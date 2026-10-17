@@ -1,14 +1,14 @@
-tree ab5930bb6c3c75463c528bb06b545be7cfd8d9af
-parent 3bead0580870db1005b76db4f55631500fbf553f
-author Mason Green <mason@greenm01.net> 1792205847 -0400
-committer Mason Green <mason@greenm01.net> 1792205847 -0400
+tree d4218c5276fce35d52017061cb85435f6f7f167d
+parent d6f83ec67c934808221f473c12b5a195e68519ee
+author Mason Green <mason@greenm01.net> 1792206120 -0400
+committer Mason Green <mason@greenm01.net> 1792206120 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLkFxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGI/RQD/c9km7cpOADwWl7ei6Knz
- wCOFgwrbZuKIruX6ao5IeO8BAOx2atRGohlp+05GhiD+bTlU1O5GHEXBBiSPX4iW
- 9E8P
- =V9zx
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLlKBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJp/gEAx0mgAByMHWMzYZkdSt1U
+ eVW7q/8KN7GUMHwxOizsgXkBAMIFbaGffyEi80HxDqrEZFWSH9wj02h6huoYmM1C
+ 34oC
+ =jV30
  -----END PGP SIGNATURE-----
 
-Reuse broker submit handle across session transactions
+Expose broker retry readiness separately from queued custody

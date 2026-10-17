@@ -35,6 +35,8 @@ int sophia_br_init(struct sophia_br *, struct sophia_bo *, uint16_t, uint16_t,
 int sophia_br_dispatch(struct sophia_br *, uint64_t now, size_t budget);
 int sophia_br_ready(const struct sophia_br *);
 int sophia_br_transaction_ready(const struct sophia_br *);
+/* Pure query: a retryable submit refusal is waiting for caller retry. */
+int sophia_br_retry_ready(const struct sophia_br *);
 /* Returned label borrows session storage until response receipt or failure.
  * Journal consumption does not invalidate the retained request. */
 int sophia_br_request(const struct sophia_br *, struct sophia_bf_request *);

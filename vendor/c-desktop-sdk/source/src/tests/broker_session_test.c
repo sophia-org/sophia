@@ -373,17 +373,20 @@ static void scenario(unsigned fault) {
       }
       assert(request.id == 8u + (unsigned)responded &&
              !sophia_br_respond(&session, request.id, rows, count, 1));
+      assert(!sophia_br_retry_ready(&session));
       ++responded;
     }
-    if (fault == 8 && responded &&
-        session.transaction.submission.custody == SOPHIA_BS_QUEUED) {
+    if (fault == 8 && responded && sophia_br_retry_ready(&session)) {
+      assert(session.transaction.submission.custody == SOPHIA_BS_QUEUED);
       e = sophia_br_retry(&session, 1);
       assert(!e || e == SOPHIA_BS_BUSY);
+      assert(!sophia_br_retry_ready(&session));
     }
     sched_yield();
   } while (receipt < target || !sophia_br_transaction_ready(&session));
 cleanup:
   sophia_br_close(&session);
+  assert(!sophia_br_retry_ready(&session));
   close(pair[0]);
   free(storage);
   assert(waitpid(child, &status, 0) == child && WIFEXITED(status) &&

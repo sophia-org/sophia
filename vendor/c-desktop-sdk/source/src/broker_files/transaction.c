@@ -25,6 +25,10 @@ void sophia_bt_close(struct sophia_bt *t) {
 int sophia_bt_done(const struct sophia_bt *t) {
   return t && !t->error && t->stage == DONE;
 }
+int sophia_bt_retry_ready(const struct sophia_bt *t) {
+  return t && !t->error && t->stage == WAIT && !t->outstanding &&
+         t->submission.custody == SOPHIA_BS_QUEUED;
+}
 int sophia_bt_deadline(const struct sophia_bt *t, uint64_t *out) {
   if (!t || !out || t->error || t->stage == DONE)
     return 0;
@@ -196,8 +200,7 @@ int sophia_bt_retry(struct sophia_bt *t, uint64_t now) {
   int e = advance(t, now);
   if (e)
     return e;
-  if (t->stage != WAIT || t->outstanding ||
-      t->submission.custody != SOPHIA_BS_QUEUED)
+  if (!sophia_bt_retry_ready(t))
     return SOPHIA_BS_BUSY;
   t->stage = SUBMIT;
   return 0;

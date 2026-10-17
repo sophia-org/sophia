@@ -165,6 +165,10 @@ impl Session {
     pub fn transaction_ready(&self) -> bool {
         self.ready() && self.transaction.done()
     }
+    /// True only after a retryable submit refusal, never merely local queuing.
+    pub fn retry_ready(&self) -> bool {
+        self.error.is_none() && self.transaction.retry_ready()
+    }
     pub fn request(&self) -> Option<Request<'_>> {
         if self.error.is_some() || self.ordering.phase() != Phase::Ready {
             return None;

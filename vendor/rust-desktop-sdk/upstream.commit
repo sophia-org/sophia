@@ -1,14 +1,14 @@
-tree e6e63e99fffd34c9b2ab4ff2f29adf6623873e98
-parent da0937fab757eec2cce37e38813761b875d84487
-author Mason Green <mason@greenm01.net> 1792205846 -0400
-committer Mason Green <mason@greenm01.net> 1792205846 -0400
+tree f01c18e6bfaa014d5cc3c591469c1a3508d63f84
+parent 3830d84fba86ece78e195041d71e598bd5072659
+author Mason Green <mason@greenm01.net> 1792206119 -0400
+committer Mason Green <mason@greenm01.net> 1792206119 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLkFhsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJllgD9H3o2aLMCxX23cjkw5BTU
- pgZg9sz7M+OBGHgDVjQdesoBAJh/Rehx7/885co4WecXVoWLYGL39oZxLXT3rPwY
- mY8D
- =gn3R
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLlJxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGL6hAD/YunSnGqtvQzlKbXArbBZ
+ F/3QjVq4e6UrEhPhtbAyqFYBAMpE3g77J3Bzj9fTE26g9Tjxe0k7SOG9U+i1I+4M
+ 3lsP
+ =drma
  -----END PGP SIGNATURE-----
 
-Reuse broker submit handle across session transactions
+Expose broker retry readiness separately from queued custody

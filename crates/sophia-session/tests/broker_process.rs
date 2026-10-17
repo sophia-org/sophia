@@ -7,7 +7,9 @@ use sophia_protocol::{
 use sophia_runtime::{
     ProcessLaunchSpec, ProcessSupervisor, ProtectionDomainRole, ProtectionDomainSpec,
     ProtectionPath, SupervisedProcessKind, SupervisorCommand,
-    broker_files::{BrokerFileListener, SOPHIA_BROKER_9P_SOCKET_ENV},
+    broker_files::{
+        BrokerFileEffects, BrokerFileListener, BrokerFileService, SOPHIA_BROKER_9P_SOCKET_ENV,
+    },
 };
 use sophia_session::{
     broker_file_driver::BrokerFileDriver,
@@ -18,9 +20,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-#[test]
-#[ignore = "requires SOPHIA_TEST_EXECUTABLE and SOPHIA_TEST_BUBBLEWRAP absolute paths"]
-fn protected_native_broker_preserves_all_operations_and_atomic_lowering() {
+fn launch<A: BrokerFileEffects>(owner: A) -> (ProcessSupervisor, BrokerFileService<A>) {
     let executable = PathBuf::from(std::env::var_os("SOPHIA_TEST_EXECUTABLE").unwrap());
     let bubblewrap = PathBuf::from(std::env::var_os("SOPHIA_TEST_BUBBLEWRAP").unwrap());
     assert!(executable.is_absolute() && bubblewrap.is_absolute());
@@ -57,7 +57,7 @@ fn protected_native_broker_preserves_all_operations_and_atomic_lowering() {
     let evidence = supervisor.protection_evidence().unwrap().clone();
     let service = listener
         .accept(
-            BrokerFileOwner::new(1).unwrap(),
+            owner,
             &evidence,
             1,
             1,
@@ -66,6 +66,13 @@ fn protected_native_broker_preserves_all_operations_and_atomic_lowering() {
             Duration::from_secs(3),
         )
         .unwrap();
+    (supervisor, service)
+}
+
+#[test]
+#[ignore = "requires SOPHIA_TEST_EXECUTABLE and SOPHIA_TEST_BUBBLEWRAP absolute paths"]
+fn protected_native_broker_preserves_all_operations_and_atomic_lowering() {
+    let (mut supervisor, service) = launch(BrokerFileOwner::new(1).unwrap());
     let mut driver = BrokerFileDriver::new(service);
     let surface = SurfaceId::new(3, 4);
     let timeout = Duration::from_secs(3);
@@ -247,4 +254,65 @@ fn protected_native_broker_preserves_all_operations_and_atomic_lowering() {
     // Explicit supervisor shutdown owns process termination; no reconnect is allowed.
     supervisor.terminate().unwrap();
     driver.close().unwrap();
+}
+
+#[test]
+#[ignore = "requires SOPHIA_TEST_EXECUTABLE and SOPHIA_TEST_BUBBLEWRAP absolute paths"]
+fn protected_native_broker_retries_pressure_without_replacing_response() {
+    struct Pressured {
+        attempts: usize,
+        committed: bool,
+        first: Option<String>,
+    }
+    impl BrokerFileEffects for Pressured {
+        type Prepared = ();
+        fn prepare(
+            &mut self,
+            set: &sophia_protocol::broker_files::BrokerFileResponseSet<'_>,
+        ) -> Result<(), sophia_9p::Errno> {
+            assert_eq!((set.request, set.submission), (1, 2));
+            let bytes = format!("{set:?}");
+            self.attempts += 1;
+            if let Some(first) = &self.first {
+                assert_eq!(&bytes, first);
+                Ok(())
+            } else {
+                self.first = Some(bytes);
+                Err(sophia_9p::Errno::EAGAIN)
+            }
+        }
+        fn commit(&mut self, (): ()) {
+            assert!(!self.committed);
+            self.committed = true;
+        }
+    }
+    let (mut supervisor, mut service) = launch(Pressured {
+        attempts: 0,
+        committed: false,
+        first: None,
+    });
+    let end = std::time::Instant::now() + Duration::from_secs(3);
+    let mut published = false;
+    while std::time::Instant::now() < end && !service.export().owner().committed {
+        service.turn(Duration::from_millis(10)).unwrap();
+        if !published && service.export().custody().negotiated() {
+            match service.export_mut().publish(
+                1,
+                Request::SurfaceAdmitted {
+                    surface: SurfaceId::new(3, 4),
+                    profile: NamespaceProfile::Confined,
+                },
+                std::time::Instant::now(),
+            ) {
+                Ok(()) => published = true,
+                Err(sophia_9p::Errno::EAGAIN) => (),
+                Err(error) => panic!("publish: {error:?}"),
+            }
+        }
+    }
+    supervisor.terminate().unwrap();
+    service.close().unwrap();
+    assert!(published);
+    assert_eq!(service.export().owner().attempts, 2);
+    assert!(service.export().owner().committed);
 }

@@ -103,6 +103,14 @@ impl Transaction {
     pub fn done(&self) -> bool {
         self.error.is_none() && self.stage == Stage::Done
     }
+    /// A retryable submit refusal has arrived; queued but unissued work is not
+    /// retryable. Calling this query performs no I/O and changes no deadline.
+    pub fn retry_ready(&self) -> bool {
+        self.error.is_none()
+            && self.stage == Stage::Wait
+            && !self.outstanding
+            && self.custody() == Custody::Queued
+    }
     pub fn deadline(&self) -> Option<u64> {
         if self.error.is_some() || self.done() {
             return None;
@@ -212,7 +220,7 @@ impl Transaction {
     /// caller decision and preserves the original candidate, ID and deadline.
     pub fn retry(&mut self, now: u64) -> Result<(), Error> {
         self.advance(now)?;
-        if self.stage != Stage::Wait || self.outstanding || self.custody() != Custody::Queued {
+        if !self.retry_ready() {
             return Err(Error::Busy);
         }
         self.stage = Stage::Submit;

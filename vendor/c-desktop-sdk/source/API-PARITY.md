@@ -1,5 +1,14 @@
 # C and Rust SDK API parity
 
+## Broker retry readiness, 2026-10-17
+
+Rust `Transaction::retry_ready` / `Session::retry_ready` match C
+`sophia_bt_retry_ready` / `sophia_br_retry_ready`. These pure queries distinguish
+received EAGAIN from locally queued but unissued work. They return false after
+retry issuance or terminal failure. EAGAIN retains Queued custody, not Refused;
+applications must schedule explicit retries from readiness, not Refused custody.
+Paired socket tests check initial queuing, EAGAIN, immutable retry and close.
+
 ## Broker submit-handle reuse, 2026-10-17
 
 Both integrated broker sessions keep the opened `submit` fid until connection

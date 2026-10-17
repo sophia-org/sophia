@@ -144,6 +144,45 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+The native broker migration and paired submit-handle reuse are implemented.
+The short release diagnostic below found about 28% lower native CPU per update,
+but native remains much more expensive than legacy; no performance acceptance
+or internal-copy total is claimed. No quiet hold is active and nothing was
+installed into the desktop.
+
+The release audit found and fixed a retry bug: the CLI watched Refused custody,
+but retryable EAGAIN returns Queued. Both SDKs now expose `retry_ready`; Sophia
+uses it to schedule its explicit retry. Signed pins are Rust
+`5683ae00c549a9d51d7e8127ecf4a44da9c8b6e5` and C
+`6e75154c82994d52a54050c4eb787dd76b5d8dc0`. The protected pressure test failed
+against the old CLI with one attempt and no commit, then passed with two
+identical attempts and one commit after the fix. The all-operation test also
+passes. Logs: `/tmp/t333-broker-retry-negative.log` and
+`/tmp/t333-retry-ready-process.log`. Independent SDK retry tests pass.
+
+Next: finish the full versioned role/API matrix and release audit against the
+criteria above, including generic transport, launch and namespace ownership.
+The current parity documents mix historical gaps with later passing evidence;
+reconcile each against source and exact test scope. Broker still lacks a concise
+operation map. Preserve the portal refused-End cancellation limit and separate
+physical acceptance from SDK capability parity. Performance work must not
+replace those closure requirements.
+
+### Broker integration and diagnostic evidence
+
+The untraced submit-reuse release run passed on October 17 at
+02:59:49–02:59:50 UTC, with clean source `57fa7d0ac` and unchanged artifacts
+built at `949186830`. Raw samples and identities are in the same evidence
+directory below. Native per-block median latency was 58.3–65.7 µs, compared
+with 84.7–94.2 µs before reuse. Mean combined owner/peer CPU per update was
+76.3 µs versus 106.3 µs, an observed reduction of about 28%. Legacy CPU means
+were 9.8 and 9.4 µs respectively; native remains substantially more expensive.
+These are short separate diagnostic runs, not a statistical qualification or
+proof that every workload improves by that percentage. Empty-work observations
+remain raw and unsubtracted. Internal buffer-copy accounting is still missing.
+The Mac mini confirmed no crunch activity during its 02:59–03:00 UTC hold;
+the hold was explicitly released. Muse remained blocked at its permission prompt.
+
 Signed Sophia `949186830` is pushed. Its separate release traces confirm the
 submit reuse reduces native peer socket calls from about 45 to about 31 per
 additional update. Peer bytes fall from 420 read/749 written to 367/698, with

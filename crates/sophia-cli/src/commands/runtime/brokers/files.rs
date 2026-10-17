@@ -1,7 +1,7 @@
 use sophia_9p_client::pipeline::{IoInterest, Pipeline, PipelineLimits, Reply};
 use sophia_broker::{MetadataBroker, MetadataBrokerRejection, file_client};
 use sophia_broker_client::{
-    Custody, Error as StateError,
+    Error as StateError,
     session::{Error, Session},
     startup::Opening,
 };
@@ -77,7 +77,7 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         // Retry only the SDK's retained immutable submission. Never run the
         // reducer twice for one request; backpressure retains its original due time.
-        if session.custody() == Custody::Refused {
+        if session.retry_ready() {
             let due = *retry_at.get_or_insert(time.saturating_add(4));
             if time >= due {
                 session.retry(time).map_err(sdk_error)?;

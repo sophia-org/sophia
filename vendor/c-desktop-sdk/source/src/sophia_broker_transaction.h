@@ -51,6 +51,8 @@ int sophia_bt_receipt(struct sophia_bt *, const struct sophia_bf_event *,
 int sophia_bt_retry(struct sophia_bt *, uint64_t now);
 int sophia_bt_release(struct sophia_bt *, uint64_t acknowledged, uint64_t now);
 int sophia_bt_done(const struct sophia_bt *);
+/* Retryable submit refusal received; false for unissued work or failure. */
+int sophia_bt_retry_ready(const struct sophia_bt *);
 /* Returns 1 and supplies the next deadline, or 0 after done/failure. */
 int sophia_bt_deadline(const struct sophia_bt *, uint64_t *);
 void sophia_bt_close(struct sophia_bt *);

@@ -264,6 +264,7 @@ fn scenario(fault: u8) {
         1000,
     )
     .unwrap();
+    assert!(!s.retry_ready());
     let end = Instant::now() + Duration::from_secs(2);
     if (1..=5).contains(&fault) {
         use sophia_broker_client::{Custody, Error as StateError, session::Error};
@@ -406,14 +407,18 @@ fn scenario(fault: u8) {
                 assert!(s.transaction_ready() && s.request().is_some());
             }
             match s.respond(8 + responded, &rows, 1) {
-                Ok(()) => responded += 1,
+                Ok(()) => {
+                    responded += 1;
+                    assert!(!s.retry_ready());
+                }
                 Err(sophia_broker_client::session::Error::State(
                     sophia_broker_client::Error::Busy,
                 )) => (),
                 Err(e) => panic!("{e:?}"),
             }
         }
-        if fault == 8 && responded != 0 && s.custody() == sophia_broker_client::Custody::Queued {
+        if fault == 8 && responded != 0 && s.retry_ready() {
+            assert_eq!(s.custody(), sophia_broker_client::Custody::Queued);
             match s.retry(1) {
                 Ok(())
                 | Err(sophia_broker_client::session::Error::State(
@@ -421,6 +426,7 @@ fn scenario(fault: u8) {
                 )) => (),
                 Err(e) => panic!("{e:?}"),
             }
+            assert!(!s.retry_ready());
         }
         thread::yield_now();
     }
@@ -431,6 +437,7 @@ fn scenario(fault: u8) {
         thread::yield_now();
     }
     s.close();
+    assert!(!s.retry_ready());
     job.join().unwrap();
 }
 

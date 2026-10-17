@@ -22,6 +22,9 @@ int sophia_br_ready(const struct sophia_br *s) {
 int sophia_br_transaction_ready(const struct sophia_br *s) {
   return sophia_br_ready(s) && sophia_bt_done(&s->transaction);
 }
+int sophia_br_retry_ready(const struct sophia_br *s) {
+  return s && !s->error && sophia_bt_retry_ready(&s->transaction);
+}
 int sophia_br_deadline(const struct sophia_br *s, uint64_t *out) {
   uint64_t due = UINT64_MAX, transaction_due;
   unsigned has = 0;
