@@ -27,7 +27,14 @@ impl Drop for Scratch {
     }
 }
 fn compile(directory: &Path, name: &str) -> PathBuf {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/c-desktop-sdk/source/src");
+    // An exact independent candidate can be checked before replacing the pin.
+    let root = if let Some(source) = std::env::var_os("SOPHIA_C_SDK_SOURCE") {
+        let source = PathBuf::from(source);
+        assert!(source.is_absolute() && source.is_dir());
+        source.join("src")
+    } else {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/c-desktop-sdk/source/src")
+    };
     let binary = directory.join(name);
     let mut cc = Command::new(std::env::var_os("CC").unwrap_or_else(|| "cc".into()));
     cc.args([

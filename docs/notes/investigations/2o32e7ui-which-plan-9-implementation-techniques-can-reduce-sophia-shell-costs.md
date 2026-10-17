@@ -166,6 +166,15 @@ overlays on the latter. This establishes these export behaviors, not complete
 B3 SDK interoperability or neighbor fairness. Logs and the old-export overlay
 are under `t331-b3-20261017/`. No desktop or native measurement was started.
 
+The same direct-export backpressure/tail fixture also passes both revisions.
+C candidate `303dfd0` passes all three independent vector and native-file session
+tests against both exports, including allocation, upload, cancellation and ACKs.
+The test now accepts an explicit absolute `SOPHIA_C_SDK_SOURCE` directory so a
+candidate can be tested before replacing the vendor pin; default runs still
+check the pinned SDK. Rust candidate `f3df891` passes independent metadata and
+content startup against both exports. These do not prove a full four-credit
+window against production or neighbor fairness; those gates remain open.
+
 ## First-slice native pilot — October 17
 
 All fourteen arms captured 1,000 frames at 60 Hz, 1080p, scale 1, VRR off and
