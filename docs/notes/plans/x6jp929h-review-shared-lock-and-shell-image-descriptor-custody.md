@@ -464,6 +464,16 @@ transport checks also pass. The C pin includes the sealed producer and opt-in
 BAR adapter; Rust producer/adapter parity remains incomplete. Neither the pins
 nor the native codec change enables lock r2 or Session image admission.
 
+The shell journal now supports nine independent held records: ChannelClosed
+and two terminal records per admitted offer. Handles are epoch-scoped and never
+reused; aggregate holds fit inside the terminal reserve, and each spend leaves
+the other holds intact. Saturation, out-of-order completion, stale handles and
+byte-budget exhaustion have regression coverage. All 118 active runtime library
+tests and the live image transport test pass (one pre-existing library test is
+ignored). Four legacy test helpers were corrected for the store-aware drain
+signature introduced in `8b08e3f71`; they had not been built by that checkpoint's
+integration-only rerun. The reservations are a prerequisite, not Source admission.
+
 First add all seven image kinds and exact body/row codecs independently in C
 and Rust, with role-specific schema tests, literal vectors and negative cases.
 The Go oracle must gain the same revision-aware ResourceStatus rule. Rust's

@@ -18,21 +18,31 @@ pub(in crate::shell_transport) struct JournalBounds {
     pub reserve_bytes: usize,
 }
 
+/// An epoch-scoped reservation identity, never reused after release or spend.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::shell_transport) struct JournalReservation {
+    epoch: u64,
+    id: u64,
+}
+
+// ChannelClosed plus two terminal events for each of four admitted offers.
+const MAX_HELD_RECORDS: usize = 9;
+
 pub(in crate::shell_transport) struct Journal {
     custody: Custody,
     bounds: JournalBounds,
     last_progress: Instant,
     revision: u16,
-    /// One held future record, stored as its total byte size; the record
-    /// count is implicitly one. While held, ordinary credited appends
-    /// leave one record and this many bytes free; only
+    /// Held future records and their total encoded byte sizes. Credited
+    /// appends leave their record and byte capacity free; only
     /// [`Self::append_consuming_reservation`] may spend it. Uncredited
     /// appends need no subtraction: the terminal reserve they already
     /// cannot touch is where a credited held record lives, so subtracting
     /// again would fence the same room twice. This is accounting, not a
     /// named slot: holding reserves capacity, it does not promise any
     /// particular record a sequence.
-    held: Option<usize>,
+    held: [Option<(JournalReservation, usize)>; MAX_HELD_RECORDS],
+    next_reservation: u64,
 }
 
 impl Journal {
@@ -42,7 +52,8 @@ impl Journal {
             bounds,
             last_progress: now,
             revision: 8,
-            held: None,
+            held: [None; MAX_HELD_RECORDS],
+            next_reservation: 1,
         }
     }
 
@@ -75,31 +86,53 @@ impl Journal {
 
     fn append_limits(&self, credited: bool) -> Limits {
         let mut limits = self.limits(credited);
-        if credited && let Some(held) = self.held {
-            limits.records = limits.records.saturating_sub(1);
-            limits.bytes = limits.bytes.saturating_sub(held);
+        if credited {
+            for (_, size) in self.held.iter().flatten() {
+                limits.records = limits.records.saturating_sub(1);
+                limits.bytes = limits.bytes.saturating_sub(*size);
+            }
         }
         limits
     }
 
-    /// Holds room for one future record of `size` total bytes. Fails if a
-    /// reservation is already held or the record would not fit under
-    /// credited bounds once held. While held, ordinary appends (credited
-    /// or not) leave one record and `size` bytes free.
-    pub(in crate::shell_transport) fn hold_reservation(&mut self, size: usize) -> bool {
-        if self.held.is_some()
-            || size > self.bounds.reserve_bytes
-            || !self.custody.fits(size, self.limits(true))
+    /// Holds one future event's capacity. All holds together must fit the
+    /// terminal reserve, which also protects them from uncredited appends.
+    pub(in crate::shell_transport) fn hold_reservation(
+        &mut self,
+        size: usize,
+    ) -> Option<JournalReservation> {
+        let held_bytes: usize = self.held.iter().flatten().map(|(_, size)| *size).sum();
+        if size < sophia_protocol::shell_files::SHELL_FILE_HEADER_BYTES
+            || size > self.bounds.reserve_bytes.saturating_sub(held_bytes)
+            || self.held.iter().flatten().count()
+                >= usize::from(SHELL_FILE_TERMINAL_RESERVE_RECORDS)
+            || !self.custody.fits(size, self.append_limits(true))
         {
-            return false;
+            return None;
         }
-        self.held = Some(size);
-        true
+        let next = self.next_reservation.checked_add(1)?;
+        let slot = self.held.iter_mut().find(|slot| slot.is_none())?;
+        let reservation = JournalReservation {
+            epoch: self.custody.epoch(),
+            id: self.next_reservation,
+        };
+        *slot = Some((reservation, size));
+        self.next_reservation = next;
+        Some(reservation)
     }
 
     /// Drops a held reservation without spending it.
-    pub(in crate::shell_transport) fn release_reservation(&mut self) {
-        self.held = None;
+    pub(in crate::shell_transport) fn release_reservation(
+        &mut self,
+        reservation: JournalReservation,
+    ) {
+        if let Some(slot) = self
+            .held
+            .iter_mut()
+            .find(|slot| slot.is_some_and(|(held, _)| held == reservation))
+        {
+            *slot = None;
+        }
     }
 
     /// Appends one complete event. Every fallible check precedes any change:
@@ -133,6 +166,7 @@ impl Journal {
     /// the reservation held and changes nothing.
     pub(in crate::shell_transport) fn append_consuming_reservation(
         &mut self,
+        reservation: JournalReservation,
         kind: ShellFileKind,
         body: &[u8],
     ) -> Result<u64, Errno> {
@@ -143,7 +177,12 @@ impl Journal {
         {
             return Err(Errno::EINVAL);
         }
-        let held = self.held.ok_or(Errno::EINVAL)?;
+        let slot = self
+            .held
+            .iter()
+            .position(|slot| slot.is_some_and(|(held, _)| held == reservation))
+            .ok_or(Errno::EINVAL)?;
+        let held = self.held[slot].expect("reservation found").1;
         let bytes = encode_shell_file_record_at_revision(
             ShellFileHeader {
                 kind,
@@ -158,8 +197,12 @@ impl Journal {
         if bytes.len() != held {
             return Err(Errno::EINVAL);
         }
-        let prepared = self.custody.prepare(bytes, self.limits(true))?;
-        self.held = None;
+        // Spend only this hold; every other offer keeps its own capacity.
+        let mut limits = self.append_limits(true);
+        limits.records += 1;
+        limits.bytes += held;
+        let prepared = self.custody.prepare(bytes, limits)?;
+        self.held[slot] = None;
         Ok(prepared.commit())
     }
 

@@ -7,6 +7,7 @@
 //! production, after its authenticated Hello); this file does not prove
 //! that Hello happened.
 use super::*;
+use crate::shell_transport::files::journal::JournalReservation;
 
 /// Owner-supplied image configuration. All three objects are validated
 /// and cross-checked at configuration time; the export encodes the
@@ -53,6 +54,7 @@ pub(super) struct ImageChannelState {
     pub limits_body: Vec<u8>,
     pub formats_body: Vec<u8>,
     pub readiness: ShellImageReadiness,
+    close_reservation: Option<JournalReservation>,
 }
 
 /// Total bytes of one journalled `ChannelClosed` record (header + body).
@@ -178,6 +180,7 @@ impl ShellFiles {
             limits_body,
             formats_body,
             readiness: ShellImageReadiness::AwaitingHello,
+            close_reservation: None,
         });
         Ok(())
     }
@@ -252,9 +255,10 @@ impl ShellFiles {
         if granted_source_kinds == 0 || granted_source_kinds & !(configured & negotiated) != 0 {
             return Err(Errno::EINVAL);
         }
-        if !self.journal.hold_reservation(CHANNEL_CLOSED_RECORD_BYTES) {
-            return Err(Errno::EAGAIN);
-        }
+        let reservation = self
+            .journal
+            .hold_reservation(CHANNEL_CLOSED_RECORD_BYTES)
+            .ok_or(Errno::EAGAIN)?;
         let body = ShellChannelReady {
             channel_generation,
             granted_source_kinds,
@@ -267,11 +271,13 @@ impl ShellFiles {
         {
             Ok(sequence) => sequence,
             Err(error) => {
-                self.journal.release_reservation();
+                self.journal.release_reservation(reservation);
                 return Err(error);
             }
         };
-        self.image.as_mut().expect("image state checked").readiness = ShellImageReadiness::Ready {
+        let state = self.image.as_mut().expect("image state checked");
+        state.close_reservation = Some(reservation);
+        state.readiness = ShellImageReadiness::Ready {
             granted_source_kinds,
         };
         Ok(sequence)
@@ -303,11 +309,14 @@ impl ShellFiles {
         }
         .encode()
         .map_err(|_| Errno::EINVAL)?;
-        let sequence = self
-            .journal
-            .append_consuming_reservation(ShellFileKind::ChannelClosed, &body)?;
-        self.image.as_mut().expect("image state checked").readiness =
-            ShellImageReadiness::Closed { reason };
+        let sequence = self.journal.append_consuming_reservation(
+            state.close_reservation.ok_or(Errno::EINVAL)?,
+            ShellFileKind::ChannelClosed,
+            &body,
+        )?;
+        let state = self.image.as_mut().expect("image state checked");
+        state.close_reservation = None;
+        state.readiness = ShellImageReadiness::Closed { reason };
         Ok(sequence)
     }
 
