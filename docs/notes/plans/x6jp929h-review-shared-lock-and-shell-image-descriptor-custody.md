@@ -487,6 +487,16 @@ returned; submitted credits survive cancellation until completion is collected.
 The eight sealed-store and seven worker tests pass, alongside the runtime library
 suite. Source receipt and admission wiring still remain.
 
+The registry's sealed-image admission operation now checks the live content
+grant, facts generation, output and allocation before reserving worker/resource
+capacity. Resource descriptions inherit the allocation's scale and existing
+content limits. Exhausted workers do not consume a resource generation, and
+failed resource reservations return their worker credit. The allocation suite
+passes 13 cases and targeted strict Clippy passes. This operation is not yet
+called by the Source reactor: the export must first enforce its published image
+budgets, increasing offer ID and terminal journal reservations, then retain the
+admitted metadata and publish ImageAdmitted before accepting an FD.
+
 First add all seven image kinds and exact body/row codecs independently in C
 and Rust, with role-specific schema tests, literal vectors and negative cases.
 The Go oracle must gain the same revision-aware ResourceStatus rule. Rust's

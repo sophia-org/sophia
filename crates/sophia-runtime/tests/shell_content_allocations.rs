@@ -84,6 +84,155 @@ fn store() -> ContentAllocationStore {
     store
 }
 
+fn image_registry() -> ContentEpochRegistry {
+    let mut registry = ContentEpochRegistry::new(64 << 20).unwrap();
+    registry.admit(ContentLimits::prototype(grant())).unwrap();
+    let allocations = registry.allocations_mut(grant()).unwrap();
+    allocations
+        .publish_outputs(tx(1), 1, vec![facts(100)])
+        .unwrap();
+    allocations
+        .request(
+            tx(2),
+            panel_request(1, 1, ContentAllocationId::default()),
+            &[],
+            0,
+        )
+        .unwrap();
+    allocations
+        .grant(
+            1,
+            panel(ContentAllocationId {
+                id: 1,
+                generation: 1,
+            }),
+            &[],
+        )
+        .unwrap();
+    while allocations.take_event().is_some() {}
+    registry
+}
+
+fn image_metadata() -> sophia_protocol::shell_files::ShellImageMetadata {
+    sophia_protocol::shell_files::ShellImageMetadata {
+        offer_id: 1,
+        resource: 1,
+        resource_generation: 1,
+        admission_epoch: 1,
+        output_id: 2,
+        allocation_id: 1,
+        topology_generation: 1,
+        source_kind: 1,
+        source_format: 1,
+        width: 200,
+        height: 20,
+        stride: 800,
+        plane_count: 1,
+        descriptor_count: 1,
+        declared_bytes: 16000,
+        modifier: 0,
+    }
+}
+
+#[test]
+fn sealed_admission_checks_live_allocation_and_rolls_back_worker_credit_on_refusal() {
+    use std::time::{Duration, Instant};
+    let mut registry = image_registry();
+    let mut worker = SealedValidationWorker::new(2, 16000).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    for field in 0..5 {
+        let mut metadata = image_metadata();
+        match field {
+            0 => metadata.admission_epoch += 1,
+            1 => metadata.topology_generation += 1,
+            2 => metadata.output_id += 1,
+            3 => metadata.allocation_id += 1,
+            _ => metadata.stride += 1,
+        }
+        assert!(
+            registry
+                .reserve_sealed_image(grant(), metadata, &mut worker, 0, deadline)
+                .is_err()
+        );
+        assert_eq!(worker.pending(), 0);
+        assert_eq!(
+            registry.resources(grant()).unwrap().usage(),
+            ContentMemoryUsage::default()
+        );
+    }
+    let admitted = registry
+        .reserve_sealed_image(grant(), image_metadata(), &mut worker, 0, deadline)
+        .unwrap();
+    assert_eq!(admitted.metadata, image_metadata());
+    assert_eq!(admitted.deadline, deadline);
+    assert_eq!(worker.pending(), 1);
+    assert_eq!(registry.resources(grant()).unwrap().usage().backing, 16000);
+    assert!(
+        registry
+            .resources(grant())
+            .unwrap()
+            .pending_event()
+            .is_none()
+    );
+    assert!(
+        registry
+            .reserve_sealed_image(grant(), image_metadata(), &mut worker, 0, deadline)
+            .is_err()
+    );
+    assert_eq!(
+        worker.pending(),
+        1,
+        "failed resource reservation returns worker credit"
+    );
+    assert!(worker.release_reserved(admitted.worker_job));
+    let resource = ContentResourceId {
+        id: 1,
+        generation: 1,
+    };
+    let mut result = Some(Err(ContentStoreError::Malformed));
+    assert_eq!(
+        registry.complete_sealed(grant(), resource, &mut result, 1),
+        Err(ContentStoreError::Malformed)
+    );
+    assert!(result.is_none());
+    assert_eq!(registry.resources(grant()).unwrap().usage().backing, 0);
+}
+
+#[test]
+fn exhausted_worker_does_not_consume_resource_generation() {
+    use std::time::{Duration, Instant};
+    let mut registry = image_registry();
+    let mut worker = SealedValidationWorker::new(1, 16000).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let occupied = worker.reserve(4, deadline).unwrap();
+    assert_eq!(
+        registry
+            .reserve_sealed_image(grant(), image_metadata(), &mut worker, 0, deadline)
+            .unwrap_err(),
+        SealedImageAdmissionError::Worker(SealedSubmitFailure::Capacity)
+    );
+    worker.release_reserved(occupied);
+    let admitted = registry
+        .reserve_sealed_image(grant(), image_metadata(), &mut worker, 0, deadline)
+        .unwrap();
+    assert!(registry.disconnect(grant()));
+    worker.release_reserved(admitted.worker_job);
+    let mut result = Some(Err(ContentStoreError::Revoked));
+    assert_eq!(
+        registry.complete_sealed(
+            grant(),
+            ContentResourceId {
+                id: 1,
+                generation: 1
+            },
+            &mut result,
+            1
+        ),
+        Err(ContentStoreError::Revoked)
+    );
+    assert_eq!(registry.accounting().retired_epochs, 0);
+}
+
 #[test]
 fn output_facts_and_an_exact_engine_resolution_create_one_allocation() {
     let mut store = store();

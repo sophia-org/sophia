@@ -6,6 +6,8 @@ use super::{
     ContentStoreError, ContentStoreProfile,
 };
 use sophia_protocol::{ContentGrant, ContentLimits};
+mod image;
+pub use image::{SealedImageAdmission, SealedImageAdmissionError};
 
 pub struct ContentEpochRegistry {
     active: Vec<ContentEpoch>,
