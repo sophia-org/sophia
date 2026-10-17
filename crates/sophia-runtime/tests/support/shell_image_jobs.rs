@@ -3,19 +3,23 @@ use super::*;
 
 fn image_registry() -> ContentEpochRegistry {
     let mut registry = ContentEpochRegistry::new(64 << 20).unwrap();
-    registry.admit(ContentLimits::prototype(grant())).unwrap();
-    let allocations = registry.allocations_mut(grant()).unwrap();
+    add_image_epoch(&mut registry, grant());
+    registry
+}
+
+fn add_image_epoch(registry: &mut ContentEpochRegistry, epoch: ContentGrant) {
+    let mut limits = ContentLimits::prototype(epoch);
+    limits.max_staging_bytes = 8 << 20;
+    limits.max_resident_bytes = 8 << 20;
+    limits.max_retiring_bytes = 8 << 20;
+    registry.admit(limits).unwrap();
+    let allocations = registry.allocations_mut(epoch).unwrap();
     allocations
         .publish_outputs(tx(1), 1, vec![facts(100)])
         .unwrap();
-    allocations
-        .request(
-            tx(2),
-            panel_request(1, 1, ContentAllocationId::default()),
-            &[],
-            0,
-        )
-        .unwrap();
+    let mut request = panel_request(1, 1, ContentAllocationId::default());
+    request.grant = epoch;
+    allocations.request(tx(2), request, &[], 0).unwrap();
     allocations
         .grant(
             1,
@@ -27,7 +31,140 @@ fn image_registry() -> ContentEpochRegistry {
         )
         .unwrap();
     while allocations.take_event().is_some() {}
-    registry
+}
+
+#[test]
+fn expiry_continues_after_another_epochs_clock_error() {
+    use std::time::{Duration, Instant};
+    for epoch_only in [false, true] {
+        let mut registry = image_registry();
+        let other = ContentGrant {
+            connection_epoch: 2,
+            content_grant_epoch: 2,
+        };
+        add_image_epoch(&mut registry, other);
+        let mut worker = SealedValidationWorker::new(2, 16000).unwrap();
+        let mut jobs = SealedImageJobs::default();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        jobs.reserve(
+            &mut registry,
+            &mut worker,
+            grant(),
+            image_metadata(),
+            10,
+            deadline,
+        )
+        .unwrap();
+        let mut other_metadata = image_metadata();
+        other_metadata.admission_epoch = other.content_grant_epoch;
+        jobs.reserve(
+            &mut registry,
+            &mut worker,
+            other,
+            other_metadata,
+            0,
+            deadline,
+        )
+        .unwrap();
+        if epoch_only {
+            jobs.withdraw_epoch(&mut registry, &mut worker, other, 5)
+                .unwrap();
+        } else {
+            assert!(
+                jobs.expire(&mut registry, &mut worker, deadline, 5)
+                    .is_err()
+            );
+        }
+        assert_eq!(worker.pending(), 1);
+        let settled = jobs.reconcile(&mut registry, 5).unwrap();
+        assert_eq!(settled.admission.grant, other);
+        assert_eq!(jobs.pending(), 1);
+        assert_eq!(registry.resources(grant()).unwrap().usage().backing, 16000);
+        jobs.withdraw_epoch(&mut registry, &mut worker, grant(), 10)
+            .unwrap();
+        assert_eq!(
+            jobs.reconcile(&mut registry, 10).unwrap().admission.grant,
+            grant()
+        );
+    }
+}
+
+#[test]
+fn delivered_success_has_no_remaining_validation_deadline() {
+    use std::time::{Duration, Instant};
+    let mut registry = image_registry();
+    let mut worker = SealedValidationWorker::new(1, 16000).unwrap();
+    let mut jobs = SealedImageJobs::default();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let job = jobs
+        .reserve(
+            &mut registry,
+            &mut worker,
+            grant(),
+            image_metadata(),
+            0,
+            deadline,
+        )
+        .unwrap();
+    jobs.submit(&mut worker, job, image_source()).unwrap();
+    let completion = loop {
+        if let Some(completion) = worker.take_completed().unwrap() {
+            break completion;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    };
+    assert!(completion.result.is_ok());
+    assert!(jobs.receive(completion).is_ok());
+    assert_eq!(jobs.deadline(), None);
+    jobs.expire(&mut registry, &mut worker, deadline, 1)
+        .unwrap();
+    assert!(jobs.reconcile(&mut registry, 1).unwrap().outcome.is_ok());
+}
+
+#[test]
+fn unsent_withdrawal_with_wrong_worker_preserves_a_retryable_credit() {
+    use std::time::{Duration, Instant};
+    let mut registry = image_registry();
+    let mut worker = SealedValidationWorker::new(1, 16000).unwrap();
+    let mut wrong = SealedValidationWorker::new(1, 16000).unwrap();
+    let mut jobs = SealedImageJobs::default();
+    let job = jobs
+        .reserve(
+            &mut registry,
+            &mut worker,
+            grant(),
+            image_metadata(),
+            0,
+            Instant::now() + Duration::from_secs(3),
+        )
+        .unwrap();
+    assert_eq!(
+        jobs.withdraw(
+            &mut registry,
+            &mut wrong,
+            job,
+            SealedImageWithdrawal::Cancelled,
+            1
+        ),
+        Err(ContentStoreError::Incomplete)
+    );
+    assert_eq!(worker.pending(), 1);
+    assert!(jobs.reconcile(&mut registry, 1).is_none());
+    jobs.withdraw(
+        &mut registry,
+        &mut worker,
+        job,
+        SealedImageWithdrawal::ChannelLost,
+        1,
+    )
+    .unwrap();
+    assert_eq!(worker.pending(), 0);
+    assert_eq!(
+        jobs.reconcile(&mut registry, 1).unwrap().stopped,
+        Some(ContentReason::Cancelled)
+    );
+    assert_eq!(registry.resources(grant()).unwrap().usage().backing, 0);
 }
 
 fn image_metadata() -> sophia_protocol::shell_files::ShellImageMetadata {

@@ -103,6 +103,9 @@ impl SealedImageJobs {
     /// Mark the store before cancelling worker work. Unsent reservations have
     /// no worker completion, so manufacture only their local refusal handoff.
     /// Submitted jobs keep their credit and source until the real completion.
+    /// An Incomplete error releasing an unsent credit indicates the wrong
+    /// worker was supplied. Custody stays stopped here; retry with the paired
+    /// worker. Never discard the slot or synthesize a second completion.
     pub fn withdraw(
         &mut self,
         registry: &mut ContentEpochRegistry,
@@ -165,7 +168,7 @@ impl SealedImageJobs {
         self.pending
             .iter()
             .flatten()
-            .filter(|pending| pending.stopped.is_none())
+            .filter(|pending| pending.stopped.is_none() && pending.result.is_none())
             .map(|pending| pending.admission.deadline)
             .min()
     }
@@ -180,14 +183,21 @@ impl SealedImageJobs {
         let jobs = self.pending.each_ref().map(|slot| {
             slot.as_ref()
                 .filter(|pending| {
-                    pending.stopped.is_none() && instant >= pending.admission.deadline
+                    pending.stopped.is_none()
+                        && pending.result.is_none()
+                        && instant >= pending.admission.deadline
                 })
                 .map(|pending| pending.admission.worker_job)
         });
+        let mut first_error = None;
         for job in jobs.into_iter().flatten() {
-            self.withdraw(registry, worker, job, SealedImageWithdrawal::Expired, now)?;
+            if let Err(error) =
+                self.withdraw(registry, worker, job, SealedImageWithdrawal::Expired, now)
+            {
+                first_error.get_or_insert(error);
+            }
         }
-        Ok(())
+        first_error.map_or(Ok(()), Err)
     }
 
     /// Channel loss withdraws every offer, including sources that never arrived.
@@ -205,16 +215,19 @@ impl SealedImageJobs {
                 .filter(|pending| pending.admission.grant == grant)
                 .map(|pending| pending.admission.worker_job)
         });
+        let mut first_error = None;
         for job in jobs.into_iter().flatten() {
-            self.withdraw(
+            if let Err(error) = self.withdraw(
                 registry,
                 worker,
                 job,
                 SealedImageWithdrawal::ChannelLost,
                 now,
-            )?;
+            ) {
+                first_error.get_or_insert(error);
+            }
         }
-        Ok(())
+        first_error.map_or(Ok(()), Err)
     }
 
     /// Reconcile one ready job. An error is a settlement only when the store

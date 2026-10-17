@@ -8,9 +8,10 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
-t338 remains in implementation. The C lock adapter is published at `6122b60`;
-an independent full `make check` passed. Its ABI additions require rebuilding
-consumers, and offer cancellation remains open. Claude's review found no blockers
+t338 remains in implementation. C offer cancellation is published at `e777235`
+on top of the lock adapter; an independent full `make check` passed. Its ABI
+additions require rebuilding consumers. Rust producer/adapters and cancellation
+parity remain open. Claude's review found no blockers
 in the retired-epoch completion fix (`d33e546d8`) or the independent journal
 reservations (`310cb886f`).
 
@@ -23,7 +24,12 @@ unsent withdrawal releases its worker credit, a submitted withdrawal waits for
 the real completion, and the first store cause survives later cancellation.
 Original admission deadlines and epoch-wide channel loss are explicit owner
 operations. A worker timeout preserves Timeout rather than becoming Malformed.
-The allocation suite passes 19 tests; targeted strict Clippy and the layout
+One epoch's withdrawal error no longer prevents expiry of another epoch's jobs.
+Delivered results no longer contribute a validation deadline, while store deadlines and
+explicit cancellation still apply at reconciliation. A failed unsent-credit
+release preserves custody for retry with the paired worker. The allocation
+suite passes 22 tests, including two-epoch isolation and wrong-worker recovery;
+targeted strict Clippy and the layout
 check pass. Explicit shell owner hooks now connect ImageBegin, Source and the
 terminal records. The real 9P/SEQPACKET fixture waits for ImageAdmitted, sends a
 sealed memfd, closes the producer FD, validates on the worker, reads the retained
@@ -34,7 +40,7 @@ the supplied test owner grants it. A late valid Source drains silently, while
 an extra-FD packet for that same stale offer faults the channel. This is supplied
 afid authority, not a Factotum or deployed Session qualification.
 
-The shell export keeps four live offers, exact metadata and two independent
+The reviewed shell checkpoint `992e20653` keeps four live offers, exact metadata and two independent
 terminal reservations each; the ChannelClosed hold makes nine. Journal encoding,
 capacity and sequence checks precede resource/worker reservation. ImageBegin
 shares the inbound queue with ordinary content. End/Cancel for a queued offer
