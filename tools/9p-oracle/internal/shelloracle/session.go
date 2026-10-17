@@ -19,6 +19,7 @@ type session struct {
 	runner                          *runner
 	fixture                         string
 	epoch, offset, sequence, nextID uint64
+	revision                        uint16
 	queue                           []record
 	last                            []byte
 }
@@ -139,8 +140,11 @@ func (s *session) readEvents() []byte {
 		need(len(rest) >= 32, "partial event header")
 		n := int(u32(rest, 0))
 		need(n >= 32 && n <= len(rest), "partial event")
-		e, err := decode(append([]byte(nil), rest[:n]...))
+		e, err := decodeAt(append([]byte(nil), rest[:n]...), s.revision)
 		must(err)
+		if e.kind == 16 {
+			s.revision = u16(e.body, 0)
+		}
 		need(e.kind >= 16 && e.epoch == s.epoch && e.sequence > s.sequence, "event epoch/sequence")
 		if e.kind >= 32 {
 			need(u64(e.body, 8) == s.epoch, "event grant epoch")

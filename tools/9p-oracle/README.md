@@ -27,10 +27,14 @@ and display sockets hidden as part of the ordinary repository gate.
 ## Shell file oracle (t252 B8)
 
 The accepted image-channel contract reserves ResourceStatus Rejected reason 13
-at shell r9. This oracle, the current C/Rust SDK codecs and Sophia's emission
-codec still enforce <=12 and do not negotiate r9. t338 must add revision-aware
-support in all three independent codecs; changing the KDL ceiling alone enables
-nothing. Other reason fields keep their existing bounds.
+at shell r9. This oracle is revision-aware. A session records the revision
+selected in Negotiated and checks later events against it. At revision 9 or
+higher it admits reason 13 only for ResourceStatus status 3. Every other status
+and reason field keeps its existing bound, and records decoded outside a
+session use the pre-r9 bound. The oracle does not offer r9, and Sophia does not
+advertise it. The Rust SDK codec and Sophia's emission codec still enforce <=12
+until their own t338 changes land. Changing the KDL ceiling alone enables
+nothing.
 
 `cmd/shell-oracle` judges the production shell file export with 96 named checks.
 It uses only the Go standard library. The director owns the t252 task and

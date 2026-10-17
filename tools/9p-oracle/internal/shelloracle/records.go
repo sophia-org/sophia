@@ -39,8 +39,17 @@ func margins(b []byte) {
 		need(v >= -512 && v <= 512, "margin")
 	}
 }
+
+// decode checks a record for a connection below shell r9.
 func decode(bytes []byte) (r record, err error) {
-	return decodeRecord(bytes, true)
+	return decodeRecord(bytes, true, 0)
+}
+
+// decodeAt checks a record under the negotiated shell revision. Revision 9
+// admits ResourceStatus Rejected reason 13 (image_channel_unavailable) and
+// nothing else; every other reason field keeps its bound at every revision.
+func decodeAt(bytes []byte, revision uint16) (r record, err error) {
+	return decodeRecord(bytes, true, revision)
 }
 
 // Candidate negative controls can inspect byte-valid records independently
@@ -49,9 +58,9 @@ func decodeCandidateBytes(bytes []byte) (r record, err error) {
 	if len(bytes) < 32 || (u16(bytes, 6) != 267 && u16(bytes, 6) != 270) {
 		return r, fmt.Errorf("not a role candidate")
 	}
-	return decodeRecord(bytes, false)
+	return decodeRecord(bytes, false, 0)
 }
-func decodeRecord(bytes []byte, values bool) (r record, err error) {
+func decodeRecord(bytes []byte, values bool, revision uint16) (r record, err error) {
 	defer func() {
 		if p := recover(); p != nil {
 			err = fmt.Errorf("record: %v", p)
@@ -107,7 +116,8 @@ func decodeRecord(bytes []byte, values bool) (r record, err error) {
 		nonzero64(b, 0, 8, 16, 24, 32)
 		s := u16(b, 40)
 		reason := u16(b, 42)
-		need(s >= 1 && s <= 4 && reason <= 12 && (s > 2 || reason == 0) && u64(b, 48) <= 4194304, "ResourceStatus")
+		unavailable := revision >= 9 && s == 3 && reason == 13
+		need(s >= 1 && s <= 4 && (reason <= 12 || unavailable) && (s > 2 || reason == 0) && u64(b, 48) <= 4194304, "ResourceStatus")
 	case 34:
 		nonzero64(b, 0, 8, 16, 24, 32)
 		need(u16(b, 40) <= 12, "ResourceReleased")
