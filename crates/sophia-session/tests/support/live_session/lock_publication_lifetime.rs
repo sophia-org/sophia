@@ -170,7 +170,7 @@ impl Fixture {
             panic!("custody must admit the uploaded image");
         };
         self.frames
-            .resource_ready(CONNECTION, resource, width_px, height_px, pixels);
+            .resource_ready_shared(CONNECTION, resource, width_px, height_px, pixels);
         self.events();
     }
 

@@ -28,7 +28,14 @@ fn compile(repo: &Path, root: &Path) -> PathBuf {
         "-pedantic",
         "-UNDEBUG",
     ]);
-    for dir in ["nine_p", "shell_files", "shell_session", "native_session"] {
+    for dir in [
+        "nine_p",
+        "shell_files",
+        "shell_session",
+        "native_session",
+        "image_channel",
+        "image_producer",
+    ] {
         let mut files = std::fs::read_dir(sdk.join(dir))
             .unwrap()
             .map(|f| f.unwrap().path())

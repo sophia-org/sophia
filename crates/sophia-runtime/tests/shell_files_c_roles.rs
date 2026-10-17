@@ -17,7 +17,7 @@ fn compile(repo: &Path, root: &Path) -> PathBuf {
     let output = root.join("c-role-peer");
     let mut command = Command::new(std::env::var_os("CC").unwrap_or_else(|| "cc".into()));
     command.args(["-std=c99", "-Wall", "-Wextra", "-Werror", "-pedantic"]);
-    for dir in ["nine_p", "shell_files"] {
+    for dir in ["nine_p", "shell_files", "image_channel", "image_producer"] {
         let mut files = std::fs::read_dir(bindings.join(dir))
             .unwrap()
             .map(|f| f.unwrap().path())

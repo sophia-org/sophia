@@ -222,7 +222,7 @@ macro_rules! service_lock_provider {
                             width_px,
                             height_px,
                             pixels,
-                        } => lock_frames.resource_ready(
+                        } => lock_frames.resource_ready_shared(
                             connection_epoch,
                             resource,
                             width_px,
