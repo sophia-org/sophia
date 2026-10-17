@@ -12,11 +12,8 @@ int sf_session_event_parse(struct sophia_sf_client *c)
         return SOPHIA_9P_INVALID;
     if (n > c->event_used)
         return 0;
-    if (sophia_sf_decode(c->event_bytes, n, r) || r->header.epoch != c->epoch ||
-        r->header.kind < 16 || r->header.kind >= 256 || r->header.sequence <= c->sequence)
-        return SOPHIA_9P_INVALID;
     /* An inert bit 0 on a content role never grants descriptor disclosure. */
-    if (!sf_session_event_allowed(c, r))
+    if (sf_session_event_decode(c, c->event_bytes, n, r) || r->header.sequence <= c->sequence)
         return SOPHIA_9P_INVALID;
     switch (r->header.kind) {
     case SOPHIA_SF_NEGOTIATED: {
@@ -24,6 +21,10 @@ int sf_session_event_parse(struct sophia_sf_client *c)
         if (c->negotiated || c->refused || v->selected_revision < c->offer.minimum_revision ||
             v->selected_revision > c->offer.maximum_revision ||
             (v->capabilities & c->offer.required_capabilities) != c->offer.required_capabilities)
+            return SOPHIA_9P_INVALID;
+        /* Image bits exist only at r9; the revision is never inferred. */
+        if (c->image_mode && (v->capabilities & (UINT64_C(3) << 13)) &&
+            v->selected_revision != SOPHIA_SF_REVISION_IMAGE_CHANNEL)
             return SOPHIA_9P_INVALID;
         if (v->connection_epoch != c->epoch ||
             (c->profile == SOPHIA_SF_DESCRIPTOR && !sf_descriptor_welcome(c, v)))

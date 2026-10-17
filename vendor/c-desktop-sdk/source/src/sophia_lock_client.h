@@ -41,6 +41,7 @@ struct sophia_lc_upload_write {
   struct sophia_lc_operation op;
   uint32_t count;
 };
+struct sophia_lc_image;
 /* Private state exposed for caller-owned allocation. Do not modify it. */
 struct sophia_lc_client {
   struct sophia_9p_client *wire;
@@ -69,10 +70,23 @@ struct sophia_lc_client {
   /* Borrowed until every issued Twrite has settled, including cancellation. */
   const uint8_t *upload_data;
   uint8_t tx[SOPHIA_LF_MAX_CANDIDATE], events[1024], object[1024], boot[128];
+  /* The optional image adapter (sophia_lock_image.h) and its whole-file
+   * reads; unused while image is NULL. */
+  struct sophia_lc_image *image;
+  struct sophia_lc_operation file_op;
+  const char *file_name;
+  uint8_t *file_buf;
+  size_t file_cap, file_used;
+  uint64_t image_submission;
+  uint32_t file_fid, file_iounit, file_error;
+  int file_status;
+  uint8_t file_stage, file_ready;
 };
 
 /* wire must be fresh and exclusively owned by this client until disposal.
- * The offer must request present; chords need the chords capability. Starts
+ * The offer must request present; chords need the chords capability.
+ * Sealed images (bit 2) need a maximum revision of at least 2 and the
+ * adapter in sophia_lock_image.h; DMA-BUF (bit 3) is not offered. Starts
  * version/attach, reads api and limits, opens the streams and submits the
  * Negotiate as submission 1, all nonblocking. */
 int sophia_lc_init(struct sophia_lc_client *, struct sophia_9p_client *,

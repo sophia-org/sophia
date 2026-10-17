@@ -1,14 +1,14 @@
-tree 8ec1a6848fe8ec03672199541bd4282fd3933bbe
-parent f45057a1dea98832f9ae8ef790d0120c9100c9a8
-author Mason Green <mason@greenm01.net> 1792249750 -0400
-committer Mason Green <mason@greenm01.net> 1792249750 -0400
+tree bf80efb1fac9f505a44df9e9c5c2ff8465da0b00
+parent 3d9855cd8608004f2501fdaf86bab480c93884f6
+author Mason Green <mason@greenm01.net> 1792278843 -0400
+committer Mason Green <mason@greenm01.net> 1792278843 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatOPlhsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKV/AD/bKYdIUY8BlqgIGQl7Gcd
- MkIrHokvlQSKVFPtSqtqPL4A/3ZIgIJISBfKSmfKaF2x7iNMrK1MdUFHr/ZcegVq
- phMO
- =DieF
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatQBOxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIq6wEA5sigqd/YGAHZ/h/qvRQQ
+ pLk79L8UPPNjcuTy1BwbCVYA+waO7RBs6bzuZ2mEtShFWdC7kbGiQiL35RekpUNJ
+ cuUH
+ =RaH+
  -----END PGP SIGNATURE-----
 
-Clarify queued cancellation and transport test scope
+fix(lock-client): keep failed discovery cleanup distinct from absence

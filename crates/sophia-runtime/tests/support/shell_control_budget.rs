@@ -58,14 +58,14 @@ fn a_role_visit_cannot_timeout_an_acknowledgement_it_did_not_service() {
         panic!("file wire required")
     };
     assert_eq!(
-        ShellComponentTransport::turn_files(files, &mut state.output, false, now).unwrap(),
+        ShellComponentTransport::turn_files(files, &mut state.output, false, now, None).unwrap(),
         (false, true)
     );
     assert_eq!(state.output.records(), 1);
     // Once input was served, a peer that really never acknowledges is still
     // refused. Sharing role input must not disable the existing deadline.
     assert!(matches!(
-        ShellComponentTransport::turn_files(files, &mut state.output, true, now),
+        ShellComponentTransport::turn_files(files, &mut state.output, true, now, None),
         Err(ShellTransportError::ContentQueueSaturated)
     ));
 }

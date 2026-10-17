@@ -45,7 +45,13 @@ fn compile(directory: &Path, name: &str) -> PathBuf {
         "-pedantic",
         "-UNDEBUG",
     ]);
-    for domain in ["nine_p", "shell_files", "shell_session"] {
+    for domain in [
+        "nine_p",
+        "shell_files",
+        "shell_session",
+        "image_channel",
+        "image_producer",
+    ] {
         let mut sources: Vec<_> = std::fs::read_dir(root.join(domain))
             .unwrap()
             .map(|entry| entry.unwrap().path())

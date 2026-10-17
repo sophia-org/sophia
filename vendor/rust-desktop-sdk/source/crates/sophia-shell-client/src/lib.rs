@@ -15,6 +15,14 @@ mod descriptor;
 mod files;
 pub use descriptor::DescriptorObservation;
 pub use files::Connecting;
+pub use files::image_adapter::{
+    IMAGE_CAPABILITY_DMA_BUF, IMAGE_CAPABILITY_SEALED, ImageAdapter, ImageAdapterError,
+    ImageBeginAdmission, ImageBeginError, ShellImageConfig,
+};
+pub use sophia_image_producer::{
+    ChannelState as ImageChannelState, CloseCause as ImageCloseCause, ImagePath, OfferInfo,
+    OfferState, ProducerMetadata, ProducerRoleBounds, ReadyEvents as ImageReadyEvents,
+};
 mod lifecycle;
 mod native_launcher;
 pub use native_launcher::NativeLauncherObservation;
@@ -125,6 +133,7 @@ pub struct ShellConnection {
     output: outbox::ClientOutbox,
     inbox: VecDeque<Inbound>,
     ledger: custody::Ledger,
+    image: Option<files::image_adapter::ImageAdapter>,
 }
 
 /// Validated shell records whose local admission capacity is held exclusively.
@@ -189,13 +198,69 @@ impl ShellConnection {
             return Err(ShellClientError::UnsupportedRevision);
         }
         let (wire, welcome, inbox) = files::FileWire::from_attached(pipeline, root, &options)?;
-        Ok(Self {
+        Ok(Self::assemble(wire, welcome, inbox, None))
+    }
+
+    /// [`Self::from_attached`] with the opt-in BAR image adapter.
+    /// `origin` and `origin_ms` are one explicit clock pair: the
+    /// monotonic instant and the absolute CLOCK_MONOTONIC
+    /// milliseconds it names. The adapter's startup deadline is in
+    /// that same millisecond domain.
+    pub fn from_attached_with_image(
+        pipeline: sophia_9p_client::pipeline::Pipeline,
+        root: sophia_9p_records::Fid,
+        options: ShellClientOptions,
+        image: ShellImageConfig,
+        origin: std::time::Instant,
+        origin_ms: u64,
+    ) -> Result<Self, ShellClientError> {
+        validate_image_options(&options, &image)?;
+        if options.minimum_revision == 0
+            || options.minimum_revision > options.maximum_revision
+            || options.handshake_timeout.is_zero()
+        {
+            return Err(ShellClientError::UnsupportedRevision);
+        }
+        let (wire, welcome, inbox) = files::FileWire::from_attached(pipeline, root, &options)?;
+        Self::assemble_image(wire, welcome, inbox, image, origin, origin_ms)
+    }
+
+    fn assemble(
+        wire: files::FileWire,
+        welcome: ShellV1ServerWelcome,
+        inbox: VecDeque<Inbound>,
+        image: Option<files::image_adapter::ImageAdapter>,
+    ) -> Self {
+        Self {
             wire: Box::new(wire),
             welcome,
             output: outbox::ClientOutbox::default(),
             inbox,
             ledger: custody::Ledger::default(),
-        })
+            image,
+        }
+    }
+
+    fn assemble_image(
+        mut wire: files::FileWire,
+        welcome: ShellV1ServerWelcome,
+        inbox: VecDeque<Inbound>,
+        image: ShellImageConfig,
+        origin: std::time::Instant,
+        origin_ms: u64,
+    ) -> Result<Self, ShellClientError> {
+        if welcome.selected_revision != 9 || welcome.capabilities & IMAGE_CAPABILITY_SEALED == 0 {
+            return Err(ShellClientError::UnsupportedRevision);
+        }
+        wire.image_enabled = true;
+        let adapter = files::image_adapter::ImageAdapter::new(
+            image,
+            welcome.connection_epoch,
+            welcome.capabilities,
+            origin,
+            origin_ms,
+        )?;
+        Ok(Self::assemble(wire, welcome, inbox, Some(adapter)))
     }
 
     /// Connect over the native 9P file wire: Pipeline connect, attach, open
@@ -213,13 +278,27 @@ impl ShellConnection {
             return Err(ShellClientError::UnsupportedRevision);
         }
         let (wire, welcome, inbox) = files::FileWire::connect(path.as_ref(), &options)?;
-        Ok(Self {
-            wire: Box::new(wire),
-            welcome,
-            output: outbox::ClientOutbox::default(),
-            inbox,
-            ledger: custody::Ledger::default(),
-        })
+        Ok(Self::assemble(wire, welcome, inbox, None))
+    }
+
+    /// [`Self::connect_files`] with the opt-in BAR image adapter;
+    /// see [`Self::from_attached_with_image`] for the clock pair.
+    pub fn connect_files_with_image(
+        path: impl AsRef<Path>,
+        options: ShellClientOptions,
+        image: ShellImageConfig,
+        origin: std::time::Instant,
+        origin_ms: u64,
+    ) -> Result<Self, ShellClientError> {
+        validate_image_options(&options, &image)?;
+        if options.minimum_revision == 0
+            || options.minimum_revision > options.maximum_revision
+            || options.handshake_timeout.is_zero()
+        {
+            return Err(ShellClientError::UnsupportedRevision);
+        }
+        let (wire, welcome, inbox) = files::FileWire::connect(path.as_ref(), &options)?;
+        Self::assemble_image(wire, welcome, inbox, image, origin, origin_ms)
     }
 
     /// Requires `SOPHIA_SHELL_9P_SOCKET`; any retired `SOPHIA_SHELL_SOCKET`
@@ -231,6 +310,24 @@ impl ShellConnection {
         )?;
         match selection {
             EnvWireSelection::Files { socket } => Self::connect_files(socket, options),
+        }
+    }
+
+    /// [`Self::connect_from_env`] with the opt-in BAR image adapter.
+    pub fn connect_from_env_with_image(
+        options: ShellClientOptions,
+        image: ShellImageConfig,
+        origin: std::time::Instant,
+        origin_ms: u64,
+    ) -> Result<Self, ShellClientError> {
+        let selection = select_env_wire(
+            std::env::var_os("SOPHIA_SHELL_SOCKET"),
+            std::env::var_os("SOPHIA_SHELL_9P_SOCKET"),
+        )?;
+        match selection {
+            EnvWireSelection::Files { socket } => {
+                Self::connect_files_with_image(socket, options, image, origin, origin_ms)
+            }
         }
     }
 
@@ -347,6 +444,9 @@ impl ShellConnection {
     /// close is harmless. The owned descriptor stays open until this value drops;
     /// unregister it from readiness monitoring and do not use it directly.
     pub fn close(&mut self) {
+        if let Some(adapter) = &mut self.image {
+            adapter.on_session_final();
+        }
         self.wire.close(&mut self.output, &mut self.ledger);
     }
 
@@ -354,7 +454,17 @@ impl ShellConnection {
     /// to read or write: a write the session refused with `EAGAIN` is retried
     /// then (or sooner, once an event is consumed). `None` when nothing waits.
     pub fn wake_deadline(&self) -> Option<std::time::Instant> {
-        self.wire.wake_deadline()
+        let session = self.wire.wake_deadline();
+        let image = self
+            .image
+            .as_ref()
+            .and_then(|adapter| adapter.next_deadline(std::time::Instant::now()));
+        match (session, image) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        }
     }
 
     /// Interests for a level-triggered external event loop. Call `poll_io`
@@ -387,6 +497,36 @@ impl ShellConnection {
         let maximum = self.wake_deadline().map_or(maximum, |deadline| {
             maximum.min(deadline.saturating_duration_since(std::time::Instant::now()))
         });
+        // Image-enabled connections wait on both sockets: the 9P
+        // socket and the producer's channel socket, each with its
+        // own interest. Readiness on either returns; the following
+        // poll_io services whichever woke.
+        if let Some(adapter) = &self.image
+            && let Some(image_fd) = adapter.poll_fd()
+        {
+            use rustix::event::{PollFd, PollFlags};
+            let session_interest = self.wire.io_interest()?;
+            let mut flags = PollFlags::empty();
+            if session_interest.readable {
+                flags |= PollFlags::IN;
+            }
+            if session_interest.writable {
+                flags |= PollFlags::OUT;
+            }
+            let image_events = adapter.poll_events();
+            let session_fd = self.wire.as_fd();
+            let mut fds = [
+                PollFd::new(&session_fd, flags),
+                PollFd::new(&image_fd, PollFlags::from_bits_retain(image_events.0)),
+            ];
+            let timeout =
+                rustix::event::Timespec::try_from(maximum).unwrap_or(rustix::event::Timespec {
+                    tv_sec: i64::MAX,
+                    tv_nsec: 0,
+                });
+            let _ = rustix::event::poll(&mut fds, Some(&timeout));
+            return Ok(());
+        }
         self.wire.wait_for_io(maximum)
     }
 
@@ -595,12 +735,193 @@ impl ShellConnection {
         Ok(Some((transaction, outcome)))
     }
 
+    /// The opt-in image adapter, when this connection was built by
+    /// an image-enabled constructor.
+    pub fn image_adapter(&self) -> Option<&files::image_adapter::ImageAdapter> {
+        self.image.as_ref()
+    }
+
+    /// The image channel socket, for external readiness loops. The
+    /// session socket remains available through `AsFd`; neither
+    /// interest is folded onto the other descriptor.
+    pub fn image_poll_fd(&self) -> Option<BorrowedFd<'_>> {
+        self.image.as_ref().and_then(|adapter| adapter.poll_fd())
+    }
+
+    /// Both sockets' readiness for an external event loop.
+    pub fn image_readiness(&self) -> Result<Option<ImageReadiness<'_>>, ShellClientError> {
+        let Some(adapter) = &self.image else {
+            return Ok(None);
+        };
+        Ok(Some(ImageReadiness {
+            session: self.io_interest()?,
+            image_fd: adapter.poll_fd(),
+            image_events: adapter.poll_events(),
+        }))
+    }
+
+    /// Forget a settled image offer, freeing its adapter slot.
+    pub fn image_forget(&mut self, offer: u64) -> Result<(), ImageAdapterError> {
+        let adapter = self.image.as_mut().ok_or(ImageAdapterError::NotEnabled)?;
+        // The producer validates the settled state first: a refused
+        // forget of a live offer must not destroy the metadata its
+        // cancellation still needs.
+        let producer = adapter.producer_mut().ok_or(ImageAdapterError::Closed)?;
+        producer.forget(offer).map_err(ImageAdapterError::from)?;
+        adapter.forget_offer(offer);
+        Ok(())
+    }
+
+    /// Queue one sealed source as an ImageBegin candidate. On
+    /// success the producer owns `source`; on any refusal in
+    /// [`ImageBeginError`] the descriptor is returned whenever the
+    /// producer or the queue has not taken it.
+    pub fn image_begin(
+        &mut self,
+        metadata: ProducerMetadata,
+        source: std::os::fd::OwnedFd,
+        now: std::time::Instant,
+    ) -> Result<ImageBeginAdmission, ImageBeginError> {
+        let refuse = |error: ImageAdapterError, source| ImageBeginError {
+            error,
+            source: Some(source),
+        };
+        if self.image.is_none() {
+            return Err(refuse(ImageAdapterError::NotEnabled, source));
+        }
+        if self.wire.peer_closed() {
+            return Err(refuse(ImageAdapterError::Closed, source));
+        }
+        // Room and a free adapter ticket first: once the producer
+        // owns the descriptor, admission cannot be allowed to fail
+        // for local queue capacity.
+        if !self.output.has_room(1, 128, false) || !self.image.as_ref().unwrap().has_free_ticket() {
+            return Err(refuse(ImageAdapterError::Busy, source));
+        }
+        let now_ms = match self.image.as_mut().unwrap().advance_clock(now) {
+            Ok(now_ms) => now_ms,
+            Err(error) => return Err(refuse(error, source)),
+        };
+        let adapter = self.image.as_mut().unwrap();
+        let producer = match adapter.producer_mut() {
+            Some(producer) => producer,
+            None => return Err(refuse(ImageAdapterError::Closed, source)),
+        };
+        let (offer, body, assigned) = match producer.begin(metadata, source, now_ms) {
+            Ok(begun) => begun,
+            Err((error, source)) => return Err(refuse(error.into(), source)),
+        };
+        let admission = match self.admit(Outbound::ImageBegin(body), false) {
+            Ok(admission) => admission,
+            Err(_) => {
+                // Unreachable after the room check; keep custody
+                // honest rather than leak the offer.
+                if let Some(producer) = self.image.as_mut().and_then(|a| a.producer_mut()) {
+                    let _ = producer.begin_refused(offer, now_ms);
+                }
+                return Err(ImageBeginError {
+                    error: ImageAdapterError::Refused,
+                    source: None,
+                });
+            }
+        };
+        let ticket = admission.first;
+        if let Some(adapter) = &mut self.image {
+            let _ = adapter.register_ticket(ticket.0, offer, assigned);
+        }
+        let _ = self.poll_io();
+        Ok(ImageBeginAdmission { offer, ticket })
+    }
+
+    /// Queue a ResourceCancel naming a live image offer. Queue room
+    /// is reserved before the producer marks the offer, so a Busy
+    /// refusal leaves the offer unmarked and sendable.
+    pub fn image_cancel(
+        &mut self,
+        offer: u64,
+        now: std::time::Instant,
+    ) -> Result<Ticket, ShellClientError> {
+        if self.image.is_none() {
+            return Err(ShellClientError::InvalidArgument(
+                "image adapter not enabled",
+            ));
+        }
+        let now_ms = self
+            .image
+            .as_mut()
+            .expect("adapter checked above")
+            .advance_clock(now)
+            .map_err(|_| ShellClientError::InvalidArgument("image clock"))?;
+        let adapter = self.image.as_ref().expect("adapter checked above");
+        let metadata = adapter
+            .ticket_metadata(offer)
+            .ok_or(ShellClientError::InvalidArgument("unknown image offer"))?;
+        let record =
+            ShellContentRecord::ResourceCancel(sophia_shell_protocol::ContentResourceCancel {
+                grant: sophia_shell_protocol::ContentGrant {
+                    connection_epoch: self.welcome.connection_epoch,
+                    content_grant_epoch: metadata.admission_epoch,
+                },
+                resource: sophia_shell_protocol::ContentResourceId {
+                    id: metadata.resource,
+                    generation: metadata.resource_generation,
+                },
+            });
+        // Prepare the queue slot before marking the offer: a
+        // saturated queue leaves the offer unmarked and sendable.
+        let outbound = Outbound::Content(TransactionId::from_raw(offer), record);
+        let control = outbound.is_control();
+        let units = self.wire.encode(outbound)?;
+        let prepared = match self.output.prepare(units, control, &mut self.ledger) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                self.wire.cancel_encoded();
+                return Err(error);
+            }
+        };
+        if let Some(producer) = self.image.as_mut().and_then(|a| a.producer_mut())
+            && let Err(error) = producer.cancel(offer, now_ms)
+        {
+            drop(prepared);
+            self.wire.cancel_encoded();
+            return Err(match error {
+                sophia_image_producer::ProducerError::Argument => {
+                    ShellClientError::InvalidArgument("unknown image offer")
+                }
+                _ => ShellClientError::QueueSaturated,
+            });
+        }
+        let admission = self.output.commit(prepared, &mut self.ledger);
+        self.wire.commit_encoded();
+        Ok(admission.first)
+    }
+
+    fn image_tick(&mut self, now: std::time::Instant) -> Result<(), ShellClientError> {
+        if let Some(adapter) = &mut self.image {
+            adapter.tick(&mut self.wire, &self.ledger, now)?;
+        }
+        Ok(())
+    }
+
     /// Bounded nonblocking progress. A queue limit is a protocol failure, not
     /// permission to discard an accepted outcome. Each call runs at most 32
     /// transport rounds, each limited to 256 KiB and 64 syscalls per direction.
     pub fn poll_io(&mut self) -> Result<(), ShellClientError> {
-        self.wire
-            .poll_io(&mut self.output, &mut self.inbox, &mut self.ledger, None)
+        let now = std::time::Instant::now();
+        // Preflight the adapter clock before the wire can transmit
+        // or consume anything on this drive.
+        if let Some(adapter) = &mut self.image {
+            adapter
+                .advance_clock(now)
+                .map_err(|_| ShellClientError::InvalidArgument("image clock"))?;
+        }
+        let result = self
+            .wire
+            .poll_io(&mut self.output, &mut self.inbox, &mut self.ledger, None);
+        if result.is_ok() {
+            self.image_tick(now)?;
+        }
+        result
     }
 
     /// Nonblocking external-loop dispatch, with caller time and a shared
@@ -621,12 +942,21 @@ impl ShellConnection {
         now: std::time::Instant,
         byte_budget: usize,
     ) -> Result<(), ShellClientError> {
-        self.wire.poll_io(
+        if let Some(adapter) = &mut self.image {
+            adapter
+                .advance_clock(now)
+                .map_err(|_| ShellClientError::InvalidArgument("image clock"))?;
+        }
+        let result = self.wire.poll_io(
             &mut self.output,
             &mut self.inbox,
             &mut self.ledger,
             Some((now, byte_budget)),
-        )
+        );
+        if result.is_ok() {
+            self.image_tick(now)?;
+        }
+        result
     }
 }
 
@@ -762,4 +1092,32 @@ fn parse_files_api(bytes: &[u8]) -> Result<(u64, &str), ShellClientError> {
         return Err(ShellClientError::Protocol("api line has extra fields"));
     }
     Ok((epoch, role))
+}
+
+/// Validate the opt-in image shape against the negotiated offer:
+/// the offer must span revision 9, require the sealed bit and not
+/// require the DMA-BUF bit, and the config must be internally sound.
+fn validate_image_options(
+    options: &ShellClientOptions,
+    image: &ShellImageConfig,
+) -> Result<(), ShellClientError> {
+    if options.minimum_revision > 9
+        || options.maximum_revision < 9
+        || options.required_capabilities & IMAGE_CAPABILITY_SEALED == 0
+        || options.required_capabilities & IMAGE_CAPABILITY_DMA_BUF != 0
+        || image.transfer_timeout_ms == 0
+        || image.formats_capacity < 64
+    {
+        return Err(ShellClientError::InvalidArgument("image adapter options"));
+    }
+    Ok(())
+}
+
+/// Readiness for both sockets of an image-enabled connection. The
+/// session interest is the ordinary 9P interest; the image socket is
+/// exposed separately rather than folded onto the 9P descriptor.
+pub struct ImageReadiness<'a> {
+    pub session: IoInterest,
+    pub image_fd: Option<BorrowedFd<'a>>,
+    pub image_events: sophia_image_producer::ReadyEvents,
 }

@@ -232,13 +232,6 @@ impl Tap {
         self.pump();
     }
 
-    pub fn walks(&self, node: &str) -> usize {
-        self.seen
-            .iter()
-            .filter(|seen| matches!(seen, Seen::Walk(walked) if walked == node))
-            .count()
-    }
-
     pub fn open_replies(&self, node: &str) -> Vec<Result<(), u32>> {
         self.seen
             .iter()

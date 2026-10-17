@@ -1,14 +1,14 @@
-tree 428be37d429d5f1589e74f04057b6962b3962671
-parent 0bc0393a5a0104eb3b15aeb6ff24753c26fe1000
-author Mason Green <mason@greenm01.net> 1792249750 -0400
-committer Mason Green <mason@greenm01.net> 1792249750 -0400
+tree c06f17a463ba1f9b42f8bcd272ce795d80e234e1
+parent f5e499c0f790f56dc7a4214755ef0237a75f1f7f
+author Mason Green <mason@greenm01.net> 1792277420 -0400
+committer Mason Green <mason@greenm01.net> 1792277420 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatOPlhsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJUugD+IpLYt9K8jNRIKE+uDpbR
- 64TvEvrbNKlYVMrIeEcaX30BAI+T4mftq86stFCGgg6Nua/+JhAifJQ8kGHXs892
- ht0C
- =8Gig
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatP7rBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKjPQEAw0q/ILdRjaL+StkztvAO
+ HhqawmHBRbv43+nReoqwMpIBAPZzRYXzxcbmYv06nAbyS+kpLjT9llS1OS4Ot8S4
+ 1isP
+ =IDGy
  -----END PGP SIGNATURE-----
 
-Clarify queued cancellation and transport test scope
+fix(image): require supported revisions and packet sockets before custody

@@ -9,6 +9,8 @@ pub enum LiveCpuPixelStorage {
     Content(sophia_runtime::ContentResourceLease),
     /// A lock provider's image, shared with Session's custody.
     Bytes(Arc<[u8]>),
+    /// Immutable lock backing, including a retained validated sealed mapping.
+    Lock(sophia_runtime::SharedPixels),
 }
 
 impl LiveCpuPixelStorage {
@@ -27,7 +29,7 @@ impl From<sophia_engine::CompositorImageSource> for LiveCpuPixelStorage {
     fn from(source: sophia_engine::CompositorImageSource) -> Self {
         match source {
             sophia_engine::CompositorImageSource::Shell(lease) => Self::Content(lease),
-            sophia_engine::CompositorImageSource::Lock(image) => Self::Bytes(image.pixels),
+            sophia_engine::CompositorImageSource::Lock(image) => Self::Lock(image.pixels),
         }
     }
 }
@@ -45,6 +47,7 @@ impl core::ops::Deref for LiveCpuPixelStorage {
             Self::Shared(bytes) => bytes,
             Self::Content(lease) => lease.bytes(),
             Self::Bytes(bytes) => bytes,
+            Self::Lock(pixels) => pixels,
         }
     }
 }

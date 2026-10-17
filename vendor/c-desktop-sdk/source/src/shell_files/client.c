@@ -226,6 +226,9 @@ int sf_session_drive(struct sophia_sf_client *c)
     r = sf_session_object_drive(c);
     if (r)
         return r;
+    r = sf_session_file_drive(c);
+    if (r)
+        return r;
     return sf_session_upload_drive(c);
 }
 /* ESTALE on the events, submit or ack stream is kept distinct from a
@@ -266,10 +269,14 @@ static int submission_reply(struct sophia_sf_client *c, const struct sophia_9p_r
             c->submit_sent = 0;
             c->submit_error = r->error;
             c->submit_stage = 4;
-            /* A refused upload record leaves nothing for the writer to wait on. */
+            /* A refused upload record leaves nothing for the writer to wait on.
+             * An End or Cancel for another resource, such as an image offer,
+             * is not the upload's. */
             if ((kind == SOPHIA_SF_RESOURCE_BEGIN && c->upload_stage == 1) ||
                 ((kind == SOPHIA_SF_RESOURCE_END || kind == SOPHIA_SF_RESOURCE_CANCEL) &&
-                 c->upload_stage == 6))
+                 c->upload_stage == 6 &&
+                 sf_get(c->tx_storage + 32 + 24, 8) == c->resource.resource_id &&
+                 sf_get(c->tx_storage + 32 + 32, 8) == c->resource.resource_generation))
                 c->upload_closing = 1;
             return 0;
         }
@@ -418,6 +425,10 @@ static int receive(struct sophia_sf_client *c, const struct sophia_9p_reply *r)
         c->upload_op.active = 0;
         return sf_session_upload_reply(c, r);
     }
+    if (sf_same(&c->file_op, r->handle)) {
+        c->file_op.active = 0;
+        return sf_session_file_reply(c, r);
+    }
     return sf_session_upload_write_reply(c, r);
 }
 int sophia_sf_client_service(struct sophia_sf_client *c, size_t budget)
@@ -521,12 +532,18 @@ int sophia_sf_client_submit_bytes(struct sophia_sf_client *c, const void *record
         return SOPHIA_9P_BUSY;
     if (sf_get(b + 8, 8) != c->epoch || c->next_submission == UINT64_MAX)
         return SOPHIA_9P_ARGUMENT;
-    if (!sf_session_candidate_allowed(c, (uint16_t)kind))
+    if (kind == SOPHIA_SF_KIND_IMAGE_BEGIN) {
+        if (!sf_session_image_r9(c))
+            return SOPHIA_9P_ARGUMENT;
+    } else if (!sf_session_candidate_allowed(c, (uint16_t)kind))
         return SOPHIA_9P_ARGUMENT;
     /* tx is idle scratch until armed; a refused record changes no state. */
     memmove(c->tx_storage, b, bytes);
     sf_put(c->tx_storage + 16, c->next_submission, 8);
-    if (sophia_sf_decode(c->tx_storage, bytes, &value))
+    if (kind == SOPHIA_SF_KIND_IMAGE_BEGIN) {
+        if (!sf_session_image_begin_valid(c, c->tx_storage, bytes))
+            return SOPHIA_9P_INVALID;
+    } else if (sophia_sf_decode(c->tx_storage, bytes, &value))
         return SOPHIA_9P_INVALID;
     submission_arm(c, bytes);
     return 0;

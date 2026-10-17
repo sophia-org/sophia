@@ -29,6 +29,7 @@ Sophia checkout to build.
 | `sophia-launch-client` | Sophia's local launch-channel authentication: correlated afid exchange, bounded progress and an admitted role root. |
 | `sophia-namespace-client` | Bounded discovery parsing and Linux lookup against a pinned namespace directory; endpoint visibility confers no authority. |
 | `sophia-desktop-ids` | Identifiers every role contract shares. |
+| `sophia-image-producer` | Clockless sealed-memory descriptor producer for shell r9 and lock r2; role adapters remain under development. |
 | `sophia-shell-protocol` | The shell's typed records and the `sophia_shell_fs_v1` file contract codec. |
 | `sophia-shell-client` | The shell client over the file contract. |
 | `sophia-wm-protocol` | The WM file codecs and passive policy records. |

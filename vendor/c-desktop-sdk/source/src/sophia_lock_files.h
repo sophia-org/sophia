@@ -95,7 +95,10 @@ enum sophia_lf_reason {
   SOPHIA_LF_REASON_PERMIT = 5,
   SOPHIA_LF_REASON_BUDGET = 6,
   SOPHIA_LF_REASON_TOPOLOGY = 7,
-  SOPHIA_LF_REASON_PROVIDER_REPLACED = 8
+  SOPHIA_LF_REASON_PROVIDER_REPLACED = 8,
+  SOPHIA_LF_REASON_IMAGE_CHANNEL_UNAVAILABLE = 9,
+  SOPHIA_LF_REASON_INVALID_SOURCE = 10,
+  SOPHIA_LF_REASON_VALIDATION_TIMEOUT = 11
 };
 
 struct sophia_lf_header {
@@ -130,10 +133,13 @@ struct sophia_lf_negotiate {
   uint64_t capabilities;
   struct sophia_lf_chord_request chords[SOPHIA_LF_MAX_CHORDS];
 };
-/* Granted chords keep their request order; a chord's ID is its index. */
+/* Granted chords keep their request order; a chord's ID is its index.
+ * selected_revision is the wire's selected revision: the plain codec reads
+ * and writes 1 (0 on encode means 1); the _revision codec carries 1 or 2. */
 struct sophia_lf_negotiated {
   uint16_t granted_chords;
   uint64_t granted_capabilities;
+  uint16_t selected_revision;
 };
 struct sophia_lf_submitted {
   uint64_t submission;
@@ -228,4 +234,24 @@ int sophia_lf_encode(void *dst, size_t capacity,
 int sophia_lf_submit_encode(uint8_t dst[24], uint64_t epoch,
                             uint64_t submission, uint32_t bytes);
 int sophia_lf_ack_encode(uint8_t dst[16], uint64_t epoch, uint64_t sequence);
+/* Lock revision 2 adds Submitted receipts naming ImageBegin (0x7000) and an
+ * explicit Negotiated selection. sophia_lf_decode/encode keep the r1
+ * vocabulary: Submitted never names 0x7000, and Negotiated selects revision
+ * 1 with grants within PRESENT|CHORDS. The _revision variants take a
+ * revision bound (1-2). They admit candidate kind 0x7000 only in Submitted
+ * at bound 2. Negotiated may select any revision from 1 to the bound; the
+ * selection is preserved, PRESENT is required, and image bits 2 (sealed)
+ * and 3 (DMA-BUF) are valid only when selected_revision is 2. The selection
+ * is never inferred from capabilities; checking it against the offered range
+ * is the caller's. Selecting a bound here advertises nothing. Same returns
+ * as sophia_lf_decode/encode. */
+#define SOPHIA_LF_REVISION_IMAGE_CHANNEL 2u
+#define SOPHIA_LF_KIND_IMAGE_BEGIN 0x7000u
+#define SOPHIA_LF_CAP_IMAGE_SEALED 4u
+#define SOPHIA_LF_CAP_IMAGE_DMABUF 8u
+int sophia_lf_decode_revision(const void *src, size_t bytes,
+                              uint16_t revision, struct sophia_lf_record *out);
+int sophia_lf_encode_revision(void *dst, size_t capacity, uint16_t revision,
+                              const struct sophia_lf_record *record,
+                              size_t *bytes);
 #endif

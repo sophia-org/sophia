@@ -24,13 +24,29 @@ impl LockFileTransport {
             .checked_add(expiry)
             .into_iter()
             .chain(self.negotiation_deadline)
+            .chain(self.image.as_ref().and_then(|image| image.deadline()))
+            .chain(
+                self.export()
+                    .and_then(|export| export.custody().image_deadline()),
+            )
+            .chain(
+                (self.sealed_leases_pending() != 0)
+                    .then(|| now + crate::lock_files::SEALED_LEASE_POLL),
+            )
             .min();
         let mut fds = vec![PollFd::new(wake, PollFlags::IN)];
+        // Completions owed to live or ended epochs wake the owner.
+        if let Some(worker) = self.worker.as_ref().filter(|worker| worker.pending() != 0) {
+            fds.push(PollFd::from_borrowed_fd(worker.readiness(), PollFlags::IN));
+        }
         // A full owner handoff cannot consume more inbound events. Waiting on
         // a permanently readable peer there would spin; owner drains wake us.
         if service_io {
             if let Some(server) = &self.server {
                 fds.extend(server.poll_fds());
+                if let Some(image) = &self.image {
+                    image.visit_poll_fds(now, &mut |fd| fds.push(fd));
+                }
             } else if self.retiring.len() < 8
                 && self.assignee_alive()?
                 && let Some(fd) = self.endpoint.accept_readiness()

@@ -81,7 +81,7 @@ impl ShellComponentTransport {
         let Some(Wire::Files(files)) = self.wire.as_mut() else {
             return Err(ShellTransportError::NotConnected);
         };
-        if !Self::drain_file_output(files, &mut self.output)? {
+        if !Self::drain_file_output(files, &mut self.output, None)? {
             return Err(ShellTransportError::ActivationQueueSaturated);
         }
         if files.publish(kind, body, false)? {

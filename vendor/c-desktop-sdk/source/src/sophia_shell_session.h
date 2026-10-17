@@ -79,6 +79,7 @@ struct sophia_ss_hold {
     uint64_t sequence, before, generation, qid;
     uint8_t active;
 };
+struct sophia_ss_image;
 struct sophia_ss {
     struct sophia_9p_client wire;
     struct sophia_sf_client files;
@@ -97,6 +98,9 @@ struct sophia_ss {
     /* holds: announcements owed a fetch; seen: the last verified fetch. */
     struct sophia_ss_hold holds[7], seen[7];
     struct sophia_ss_ticket tickets[SOPHIA_SS_OUTCOMES];
+    /* Optional image adapter (sophia_shell_image.h); NULL keeps every path
+     * byte-identical. Set only by sophia_ss_image_attach. */
+    struct sophia_ss_image *image;
 };
 /* 9P request storage plus the encoded queue; 0 for invalid sizes. */
 size_t sophia_ss_storage_bytes(uint32_t msize, size_t queue_bytes);

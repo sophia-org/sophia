@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 use super::ContentStoreProfile;
 use sophia_protocol::*;
+mod image;
 mod native;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -292,7 +292,7 @@ fn image(output: OutputId, generation: u64) -> SessionLockImagePlacement {
             },
             width_px: 2560,
             height_px: 1440,
-            pixels: std::sync::Arc::from(vec![0u8; 2560 * 1440 * 4]),
+            pixels: std::sync::Arc::<[u8]>::from(vec![0u8; 2560 * 1440 * 4]).into(),
         },
         generation,
     }

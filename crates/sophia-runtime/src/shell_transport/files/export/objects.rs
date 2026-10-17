@@ -78,6 +78,13 @@ impl ShellFiles {
         if self.supports_indicators() {
             entries.push((b"indicators", Node::Indicators));
         }
+        if self.image_disclosed() {
+            entries.extend([
+                (b"image-channel".as_slice(), Node::ImageChannel),
+                (b"image-limits".as_slice(), Node::ImageLimits),
+                (b"image-formats".as_slice(), Node::ImageFormats),
+            ]);
+        }
         for (name, node) in [
             (b"descriptors".as_slice(), Node::Descriptors),
             (b"tabs", Node::Tabs),
@@ -92,6 +99,8 @@ impl ShellFiles {
 
     pub(super) fn object_slot(&self, kind: ShellFileKind) -> Option<&ObjectSlot> {
         match kind {
+            ShellFileKind::ImageLimits => Some(&self.image_limits),
+            ShellFileKind::ImageFormats => Some(&self.image_formats),
             ShellFileKind::Outputs => Some(&self.outputs),
             ShellFileKind::Catalog => Some(&self.catalog),
             ShellFileKind::Indicators => Some(&self.indicators),
@@ -104,6 +113,8 @@ impl ShellFiles {
 
     pub(super) fn object_slot_mut(&mut self, kind: ShellFileKind) -> Option<&mut ObjectSlot> {
         match kind {
+            ShellFileKind::ImageLimits => Some(&mut self.image_limits),
+            ShellFileKind::ImageFormats => Some(&mut self.image_formats),
             ShellFileKind::Outputs => Some(&mut self.outputs),
             ShellFileKind::Catalog => Some(&mut self.catalog),
             ShellFileKind::Indicators => Some(&mut self.indicators),

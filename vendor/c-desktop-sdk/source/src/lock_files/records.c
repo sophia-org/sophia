@@ -198,6 +198,7 @@ static int body_read(const uint8_t *p, size_t n, struct sophia_lf_record *r) {
       return -1;
     r->value.negotiated.granted_chords = (uint16_t)get(p + 2, 2);
     r->value.negotiated.granted_capabilities = get(p + 8, 8);
+    r->value.negotiated.selected_revision = SOPHIA_LF_REVISION;
     return negotiated_valid(&r->value.negotiated) ? 0 : -1;
   case SOPHIA_LF_REFUSED:
     if (n != 8 || !zero(p + 2, 6))
@@ -454,7 +455,8 @@ static int body_write(uint8_t *p, size_t capacity,
     break;
   }
   case SOPHIA_LF_NEGOTIATED:
-    if (!negotiated_valid(&r->value.negotiated))
+    if (!negotiated_valid(&r->value.negotiated) ||
+        r->value.negotiated.selected_revision > SOPHIA_LF_REVISION)
       return -1;
     put(body, SOPHIA_LF_REVISION, 2);
     put(body + 2, r->value.negotiated.granted_chords, 2);

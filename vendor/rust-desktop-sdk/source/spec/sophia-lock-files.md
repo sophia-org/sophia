@@ -171,14 +171,19 @@ separate from the shell content registry, whose per-resource and shared
 ceilings cannot hold whole-output surfaces.
 
 The `lock` object is republished whenever the lock phase, lock epoch or
-topology changes. It carries the phase (unlocked, locking, locked, unlocking),
+topology changes, including a changed admitted image-channel import-format set.
+An unchanged set does not advance topology. Publish the new image-formats snapshot
+before announcing the replacement lock object; formats generation equals the
+lock topology generation. It carries the phase (unlocked, locking, locked, unlocking),
 the lock epoch (zero when unlocked), the topology generation and one allocation
 per output while the phase is locking or locked. An allocation covers its
 output: its pixel size is the output's logical size times its scale. Mirror
 heads of one output share its allocation; Engine scales the image to each head.
 
 A provider draws for locking and locked, and stops at unlocking or unlocked.
-An allocation of an earlier lock epoch or topology generation is stale.
+An allocation of an earlier lock epoch or topology generation is stale, including
+after a format-only change. The provider must replace its whole-output images
+and present against the new allocations. Engine retains its cover throughout.
 
 ## Resources and candidates
 
@@ -214,7 +219,29 @@ actions. `CandidateOutcome` reports prepared, presented, rejected, superseded or
 revoked. A candidate for a stale lock epoch, allocation, resource size or
 permit is rejected and changes nothing on screen. A new lock object revokes
 forwarded candidates, and lapses demands and permits, for allocations it no
-longer grants.
+longer grants, including replacements caused by a changed import-format set.
+
+## Separate image descriptor channel
+
+The [shared image-channel contract](sophia-image-channel.md) is accepted for lock
+r2 with capability bits 2 (sealed memory) and 3 (DMA-BUF). Existing byte records
+and rendering-only authority remain unchanged. `Negotiated.selected_revision`
+explicitly selects 1 or 2; image bits 2/3 may be granted only at revision 2.
+The client checks that selection against its offered revision range and grants
+against its request before changing event decoding. A capability alone never
+selects r2. The legacy codec entry points remain r1-only; revision-aware entry
+points carry the new selection without changing the 16-byte body layout.
+ResourceStatus Rejected uses reason 9 `image_channel_unavailable`, reason 10
+`invalid_source` for an invalid sealed backing type, seals or pixels, and reason
+11 `validation_timeout` for an admitted source that misses its arrival/validation
+deadline. A wrong backing length uses the existing `size_mismatch` reason 4.
+These descriptor reasons apply at r2; unknown reasons retain the existing
+open-vocabulary rule and never imply success. Byte-only callers retain r1.
+Sealed backing is immutable; mutable DMA-BUF sources require a renderer-owned
+capture and proven safe completion before release. No socket closure, timeout or
+lock transition substitutes for that proof. Descriptor failure cannot delay
+covering or unlock. A format-only topology change has the same allocation and
+forwarded-candidate consequences as any other topology change.
 
 ## Entry and chord events
 

@@ -179,7 +179,11 @@ fn every_encoded_record_round_trips() {
 
 #[test]
 fn submitted_names_only_candidate_kinds() {
-    for kind in [LockFileKind::Lock, LockFileKind::Entry] {
+    for kind in [
+        LockFileKind::Lock,
+        LockFileKind::Entry,
+        LockFileKind::ImageBegin,
+    ] {
         let submitted = LockSubmitted {
             submission_id: 1,
             candidate_kind: kind,
@@ -192,6 +196,13 @@ fn submitted_names_only_candidate_kinds() {
     }
     .encode()
     .unwrap();
+    for kind in 0x7000_u16..=0x7006 {
+        bytes[8..10].copy_from_slice(&kind.to_le_bytes());
+        assert_eq!(
+            LockSubmitted::decode(&bytes),
+            Err(BinaryCodecError::InvalidRecord("candidate_kind"))
+        );
+    }
     bytes[8..10].copy_from_slice(&257u16.to_le_bytes());
     assert_eq!(
         LockSubmitted::decode(&bytes),

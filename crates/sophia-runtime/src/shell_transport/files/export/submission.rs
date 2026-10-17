@@ -7,7 +7,11 @@ impl ShellFiles {
     /// slot effect applied once custody transfers. The phase decides which
     /// kinds exist: Negotiate once before negotiation, content records only
     /// after a content grant.
-    fn decode(&self, bytes: &[u8], kind: ShellFileKind) -> Result<(Inbound, SlotEffect), Errno> {
+    fn decode(
+        &self,
+        bytes: &[u8],
+        kind: ShellFileKind,
+    ) -> Result<(Option<Inbound>, SlotEffect), Errno> {
         let content = |decoded: Result<ShellFileTransactionRecord, ShellFilePayloadError>| {
             if !self.negotiated || !self.content {
                 return Err(Errno::EACCES);
@@ -23,6 +27,7 @@ impl ShellFiles {
                     _ => None,
                 },
                 Inbound::Negotiate(_)
+                | Inbound::ImageBegin(_)
                 | Inbound::Candidate(_)
                 | Inbound::NativeAllocation(..)
                 | Inbound::NativeCandidate(_)
@@ -34,7 +39,7 @@ impl ShellFiles {
                 | Inbound::Descriptor(_) => None,
             };
             (
-                inbound,
+                Some(inbound),
                 resource.map_or(SlotEffect::None, SlotEffect::Close),
             )
         };
@@ -143,15 +148,16 @@ impl ShellFiles {
                     decode_shell_file_indicator_activate(bytes).map_err(|_| Errno::EINVAL)?;
                 Inbound::IndicatorActivate(value.transaction, Box::new(value.activation))
             }
+            ShellFileKind::ImageBegin => return self.decode_image_begin(bytes),
             _ => return Err(Errno::EINVAL),
         };
-        Ok((inbound, SlotEffect::None))
+        Ok((Some(inbound), SlotEffect::None))
     }
 
     /// A Begin names a free slot. The slot is reserved (pending) only when the
     /// description has a valid layout; the store still decides admission and
     /// reports it, so a malformed description reaches its existing refusal.
-    fn decode_begin(&self, bytes: &[u8]) -> Result<(Inbound, SlotEffect), Errno> {
+    fn decode_begin(&self, bytes: &[u8]) -> Result<(Option<Inbound>, SlotEffect), Errno> {
         if !self.negotiated || !self.content {
             return Err(Errno::EACCES);
         }
@@ -177,8 +183,70 @@ impl ShellFiles {
             layout,
         });
         Ok((
-            Inbound::Content(value.transaction, Box::new(value.record)),
+            Some(Inbound::Content(value.transaction, Box::new(value.record))),
             effect,
+        ))
+    }
+
+    /// Before readiness there is no custody. Explicit owner admission queues
+    /// ImageBegin in wire order; otherwise readiness or closure produces the
+    /// clean unavailable refusal without admitting a source.
+    fn decode_image_begin(&self, bytes: &[u8]) -> Result<(Option<Inbound>, SlotEffect), Errno> {
+        if !self.image_disclosed() {
+            return Err(Errno::EINVAL);
+        }
+        match self.image_readiness() {
+            ShellImageReadiness::AwaitingHello | ShellImageReadiness::Disabled => {
+                return Err(EBUSY);
+            }
+            ShellImageReadiness::Ready { .. } | ShellImageReadiness::Closed { .. } => {}
+        }
+        let body = bytes.get(SHELL_FILE_HEADER_BYTES..).ok_or(Errno::EINVAL)?;
+        let metadata = ShellImageMetadata::decode(body).map_err(|_| Errno::EINVAL)?;
+        if !self
+            .image
+            .as_ref()
+            .is_some_and(|state| state.offers.accepts_id(metadata.offer_id))
+        {
+            return Err(Errno::ESTALE);
+        }
+        if self
+            .content_limits
+            .as_ref()
+            .is_none_or(|limits| metadata.admission_epoch != limits.grant.content_grant_epoch)
+        {
+            return Err(Errno::ESTALE);
+        }
+        if matches!(self.image_readiness(), ShellImageReadiness::Ready { .. })
+            && self
+                .image
+                .as_ref()
+                .is_some_and(|state| state.offers.enabled)
+        {
+            let state = self.image.as_ref().expect("checked image state");
+            if self
+                .inbound
+                .iter()
+                .filter(|item| matches!(item, Inbound::ImageBegin(_)))
+                .count()
+                >= state.config.limits.max_offers as usize
+            {
+                return Err(Errno::EAGAIN);
+            }
+            return Ok((Some(Inbound::ImageBegin(metadata)), SlotEffect::None));
+        }
+        Ok((
+            None,
+            SlotEffect::PublishImageRefusal {
+                refusal: PendingImageRefusal {
+                    offer_id: metadata.offer_id,
+                    admission_epoch: metadata.admission_epoch,
+                    resource: ContentResourceId {
+                        id: metadata.resource,
+                        generation: metadata.resource_generation,
+                    },
+                },
+            },
         ))
     }
 
@@ -209,6 +277,20 @@ impl ShellFiles {
                     scratch: Vec::with_capacity(chunk),
                 });
             }
+            SlotEffect::PublishImageRefusal { refusal } => {
+                self.image
+                    .as_mut()
+                    .expect("disclosed image state")
+                    .offers
+                    .note_submitted(refusal.offer_id);
+                // Custody has already moved: publication failure is never
+                // a submit error. The refusal stays export-pending and
+                // retries from journal progress until it is emitted.
+                self.pending_image_refusal = Some(refusal);
+                if let Ok(true) = self.publish_image_refusal(refusal) {
+                    self.pending_image_refusal = None;
+                }
+            }
             SlotEffect::Close(resource) => {
                 for binding in self.uploads.iter_mut().flatten() {
                     if binding.resource == resource {
@@ -225,6 +307,18 @@ impl ShellFiles {
     }
 
     pub(super) fn submit_decoded(&mut self, submit: ShellFileSubmit) -> Result<(), Errno> {
+        // A pending image refusal blocks every further submission until
+        // it is emitted. An identical retry of the accepted submission
+        // that produced it returns accepted success and retries
+        // publication; anything else is refused while it is pending.
+        if self.pending_image_refusal.is_some() {
+            let _ = self.retry_pending_image_refusal();
+            if self.pending_image_refusal.is_some()
+                && !self.accepted.as_ref().is_some_and(|a| a.submit == submit)
+            {
+                return Err(EBUSY);
+            }
+        }
         // Accepted bytes cannot be edited. An identical retry names the same
         // retained object and never enqueues it again.
         if let Some(accepted) = &self.accepted {
@@ -245,8 +339,13 @@ impl ShellFiles {
         if staging.bytes.len() != submit.candidate_bytes as usize {
             return Err(Errno::EINVAL);
         }
-        let record = decode_shell_file_record(&staging.bytes, ShellFileClass::Candidate)
-            .map_err(|_| Errno::EINVAL)?;
+        let revision = if self.image_disclosed() { 9 } else { 8 };
+        let record = decode_shell_file_record_at_revision(
+            &staging.bytes,
+            ShellFileClass::Candidate,
+            revision,
+        )
+        .map_err(|_| Errno::EINVAL)?;
         if record.header.connection_epoch != self.epoch {
             return Err(Errno::ESTALE);
         }
@@ -255,10 +354,13 @@ impl ShellFiles {
         }
         let kind = record.header.kind;
         let (inbound, effect) = self.decode(&staging.bytes, kind)?;
-        let body = encode_shell_file_submitted_body(ShellFileSubmitted {
-            submission_id: submit.submission_id,
-            candidate_kind: kind,
-        })
+        let body = encode_shell_file_submitted_body_at_revision(
+            ShellFileSubmitted {
+                submission_id: submit.submission_id,
+                candidate_kind: kind,
+            },
+            revision,
+        )
         .map_err(|_| Errno::EINVAL)?;
         // Every fallible check precedes custody transfer, including journal
         // capacity. Custody records never use the terminal reserve.
@@ -276,7 +378,16 @@ impl ShellFiles {
         if kind == ShellFileKind::Negotiate {
             self.negotiate_accepted = true;
         }
-        self.inbound.push_back(inbound);
+        if let Some(inbound) = inbound {
+            if let Inbound::ImageBegin(metadata) = &inbound {
+                self.image
+                    .as_mut()
+                    .expect("disclosed image state")
+                    .offers
+                    .note_submitted(metadata.offer_id);
+            }
+            self.inbound.push_back(inbound);
+        }
         // Only an allocated qid can fail here, and nothing can observe a
         // half-applied effect: the binding is created whole or not at all.
         self.apply(effect)
@@ -294,4 +405,7 @@ enum SlotEffect {
         layout: ContentResourceLayout,
     },
     Close(ContentResourceId),
+    PublishImageRefusal {
+        refusal: PendingImageRefusal,
+    },
 }

@@ -246,6 +246,7 @@ impl Worker {
         while !stopped.load(Ordering::Acquire) {
             self.transport
                 .poll_authentication_cleanup(std::time::Instant::now());
+            self.transport.poll_detached_images();
             // Clear before inspecting queues. Publications after the check
             // remain readable, including commands, stop and freed handoff space.
             self.service_wake

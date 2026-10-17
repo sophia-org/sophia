@@ -4,10 +4,12 @@
 //! records carry no characters and no unlock authority in either direction.
 mod bodies;
 mod envelope;
+mod image;
 mod transfer;
 
 pub use bodies::*;
 pub use envelope::*;
+pub use image::*;
 pub use transfer::*;
 
 use crate::BinaryCodecError;

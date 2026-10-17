@@ -101,6 +101,16 @@ impl Submission {
     }
     /// Internal admission: the session restricts public kinds and owns upload sequencing.
     pub fn admit(&mut self, candidate: &Candidate) -> Result<u64, Error> {
+        let value = self.prepare(candidate)?;
+        Ok(self.admit_prepared(value))
+    }
+    pub(crate) fn prepare(&self, candidate: &Candidate) -> Result<Prepared, Error> {
+        self.can_admit()?;
+        candidate
+            .prepare(self.epoch, self.next)
+            .map_err(Error::Encode)
+    }
+    pub(crate) fn can_admit(&self) -> Result<(), Error> {
         if self.closed {
             return Err(Error::Closed);
         }
@@ -110,8 +120,16 @@ impl Submission {
         if self.next == u64::MAX {
             return Err(Error::Invalid);
         }
+        Ok(())
+    }
+    pub(crate) fn admit_image(&mut self, body: &[u8; 96]) -> Result<u64, Error> {
+        self.can_admit()?;
+        let value = Prepared::image(self.epoch, self.next, body).map_err(Error::Encode)?;
+        Ok(self.admit_prepared(value))
+    }
+    // The session prepares and commits without another submission mutation.
+    pub(crate) fn admit_prepared(&mut self, value: Prepared) -> u64 {
         let id = self.next;
-        let value = candidate.prepare(self.epoch, id).map_err(Error::Encode)?;
         self.control = [0; 24];
         self.control[..8].copy_from_slice(&self.epoch.to_le_bytes());
         self.control[8..16].copy_from_slice(&id.to_le_bytes());
@@ -124,7 +142,7 @@ impl Submission {
         self.replied = false;
         self.retry_wait = false;
         self.submitted_sequence = 0;
-        Ok(id)
+        id
     }
     pub fn retry(&mut self) -> Result<(), Error> {
         if self.closed {

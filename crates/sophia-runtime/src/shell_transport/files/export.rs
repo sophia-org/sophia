@@ -24,11 +24,22 @@ use super::journal::{Journal, JournalBounds};
 use sophia_9p::journal::{Staging, StagingBounds};
 
 mod authentication;
+mod image;
+pub(super) mod image_offers;
+mod image_topology;
+use image::{ImageChannelState, PendingImageRefusal, ShellImageReadiness};
+pub(in crate::shell_transport) use image::{
+    ShellImageChannelConfig, ShellImageReadiness as ImageReadiness,
+};
 mod inbound;
 mod objects;
 mod snapshots;
 mod submission;
 mod transaction;
+
+#[cfg(test)]
+#[path = "../../../tests/support/shell_image_inbound.rs"]
+mod image_inbound_tests;
 
 /// Not in `sophia-9p`'s set; the WM file owner defines the same values.
 const EBUSY: Errno = Errno(16);
@@ -67,6 +78,9 @@ pub(in crate::shell_transport) enum Node {
     Descriptors,
     Tabs,
     Shortcuts,
+    ImageChannel,
+    ImageLimits,
+    ImageFormats,
 }
 
 impl Node {
@@ -89,6 +103,9 @@ impl Node {
             Self::Tabs => 16,
             Self::Shortcuts => 17,
             Self::TransactionReuse => 18,
+            Self::ImageChannel => 19,
+            Self::ImageLimits => 20,
+            Self::ImageFormats => 21,
         }
     }
 
@@ -101,6 +118,8 @@ impl Node {
             Self::Descriptors => Some(ShellFileKind::Descriptors),
             Self::Tabs => Some(ShellFileKind::Tabs),
             Self::Shortcuts => Some(ShellFileKind::Shortcuts),
+            Self::ImageLimits => Some(ShellFileKind::ImageLimits),
+            Self::ImageFormats => Some(ShellFileKind::ImageFormats),
             _ => None,
         }
     }
@@ -115,6 +134,7 @@ pub(in crate::shell_transport) enum Handle {
     ReusableTransaction(u64),
     /// A pinned snapshot object: immutable, whatever is published later.
     Object(Arc<Object>),
+    ImageDiscovery(Arc<image_topology::DiscoverySnapshot>),
     /// A writer fid on one binding of an upload slot. Its `binding` qid fences
     /// it from any later binding of the same slot.
     Upload {
@@ -187,6 +207,7 @@ pub(in crate::shell_transport) use super::super::wire::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::shell_transport) enum Inbound {
     Negotiate(ShellV1ClientHello),
+    ImageBegin(ShellImageMetadata),
     Content(TransactionId, Box<ShellContentRecord>),
     /// One whole candidate; its parts reach the owner in wire order.
     Candidate(Box<ShellFileCandidate>),
@@ -235,6 +256,8 @@ pub(in crate::shell_transport) struct ShellFiles {
     content_limits: Option<ContentLimits>,
     upload_slots: u8,
     uploads: [Option<Binding>; SHELL_FILE_MAX_UPLOAD_SLOTS as usize],
+    image_limits: ObjectSlot,
+    image_formats: ObjectSlot,
     outputs: ObjectSlot,
     catalog: ObjectSlot,
     indicators: ObjectSlot,
@@ -247,6 +270,10 @@ pub(in crate::shell_transport) struct ShellFiles {
     staging: Option<Staging>,
     reuse_writer: Option<transaction::ReusableWriter>,
     accepted: Option<Accepted>,
+    image: Option<ImageChannelState>,
+    image_revision: u16,
+    pending_image_refusal: Option<PendingImageRefusal>,
+    pending_image_closed: Option<ShellChannelClosed>,
     submission_watermark: u64,
     journal: Journal,
     inbound: VecDeque<Inbound>,
@@ -305,6 +332,8 @@ impl ShellFiles {
             content_limits: None,
             upload_slots: 0,
             uploads: Default::default(),
+            image_limits: ObjectSlot::default(),
+            image_formats: ObjectSlot::default(),
             outputs: ObjectSlot::default(),
             catalog: ObjectSlot::default(),
             indicators: ObjectSlot::default(),
@@ -315,6 +344,10 @@ impl ShellFiles {
             staging: None,
             reuse_writer: None,
             accepted: None,
+            image: None,
+            image_revision: 0,
+            pending_image_refusal: None,
+            pending_image_closed: None,
             submission_watermark: 0,
             journal: Journal::new(epoch, bounds, now),
             inbound: VecDeque::with_capacity(INBOUND_RECORDS),
@@ -350,12 +383,34 @@ impl ShellFiles {
         limits: Option<(Vec<u8>, ContentLimits)>,
         capabilities: u64,
     ) -> Result<(), Errno> {
+        self.complete_negotiation_with_image_revision(limits, capabilities, 0)
+    }
+
+    /// Negotiation completion with the selected image revision hooked in
+    /// atomically: disclosure, readiness and candidate gating all read
+    /// this one recorded value, never a later unchecked setter.
+    pub(in crate::shell_transport) fn complete_negotiation_with_image_revision(
+        &mut self,
+        limits: Option<(Vec<u8>, ContentLimits)>,
+        capabilities: u64,
+        image_revision: u16,
+    ) -> Result<(), Errno> {
         if self.revoked {
             return Err(Errno::ESTALE);
         }
         if self.negotiated {
             return Err(EALREADY);
         }
+        let image_objects = if self.image.is_some()
+            && image_revision == 9
+            && capabilities & ((1 << 13) | (1 << 14)) != 0
+        {
+            let (_, content_limits) = limits.as_ref().ok_or(Errno::EACCES)?;
+            self.validate_image_content_limits(content_limits)?;
+            self.prepare_image_objects()?
+        } else {
+            Vec::new()
+        };
         self.content = limits.is_some();
         if let Some((bytes, limits)) = limits {
             self.upload_slots = limits
@@ -365,7 +420,12 @@ impl ShellFiles {
             self.content_limits = Some(limits);
         }
         self.capabilities = capabilities;
+        self.image_revision = image_revision;
+        if image_revision == 9 {
+            self.journal.enable_image_revision();
+        }
         self.negotiated = true;
+        self.install_image_objects(image_objects);
         self.snapshot_reserved_bytes = self.selected_snapshot_bound();
         Ok(())
     }
@@ -408,18 +468,23 @@ impl ShellFiles {
                 body,
             )
             .map_err(|_| Errno::EINVAL)?;
-            match decode_shell_file_resource_status(&record)
-                .map_err(|_| Errno::EINVAL)?
-                .record
-            {
-                ShellContentRecord::ResourceStatus(status) => Some(status),
+            let decoded = decode_shell_file_resource_status(&record).map_err(|_| Errno::EINVAL)?;
+            match decoded.record {
+                ShellContentRecord::ResourceStatus(status) => Some((decoded.transaction, status)),
                 _ => return Err(Errno::EINVAL),
             }
         } else {
             None
         };
-        let sequence = self.journal.append(kind, body, credited)?;
-        if let Some(status) = status {
+        let sequence = if let Some((transaction, status)) = &status {
+            match self.append_image_status(*transaction, status, body)? {
+                Some(sequence) => sequence,
+                None => self.journal.append(kind, body, credited)?,
+            }
+        } else {
+            self.journal.append(kind, body, credited)?
+        };
+        if let Some((_, status)) = status {
             self.observe_resource_status(status.resource, status.status);
         }
         Ok(sequence)
@@ -595,8 +660,14 @@ impl Export for ShellFiles {
         match handle {
             Some(Handle::Transaction(id) | Handle::ReusableTransaction(id)) => qid_path = *id,
             Some(Handle::Object(object)) => qid_path = object.qid,
+            Some(Handle::ImageDiscovery(discovery)) => qid_path = discovery.qid,
             Some(Handle::Upload { binding, .. }) => qid_path = *binding,
             _ => {
+                if *node == Node::ImageChannel
+                    && let Some(state) = &self.image
+                {
+                    qid_path = state.discovery.qid;
+                }
                 if let Some(kind) = node.object_kind()
                     && let Some(object) = self
                         .object_slot(kind)
@@ -608,6 +679,13 @@ impl Export for ShellFiles {
         }
         let size = match (node, handle) {
             (Node::Api, _) => self.api.len() as u64,
+            (Node::ImageChannel, Some(Handle::ImageDiscovery(discovery))) => {
+                discovery.text.len() as u64
+            }
+            (Node::ImageChannel, _) => self
+                .image
+                .as_ref()
+                .map_or(0, |state| state.discovery.text.len() as u64),
             (Node::Limits, _) => self.limits.as_ref().map_or(0, |l| l.len() as u64),
             (node, Some(Handle::Object(object))) if node.object_kind().is_some() => {
                 object.bytes.len() as u64
@@ -667,6 +745,14 @@ impl Export for ShellFiles {
         }
         match node {
             Node::Limits if self.limits.is_none() => Err(Errno::EAGAIN),
+            Node::ImageChannel if self.image_disclosed() => Ok(Handle::ImageDiscovery(
+                self.image
+                    .as_ref()
+                    .expect("disclosed image")
+                    .discovery
+                    .clone(),
+            )),
+            Node::ImageChannel => Err(Errno::ENOENT),
             Node::Upload(slot) => {
                 let writer = self.next_qid;
                 let binding = self.uploads[usize::from(*slot)]
@@ -735,6 +821,9 @@ impl Export for ShellFiles {
     ) -> Result<ReadOutcome, Errno> {
         match (node, handle) {
             (Node::Api, _) => Ok(slice(&self.api, offset, count)),
+            (Node::ImageChannel, Handle::ImageDiscovery(discovery)) => {
+                Ok(slice(discovery.text.as_bytes(), offset, count))
+            }
             (Node::Limits, _) => self
                 .limits
                 .as_ref()
@@ -806,6 +895,9 @@ impl Export for ShellFiles {
             (Node::Ack, _) if offset == 0 => {
                 let ack = decode_shell_file_ack(data).map_err(|_| Errno::EINVAL)?;
                 self.journal.ack(ack, Instant::now())?;
+                // A pending image refusal retries from ACK progress; its
+                // outcome never fails the acknowledgement itself.
+                let _ = self.retry_pending_image_refusal();
                 if self
                     .accepted
                     .as_ref()

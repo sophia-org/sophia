@@ -1,5 +1,260 @@
 # C and Rust SDK API parity
 
+## Opt-in sealed-image role adapters, Rust, 2026-10-17
+
+The BAR shell adapter (`9cc9678`, corrected by `1e1eecf`) and lock adapter
+integrate the shared producer with their existing 9P sessions. Default
+constructors remain byte-only. Explicit selection and sealed grants gate
+discovery; DMA is not requested. Each adapter reads one bounded, immutable
+three-file set per pass, waits for clunk completion, and treats only an absent
+image-channel file as clean absence. Generation mismatches retry; other read
+or coherence failures close the image path without destroying the role session.
+
+Image events are consumed internally in journal order; ResourceStatus remains
+public and reaches the producer only for its exact offer transaction and resource
+identity. Cancellation prepares the candidate before permanently suppressing
+Source transmission. SourceReleased retains sole settlement authority after
+admission. Both socket interests and image deadlines join the caller's drive;
+neither adapter hides a second event loop. A validated selection without a sealed
+grant reports Unavailable consistently, including through the producer view.
+
+These capabilities correspond to C role adapters and cancellation through
+`e777235` (published in the C `d51b033` stack). Rust's lock controls exercise real
+9P discovery and SEQPACKET descriptor handoff, cancel-before-admission, ordered
+status/release, clean absence, malformed/denied/oversized/clunk-failed discovery,
+channel contradictions and an ungranted sealed path. Shell controls additionally
+pin failed-forget custody, transaction-specific status routing and clock
+preflight. Full lock-client/producer suites and strict Clippy pass; shell's
+205-test result is recorded by its lane. Production-export interoperability and
+native performance remain separate qualification gates; this is not a claim
+that t338 is complete.
+
+## Rust lock revision selection, 2026-10-17
+
+The lock session validates the explicit Negotiated selection against the offered
+range, epoch, sequence and requested grants before changing journal decoding.
+Session and Connecting expose selected_revision(); r1 offers retain their bytes.
+Sealed offers require a maximum revision of at least 2; DMA requests remain
+refused. This matches C lock-client selection at `6122b60`, without yet claiming
+its discovery/producer adapter: those Rust integration paths remain unfinished.
+Literal journal controls cover same-read and split-read r2 receipts, invalid
+selections and grants, and identity failures. The full lock-client suite and
+strict all-target Clippy pass.
+
+## Sealed-image producer, Rust, 2026-10-17
+
+`sophia-image-producer` provides the role-neutral channel half corresponding to
+C `sophia_ip` at `d51b033`. It owns a connected SEQPACKET socket and up to four
+offers; discovery and journal records remain the role caller's responsibility.
+Time and poll readiness are caller-supplied. Both implementations require the
+known shell r9 or lock r2 selection, admission before Source, permanent cancel
+suppression, exactly-once send attempts and authoritative release. Rust returns
+the source/socket `OwnedFd` with local begin/attach errors; C leaves the integer
+descriptor with its caller. Neither reconnects or silently chooses byte fallback.
+
+Independent Rust controls cover both role codes with real SCM_RIGHTS, descriptor
+ownership, EAGAIN/resume, ambiguous send, expiry, cancellation, four-offer order
+and final release. Root reran 19 distinct tests. These are channel controls, not
+authentication, a live 9P role-adapter result, or native performance evidence.
+The C producer and adapters pass the full C check; Rust role adapters remain
+unfinished, so complete role capability parity is still open.
+
+Rust's safe sealed builder writes exact bounded ranges using `pwrite` and then
+seals; it does not expose C's writable mapping helper. Existing sealed FDs are
+also accepted after seal/type/size checks. This storage-construction difference
+must be included in producer-cost measurements; it is not a zero-copy claim.
+
+## Lock sealed-source refusal names, 2026-10-17
+
+Both SDKs name lock r2 reasons `invalid_source` (10) and
+`validation_timeout` (11). Wrong backing length retains `size_mismatch` (4).
+The existing open-vocabulary codecs already preserve these values; no decoder
+bound or negotiation behavior changes. Rust producer/adapters remain unfinished.
+
+## Image cancellation contract sync, 2026-10-17
+
+The shared contract now explicitly gives shell and lock ResourceCancel the
+metadata offer ID as transaction identity; the shell grant uses the connection
+epoch and metadata admission epoch. Cancellation may queue behind ImageBegin,
+permanently suppresses an unsent Source once locally recorded, and never
+releases admitted custody before SourceReleased. Queue refusal changes nothing;
+an acceptance that wins the race is retained. C `e777235` implements these
+controls. Rust producer and role adapters remain unimplemented, so cancellation
+and producer parity are still open. This spec sync changes no Rust codec or API.
+
+## Explicit lock revision selection, 2026-10-17
+
+LockNegotiated now has explicit revision-aware encode/decode and a
+decode_selected entry point returning the wire selection. Plain APIs remain
+r1-only. At r2 the grant mask may contain image bits 2/3; PRESENT remains
+required. The client must validate its offered range and requested grants
+before installing the returned selection. No capability implies a revision.
+The body remains 16 bytes and existing r1 encodings are unchanged.
+
+The matching C Negotiated revision path landed in `af75ab3`; its lock adapter
+landed in `6122b60`. Codec selection is aligned, but this does not implement the
+Rust producer or role adapters. C remains ahead on those capabilities.
+
+## Image receipts and context checks, 2026-10-17
+
+Explicit Rust shell r9 and lock r2 receipt entry points now carry ImageBegin
+as Submitted.candidate_kind. Plain APIs and earlier revisions retain their
+legacy candidate sets. C 21d03b8 provides equivalent revision-aware receipt
+encoding and decoding. Both independently test the actual kind bytes, old
+record byte identity, invalid revisions, identities, padding and other image
+kinds. This does not enable negotiation or a producer channel.
+
+Both Rust image codecs now provide caller-context packet validation and
+discovery coherence, matching the C capability. Rust additionally revalidates
+public typed limits and formats passed to coherence; C requires decoded
+inputs. Neither infers narrowing from ChannelReady: the caller supplies the
+granted source mask. No authenticated endpoint or runtime custody is proved
+by these codec checks.
+
+## Coordinated image codec and KDL checkpoint, 2026-10-17
+
+Both SDK spec copies now declare the seven image kinds with explicit classes.
+Rust shell envelopes require an explicit negotiated r9 for those kinds, and
+lock envelopes require r2. Ordinary entry points retain their old vocabulary.
+The C image codec remains separate from its legacy role codecs. Neither SDK
+changes the revisions it offers or opens a descriptor channel.
+
+Explicit shell ResourceStatus entry points in both SDKs admit reason 13 only
+for Rejected at r9. Rust sizing follows the same rule without allocating.
+Legacy entry points and the other seven reason fields retain the <=12 bound.
+The Go oracle has matching revision-aware support but still offers old revisions.
+
+Rust packet and discovery values are owned; formats own their row vector.
+C format rows borrow the original input bytes, while its packet and discovery
+values are copied. C also supplies cross-object coherence and caller-bound
+checks. Rust body codecs do not yet supply that check: the discovery reader
+must compare epochs, all three generations, discovery/limits equalities,
+source-kind grants and per-output bounds before Hello. Actual received FD
+counts are also a separate caller check in Rust. This gap blocks a claim of
+complete discovery/packet-admission parity; it does not activate a fallback.
+No channel I/O, authenticated endpoint, custody implementation or performance
+result is established by this codec checkpoint.
+
+## Acceptance-time image-channel boundary, 2026-10-17 (historical)
+
+The spec copies now include the shared shell/lock descriptor contract and its
+54-case sealed-only corpus. The coordinated Sophia acceptance changes both
+topology contracts and reserves ResourceStatus Rejected reason 13 for shell r9.
+At acceptance the SDK codecs kept the <=12 bound and did not advertise r9;
+Sophia's Rust emission path and the Go oracle then also retained <=12.
+The coordinated checkpoint above supersedes that codec boundary. Production
+connections still use the old revisions; authenticated discovery and channel
+service remain t338 work in both SDKs.
+Lock's reason vocabulary remains open; reason 9 is named for the r2 refusal.
+
+This is a spec/evidence update, not public descriptor API or ABI support. The
+existing byte APIs, advertised revisions and production behavior are unchanged.
+The local lifecycle peers remain models, not authenticated export, worker or
+GPU-completion proof. The image contract is authoritative for subsequent work.
+
+
+## Proposed sealed lifecycle peer, 2026-10-17 (historical fixture checkpoint)
+
+`descriptor_custody` exercises proposed Sophia x6jp929h at `0f3289c2e`.
+It is a test-side producer/owner model, not an exported SDK or authenticated
+9P endpoint. Source packets use the proposed 200-byte layout and real local
+SEQPACKET/SCM_RIGHTS with sealed files for both role codes. Control admission,
+Ready/Closed events, terminal journal consumption and worker completion are
+explicit fixture calls; SourceReleased has an independent record decoder.
+Peer credentials are supplied as a test predicate, not established by a launch.
+The source metadata fixes one grant/allocation and an eight-byte image.
+
+The peer covers the Ready and Admitted barriers, denied versus absent discovery,
+two snapshot mismatches with one attempt per drive pass and a startup deadline,
+monotonic IDs/exhaustion, socket EAGAIN plus POLLOUT, uncertain-send no-replay,
+stale and duplicate packets, missing/extra received rights, cancellation before
+receive/after receive/during validation, expiry, channel loss, journal loss,
+terminal reservations, and retained backing leases. Terminal reservation and
+backing-byte budgets are separate; ordinary transaction/admission journal
+traffic is outside this ledger. A cancelled validation retains its FD and charge
+until the fixture worker returns. No release is invented on a dead journal.
+Review follow-ups separate ResourceStatus, SourceReleased, ChannelClosed and
+ResourceReleased model events; explicit cancellation uses disposition 4 and
+expiry/refusal uses 3. Stored admitted metadata, varied topology, isolated
+offer/byte/journal bounds, send failure on a closed socket, ancillary truncation,
+and owner-integrated seal/size/pixel refusals have independent assertions.
+Released source offers are distinct from retained resource backing: a late
+packet does not fault merely because the resource still has consumer leases.
+A fake capture-completion seam retains all four slots and received references
+through timeout and epoch loss until an explicit safe-cleanup signal. This
+checks the quarantine state transition only; the source is still a sealed file,
+and no DMA-BUF or GPU operation occurs.
+The producer exposes a caller-driven admission deadline and timeout: a stalled
+unsent source stops requesting writable service at expiry, never sends later,
+and still waits for authoritative release. Packet shape, including zero or
+mismatched offer IDs and malformed plane rows, is checked before stale-ID drain.
+ResourceReleased waits for journal capacity without dropping the backing charge.
+The Rust model explicitly calls collection after journal consumption; production
+must retrigger it on ACK. Producer custody is single-offer; concurrent four-offer
+producer scheduling and distinct not-ready versus ID-exhaustion API errors are
+not proved. The owner separately exercises the four-offer bound.
+The existing kernel/decoder targets separately exercise truncation, seal variants,
+wrong sizes and the complete draft vector corpus.
+
+Snapshot replacement is a policy model over immutable owned bytes, not a
+multi-read production export test. No GPU operation, capture/quarantine safety,
+authenticated Hello, cross-process owner or public event-loop implementation
+is proved. The test does not make the draft normative or complete t337's
+acceptance gate. C peer implementation and cross-review are in progress in an
+independent worktree; parity must be checked against its signed result before
+any adoption. No public API, ABI, spec copy or Sophia vendor pin changes here.
+
+## Draft image codec fixtures, 2026-10-17
+
+Independent test-only decoders exercise 53 reviewed vectors from proposed Sophia
+x6jp929h (3a1e5588d): channel Hello/Source, records 0x7000–0x7006 and discovery.
+Each rejects every truncated prefix of a valid case and trailing bytes.
+An additional one-row/64-byte formats case brings the corpus to 54. Formats
+length is checked before capacity or sealed-only support. A separately generated,
+correctly sized 4097-row object reaches Capacity; the old short 4097-row case
+now correctly reports Length.
+Every corpus row also names its required refusal category; malformed data,
+stale identities, count/arithmetic failures and incoherent snapshots cannot
+substitute for one another. These enums are fixture diagnostics, not new wire
+reason codes. Channel, limits and formats generations are decoded independently
+and compared between discovery and both objects. Matching changed generations
+pass; changing only discovery or one participating object fails coherence.
+The fixture fixes the admitted grant/allocation and sealed-only discovery;
+it is not a general DMA format decoder or a public protocol implementation.
+The source corpus is draft-vectors.json (d76d9b3f84854dabb04a223c522bd6001af2b85a0fc73b2987de16e1d6b6e71a)
+and draft-object-vectors-r2.json (8444e92f1f1db24165f2576aa02376a4f3f46825169cc4792fc517325771775b).
+Their literal cases are copied into test support only, not normative spec/.
+
+On Linux, both decoders also compare declared bytes to real sealed file sizes:
+0, 7 and 9 bytes refuse an 8-byte declaration, while 8 passes. Unsupported seal
+queries refuse. These checks do not transfer the file through an authenticated
+owner or validate pixels. Production codecs, admission, journal custody and
+DMA-BUF validation remain unimplemented by this slice; no public ABI changes.
+
+## Proposed image-channel kernel fixtures, 2026-10-17
+
+Sophia's proposed t337 design (x6jp929h at fb5d2ae57) now has independent
+Linux kernel-prerequisite tests in both SDK trees. They exercise real SEQPACKET
+SCM_RIGHTS, required seals and FUTURE_WRITE rejection, producer-close survival,
+receiver CLOEXEC, missing/extra rights, control truncation, bounded nonblocking
+send backpressure and socket writable readiness after draining the burst. The
+fixture bounds SO_SNDBUF and accepts ETOOMANYREFS as a distinct per-user limit;
+POLLOUT proves socket progress, not availability of an SCM_RIGHTS credit.
+Each checks its FD-table count returns to baseline, not the lifetime of kernel
+references invisible in /proc/self/fd. Truncation with no control storage must
+deliver zero FDs. C additionally verifies that a shared writable
+mapping makes F_ADD_SEALS(F_SEAL_WRITE) fail with EBUSY, a received sealed mapping
+survives closing both producer and receiver FDs, and a new shared writable
+mapping fails EPERM. Rust keeps its unsafe-code
+prohibition and checks the resulting seal requirement without mapping memory.
+
+These tests use no new public API and do not implement the proposed transport.
+They establish kernel prerequisites only, not codec, authentication, admission,
+journal custody, GPU completion or production-export conformance. C runs
+descriptor_kernel_test; Rust runs sophia-shell-client's descriptor_kernel test.
+The draft custody matrix remains to be implemented independently in both SDKs.
+No public ABI or vendored contract changes are part of this fixture slice.
+
 ## Queued shell submit (B2), 2026-10-17
 
 Review follow-up: both SDKs retain a full successful submit reply as authoritative

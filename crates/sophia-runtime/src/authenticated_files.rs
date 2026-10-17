@@ -128,6 +128,21 @@ impl<E> AuthenticatedFiles<E> {
             Admission::Legacy | Admission::Pending => None,
         }
     }
+    /// Joins a side channel to current afid custody, not just remembered
+    /// identity. Legacy and pending roots never confer descriptor authority.
+    /// The transport separately checks the connector against its live assignee.
+    pub fn check_side_channel(
+        &mut self,
+        connection: ConnectionId,
+        now: Instant,
+    ) -> Result<sophia_protocol::ClientAdmissionContext, Errno> {
+        let owner = self.authentication()?;
+        owner.check(connection, now)?;
+        if !owner.admitted() {
+            return Err(Errno::EACCES);
+        }
+        owner.admission_context().ok_or(Errno::EACCES)
+    }
     pub fn poll(&mut self, now: Instant) -> Result<(), Errno> {
         match &mut self.admission {
             Admission::Legacy => Ok(()),

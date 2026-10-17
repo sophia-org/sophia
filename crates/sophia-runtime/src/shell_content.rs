@@ -13,6 +13,9 @@ mod epochs;
 mod profile;
 mod reconnect_budget;
 mod resources;
+mod sealed_jobs;
+mod sealed_pixels;
+mod sealed_worker;
 
 pub use accounting::*;
 pub use allocations::*;
@@ -22,3 +25,6 @@ pub use epochs::*;
 pub use profile::*;
 pub use reconnect_budget::*;
 pub use resources::*;
+pub use sealed_jobs::*;
+pub use sealed_pixels::*;
+pub use sealed_worker::*;

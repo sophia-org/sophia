@@ -174,7 +174,9 @@ pub fn encode_shell_file_submitted_body(
     if value.submission_id == 0 {
         return Err(ShellFilePayloadError::Identity);
     }
-    if shell_file_class(value.candidate_kind) != ShellFileClass::Candidate {
+    if shell_file_class(value.candidate_kind) != ShellFileClass::Candidate
+        || super::codec::kind(value.candidate_kind as u16).is_err()
+    {
         return Err(ShellFileCodecError::Kind.into());
     }
     let mut body = Vec::with_capacity(16);

@@ -238,6 +238,7 @@ impl FileWire {
             progressed |= self.drive_submit_retry()?;
             progressed |= self.drive_slot_write(output)?;
             progressed |= self.drive_object_fetch()?;
+            progressed |= self.drive_image_fetch()?;
             progressed |= self.process_buffered_event(inbox)?;
             progressed |= self.maybe_read_events(inbox)?;
             if !progressed
@@ -304,6 +305,9 @@ impl FileWire {
                 continue;
             }
             if self.on_object_fetch_reply(tag, &reply, inbox)? {
+                continue;
+            }
+            if self.on_image_fetch_reply(tag, &reply)? {
                 continue;
             }
             return Err(ShellClientError::Protocol("reply to an untracked tag"));

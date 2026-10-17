@@ -16,9 +16,11 @@ use crate::ContentStoreProfile;
 use crate::authenticated_files::{AuthenticatedFiles, FileAuthenticationFactory};
 
 mod export;
+mod image;
 mod journal;
 
 pub(super) use export::{CandidateFamily, Inbound, NativeCandidatePart, ShellFiles};
+pub(super) use export::{ImageReadiness, ShellImageChannelConfig};
 pub(super) use journal::JournalBounds;
 
 /// Nonblocking turns spent flushing a revocation; bounded so a peer that
@@ -68,7 +70,9 @@ pub(super) fn role_bounds(profile: Option<ContentStoreProfile>) -> (&'static str
 }
 
 pub(super) struct ShellFileWire {
+    image: Option<image::ImageService>,
     server: Server<AuthenticatedFiles<ShellFiles>>,
+    connection: sophia_9p::ConnectionId,
     authentication: Option<Box<dyn FileAuthenticationFactory>>,
     publication_pending: bool,
     turns: u64,
@@ -102,7 +106,9 @@ impl ShellFileWire {
             .map_err(|refused| io_error(refused.error))?;
         server.export_mut().files_mut().bind_connection(connection);
         let mut wire = Self {
+            image: None,
             server,
+            connection,
             authentication,
             publication_pending: false,
             turns: 0,
@@ -130,13 +136,20 @@ impl ShellFileWire {
     }
 
     pub(super) fn authentication_wait(&self, now: Instant) -> Duration {
-        self.server.export().wait(now)
+        self.server.export().wait(now).min(
+            self.image
+                .as_ref()
+                .map_or(Duration::MAX, |image| image.wait(now)),
+        )
     }
 
     /// The server's readiness, borrowed for the owner's wait. The next
     /// [`Self::turn`] consumes it.
-    pub(super) fn visit_poll_fds<'a>(&'a self, visit: impl FnMut(rustix::event::PollFd<'a>)) {
-        self.server.visit_poll_fds(visit)
+    pub(super) fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(rustix::event::PollFd<'a>)) {
+        self.server.visit_poll_fds(&mut visit);
+        if let Some(image) = &self.image {
+            image.visit_poll_fds(visit);
+        }
     }
 
     pub(super) fn subscription(&self) -> Option<sophia_9p::unix::Subscription> {
@@ -181,11 +194,17 @@ impl ShellFileWire {
             .poll(Instant::now())
             .map_err(|_| ShellTransportError::NotConnected)?;
         self.export_mut().expire();
+        self.service_image_channel(Instant::now());
         Ok(())
     }
 
     pub(super) const fn publication_pending(&self) -> bool {
         self.publication_pending
+    }
+
+    pub(super) fn image_publication_pending(&mut self) {
+        self.publication_pending = true;
+        self.server.wake().wake();
     }
 
     pub(super) const fn turn_count(&self) -> u64 {

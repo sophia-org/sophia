@@ -21,6 +21,167 @@ fn ack(sequence: u64) -> ShellFileAck {
 }
 
 #[test]
+fn held_close_survives_credited_record_and_byte_exhaustion() {
+    use sophia_protocol::shell_files::{ShellChannelClosed, ShellChannelClosedReason};
+    let closed = ShellChannelClosed {
+        channel_generation: 2,
+        reason: ShellChannelClosedReason::PeerDisconnect,
+    }
+    .encode()
+    .unwrap();
+    for bounds in [
+        BOUNDS,
+        JournalBounds {
+            bytes: 192,
+            reserve_bytes: 48,
+        },
+    ] {
+        let mut journal = Journal::new(1, bounds, Instant::now());
+        journal.enable_image_revision();
+        let reservation = journal.hold_reservation(48).unwrap();
+        while journal
+            .append(ShellFileKind::Submitted, &body(16), true)
+            .is_ok()
+        {}
+        assert!(!journal.fits(48, true));
+        let size = journal.size();
+        let records = journal.records();
+        assert_eq!(
+            journal.append_consuming_reservation(reservation, ShellFileKind::ImageLimits, &closed),
+            Err(Errno::EINVAL)
+        );
+        assert_eq!(
+            journal.append_consuming_reservation(
+                reservation,
+                ShellFileKind::ChannelClosed,
+                &closed[..8]
+            ),
+            Err(Errno::EINVAL)
+        );
+        assert_eq!((journal.size(), journal.records()), (size, records));
+        assert_eq!(
+            journal.append_consuming_reservation(
+                reservation,
+                ShellFileKind::ChannelClosed,
+                &closed
+            ),
+            Ok(records as u64 + 1)
+        );
+        assert_eq!(
+            journal.append_consuming_reservation(
+                reservation,
+                ShellFileKind::ChannelClosed,
+                &closed
+            ),
+            Err(Errno::EINVAL)
+        );
+        assert_eq!(journal.size(), size + 48);
+    }
+}
+
+#[test]
+fn four_offer_pairs_and_close_keep_independent_terminal_capacity() {
+    for bounds in [
+        BOUNDS,
+        JournalBounds {
+            bytes: 800,
+            reserve_bytes: 640,
+        },
+    ] {
+        let mut journal = Journal::new(1, bounds, Instant::now());
+        let sizes = [48, 80, 64, 80, 64, 80, 64, 80, 64];
+        let held: Vec<_> = sizes
+            .into_iter()
+            .map(|size| journal.hold_reservation(size).unwrap())
+            .collect();
+        assert!(journal.hold_reservation(48).is_none());
+        while journal
+            .append(ShellFileKind::Submitted, &body(16), false)
+            .is_ok()
+        {}
+        while journal
+            .append(ShellFileKind::Submitted, &body(16), true)
+            .is_ok()
+        {}
+        // Interleave offers in a different completion order. Every other
+        // reservation must survive each spend, even with a full journal.
+        for index in [5, 2, 8, 0, 7, 1, 4, 6, 3] {
+            let before = journal.records();
+            journal
+                .append_consuming_reservation(
+                    held[index],
+                    ShellFileKind::Submitted,
+                    &body(sizes[index] - 32),
+                )
+                .unwrap();
+            assert_eq!(journal.records(), before + 1);
+            assert_eq!(
+                journal.append_consuming_reservation(
+                    held[index],
+                    ShellFileKind::Submitted,
+                    &body(sizes[index] - 32)
+                ),
+                Err(Errno::EINVAL)
+            );
+        }
+    }
+}
+
+#[test]
+fn released_and_foreign_epoch_handles_cannot_spend_a_reused_slot() {
+    let mut journal = Journal::new(1, BOUNDS, Instant::now());
+    let old = journal.hold_reservation(48).unwrap();
+    journal.release_reservation(old);
+    let new = journal.hold_reservation(48).unwrap();
+    assert_ne!(old, new);
+    journal.release_reservation(old);
+    assert_eq!(
+        journal.append_consuming_reservation(old, ShellFileKind::Submitted, &body(16)),
+        Err(Errno::EINVAL)
+    );
+    journal
+        .append_consuming_reservation(new, ShellFileKind::Submitted, &body(16))
+        .unwrap();
+    let mut successor = Journal::new(2, BOUNDS, Instant::now());
+    let own = successor.hold_reservation(48).unwrap();
+    assert_eq!(
+        successor.append_consuming_reservation(old, ShellFileKind::Submitted, &body(16)),
+        Err(Errno::EINVAL)
+    );
+    successor
+        .append_consuming_reservation(own, ShellFileKind::Submitted, &body(16))
+        .unwrap();
+}
+
+#[test]
+fn holds_cannot_overbook_terminal_bytes_even_with_free_record_slots() {
+    let mut journal = Journal::new(
+        1,
+        JournalBounds {
+            bytes: 4096,
+            reserve_bytes: 96,
+        },
+        Instant::now(),
+    );
+    assert!(journal.hold_reservation(31).is_none());
+    let first = journal.hold_reservation(48).unwrap();
+    let second = journal.hold_reservation(48).unwrap();
+    assert!(journal.hold_reservation(48).is_none());
+    journal.release_reservation(first);
+    let replacement = journal.hold_reservation(48).unwrap();
+    while journal
+        .append(ShellFileKind::Submitted, &body(16), true)
+        .is_ok()
+    {}
+    journal
+        .append_consuming_reservation(second, ShellFileKind::Submitted, &body(16))
+        .unwrap();
+    journal
+        .append_consuming_reservation(replacement, ShellFileKind::Submitted, &body(16))
+        .unwrap();
+}
+
+#[test]
 fn unsolicited_records_leave_the_terminal_reserve_to_credited_responses() {
     let now = Instant::now();
     let mut journal = Journal::new(1, BOUNDS, now);

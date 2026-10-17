@@ -141,4 +141,17 @@ size_t sophia_sf_record_bytes(const struct sophia_sf_record *);
 int sophia_sf_decode(const void *, size_t, struct sophia_sf_record *);
 int sophia_sf_submit_encode(uint8_t dst[24], uint64_t epoch, uint64_t submission, uint32_t bytes);
 int sophia_sf_ack_encode(uint8_t dst[16], uint64_t epoch, uint64_t sequence);
+/* Negotiated shell revision 9 adds ResourceStatus Rejected reason 13,
+ * image_channel_unavailable, and Submitted receipts naming ImageBegin
+ * (0x7000). sophia_sf_decode/encode keep the r<=8 bounds and refuse both. The
+ * _revision variants take the negotiated revision (1-9) and admit reason 13
+ * only for status 3, and candidate_kind 0x7000 only in Submitted, at revision
+ * 9; every other bound is unchanged. Selecting revision 9 here does not
+ * advertise it. */
+#define SOPHIA_SF_REVISION_IMAGE_CHANNEL 9u
+#define SOPHIA_SF_REASON_IMAGE_CHANNEL_UNAVAILABLE 13u
+#define SOPHIA_SF_KIND_IMAGE_BEGIN 0x7000u
+int sophia_sf_decode_revision(const void *, size_t, uint16_t revision, struct sophia_sf_record *);
+int sophia_sf_encode_revision(void *, size_t, uint16_t revision, const struct sophia_sf_record *,
+                              size_t *);
 #endif

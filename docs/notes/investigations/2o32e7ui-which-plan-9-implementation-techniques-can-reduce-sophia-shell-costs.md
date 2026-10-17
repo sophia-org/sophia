@@ -15,17 +15,118 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+t338 remains in implementation. Codex owns shell/Session integration; Claude
+owns the lock runtime lane. Muse remains quota-limited and has not started the
+Rust producer. The [delivery plan's current resumption](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#current-resumption)
+records the implementation and evidence boundaries.
+
+Shell sealed admission now connects real 9P and SEQPACKET to bounded validation,
+mapped resource backing and separate terminal reservations. The persistent
+owner survives disconnects and reconciles against exact retired stores.
+Session installs it for authenticated components using their reserved budgets,
+shares a monotonic resource clock, polls workers after revocation and guards
+shutdown. Wire tests cover supplied afid authority, success, cancellation,
+unsent-offer disconnect cleanup, topology snapshot replacement and legacy
+absence. These are not protected-launch or native performance results.
+
+C producer, BAR and lock adapters, explicit lock r2 selection and cancellation
+are published through `e777235`; an independent full check passes. Rust
+producer/adapters and cancellation parity remain open. Claude's lock runtime
+now selects r2 and publishes coherent immutable discovery after the sealed
+grant, with readiness-gated refusal. Lock authenticated Hello/Source acceptance,
+Session submitted-worker shutdown qualification, SDK adoption and the native
+CPU comparison remain to finish. The installed desktop is unchanged.
+
+t337 design acceptance is recorded October 17 under niltempus's conditional
+approval. Independent lifecycle peers Rust `8f7dc5d` and C `b2ca17d` passed
+cross-review. The coordinated change widens both role topology contracts and
+the shell ResourceStatus reason bound; the [shared normative contract](../../sophia-image-channel.md)
+owns exact custody and layouts. Signed spec/evidence pins are Rust `8ad08de`
+and C `ca61d21`. The preserved 54-case corpus and source hashes are in that
+contract. Model tests do not prove production authentication, live discovery
+fids, asynchronous validation or GPU completion.
+
+t338's passive codec checkpoint is reviewed, published and vendored at Rust
+`5c41aeb` and C `e146897`. It includes authoritative image KDL rows, explicit
+classes, the distinct Rust lock mirror, shell image bodies and explicit r9/r2
+envelopes. Old entry points retain their vocabulary. Review caught and fixed
+LockSubmitted accepting ImageBegin at r1; the pre-existing shell receipt KDL
+ceiling is corrected to 278. The Go oracle is integrated as `42548ad9b` and
+`fd805a2eb`, with revision selection tested before reason-13 decoding.
+
+Both Rust protocol suites, strict Clippy, shell field-offset tests, C's 54-case
+codec controls and targeted Sophia schemas pass. Signed snapshot identity and
+spec equality pass; the affected Sophia C/Rust/Go shell and lock export run
+passes 62 tests. One existing test requiring an independently built upload peer
+remains ignored. Claude's final 117,756-case differential per role on the exact
+SDK heads has only the expected opposite-role discovery split and byte-identical
+accepted round trips. The plan records scope, negative controls and harness
+hashes. No independent review blockers remain for this codec checkpoint.
+
+Next: finish Rust producer/adapters and lock receive/accept integration, then
+qualify complete custody and native performance. Rust's
+contextual codecs now check coherence and received FD counts; production
+readers must use those entry points. Complete admission parity is not claimed. The
+[first slice](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#t338-first-slice-and-ownership)
+keeps default callers byte-only. Explicit revision-aware paths admit shell
+reason 13 only for r9 Rejected; legacy decoders and emission remain <=12.
+Other reason fields must not widen.
+
+CPU content uses sealed memfd per image. A shared launch window is not pursued
+without measured need. DMA-BUF remains behind t339/t304 and t289 safe-completion
+proof. No installed desktop or production transport changed during acceptance.
+
+t331 remains open, waiting on t338. All four +10% gates remain unchanged; the
+panel allocation result is accepted red as permission to proceed, not a pass.
+Rerun all four after t338; per-request allocation attribution and journal read
+pairing remain required. The frozen B2/B3 evidence remains comparator
+`6c87721fa`, integration `4b16974`, under
+`~/.local/state/sophia/development-evidence/t331-b3-20261017/native-candidate/`.
+No quiet hold is active.
+
+## Pre-acceptance checkpoint — October 17
+
+The following records the state before coordinated contract acceptance.
+
+The independent t337 lifecycle peers are reviewed and published: Rust `8f7dc5d`
+and C `b2ca17d`. Both exercise real descriptor transfer and local custody models;
+neither proves production authentication, live discovery fids or GPU completion.
+Cross-review found no remaining blockers. Next is the owner's conditional
+acceptance change: both topology contracts and the shell KDL reason bound
+together, then opening t338. The proposed plan records the precise test limits.
+
+October 17 owner direction: t331 remains open, waiting on t338, with the panel
+allocation result accepted as red and all four +10% gates unchanged. Rerun all
+four after t338; per-request allocation attribution and journal read pairing
+remain required. t337 acceptance is approved in principle, conditional on reviewed
+lifecycle/custody peers. The ADR remains proposed until that condition and the
+coordinated contract/KDL amendment are satisfied. t338 uses sealed memfd per image;
+the shared launch window is not pursued without measured descriptor cost. See the
+[owner direction](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#owner-direction--october-17-2026)
+and [t331 criteria](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#t331--reduce-shell-allocation-overhead).
+
 B3 validation is complete in signed Rust SDK `01474a9` and C SDK `5246f96`.
 The final fault tests cover terminal status with four outstanding writes, a stale
 head, partial transport output and cancellation with unissued chunks. Both SDK
 suites pass, as does strict Rust Clippy. The independent review found no blockers.
-The exact archives are imported for production adoption. Snapshot checks, C
+Production adoption `ec410a09a` is signed and pushed. Snapshot checks, C
 export/lifecycle gates, the full default Sophia suite, formatting and offline
 metadata checks pass. The final source commits add only the reviewed test-scope
 clarifications; their repeated snapshot checks also pass.
-The matched native B2/B3 pilot is next.
-No quiet hold is active and the installed desktop is unchanged. The +10% gates
-remain unchanged; no B2/B3 native result exists yet.
+Comparator merge `6c87721fa` is signed and pushed with those exact archives;
+its repeated snapshot checks pass. Integration remains `4b16974`. The matched
+native B2/B3 pilot completed twelve arms: eight files/IPC cost arms for panel and
+bulk, plus four separate progress arms. Offline replay reproduces all 12,000
+exact presentation joins, journal reports and eight cost reports. Every arm
+records normal console recovery. Both Claude sessions and Muse report no work
+during the strict hold, now released. The installed desktop is unchanged.
+
+All four +10% gates still fail. Panel CPU is +14.02–14.29% and allocations
++45.49–46.01% versus IPC; bulk CPU is +15.71–15.76% and allocations
++54.06–54.21%. Files owner passes per frame are 17.548–17.607 for panel and
+90.179–90.384 for bulk. The result below separates improvements from the
+remaining gap. Evidence, frozen plans and offline replay are under
+`t331-b3-20261017/native-candidate` in the evidence directory below.
 
 The test scopes differ deliberately: Rust forces kernel socket backpressure;
 C limits each dispatch to one output byte. Rust's queued chunks are dropped by
@@ -36,11 +137,89 @@ ordering and custody review before implementation.
 
 The server's one-msize input budget remains the main limit on bulk pass counts.
 Four client credits do not imply four pixel writes serviced in one owner pass.
-Use the matched pilot to decide whether the proposed descriptor path should take
-priority; its implementation is not yet approved. The
+The pilot supports prioritizing descriptor-path design for bulk content, with
+producer/Sophia CPU, GPU work, latency and memory measured together. It does not
+prove a descriptor speedup or solve the panel's remaining per-pass costs. The
+descriptor implementation is not yet approved. The
 [accepted plan](../plans/nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
 owns the remaining performance gate. Evidence is under
 `~/.local/state/sophia/development-evidence/t331-b3-20261017/`.
+
+niltempus subsequently directed the shared descriptor design review. Its
+[proposed lifecycle and byte layouts](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md)
+answer the nine lock questions for both roles, with sealed memory first and
+DMA-BUF capture behind the renderer ownership decision. This is design work;
+t331's measured failure and the current byte contracts remain in force.
+The draft now includes exact discovery/limits/formats layouts and a C/Rust
+custody fixture matrix. Thirty-two packet vectors received independent review;
+19 companion-object cases received independent review, then the draft switched
+to common record headers with 21 revised cases. Formats now follow topology
+generation; limits remain fixed per connection. Independent real ancillary/seal
+kernel fixtures now pass in Rust SDK `05bf018` and C SDK `9bca0db`, with the
+Rust shell-client suite, targeted strict Clippy and C `make check` passing.
+Test-only decoders now pass all 53 draft cases in Rust `47397e5` and C `c6d7837`,
+including truncated-prefix controls and real sealed-file length checks. They
+use a fixed admitted sealed-only context, not general production codecs.
+Follow-ups Rust `7977ba7` and C `90307ac` assert specific refusal categories and
+compare generations across actual discovery/limits/formats objects; matching
+changed generations pass and individual mismatches refuse. Both targets,
+strict Rust Clippy and C Clang ASan/UBSan pass.
+Rust lifecycle peer `8f7dc5d` and C peer `b2ca17d` are signed and published;
+their targets pass, as does targeted strict Rust Clippy. Independent review
+closed cancellation, metadata, deadline, packet-shape and deferred-release
+findings. Real Source/SCM_RIGHTS is exercised,
+but control/journal/worker steps remain fixture models; authenticated endpoints,
+real discovery fids and GPU safety are not proved. The
+[fixture checkpoint](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#sealed-lifecycle-peer-checkpoint--october-17)
+records the scope. No vendor pin or runtime changed. The fixture condition is
+satisfied; the coordinated acceptance amendment remains next, and t338
+implementation remains unopened.
+
+## B2/B3 native pilot — October 17
+
+The matched candidate is comparator `6c87721fa`, integration `4b16974`, Rust
+SDK `01474a9` and C SDK `5246f96`. The timing peer uses Rust; these figures do
+not establish C client performance. Each arm offered 1,000 frames at 60 Hz in a
+60-second session. The bulk arm adds a 4 MiB upload to each panel frame. CPU and
+allocation instrumentation run separately, with separate progress arms. The
+replay's `comparison.json` uses whole-workload bounds, without interpolation or
+subtracting instrumentation overhead.
+
+| Workload and metric | Files | IPC | Files excess |
+| --- | --- | --- | --- |
+| Panel CPU, ms/uploaded MiB | 8.982–8.991 | 7.866–7.878 | 14.02–14.29% |
+| Panel allocations/frame | 1,663–1,666 | 1,141–1,143 | 45.49–46.01% |
+| Bulk CPU, ms/uploaded MiB | 1.6206–1.6209 | 1.4003–1.4006 | 15.71–15.76% |
+| Bulk allocations/frame | 5,218–5,220 | 3,385–3,387 | 54.06–54.21% |
+
+CPU includes all threads in Session and the peer, including foreign code, but
+excludes other processes. Allocation counts cover their Rust global allocations
+and reallocations, excluding foreign allocators. This synthetic byte-upload
+workload does not measure a GPU producer's readback cost. It is a pilot, not the
+full qualification matrix or an uninstrumented latency result.
+
+Compared with the first-slice pilot, files CPU fell about 5.8% for panel and
+4.0% for bulk; allocations fell about 10.5% and 8.6%. IPC CPU rose about 1.6%
+in both workloads, so the narrower ratios are not entirely files improvements.
+These are sequential campaigns, not repeated-run confidence intervals.
+
+Separate progress arms bracket files owner passes/frame at 17.548–17.607 for
+panel, against IPC 8.019–8.043, and 90.179–90.384 for bulk, against IPC
+45.069–46.208. The previous files figures were about 22.6 and 102.3. Bulk still
+has 67.863–67.999 pixel-bearing owner passes per frame; panel has 2.997–3.000.
+These are observed activity counts, not exclusive wake causes or CPU attribution.
+They support the one-msize input-budget explanation and rule out the earlier
+69/4 bulk-pass projection for this implementation.
+
+Keep t331 open with its existing gates. The recommended next design work is the
+[proposed descriptor channel](../decisions/qujwzrdz-admit-shell-content-through-a-negotiated-descriptor-channel-beside-the-9p-wire.md),
+starting with its accounting and shared lock/shell ownership decisions. It may
+avoid repeated bulk byte transport, but no measured result yet establishes that
+benefit. Keep the panel's request/pass and allocation costs explicit: three
+pixel-bearing passes cannot explain its entire gap. Do not widen the server
+budget, claim a descriptor pass, or start another fixed-cost slice from this
+pilot alone. No candidate task is promoted and no new transport is implemented
+by this result checkpoint.
 
 ## October 17 implementation and validation history
 

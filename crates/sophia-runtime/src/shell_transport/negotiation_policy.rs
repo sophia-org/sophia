@@ -9,6 +9,54 @@ impl ShellComponentTransport {
         content_policy: ShellContentAdmissionPolicy,
         hello: ShellV1ClientHello,
     ) -> Result<(ShellV1ServerWelcome, Option<ContentLimits>), ShellTransportError> {
+        const SEALED: u64 = 1 << 13;
+        const DMA: u64 = 1 << 14;
+        if hello.required_capabilities & (SEALED | DMA) != 0 {
+            if hello.minimum_revision == 0
+                || hello.minimum_revision > 9
+                || hello.maximum_revision < 9
+                || hello.minimum_revision > hello.maximum_revision
+            {
+                return Err(ShellTransportError::UnsupportedRevision);
+            }
+            if hello.required_capabilities & DMA != 0
+                || !self.authentication_required
+                || self
+                    .image_config
+                    .as_ref()
+                    .is_none_or(|config| config.discovery.connection_epoch != connection_epoch)
+                || hello.required_capabilities
+                    & sophia_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+                    == 0
+            {
+                return Err(ShellTransportError::MissingCapability);
+            }
+            // Reuse the role's existing capability and content-policy checks.
+            // This is local validation, not an on-wire revision downgrade.
+            let base = ShellV1ClientHello {
+                minimum_revision: 1,
+                maximum_revision: 8,
+                required_capabilities: hello.required_capabilities & !SEALED,
+            };
+            let (mut welcome, limits) =
+                self.select_legacy_negotiation(epochs, connection_epoch, content_policy, base)?;
+            if limits.is_none() {
+                return Err(ShellTransportError::MissingCapability);
+            }
+            welcome.selected_revision = 9;
+            welcome.capabilities |= SEALED;
+            return Ok((welcome, limits));
+        }
+        self.select_legacy_negotiation(epochs, connection_epoch, content_policy, hello)
+    }
+
+    fn select_legacy_negotiation(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+        connection_epoch: u64,
+        content_policy: ShellContentAdmissionPolicy,
+        hello: ShellV1ClientHello,
+    ) -> Result<(ShellV1ServerWelcome, Option<ContentLimits>), ShellTransportError> {
         let maximum_revision = if self
             .negotiation
             .as_ref()

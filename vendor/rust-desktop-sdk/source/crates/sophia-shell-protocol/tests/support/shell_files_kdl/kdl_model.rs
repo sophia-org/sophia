@@ -202,6 +202,38 @@ pub fn parse_kdl() -> Kdl {
                 };
                 kinds.push((class, name, kind));
             }
+            "rows" => {
+                assert_eq!(node_str(node, 0).as_deref(), Some("ImageFormats"));
+                let rows = node.children().expect("row relationship").nodes();
+                assert_eq!(rows.len(), 1);
+                assert_eq!(rows[0].name().value(), "row");
+                assert_eq!(node_str(&rows[0], 0).as_deref(), Some("ImageFormat"));
+                assert_eq!(node_str(&rows[0], "count").as_deref(), Some("row_count"));
+            }
+            "disposition" | "channel-closed-reason" => {
+                let names: &[&str] = if keyword == "disposition" {
+                    &[
+                        "retained",
+                        "capture_complete",
+                        "refused_before_use",
+                        "cancelled_before_import",
+                        "drained_after_submission",
+                    ]
+                } else {
+                    &[
+                        "peer_disconnect",
+                        "protocol_fault",
+                        "hello_timeout",
+                        "grant_revoked",
+                    ]
+                };
+                let name = node_str(node, 0).expect("vocabulary name");
+                let index = names
+                    .iter()
+                    .position(|expected| *expected == name)
+                    .expect("known vocabulary");
+                assert_eq!(node_int(node, "value"), Some(index as i128 + 1));
+            }
             other => panic!("unknown protocol child node `{other}`"),
         }
     }
@@ -223,7 +255,7 @@ pub fn find_block<'a>(blocks: &'a [Block], name: &str) -> &'a Block {
         .unwrap_or_else(|| panic!("no `{}` block named `{name}`", blocks[0].keyword))
 }
 
-pub fn all_shell_file_kinds() -> [ShellFileKind; 56] {
+pub fn all_shell_file_kinds() -> [ShellFileKind; 63] {
     [
         ShellFileKind::Limits,
         ShellFileKind::Outputs,
@@ -281,6 +313,13 @@ pub fn all_shell_file_kinds() -> [ShellFileKind; 56] {
         ShellFileKind::ReferenceCandidate,
         ShellFileKind::LauncherCandidate,
         ShellFileKind::LauncherActivationAck,
+        ShellFileKind::ImageBegin,
+        ShellFileKind::ImageAdmitted,
+        ShellFileKind::SourceReleased,
+        ShellFileKind::ChannelReady,
+        ShellFileKind::ChannelClosed,
+        ShellFileKind::ImageLimits,
+        ShellFileKind::ImageFormats,
     ]
 }
 
@@ -345,6 +384,13 @@ pub fn kind_name(kind: ShellFileKind) -> &'static str {
         ShellFileKind::ReferenceCandidate => "ReferenceCandidate",
         ShellFileKind::LauncherCandidate => "LauncherCandidate",
         ShellFileKind::LauncherActivationAck => "LauncherActivationAck",
+        ShellFileKind::ImageBegin => "ImageBegin",
+        ShellFileKind::ImageAdmitted => "ImageAdmitted",
+        ShellFileKind::SourceReleased => "SourceReleased",
+        ShellFileKind::ChannelReady => "ChannelReady",
+        ShellFileKind::ChannelClosed => "ChannelClosed",
+        ShellFileKind::ImageLimits => "ImageLimits",
+        ShellFileKind::ImageFormats => "ImageFormats",
     }
 }
 

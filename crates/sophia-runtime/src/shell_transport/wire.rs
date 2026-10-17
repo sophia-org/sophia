@@ -99,6 +99,13 @@ impl ShellComponentTransport {
         }
     }
 
+    pub(super) fn files(&self) -> Option<&files::ShellFileWire> {
+        match self.wire.as_ref()? {
+            Wire::Files(files) => Some(files.as_ref()),
+            Wire::Socket(_) => None,
+        }
+    }
+
     pub(super) fn files_mut(&mut self) -> Option<&mut files::ShellFileWire> {
         match self.wire.as_mut()? {
             Wire::Files(files) => Some(files.as_mut()),

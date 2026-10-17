@@ -1,5 +1,28 @@
 # Provenance
 
+## Lock sealed-source refusal names, 2026-10-17
+
+The lock KDL, lock contract and shared image contract are copied from the
+coordinated Sophia working tree based on signed `d5ffb8d2a`. The exact bytes
+are recorded in `spec/SHA256SUMS`; reasons 10/11 name invalid source and timeout.
+
+## Image cancellation identity, 2026-10-17
+
+The shared image contract is copied from the coordinated Sophia working tree
+based on signed `67b38ae5d`. Its exact digest is in `spec/SHA256SUMS`.
+It records the approved ResourceCancel identity and custody rules for both
+roles. This update changes contract text only; producer parity remains open.
+
+## Shared image-channel acceptance, 2026-10-17
+
+Spec copies come from the coordinated Sophia acceptance working tree based on
+signed `eea44c4d2`; exact bytes are identified by `spec/SHA256SUMS`. Sophia will
+adopt this signed SDK revision with those same authoritative contract bytes.
+The public r9/r2 image codecs and runtime channel are not implemented by this
+commit. Reviewed lifecycle peers are Rust `8f7dc5d` and C `b2ca17d`; the accepted
+contract preserves their evidence limits and leaves production byte paths intact.
+
+
 ## Queued shell submit, 2026-10-17
 
 The shell contract copy comes from signed Sophia `feaf3cbc7`. B2 queues

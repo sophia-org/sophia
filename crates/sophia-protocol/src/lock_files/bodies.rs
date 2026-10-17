@@ -14,6 +14,10 @@ pub const LOCK_FILE_MAX_PIXELS_PER_SIDE: u32 = 16_384;
 pub const LOCK_FILE_MAX_RESOURCE_BYTES: u64 = 1 << 30;
 pub const LOCK_FILE_CAPABILITY_PRESENT: u64 = 1 << 0;
 pub const LOCK_FILE_CAPABILITY_CHORDS: u64 = 1 << 1;
+/// Allocated for lock r2 descriptor admission. Naming the bits does not
+/// advertise them: r1 negotiation below still refuses either bit.
+pub const LOCK_FILE_CAPABILITY_SEALED_MEMORY: u64 = 1 << 2;
+pub const LOCK_FILE_CAPABILITY_DMA_BUF: u64 = 1 << 3;
 /// Shift, control, alt and super.
 pub const LOCK_FILE_MODIFIER_MASK: u16 = 0b1111;
 const SHIFT: u16 = 1;
@@ -407,14 +411,23 @@ pub struct LockNegotiated {
 }
 
 impl LockNegotiated {
-    fn validate(&self) -> Result<(), BinaryCodecError> {
+    fn validate_at_revision(&self, revision: u16) -> Result<(), BinaryCodecError> {
+        if !(1..=2).contains(&revision) {
+            return Err(BinaryCodecError::UnsupportedVersion(revision));
+        }
         range(
             u64::from(self.granted_chords),
             0,
             LOCK_FILE_MAX_CHORDS as u64,
             "granted_chords",
         )?;
-        let known = LOCK_FILE_CAPABILITY_PRESENT | LOCK_FILE_CAPABILITY_CHORDS;
+        let known = LOCK_FILE_CAPABILITY_PRESENT
+            | LOCK_FILE_CAPABILITY_CHORDS
+            | if revision == 2 {
+                LOCK_FILE_CAPABILITY_SEALED_MEMORY | LOCK_FILE_CAPABILITY_DMA_BUF
+            } else {
+                0
+            };
         if self.granted_capabilities & !known != 0
             || self.granted_capabilities & LOCK_FILE_CAPABILITY_PRESENT == 0
         {
@@ -424,9 +437,14 @@ impl LockNegotiated {
     }
 
     pub fn encode(&self) -> Result<Vec<u8>, BinaryCodecError> {
-        self.validate()?;
+        self.encode_at_revision(1)
+    }
+
+    /// Encodes the owner's explicit selection, never inferred from grants.
+    pub fn encode_at_revision(&self, revision: u16) -> Result<Vec<u8>, BinaryCodecError> {
+        self.validate_at_revision(revision)?;
         let mut bytes = Vec::with_capacity(16);
-        push_u16(&mut bytes, 1);
+        push_u16(&mut bytes, revision);
         push_u16(&mut bytes, self.granted_chords);
         push_u32(&mut bytes, 0);
         push_u64(&mut bytes, self.granted_capabilities);
@@ -434,8 +452,28 @@ impl LockNegotiated {
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, BinaryCodecError> {
+        Self::decode_at_revision(bytes, 1)
+    }
+
+    /// Checks an exact selection. The legacy entry point remains r1-only.
+    pub fn decode_at_revision(bytes: &[u8], revision: u16) -> Result<Self, BinaryCodecError> {
+        if !(1..=2).contains(&revision) {
+            return Err(BinaryCodecError::UnsupportedVersion(revision));
+        }
+        let (selected, value) = Self::decode_selected(bytes)?;
+        if selected != revision {
+            return Err(invalid("selected_revision"));
+        }
+        Ok(value)
+    }
+
+    /// Reads the explicit wire selection before the client has a revision.
+    /// The caller must still verify its offered range and requested grants
+    /// before installing this selection for subsequent event decoding.
+    pub fn decode_selected(bytes: &[u8]) -> Result<(u16, Self), BinaryCodecError> {
         let mut cursor = Cursor::new(bytes);
-        if cursor.u16()? != 1 {
+        let revision = cursor.u16()?;
+        if !(1..=2).contains(&revision) {
             return Err(invalid("selected_revision"));
         }
         let granted_chords = cursor.u16()?;
@@ -445,8 +483,8 @@ impl LockNegotiated {
             granted_capabilities: cursor.u64()?,
         };
         cursor.finish()?;
-        negotiated.validate()?;
-        Ok(negotiated)
+        negotiated.validate_at_revision(revision)?;
+        Ok((revision, negotiated))
     }
 }
 
@@ -489,9 +527,12 @@ pub struct LockSubmitted {
 
 impl LockSubmitted {
     pub fn encode(&self) -> Result<Vec<u8>, BinaryCodecError> {
-        if self.candidate_kind.class() != LockFileClass::Candidate {
-            return Err(invalid("candidate_kind"));
-        }
+        self.encode_at_revision(1)
+    }
+
+    /// ImageBegin receipts are valid only at the caller's negotiated r2.
+    pub fn encode_at_revision(&self, revision: u16) -> Result<Vec<u8>, BinaryCodecError> {
+        Self::check_kind(self.candidate_kind, revision)?;
         let mut bytes = Vec::with_capacity(16);
         push_u64(&mut bytes, nonzero(self.submission_id, "submission_id")?);
         push_u16(&mut bytes, self.candidate_kind as u16);
@@ -500,18 +541,39 @@ impl LockSubmitted {
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, BinaryCodecError> {
+        Self::decode_at_revision(bytes, 1)
+    }
+
+    pub fn decode_at_revision(bytes: &[u8], revision: u16) -> Result<Self, BinaryCodecError> {
+        if !(1..=2).contains(&revision) {
+            return Err(BinaryCodecError::UnsupportedVersion(revision));
+        }
         let mut cursor = Cursor::new(bytes);
         let submission_id = nonzero(cursor.u64()?, "submission_id")?;
-        let candidate_kind = LockFileKind::decode(cursor.u16()?)
-            .ok()
-            .filter(|kind| kind.class() == LockFileClass::Candidate)
-            .ok_or_else(|| invalid("candidate_kind"))?;
+        let candidate_kind =
+            LockFileKind::decode(cursor.u16()?).map_err(|_| invalid("candidate_kind"))?;
+        Self::check_kind(candidate_kind, revision)?;
         reserved(&mut cursor, 6)?;
         cursor.finish()?;
         Ok(Self {
             submission_id,
             candidate_kind,
         })
+    }
+
+    fn check_kind(kind: LockFileKind, revision: u16) -> Result<(), BinaryCodecError> {
+        if !(1..=2).contains(&revision) {
+            return Err(BinaryCodecError::UnsupportedVersion(revision));
+        }
+        // Keep the legacy vocabulary exact; r2 adds only ImageBegin here,
+        // not every kind sharing the image namespace.
+        if kind.class() != LockFileClass::Candidate
+            || !((256..=263).contains(&(kind as u16))
+                || revision == 2 && kind == LockFileKind::ImageBegin)
+        {
+            return Err(invalid("candidate_kind"));
+        }
+        Ok(())
     }
 }
 

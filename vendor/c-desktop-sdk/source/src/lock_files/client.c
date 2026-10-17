@@ -18,7 +18,10 @@ static int offer_valid(const struct sophia_lf_negotiate *offer) {
          offer->minimum_revision <= offer->maximum_revision &&
          (offer->capabilities & SOPHIA_LF_CAP_PRESENT) &&
          !(offer->capabilities &
-           ~(uint64_t)(SOPHIA_LF_CAP_PRESENT | SOPHIA_LF_CAP_CHORDS)) &&
+           ~(uint64_t)(SOPHIA_LF_CAP_PRESENT | SOPHIA_LF_CAP_CHORDS |
+                       SOPHIA_LF_CAP_IMAGE_SEALED)) &&
+         (!(offer->capabilities & SOPHIA_LF_CAP_IMAGE_SEALED) ||
+          offer->maximum_revision >= SOPHIA_LF_REVISION_IMAGE_CHANNEL) &&
          (!offer->chord_count || (offer->capabilities & SOPHIA_LF_CAP_CHORDS)) &&
          !sophia_lf_encode(b, sizeof(b), &r, &n);
 }
@@ -32,7 +35,7 @@ static int initialize(struct sophia_lc_client *c, struct sophia_9p_client *wire,
   c->upload_window = 1;
   c->offer = *offer;
   c->next_submission = 1;
-  c->object_fid = c->upload_fid = UINT32_MAX;
+  c->object_fid = c->upload_fid = c->file_fid = UINT32_MAX;
   return 0;
 }
 int sophia_lc_init(struct sophia_lc_client *c, struct sophia_9p_client *wire,
@@ -249,6 +252,7 @@ static int submit_reply(struct sophia_lc_client *c,
       c->submit_error = r->error ? r->error : UINT32_MAX;
       c->submit_stage = LC_TX_CLUNK;
       sophia_lc_internal_upload_refused(c, (uint16_t)lc_get(c->tx + 6, 2));
+      sophia_lc_internal_image_settled(c, 1);
       return 0;
     }
   }
@@ -309,12 +313,13 @@ static int events_drive(struct sophia_lc_client *c) {
                     sophia_9p_read(c->wire, c->fids[LC_EVENTS], c->event_offset,
                                    n, &c->event_op.handle));
 }
-static int drive(struct sophia_lc_client *c) {
+int sophia_lc_internal_drive(struct sophia_lc_client *c) {
   int r = bootstrap_drive(c);
   if (r || c->bootstrap < LC_BOOTED)
     return r;
   if ((r = events_drive(c)) || (r = ack_drive(c)) || (r = submit_drive(c)) ||
-      (r = sophia_lc_internal_object_drive(c)))
+      (r = sophia_lc_internal_object_drive(c)) ||
+      (r = sophia_lc_internal_file_drive(c)))
     return r;
   if ((r = sophia_lc_internal_upload_drive(c)))
     return r;
@@ -361,6 +366,10 @@ static int receive(struct sophia_lc_client *c, const struct sophia_9p_reply *r) 
     c->upload_op.active = 0;
     return sophia_lc_internal_upload_reply(c, r);
   }
+  if (lc_same(&c->file_op, r->handle)) {
+    c->file_op.active = 0;
+    return sophia_lc_internal_file_reply(c, r);
+  }
   return sophia_lc_internal_upload_write_reply(c, r);
 }
 int sophia_lc_service(struct sophia_lc_client *c, size_t budget) {
@@ -371,7 +380,8 @@ int sophia_lc_service(struct sophia_lc_client *c, size_t budget) {
     return SOPHIA_9P_ARGUMENT;
   if (c->terminal)
     return c->terminal;
-  if ((r = drive(c)) || (r = sophia_9p_service(c->wire, budget)))
+  if ((r = sophia_lc_internal_drive(c)) ||
+      (r = sophia_9p_service(c->wire, budget)))
     return c->terminal = r;
   for (i = 0; i < 64; ++i) {
     r = sophia_9p_peek(c->wire, &reply);
@@ -381,11 +391,22 @@ int sophia_lc_service(struct sophia_lc_client *c, size_t budget) {
         (r = sophia_9p_consume(c->wire, reply.handle)))
       return c->terminal = r;
   }
-  if ((r = drive(c)))
+  if ((r = sophia_lc_internal_drive(c)))
     c->terminal = r;
   return r;
 }
 
+/* Stage n encoded bytes already in tx as the next submission. */
+static int stage(struct sophia_lc_client *c, size_t n) {
+  c->next_submission++;
+  c->tx_size = n;
+  c->tx_offset = 0;
+  c->submit_stage = LC_TX_WRITE;
+  c->submitted = c->submit_replied = c->submit_wait = c->submit_sent = 0;
+  c->submitted_sequence = 0;
+  c->submit_error = 0;
+  return 0;
+}
 int sophia_lc_internal_queue(struct sophia_lc_client *c,
                              const struct sophia_lf_record *value) {
   struct sophia_lf_record r;
@@ -400,14 +421,20 @@ int sophia_lc_internal_queue(struct sophia_lc_client *c,
   r.header.sequence = 0;
   if (sophia_lf_encode(c->tx, sizeof(c->tx), &r, &n))
     return SOPHIA_9P_ARGUMENT;
-  c->next_submission++;
-  c->tx_size = n;
-  c->tx_offset = 0;
-  c->submit_stage = LC_TX_WRITE;
-  c->submitted = c->submit_replied = c->submit_wait = c->submit_sent = 0;
-  c->submitted_sequence = 0;
-  c->submit_error = 0;
-  return 0;
+  return stage(c, n);
+}
+/* An ImageBegin the adapter encoded with this client's epoch and next
+ * submission; the client keeps it as the image submission until custody or
+ * an authoritative refusal. */
+int sophia_lc_internal_queue_image(struct sophia_lc_client *c, const uint8_t *b,
+                                   size_t n) {
+  if (c->submit_stage)
+    return SOPHIA_9P_BUSY;
+  if (c->next_submission == UINT64_MAX || n > sizeof(c->tx))
+    return SOPHIA_9P_ARGUMENT;
+  memcpy(c->tx, b, n);
+  c->image_submission = c->next_submission;
+  return stage(c, n);
 }
 int sophia_lc_submit(struct sophia_lc_client *c,
                      const struct sophia_lf_record *r) {

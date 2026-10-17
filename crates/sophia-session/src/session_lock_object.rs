@@ -164,3 +164,20 @@ pub fn session_lock_file_limits(topology: Option<&OutputAuthoritySnapshot>) -> L
         ack_progress_timeout_ms: 2_000,
     }
 }
+
+/// Sealed backing uses the same live-place envelope as byte resources. Retired
+/// mappings and disconnected-epoch leases remain charged inside this budget;
+/// they do not grant extra places to a replacement provider.
+pub fn session_lock_image_policy(
+    limits: &LockFileLimits,
+) -> sophia_runtime::lock_files::LockImagePolicy {
+    sophia_runtime::lock_files::LockImagePolicy {
+        hello_timeout_ms: 250,
+        validation_timeout_ms: limits.assembly_timeout_ms,
+        validation_chunk_bytes: 65_536,
+        capture_interest_timeout_ms: 500,
+        max_sealed_backing_bytes: limits
+            .max_resource_bytes
+            .saturating_mul(u64::from(limits.max_live_resources)),
+    }
+}

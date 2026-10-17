@@ -8,8 +8,12 @@ static void drop_head(struct sophia_lc_client *c) {
 }
 static int negotiated(struct sophia_lc_client *c,
                       const struct sophia_lf_negotiated *v) {
-  /* Session grants every requested chord or refuses the negotiation. */
+  /* Session grants every requested chord or refuses the negotiation. The
+   * selection lies within the offered range; the codec already tied image
+   * grants to selection 2. */
   if (c->negotiated || c->refusal ||
+      v->selected_revision < c->offer.minimum_revision ||
+      v->selected_revision > c->offer.maximum_revision ||
       (v->granted_capabilities & ~c->offer.capabilities) ||
       v->granted_chords != c->offer.chord_count ||
       (v->granted_chords && !(v->granted_capabilities & SOPHIA_LF_CAP_CHORDS)))
@@ -27,9 +31,21 @@ static int submitted(struct sophia_lc_client *c,
     return SOPHIA_9P_INVALID;
   c->submitted = 1;
   c->submitted_sequence = sequence;
+  sophia_lc_internal_image_settled(c, 0);
   if (c->submit_replied)
     c->submit_stage = LC_TX_CLUNK;
   return 0;
+}
+/* Before negotiation the offer bounds the codec (at most revision 2); after
+ * it, the explicit selection does. An offer of revision 1 stays plain. */
+static int decode(const struct sophia_lc_client *c, size_t n,
+                  struct sophia_lf_record *r) {
+  uint16_t revision =
+      c->negotiated ? c->welcome.selected_revision
+      : c->offer.maximum_revision >= SOPHIA_LF_REVISION_IMAGE_CHANNEL
+          ? SOPHIA_LF_REVISION_IMAGE_CHANNEL
+          : SOPHIA_LF_REVISION;
+  return sophia_lf_decode_revision(c->events, n, revision, r);
 }
 /* Process events at the head in journal order. Negotiation and custody are
  * consumed here; an ObjectPublished holds the head until its object is read;
@@ -43,7 +59,18 @@ int sophia_lc_internal_parse(struct sophia_lc_client *c) {
       return SOPHIA_9P_INVALID;
     if (n > c->event_used)
       return 0;
-    if (sophia_lf_decode(c->events, n, r) || r->header.epoch != c->epoch ||
+    /* Image events belong to the adapter: checked, routed and consumed. */
+    if (sophia_lc_internal_image_kind((uint16_t)lc_get(c->events + 6, 2))) {
+      uint64_t sequence = lc_get(c->events + 24, 8);
+      if (!c->negotiated || c->refusal || sequence <= c->sequence ||
+          sophia_lc_internal_image_event(c, c->events, n))
+        return SOPHIA_9P_INVALID;
+      c->sequence = sequence;
+      c->event.header.sequence = sequence;
+      drop_head(c);
+      continue;
+    }
+    if (decode(c, n, r) || r->header.epoch != c->epoch ||
         r->header.kind >= 256 || r->header.sequence <= c->sequence ||
         c->refusal)
       return SOPHIA_9P_INVALID;
@@ -80,6 +107,7 @@ int sophia_lc_internal_parse(struct sophia_lc_client *c) {
       break;
     case SOPHIA_LF_RESOURCE_STATUS:
       sophia_lc_internal_upload_status(c, &r->value.resource_status);
+      sophia_lc_internal_image_status(c, &r->value.resource_status);
       break;
     case SOPHIA_LF_CHORD:
       if (r->value.chord.chord >= c->welcome.granted_chords)

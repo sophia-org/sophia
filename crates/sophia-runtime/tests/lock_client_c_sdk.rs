@@ -39,6 +39,8 @@ fn compile(directory: &Path, source: Option<&Path>) -> PathBuf {
     let mut sources: Vec<_> = std::fs::read_dir(sdk.join("nine_p"))
         .unwrap()
         .chain(std::fs::read_dir(sdk.join("lock_files")).unwrap())
+        .chain(std::fs::read_dir(sdk.join("image_channel")).unwrap())
+        .chain(std::fs::read_dir(sdk.join("image_producer")).unwrap())
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension().is_some_and(|extension| extension == "c"))
         .collect();

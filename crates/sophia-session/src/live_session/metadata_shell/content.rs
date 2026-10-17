@@ -91,7 +91,6 @@ pub(super) struct LiveContentSession {
     pending: Vec<PendingPresentation>,
     presented: BTreeMap<ContentOutputId, PresentedOutputContent>,
     actions: ContentActionLedger,
-    started: std::time::Instant,
     stage: ContentServiceStage,
 }
 
@@ -109,7 +108,6 @@ impl LiveContentSession {
             pending: Vec::new(),
             presented: BTreeMap::new(),
             actions: ContentActionLedger::default(),
-            started: std::time::Instant::now(),
             stage: ContentServiceStage::Idle,
         }
     }
@@ -131,7 +129,7 @@ impl LiveContentSession {
     }
 
     fn now_msec(&self) -> u64 {
-        u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX)
+        crate::shell_component_connections::content_now_msec()
     }
 
     pub(super) fn has_presented_content(&self) -> bool {

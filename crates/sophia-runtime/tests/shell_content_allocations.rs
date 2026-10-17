@@ -84,6 +84,9 @@ fn store() -> ContentAllocationStore {
     store
 }
 
+#[path = "support/shell_image_jobs.rs"]
+mod image_jobs;
+
 #[test]
 fn output_facts_and_an_exact_engine_resolution_create_one_allocation() {
     let mut store = store();

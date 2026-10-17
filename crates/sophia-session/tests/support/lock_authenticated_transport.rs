@@ -70,12 +70,18 @@ impl Peer {
         if kind == PeerKind::CSdk {
             let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../../vendor/c-desktop-sdk/source/src");
-            let mut units: Vec<_> = ["nine_p", "launch_auth", "lock_files"]
-                .into_iter()
-                .flat_map(|directory| std::fs::read_dir(source.join(directory)).unwrap())
-                .map(|entry| entry.unwrap().path())
-                .filter(|path| path.extension().is_some_and(|ext| ext == "c"))
-                .collect();
+            let mut units: Vec<_> = [
+                "nine_p",
+                "launch_auth",
+                "lock_files",
+                "image_channel",
+                "image_producer",
+            ]
+            .into_iter()
+            .flat_map(|directory| std::fs::read_dir(source.join(directory)).unwrap())
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "c"))
+            .collect();
             units.sort();
             command
                 .arg("-DSOPHIA_TEST_C_SDK")

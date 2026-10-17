@@ -21,6 +21,14 @@ static inline void ss_consumed(struct sophia_ss *s, uint64_t sequence)
     s->upload_progress = 1;
 }
 int ss_status(const struct sophia_ss *);
+/* Free queue slot and bytes outside any reservation. */
+int ss_room(const struct sophia_ss *, size_t bytes);
+/* Admits one already-encoded candidate (submission 0) with a new ticket. */
+int ss_admit_encoded(struct sophia_ss *, const uint8_t *, size_t, uint64_t *ticket);
+/* Image adapter hooks; each does nothing without an attached adapter. */
+void ss_image_drive(struct sophia_ss *, uint64_t now_ms);
+int ss_image_event(struct sophia_ss *, const struct sophia_sf_record *);
+void ss_image_status(struct sophia_ss *);
 int ss_pump(struct sophia_ss *, size_t budget);
 int ss_handoff(struct sophia_ss *);
 #endif

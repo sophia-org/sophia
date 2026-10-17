@@ -1,5 +1,426 @@
 # C and Rust SDK API parity
 
+## Producer transport and revision preconditions, 2026-10-17
+
+The producer accepts only the implemented shell r9 or lock r2 selection and
+requires a SEQPACKET socket at attach. Refusal preserves caller FD ownership
+and the Discovered state. The Rust producer under review applies the same
+checks; its role adapters and full parity qualification remain unfinished.
+
+## Lock sealed-source refusal names, 2026-10-17
+
+Both SDKs name lock r2 reasons `invalid_source` (10) and
+`validation_timeout` (11). Wrong backing length retains `size_mismatch` (4).
+The existing open-vocabulary codecs already preserve these values; no decoder
+bound or negotiation behavior changes. Rust producer/adapters remain unfinished.
+
+## Sealed-image offer cancellation, C, 2026-10-17
+
+Both C adapters cancel an offer with the existing ResourceCancel record; no
+wire kind is added. The record's transaction is the offer ID, and its resource
+is the offer's resource. The shell record carries the files connection epoch
+as grant_connection_epoch and the offer metadata's admission_epoch as
+grant_content_epoch. sophia_ss_image_cancel returns a session ticket;
+sophia_lc_image_cancel queues the lock client's one submission.
+
+sophia_ip_cancel marks an offer on the producer. The mark is permanent: an
+admitted source is never sent afterward and its descriptor stays held, even
+when the cancel is refused or never answered. Settlement is unchanged. Only
+SourceReleased closes the descriptor and settles an admitted offer, and
+journal loss makes it UNKNOWN. A Cancelled status before admission refuses
+the offer as before. After admission, a Cancelled status is recorded and the
+offer still waits for SourceReleased; there is no early release. Acceptance
+may win the race with the cancel, in which case Accepted is kept and the
+release that follows settles the offer. An owner-initiated Cancelled routes
+the same way without a local mark. Nothing is inferred from the cancel's own
+outcome.
+
+A cancel may be queued before ImageAdmitted, behind ImageBegin on the same
+connection. Queue room is checked before the mark, so BUSY changes nothing.
+The shell cancel ticket is the caller's alone: whatever its outcome, the mark
+stays and custody is unchanged, and session end is journal loss as for any
+offer. The lock adapter is BUSY while any submission is in flight or its
+transaction file is recycling. A mark is refused once the offer has a status
+or a mark, or is refused, settled or unknown.
+
+A refused End or Cancel closes a byte upload in either client only when the
+refused record names the upload's resource ID and generation. A refused image
+ResourceCancel therefore leaves a byte upload's pending End alone. The shell
+check is in shell_files/client.c and the lock check in lock_files/upload.c.
+
+ABI: struct sophia_ip_slot gains cancelled and struct sophia_ip_offer_info
+gains cancel_requested; callers must rebuild. Rust has no offer cancellation
+yet. Tests: image_producer_test cancellation, shell_image_test cancel_before_admission,
+cancel_races, cancel_lost_with_session and cancel_beside_upload, and
+lock_image_test cancellation, cancel_beside_upload and cancel_journal_loss.
+The scripted lock peer leaves a ResourceCancel naming the last ImageBegin's
+resource for the test to answer, and can hold an upload End's status.
+
+## Lock sealed-image adapter, revision 2, C, 2026-10-17
+
+The lock client now adopts the explicit selection for every caller. Before
+negotiation it decodes at the lower of the offer's maximum and 2; Negotiated
+must select a revision inside the offered range, with grants within the
+request, before any later event is decoded at the selected revision. An offer
+of revision 1 is byte-identical to before. sophia_lc_init accepts capability 2
+(sealed images) only with a maximum revision of 2 or more, and still refuses
+capability 3 (DMA-BUF).
+
+sophia_lock_image.h adds an optional adapter, mirroring the shell one. The
+caller attaches it after sophia_lc_init or sophia_lc_init_attached and before
+Negotiated arrives; the offer must span revision 2 and request capability 2.
+After a selection of 2 with a sealed grant, sophia_lc_image_dispatch reads
+image-channel, image-limits and image-formats through the client's own 9P
+wire, one set per pass, with the shell's ENOENT, back-off and formats-cap
+rules, then connects and attaches the image socket. A selection of 1, or no
+sealed grant, closes the producer as unavailable, so the byte path serves
+images when the caller allows it. The client is clockless: dispatch drives
+discovery and connect, and records routed inside sophia_lc_service use the
+producer's last time.
+
+Image events (0x7001 to 0x7004) at revision 2 are consumed and acknowledged
+by the client and routed to the producer; sophia_lc_event never returns them.
+An image event without the adapter, at selection 1, without a sealed grant,
+of another epoch or out of sequence fails the client. ResourceStatus naming a
+live offer as its transaction, for the same resource, is routed and still
+presented; status 1 is not routed, and Rejected reason 9 means unavailable.
+ImageBegin is the client's one submission, so begin is BUSY while any
+submission is in flight or awaits its ack. A refused submit, or a terminal
+client whose ImageBegin submit was never queued, refuses the offer. A submit
+possibly sent when the client ends is journal loss. See the offer
+cancellation section for ResourceCancel naming an offer.
+
+ABI: struct sophia_lc_client gains a trailing image pointer, the image
+submission and whole-file-read fields, and struct sophia_lf_negotiated already
+carries selected_revision; callers must rebuild. Rust has the selection
+(8618793) but no lock image adapter yet. lock_image_test drives the adapter
+against the scripted lock peer, now shared as src/tests/lock_client_peer.h,
+and a real SEQPACKET endpoint.
+
+## Explicit lock Negotiated selection at r2, C, 2026-10-17
+
+Lock revision 2 carries its selection on the wire. Negotiated's u16 at body
+offset 0 is selected_revision, 1 or 2, and is never inferred from the granted
+capabilities. Granted capabilities must include PRESENT (bit 0) and stay
+within mask 15. Bits 2 (sealed images) and 3 (DMA-BUF images), now named
+SOPHIA_LF_CAP_IMAGE_SEALED and SOPHIA_LF_CAP_IMAGE_DMABUF, are valid only
+when the selection is 2. An explicit selection of 2 with mask 1 or 3 is valid.
+The body stays 16 bytes and every other rule is unchanged.
+
+sophia_lf_decode_revision and sophia_lf_encode_revision accept a selection
+from 1 up to the given bound and preserve it in the record. Checking it
+against the offered range is the caller's. sophia_lf_decode and
+sophia_lf_encode stay revision 1: they read and write selection 1 with grants
+within PRESENT|CHORDS, and refuse selection 2.
+
+ABI: struct sophia_lf_negotiated gains a trailing uint16_t selected_revision,
+so callers that embed it must rebuild. The plain decoder sets it to 1, and on
+encode 0 means 1, so zero-initialized callers keep their bytes. The matching
+Rust change is 8618793. Nothing advertises lock r2. image_receipt_test covers
+plain selection 1 and its refusal of 2, byte identity under bound 1, every
+mask with PRESENT at selection 2 and its refusal below bound 2, image bits at
+selection 1, selections 0 and 3, missing PRESENT, unknown bits, reserved
+bytes, the chord bound, length and capacity.
+
+## Shell sealed-image adapter, BAR at revision 9, C, 2026-10-17
+
+sophia_shell_image.h adds an optional adapter that joins a BAR shell session
+to the image producer. The caller attaches it after sophia_ss_open_* and
+before negotiation completes. The session offer must span revision 9,
+require capability bit 13 and not request bit 14; DMA-BUF is never
+requested. After an r9 welcome with sealed images, the adapter reads
+image-channel, image-limits and image-formats through the session's own 9P
+wire, one complete set per pass, hands the set to the producer, connects the
+discovered endpoint beneath the caller's endpoint directory and attaches it.
+Discovery and connect retries use the session's EAGAIN policy (4 ms doubling
+to 256 ms) inside the producer's startup deadline.
+The image-formats read is capped at the contract's 64 + 40 * 4096 bytes even
+when the caller's storage is larger, so a longer file is a discovery error.
+
+At r9 the session decodes journal records with the revision 9 codec. Image
+events (ImageAdmitted, SourceReleased, ChannelReady, ChannelClosed) are
+consumed by the session and routed to the producer; sophia_ss_event never
+returns them, including after the session ends. A ResourceStatus whose
+transaction names a live image offer for the same resource is routed once
+and still delivered to the application; status 1 is not routed. ImageBegin
+is queued as an ordinary candidate with its own ticket, after queue room is
+checked so the caller keeps its descriptor on BUSY. A refused or unsent
+ImageBegin is a definitive pre-admission refusal; a session end with offers
+in custody is journal loss. With the adapter attached, a welcome granting
+image bits below r9 fails the session; an unattached session still fails on
+any image event.
+
+ABI: struct sophia_ss gains a trailing `struct sophia_ss_image *image`
+pointer, and struct sophia_sf_client gains image-mode and whole-file-read
+fields at its end. Both are caller-allocated public layouts, so callers must
+rebuild against this header. With no adapter attached every path is
+byte-identical to before. Launcher, dock and descriptor profiles are not yet
+covered; the lock adapter follows separately. shell_image_test drives the
+adapter against the scripted 9P shell peer and a real SEQPACKET endpoint.
+
+## Clockless image-channel producer, C, 2026-10-17
+
+sophia_image_producer.h adds the producer side of the image side channel
+for the shell at revision 9 and the lock role at revision 2. It owns no 9P
+and no clock. The role client reads one discovery set per pass and passes it
+in, attaches a connected SEQPACKET socket, routes journal records and
+resource statuses, and wraps the 96-byte ImageBegin body that begin returns
+in its own record header and submission. The struct is a public fixed
+layout, like sophia_ss and sophia_lc_client.
+
+After a successful attach the producer owns the socket. After a successful
+begin it owns the sealed source descriptor; on any other result the caller
+still owns it. Begin takes sealed sources only, with all four seals and the
+exact logical size. Discovery naming a source kind that negotiation did not
+grant is a fatal discovery error, never narrowed; a set without the sealed
+kind is clean unavailability. Offer IDs start at 1 and never repeat, at most the
+discovered offer bound are live, and a source is sent only after
+ImageAdmitted with byte-equal metadata. A failed or uncertain send closes
+the producer's descriptor and leaves the offer ambiguous; it is never sent
+again. A deadline begins at begin and expires locally only: the offer keeps
+custody until a definitive refusal, SourceReleased or journal loss.
+Contradictory records close the channel with a fault while every offer keeps
+custody. Records of another epoch are ignored, and so are events for offers
+already forgotten after their definitive end.
+
+path() returns BYTES only for a clean closure (discovery absent, sealed
+sources unavailable, peer or revoked closure, offer IDs exhausted) when the
+caller allows byte fallback. Denied or malformed discovery, Hello and
+startup timeouts, protocol faults, journal loss and caller closure are
+errors even with fallback allowed. The connect helper is nonblocking and
+reports a full listener backlog as AGAIN. sealed_create and sealed_finish
+build a memfd source and seal it after unmapping.
+
+This is C only and wires no session: no role client advertises r9 or r2
+from this change. image_producer_test drives the producer against a
+scripted owner over a real SEQPACKET socketpair for both roles and checks
+the FD table after every case.
+
+## Coordinated receipt and coherence checkpoint, 2026-10-17
+
+Rust 93fe07b provides the shell r9 and lock r2 Submitted receipt entry points
+corresponding to C 21d03b8. Both preserve plain codecs and earlier revisions,
+carry ImageBegin as the actual candidate kind, and independently test legacy
+byte identity and malformed receipts. Specs declare the additional receipt
+value only at the corresponding negotiated revision.
+
+Rust now also supplies caller-context packet checks and cross-object discovery
+coherence for both roles. Rust revalidates public typed limits and formats;
+the C coherence API requires decoded inputs. Both leave narrowing after
+ChannelReady to the caller. These are codec capabilities, not channel or
+authenticated custody implementation.
+
+## ImageBegin Submitted receipts at shell r9 and lock r2, C, 2026-10-17
+
+A Submitted record that acknowledges an accepted ImageBegin candidate names
+the real kind, 0x7000. The C codecs carry it only through the explicit
+revision entry points: sophia_sf_decode_revision and sophia_sf_encode_revision
+at shell revision 9, and the new sophia_lf_decode_revision and
+sophia_lf_encode_revision at lock revision 2. Both validate the record with
+the legacy codec and one legal stand-in kind, then restore 0x7000, so every
+other Submitted rule is unchanged: nonzero submission, zero reserved bytes,
+event identity and the exact 48-byte length. sophia_sf_decode/encode and
+sophia_lf_decode/encode, and every earlier revision, still refuse 0x7000.
+The other image kinds and values outside the legacy range stay refused at
+every revision. The lock _revision entry points accept revisions 1 and 2.
+Negotiated's explicit selection is recorded in its own section above.
+
+This is C only. The matching Rust entry points are recorded with their own
+change. Selecting a revision in these calls advertises nothing; no session
+offers shell r9 or lock r2, and no channel exists. image_receipt_test covers
+both roles: legacy kinds byte-identical through every entry point, refusal
+below the receipt revision, the other image kinds and out-of-range neighbors,
+reserved, identity and over-length variants, and other 48-byte records with
+0x7000 at the same offset.
+
+## Coordinated image codec and KDL checkpoint, 2026-10-17
+
+Both SDK spec copies now declare the seven image kinds with explicit classes.
+Rust shell envelopes require an explicit negotiated r9 for those kinds, and
+lock envelopes require r2. Ordinary entry points retain their old vocabulary.
+The C image codec remains separate from its legacy role codecs. Neither SDK
+changes the revisions it offers or opens a descriptor channel.
+
+Explicit shell ResourceStatus entry points in both SDKs admit reason 13 only
+for Rejected at r9. Rust sizing follows the same rule without allocating.
+Legacy entry points and the other seven reason fields retain the <=12 bound.
+The Go oracle has matching revision-aware support but still offers old revisions.
+
+Rust packet and discovery values are owned; formats own their row vector.
+C format rows borrow the original input bytes, while its packet and discovery
+values are copied. C also supplies cross-object coherence and caller-bound
+checks. Rust body codecs do not yet supply that check: the discovery reader
+must compare epochs, all three generations, discovery/limits equalities,
+source-kind grants and per-output bounds before Hello. Actual received FD
+counts are also a separate caller check in Rust. This gap blocks a claim of
+complete discovery/packet-admission parity; it does not activate a fallback.
+No channel I/O, authenticated endpoint, custody implementation or performance
+result is established by this codec checkpoint.
+
+## Public image-channel codecs and shell r9 reason 13, C, 2026-10-17
+
+The C SDK now has a passive public codec for the accepted image-channel
+contract, declared in sophia_image_channel.h. It encodes and decodes the 40-byte
+Hello and 200-byte Source packets, the seven shared records from ImageBegin
+(0x7000) to ImageFormats (0x7006), and the ASCII discovery file. A separate
+check compares one discovery set, meaning discovery, limits and formats, against
+each other and against bounds the caller supplies from its role. A successful
+check yields the expected role, epoch, channel generation, source kinds and
+size bounds for packet decoding. Validation runs in a fixed order and each
+refusal reports the first failed check, preserving the corpus categories. That
+order is not the contract's field-table order. Encoders decode what they wrote
+and return the same category, so they cannot emit bytes the decoder refuses.
+Format rows are the one borrowed view: they point into the caller's input
+buffer, which must stay alive and unchanged while the view is used. Packet and discovery results are owned
+copies. DMA-BUF plane offsets and strides are left to the import validator;
+the codec checks only descriptor order and reserved bytes for those rows.
+
+The codec performs no I/O and holds no descriptors. It does not check seals,
+map memory, enforce budgets or decide custody, and it does not open a channel or
+advertise anything. The role codecs are unchanged. They still refuse the
+0x7000 kinds, and sophia_sf_decode and sophia_sf_encode still refuse reason 13.
+The new sophia_sf_decode_revision and sophia_sf_encode_revision take the
+negotiated shell revision. At revision 9 they admit ResourceStatus reason 13,
+image_channel_unavailable, but only with status 3 (Rejected). Every other
+status, ResourceReleased and every earlier revision keep the existing bound.
+Revisions outside 1 to 9 are argument errors. The shared reason helpers are not
+widened. The lock reason vocabulary was already open; it now names reason 9.
+
+image_channel_codec_test reads spec/golden/sophia-image-channel-v1.tsv at run
+time. All 54 cases give their expected category. Every accepted case round
+trips byte for byte, and every strict prefix and one-byte extension of it is
+refused. Further controls cover two-plane DMA-BUF shape, unused and reserved
+plane bytes, overflowed sizes, dispositions, close reasons, record direction,
+limits grant pairs, format row order and flags, the 4097-row ceiling,
+per-output and dimension bounds, and each generation in the coherence check.
+All 59 bounded source mutants were killed. The test also passes under
+clang AddressSanitizer and UndefinedBehaviorSanitizer.
+
+The coordinated checkpoint above records the Rust counterpart and the remaining
+coherence/admission gaps. The Go oracle now checks the negotiated revision;
+none of these changes makes a production connection negotiate r9.
+
+## Acceptance-time image-channel boundary, 2026-10-17 (historical)
+
+The spec copies now include the shared shell/lock descriptor contract and its
+54-case sealed-only corpus. The coordinated Sophia acceptance changes both
+topology contracts and reserves ResourceStatus Rejected reason 13 for shell r9.
+At acceptance the SDK codecs kept the <=12 bound and did not advertise r9;
+Sophia's Rust emission path and the Go oracle then also retained <=12.
+The coordinated checkpoint above supersedes that codec boundary. Production
+connections still use the old revisions; authenticated discovery and channel
+service remain t338 work in both SDKs.
+Lock's reason vocabulary remains open; reason 9 is named for the r2 refusal.
+
+This is a spec/evidence update, not public descriptor API or ABI support. The
+existing byte APIs, advertised revisions and production behavior are unchanged.
+The local lifecycle peers remain models, not authenticated export, worker or
+GPU-completion proof. The image contract is authoritative for subsequent work.
+
+
+## Draft image codec fixtures, 2026-10-17
+
+Independent test-only decoders exercise 53 reviewed vectors from proposed Sophia
+x6jp929h (3a1e5588d): channel Hello/Source, records 0x7000–0x7006 and discovery.
+Each rejects every truncated prefix of a valid case and trailing bytes.
+An additional one-row/64-byte formats case brings the corpus to 54. Formats
+length is checked before capacity or sealed-only support. A separately generated,
+correctly sized 4097-row object reaches Capacity; the old short 4097-row case
+now correctly reports Length.
+Every corpus row also names its required refusal category; malformed data,
+stale identities, count/arithmetic failures and incoherent snapshots cannot
+substitute for one another. These enums are fixture diagnostics, not new wire
+reason codes. Channel, limits and formats generations are decoded independently
+and compared between discovery and both objects. Matching changed generations
+pass; changing only discovery or one participating object fails coherence.
+The fixture fixes the admitted grant/allocation and sealed-only discovery;
+it is not a general DMA format decoder or a public protocol implementation.
+The source corpus is draft-vectors.json (d76d9b3f84854dabb04a223c522bd6001af2b85a0fc73b2987de16e1d6b6e71a)
+and draft-object-vectors-r2.json (8444e92f1f1db24165f2576aa02376a4f3f46825169cc4792fc517325771775b).
+Their literal cases are copied into test support only, not normative spec/.
+
+On Linux, both decoders also compare declared bytes to real sealed file sizes:
+0, 7 and 9 bytes refuse an 8-byte declaration, while 8 passes. Unsupported seal
+queries refuse. These checks do not transfer the file through an authenticated
+owner or validate pixels. Production codecs, admission, journal custody and
+DMA-BUF validation remain unimplemented by this slice; no public ABI changes.
+
+## Proposed image-channel kernel fixtures, 2026-10-17
+
+Sophia's proposed t337 design (x6jp929h at fb5d2ae57) now has independent
+Linux kernel-prerequisite tests in both SDK trees. They exercise real SEQPACKET
+SCM_RIGHTS, required seals and FUTURE_WRITE rejection, producer-close survival,
+receiver CLOEXEC, missing/extra rights, control truncation, bounded nonblocking
+send backpressure and socket writable readiness after draining the burst. The
+fixture bounds SO_SNDBUF and accepts ETOOMANYREFS as a distinct per-user limit;
+POLLOUT proves socket progress, not availability of an SCM_RIGHTS credit.
+Each checks its FD-table count returns to baseline, not the lifetime of kernel
+references invisible in /proc/self/fd. Truncation with no control storage must
+deliver zero FDs. C additionally verifies that a shared writable
+mapping makes F_ADD_SEALS(F_SEAL_WRITE) fail with EBUSY, a received sealed mapping
+survives closing both producer and receiver FDs, and a new shared writable
+mapping fails EPERM. Rust keeps its unsafe-code
+prohibition and checks the resulting seal requirement without mapping memory.
+
+These tests use no new public API and do not implement the proposed transport.
+They establish kernel prerequisites only, not codec, authentication, admission,
+journal custody, GPU completion or production-export conformance. C runs
+descriptor_kernel_test; Rust runs sophia-shell-client's descriptor_kernel test.
+The draft custody matrix remains to be implemented independently in both SDKs.
+No public ABI or vendored contract changes are part of this fixture slice.
+
+## Proposed image-channel lifecycle and custody fixture, C peer, 2026-10-17
+
+The C SDK now carries an independent peer for the sixteen-case custody matrix in
+Sophia's proposed x6jp929h design. It was written by a different author from the
+Rust peer in sophia-shell-client and shares no code or codec with it. Two test
+programs, descriptor_lifecycle_test and descriptor_custody_test, run in the
+Linux check-files target. They cover optional discovery, snapshot replacement,
+readiness, duplicate channels and bad Hello, offer IDs, source send, ambiguous
+send, kernel seals, ancillary ownership, the expiry race, cancellation in three
+phases, channel loss, journal loss, 9P epoch end, capacity and sealed backing.
+Every case runs once for the shell role and once for the lock role, including
+the role-specific channel-unavailable reason, shell 13 and lock 9.
+
+The fixture holds two separate state machines, an owner standing in for Sophia
+and a producer standing in for an SDK client. Source and Hello packets cross a
+real SEQPACKET pair with real SCM_RIGHTS references to real sealed memfds, and
+received descriptors are checked for close-on-exec and counted back to the FD
+baseline. Discovery text is parsed strictly and the limits and formats objects
+are compared by their draft offsets. Journal events are structured values passed
+in process, not encoded records; their bytes are covered by
+descriptor_draft_codec_test. Both models are clockless: the caller supplies time
+and its own drive-pass identity, and the producer exposes writable interest and
+its next deadline. Discovery reads at most one complete set per caller pass, the
+first included, which is the stricter of the two readings of the draft.
+Admission reserves the offer slot, two terminal journal slots, the declared
+sealed backing bytes and a backing slot together; acceptance moves that charge
+into the retained backing instead of duplicating it. Epoch end retires every
+backing, so an unleased one is unmapped at once and a leased one lives until its
+last consumer lease ends, with no event on the dead journal. A Source whose
+metadata differs from the admitted record faults the channel, and packet shape,
+including descriptor counts, is checked before the stale-ID lookup so a stale
+ID cannot hide a malformed packet. Channel loss withdraws interest in every live
+offer: unsent and synchronously held sources release at once with disposition
+4, and submitted work releases with disposition 5 only after its fake safe
+cleanup. A producer never
+sends after ChannelClosed, even for an offer still awaiting its release. On a
+live journal with no free slot, a retired and unleased backing keeps its slot
+and charge until ResourceReleased can be recorded, then records it exactly once.
+
+The owner model is not an authenticated endpoint. Its credential check compares
+SO_PEERCRED with the test process and proves nothing about supervised launch.
+GPU custody is a fake completion signal that tests transitions only; it cannot
+prove that GPU reads ended, safe rollback or quarantine cleanup. Validation
+units run synchronously, so cancelling between them may unmap at once; that is
+not evidence about cancelling an in-flight worker. No public ABI,
+library code or vendored contract changes are part of this slice.
+
+Both programs also pass under clang AddressSanitizer, LeakSanitizer and UBSan.
+Twenty-nine mutants of the model, each breaking one named custody rule in a separate
+source copy under a hard timeout, all fail a named assertion in the case that
+covers that rule.
+
 ## Queued shell submit (B2), 2026-10-17
 
 Review follow-up: both SDKs retain a full successful submit reply as authoritative

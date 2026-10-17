@@ -199,6 +199,8 @@ pub struct Peer {
     /// [`Peer::end_batch`].
     batch: Option<Vec<u8>>,
     reuse_error: Option<u32>,
+    /// Walk errno per node name, for absent/discovery-error scripting.
+    pub error_nodes: HashMap<String, u32>,
 }
 
 fn qid(kind: u8, path: u64) -> [u8; 13] {
@@ -368,6 +370,7 @@ impl Peer {
             edit_bootstrap,
             batch: None,
             reuse_error,
+            error_nodes: HashMap::new(),
         };
         let (kind, tag, body) = peer.frame(WAIT).expect("Tversion");
         assert_eq!((kind, tag), (TVERSION, u16::MAX), "Tversion first");
@@ -432,6 +435,24 @@ impl Peer {
         self.next_sequence
     }
 
+    /// One whole r9 image event record with the next sequence.
+    #[allow(dead_code)]
+    pub fn event_image(&mut self, kind: ShellFileKind, body: &[u8]) -> Vec<u8> {
+        let sequence = self.next_sequence;
+        self.next_sequence += 1;
+        encode_shell_file_record_at_revision(
+            ShellFileHeader {
+                kind,
+                connection_epoch: EPOCH,
+                submission_id: 0,
+                sequence,
+            },
+            body,
+            9,
+        )
+        .expect("an image event record")
+    }
+
     /// One whole event record with the next sequence, in this attach's epoch.
     pub fn event(&mut self, kind: ShellFileKind, body: &[u8]) -> Vec<u8> {
         self.event_in(EPOCH, kind, body)
@@ -451,6 +472,24 @@ impl Peer {
             body,
         )
         .unwrap()
+    }
+
+    /// A `Submitted` event naming an r9 candidate kind.
+    #[allow(dead_code)]
+    pub fn submitted_image(
+        &mut self,
+        submission_id: u64,
+        candidate_kind: ShellFileKind,
+    ) -> Vec<u8> {
+        let body = encode_shell_file_submitted_body_at_revision(
+            ShellFileSubmitted {
+                submission_id,
+                candidate_kind,
+            },
+            9,
+        )
+        .expect("an r9 submitted body");
+        self.event_image(ShellFileKind::Submitted, &body)
     }
 
     pub fn submitted(&mut self, submission_id: u64, candidate_kind: ShellFileKind) -> Vec<u8> {
@@ -561,6 +600,10 @@ impl Peer {
                 if !path.is_empty() {
                     self.walks.push(node.clone());
                     self.log.push(Logged::Walk(node.clone()));
+                }
+                if let Some(errno) = self.error_nodes.get(&node).copied() {
+                    self.answer_error(tag, errno);
+                    return;
                 }
                 if node == "transaction-reuse"
                     && let Some(error) = self.reuse_error

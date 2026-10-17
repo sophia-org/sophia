@@ -2,7 +2,7 @@
 id: qujwzrdz
 date: 2026-10-17
 kind: adr
-status: proposed
+status: accepted
 tags: [adr, shell, gpu, performance, 9p]
 ---
 # Admit shell content through a negotiated descriptor channel beside the 9P wire
@@ -20,14 +20,17 @@ keeps the same rule: no descriptor crosses the wire, every `api` line announces
 `fd_transfer=none`, and Lom and Provlita render on the GPU, read back, and upload
 bytes.
 
-The measured need now exists. The [t331 native pilot](../investigations/2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md)
-after the reusable writer puts Session CPU for the panel workload at 9.54 ms per
-uploaded MiB on the files wire against 7.75 on the IPC comparator, and the 4 MiB
-bulk workload at 1.688 against 1.379. The transport difference is the smaller
-part of each figure. The larger part is work the byte path does whatever the
-transport: a GPU-rendered client reads its frame back, the kernel copies it into
-the socket and out again, the export copies canonical chunks into the store, and
-the renderer uploads the accepted bytes into a texture for composition. The lock
+The [matched B2/B3 pilot](../investigations/2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#b2b3-native-pilot--october-17)
+measures combined Session and peer CPU at 8.982–8.991 ms per uploaded MiB for
+panel on files against 7.866–7.878 on IPC, and bulk at 1.6206–1.6209 against
+1.4003–1.4006. All four CPU/allocation gates remain unmet. Bulk still needs
+about 68 pixel-bearing owner passes per frame, consistent with the one-msize
+read budget. This supports reviewing another bulk transport; it does not
+attribute the common cost to copies or measure a GPU producer's readback.
+
+In the current GPU-client byte path, the producer reads pixels back, sends them
+through the socket, and Sophia stores and uploads accepted bytes for rendering.
+Their individual cost and any descriptor-path saving still need measurement. The lock
 design draft in `t302-integration-01/DESIGN-lock-dmabuf-phase1-01.txt` attributes
 the lock screen's cost to the same four steps, and the
 [wmbench investigation](../investigations/djo84ohx-repeated-kms-software-mappings-account-for-the-wmbench-fault-storm.md)
@@ -48,9 +51,27 @@ placements let a client re-offer one small tile instead of a whole frame.
 
 ## Decision
 
-Proposed: extend the t304 descriptor channel from the lock role to shell
+Accepted: extend the t304 descriptor channel from the lock role to shell
 content, as one contract answered once for both roles, with two source kinds and
 the byte path kept as the required fallback.
+
+The [shared design review](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md)
+records answers to the nine lock questions, including separate admission,
+immutable acceptance and source release. niltempus directed this review after
+the B2/B3 pilot on October 17. That direction admits planning, not implementation
+or acceptance of the proposed contract at that time.
+
+On October 17 niltempus approved acceptance in principle, conditional on the
+lifecycle/custody fixture peers landing and passing review. Rust `8f7dc5d` and
+C `b2ca17d` satisfy that condition; Claude's final review and Muse's C cross-check
+found no remaining blockers. Acceptance includes both contracts' formats/topology
+amendments and the shell KDL ResourceStatus reason bound together, as recorded in the
+[owner direction](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#owner-direction--october-17-2026).
+The [shared contract](../../sophia-image-channel.md) now owns custody and exact
+layouts. t338 opens with public codec/schema work and authenticated receive-and-refuse;
+production still advertises its old revisions. Its CPU data plane is sealed
+memfd per image; a launch-time shared window is not pursued without measured
+descriptor cost from t338/t339 justifying reconsideration.
 
 A shell component holding a content grant may open a second endpoint beside its
 9P connection, admitted the same way: the peer's pidfd must be the launched
@@ -71,15 +92,16 @@ dimensions and rejection rather than resampling apply unchanged.
 
 A client with a GPU grant offers a DMA-BUF with format, modifier, planes, offsets
 and strides for an output composed on its granted device. The buffer is a capture
-source only. Sophia imports it on the composing device, copies it into a
-same-format renderer-owned image through the existing capture path, destroys the
-import, closes every received descriptor, and journals `SourceReleased`. The
+source only. A bounded capture job imports it on the composing device and copies
+it into a same-format renderer-owned image. Proven GPU completion permits
+immutable acceptance and `SourceReleased`; closing an FD alone does not. The
 provider must not write the buffer before that event. The first phase offers
 finished buffers with no sync file and stays same-device, as the t304 revision-2
 draft proposes. Importing establishes no zero-copy composition or scanout claim.
 
-`ResourceBegin` names the transport: upload, sealed memory or DMA-BUF. The
-contract review decides between a selector field and a new record kind. Sealed
+Keep the existing byte `ResourceBegin` unchanged. The design proposes a new
+revision-gated `ImageBegin` record for descriptor offers, with a 9P admission
+reply before the source is sent on the other socket. Sealed
 memory counts against resident bytes as uploads do; captured images count against
 the renderer-image table; offers in flight are bounded like upload slots. A
 per-output formats file lists the pairs of fourcc and modifier each composing
@@ -120,20 +142,19 @@ content-shell; the shell keeps one authority boundary.
 
 ## Consequences
 
-For a GPU-rendered client the path loses the readback, both kernel copies through
-the socket, the store copy and the per-composition texture upload, and gains one
-import and one GPU copy per frame per output in Sophia plus descriptor passing.
-For a CPU-rendered client it loses the socket and store copies and gains a map
-and a seal check. CPU per frame should fall to a few syscalls and records on each
-side. That is an expectation to measure, not a result, and the t331 ratio gate
-cannot measure it because its comparator pairs two byte paths. This change needs
+The intended GPU path replaces readback and byte upload with descriptor passing,
+import and a Sophia-owned capture. The intended CPU path replaces socket and
+store copies with retained sealed backing, while still paying for producing,
+sealing, validating and rendering that backing. Neither saving is measured yet;
+CPU per frame cannot be predicted from syscall count. The t331 ratio gate pairs
+two byte paths and remains unchanged. This new path needs
 its own paired evidence reporting both process CPU, frame delivery, input
 response and, on the laptop, package C-state residency and wakeups, which is the
 battery figure.
 
-Acceptance changes the contract's descriptor section and `fd_transfer`
-announcement and supersedes the transport choice in ADR 6ndjwffd while leaving
-its content model in force; normative text is written only after acceptance. The
+Acceptance changes the contract's descriptor section, keeps `fd_transfer=none`
+for the 9P stream, and supersedes the transport choice in ADR 6ndjwffd while
+leaving its content model in force. The
 nine open t304 decisions, covering capability bit against revision, channel
 admission, `SourceReleased` and `Superseded` semantics, synchronization, capture
 failure policy, same-device scope, renderer-image identity, store share and the
@@ -144,7 +165,7 @@ and the C SDK's public structs change layout again. Revocation stops admission
 and closes Sophia's end of the channel; it cannot retract a descriptor the client
 already holds, which is the existing rule for GPU grants.
 
-### Candidates
+### Delivery scopes
 
 #### t336: measure the shell copy path and its power cost
 
@@ -176,16 +197,22 @@ Paired CPU evidence against the byte path on the panel workload closes it.
 
 After t289's snapshot reuse decision and sharing t304's renderer work: import on
 the composing device, capture into a renderer-owned image, `SourceReleased` after
-the capturing flip retires, the capture-failure policy and the same-device
+proven capture completion without requiring a candidate flip, and the same-device
 formats file. Lom and Provlita render into GBM buffers and keep the mapped
 readback as fallback. Paired CPU evidence on the bulk workload closes it.
 
 ## Acceptance and connections
 
 Proposed October 17, 2026 at niltempus's request, after the t331 first-slice
-native pilot showed the transport share of the shell frame cost to be the smaller
-part. Not accepted. The [current contract](../../sophia-shell-files.md) and
-ADR 6ndjwffd remain authoritative until acceptance is recorded here.
+native pilot; the subsequent B2/B3 pilot supports the shared design review.
+Neither pilot attributes the common cost to particular copies. Accepted
+October 17 after independent lifecycle peers and review, under niltempus's
+recorded conditional authorization. The shared contract and both role topology
+amendments land together with the ResourceStatus reason-bound change.
+This is design acceptance, not production descriptor support or a performance
+pass. Authenticated exports, live discovery, asynchronous validation and GPU
+completion remain implementation/qualification gates; the peers model those
+boundaries explicitly.
 
 - [Content capability design](6ndjwffd-content-capability-design-for-sophia_shell_v1.md), the transport choice this would supersede.
 - [GPU execution permission](mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md), whose optional image transport this instantiates.

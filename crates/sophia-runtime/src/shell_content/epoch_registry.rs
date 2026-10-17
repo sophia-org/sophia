@@ -6,6 +6,8 @@ use super::{
     ContentStoreError, ContentStoreProfile,
 };
 use sophia_protocol::{ContentGrant, ContentLimits};
+mod image;
+pub use image::{SealedImageAdmission, SealedImageAdmissionError};
 
 pub struct ContentEpochRegistry {
     active: Vec<ContentEpoch>,
@@ -196,6 +198,29 @@ impl ContentEpochRegistry {
             .iter_mut()
             .find(|epoch| epoch.resources.grant() == grant)
             .map(|epoch| &mut epoch.resources)
+    }
+
+    /// Reconcile worker custody with the exact grant, including disconnected
+    /// epochs. This does not reopen retired stores for ordinary requests. An
+    /// unmatched or mistimed result remains owned by the caller for recovery.
+    pub fn complete_sealed(
+        &mut self,
+        grant: ContentGrant,
+        resource: sophia_protocol::ContentResourceId,
+        result: &mut Option<Result<super::ValidatedSealedPixels, ContentStoreError>>,
+        now: u64,
+    ) -> Result<(), ContentStoreError> {
+        let epoch = self
+            .active
+            .iter_mut()
+            .chain(&mut self.retired)
+            .find(|epoch| epoch.resources.grant() == grant)
+            .ok_or(ContentStoreError::Stale)?;
+        let outcome = epoch
+            .resources
+            .complete_sealed(grant, resource, result, now);
+        self.collect();
+        outcome
     }
 
     pub fn allocations(&self, grant: ContentGrant) -> Option<&ContentAllocationStore> {

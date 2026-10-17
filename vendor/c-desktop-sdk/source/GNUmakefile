@@ -13,7 +13,7 @@ NINE_P = $(sort $(wildcard src/nine_p/*.c))
 ADMIN_FILES = $(sort $(wildcard src/admin_files/*.c))
 BROKER_FILES = $(sort $(wildcard src/broker_files/*.c))
 PORTAL_FILES = $(sort $(wildcard src/portal_files/*.c))
-FILES = $(sort $(wildcard src/shell_files/*.c src/shell_session/*.c src/native_session/*.c src/wm_files/*.c src/wm_session/*.c src/output_files/*.c src/output_session/*.c src/lock_files/*.c src/launch_auth/*.c src/namespace/*.c)) src/desktop_connection.c
+FILES = $(sort $(wildcard src/shell_files/*.c src/shell_session/*.c src/native_session/*.c src/wm_files/*.c src/wm_session/*.c src/output_files/*.c src/output_session/*.c src/lock_files/*.c src/launch_auth/*.c src/namespace/*.c src/image_channel/*.c src/image_producer/*.c)) src/desktop_connection.c
 objects = $(patsubst %.c,$(BUILD)/%.o,$(1))
 LIBRARIES = $(BUILD)/libsophia-9p.a $(BUILD)/libsophia-desktop.a
 PACKAGES = sophia-9p sophia-desktop
@@ -38,9 +38,14 @@ $(BUILD)/%.pc: pkgconfig/%.pc.in GNUmakefile
 	@mkdir -p $(@D)
 	sed -e 's|@PREFIX@|$(PREFIX)|g' -e 's|@LIBDIR@|$(LIBDIR)|g' -e 's|@INCLUDEDIR@|$(INCLUDEDIR)|g' -e 's|@VERSION@|$(VERSION)|g' $< > $@
 
-FILE_TESTS = shell_session_attached_test sophia_9p_client_test launch_auth_test sophia_shell_files_test sophia_shell_files_roles_test sophia_shell_files_descriptors_test sophia_shell_files_descriptor_candidates_test sophia_shell_files_descriptor_objects_test sophia_shell_files_staging_test desktop_connection_test shell_session_custody_test shell_session_events_test shell_session_descriptors_test shell_session_staging_test native_session_test wm_files_test wm_session_test output_files_test output_session_test lock_files_test lock_client_test
+FILE_TESTS = shell_session_attached_test sophia_9p_client_test launch_auth_test sophia_shell_files_test sophia_shell_files_roles_test sophia_shell_files_descriptors_test sophia_shell_files_descriptor_candidates_test sophia_shell_files_descriptor_objects_test sophia_shell_files_staging_test desktop_connection_test shell_session_custody_test shell_session_events_test shell_session_descriptors_test shell_session_staging_test native_session_test wm_files_test wm_session_test output_files_test output_session_test lock_files_test lock_client_test lock_image_test
 FILE_TESTS += namespace_test
+FILE_TESTS += image_channel_codec_test
+FILE_TESTS += image_receipt_test
+FILE_TESTS += image_producer_test
+FILE_TESTS += shell_image_test
 FILE_TESTS += shell_upload_window_test
+FILE_TESTS += descriptor_draft_codec_test
 FILE_TESTS += broker_discovery_test
 FILE_TESTS += broker_events_test
 FILE_TESTS += broker_responses_test
@@ -78,6 +83,7 @@ FILE_TESTS += portal_requester_session_test
 FILE_TESTS += portal_requester_transfer_test
 FILE_TESTS += portal_requester_upload_test
 ifeq ($(shell uname -s),Linux)
+FILE_TESTS += descriptor_kernel_test descriptor_lifecycle_test descriptor_custody_test
 $(BUILD)/desktop_connection_test: WRAPS = -Wl,--wrap=getsockopt
 endif
 $(addprefix $(BUILD)/,$(FILE_TESTS)): $(BUILD)/%: src/tests/%.c $(wildcard src/tests/*.h) $(BUILD)/libsophia-desktop.a $(BUILD)/libsophia-9p.a
