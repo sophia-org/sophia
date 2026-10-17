@@ -5,8 +5,10 @@ use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 
 mod exec_gate;
 mod rights;
-pub use rights::{ReceivedRights, receive_rights};
+mod sealed_mapping;
 pub use exec_gate::{ExecGate, ExecGateChild};
+pub use rights::{ReceivedRights, receive_rights};
+pub use sealed_mapping::SealedMapping;
 
 /// Duplicate an inherited descriptor without claiming ownership of its number.
 /// An invalid number returns EBADF; callers must authenticate the channel.
