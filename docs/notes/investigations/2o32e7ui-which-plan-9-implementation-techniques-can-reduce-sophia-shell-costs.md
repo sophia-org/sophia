@@ -67,8 +67,10 @@ to common record headers with 21 revised cases. Formats now follow topology
 generation; limits remain fixed per connection. Independent real ancillary/seal
 kernel fixtures now pass in Rust SDK `05bf018` and C SDK `9bca0db`, with the
 Rust shell-client suite, targeted strict Clippy and C `make check` passing.
-These tests establish kernel prerequisites only; draft codecs and SDK
-admission/journal-custody fixtures remain outstanding. No vendor pin or runtime
+Test-only decoders now pass all 53 draft cases in Rust `47397e5` and C `c6d7837`,
+including truncated-prefix controls and real sealed-file length checks. They
+use a fixed admitted sealed-only context, not general production codecs.
+SDK admission/journal-custody fixtures remain outstanding. No vendor pin or runtime
 changed, and the design remains proposed.
 
 ## B2/B3 native pilot — October 17

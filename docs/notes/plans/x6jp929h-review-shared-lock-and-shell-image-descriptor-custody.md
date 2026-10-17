@@ -695,6 +695,22 @@ channel. Full draft codec, authentication/admission, cancellation, journal
 custody, timed retries and cross-process owner fixtures remain outstanding.
 The probes do not establish performance, GPU completion or design acceptance.
 
+#### Draft decoder results — October 17
+
+Rust SDK `47397e5` and C SDK `c6d7837` independently decode the 53 draft packet
+and object cases in test-only code. Each also refuses every truncated prefix of
+a valid case and an appended byte. The cases are literal test-support inputs,
+not normative spec copies. Both use the same admitted sealed-only context;
+arbitrary grants, full DMA format lists and production negotiation are outside
+this coverage. No public codec or runtime feature is exported.
+
+On Linux, each decoder checks a real sealed file against the Source packet's
+declared length: sizes 0, 7 and 9 refuse a declaration of 8, while 8 passes.
+Unsupported seal queries fail closed. This is a local FD check, not a complete
+authenticated receive/admit exchange or pixel validation. Rust's new target and
+strict Clippy pass; C `make check` passes. Lifecycle fixtures for readiness,
+admission, cancellation, source release and journal loss remain the next work.
+
 ### Draft golden cases
 
 The first encode/decode review uses these canonical values: shell role 1,
@@ -728,6 +744,7 @@ The two added cases refuse changed version-1 packet and FD constants.
 The format-row example checks byte shape only: it does not advertise that device
 or format on this machine. The sealed-only fixture has no GPU rows. Negative
 cases cover grammar, generation disagreement, length/reserved values and bounds.
-These object vectors have not yet passed independent C/Rust codecs. Shell and
+These object vectors now pass the independent test-only C/Rust decoders described
+above; general production codecs remain outstanding. Shell and
 lock binary objects now have identical fixture bytes because the common header
 uses the authenticated role context, not an extra role field.
