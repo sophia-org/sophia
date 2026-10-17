@@ -1,0 +1,17 @@
+[package]
+name = "sophia-broker-client"
+description = "Developing bounded metadata broker file client."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+sophia-9p-client.workspace = true
+sophia-9p-records.workspace = true
+sophia-broker-protocol = { path = "../sophia-broker-protocol", version = "0.3.0" }
+
+[lints]
+workspace = true

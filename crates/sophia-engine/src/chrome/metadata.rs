@@ -45,6 +45,24 @@ impl ChromeDescriptorTable {
     }
 
     pub fn apply_metadata(&mut self, metadata: SanitizedChromeMetadata) -> MetadataChromeUpdate {
+        match self.prepare_metadata(metadata) {
+            Ok(descriptor) => {
+                let surface = descriptor.surface;
+                self.upsert(descriptor);
+                MetadataChromeUpdate::Upserted { surface }
+            }
+            Err(reason) => MetadataChromeUpdate::Rejected(reason),
+        }
+    }
+
+    /// Validate without changing the table. A caller applying a compound update
+    /// can prepare every effect before committing any of them. Commit with
+    /// `upsert` before allowing another mutation of this table; preparation does
+    /// not reserve a generation against intervening updates.
+    pub fn prepare_metadata(
+        &self,
+        metadata: SanitizedChromeMetadata,
+    ) -> Result<ChromeDescriptor, MetadataChromeRejectReason> {
         let surface = metadata.surface;
         let generation = metadata.generation;
         let Ok(descriptor) = chrome_descriptor_from_metadata(metadata) else {
@@ -54,7 +72,7 @@ impl ChromeDescriptorTable {
                 metadata_generation = generation,
                 "rejected sanitized chrome metadata with invalid label"
             );
-            return MetadataChromeUpdate::Rejected(MetadataChromeRejectReason::InvalidLabel);
+            return Err(MetadataChromeRejectReason::InvalidLabel);
         };
 
         if !descriptor.surface.is_valid() {
@@ -64,7 +82,7 @@ impl ChromeDescriptorTable {
                 metadata_generation = descriptor.generation,
                 "rejected sanitized chrome metadata with invalid surface"
             );
-            return MetadataChromeUpdate::Rejected(MetadataChromeRejectReason::InvalidSurface);
+            return Err(MetadataChromeRejectReason::InvalidSurface);
         }
 
         if self
@@ -77,12 +95,10 @@ impl ChromeDescriptorTable {
                 metadata_generation = descriptor.generation,
                 "rejected stale sanitized chrome metadata"
             );
-            return MetadataChromeUpdate::Rejected(MetadataChromeRejectReason::StaleGeneration);
+            return Err(MetadataChromeRejectReason::StaleGeneration);
         }
 
-        let surface = descriptor.surface;
-        self.upsert(descriptor);
-        MetadataChromeUpdate::Upserted { surface }
+        Ok(descriptor)
     }
 
     pub fn remove_metadata(&mut self, surface: SurfaceId, generation: u64) -> MetadataChromeUpdate {

@@ -230,7 +230,7 @@ static int submit_reply(struct sophia_lc_client *c,
                         const struct sophia_9p_reply *r) {
   if (r->type == 7 && c->submit_stage == LC_TX_SUBMIT) {
     /* EAGAIN transferred nothing; it waits for submit_retry. */
-    if (r->error == 11) {
+    if (r->error == 11 && !c->submitted) {
       c->submit_sent = 0;
       c->submit_wait = 1;
       return 0;
@@ -443,6 +443,27 @@ int sophia_lc_submission(const struct sophia_lc_client *c, uint64_t *id,
     *stage = SOPHIA_LC_SUBMISSION_NONE;
   return 0;
 }
+int sophia_lc_obligations(const struct sophia_lc_client *c,
+                          struct sophia_lc_obligations *out) {
+  unsigned i;
+  if (!c || !out)
+    return SOPHIA_9P_ARGUMENT;
+  memset(out, 0, sizeof(*out));
+  out->consumed = c->consumed;
+  out->acked = c->acked;
+  if (c->terminal)
+    return 0;
+  out->event_pending = c->event_ready;
+  out->object_pending = c->object_stage != LC_OBJECT_IDLE;
+  out->upload_pending = (uint8_t)sophia_lc_upload_pending(c);
+  out->waiting_for_ack = c->submit_stage == LC_TX_OPEN &&
+                         c->acked < c->submitted_sequence;
+  out->waiting_for_retry = c->submit_wait;
+  for (i = 0; i < SOPHIA_LC_MAX_UPLOAD_WRITES; ++i)
+    out->upload_writes += c->upload_writes[i].op.active != 0;
+  return 0;
+}
+
 int sophia_lc_submit_retry(struct sophia_lc_client *c) {
   if (!c)
     return SOPHIA_9P_ARGUMENT;

@@ -4,6 +4,7 @@
 //! the executable form of the data model in `docs/dod.md`.
 
 pub mod admin_files;
+pub mod broker_files;
 mod byte_cursor;
 pub mod capacity;
 mod codec_error;

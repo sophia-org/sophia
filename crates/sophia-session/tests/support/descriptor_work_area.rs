@@ -49,7 +49,7 @@ fn present(
 
 fn candidate(
     shell: &mut LiveMetadataShell,
-    broker: &LiveMetadataBroker,
+    broker: &impl super::super::metadata_broker::MetadataBrokerView,
     output: HeadlessOutput,
     bounds: Rect,
     surface: SurfaceId,
@@ -99,7 +99,7 @@ fn protected_c_descriptor_work_area_changes_only_after_matching_presentation() {
         "descriptor_work_area_peer.c",
     );
     let surface = SurfaceId::new(1, 1);
-    let broker = broker_fixture(&scratch.0.join("broker"), surface);
+    let broker = broker_fixture(surface);
     // Select the independent peer through the public desktop profile, rather
     // than reconstructing the retired single-shell command-line defaults.
     use std::os::unix::fs::PermissionsExt;

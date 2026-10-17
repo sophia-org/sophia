@@ -51,6 +51,8 @@ struct sophia_ss_config {
     size_t object_capacity;
 };
 struct sophia_ss_reservation {
+    const struct sophia_ss *owner;
+    uint64_t epoch;
     uint64_t serial;
     uint16_t slots;
     size_t bytes;
@@ -157,7 +159,9 @@ size_t sophia_ss_record_bytes(const struct sophia_sf_record *);
 int sophia_ss_submit(struct sophia_ss *, const struct sophia_sf_record *records, size_t count,
                      uint64_t *first_ticket);
 /* Reserve room before an irreversible local step (for example a UI edit
- * whose acknowledgement must follow). One reservation at a time; BUSY
+ * whose acknowledgement must follow). Tokens belong to this session address
+ * and connection epoch; do not move or reinitialize a session with a live
+ * reservation. One reservation at a time; BUSY
  * changes nothing. Reserved room is unavailable to submit until commit or
  * cancel, and hand-off only frees room. Commit cannot fail for capacity: it
  * admits all records or none, keeping the reservation on INVALID/ARGUMENT

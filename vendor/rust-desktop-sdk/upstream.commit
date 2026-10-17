@@ -1,14 +1,14 @@
-tree 4f7f041a468c47aa2a3c3b69769d84876f432c71
-parent 3edcd28a4c6e3274dd162f8a92001bb10a99c307
-author Mason Green <mason@greenm01.net> 1792171770 -0400
-committer Mason Green <mason@greenm01.net> 1792171770 -0400
+tree 5a532d007760c1c56df07801826003dfac8df64d
+parent 1c3a00d432de3bee405c9bff779945365da13a38
+author Mason Green <mason@greenm01.net> 1792204829 -0400
+committer Mason Green <mason@greenm01.net> 1792204829 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatJe+hsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKf1QD9FwAdlJJCsn4GEkOdhWWx
- meXXTGhQd10MwBax5zkDbOAA/iI71nuDYRAiMnooAu5SdiIUy0IrZqOPX66M4XKt
- 7VkO
- =gfkQ
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLgHRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJprgD/VPzBJLi/pE/HwEZkXrVo
+ lDD568b5AtekpO+up2jUjUoBALtiygYspsayVHj+xuONWQq5sfKTP5AnOKfLaGGB
+ j+oK
+ =T6Xw
  -----END PGP SIGNATURE-----
 
-Read retry clock only when the deadline controls eligibility
+Remove trailing blank line from administration guide

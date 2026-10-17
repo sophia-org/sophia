@@ -44,6 +44,11 @@ impl FileWire {
         };
         if let QueuedKind::SlotWrite { resource, .. } = kind
             && super::open_fid_for(&self.uploads, resource).is_none()
+            && self
+                .uploads
+                .iter()
+                .flatten()
+                .any(|upload| upload.resource == resource)
         {
             return Ok(false);
         }
@@ -165,7 +170,10 @@ impl FileWire {
             return Ok(false);
         };
         // Only a pending retry without new event progress needs a clock read.
-        if self.pass == *pass || (self.progress == *progress && Instant::now() < *not_before) {
+        if self.pass == *pass
+            || (self.progress == *progress
+                && self.dispatch_time.unwrap_or_else(Instant::now) < *not_before)
+        {
             return Ok(false);
         }
         let fid = *fid;
@@ -293,7 +301,8 @@ impl FileWire {
                             return Err(ShellClientError::Protocol("EAGAIN after Submitted"));
                         }
                         let (progress, pass) = (self.progress, self.pass);
-                        let not_before = Instant::now() + self.next_backoff();
+                        let not_before =
+                            self.dispatch_time.unwrap_or_else(Instant::now) + self.next_backoff();
                         if let Some(Current::Submission { phase, .. }) = &mut self.current {
                             *phase = SubmissionPhase::RetryWait {
                                 fid,
@@ -324,6 +333,27 @@ impl FileWire {
                     Reply::Error(errno) => {
                         // A definitive refusal: nothing was journaled.
                         let errno = errno.0;
+                        if let Some(Current::Submission {
+                            kind: ShellFileKind::ResourceBegin,
+                            bytes,
+                            ..
+                        }) = &self.current
+                        {
+                            let begin = sophia_shell_protocol::shell_files::decode_shell_file_resource_begin(bytes)?;
+                            if let sophia_shell_protocol::ShellContentRecord::ResourceBegin(value) =
+                                begin.record
+                            {
+                                let slot = &mut self.uploads[begin.slot as usize];
+                                // No admission event will release this local claim.
+                                // A queued payload then settles DroppedUnsent.
+                                if slot.is_some_and(|upload| {
+                                    upload.resource == value.resource
+                                        && matches!(upload.state, super::UploadState::Pending)
+                                }) {
+                                    *slot = None;
+                                }
+                            }
+                        }
                         self.forget(fid)?;
                         self.backoff = RETRY_FIRST;
                         self.settle_current(Custody::Refused(errno));

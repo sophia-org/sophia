@@ -5,6 +5,14 @@ without a Sophia checkout and uses no Rust code. Nim clients can use its C API.
 
 ## SDK scope
 
+The current development candidate is **0.10.0-dev, unreleased**. Reservation
+tokens now identify the issuing session address and epoch as well as their
+serial. Previously two live sessions with matching serials could accept each
+other's tokens. The public `sophia_ss_reservation` layout has grown: recompile
+C consumers and foreign-language bindings before adoption. Do not mix old
+headers with this library or move/reinitialize a session with a live reservation.
+The wire contract is unchanged. [API parity](API-PARITY.md) maps the Rust controls.
+
 One desktop SDK per language covers Sophia's WM, shell, output and admin/control
 roles. Role modules share standard 9P2000.L transport, bounded I/O and custody
 rules; they are not separate SDK repositories. Nim uses this SDK through thin C
@@ -17,6 +25,20 @@ tested support. A missing server file contract is a migration gap, not permissio
 to tunnel the old socket protocol through a file.
 
 ## Current coverage
+
+The developing broker API (`sophia_broker_session.h`) retains one request and
+submits its one- or two-row response atomically. Startup borrows a quiescent 9P
+client and an admitted root; it does not authenticate the caller. The caller
+drives progress and acknowledgements, chooses explicit retries and closes the
+borrowed descriptor on failure. The session never reconnects or replays work.
+Independent C/Rust peers pass Sophia's generic export and protected-launch gates;
+production broker migration and the legacy transport comparison remain open.
+See [API parity](API-PARITY.md).
+
+Portal recipient sessions cover capture, frames and transfer reads. The requester
+session (`sophia_portal_requester_session.h`) adds bounded uploads, cancellation
+and terminal outcomes. [Portal parity](PORTAL-PARITY.md) records the paired SDK
+and export checks and distinguishes them from physical desktop acceptance.
 
 `sophia_namespace.h` implements the pinned
 [`namespace-discovery` contract](spec/namespace-discovery.md). Parsing uses
@@ -58,8 +80,9 @@ The output file
 codec and session pass scripted-peer tests, Sophia's production output export
 exchange and Sophia's attended native output acceptance on one card with two
 heads (see provenance for its scope). The output default rollout and other
-physical configurations are not qualified here. The admin file client is not
-implemented yet.
+physical configurations are not qualified here. The developing admin file client
+now provides startup, retained catalogs, command custody and status snapshots;
+its current qualification is recorded in [API parity](API-PARITY.md).
 
 Descriptor codecs and profile selection use the native layouts in
 `spec/sophia-shell-files-v1.kdl` and the rules in `spec/sophia-shell-descriptors.md`.

@@ -419,6 +419,41 @@ static void custody_cannot_cross_undisclosed_events(void)
 }
 int main(void)
 {
+    {
+        struct rig r;
+        struct sophia_ss_reservation token;
+        struct sophia_sf_record records[2] = {candidate(1), candidate(2)};
+        struct sophia_ss_config c = config(1, 1);
+        uint64_t ticket;
+        c.queue_slots = 2;
+        rig_start(&r, &c);
+        r.p.descriptor = 1;
+        rig_settle(&r);
+        assert(sophia_ss_state(&r.s) == SOPHIA_SS_READY);
+        rig_ack(&r);
+        records[1].value.descriptor_candidate.transaction = 2;
+        size_t bytes = sophia_ss_record_bytes(&records[0]) + sophia_ss_record_bytes(&records[1]);
+        assert(!sophia_ss_reserve(&r.s, 2, bytes, &token));
+        {
+            uint64_t extra;
+            assert(sophia_ss_submit(&r.s, records, 1, &extra) == SOPHIA_9P_BUSY);
+        }
+        rig_run(&r, 2);
+        assert(!sophia_ss_commit(&r.s, &token, records, 2, &ticket));
+        {
+            uint64_t extra;
+            /* C copies the head into separate transaction storage. Its two
+             * configured queue slots exclude that single in-flight record. */
+            struct sophia_sf_record third = candidate(3);
+            third.value.descriptor_candidate.transaction = 3;
+            assert(!sophia_ss_submit(&r.s, &third, 1, &extra));
+            assert(sophia_ss_submit(&r.s, records, 1, &extra) == SOPHIA_9P_BUSY);
+        }
+        assert(rig_until(&r, ticket, 32) == SOPHIA_SS_SUBMITTED);
+        rig_ack(&r);
+        assert(rig_until(&r, ticket + 1, 32) == SOPHIA_SS_SUBMITTED);
+        rig_close(&r);
+    }
     readiness();
     bad_offers();
     wrong_role_and_welcome();

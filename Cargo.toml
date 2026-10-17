@@ -87,6 +87,8 @@ rustix = { version = "1.1", default-features = false, features = ["fs", "process
 # and digests are in vendor/rust-desktop-sdk/manifest.json (cargo xtask check
 # rust-desktop-sdk).
 sophia-9p-client = { path = "vendor/rust-desktop-sdk/source/crates/sophia-9p-client" }
+sophia-broker-client = { path = "vendor/rust-desktop-sdk/source/crates/sophia-broker-client" }
+sophia-broker-protocol = { path = "vendor/rust-desktop-sdk/source/crates/sophia-broker-protocol" }
 sophia-9p-records = { path = "vendor/rust-desktop-sdk/source/crates/sophia-9p-records" }
 sophia-desktop-ids = { path = "vendor/rust-desktop-sdk/source/crates/sophia-desktop-ids" }
 sophia-launch-client = { path = "vendor/rust-desktop-sdk/source/crates/sophia-launch-client" }

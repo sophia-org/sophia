@@ -126,13 +126,16 @@ int sophia_ss_reserve(struct sophia_ss *s, uint16_t slots, size_t bytes,
     s->reserved_slots = slots;
     s->reserved_bytes = bytes;
     out->serial = ++s->reservation;
+    out->owner = s;
+    out->epoch = s->files.epoch;
     out->slots = slots;
     out->bytes = bytes;
     return 0;
 }
 static int release(struct sophia_ss *s, struct sophia_ss_reservation *v)
 {
-    if (!s || !v || !s->reserved || v->serial != s->reservation)
+    if (!s || !v || !s->reserved || v->owner != s || v->epoch != s->files.epoch ||
+        v->serial != s->reservation)
         return SOPHIA_9P_ARGUMENT;
     s->reserved = 0;
     s->reserved_slots = 0;
@@ -144,7 +147,8 @@ int sophia_ss_commit(struct sophia_ss *s, struct sophia_ss_reservation *v,
                      const struct sophia_sf_record *records, size_t count, uint64_t *first_ticket)
 {
     int r;
-    if (!s || !v || !s->reserved || v->serial != s->reservation)
+    if (!s || !v || !s->reserved || v->owner != s || v->epoch != s->files.epoch ||
+        v->serial != s->reservation)
         return SOPHIA_9P_ARGUMENT;
     if (ss_final(s)) {
         (void)release(s, v);

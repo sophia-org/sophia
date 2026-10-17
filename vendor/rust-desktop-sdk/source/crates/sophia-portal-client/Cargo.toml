@@ -1,0 +1,22 @@
+[package]
+name = "sophia-portal-client"
+description = "Developing nonblocking Sophia portal recipient file client."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+sophia-portal-protocol = { path = "../sophia-portal-protocol", version = "0.3.0" }
+sophia-9p-client.workspace = true
+sophia-9p-records.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+sophia-launch-client = { path = "../sophia-launch-client" }
+sophia-namespace-client = { path = "../sophia-namespace-client" }
+rustix = { workspace = true, features = ["event", "std"] }

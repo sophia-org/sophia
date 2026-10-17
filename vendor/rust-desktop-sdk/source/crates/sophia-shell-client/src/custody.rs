@@ -13,6 +13,17 @@ use std::collections::VecDeque;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ticket(pub u64);
 
+/// Why a connection cannot report a ticket's custody. Tickets are local to
+/// one connection; the same number in another connection is unrelated.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CustodyLookupError {
+    /// Zero or a number this connection has not issued.
+    Unissued,
+    /// Issued, but older than the retained 256 tickets. This says nothing
+    /// about whether the server accepted the operation.
+    Unavailable,
+}
+
 /// The tickets one admission issued, in wire order. A pair (an action ACK and
 /// the activation it authorizes) is two consecutive tickets.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -73,6 +84,14 @@ impl Default for Ledger {
 }
 
 impl Ledger {
+    /// Acquire storage before an application commits its local side effect.
+    pub(crate) fn reserve(&mut self, count: usize) -> Result<(), crate::ShellClientError> {
+        let needed = self.recent.len().saturating_add(count).min(LEDGER_CAPACITY);
+        self.recent
+            .try_reserve(needed - self.recent.len())
+            .map_err(|_| crate::ShellClientError::QueueSaturated)
+    }
+
     /// Issues `count` consecutive tickets, all `Queued`.
     pub(crate) fn issue(&mut self, count: usize) -> Admission {
         let first = self.next;
@@ -103,6 +122,13 @@ impl Ledger {
             .map(|(_, custody)| *custody)
     }
 
+    pub(crate) fn lookup(&self, ticket: Ticket) -> Result<Custody, CustodyLookupError> {
+        if ticket.0 == 0 || ticket.0 >= self.next {
+            return Err(CustodyLookupError::Unissued);
+        }
+        self.get(ticket).ok_or(CustodyLookupError::Unavailable)
+    }
+
     /// Records a new state. An evicted ticket is ignored: its outcome is
     /// simply no longer reported. A settled outcome is final: nothing later
     /// replaces `Submitted` (or any other settled state) for the same unit.
@@ -123,30 +149,5 @@ impl Ledger {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn tickets_rise_and_an_evicted_ticket_is_unavailable_never_aliased() {
-        let mut ledger = Ledger::default();
-        let first = ledger.issue(2);
-        assert_eq!(first.tickets().collect::<Vec<_>>(), [Ticket(1), Ticket(2)]);
-        ledger.set(2, Custody::Submitted);
-        assert_eq!(ledger.get(Ticket(2)), Some(Custody::Submitted));
-        for _ in 0..LEDGER_CAPACITY {
-            ledger.issue(1);
-        }
-        assert_eq!(ledger.get(Ticket(1)), None);
-        assert_eq!(ledger.get(Ticket(2)), None);
-        ledger.set(2, Custody::Unknown);
-        let settled = ledger.issue(1).first;
-        ledger.set(settled.0, Custody::Submitted);
-        ledger.set(settled.0, Custody::Refused(22));
-        ledger.set(settled.0, Custody::Unknown);
-        assert_eq!(ledger.get(settled), Some(Custody::Submitted));
-        ledger.issue(1);
-        let newest = Ticket(ledger.peek() - 1);
-        assert_eq!(ledger.get(newest), Some(Custody::Queued));
-        assert_eq!(ledger.get(Ticket(ledger.peek())), None);
-    }
-}
+#[path = "../tests/support/custody.rs"]
+mod tests;

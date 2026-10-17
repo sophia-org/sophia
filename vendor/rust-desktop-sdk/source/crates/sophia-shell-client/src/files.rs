@@ -34,11 +34,13 @@ use crate::custody::Custody;
 use crate::wire::Outbound;
 use crate::{ShellClientError, client_record};
 
+mod batch;
 mod budget;
 mod connect;
 mod descriptor;
 mod drive;
 mod events;
+mod native_launcher;
 mod opening;
 mod submission;
 mod uploads;
@@ -83,8 +85,8 @@ enum QueuedKind {
 /// with `EAGAIN`. A retry also goes early once an event has been consumed,
 /// since that is what frees journal room or a permit; it never goes in the
 /// same pass that saw the refusal.
-const RETRY_FIRST: Duration = Duration::from_millis(2);
-const RETRY_MAX: Duration = Duration::from_millis(64);
+const RETRY_FIRST: Duration = Duration::from_millis(4);
+const RETRY_MAX: Duration = Duration::from_millis(256);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SubmissionPhase {
@@ -219,6 +221,7 @@ pub(crate) struct FileWire {
     capabilities: u64,
     /// Session's pre-admitted API role; bit 0 on a content bar is not enough.
     descriptor: bool,
+    native_launcher: bool,
     root: Fid,
     events_fid: Fid,
     submit_fid: Fid,
@@ -245,8 +248,12 @@ pub(crate) struct FileWire {
     progress: u64,
     /// `poll_io` calls so far.
     pass: u64,
-    /// The previous bounded drive exhausted its rounds with local work left.
+    /// New admission or an exhausted drive needs another local service pass.
     service_pending: bool,
+    /// Explicit dispatch time for this pass; absent for the convenience driver.
+    dispatch_time: Option<Instant>,
+    /// Monotonicity check for successive caller-supplied times.
+    last_dispatch_time: Option<Instant>,
     /// A `Submitted` found among the buffered events while the submit reply
     /// was being settled, before normal intake reaches it; intake accepts
     /// that one event once.
@@ -261,7 +268,7 @@ pub(crate) struct FileWire {
     // Outbound: a single lane, mirroring `ClientOutbox`'s FIFO order.
     pending: VecDeque<QueuedKind>,
     staged: Vec<QueuedKind>,
-    staged_begin: Option<(u16, ContentResourceId)>,
+    staged_begins: [Option<ContentResourceId>; SHELL_FILE_MAX_UPLOAD_SLOTS as usize],
     current: Option<Current>,
     /// The next `EAGAIN` backoff.
     backoff: Duration,
@@ -398,9 +405,9 @@ impl FileWire {
     }
 
     fn free_slot(&self) -> Option<u16> {
-        (0..self.upload_slots)
-            .map(u16::from)
-            .find(|&slot| self.uploads[slot as usize].is_none())
+        (0..self.upload_slots).map(u16::from).find(|&slot| {
+            self.uploads[slot as usize].is_none() && self.staged_begins[slot as usize].is_none()
+        })
     }
 
     pub(crate) fn encode(&mut self, outbound: Outbound) -> Result<Vec<Vec<u8>>, ShellClientError> {
@@ -408,11 +415,17 @@ impl FileWire {
             return Err(error.clone());
         }
         self.staged.clear();
-        self.staged_begin = None;
+        self.staged_begins.fill(None);
+        self.encode_unit(outbound)
+    }
+
+    fn encode_unit(&mut self, outbound: Outbound) -> Result<Vec<Vec<u8>>, ShellClientError> {
         if self.descriptor
             && (matches!(
                 &outbound,
-                Outbound::CatalogCandidateGroup { .. } | Outbound::CatalogActionResponse { .. }
+                Outbound::CatalogCandidateGroup { .. }
+                    | Outbound::CatalogActionResponse { .. }
+                    | Outbound::CatalogActivation(..)
             ) || (!matches!(
                 &outbound,
                 Outbound::Descriptor(_) | Outbound::IndicatorActivation(..)
@@ -423,6 +436,71 @@ impl FileWire {
             return Err(ShellClientError::MissingCapability);
         }
         match outbound {
+            Outbound::CatalogActivation(transaction, activation) => {
+                let header = self.next_header(ShellFileKind::CatalogActivate);
+                let bytes = encode_shell_file_catalog_action(
+                    header,
+                    &ShellFileCatalogActionRecord {
+                        transaction,
+                        record: ShellCatalogActionRecord::Activate(activation),
+                    },
+                )?;
+                Ok(self.stage_records(vec![bytes]))
+            }
+            Outbound::NativeActionResponse {
+                transaction,
+                ack,
+                activation,
+            } => {
+                self.require_native_launcher()?;
+                let mut records = Vec::with_capacity(2);
+                if let Some((tx, activation)) = activation {
+                    records.push(self.encode_native_record(&ShellFileNativeLauncherRecord {
+                        transaction: tx,
+                        record: sophia_shell_protocol::ShellNativeLauncherRecord::Activate(
+                            activation,
+                        ),
+                    })?);
+                }
+                records.push(self.action_ack(transaction, ack)?);
+                Ok(self.stage_records(records))
+            }
+            Outbound::Native(value) => {
+                let bytes = self.encode_native_record(&value)?;
+                Ok(self.stage_records(vec![bytes]))
+            }
+            Outbound::NativeCandidate(value) => {
+                self.require_native_launcher()?;
+                let header = self.next_header(ShellFileKind::NativeCandidate);
+                let bytes = encode_shell_file_native_candidate(header, &value)?;
+                Ok(self.stage_records(vec![bytes]))
+            }
+            Outbound::NativeResponse {
+                transaction,
+                ack,
+                activation,
+            } => {
+                self.require_native_launcher()?;
+                let mut records = Vec::with_capacity(2);
+                if let Some((tx, activation)) = activation {
+                    if activation.event != ack.event || activation.cause != 1 || tx == transaction {
+                        return Err(ShellClientError::InvalidArgument(
+                            "native response identity",
+                        ));
+                    }
+                    records.push(self.encode_native_record(&ShellFileNativeLauncherRecord {
+                        transaction: tx,
+                        record: sophia_shell_protocol::ShellNativeLauncherRecord::Activate(
+                            activation,
+                        ),
+                    })?);
+                }
+                records.push(self.encode_native_record(&ShellFileNativeLauncherRecord {
+                    transaction,
+                    record: sophia_shell_protocol::ShellNativeLauncherRecord::InputAck(ack),
+                })?);
+                Ok(self.stage_records(records))
+            }
             Outbound::Descriptor(value) => {
                 let kind = shell_file_descriptor_kind(&value.record);
                 self.require_descriptor_kind(kind)?;
@@ -566,6 +644,11 @@ impl FileWire {
                 Ok(vec![chunk.bytes])
             }
             ShellContentRecord::ResourceBegin(begin) => {
+                if self.staged_begins.contains(&Some(begin.resource)) {
+                    return Err(ShellClientError::InvalidArgument(
+                        "duplicate resource in batch",
+                    ));
+                }
                 let slot = self.free_slot().ok_or(ShellClientError::QueueSaturated)?;
                 let resource = begin.resource;
                 let header = self.next_header(ShellFileKind::ResourceBegin);
@@ -578,7 +661,7 @@ impl FileWire {
                     },
                 )?;
                 self.staged.push(QueuedKind::Record);
-                self.staged_begin = Some((slot, resource));
+                self.staged_begins[slot as usize] = Some(resource);
                 Ok(vec![bytes])
             }
             ShellContentRecord::AllocationRequest(_) => {
@@ -658,13 +741,27 @@ impl FileWire {
         }
     }
 
+    pub(crate) fn reserve_encoded(&mut self) -> Result<(), ShellClientError> {
+        self.pending
+            .try_reserve(self.staged.len())
+            .map_err(|_| ShellClientError::QueueSaturated)
+    }
+
     pub(crate) fn commit_encoded(&mut self) {
-        if let Some((slot, resource)) = self.staged_begin.take() {
-            self.uploads[slot as usize] = Some(Upload {
-                resource,
-                state: UploadState::Pending,
-            });
+        self.service_pending |= !self.staged.is_empty();
+        for (slot, resource) in self.staged_begins.iter_mut().enumerate() {
+            if let Some(resource) = resource.take() {
+                self.uploads[slot] = Some(Upload {
+                    resource,
+                    state: UploadState::Pending,
+                });
+            }
         }
         self.pending.extend(self.staged.drain(..));
+    }
+
+    pub(crate) fn cancel_encoded(&mut self) {
+        self.staged.clear();
+        self.staged_begins.fill(None);
     }
 }

@@ -104,6 +104,33 @@ name = "sophia-9p-records"
 version = "0.3.0"
 
 [[package]]
+name = "sophia-admin-client"
+version = "0.3.0"
+dependencies = [
+ "rustix",
+ "sophia-9p-client",
+ "sophia-9p-records",
+ "sophia-admin-protocol",
+]
+
+[[package]]
+name = "sophia-admin-protocol"
+version = "0.3.0"
+
+[[package]]
+name = "sophia-broker-client"
+version = "0.3.0"
+dependencies = [
+ "sophia-9p-client",
+ "sophia-9p-records",
+ "sophia-broker-protocol",
+]
+
+[[package]]
+name = "sophia-broker-protocol"
+version = "0.3.0"
+
+[[package]]
 name = "sophia-desktop-ids"
 version = "0.3.0"
 
@@ -113,6 +140,17 @@ version = "0.3.0"
 dependencies = [
  "rustix",
  "sophia-9p-client",
+]
+
+[[package]]
+name = "sophia-lock-client"
+version = "0.3.0"
+dependencies = [
+ "rustix",
+ "sophia-9p-client",
+ "sophia-9p-records",
+ "sophia-launch-client",
+ "sophia-lock-protocol",
 ]
 
 [[package]]
@@ -130,6 +168,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "sophia-output-client"
+version = "0.3.0"
+dependencies = [
+ "rustix",
+ "sophia-9p-client",
+ "sophia-9p-records",
+ "sophia-launch-client",
+ "sophia-output-protocol",
+]
+
+[[package]]
+name = "sophia-output-protocol"
+version = "0.3.0"
+dependencies = [
+ "kdl",
+ "sophia-desktop-ids",
+]
+
+[[package]]
+name = "sophia-portal-client"
+version = "0.3.0"
+dependencies = [
+ "rustix",
+ "sophia-9p-client",
+ "sophia-9p-records",
+ "sophia-launch-client",
+ "sophia-namespace-client",
+ "sophia-portal-protocol",
+]
+
+[[package]]
+name = "sophia-portal-protocol"
+version = "0.3.0"
+
+[[package]]
 name = "sophia-shell-client"
 version = "0.3.0"
 dependencies = [
@@ -144,6 +217,24 @@ name = "sophia-shell-protocol"
 version = "0.3.0"
 dependencies = [
  "kdl",
+ "sophia-desktop-ids",
+]
+
+[[package]]
+name = "sophia-wm-client"
+version = "0.3.0"
+dependencies = [
+ "rustix",
+ "sophia-9p-client",
+ "sophia-9p-records",
+ "sophia-launch-client",
+ "sophia-wm-protocol",
+]
+
+[[package]]
+name = "sophia-wm-protocol"
+version = "0.3.0"
+dependencies = [
  "sophia-desktop-ids",
 ]
 

@@ -124,6 +124,16 @@ fn external_sdk_portal_session_old_watch_and_new_transfer() {
     run_boundary("sdk-session-revoke");
 }
 #[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independent SDK peer"]
+fn external_sdk_portal_session_capture_replaces_watched_frame() {
+    run_boundary("sdk-session-capture");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independent SDK peer"]
+fn external_sdk_portal_session_frame_survives_watch_cancellation() {
+    run_boundary("sdk-session-frame");
+}
+#[test]
 #[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
 fn external_sdk_portal_transfer_revocation_hides_scratch() {
     run_boundary("sdk-transfer-revoke");
@@ -151,7 +161,11 @@ fn run_boundary(boundary: &str) {
     let occupied_request = matches!(boundary, "sdk-request-busy" | "sdk-request-stale");
     let refused_request = locked_request || occupied_request;
     let cancelled_request = boundary.starts_with("sdk-request-cancelled");
-    let sdk_frame = boundary.starts_with("sdk-frame") || sdk_request;
+    let session_capture = boundary == "sdk-session-capture";
+    let sdk_frame = boundary.starts_with("sdk-frame")
+        || sdk_request
+        || session_capture
+        || boundary == "sdk-session-frame";
     let revoke_frame = boundary == "sdk-frame-revoke";
     let is_capture = boundary.starts_with("capture") || sdk_frame;
     let standalone = boundary.starts_with("capture-bootstrap");
@@ -360,6 +374,9 @@ fn run_boundary(boundary: &str) {
             while std::fs::read_to_string(&report).ok().as_deref() != Some("session-done\n") {
                 assert!(Instant::now() < deadline, "shared session deadline");
                 f.auth.tick();
+                if session_capture {
+                    capture.as_ref().unwrap().service();
+                }
             }
         }
         if sdk_watch && !watch_absent {

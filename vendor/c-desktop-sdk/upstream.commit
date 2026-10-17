@@ -1,14 +1,14 @@
-tree 5062f72cd3a5023e377ba3c403b0726ad959d810
-parent 8bb069e13afb076f08431cf299a64d2305330ea7
-author Mason Green <mason@greenm01.net> 1791806792 -0400
-committer Mason Green <mason@greenm01.net> 1791806792 -0400
+tree bf0819514b8cef11ff495157d8bf87d5a7c16f1f
+parent 5de85f2e5a8e314248e58bc79b5529e43df89cce
+author Mason Green <mason@greenm01.net> 1792204829 -0400
+committer Mason Green <mason@greenm01.net> 1792204829 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaszNSBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKBZgD+OmMJCREgzpKkzvD4aVMz
- aoHKlvKolL2xHh+EpgPWD4ABAPLfzznaNKXJzIdNIw8e5hGkYZhK7POj/LbzBvxc
- TdUJ
- =6yIe
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLgHRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLicgD9FJQBWR7yW54YyRuZzRUr
+ /C4PKmZOH98am/y7a0ZG5mQA/0fnj9wl85O81tONIf6dXOQnGG4b+lsFsZEiO5Rw
+ A0wN
+ =FcQq
  -----END PGP SIGNATURE-----
 
-feat(auth): reuse quiescent launch relay for another endpoint
+Remove trailing blank line from administration guide

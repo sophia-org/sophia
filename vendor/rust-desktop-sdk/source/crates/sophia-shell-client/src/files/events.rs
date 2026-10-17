@@ -129,8 +129,8 @@ impl FileWire {
         }
         let needed = match feed {
             ShellFileKind::Outputs => SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE,
-            // The file wire's catalog object is the r8 persistent catalog.
-            ShellFileKind::Catalog if self.descriptor => {
+            // Descriptor and launcher catalogs omit the r8 identity extension.
+            ShellFileKind::Catalog if self.descriptor || self.native_launcher => {
                 SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
             }
             ShellFileKind::Catalog => SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG,
@@ -240,6 +240,20 @@ impl FileWire {
                 let value = decode_shell_file_indicator_activation_outcome(record)?;
                 Event::Inbound(Inbound::IndicatorOutcome(value.transaction, value.outcome))
             }
+            ShellFileKind::NativeOpening
+            | ShellFileKind::NativeFocus
+            | ShellFileKind::NativeFocusRevoked
+            | ShellFileKind::NativeInput
+            | ShellFileKind::NativeActivationOutcome
+            | ShellFileKind::NativeClosed => {
+                self.require_native_launcher()?;
+                let value = if header.kind == ShellFileKind::NativeInput {
+                    decode_shell_file_native_input(record)?
+                } else {
+                    decode_shell_file_native_launcher_transaction(record, header.kind)?
+                };
+                Event::Inbound(Inbound::Native(value))
+            }
             kind if shell_file_descriptor_max_bytes(kind).is_some() => {
                 self.require_descriptor_kind(kind)?;
                 Event::Inbound(Inbound::Descriptor(decode_shell_file_descriptor(
@@ -266,6 +280,9 @@ impl FileWire {
                 self.submitted_sequence = sequence;
             }
             Event::Published(published, index) => {
+                if self.native_launcher {
+                    inbox.push_back(Inbound::NativePublication(published));
+                }
                 let bound = sequence - 1;
                 let hold = self.holds[index].get_or_insert(bound);
                 *hold = (*hold).min(bound);
@@ -497,7 +514,8 @@ impl FileWire {
             ShellFileKind::Catalog => {
                 let value = decode_shell_file_catalog(&fetch.buf)?;
                 if value.catalog.catalog.connection_epoch != self.epoch
-                    || (self.descriptor && !value.catalog.identities.is_empty())
+                    || ((self.descriptor || self.native_launcher)
+                        && !value.catalog.identities.is_empty())
                 {
                     return Err(ShellClientError::Protocol("catalog identity or profile"));
                 }
@@ -507,7 +525,7 @@ impl FileWire {
                     ));
                 }
                 let generation = value.catalog.catalog.generation;
-                let item = if self.descriptor {
+                let item = if self.descriptor || self.native_launcher {
                     Inbound::ApplicationCatalog(value.transaction, value.catalog.catalog)
                 } else {
                     Inbound::Catalog(value.transaction, value.catalog)

@@ -403,6 +403,36 @@ static void authentication_qid_is_not_an_ordinary_file_qid(void)
         finish(&f);
     }
 }
+static void service_byte_budget_bounds_partial_requests(void)
+{
+    struct fixture f;
+    struct sophia_9p_handle h;
+    uint32_t fid;
+    uint8_t bytes[128], extra;
+    size_t used = 0, total = 4;
+    ssize_t n;
+    init(&f, 4, 4);
+    assert(!sophia_9p_attach(&f.c, "", "", &h, &fid));
+    assert(!sophia_9p_service(&f.c, 0));
+    assert(recv(f.fd[1], &extra, 1, MSG_DONTWAIT) < 0 &&
+           (errno == EAGAIN || errno == EWOULDBLOCK));
+    while (used < total) {
+        assert(!sophia_9p_service(&f.c, 3));
+        n = recv(f.fd[1], bytes + used, sizeof(bytes) - used, MSG_DONTWAIT);
+        assert(n > 0 && n <= 3);
+        used += (size_t)n;
+        if (used >= 4) {
+            total = get32(bytes);
+            assert(total <= sizeof(bytes));
+        }
+        assert(!sophia_9p_service(&f.c, 0));
+        assert(recv(f.fd[1], &extra, 1, MSG_DONTWAIT) < 0 &&
+               (errno == EAGAIN || errno == EWOULDBLOCK));
+    }
+    assert(used == total && bytes[4] == 104 && !sophia_9p_wants_write(&f.c));
+    finish(&f);
+}
+
 int main(void)
 {
     puts("tag wrap");
@@ -417,6 +447,7 @@ int main(void)
     reply_shape_poisoning();
     authenticated_attach_and_afid_custody();
     authentication_qid_is_not_an_ordinary_file_qid();
+    service_byte_budget_bounds_partial_requests();
     puts("Tauth/afid wire and custody controls passed");
     puts("sophia_9p_client: R4-1..R4-7 controls passed");
     return 0;

@@ -1364,8 +1364,22 @@ dependencies = [
 name = "sophia-broker"
 version = "0.1.0"
 dependencies = [
+ "sophia-broker-protocol",
  "sophia-protocol",
 ]
+
+[[package]]
+name = "sophia-broker-client"
+version = "0.3.0"
+dependencies = [
+ "sophia-9p-client",
+ "sophia-9p-records",
+ "sophia-broker-protocol",
+]
+
+[[package]]
+name = "sophia-broker-protocol"
+version = "0.3.0"
 
 [[package]]
 name = "sophia-cli"
@@ -1376,6 +1390,7 @@ dependencies = [
  "sophia-9p-client",
  "sophia-backend-live",
  "sophia-broker",
+ "sophia-broker-client",
  "sophia-config",
  "sophia-engine",
  "sophia-launch-client",

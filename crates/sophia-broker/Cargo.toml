@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+sophia-broker-protocol.workspace = true
 sophia-protocol = { path = "../sophia-protocol" }
 
 [lints]

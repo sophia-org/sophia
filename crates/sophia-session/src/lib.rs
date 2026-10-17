@@ -23,6 +23,9 @@ pub(crate) use session_eprintln;
 pub mod application_catalog;
 pub mod backend_args;
 pub mod backend_evidence;
+pub mod broker_file_driver;
+pub mod broker_file_owner;
+pub mod broker_responses;
 // The start-cause vocabulary is shared by the emitter, which needs the native
 // session, and by evidence reduction, which does not. It lives outside the
 // gated module so the reducer builds in every configuration.

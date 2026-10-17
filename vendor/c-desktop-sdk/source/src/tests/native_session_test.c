@@ -630,6 +630,26 @@ static void test_focus(void)
     assert(e.held && !sophia_ns_done(&n) && sophia_ns_focus(&n)->focus_lease == 5);
 }
 static unsigned edits;
+static int decline_edit(void *user, const struct sophia_sf_native_input *v)
+{
+    (void)user;
+    (void)v;
+    edits++;
+    return 0;
+}
+static void test_declined_edit_is_acknowledged_stale(void)
+{
+    struct sophia_ns n;
+    struct sophia_ns_event e;
+    const struct sophia_sf_record *c = shown(&n);
+    uint64_t t;
+    input(binding(c->value.role_candidate.content.candidate_generation, 1, 1), 10, 2, 1, "ab");
+    (void)next(&n, &e, SOPHIA_NS_EV_INPUT);
+    edits = 0;
+    assert(!sophia_ns_input_apply(&n, 0, decline_edit, NULL, &t));
+    assert(edits == 1 && F.head == F.pushed);
+    assert(last(SOPHIA_SF_NATIVE_INPUT_ACK)->value.native_input_ack.disposition == 2);
+}
 static int edit(void *user, const struct sophia_sf_native_input *v)
 {
     (void)user;
@@ -763,6 +783,33 @@ static void action(uint64_t generation, uint64_t event, uint16_t kind)
 }
 /* Action acknowledgement is explicit, BUSY-safe and consumes the event; a
  * pointer activation is sent only on request, before the ack, atomically. */
+static void test_action_nonselected_row(void)
+{
+    struct sophia_ns n;
+    struct sophia_ns_scene s = scene();
+    struct sophia_ns_event e;
+    const struct sophia_sf_record *c;
+    uint64_t t, g;
+    ready(&n);
+    s.row_count = 2;
+    s.rows[1] = 6;
+    s.selected = 6;
+    s.targets[1] = s.targets[0];
+    s.targets[1].target_id++;
+    assert(!sophia_ns_present(&n, &s, 1050, &t));
+    c = last(SOPHIA_SF_NATIVE_CANDIDATE);
+    g = c->value.role_candidate.content.candidate_generation;
+    outcome(c, 2);
+    finish(&n, SOPHIA_NS_EV_CANDIDATE);
+    focus(binding(g, 1, 1));
+    finish(&n, SOPHIA_NS_EV_FOCUS);
+    action(g, 31, 1); /* row 5 is displayed, but row 6 is selected */
+    (void)next(&n, &e, SOPHIA_NS_EV_ACTION);
+    assert(e.can_activate);
+    assert(!sophia_ns_action_ack(&n, 1, 1, &t));
+    assert(last(SOPHIA_SF_NATIVE_ACTIVATE)->value.native_activate.slot == 5);
+}
+
 static void test_action(void)
 {
     struct sophia_ns n;
@@ -772,6 +819,15 @@ static void test_action(void)
     unsigned before;
     action(g, 30, 1);
     (void)next(&n, &e, SOPHIA_NS_EV_ACTION);
+    {
+        struct sophia_ns_obligations o;
+        uint64_t due;
+        assert(!sophia_ns_obligations(&n, &o));
+        due = o.action_due_ms;
+        assert(due == n.head_ms + F.limits.action_ack_timeout_ms);
+        assert(!sophia_ns_next(&n, n.head_ms + 100, &e));
+        assert(!sophia_ns_obligations(&n, &o) && o.action_due_ms == due);
+    }
     assert(e.current && e.ack_owed && e.can_activate && sophia_ns_done(&n) == SOPHIA_9P_ARGUMENT);
     F.submit_busy = 1;
     assert(sophia_ns_action_ack(&n, 1, 1, &t) == SOPHIA_9P_BUSY && F.head < F.pushed);
@@ -873,8 +929,75 @@ static void test_terminal(void)
     assert(sophia_ns_next(&n, 2000, &e) == SOPHIA_9P_CLOSED);
     assert(sophia_ns_input_reserve(&n, 0) == SOPHIA_9P_CLOSED);
 }
+static void test_expiry_before_submit_refusal(void)
+{
+    struct sophia_ns n;
+    struct sophia_ns_scene s = scene();
+    uint64_t t;
+    ready(&n);
+    assert(!sophia_ns_present(&n, &s, 1050, &t));
+    permit(1, 2, 77, 0);
+    finish(&n, SOPHIA_NS_EV_PERMIT);
+    F.outcomes[t] = SOPHIA_SS_REFUSED;
+    assert(!sophia_ns_service(&n, 1200));
+    /* The authoritative expiry already arrived; do not await it twice. */
+    assert(!sophia_ns_demand(&n, 1, 1200, &t));
+    permit(2, 1, 78, 100);
+    finish(&n, SOPHIA_NS_EV_PERMIT);
+    permit(1, 2, 77, 0);
+    finish(&n, SOPHIA_NS_EV_PERMIT);
+    assert(!sophia_ns_present(&n, &s, 1250, &t));
+}
+
+static void test_cancel_resource_after_refused_end(void)
+{
+    struct sophia_ns n;
+    struct sophia_sf_resource_begin begin;
+    const struct sophia_sf_record *record;
+    uint64_t t, next;
+    reset();
+    assert(!sophia_ns_init(&n, &SS, &CONFIG));
+    memset(&begin, 0, sizeof(begin));
+    begin.resource_id = RES;
+    begin.resource_generation = RES_GEN;
+    assert(!sophia_ns_upload_begin(&n, begin, &t));
+    resource_status(1);
+    finish(&n, SOPHIA_NS_EV_RESOURCE);
+    assert(!sophia_ns_upload_end(&n, &t));
+    F.outcomes[t] = SOPHIA_SS_REFUSED;
+    assert(!sophia_ns_service(&n, 1000));
+    assert(sophia_ns_upload_cancel(&n, &t) == SOPHIA_9P_INVALID);
+    next = n.next_transaction;
+    F.submit_busy = 1;
+    assert(sophia_ns_resource_cancel(&n, RES, RES_GEN, &t) == SOPHIA_9P_BUSY);
+    assert(n.next_transaction == next);
+    F.submit_busy = 0;
+    assert(sophia_ns_resource_cancel(&n, RES, RES_GEN + 1, &t) == SOPHIA_9P_INVALID);
+    assert(!sophia_ns_resource_cancel(&n, RES, RES_GEN, &t));
+    record = last(SOPHIA_SF_RESOURCE_CANCEL);
+    assert(record && record->value.resource_cancel.resource_id == RES);
+    assert(record->value.resource_cancel.resource_generation == RES_GEN);
+    assert(record->value.resource_cancel.transaction == next);
+    /* Local admission does not free the identity. */
+    assert(sophia_ns_upload_begin(&n, begin, &t) == SOPHIA_9P_INVALID);
+    resource_status(4);
+    finish(&n, SOPHIA_NS_EV_RESOURCE);
+    assert(!sophia_ns_upload_begin(&n, begin, &t));
+    assert(!sophia_ns_resource_cancel(&n, RES, RES_GEN, &t));
+    assert(!n.uploading);
+    resource_status(4);
+    finish(&n, SOPHIA_NS_EV_RESOURCE);
+    assert(sophia_ns_resource_cancel(&n, RES, RES_GEN, &t) == SOPHIA_9P_INVALID);
+    ready(&n);
+    assert(sophia_ns_resource_cancel(&n, RES, RES_GEN, &t) == SOPHIA_9P_INVALID);
+}
+
 int main(void)
 {
+    test_declined_edit_is_acknowledged_stale();
+    test_action_nonselected_row();
+    test_cancel_resource_after_refused_end();
+    test_expiry_before_submit_refusal();
     test_init();
     test_catalog_invalidation();
     test_pacing();

@@ -32,7 +32,7 @@ impl CatalogInbox {
 }
 
 impl ShellConnection {
-    fn require_catalog(&self) -> Result<(), ShellClientError> {
+    pub(crate) fn require_catalog(&self) -> Result<(), ShellClientError> {
         if self.welcome.selected_revision != SOPHIA_SHELL_PERSISTENT_CATALOG_REVISION
             || self.welcome.capabilities & SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG == 0
         {
@@ -90,7 +90,9 @@ impl ShellConnection {
                 assembly.generation = catalog.catalog.generation;
                 Ok(Some(CatalogObservation::Catalog(tx, catalog)))
             }
-            Inbound::Indicators(_, _)
+            Inbound::NativePublication(_)
+            | Inbound::Native(_)
+            | Inbound::Indicators(_, _)
             | Inbound::IndicatorOutcome(_, _)
             | Inbound::Descriptor(_)
             | Inbound::ApplicationCatalog(..) => {

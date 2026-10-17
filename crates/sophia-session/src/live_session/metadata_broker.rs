@@ -1,4 +1,8 @@
 use super::*;
+use crate::broker_file_driver::BrokerFileDriver;
+use crate::broker_file_owner::{BrokerCompletion, BrokerFileOwner};
+use sophia_protocol::broker_files::{BrokerFileLimits, BrokerFileRequest};
+use sophia_runtime::broker_files::{BrokerFileListener, SOPHIA_BROKER_9P_SOCKET_ENV};
 
 /// Session-owned host for the metadata authority and Engine's sanitized table.
 ///
@@ -7,29 +11,29 @@ use super::*;
 /// the broker; raw X properties never enter this process boundary.
 pub(super) struct LiveMetadataBroker {
     supervisor: ProcessSupervisor,
-    transport: sophia_runtime::MetadataBrokerSessionTransport,
-    descriptors: sophia_engine::ChromeDescriptorTable,
-    grants: BTreeMap<SurfaceId, sophia_protocol::BrokerToplevelActionGrant>,
-    admitted: BTreeMap<SurfaceId, sophia_x_authority::XServerFrontendClientId>,
+    driver: BrokerFileDriver<sophia_x_authority::XServerFrontendClientId>,
+    // Includes surfaces retired before admission, which never enter the broker.
     retired: BTreeSet<SurfaceId>,
     connection_epoch: u64,
-    next_transaction: u64,
 }
 
 impl LiveMetadataBroker {
     pub(super) fn start(bubblewrap: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
         let executable = std::env::current_exe()?;
+        Self::start_executable(&executable, bubblewrap)
+    }
+
+    fn start_executable(
+        executable: &std::path::Path,
+        bubblewrap: &std::path::Path,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let directory = std::env::temp_dir().join(format!(
             "sophia-live-metadata-broker-{}-{}",
             std::process::id(),
             SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
         ));
-        let mut transport =
-            sophia_runtime::MetadataBrokerSessionTransport::bind_for_supervised_uid(
-                &directory,
-                rustix::process::geteuid().as_raw(),
-            )?;
-        let socket = transport.socket_path().to_path_buf();
+        let listener = BrokerFileListener::bind(&directory, rustix::process::geteuid().as_raw())?;
+        let socket = listener.socket_path().to_path_buf();
         let domain = sophia_runtime::ProtectionDomainSpec::bubblewrap([
             sophia_runtime::ProtectionDomainRole::MetadataBroker,
         ])?
@@ -40,8 +44,8 @@ impl LiveMetadataBroker {
                 .expect("metadata broker socket always has a parent"),
         ))?;
         let spec = ProcessLaunchSpec::new(executable)
-            .arg("metadata-broker-serve")
-            .env(sophia_runtime::SOPHIA_BROKER_SOCKET_ENV, &socket)
+            .arg("metadata-broker-files-serve")
+            .env(SOPHIA_BROKER_9P_SOCKET_ENV, &socket)
             .env("SOPHIA_BROKER_DEFAULT_DISCLOSURE", "class-only")
             .process_group()
             .protection_domain(domain);
@@ -58,32 +62,37 @@ impl LiveMetadataBroker {
                 .protection_evidence()
                 .ok_or("metadata broker supervisor omitted its protection domain")?
                 .clone();
-            transport.authorize_protected_peer(&evidence)?;
-            let welcome = transport.accept_and_negotiate(1, Duration::from_secs(5))?;
-            Ok((evidence.peer_pid, welcome))
+            let owner = BrokerFileOwner::new(1)
+                .map_err(|error| format!("metadata broker owner: {error:?}"))?;
+            let service = listener.accept(
+                owner,
+                &evidence,
+                1,
+                1,
+                0,
+                BrokerFileLimits::default(),
+                Duration::from_secs(5),
+            )?;
+            let mut driver = BrokerFileDriver::new(service);
+            driver.negotiate(Duration::from_secs(5))?;
+            Ok((evidence.peer_pid, driver))
         })();
-        let (peer_pid, welcome) = match ready {
+        let (peer_pid, driver) = match ready {
             Ok(ready) => ready,
             Err(error) => {
-                let _ = transport.disconnect();
                 let _ = supervisor.terminate();
                 return Err(error);
             }
         };
         crate::session_println!(
-            "sophia_live_metadata_broker schema=1 status=ready protected=true peer_pid={} revision={}",
+            "sophia_live_metadata_broker schema=1 status=ready protected=true peer_pid={} revision=2 transport=9p",
             peer_pid,
-            welcome.selected_revision,
         );
         Ok(Self {
             supervisor,
-            transport,
-            descriptors: Default::default(),
-            grants: Default::default(),
-            admitted: Default::default(),
+            driver,
             retired: Default::default(),
-            connection_epoch: welcome.connection_epoch,
-            next_transaction: 1,
+            connection_epoch: 1,
         })
     }
 
@@ -91,6 +100,7 @@ impl LiveMetadataBroker {
         if self.supervisor.poll()?.is_some() {
             return Err("protected metadata broker exited".into());
         }
+        self.driver.poll()?;
         Ok(())
     }
 
@@ -118,32 +128,32 @@ impl LiveMetadataBroker {
         if self.retired.contains(&surface) {
             return Ok(None);
         }
-        if let Some(existing) = self.admitted.get(&surface) {
-            if *existing == client {
+        if let Some(existing) = self.driver.owner().route(surface) {
+            if existing == client {
                 return Ok(None);
             }
             return Err("metadata surface changed owning X client without retirement".into());
         }
-        let transaction = self.next_transaction()?;
-        let response = self.transport.request(
-            transaction,
-            &sophia_protocol::BrokerV1Request::SurfaceAdmitted {
-                connection_epoch: self.connection_epoch,
-                surface,
-                profile,
-            },
+        let response = self.driver.request(
+            BrokerFileRequest::SurfaceAdmitted { surface, profile },
+            client,
+            Duration::from_secs(5),
         )?;
-        let sophia_protocol::BrokerV1Response::PublishRule { rule, .. } = response else {
+        let BrokerCompletion::Applied {
+            request,
+            rule: Some(rule),
+            retired: None,
+        } = response
+        else {
             return Err(format!("metadata broker rejected surface admission: {response:?}").into());
         };
         if rule.surface != surface {
             return Err("metadata broker returned a rule for another surface".into());
         }
-        self.admitted.insert(surface, client);
         Ok(Some(XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::PublishMetadataRule {
-                transaction,
+                transaction: TransactionId::from_raw(request),
                 surface,
                 rule,
             },
@@ -157,40 +167,30 @@ impl LiveMetadataBroker {
         if self.retired.contains(&delivery.candidate.surface) {
             return Ok(());
         }
-        if self.admitted.get(&delivery.candidate.surface) != Some(&delivery.client) {
+        if self.driver.owner().route(delivery.candidate.surface) != Some(delivery.client) {
             return Err("reduced metadata arrived outside its admitted X client route".into());
         }
-        let transaction = self.next_transaction()?;
-        let response = self.transport.request(
-            transaction,
-            &sophia_protocol::BrokerV1Request::CandidateReduced {
-                connection_epoch: self.connection_epoch,
-                candidate: delivery.candidate,
+        let candidate = &delivery.candidate;
+        let response = self.driver.request(
+            BrokerFileRequest::CandidateReduced {
+                surface: candidate.surface,
+                disclosure: candidate.disclosure,
+                label: candidate.label.as_ref().map(|label| label.text.as_str()),
+                redacted: candidate.label.as_ref().is_some_and(|label| label.redacted),
+                generation: candidate.generation,
             },
+            delivery.client,
+            Duration::from_secs(5),
         )?;
         match response {
-            sophia_protocol::BrokerV1Response::EmitDescriptor {
-                descriptor, action, ..
-            } => {
-                if action.target_generation != descriptor.generation {
-                    return Err("metadata broker action and descriptor generations differ".into());
-                }
-                match self.descriptors.apply_metadata(descriptor) {
-                    sophia_engine::MetadataChromeUpdate::Upserted { surface } => {
-                        self.grants.insert(surface, action);
-                        crate::session_println!(
-                            "sophia_live_metadata_broker schema=1 status=descriptor_committed surface={} content=redacted",
-                            surface.index(),
-                        );
-                        Ok(())
-                    }
-                    outcome => Err(format!(
-                        "Engine rejected sanitized metadata descriptor: {outcome:?}"
-                    )
-                    .into()),
-                }
+            BrokerCompletion::Applied { .. } => {
+                crate::session_println!(
+                    "sophia_live_metadata_broker schema=1 status=descriptor_committed surface={} content=redacted",
+                    candidate.surface.index(),
+                );
+                Ok(())
             }
-            sophia_protocol::BrokerV1Response::NoChange { .. } => Ok(()),
+            BrokerCompletion::NoChange { .. } => Ok(()),
             response => {
                 Err(format!("metadata broker rejected reduced candidate: {response:?}").into())
             }
@@ -204,48 +204,55 @@ impl LiveMetadataBroker {
         if !self.retired.insert(surface) {
             return Ok(());
         }
-        if self.admitted.remove(&surface).is_none() {
+        let Some(client) = self.driver.owner().route(surface) else {
             return Ok(());
-        }
-        let transaction = self.next_transaction()?;
-        let response = self.transport.request(
-            transaction,
-            &sophia_protocol::BrokerV1Request::SurfaceRemoved {
-                connection_epoch: self.connection_epoch,
-                surface,
-            },
+        };
+        let response = self.driver.request(
+            BrokerFileRequest::SurfaceRemoved { surface },
+            client,
+            Duration::from_secs(5),
         )?;
         match response {
-            sophia_protocol::BrokerV1Response::RetireSurface {
-                surface: retired, ..
-            } if retired == surface => {
-                self.descriptors.remove_surface(surface);
-                self.grants.remove(&surface);
-                Ok(())
-            }
+            BrokerCompletion::Applied {
+                retired: Some(retired),
+                ..
+            } if retired == surface => Ok(()),
             response => {
                 Err(format!("metadata broker rejected surface retirement: {response:?}").into())
             }
         }
     }
+}
 
-    pub(super) const fn connection_epoch(&self) -> u64 {
+impl MetadataBrokerView for LiveMetadataBroker {
+    fn connection_epoch(&self) -> u64 {
         self.connection_epoch
     }
 
-    pub(super) const fn descriptors(&self) -> &sophia_engine::ChromeDescriptorTable {
-        &self.descriptors
+    fn descriptors(&self) -> &sophia_engine::ChromeDescriptorTable {
+        self.driver.owner().descriptors()
     }
+    fn grants(&self) -> &BTreeMap<SurfaceId, sophia_protocol::BrokerToplevelActionGrant> {
+        self.driver.owner().grants()
+    }
+}
 
-    pub(super) fn shell_sources(
+/// Read-only sanitized metadata consumed by shells. Presentation tests can
+/// supply a table without constructing a fake broker process or transport.
+pub(super) trait MetadataBrokerView {
+    fn connection_epoch(&self) -> u64;
+    fn descriptors(&self) -> &sophia_engine::ChromeDescriptorTable;
+    fn grants(&self) -> &BTreeMap<SurfaceId, sophia_protocol::BrokerToplevelActionGrant>;
+
+    fn shell_sources(
         &self,
         activation_surfaces: &BTreeSet<SurfaceId>,
     ) -> Vec<LiveShellDescriptorSource> {
-        self.grants
+        self.grants()
             .iter()
             .filter(|(surface, _)| activation_surfaces.contains(surface))
             .filter_map(|(surface, grant)| {
-                self.descriptors
+                self.descriptors()
                     .get(*surface)
                     .filter(|descriptor| descriptor.generation == grant.target_generation)
                     .cloned()
@@ -260,25 +267,16 @@ impl LiveMetadataBroker {
 
     /// Resolves only the exact current broker grant. Shell slot and recipient
     /// validation happen in the shell owner before this issuer-side check.
-    pub(super) fn resolve_toplevel_action(
+    fn resolve_toplevel_action(
         &self,
         action: sophia_protocol::ToplevelActionCapabilityRef,
     ) -> Option<SurfaceId> {
         resolve_live_broker_toplevel_action(
-            self.connection_epoch,
-            &self.grants,
-            &self.descriptors,
+            self.connection_epoch(),
+            self.grants(),
+            self.descriptors(),
             action,
         )
-    }
-
-    fn next_transaction(&mut self) -> Result<TransactionId, Box<dyn std::error::Error>> {
-        let transaction = TransactionId::from_raw(self.next_transaction);
-        self.next_transaction = self
-            .next_transaction
-            .checked_add(1)
-            .ok_or("metadata broker transaction identity exhausted")?;
-        Ok(transaction)
     }
 }
 
@@ -309,8 +307,8 @@ pub(super) struct LiveShellDescriptorSource {
 
 impl Drop for LiveMetadataBroker {
     fn drop(&mut self) {
-        let transport_stopped = self.transport.disconnect().is_ok();
         let process_stopped = self.supervisor.terminate().is_ok();
+        let transport_stopped = self.driver.close().is_ok();
         if transport_stopped && process_stopped {
             crate::session_println!(
                 "sophia_live_metadata_broker schema=1 status=stopped transport=disconnected process=terminated"
@@ -335,3 +333,6 @@ impl Drop for LiveMetadataBroker {
 
 #[path = "../../tests/support/descriptor_broker_fixture.rs"]
 pub(super) mod descriptor_fixture;
+
+#[path = "../../tests/support/live_broker_files.rs"]
+mod live_broker_files;

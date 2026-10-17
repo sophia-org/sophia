@@ -15,6 +15,25 @@ contract in the [control bus](sophia-9p-control-bus.md).
 
 ## Current owners, versions and grants
 
+### Request ordering on a shell connection
+
+The shell export executes synchronous requests in wire order on each
+connection. A client may queue a fresh `Twalk` followed by `Tlopen` for the
+new fid without waiting between them. This is a shell-profile guarantee,
+not an assumption about arbitrary 9P servers. Pending journal reads do not
+block later requests, and clients must match replies by tag rather than
+assume reply order.
+
+A writer must receive both a complete successful walk and a successful open
+before sending payload. A partial walk or either refusal ends that setup;
+an early successful open does not authorize data. Bounded clients may retain
+the sequential walk-then-open path when they lack a second request credit.
+This changes no upload, submission or acknowledgement barrier: resource
+admission precedes upload setup, writes remain sequential, the complete record
+write precedes submit, and the covering acknowledgement precedes the next
+transaction setup. Terminal resource status discards pending setup replies
+and releases its fid without allowing a later reply to reopen the slot.
+
 ### Protocol and revisions
 
 `protocol/sophia-shell-files-v1.kdl` defines the file records and objects.
@@ -239,6 +258,13 @@ feeds of 2 x cap plus one shared 4 MiB build scratch. These are encoded-buffer
 bounds, not RSS; allocator capacity, metadata and queues are accounted
 separately. The per-object caps are: catalog 4 MiB, tabs 1 MiB, shortcuts
 128 KiB, indicators 32 KiB, descriptors 4 KiB, outputs 1 KiB.
+
+Each shell 9P connection may also retain one reusable read payload buffer with
+capacity at most the negotiated frame limit minus the 11-byte Rread overhead.
+This storage is separate from journal retention and queued output; include it
+in transport memory accounting. It is allocated on demand and released on
+version reset or disconnect. Reuse never borrows bytes from queued replies or
+changes their node/epoch delivery checks.
 
 The r8 catalog maximum is 3,014,740 bytes in old framing, and 3,145,876 bytes
 conservative with headers, which fits the 4 MiB cap. The new codec must
@@ -1016,6 +1042,24 @@ before measurement and cannot be relaxed after a result.
 
 Each distribution reports p50, p95 and p99, the maximum, and every timeout,
 with the same client, workload and output on both transports.
+
+### Cost accounting scope (accepted October 15, 2026)
+
+For the B9 cost gate, measure steady-state Session plus client: CPU across all
+their threads, including foreign-library CPU, and Rust global allocation and
+reallocation calls. Divide CPU by exact uploaded MiB (1,048,576 bytes) and
+allocation operations by offered frames. Include preparation, encoding,
+transport, owner processing, presentation, retirement and intervening work
+within the declared workload interval. Do not subtract idle costs.
+
+Exclude startup before that interval, WM/authentication/helper processes,
+foreign allocation calls, GPU allocations and kernel allocations. This scope
+does not establish whole-desktop efficiency. Use separate instrumented cost
+and ordinary latency runs. A cost pass requires the 9P upper bound to be at
+most 1.10 times the paired IPC lower bound; overlapping uncertainty is not a
+pass. The optimization objective is to beat IPC on both measures, established
+only when the 9P upper bound is below the IPC lower bound. The +10% acceptance
+ceiling and all latency and correctness requirements remain unchanged.
 
 ## Amendment 1 (2026-09-26): native bodies, IPC-independent records
 

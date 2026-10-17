@@ -51,6 +51,29 @@ continues to describe implemented support until the relevant gates pass.
 
 ## Parity gate
 
+[API-PARITY.md](API-PARITY.md) maps the shell event-loop operations to the
+native Rust SDK, with tests and remaining differences. Rust `1f33550` supplies
+borrowed-descriptor/readiness access, caller time, whole-call byte/syscall
+budgets and the same 4–256 ms backoff as C. C already provides these controls;
+its library implementation is unchanged. `make check` passes, including the
+new `service_byte_budget_bounds_partial_requests` control and existing clock
+and retry tests. Full shell operation coverage, missing role clients and the
+documented clock-representation differences remain explicit under Sophia t333.
+
+Rust `85b37ed` adds prepared content reservations with infallible local commit
+and cancellation by Drop. C's `reservation` test now also checks successful
+cancellation without ticket issuance. `make check` passes. Rust still cannot
+service the connection through that prepared handle. The later Rust `a2c0e74`
+adds a separate `reserve_capacity` token that allows service and delayed record
+selection. Rust `5b72169` adds atomic batches of content records and whole
+candidates, with distinct transactions and custody tickets. Its batch controls
+map to C's existing `admission_atomicity` tests; the full C suite passes at
+`a90e235`. Non-content batch coverage and native lifecycle parity remain open.
+
+The C cross-session token regression failed before the owner/epoch fix and now
+passes with the full check suite. This is an unreleased 0.10.0-dev candidate:
+the public reservation struct changed and requires consumer/binding rebuilds.
+
 Descriptor support covers all seventeen native envelopes:
 three whole objects, eight events, two activation acknowledgements and four
 presentation candidates in `spec/sophia-shell-files-v1.kdl`. It validates envelopes, identities,
