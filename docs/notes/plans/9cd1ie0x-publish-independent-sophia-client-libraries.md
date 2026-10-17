@@ -144,6 +144,26 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+The first untraced release broker diagnostic at signed Sophia `313e0160c`
+completed all 24 blocks (1,000 operations each) on October 17 at 02:52 UTC.
+Evidence is in
+`~/.local/state/sophia/broker-cost/313e0160c-20261017T025157Z/`:
+artifact hashes and clean source checks, raw samples, process snapshot and log.
+Median update latency across blocks was 84.7–94.2 µs for native files versus
+6.6–8.4 µs for the legacy transport. Combined owner/peer CPU was 97.8–112.4 µs
+per operation versus 8.3–10.6 µs. Correctness checks passed; source and artifacts
+were unchanged. This is diagnostic evidence, not performance acceptance.
+Socket traces and internal copy accounting remain separate and incomplete.
+The next performance step is to attribute the extra native exchanges and CPU
+cost before proposing changes; the final SDK role/API audit also remains open.
+
+The Mac mini confirmed its quiet hold at 02:50 UTC and reported no crunch
+activity before release at 02:52. Muse was visibly stopped at an interactive
+permission prompt, without an explicit hold confirmation. Herdr rejected its
+release message with `agent_blocked`; its permission prompt was left untouched.
+The hold is over. Expected connection-reset messages came from deliberate
+transport teardown outside measurement, after the descriptor checks passed.
+
 The diagnostic now closes its transport and waits for process exit before
 supervisor cleanup, outside measurement. This lets blocked reads return instead
 of leaving syscall traces indeterminate. `cargo xtask check broker-socket-bytes
