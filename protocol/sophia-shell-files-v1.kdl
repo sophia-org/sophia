@@ -344,7 +344,11 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     }
     // status 1 Admitted (transfer admitted; upload may start), 2 Accepted
     // (validated and stored), 3 Rejected, 4 Cancelled. Normative: reason is 0
-    // for status 1 and 2 and <= 12 for status 3 and 4; admitted_bytes <= 4 MiB.
+    // for status 1 and 2. Reasons remain <= 12 below negotiated shell r9.
+    // Reason 13 (image_channel_unavailable) is reserved for status 3 at r9;
+    // status 4 and every other reason field retain their existing <= 12 bound.
+    // Current <= r8 codecs deliberately keep <= 12 until t338 adds r9 support.
+    // admitted_bytes <= 4 MiB.
     body "ResourceStatus" size=56 {
         field "transaction" type="u64" offset=0 nonzero=#true
         field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
@@ -352,7 +356,7 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "resource_id" type="u64" offset=24 nonzero=#true
         field "resource_generation" type="u64" offset=32 nonzero=#true
         field "status" type="u16" offset=40 min=1 max=4
-        field "reason" type="u16" offset=42 max=12
+        field "reason" type="u16" offset=42 max=13
         field "next_ordinal" type="u32" offset=44
         field "admitted_bytes" type="u64" offset=48 max=4194304
     }

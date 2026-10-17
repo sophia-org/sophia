@@ -1,5 +1,126 @@
 # C and Rust SDK API parity
 
+## Accepted image-channel contract, 2026-10-17
+
+The spec copies now include the shared shell/lock descriptor contract and its
+54-case sealed-only corpus. The coordinated Sophia acceptance changes both
+topology contracts and reserves ResourceStatus Rejected reason 13 for shell r9.
+Current SDK codecs deliberately keep the <=12 bound and do not advertise r9;
+Sophia's Rust emission path and the independent Go oracle also retain <=12.
+No current production connection may emit or accept reason 13. t338 must add
+revision-aware ResourceStatus support without widening other reason fields,
+then new-kind codecs, authenticated discovery and channel service in both SDKs.
+Lock's reason vocabulary remains open; reason 9 is named for the r2 refusal.
+
+This is a spec/evidence update, not public descriptor API or ABI support. The
+existing byte APIs, advertised revisions and production behavior are unchanged.
+The local lifecycle peers remain models, not authenticated export, worker or
+GPU-completion proof. The image contract is authoritative for subsequent work.
+
+
+## Draft image codec fixtures, 2026-10-17
+
+Independent test-only decoders exercise 53 reviewed vectors from proposed Sophia
+x6jp929h (3a1e5588d): channel Hello/Source, records 0x7000–0x7006 and discovery.
+Each rejects every truncated prefix of a valid case and trailing bytes.
+An additional one-row/64-byte formats case brings the corpus to 54. Formats
+length is checked before capacity or sealed-only support. A separately generated,
+correctly sized 4097-row object reaches Capacity; the old short 4097-row case
+now correctly reports Length.
+Every corpus row also names its required refusal category; malformed data,
+stale identities, count/arithmetic failures and incoherent snapshots cannot
+substitute for one another. These enums are fixture diagnostics, not new wire
+reason codes. Channel, limits and formats generations are decoded independently
+and compared between discovery and both objects. Matching changed generations
+pass; changing only discovery or one participating object fails coherence.
+The fixture fixes the admitted grant/allocation and sealed-only discovery;
+it is not a general DMA format decoder or a public protocol implementation.
+The source corpus is draft-vectors.json (d76d9b3f84854dabb04a223c522bd6001af2b85a0fc73b2987de16e1d6b6e71a)
+and draft-object-vectors-r2.json (8444e92f1f1db24165f2576aa02376a4f3f46825169cc4792fc517325771775b).
+Their literal cases are copied into test support only, not normative spec/.
+
+On Linux, both decoders also compare declared bytes to real sealed file sizes:
+0, 7 and 9 bytes refuse an 8-byte declaration, while 8 passes. Unsupported seal
+queries refuse. These checks do not transfer the file through an authenticated
+owner or validate pixels. Production codecs, admission, journal custody and
+DMA-BUF validation remain unimplemented by this slice; no public ABI changes.
+
+## Proposed image-channel kernel fixtures, 2026-10-17
+
+Sophia's proposed t337 design (x6jp929h at fb5d2ae57) now has independent
+Linux kernel-prerequisite tests in both SDK trees. They exercise real SEQPACKET
+SCM_RIGHTS, required seals and FUTURE_WRITE rejection, producer-close survival,
+receiver CLOEXEC, missing/extra rights, control truncation, bounded nonblocking
+send backpressure and socket writable readiness after draining the burst. The
+fixture bounds SO_SNDBUF and accepts ETOOMANYREFS as a distinct per-user limit;
+POLLOUT proves socket progress, not availability of an SCM_RIGHTS credit.
+Each checks its FD-table count returns to baseline, not the lifetime of kernel
+references invisible in /proc/self/fd. Truncation with no control storage must
+deliver zero FDs. C additionally verifies that a shared writable
+mapping makes F_ADD_SEALS(F_SEAL_WRITE) fail with EBUSY, a received sealed mapping
+survives closing both producer and receiver FDs, and a new shared writable
+mapping fails EPERM. Rust keeps its unsafe-code
+prohibition and checks the resulting seal requirement without mapping memory.
+
+These tests use no new public API and do not implement the proposed transport.
+They establish kernel prerequisites only, not codec, authentication, admission,
+journal custody, GPU completion or production-export conformance. C runs
+descriptor_kernel_test; Rust runs sophia-shell-client's descriptor_kernel test.
+The draft custody matrix remains to be implemented independently in both SDKs.
+No public ABI or vendored contract changes are part of this fixture slice.
+
+## Proposed image-channel lifecycle and custody fixture, C peer, 2026-10-17
+
+The C SDK now carries an independent peer for the sixteen-case custody matrix in
+Sophia's proposed x6jp929h design. It was written by a different author from the
+Rust peer in sophia-shell-client and shares no code or codec with it. Two test
+programs, descriptor_lifecycle_test and descriptor_custody_test, run in the
+Linux check-files target. They cover optional discovery, snapshot replacement,
+readiness, duplicate channels and bad Hello, offer IDs, source send, ambiguous
+send, kernel seals, ancillary ownership, the expiry race, cancellation in three
+phases, channel loss, journal loss, 9P epoch end, capacity and sealed backing.
+Every case runs once for the shell role and once for the lock role, including
+the role-specific channel-unavailable reason, shell 13 and lock 9.
+
+The fixture holds two separate state machines, an owner standing in for Sophia
+and a producer standing in for an SDK client. Source and Hello packets cross a
+real SEQPACKET pair with real SCM_RIGHTS references to real sealed memfds, and
+received descriptors are checked for close-on-exec and counted back to the FD
+baseline. Discovery text is parsed strictly and the limits and formats objects
+are compared by their draft offsets. Journal events are structured values passed
+in process, not encoded records; their bytes are covered by
+descriptor_draft_codec_test. Both models are clockless: the caller supplies time
+and its own drive-pass identity, and the producer exposes writable interest and
+its next deadline. Discovery reads at most one complete set per caller pass, the
+first included, which is the stricter of the two readings of the draft.
+Admission reserves the offer slot, two terminal journal slots, the declared
+sealed backing bytes and a backing slot together; acceptance moves that charge
+into the retained backing instead of duplicating it. Epoch end retires every
+backing, so an unleased one is unmapped at once and a leased one lives until its
+last consumer lease ends, with no event on the dead journal. A Source whose
+metadata differs from the admitted record faults the channel, and packet shape,
+including descriptor counts, is checked before the stale-ID lookup so a stale
+ID cannot hide a malformed packet. Channel loss withdraws interest in every live
+offer: unsent and synchronously held sources release at once with disposition
+4, and submitted work releases with disposition 5 only after its fake safe
+cleanup. A producer never
+sends after ChannelClosed, even for an offer still awaiting its release. On a
+live journal with no free slot, a retired and unleased backing keeps its slot
+and charge until ResourceReleased can be recorded, then records it exactly once.
+
+The owner model is not an authenticated endpoint. Its credential check compares
+SO_PEERCRED with the test process and proves nothing about supervised launch.
+GPU custody is a fake completion signal that tests transitions only; it cannot
+prove that GPU reads ended, safe rollback or quarantine cleanup. Validation
+units run synchronously, so cancelling between them may unmap at once; that is
+not evidence about cancelling an in-flight worker. No public ABI,
+library code or vendored contract changes are part of this slice.
+
+Both programs also pass under clang AddressSanitizer, LeakSanitizer and UBSan.
+Twenty-nine mutants of the model, each breaking one named custody rule in a separate
+source copy under a hard timeout, all fail a named assertion in the case that
+covers that rule.
+
 ## Queued shell submit (B2), 2026-10-17
 
 Review follow-up: both SDKs retain a full successful submit reply as authoritative

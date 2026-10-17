@@ -8,9 +8,32 @@ tags: [plan, shell, lock, rendering]
 
 ## Scope and exit
 
+**Accepted October 17.** The independent lifecycle peers (Rust `8f7dc5d`, C
+`b2ca17d`) landed and passed cross-review, satisfying niltempus's condition.
+The [shared normative contract](../../sophia-image-channel.md) now owns the
+custody rules and exact layouts. The proposed text below is retained as the
+review record; implementations follow the normative document if wording differs.
+Both role topology amendments and the shell KDL ResourceStatus bound land in
+this acceptance change. t338 begins with schema/public codecs and authenticated
+receive-and-refuse, not seal acceptance or DMA-BUF. No production capability
+is enabled by this decision.
+
+Acceptance validation: `cargo-slot sophia cargo xtask check` passed, including
+workspace and SDK tests, strict Clippy, contract snapshot equality, layout and
+reader checks, all six archived scanout runs, buffer-age pixel equivalence and
+GLX/EGL first-frame and pixmap-export pixels on this host. The log is
+`~/.local/state/sophia/development-evidence/t337-acceptance-20261017/check.log`.
+These checks do not prove a production image channel or meet t331's cost gates.
+The installed desktop was not changed.
+
+The staged whitespace check then found a trailing blank line in the new
+contract. Rust `8ad08de` and C `ca61d21` remove it and refresh the spec hashes;
+the adopted pins change no code. Both snapshot gates were rerun after that
+correction, with the staged diff checked as well.
+
 On October 17 niltempus directed the descriptor design review after the matched
-B2/B3 pilot. This admits t337 planning. It does not accept a new wire contract,
-promote t338/t339 implementation, change t331's gates or change the installed
+B2/B3 pilot. That initial direction admitted planning only; it did not yet accept
+a new wire contract or implementation, change t331's gates or change the installed
 desktop. Codex owns this shared design; consumer ownership is assigned when
 implementation opens. Claude confirmed that no newer lock draft or active
 consumer work conflicts with it.
@@ -20,7 +43,7 @@ The review starts from Sophia `924ed07f2`, the proposed
 and the October 4 revision-2 lock draft at
 `~/.local/state/sophia/development-evidence/t302-integration-01/DESIGN-lock-dmabuf-phase1-01.txt`.
 That draft is historical input, not the contract. The recommendations below
-supersede its suggestions only if accepted.
+supersede its suggestions through the accepted shared contract linked above.
 
 The [image-path investigation](../investigations/cerml352-what-a-fast-shell-and-lock-image-path-looks-like-beside-9p.md)
 collects precedents and further options: credits, reusable GPU registrations,
@@ -40,9 +63,9 @@ must resolve the lifecycle before making those layouts normative.
 
 niltempus approved this design and ADR qujwzrdz in principle, conditional on the
 independent lifecycle/custody fixture peers landing and passing review. Kernel
-and decoder fixtures alone do not meet that condition. Until then the ADR remains
-proposed and the layouts remain non-normative. Once the condition is met, Codex
-owns the acceptance edits, ADR status change and promotion of t338.
+and decoder fixtures alone do not meet that condition. The independent lifecycle
+peers and cross-review now satisfy it. Codex records acceptance and promotes
+t338 with the coordinated contract change described above.
 
 The acceptance change must widen the topology-change wording in both the shell
 contract (output facts and candidate validation) and the lock contract (object
@@ -287,6 +310,13 @@ for an image reservation, renderer job or provider acknowledgement.
 
 ## t337 delivery and review order
 
+Acceptance evidence: Rust `8f7dc5d` and C `b2ca17d` passed independent lifecycle
+review; the spec/evidence adoption is Rust `8ad08de` and C `ca61d21`. Their
+signed archives are pinned by this change. The 54 exact vectors are retained in
+`protocol/golden/sophia-image-channel-v1.tsv`; the shared contract records their
+source hashes and the namespace audit. Public codec and runtime support remains
+the first t338 implementation step, not a result attributed to these fixtures.
+
 1. Review the nine recommendations and lifecycle above against both existing
    contracts. Resolve the renderer's safe-completion and bounded-worker seam with
    t289 before admitting DMA-BUF implementation. Keep the sealed path separate.
@@ -298,9 +328,43 @@ for an image reservation, renderer job or provider acknowledgement.
    ambiguous send, cancellation, terminal status, reconnect and idle wake. Keep
    low-level C clocks caller-owned. Record public C layout changes and rebuild
    requirements. Native-client tests belong with the clients, not Sophia.
-4. On acceptance, update ADR qujwzrdz and both normative contracts, generate exact
-   rows/vectors, and admit receive-and-refuse fixtures first. Promote implementation
-   separately; t337 is not complete merely because this design note exists.
+4. Record acceptance in ADR qujwzrdz and both normative contracts together with
+   the ResourceStatus reason bound. Preserve exact reviewed layout vectors;
+   t338's first slice transcribes the normative tables into complete KDL rows
+   and public codecs before runtime receive-and-refuse. Promote that work
+   separately; a design note alone does not satisfy the reviewed-fixture exit.
+
+### t338 first slice and ownership
+
+Codex owns the shared contract, shell/lock schema and protocol codecs, SDK spec
+copies, vendor pins, Session endpoint wiring, integration and pushes. Claude
+reviews read-only. Muse owns the proposed runtime discovery/refusal work only
+after Codex names the files and the protocol/vendor prerequisites have landed.
+Until then Muse may review the slice read-only; acceptance does not authorize
+overlapping edits to export owners.
+
+First add all seven image kinds and exact body/row codecs independently in C
+and Rust, with role-specific schema tests, literal vectors and negative cases.
+The Go oracle must gain the same revision-aware ResourceStatus rule. Rust's
+shared reason helper must not widen other reason fields; reason 13 belongs only
+to ResourceStatus Rejected under shell r9. Keep all older revisions at <=12.
+Lock ImageBegin must be explicitly classified Candidate; the existing lock
+kind classifier otherwise defaults to Event. Update role capability profiles
+without enabling support in production before the authenticated endpoint works.
+
+The receive-and-refuse slice must complete authenticated Hello and publish
+ChannelReady before ImageBegin can be refused with image_channel_unavailable.
+Alternatively, honest capability absence permits no Hello at all; it cannot
+claim to test ImageBegin fallback. Malformed/denied discovery and Hello timeout
+remain failures. Clean refusal or absence selects bytes only under caller policy.
+Discovery kinds, positive limits and granted capabilities must agree. Bound
+ancillary reception and close every refused FD. Prove byte upload still works
+on the same connection and refused offers retain no reservation or upload slot.
+
+Only after this slice passes may t338 add seal validation, worker-backed mapping,
+retained backing budgets and production cancellation/retirement. Finish with
+paired panel evidence and rerun t331's four unchanged gates. DMA-BUF remains
+behind t339/t304 and t289's real safe-completion proof.
 
 Planning is allowed before t252 and t304 close: making completed t304 a dependency
 of the design that t304 needs would be circular. Lock renderer implementation

@@ -1,14 +1,14 @@
-tree 8ec1a6848fe8ec03672199541bd4282fd3933bbe
-parent f45057a1dea98832f9ae8ef790d0120c9100c9a8
-author Mason Green <mason@greenm01.net> 1792249750 -0400
-committer Mason Green <mason@greenm01.net> 1792249750 -0400
+tree 5eb3794f96071e7e39ae74bd14fe563bb962a07d
+parent 1ea1259cbbfad66f63520773fea84ae910921ee3
+author Mason Green <mason@greenm01.net> 1792266053 -0400
+committer Mason Green <mason@greenm01.net> 1792266053 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatOPlhsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKV/AD/bKYdIUY8BlqgIGQl7Gcd
- MkIrHokvlQSKVFPtSqtqPL4A/3ZIgIJISBfKSmfKaF2x7iNMrK1MdUFHr/ZcegVq
- phMO
- =DieF
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatPPRRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLVhwEA7U/ReXOeHJnUHdM1wfFv
+ Xuk2saQ0lWUc4NbA4MdCd2kBAM/MHaKvF/GKeVMC3Q2q/nJ+w5A95QXgIpbPj4pk
+ +RoG
+ =L/vu
  -----END PGP SIGNATURE-----
 
-Clarify queued cancellation and transport test scope
+Normalize image contract trailing whitespace

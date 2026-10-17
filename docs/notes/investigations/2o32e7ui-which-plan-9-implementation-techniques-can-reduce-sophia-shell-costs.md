@@ -15,6 +15,42 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+t337 design acceptance is recorded October 17 under niltempus's conditional
+approval. Independent lifecycle peers Rust `8f7dc5d` and C `b2ca17d` passed
+cross-review. The coordinated change widens both role topology contracts and
+the shell ResourceStatus reason bound; the [shared normative contract](../../sophia-image-channel.md)
+owns exact custody and layouts. Signed spec/evidence pins are Rust `8ad08de`
+and C `ca61d21`. The preserved 54-case corpus and source hashes are in that
+contract. Model tests do not prove production authentication, live discovery
+fids, asynchronous validation or GPU completion.
+
+t338 is the next implementation task. Codex owns authoritative KDL rows, Rust
+shell codecs, pins, Session wiring and integration. Claude owns independent C
+codecs from `ca61d21`, then the Go oracle. Muse owns the Sophia lock codec and
+its tests, with SDK lock parity coordinated before edits. Runtime discovery and
+receive-and-refuse wait for those codec/pin prerequisites and a named file
+assignment. The [first slice](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#t338-first-slice-and-ownership)
+keeps r9/r2 unadvertised until an authenticated channel can honor them. Current
+C/Rust/Go codecs and Sophia emission still enforce shell reasons <=12; reserved
+reason 13 applies only to Rejected under r9 in the new contract. Other reason
+fields must not widen.
+
+CPU content uses sealed memfd per image. A shared launch window is not pursued
+without measured need. DMA-BUF remains behind t339/t304 and t289 safe-completion
+proof. No installed desktop or production transport changed during acceptance.
+
+t331 remains open, waiting on t338. All four +10% gates remain unchanged; the
+panel allocation result is accepted red as permission to proceed, not a pass.
+Rerun all four after t338; per-request allocation attribution and journal read
+pairing remain required. The frozen B2/B3 evidence remains comparator
+`6c87721fa`, integration `4b16974`, under
+`~/.local/state/sophia/development-evidence/t331-b3-20261017/native-candidate/`.
+No quiet hold is active.
+
+## Pre-acceptance checkpoint — October 17
+
+The following records the state before coordinated contract acceptance.
+
 The independent t337 lifecycle peers are reviewed and published: Rust `8f7dc5d`
 and C `b2ca17d`. Both exercise real descriptor transfer and local custody models;
 neither proves production authentication, live discovery fids or GPU completion.

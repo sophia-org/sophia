@@ -108,6 +108,8 @@ protocol "sophia_lock_fs_v1" api-version=1 byte-order="little" max-record-bytes=
     reason "budget" value=6
     reason "topology" value=7
     reason "provider_replaced" value=8
+    // Negotiated lock r2 descriptor admission only; r1 vocabulary stays open.
+    reason "image_channel_unavailable" value=9
 
     // Limits are fixed for one connection epoch. The resource bounds follow
     // the largest allocation the current topology can grant, under a fixed

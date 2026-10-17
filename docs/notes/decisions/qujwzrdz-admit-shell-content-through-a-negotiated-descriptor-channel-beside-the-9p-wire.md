@@ -2,7 +2,7 @@
 id: qujwzrdz
 date: 2026-10-17
 kind: adr
-status: proposed
+status: accepted
 tags: [adr, shell, gpu, performance, 9p]
 ---
 # Admit shell content through a negotiated descriptor channel beside the 9P wire
@@ -51,23 +51,25 @@ placements let a client re-offer one small tile instead of a whole frame.
 
 ## Decision
 
-Proposed: extend the t304 descriptor channel from the lock role to shell
+Accepted: extend the t304 descriptor channel from the lock role to shell
 content, as one contract answered once for both roles, with two source kinds and
 the byte path kept as the required fallback.
 
 The [shared design review](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md)
-now proposes answers to the nine lock questions, including separate admission,
+records answers to the nine lock questions, including separate admission,
 immutable acceptance and source release. niltempus directed this review after
 the B2/B3 pilot on October 17. That direction admits planning, not implementation
 or acceptance of the proposed contract at that time.
 
-On October 17 niltempus subsequently approved acceptance in principle, conditional
-on the lifecycle/custody fixture peers landing and passing review. This ADR stays
-proposed until that condition is met. The acceptance change must include both
-contracts' formats/topology amendments and the shell KDL ResourceStatus reason
-bound together, as recorded in the
+On October 17 niltempus approved acceptance in principle, conditional on the
+lifecycle/custody fixture peers landing and passing review. Rust `8f7dc5d` and
+C `b2ca17d` satisfy that condition; Claude's final review and Muse's C cross-check
+found no remaining blockers. Acceptance includes both contracts' formats/topology
+amendments and the shell KDL ResourceStatus reason bound together, as recorded in the
 [owner direction](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#owner-direction--october-17-2026).
-Codex then records acceptance and promotes t338. Its CPU data plane is sealed
+The [shared contract](../../sophia-image-channel.md) now owns custody and exact
+layouts. t338 opens with public codec/schema work and authenticated receive-and-refuse;
+production still advertises its old revisions. Its CPU data plane is sealed
 memfd per image; a launch-time shared window is not pursued without measured
 descriptor cost from t338/t339 justifying reconsideration.
 
@@ -150,9 +152,9 @@ its own paired evidence reporting both process CPU, frame delivery, input
 response and, on the laptop, package C-state residency and wakeups, which is the
 battery figure.
 
-Acceptance changes the contract's descriptor section and `fd_transfer`
-announcement and supersedes the transport choice in ADR 6ndjwffd while leaving
-its content model in force; normative text is written only after acceptance. The
+Acceptance changes the contract's descriptor section, keeps `fd_transfer=none`
+for the 9P stream, and supersedes the transport choice in ADR 6ndjwffd while
+leaving its content model in force. The
 nine open t304 decisions, covering capability bit against revision, channel
 admission, `SourceReleased` and `Superseded` semantics, synchronization, capture
 failure policy, same-device scope, renderer-image identity, store share and the
@@ -163,7 +165,7 @@ and the C SDK's public structs change layout again. Revocation stops admission
 and closes Sophia's end of the channel; it cannot retract a descriptor the client
 already holds, which is the existing rule for GPU grants.
 
-### Candidates
+### Delivery scopes
 
 #### t336: measure the shell copy path and its power cost
 
@@ -203,9 +205,14 @@ readback as fallback. Paired CPU evidence on the bulk workload closes it.
 
 Proposed October 17, 2026 at niltempus's request, after the t331 first-slice
 native pilot; the subsequent B2/B3 pilot supports the shared design review.
-Neither pilot attributes the common cost to particular copies. Not accepted.
-The [current contract](../../sophia-shell-files.md) and
-ADR 6ndjwffd remain authoritative until acceptance is recorded here.
+Neither pilot attributes the common cost to particular copies. Accepted
+October 17 after independent lifecycle peers and review, under niltempus's
+recorded conditional authorization. The shared contract and both role topology
+amendments land together with the ResourceStatus reason-bound change.
+This is design acceptance, not production descriptor support or a performance
+pass. Authenticated exports, live discovery, asynchronous validation and GPU
+completion remain implementation/qualification gates; the peers model those
+boundaries explicitly.
 
 - [Content capability design](6ndjwffd-content-capability-design-for-sophia_shell_v1.md), the transport choice this would supersede.
 - [GPU execution permission](mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md), whose optional image transport this instantiates.

@@ -5,7 +5,7 @@ Current contracts are identified in the [documentation map](../../README.md).
 
 | Record | Status | Scope |
 | --- | --- | --- |
-| [Admit shell content through a negotiated descriptor channel](../decisions/qujwzrdz-admit-shell-content-through-a-negotiated-descriptor-channel-beside-the-9p-wire.md) | Proposed 2026-10-17 | Sealed memfd and DMA-BUF shell resources on the t304 channel beside 9P; byte upload stays the fallback; measurement, one shared contract decision and two implementations as candidates t336-t339 |
+| [Admit shell content through a negotiated descriptor channel](../decisions/qujwzrdz-admit-shell-content-through-a-negotiated-descriptor-channel-beside-the-9p-wire.md) | Accepted 2026-10-17 | Shared shell/lock custody and layouts; sealed memfd first in t338, DMA-BUF capture behind renderer proof; current runtime remains byte-only |
 | [Pipeline shell writes with bounded recovery](../decisions/s5msyyv2-pipeline-shell-writes-with-bounded-recovery-and-unchanged-custody.md) | Accepted 2026-10-17 | Queued final-fragment submit and up to four pixel writes; first-slice capture precedes implementation; native gates remain open |
 | [Separate desktop readiness from application proofs](../decisions/adr0001-separate-desktop-readiness-from-application-proofs.md) | Accepted, recorded retrospectively | Ordinary session lifecycle; physical acceptance remains pending |
 | [Session owns desktop composition](../decisions/adr0002-session-owns-desktop-composition.md) | Accepted, recorded retrospectively | Operator component selection and restart semantics |

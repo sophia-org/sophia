@@ -18,4 +18,4 @@ sophia-shell-protocol = { workspace = true }
 workspace = true
 
 [dev-dependencies]
-rustix = { workspace = true, features = ["net"] }
+rustix = { workspace = true, features = ["net", "fs"] }

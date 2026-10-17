@@ -26,6 +26,12 @@ and display sockets hidden as part of the ordinary repository gate.
 
 ## Shell file oracle (t252 B8)
 
+The accepted image-channel contract reserves ResourceStatus Rejected reason 13
+at shell r9. This oracle, the current C/Rust SDK codecs and Sophia's emission
+codec still enforce <=12 and do not negotiate r9. t338 must add revision-aware
+support in all three independent codecs; changing the KDL ceiling alone enables
+nothing. Other reason fields keep their existing bounds.
+
 `cmd/shell-oracle` judges the production shell file export with 96 named checks.
 It uses only the Go standard library. The director owns the t252 task and
 plan-note updates.

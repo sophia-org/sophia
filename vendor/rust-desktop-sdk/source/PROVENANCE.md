@@ -1,5 +1,15 @@
 # Provenance
 
+## Shared image-channel acceptance, 2026-10-17
+
+Spec copies come from the coordinated Sophia acceptance working tree based on
+signed `eea44c4d2`; exact bytes are identified by `spec/SHA256SUMS`. Sophia will
+adopt this signed SDK revision with those same authoritative contract bytes.
+The public r9/r2 image codecs and runtime channel are not implemented by this
+commit. Reviewed lifecycle peers are Rust `8f7dc5d` and C `b2ca17d`; the accepted
+contract preserves their evidence limits and leaves production byte paths intact.
+
+
 ## Queued shell submit, 2026-10-17
 
 The shell contract copy comes from signed Sophia `feaf3cbc7`. B2 queues

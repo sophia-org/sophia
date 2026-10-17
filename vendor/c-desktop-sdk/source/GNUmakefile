@@ -41,6 +41,7 @@ $(BUILD)/%.pc: pkgconfig/%.pc.in GNUmakefile
 FILE_TESTS = shell_session_attached_test sophia_9p_client_test launch_auth_test sophia_shell_files_test sophia_shell_files_roles_test sophia_shell_files_descriptors_test sophia_shell_files_descriptor_candidates_test sophia_shell_files_descriptor_objects_test sophia_shell_files_staging_test desktop_connection_test shell_session_custody_test shell_session_events_test shell_session_descriptors_test shell_session_staging_test native_session_test wm_files_test wm_session_test output_files_test output_session_test lock_files_test lock_client_test
 FILE_TESTS += namespace_test
 FILE_TESTS += shell_upload_window_test
+FILE_TESTS += descriptor_draft_codec_test
 FILE_TESTS += broker_discovery_test
 FILE_TESTS += broker_events_test
 FILE_TESTS += broker_responses_test
@@ -78,6 +79,7 @@ FILE_TESTS += portal_requester_session_test
 FILE_TESTS += portal_requester_transfer_test
 FILE_TESTS += portal_requester_upload_test
 ifeq ($(shell uname -s),Linux)
+FILE_TESTS += descriptor_kernel_test descriptor_lifecycle_test descriptor_custody_test
 $(BUILD)/desktop_connection_test: WRAPS = -Wl,--wrap=getsockopt
 endif
 $(addprefix $(BUILD)/,$(FILE_TESTS)): $(BUILD)/%: src/tests/%.c $(wildcard src/tests/*.h) $(BUILD)/libsophia-desktop.a $(BUILD)/libsophia-9p.a

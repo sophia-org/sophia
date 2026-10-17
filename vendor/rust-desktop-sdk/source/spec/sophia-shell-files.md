@@ -961,13 +961,22 @@ candidates and activations for the old generation; it can continue acknowledging
 input while awaiting close or termination. An arbitrary runtime fixture that
 republishes a catalog is not evidence that production Session supports it.
 
-Session advances `facts_generation` when output facts change. The Outputs object
+Session advances `facts_generation` when output facts change, including a change
+to the admitted image-channel import-format set. An unchanged set does not
+advance the generation. Publish the new image-formats snapshot before the
+Outputs announcement; its formats generation equals `facts_generation`.
+The Outputs object
 and its ObjectPublished announcement carry that same generation. A candidate
 must name the Session's current facts when validated and when taken for renderer
 submission. Fetch the facts used to build the candidate, and disarm that local
 scene when a newer Outputs announcement arrives. This reduces stale work but
 does not eliminate a race with a later server update. The announcement does not
 reserve that generation for the client.
+
+A format-only change therefore requires components to fetch current facts and
+rebuild/resubmit candidates. This is the accepted topology cost of the
+[image-channel contract](sophia-image-channel.md); current byte-only production
+does not yet publish import formats. Old open snapshots remain immutable.
 
 Production Session supplies `interaction_generation` **1** to the native and
 ordinary shell candidate owners. It is not client-selected authority and is not
@@ -1105,14 +1114,18 @@ add for 9P:
 
 ## File descriptors and GPU
 
-Version 1 carries bytes only. 9P has no descriptor transfer, and a v9fs mount
+The 9P stream carries bytes only. 9P has no descriptor transfer, and a v9fs mount
 could not carry one. Using SCM_RIGHTS on the same socket would be a side
-channel outside the protocol. Pixels stay copied exactly as today.
+channel outside the protocol. The separate
+[image descriptor channel](sophia-image-channel.md) is accepted for negotiated
+shell r9, with sealed-memory capability bit 13 and DMA-BUF bit 14. It retains
+the `api` line's `fd_transfer=none`, existing byte records and caller-selected
+fallback. Current production and SDKs remain on the byte path until t338.
 
 A 4 MiB resource needs about 64 writes at a 64 KiB msize, compared with 65
-chunks today. DMA-BUF or sealed memfd import remains a separate future
-contract (`docs/sophia-shell-v1-direction.md`, ADR `mn4mzcnf`). It would need
-its own admission, GPU-grant coupling and retirement. The GPU grant is
+chunks today. Sealed import and DMA-BUF capture have separate admission,
+custody and retirement under the shared contract. DMA-BUF implementation waits
+for proven renderer safe completion; acceptance makes no speedup claim. The GPU grant is
 unchanged and still cannot retract an already-open render-node descriptor.
 
 ## Compatibility and revision skew
@@ -1126,7 +1139,12 @@ unchanged and still cannot retract an already-open render-node descriptor.
 
 The C and Rust desktop SDKs expose native records over standard 9P2000.L.
 Client implementations and their dependency pins belong in their repositories.
-Revision 9 and overview capability bit 13 are not part of this accepted contract.
+Revision 9 reserves image-channel capabilities 13 (sealed) and 14 (DMA-BUF);
+it does not allocate an overview capability. These are accepted contract additions,
+not currently advertised SDK/runtime support. ResourceStatus reason 13
+(`image_channel_unavailable`) is valid only for Rejected after negotiated r9;
+earlier revisions and all other reason fields keep their existing bounds.
+Current codecs retain the <=12 check until t338 adds revision-aware r9 support.
 Skew is resolved by revision and capability negotiation, with no wire fallback.
 Supervisor replacement starts a fresh process and epoch; reconnect never replays
 unsettled submissions.
@@ -1191,7 +1209,7 @@ Rows marked as product gaps belong to their own tasks, not to this transport.
 | Dock (Provlita, r8) | Per-output allocations and edge reservations, checked against the allowed reservation extent. Pinned tiles from the catalog, with r8 identities at the 4 MiB cap. Activation names the catalog generation and slot and is accepted only against the Presented target. Launch context taken by Session from the committed WM output context, refused when stale. Replacing the dock does not disturb bar or launcher. Retained dock content retires after revocation, and storage is reclaimed. | Running-window feed (t043); reservation arbitration (t106) |
 | Launcher (Bemenu, r7) | Opening from Session; parentless allocation with no reservation. Focus lease minted only after an actual Presented, and FocusRevoked on loss. Semantic input with stale acknowledgements. A query edit disarms activation. Activation admits a queue slot only; the revocation semantics above hold. Close, and the opening timeout. | Popout workflow (t099) |
 | Bar (Lom, r6) | Panel allocation per output with its reservation. Indicator snapshot and exact activation echo. Presented work-area bands survive reconnect until the new first Present. Content upload and retirement within role limits. | Recovery (t100) |
-| Legacy descriptor (Narthex, r1-r8) | Descriptor snapshot, candidate, activation and ack; tabs; shortcuts and reference; launcher catalog when r4 and bit 5 are selected. Reservation via candidate, and withdrawal. | Overview r9 exists only on the unmerged `overview` branch |
+| Legacy descriptor (Narthex, r1-r8) | Descriptor snapshot, candidate, activation and ack; tabs; shortcuts and reference; launcher catalog when r4 and bit 5 are selected. Reservation via candidate, and withdrawal. | The parked `overview` branch has no reserved revision or capability bit; its informal r9/bit-13 claim is withdrawn. Revival needs fresh allocation (currently r10/bit 15) |
 
 ## Budgets
 
