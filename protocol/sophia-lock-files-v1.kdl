@@ -1,7 +1,6 @@
-// Lock provider file byte contract for t294. DRAFT: the native codec
-// (crates/sophia-protocol/src/lock_files) is bound to this file by
-// tests/lock_file_schema.rs; no export or admission serves it yet, and a
-// layout change must change both together. The export, custody and
+// Lock provider file byte contract. The native codec is bound to this file
+// by tests/lock_file_schema.rs; layout changes update both together.
+// The export serves r1; image records require explicit r2 codec entry points. The export, custody and
 // authority rules are in docs/sophia-lock-files.md; these records alone grant
 // no admission, lock or unlock authority. Integers are little endian.
 //
@@ -23,6 +22,8 @@ protocol "sophia_lock_fs_v1" api-version=1 byte-order="little" max-record-bytes=
     file "ack" access="write"
     file "upload" access="write" slots="Limits.upload_slots"
 
+    // ImageFormats alone may exceed max-record-bytes, up to its max-bytes.
+    // The total_bytes header bound below applies to every other kind.
     header size=32 {
         field "total_bytes" type="u32" offset=0 min=32 max=65536
         field "api_version" type="u16" offset=4 value=1
@@ -55,8 +56,21 @@ protocol "sophia_lock_fs_v1" api-version=1 byte-order="little" max-record-bytes=
     candidate "Candidate" kind=262
     candidate "FrameDemand" kind=263
 
+    // Shared image kinds require negotiated lock r2.
+    // Their explicit classes override the ordinary numeric class ranges.
+    candidate "ImageBegin" kind=28672
+    event "ImageAdmitted" kind=28673
+    event "SourceReleased" kind=28674
+    event "ChannelReady" kind=28675
+    event "ChannelClosed" kind=28676
+    object "ImageLimits" kind=28677
+    object "ImageFormats" kind=28678 max-bytes=163904
+
     capability "present" bit=0 required=#true
     capability "chords" bit=1
+    // r2 only; current Negotiated constraints and export remain r1.
+    capability "sealed_memory" bit=2
+    capability "dma_buf" bit=3
 
     refusal "unsupported_revision" value=1
     refusal "presentation_required" value=2
@@ -313,4 +327,119 @@ protocol "sophia_lock_fs_v1" api-version=1 byte-order="little" max-record-bytes=
         field "connection_epoch" type="u64" offset=0 nonzero=#true
         field "sequence" type="u64" offset=8 nonzero=#true
     }
+    // Shared image metadata uses checked declared_bytes = width*height*4.
+    // Sealed stride is width*4 and modifier is zero; DMA-BUF stride is zero.
+    // Role-specific dimension limits are checked by the admitted reader.
+    // ImageLimits sealed fields are both zero, or validation jobs are
+    // 1..=max_offers with backing >= max_resource_bytes. The four DMA-BUF
+    // fields are all zero, or all positive with capture jobs <= max_offers.
+    // max_offers = min(4, role transfer slots). Timeouts, chunk bytes and
+    // packets per turn are positive. Source availability uses the kind mask.
+    // ImageFormats rows are strictly ordered by (output, device_major,
+    // device_minor, fourcc, modifier), with exactly one flag and total size
+    // 64 + 40*row_count. See docs/sophia-image-channel.md for admission rules.
+    body "ImageBegin" size=96 {
+        field "offer_id" type="u64" offset=0 nonzero=#true
+        field "resource_id" type="u64" offset=8 nonzero=#true
+        field "resource_generation" type="u64" offset=16 nonzero=#true
+        field "admission_epoch" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "allocation_id" type="u64" offset=40 nonzero=#true
+        field "topology_generation" type="u64" offset=48 nonzero=#true
+        field "source_kind" type="u32" offset=56 min=1 max=2
+        field "source_format" type="u32" offset=60 nonzero=#true
+        field "width" type="u32" offset=64 min=1
+        field "height" type="u32" offset=68 min=1
+        field "stride" type="u32" offset=72
+        field "plane_count" type="u16" offset=76 min=1 max=4
+        field "descriptor_count" type="u16" offset=78 min=1 max=4
+        field "declared_bytes" type="u64" offset=80 nonzero=#true
+        field "modifier" type="u64" offset=88
+    }
+    body "ImageAdmitted" size=96 {
+        field "offer_id" type="u64" offset=0 nonzero=#true
+        field "resource_id" type="u64" offset=8 nonzero=#true
+        field "resource_generation" type="u64" offset=16 nonzero=#true
+        field "admission_epoch" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "allocation_id" type="u64" offset=40 nonzero=#true
+        field "topology_generation" type="u64" offset=48 nonzero=#true
+        field "source_kind" type="u32" offset=56 min=1 max=2
+        field "source_format" type="u32" offset=60 nonzero=#true
+        field "width" type="u32" offset=64 min=1
+        field "height" type="u32" offset=68 min=1
+        field "stride" type="u32" offset=72
+        field "plane_count" type="u16" offset=76 min=1 max=4
+        field "descriptor_count" type="u16" offset=78 min=1 max=4
+        field "declared_bytes" type="u64" offset=80 nonzero=#true
+        field "modifier" type="u64" offset=88
+    }
+    body "SourceReleased" size=32 {
+        field "offer_id" type="u64" offset=0 nonzero=#true
+        field "resource_id" type="u64" offset=8 nonzero=#true
+        field "resource_generation" type="u64" offset=16 nonzero=#true
+        field "disposition" type="u32" offset=24 min=1 max=5
+        field "reserved" type="u32" offset=28 value=0
+    }
+    body "ChannelReady" size=16 {
+        field "channel_generation" type="u64" offset=0 nonzero=#true
+        field "granted_source_kinds" type="u32" offset=8 min=1 max=3
+        field "reserved" type="u32" offset=12 value=0
+    }
+    body "ChannelClosed" size=16 {
+        field "channel_generation" type="u64" offset=0 nonzero=#true
+        field "reason" type="u32" offset=8 min=1 max=4
+        field "reserved" type="u32" offset=12 value=0
+    }
+    body "ImageLimits" size=104 {
+        field "channel_generation" type="u64" offset=0 nonzero=#true
+        field "limits_generation" type="u64" offset=8 nonzero=#true
+        field "max_resource_bytes" type="u64" offset=16 nonzero=#true
+        field "max_sealed_backing_bytes" type="u64" offset=24
+        field "max_dma_source_bytes" type="u64" offset=32
+        field "max_renderer_allocation_bytes" type="u64" offset=40
+        field "max_renderer_entries" type="u32" offset=48
+        field "max_offers" type="u32" offset=52 min=1 max=4
+        field "max_validation_jobs" type="u32" offset=56 max=4
+        field "max_capture_jobs" type="u32" offset=60 max=4
+        field "max_admitted_outputs" type="u32" offset=64 min=1 max=16
+        field "max_format_rows_per_output" type="u32" offset=68 min=1 max=256
+        field "max_width" type="u32" offset=72 min=1
+        field "max_height" type="u32" offset=76 min=1
+        field "validation_timeout_ms" type="u32" offset=80 nonzero=#true
+        field "capture_interest_timeout_ms" type="u32" offset=84 nonzero=#true
+        field "validation_chunk_bytes" type="u32" offset=88 nonzero=#true
+        field "max_packets_per_turn" type="u32" offset=92 nonzero=#true
+        field "reserved" type="u64" offset=96 value=0
+    }
+    body-prefix "ImageFormats" size=32 {
+        field "channel_generation" type="u64" offset=0 nonzero=#true
+        field "formats_generation" type="u64" offset=8 nonzero=#true
+        field "limits_generation" type="u64" offset=16 nonzero=#true
+        field "row_count" type="u32" offset=24 max=4096
+        field "reserved" type="u32" offset=28 value=0
+    }
+    row "ImageFormat" size=40 {
+        field "output_id" type="u64" offset=0 nonzero=#true
+        field "device_major" type="u32" offset=8
+        field "device_minor" type="u32" offset=12
+        field "fourcc" type="u32" offset=16 nonzero=#true
+        field "flags" type="u32" offset=20 min=1 max=2
+        field "modifier" type="u64" offset=24
+        field "max_width" type="u32" offset=32 nonzero=#true
+        field "max_height" type="u32" offset=36 nonzero=#true
+    }
+    rows "ImageFormats" {
+        row "ImageFormat" count="row_count"
+    }
+    disposition "retained" value=1
+    disposition "capture_complete" value=2
+    disposition "refused_before_use" value=3
+    disposition "cancelled_before_import" value=4
+    disposition "drained_after_submission" value=5
+    channel-closed-reason "peer_disconnect" value=1
+    channel-closed-reason "protocol_fault" value=2
+    channel-closed-reason "hello_timeout" value=3
+    channel-closed-reason "grant_revoked" value=4
+
 }

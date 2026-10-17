@@ -31,12 +31,20 @@ decoding. Sophia lock codecs at `4fbe66d71`, plus tests at `f4eb0d2f1`, passed
 independent review and 34 runtime custody/export/service tests. Old lock entry
 points remain r1; new image envelopes require an explicit r2 entry point.
 
-Next: Codex's authoritative KDL rows and schema-class handling, Rust shell
-codecs and the distinct SDK lock counterpart, then coordinated specs and pins.
-The lock discovery reader still needs the equivalent of C's cross-object
-coherence checks; no parity claim is made yet. Keep positive timeout/chunk/turn
-rules explicit in the coordinated contract update. Runtime discovery and
-receive-and-refuse wait for these prerequisites and named ownership. The
+The next codec checkpoint is signed locally: Rust `5c83d6d` (SDK lock mirror,
+shell image bodies, explicit r9 envelope/reason APIs and schemas) and C `380654f`
+(matching specs and parity limits). Authoritative KDL rows and explicit image
+classes are integrated. Both Rust protocol suites, strict Clippy, new shell
+field-offset checks, C's 54-case codec controls and targeted Sophia schemas pass.
+Independent C/Rust review and differential checks are pending; these SDK heads
+are not published or vendored yet. Next: resolve review, publish, adopt signed
+snapshots and run affected export gates.
+
+The Rust discovery reader still needs C's cross-object coherence checks, and
+its packet caller must check actual received FD counts; complete admission
+parity is not claimed. Positive timeout/chunk/turn rules are now explicit in
+the coordinated specs. Runtime discovery and receive-and-refuse wait for
+these prerequisites and named ownership. The
 [first slice](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#t338-first-slice-and-ownership)
 keeps r9/r2 unadvertised. Explicit C and oracle revision-aware paths admit shell
 reason 13 only for r9 Rejected; legacy decoders and Sophia emission remain <=12.

@@ -93,19 +93,27 @@ including refusal of r2 ImageBegin before r1 epoch/submission checks, unchanged
 journal state and successful subsequent legacy submission. Evidence is under
 `~/.local/state/sophia/development-evidence/t338-lock-codec-review-20261017/`.
 
-Remaining first-slice work: authoritative image KDL rows and schema-class
-handling; Rust shell codecs; the distinct Rust SDK lock codec; coordinated spec
-copies and pins. The C cross-object coherence helper has no lock counterpart
-yet: the lock discovery reader must check epochs, all three generations,
-discovery/limits equalities, source-kind grants and per-output bounds before
-Hello. Shape codecs alone do not establish that parity.
+The coordinated codec checkpoint is signed locally: Rust `5c83d6d` includes
+the SDK lock mirror `1b07ebb`, shell image bodies `4c14819`, explicit shell r9
+envelopes and ResourceStatus entry points, and schema tests against the new KDL
+rows. C `380654f` carries matching specs and the stated parity limits. The
+shared contract now makes timeout, chunk and per-turn values positive. Legacy
+entry points still refuse image kinds and reason 13; legacy Submitted and
+ObjectPublished encoders also retain their old embedded-kind vocabulary.
 
-Carry this explicit clarification into the shared contract and both SDK spec
-copies together at adoption: Hello, validation and capture-interest timeouts,
-validation chunk bytes and max packets per turn must be positive. Zero means
-neither an unlimited wait nor disabled service; source availability is expressed
-by the kind mask and its capacity fields. The limits object follows the same
-rule. The new codecs enforce it, but their runtime paths remain unadvertised.
+Both Rust protocol suites pass, along with strict Clippy, formatting, the new
+shell field-offset tests, and C's 54-case image codec controls. Sophia's image,
+lock-schema and explicit-class tests pass. These commits are not yet published
+or vendored; independent C/Rust review and differential checks are pending.
+No production revision, endpoint or installed desktop changes here.
+
+Remaining first-slice work: resolve that review, publish the paired SDK commits,
+adopt their signed snapshots and run affected export gates. C's cross-object
+coherence helper has no Rust counterpart yet: the discovery reader must check
+epochs, all three generations, discovery/limits equalities, source-kind grants
+and per-output bounds before Hello. Rust packet shape also leaves the actual
+received FD count to its caller. These gaps remain explicit and block a claim
+of complete discovery/admission parity. Shape codecs alone do not close them.
 
 ## Owner direction — October 17, 2026
 
