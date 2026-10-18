@@ -21,7 +21,12 @@ versus 114 IPC samples; peers have only 34 versus 14. Image validation and
 sealed-source preparation appear in the files samples, but this sparse pair
 cannot explain the remaining CPU gap. Kernel sampling and syscall tracing are
 now available after niltempus changed the host permissions. The next diagnostic
-capture will include them at a higher CPU sampling rate; t331 remains open.
+pair is prepared with external runner `32c2d61`, at 997 Hz with 26 stackless
+syscall-entry tracepoints. From tty4, run
+`~/dev/niltempus/.artifacts/t331-kernel-20261018/run.sh`.
+The destinations `~/.local/state/t331/kern-{files,ipc}-01` are unused;
+`candidate-03/kernel-perf/ready.json` binds the inputs. Attendance and report
+validation remain pending; t331 remains open.
 
 October 18 follow-up: the ISB-only integration is signed and published as
 `5632d5423c9344c709810e00697a3d464cad5600`. Provlita
@@ -279,6 +284,25 @@ reports have zero lost samples and agree with independently filtered raw sample
 counts. Files validation accounts for 16 Session self samples; sealed-source
 preparation accounts for 12 peer self samples. These are leads for a denser
 kernel-inclusive capture, not precise attribution of the CPU difference.
+
+The kernel/syscall mode is published in external integration revision
+`32c2d616725a3ce3da41a566f82b1374d2926a5c`. Old descriptors retain user-only
+sampling. The new mode verifies actual recorded event attributes, loss counts,
+TGIDs, workload timestamps and CPU histogram totals. Syscall-entry counts are
+not durations. Both real-perf controls passed with retained unfiltered output
+in `candidate-03/kernel-profile-controls.log` (18 tests). Strict Clippy passed
+(`kernel-profile-clippy.log`). The full serial xtask suite passed 415 tests,
+13 ignored (`kernel-profile-tests-02.log`); the first parallel run hit an
+unrelated launcher fixture's `ExecutableFileBusy`, retained in
+`kernel-profile-tests.log`. Scoped formatting and diff checks passed.
+
+The fresh pair reuses comparator `890215a3e` and the first pair's symbolized
+CPU-only binaries. Both plans and device-hidden desktop configuration checks
+pass (`kernel-perf/preparation.log`). An initial generated configuration had
+unsafe permissions and was rejected before launch; the corrected inputs use
+private permissions, and the rejected attempt remains in
+`kernel-perf-preparation-01`. The native wrapper and environment observer are
+unchanged. This pair supplies diagnostic evidence only.
 
 ## October 18 first attended block
 
