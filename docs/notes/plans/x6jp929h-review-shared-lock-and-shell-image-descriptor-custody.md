@@ -8,6 +8,22 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
+The operator selected **DP-1**, superseding the brief DP-2 answer, for
+1920×1080@120 Hz with VRR off. Two files-wire panel CPU plans are prepared
+under the artifact-preparation directory below: `panel-cpu-bytes/plan.json`
+(`be60b59d7b9fb5b74e95162fbf2b51da93daa6a1947595ec3a1d7b2eaefaf6de`)
+and `panel-cpu-sealed/plan.json`
+(`2951639cf04f027c145a0c6203baa94f0c05f4946877106307ca0906b76adc6a`).
+Independent review confirms matching artifacts, 1000 frames, 60 seconds,
+24-pixel panel, no bulk probe, and identical output settings. This selects
+a target; it does not establish that the hardware applied it.
+
+The existing authenticated observer is reachable only through the full
+108-arm campaign. A narrow two-arm calibration entry point and reusable
+target-bound provenance check are being added in external niltempus, without
+changing campaign validation. The two plans will need refreshed runner/source
+identities after that change. No physical run has started.
+
 Fresh CPU-only release host and peer builds pass at clean signed comparator
 `180808d48`; runner and preflight builds pass at clean signed external
 `niltempus 52df140`. Artifact paths, SHA-256 hashes, features and source heads
@@ -15,7 +31,7 @@ are retained in
 `~/.local/state/sophia/development-evidence/t338-panel-cpu-20261017-preparation-01/build-artifacts.json`,
 beside the Cargo JSON output and build logs. Binaries remain in the cargo-slot
 pools. This is device-hidden build preparation, not calibration or paired CPU
-evidence. The attended run still needs the operator's connector selection.
+evidence. The attended run still needs a foreground-console quiet window.
 
 The campaign runner and provenance provider are signed in external
 `niltempus 297819c`, on monitor `b988ddb`, load qualification `9b25d2e`,
@@ -64,8 +80,8 @@ environment datagram. The receiver checks the live handle as well as kernel
 credentials, refusing queued records from an exited sender after PID reuse.
 Sophia `ff6f445fe` and comparator `180808d48` add the separately armed,
 bounded `--output-environment-readback` path; the old output-role proof gate
-is unchanged. No physical run has occurred. The operator's 1920×1080@120 Hz
-connector selection remains pending, and this campaign cannot close 60 Hz B9.
+is unchanged. No physical run has occurred, and this campaign cannot close
+60 Hz B9.
 
 Environment readback is implemented in Sophia `21bcd211e` and emitted by
 Session `116d663b4`. Nominal refresh and timing-derived refresh stay distinct;
