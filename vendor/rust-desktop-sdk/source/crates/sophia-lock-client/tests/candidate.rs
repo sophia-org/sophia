@@ -24,14 +24,6 @@ fn offer() -> LockNegotiate {
 fn every_candidate_has_exact_identity_and_typed_body() {
     let candidates = [
         Candidate::Negotiate(offer()),
-        Candidate::ResourceBegin(LockResourceBegin {
-            transaction: 4,
-            resource: resource(),
-            width_px: 8,
-            height_px: 9,
-            slot: 0,
-        }),
-        Candidate::ResourceEnd(step(Some(288))),
         Candidate::ResourceCancel(step(None)),
         Candidate::ResourceRetire(step(None)),
         Candidate::Present(LockCandidate {
@@ -85,6 +77,22 @@ fn every_candidate_has_exact_identity_and_typed_body() {
         }
     }
 }
+#[test]
+fn retired_byte_candidates_cannot_prepare_a_submission() {
+    for value in [
+        Candidate::ResourceBegin(LockResourceBegin {
+            transaction: 4,
+            resource: resource(),
+            width_px: 8,
+            height_px: 9,
+            slot: 0,
+        }),
+        Candidate::ResourceEnd(step(Some(288))),
+    ] {
+        assert!(value.prepare(17, 23).is_err());
+    }
+}
+
 #[test]
 fn frame_demand_bytes_are_literal_and_independent_of_caller_mutation() {
     let mut value = Candidate::FrameDemand(LockFrameDemand {

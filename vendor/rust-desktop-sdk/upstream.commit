@@ -1,14 +1,14 @@
-tree bf80efb1fac9f505a44df9e9c5c2ff8465da0b00
-parent 3d9855cd8608004f2501fdaf86bab480c93884f6
-author Mason Green <mason@greenm01.net> 1792278843 -0400
-committer Mason Green <mason@greenm01.net> 1792278843 -0400
+tree 17d989ce7707147a42360970110ce9896537a2e4
+parent fbde253ef297e282357080600a560f1824cd6b50
+author Mason Green <mason@greenm01.net> 1792355821 -0400
+committer Mason Green <mason@greenm01.net> 1792355821 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatQBOxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIq6wEA5sigqd/YGAHZ/h/qvRQQ
- pLk79L8UPPNjcuTy1BwbCVYA+waO7RBs6bzuZ2mEtShFWdC7kbGiQiL35RekpUNJ
- cuUH
- =RaH+
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatUt7RsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIelQD/RNhAGs5Z/p9DIF+pu7Yx
+ OkNS9zYLpe6JmjRoTKYdBUYA/3sMWh61zZlOAkKqvH2Q6LWsC/PVn0kIhDmNI2Nf
+ mw8C
+ =sFof
  -----END PGP SIGNATURE-----
 
-fix(lock-client): keep failed discovery cleanup distinct from absence
+Add bounded mapped ISB construction with sealed finalization

@@ -59,10 +59,10 @@ fn component_budget_refusal_is_named_and_recovers_after_real_collection() {
     let bands = h.owner.work_area_bands();
     let mut pins = Vec::new();
     for id in 2..=7 {
+        let pin = wire::upload_maximum(&mut wire::Component(&mut h.owner, old), &mut peer, id);
         pins.push(
             h.owner
                 .with_service(old, |_, transport| {
-                    let pin = wire::upload_maximum(transport, &mut peer, id);
                     if id <= 4 {
                         wire::send(
                             transport,
@@ -72,7 +72,11 @@ fn component_budget_refusal_is_named_and_recovers_after_real_collection() {
                                 resource: pin.description().resource,
                             }),
                         );
-                        transport.service_content_resources(0).unwrap();
+                        transport
+                            .service_content_resources(
+                                crate::shell_component_connections::content_now_msec(),
+                            )
+                            .unwrap();
                         transport.poll_io().unwrap();
                     }
                     pin

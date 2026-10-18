@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <poll.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -16,6 +17,7 @@
 #include "sophia_9p_client.h"
 #include "sophia_launch_auth.h"
 #include "sophia_lock_client.h"
+#include "sophia_lock_image.h"
 #endif
 
 static unsigned char buf[512];
@@ -136,12 +138,138 @@ static void authenticate(int relay_fd, unsigned *relay_tag, int first) {
     attach(7, 105);
 }
 #endif
+static void mark(const char *path, const char *value);
+#ifdef SOPHIA_TEST_C_SDK
+/* Sealed-image mode (argv[3]=="image"): the lock adapter runs against the
+ * real runtime endpoint while the ordinary provider authority flow above
+ * stays untouched. One service turn, then one adapter dispatch fed with
+ * real poll(2) revents from the producer socket - never interest bits. */
+static int image_pump(struct sophia_lc_client *client, struct sophia_lc_image *img) {
+    int status = sophia_lc_service(client, 4096);
+    const struct sophia_lf_record *event = NULL;
+    while (sophia_lc_event(client, &event) == 0 && event) {
+        assert(sophia_lc_event_consume(client) == 0);
+        event = NULL;
+    }
+    short revents = 0;
+    int fd = sophia_lc_image_poll_fd(img);
+    if (fd >= 0) {
+        struct pollfd wanted = {fd, sophia_lc_image_poll_events(img), 0};
+        if (poll(&wanted, 1, 0) > 0) revents = wanted.revents;
+    }
+    assert(sophia_lc_image_dispatch(img, revents, now_msec()) >= 0);
+    struct timespec delay = {0, 1000000};
+    nanosleep(&delay, NULL);
+    return status;
+}
+
+static void run_image(struct sophia_lc_client *client, int endpoint_dir,
+                      const char *report) {
+    static uint8_t formats[4096];
+    struct sophia_lc_image img;
+    struct sophia_lc_image_config config;
+    memset(&config, 0, sizeof config);
+    config.producer.bounds.max_resource_bytes = 1024;
+    config.producer.bounds.max_width = 16;
+    config.producer.bounds.max_height = 16;
+    config.producer.bounds.max_outputs = 1;
+    config.producer.bounds.transfer_slots = 1;
+    config.producer.transfer_timeout_ms = 2000;
+    config.producer.startup_deadline_ms = now_msec() + 60000;
+    config.endpoint_dir = endpoint_dir;
+    config.formats = formats;
+    config.formats_capacity = sizeof formats;
+    assert(sophia_lc_image_init(&img, &config) == SOPHIA_IPR_OK);
+    /* Attached before any service turn: Negotiated has not arrived. */
+    assert(sophia_lc_image_attach(client, &img) == SOPHIA_IPR_OK);
+    unsigned guard;
+    uint64_t generation;
+    for (guard = 0;; ++guard) {
+        const struct sophia_lf_record *event = NULL;
+        assert(guard < 20000 && image_pump(client, &img) == 0);
+        if (sophia_lc_ready(client) && sophia_lc_lock(client, &generation)) break;
+        (void)event;
+    }
+    struct sophia_ip *producer = sophia_lc_image_producer(&img);
+    assert(producer);
+    for (guard = 0; sophia_ip_channel(producer) != SOPHIA_IPC_READY; ++guard) {
+        assert(guard < 20000 && image_pump(client, &img) == 0);
+    }
+    assert(sophia_ip_path(producer) == SOPHIA_IPP_DESCRIPTOR);
+    mark(report, "image-ready\n");
+
+    /* The source names the session's actual lock allocation, derived
+     * from the presented lock object - not the transport maxima. */
+    const struct sophia_lf_lock *lock = sophia_lc_lock(client, &generation);
+    assert(lock && lock->allocation_count >= 1);
+    const struct sophia_lf_allocation *alloc = &lock->allocations[0];
+    int source = -1;
+    void *pixels = NULL;
+    size_t bytes = 0;
+    assert(sophia_ip_isb_create(alloc->pixel_width, alloc->pixel_height,
+                                   &source, &pixels, &bytes) == SOPHIA_IPR_OK);
+    assert(bytes == (size_t)alloc->pixel_width * alloc->pixel_height * 4);
+    /* Patterned RGB with a full alpha byte: a valid premultiplied
+     * BGRA source, so validation can accept every pixel. */
+    for (size_t i = 0; i < bytes; ++i)
+        ((unsigned char *)pixels)[i] =
+            (i % 4 == 3) ? 255 : (unsigned char)(i * 31 + 7);
+    assert(sophia_ip_isb_finish(source, pixels, bytes) == SOPHIA_IPR_OK);
+    struct sophia_ic_metadata meta;
+    memset(&meta, 0, sizeof meta);
+    meta.resource_id = 7;
+    meta.resource_generation = 1;
+    meta.admission_epoch = lock->lock_epoch;
+    meta.output = alloc->output;
+    meta.allocation = alloc->allocation;
+    meta.topology_generation = lock->topology_generation;
+    meta.source_kind = SOPHIA_IC_SOURCE_SEALED;
+    meta.source_format = SOPHIA_IC_SEALED_BGRA8_PREMULTIPLIED;
+    meta.width = alloc->pixel_width;
+    meta.height = alloc->pixel_height;
+    meta.stride = alloc->pixel_width * 4;
+    meta.plane_count = meta.descriptor_count = 1;
+    meta.logical_bytes = bytes;
+    uint64_t offer = 0;
+    int begun;
+    for (guard = 0;; ++guard) {
+        assert(guard < 20000);
+        begun = sophia_lc_image_begin(&img, &meta, source, now_msec(), &offer);
+        if (begun != SOPHIA_IPR_BUSY) break;
+        assert(image_pump(client, &img) == 0);
+    }
+    assert(begun == SOPHIA_IPR_OK && offer != 0);
+    mark(report, "image-begun\n");
+    /* Accepted alone does not prove the proof point: the source custody
+     * must also come back as SourceReleased (SETTLED, disposition 1). */
+    struct sophia_ip_offer_info info;
+    for (guard = 0;; ++guard) {
+        assert(guard < 20000 && image_pump(client, &img) == 0);
+        assert(sophia_ip_offer(producer, offer, &info) == SOPHIA_IPR_OK);
+        if (info.status == SOPHIA_IPS_ACCEPTED && info.state == SOPHIA_IPO_SETTLED)
+            break;
+    }
+    assert(info.disposition == 1);
+    mark(report, "image-accepted\n");
+    /* The connection now waits as any locked provider does; revocation
+     * ends the journal and no release is owed on a dead journal. */
+    for (;;) {
+        int status = image_pump(client, &img);
+        if (status) {
+            assert(status == SOPHIA_9P_CLOSED ||
+                   sophia_lc_state(client) == SOPHIA_LC_STALE);
+            break;
+        }
+    }
+    mark(report, "revoked\n");
+}
+#endif
 static void mark(const char *path, const char *value) {
     FILE *f = fopen(path, "w"); assert(f); assert(fputs(value, f) >= 0); assert(fclose(f) == 0);
 }
 int main(int argc, char **argv) {
     alarm(20);
-    assert(argc == 3 || (argc == 4 && strcmp(argv[3], "upload") == 0));
+    assert(argc == 3 || (argc == 4 && (strcmp(argv[3], "upload") == 0 || strcmp(argv[3], "image") == 0)));
     const char *fd = getenv("SOPHIA_LAUNCH_AUTH_FD"); assert(fd);
     int relay_fd = atoi(fd); assert(relay_fd > 2);
     assert(fcntl(relay_fd, F_SETFD, FD_CLOEXEC) == 0);
@@ -167,10 +295,27 @@ int main(int argc, char **argv) {
     authenticate(relay_fd, &relay_tag, 0);
 #ifdef SOPHIA_TEST_C_SDK
     struct sophia_lc_client client;
+    int image_mode = argc == 4 && strcmp(argv[3], "image") == 0;
     struct sophia_lf_negotiate offer; memset(&offer, 0, sizeof offer);
-    offer.minimum_revision = offer.maximum_revision = 1;
-    offer.capabilities = SOPHIA_LF_CAP_PRESENT;
+    offer.minimum_revision = 1;
+    offer.maximum_revision = image_mode ? 2 : 1;
+    offer.capabilities = image_mode
+        ? (SOPHIA_LF_CAP_PRESENT | SOPHIA_LF_CAP_IMAGE_SEALED)
+        : SOPHIA_LF_CAP_PRESENT;
     assert(sophia_lc_init_attached(&client, &role_wire, role_root, &offer) == 0);
+    if (image_mode) {
+        /* The endpoint directory is the lock socket's parent: the
+         * runtime binds its image endpoint beside it. */
+        char dirbuf[108];
+        const char *slash = strrchr(argv[1], '/');
+        assert(slash && (size_t)(slash - argv[1]) < sizeof dirbuf);
+        memcpy(dirbuf, argv[1], (size_t)(slash - argv[1]));
+        dirbuf[slash - argv[1]] = 0;
+        int endpoint_dir = open(dirbuf, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        assert(endpoint_dir >= 0);
+        run_image(&client, endpoint_dir, argv[2]);
+        return 0;
+    }
     for (;;) {
         const struct sophia_lf_record *event = NULL;
         assert(sophia_lc_service(&client, 4096) == 0);

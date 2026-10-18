@@ -81,10 +81,7 @@ impl ShellFiles {
             // Only controls for the pending offer depend on its admission.
             // Retire/allocation/ack progress must remain available to free the
             // very budgets on which that admission may be waiting.
-            let ordered = matches!(
-                record.as_ref(),
-                ShellContentRecord::ResourceCancel(_) | ShellContentRecord::ResourceEnd(_)
-            );
+            let ordered = matches!(record.as_ref(), ShellContentRecord::ResourceCancel(_));
             let blocked = ordered
                 && self.inbound.iter().take(at).any(|earlier| {
                     matches!(earlier, Inbound::ImageBegin(metadata)

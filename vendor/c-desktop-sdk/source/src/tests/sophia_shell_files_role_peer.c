@@ -1,5 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
-#include "../sophia_shell_files_client.h"
+#include "../sophia_shell_image.h"
+#include <fcntl.h>
+#include <poll.h>
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,7 +14,33 @@
 
 /* This peer drives the public C file-session API. The test control channel
  * schedules real server owners; it supplies no wire records or codec bytes. */
-static struct sophia_sf_client client;
+static struct sophia_ss session;
+#define client session.files
+static struct sophia_ss_image image;
+static uint8_t formats[65536];
+static int image_dir, image_enabled;
+static uint64_t now_ms(void) {
+    struct timespec now;
+    assert(!clock_gettime(CLOCK_MONOTONIC, &now));
+    return (uint64_t)now.tv_sec * 1000 + (uint64_t)now.tv_nsec / 1000000;
+}
+static void auth_reply(struct sophia_9p_client *wire, struct sophia_9p_handle request, uint8_t type) {
+    uint64_t deadline = now_ms() + 5000;
+    for (;;) {
+        struct sophia_9p_reply reply;
+        struct pollfd p = {wire->fd, POLLIN, 0};
+        int result;
+        assert(now_ms() < deadline);
+        if (sophia_9p_wants_write(wire)) p.events |= POLLOUT;
+        assert(poll(&p, 1, 2) >= 0);
+        assert(!sophia_9p_service(wire, 65536));
+        result = sophia_9p_peek(wire, &reply);
+        if (result == SOPHIA_9P_AGAIN) continue;
+        assert(!result && reply.handle.serial == request.serial && reply.type == type && !reply.error);
+        assert(!sophia_9p_consume(wire, request));
+        return;
+    }
+}
 static const char *root, *fixture;
 static struct timespec started;
 static uint8_t input_text[256];
@@ -56,15 +84,14 @@ static void step(void)
 {
     struct timespec now, pause = {0, 100000};
     int status;
-    /* EAGAIN deferred a submit in an earlier step; the pause is the backoff. */
-    if (client.submit_wait)
-        assert(!sophia_sf_client_submit_retry(&client));
-    status = sophia_sf_client_service(&client, 65536);
-    if (status)
-        fprintf(stderr, "role service=%d remote=%u boot=%u submit=%u\n", status,
-                client.remote_error, client.bootstrap, client.submit_stage);
+    struct pollfd p[2] = {{sophia_ss_poll_fd(&session), sophia_ss_poll_events(&session), 0},
+        {image_enabled ? sophia_ss_image_poll_fd(&image) : -1,
+         image_enabled ? sophia_ss_image_poll_events(&image) : 0, 0}};
+    assert(poll(p, 2, 1) >= 0);
+    status = sophia_ss_dispatch(&session, p[0].revents, 65536, now_ms());
     assert(!status);
-    status = sophia_sf_client_ack(&client);
+    if (image_enabled) assert(sophia_ss_image_dispatch(&image, p[1].revents, now_ms()) >= 0);
+    status = sophia_ss_ack(&session);
     assert(!status || status == SOPHIA_9P_BUSY);
     assert(!clock_gettime(CLOCK_MONOTONIC, &now));
     assert(now.tv_sec - started.tv_sec < 30);
@@ -74,7 +101,7 @@ static struct sophia_sf_record event(unsigned kind)
 {
     const struct sophia_sf_record *r;
     struct sophia_sf_record out;
-    while (sophia_sf_client_event(&client, &r))
+    while (sophia_ss_event(&session, &r))
         step();
     if (r->header.kind != kind)
         fprintf(stderr, "event %u want %u\n", r->header.kind, kind);
@@ -84,20 +111,24 @@ static struct sophia_sf_record event(unsigned kind)
         memcpy(input_text, r->value.native_input.text.data, r->value.native_input.text.size);
         out.value.native_input.text.data = input_text;
     }
-    assert(!sophia_sf_client_event_consume(&client));
+    assert(!sophia_ss_consume(&session));
     return out;
 }
 static void submit(struct sophia_sf_record *r)
 {
-    struct sophia_sf_record custody;
-    uint64_t id;
-    while (client.submit_stage)
+    uint64_t ticket;
+    enum sophia_ss_outcome outcome;
+    int result;
+    do {
+        result = sophia_ss_submit(&session, r, 1, &ticket);
+        if (result == SOPHIA_9P_BUSY) step();
+    } while (result == SOPHIA_9P_BUSY);
+    assert(!result);
+    do {
         step();
-    id = client.next_submission;
-    assert(!sophia_sf_client_submit(&client, r));
-    custody = event(SOPHIA_SF_SUBMITTED);
-    assert(custody.value.submitted.submission_id == id &&
-           custody.value.submitted.candidate_kind == r->header.kind);
+        assert(!sophia_ss_outcome(&session, ticket, &outcome, NULL));
+    } while (outcome < SOPHIA_SS_SUBMITTED);
+    assert(outcome == SOPHIA_SS_SUBMITTED);
 }
 static void echoed(const struct sophia_sf_record *request, const struct sophia_sf_record *outcome,
                    size_t body_size)
@@ -119,11 +150,11 @@ static void snapshot(uint64_t generation, unsigned count, int identities)
     struct sophia_sf_catalog_entry row;
     assert(published.value.object_published.object_kind == SOPHIA_SF_CATALOG);
     assert(published.value.object_published.generation == generation);
-    assert(!sophia_sf_client_object(&client, SOPHIA_SF_CATALOG, generation,
+    assert(!sophia_ss_object(&session, SOPHIA_SF_CATALOG, generation,
                                     published.value.object_published.qid));
     while (!client.object_ready)
         step();
-    assert(!sophia_sf_client_object_result(&client, &r));
+    assert(!sophia_ss_object_result(&session, &r));
     assert(r->value.catalog.generation == generation && r->value.catalog.entry_count == count &&
            r->value.catalog.identities_present == identities);
     assert(!sophia_sf_catalog_entry_at(&r->value.catalog, count - 1, &row));
@@ -133,7 +164,15 @@ static void allocate(int native)
 {
     struct sophia_sf_record r = {0}, result;
     phase("outputs");
-    event(SOPHIA_SF_OBJECT_PUBLISHED);
+    result = event(SOPHIA_SF_OBJECT_PUBLISHED);
+    assert(!sophia_ss_object(&session, SOPHIA_SF_OUTPUTS,
+        result.value.object_published.generation, result.value.object_published.qid));
+    {
+        const struct sophia_sf_record *outputs;
+        while (!client.object_ready) step();
+        assert(!sophia_ss_object_result(&session, &outputs));
+        assert(outputs->header.kind == SOPHIA_SF_OUTPUTS);
+    }
     if (native) {
         struct sophia_sf_native_allocation_request *a = &r.value.native_allocation_request;
         r.header.kind = SOPHIA_SF_NATIVE_ALLOCATION_REQUEST;
@@ -170,38 +209,35 @@ static void allocate(int native)
 }
 static void upload(void)
 {
-    struct sophia_sf_resource_begin b = {0};
+    struct sophia_ic_metadata metadata = {0};
+    struct sophia_ip_offer_info info;
     struct sophia_sf_record status;
-    static const uint8_t pixels[8] = {0};
-    b.transaction = 70;
-    b.grant_connection_epoch = client.epoch;
-    b.grant_content_epoch = 1;
-    b.resource_id = 5;
-    b.resource_generation = 1;
-    b.width_px = 2;
-    b.height_px = 1;
-    b.rendered_scale_numerator = 1;
-    b.rendered_scale_denominator = 1;
-    b.pixel_format = 1;
-    b.chunk_count = 1;
-    b.total_bytes = 8;
-    while (client.submit_stage)
-        step();
-    assert(!sophia_sf_client_upload_begin(&client, b));
-    event(SOPHIA_SF_SUBMITTED);
-    status = event(SOPHIA_SF_RESOURCE_STATUS);
-    assert(status.value.resource_status.status == 1);
-    while (!sophia_sf_client_upload_ready(&client))
-        step();
-    assert(!sophia_sf_client_upload_chunk(&client, pixels, 8));
-    while (client.upload_offset != 8 || client.submit_stage)
-        step();
-    assert(!sophia_sf_client_upload_end(&client, 71));
-    event(SOPHIA_SF_SUBMITTED);
+    uint64_t offer, ticket;
+    int source, result;
+    void *pixels;
+    size_t bytes;
+    assert(!sophia_ip_isb_create(2, 1, &source, &pixels, &bytes));
+    memset(pixels, 0, bytes);
+    assert(!sophia_ip_isb_finish(source, pixels, bytes));
+    metadata.resource_id = 5; metadata.resource_generation = 1;
+    metadata.admission_epoch = 1;
+    metadata.output = 2; metadata.allocation = 1; metadata.topology_generation = 3;
+    metadata.source_kind = metadata.source_format = 1;
+    metadata.width = 2; metadata.height = 1; metadata.stride = 8;
+    metadata.plane_count = metadata.descriptor_count = 1; metadata.logical_bytes = 8;
+    do {
+        result = sophia_ss_image_begin(&image, &metadata, source, now_ms(), &offer, &ticket);
+        if (result == SOPHIA_IPR_BUSY || result == SOPHIA_IPR_AGAIN) step();
+    } while (result == SOPHIA_IPR_BUSY || result == SOPHIA_IPR_AGAIN);
+    assert(!result);
     status = event(SOPHIA_SF_RESOURCE_STATUS);
     assert(status.value.resource_status.status == 2);
-    while (client.upload_stage || client.submit_stage)
+    do {
         step();
+        assert(!sophia_ip_offer(&image.producer, offer, &info));
+    } while (info.state != SOPHIA_IPO_SETTLED);
+    assert(info.status == SOPHIA_IPS_ACCEPTED && info.disposition == 1);
+    assert(!sophia_ip_forget(&image.producer, offer));
 }
 static uint64_t permit(uint64_t demand)
 {
@@ -299,7 +335,9 @@ static void launcher(void)
         invalid.value.role_candidate.selected = 2;
         while (client.submit_stage)
             step();
-        assert(sophia_sf_client_submit(&client, &invalid) == SOPHIA_9P_INVALID);
+        uint64_t ticket = 0;
+        assert(sophia_ss_submit(&session, &invalid, 1, &ticket) == SOPHIA_9P_INVALID);
+        assert(!ticket);
         assert(client.next_submission == next);
     }
     submit(&r);
@@ -407,27 +445,32 @@ static void insufficient_storage(void)
     const struct sophia_sf_record *value;
     phase("publish");
     publication = event(SOPHIA_SF_OBJECT_PUBLISHED);
-    assert(!sophia_sf_client_object(&client, SOPHIA_SF_CATALOG, 3,
+    assert(!sophia_ss_object(&session, SOPHIA_SF_CATALOG, 3,
                                     publication.value.object_published.qid));
     while (!client.object_ready)
         step();
-    assert(sophia_sf_client_object_result(&client, &value) == SOPHIA_9P_INVALID);
+    assert(sophia_ss_object_result(&session, &value) == SOPHIA_9P_INVALID);
     assert(!client.terminal && !client.remote_error && !client.object_stage);
     phase("outputs");
     publication = event(SOPHIA_SF_OBJECT_PUBLISHED);
-    assert(!sophia_sf_client_object(&client, SOPHIA_SF_OUTPUTS, 3,
+    assert(!sophia_ss_object(&session, SOPHIA_SF_OUTPUTS, 3,
                                     publication.value.object_published.qid));
     while (!client.object_ready)
         step();
-    assert(!sophia_sf_client_object_result(&client, &value));
+    assert(!sophia_ss_object_result(&session, &value));
     assert(value->header.kind == SOPHIA_SF_OUTPUTS);
 }
 int main(int argc, char **argv)
 {
     struct sophia_9p_client wire;
     struct sophia_sf_negotiate offer;
-    struct sophia_sf_record e;
-    const struct sophia_sf_record *object;
+    struct sophia_ss_config config = {0};
+    struct sophia_ss_image_config image_config = {0};
+    struct sophia_9p_handle request;
+    uint32_t afid, attached_root;
+    void *session_storage;
+    size_t session_bytes;
+    char directory[256], *slash;
     enum sophia_sf_profile profile;
     char path[512], endpoint[256];
     FILE *file;
@@ -450,26 +493,35 @@ int main(int argc, char **argv)
     endpoint[n] = 0;
     fd = connect_path(endpoint);
     assert(!sophia_9p_init(&wire, fd, 4096, 8, 32, memory, bytes));
-    offer.minimum_revision = offer.maximum_revision = profile == SOPHIA_SF_LAUNCHER ? 7 : 8;
-    offer.required_capabilities = profile == SOPHIA_SF_LAUNCHER ? 0x9a0 : 0x11a2;
-    {
-        struct sophia_sf_negotiate invalid = offer;
-        invalid.required_capabilities ^= 1;
-        assert(sophia_sf_client_init_profile(&client, &wire, invalid, profile, objects,
-                                             SOPHIA_SF_MAX_RECORD) == SOPHIA_9P_ARGUMENT);
-        assert(wire.phase == 0);
-    }
+    offer.minimum_revision = offer.maximum_revision = 9;
+    offer.required_capabilities = profile == SOPHIA_SF_LAUNCHER ? 0x29a0 : 0x31a2;
+    assert(!sophia_9p_version(&wire, &request)); auth_reply(&wire, request, 101);
+    assert(!sophia_9p_auth(&wire, "", "", &request, &afid)); auth_reply(&wire, request, 103);
+    assert(!sophia_9p_attach_with_afid(&wire, afid, "", "", &request, &attached_root)); auth_reply(&wire, request, 105);
+    assert(!sophia_9p_clunk(&wire, afid, &request)); auth_reply(&wire, request, 121);
+    config.offer = offer; config.profile = profile; config.msize = 4096;
+    config.queue_slots = 8; config.queue_bytes = 65536;
+    config.object_storage = objects;
+    config.object_capacity = !strcmp(fixture, "dock-small") ? 1024 : SOPHIA_SF_MAX_RECORD;
     memset(objects, 0xa5, SOPHIA_SF_MAX_RECORD);
-    assert(!sophia_sf_client_init_profile(&client, &wire, offer, profile, objects,
-                                          !strcmp(fixture, "dock-small") ? 1024
-                                                                         : SOPHIA_SF_MAX_RECORD));
-    event(SOPHIA_SF_SUBMITTED);
-    e = event(SOPHIA_SF_NEGOTIATED);
-    assert(e.value.negotiated.capabilities == offer.required_capabilities);
-    while (!client.object_ready)
-        step();
-    assert(!sophia_sf_client_object_result(&client, &object));
-    assert(object->header.kind == SOPHIA_SF_LIMITS);
+    session_bytes = sophia_ss_storage_bytes(config.msize, config.queue_bytes);
+    session_storage = malloc(session_bytes); assert(session_storage);
+    assert(!sophia_ss_open_attached(&session, &wire, attached_root, &config, session_storage, session_bytes));
+    strcpy(directory, endpoint); slash = strrchr(directory, '/');
+    assert(slash); slash[slash == directory ? 1 : 0] = 0;
+    image_dir = open(directory, O_RDONLY | O_DIRECTORY | O_CLOEXEC); assert(image_dir >= 0);
+    image_config.endpoint_dir = image_dir; image_config.formats = formats;
+    image_config.formats_capacity = sizeof formats;
+    image_config.producer.bounds.max_resource_bytes = 4194304;
+    image_config.producer.bounds.max_width = image_config.producer.bounds.max_height = 8192;
+    image_config.producer.bounds.max_outputs = 16; image_config.producer.bounds.transfer_slots = 4;
+    image_config.producer.transfer_timeout_ms = 5000;
+    image_config.producer.startup_deadline_ms = now_ms() + 5000;
+    assert(!sophia_ss_image_init(&image, &image_config));
+    assert(!sophia_ss_image_attach(&session, &image)); image_enabled = 1;
+    while (sophia_ss_state(&session) == SOPHIA_SS_NEGOTIATING) step();
+    assert(sophia_ss_state(&session) == SOPHIA_SS_READY);
+    assert(sophia_ss_welcome(&session)->capabilities == offer.required_capabilities);
     if (!strcmp(fixture, "dock-small")) {
         insufficient_storage();
         assert(((uint8_t *)objects)[1024] == 0xa5);
@@ -477,9 +529,14 @@ int main(int argc, char **argv)
         launcher();
     else
         dock();
-    while (client.submit_stage || client.ack_op.active ||
-           client.acked_sequence != client.consumed_sequence)
-        step();
+    if (strcmp(fixture, "dock-small")) {
+        while (client.submit_stage || client.ack_op.active || client.acked_sequence != client.consumed_sequence) step();
+    }
+    sophia_ss_close(&session);
+    sophia_ip_close(&image.producer);
+    close(image_dir);
+    sophia_9p_close(&wire);
+    free(session_storage);
     close(fd);
     free(objects);
     free(memory);

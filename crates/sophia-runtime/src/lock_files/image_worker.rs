@@ -19,7 +19,7 @@ use sophia_protocol::lock_files::LOCK_RESOURCE_REASON_IMAGE_CHANNEL_UNAVAILABLE;
 
 use super::{LockFileCustody, LockImageSource, LockImageWorkerAction, reason};
 use crate::image_channel::ImageDatagram;
-use crate::{SealedSubmitFailure, SealedValidationFailure, SealedValidationWorker, SharedPixels};
+use crate::{IsbSubmitFailure, IsbValidationFailure, IsbValidationWorker, SharedPixels};
 
 /// A worker job and whether its epoch has ended.
 struct Job {
@@ -28,10 +28,10 @@ struct Job {
 }
 
 pub(super) struct ImageWorker {
-    worker: SealedValidationWorker,
+    worker: IsbValidationWorker,
     jobs: Vec<Job>,
     /// A completion custody could not journal yet; retried before others.
-    parked: Option<(u64, Result<SharedPixels, SealedValidationFailure>)>,
+    parked: Option<(u64, Result<SharedPixels, IsbValidationFailure>)>,
     /// The worker ended; its jobs will never complete.
     dead: bool,
 }
@@ -43,7 +43,7 @@ impl ImageWorker {
         validation_bytes: usize,
     ) -> std::io::Result<Self> {
         Ok(Self {
-            worker: SealedValidationWorker::with_validation_budget(
+            worker: IsbValidationWorker::with_validation_budget(
                 max_jobs,
                 max_bytes,
                 validation_bytes,
@@ -98,7 +98,7 @@ impl ImageWorker {
         &mut self,
         custody: &mut LockFileCustody,
         id: u64,
-        result: Result<SharedPixels, SealedValidationFailure>,
+        result: Result<SharedPixels, IsbValidationFailure>,
     ) -> bool {
         match custody.image_completed(id, result.clone()) {
             Ok(_) => {}
@@ -203,8 +203,8 @@ impl ImageWorker {
                         return;
                     }
                 },
-                Err(SealedSubmitFailure::Capacity) => return,
-                Err(SealedSubmitFailure::Invalid | SealedSubmitFailure::Closed) => {
+                Err(IsbSubmitFailure::Capacity) => return,
+                Err(IsbSubmitFailure::Invalid | IsbSubmitFailure::Closed) => {
                     if custody
                         .refuse_image(admission.offer_id, reason::BUDGET)
                         .is_err()
@@ -232,7 +232,7 @@ impl ImageWorker {
                 let source = datagram.take_descriptor(0).ok_or(Errno::EPROTO)?;
                 match self.worker.submit_reserved(job, source) {
                     Ok(()) => custody.image_source_submitted(job)?,
-                    Err((SealedSubmitFailure::Closed, _)) => self.fail(Some(custody)),
+                    Err((IsbSubmitFailure::Closed, _)) => self.fail(Some(custody)),
                     // Kept admitted with its reservation until its deadline.
                     Err(_) => {}
                 }

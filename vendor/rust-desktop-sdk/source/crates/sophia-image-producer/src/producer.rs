@@ -552,7 +552,7 @@ impl ImageProducer {
 
     /// The role adapter has validated a negotiation without a usable sealed
     /// grant. This closes the side channel cleanly; it never settles offers or
-    /// invents journal release. Callers still choose whether bytes are allowed.
+    /// invents journal release. Image admission stays closed for this epoch.
     pub fn channel_unavailable(&mut self) {
         self.fail(CloseCause::Unavailable);
     }
@@ -572,13 +572,7 @@ impl ImageProducer {
     pub fn path(&self) -> ImagePath {
         match self.channel {
             ChannelState::Ready => ImagePath::Descriptor,
-            ChannelState::Closed => {
-                if self.cause.is_clean() && self.config.fallback_bytes {
-                    ImagePath::Bytes
-                } else {
-                    ImagePath::Error
-                }
-            }
+            ChannelState::Closed => ImagePath::Error,
             _ => ImagePath::Wait,
         }
     }

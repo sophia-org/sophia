@@ -79,7 +79,7 @@ impl ImageChannel {
             && discovery.validation_timeout_ms == image.validation_timeout_ms
             && discovery.validation_chunk_bytes == image.validation_chunk_bytes
             && discovery.capture_interest_timeout_ms == image.capture_interest_timeout_ms;
-        // Sealed only: DMA-BUF needs the later capture owner.
+        // Isb only: DMA-BUF needs the later capture owner.
         let sealed = discovery.source_kinds == SEALED_KIND
             && image.max_validation_jobs != 0
             && image.max_dma_source_bytes == 0;
@@ -287,7 +287,7 @@ impl LockFileCustody {
         }
     }
 
-    /// Sealed-only formats have no rows, so a new topology changes only the
+    /// Isb-only formats have no rows, so a new topology changes only the
     /// generation that discovery and the formats snapshot name.
     pub(super) fn follow_image_topology(&mut self) {
         let generation = self.lock.topology_generation;

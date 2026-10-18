@@ -84,29 +84,20 @@ fn independent_vectors_and_pipeline_regressions() {
     }
 }
 #[test]
-fn c_session_negotiates_uploads_and_cancels_over_native_files() {
+fn c_file_client_refuses_retired_byte_uploads() {
     session_peer("sophia_shell_files_peer");
 }
 #[test]
-fn public_c_session_tracks_custody_and_uploads_against_production_owners() {
+fn public_c_session_keeps_custody_while_refusing_byte_uploads() {
     session_peer("desktop_session_peer");
 }
 fn session_peer(name: &str) {
     let scratch = Scratch::new();
     let binary = compile(&scratch.0, name);
-    run_peer(&binary, &scratch.0, 65536);
+    run_peer(&binary, &scratch.0);
 }
 
-#[test]
-#[ignore = "requires SOPHIA_SHELL_UPLOAD_PEER naming an independently built 256 KiB upload peer"]
-fn independent_sdk_uploads_multiple_canonical_chunks() {
-    let binary = PathBuf::from(std::env::var_os("SOPHIA_SHELL_UPLOAD_PEER").expect("SDK peer"));
-    assert!(binary.is_absolute() && binary.is_file());
-    let scratch = Scratch::new();
-    run_peer(&binary, &scratch.0, 262144);
-}
-
-fn run_peer(binary: &Path, scratch: &Path, expected_bytes: usize) {
+fn run_peer(binary: &Path, scratch: &Path) {
     let directory = scratch.join("socket");
     let mut transport = ShellComponentTransport::bind_for_supervised_uid(
         &directory,
@@ -202,19 +193,18 @@ fn run_peer(binary: &Path, scratch: &Path, expected_bytes: usize) {
     };
     assert!(status.success());
     assert!(negotiated);
-    let lease = transport
-        .lease_content_resource(
-            &registry,
-            grant,
-            ContentResourceId {
-                id: 1,
-                generation: 1,
-            },
-        )
-        .unwrap();
-    assert_eq!(lease.bytes().len(), expected_bytes);
-    assert!(lease.bytes().iter().all(|byte| *byte == 0));
-    drop(lease);
+    assert!(
+        transport
+            .lease_content_resource(
+                &registry,
+                grant,
+                ContentResourceId {
+                    id: 1,
+                    generation: 1
+                }
+            )
+            .is_err()
+    );
     transport.disconnect(&mut registry).unwrap();
     registry.collect();
 }

@@ -152,34 +152,22 @@ fn content_reservation_refuses_capacity_and_invalid_groups_without_tickets() {
 }
 
 #[test]
-fn cancelled_resource_reservations_do_not_consume_upload_slots() {
-    let (mut connection, mut peer) = connect(Profile {
-        limits_published: true,
-        ..bar(0)
-    });
-    let (_, limits) = next(&mut connection, &mut peer, ShellConnection::take_content);
-    assert!(matches!(limits, ShellContentRecord::Limits(_)));
-    let begin = ShellContentRecord::ResourceBegin(ContentResourceBegin {
-        grant: grant(),
-        resource: ContentResourceId {
-            id: 1,
-            generation: 1,
-        },
-        width_px: 4,
-        height_px: 4,
-        rendered_scale_numerator: 1,
-        rendered_scale_denominator: 1,
-        pixel_format: 1,
-        chunk_count: 1,
-        total_bytes: 64,
-    });
+fn byte_resource_reservations_are_refused_without_consuming_tickets() {
+    let (mut connection, mut peer) = connect(bar(0));
+    let begin = super::batch::begin(1);
     for _ in 0..16 {
-        drop(connection.reserve_content(tx(1), &begin).unwrap());
+        assert!(matches!(
+            connection.reserve_content(tx(1), &begin),
+            Err(ShellClientError::WrongDirection)
+        ));
     }
-    let admission = connection.reserve_content(tx(2), &begin).unwrap().commit();
+    let admission = connection
+        .reserve_content(tx(2), &demand(2))
+        .unwrap()
+        .commit();
     assert_eq!(admission.first, Ticket(1));
     let record = commit(&mut connection, &mut peer, admission.first);
-    assert_eq!(kind_and_id(&record).0, ShellFileKind::ResourceBegin);
+    assert_eq!(kind_and_id(&record).0, ShellFileKind::FrameDemand);
 }
 
 #[test]

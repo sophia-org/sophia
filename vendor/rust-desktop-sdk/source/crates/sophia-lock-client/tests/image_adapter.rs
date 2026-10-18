@@ -2,7 +2,7 @@
 mod peer;
 use sophia_9p_client::pipeline::{Pipeline, PipelineLimits};
 use sophia_image_producer::{
-    ImagePath, OfferState, ProducerMetadata, ResourceStatusKind, create_sealed, finish_sealed,
+    ImagePath, OfferState, ProducerMetadata, ResourceStatusKind, create_isb, finish_isb,
 };
 use sophia_lock_client::{
     LockImageConfig, Session, journal::Event, protocol::lock_files::*, startup::Opening,
@@ -48,7 +48,6 @@ fn run(absent: bool, cancel: bool) {
             endpoint_dir: peer.dir.clone(),
             startup_deadline_ms: 3000,
             transfer_timeout_ms: 1000,
-            fallback_bytes: true,
             formats_capacity: 163904,
         },
     )
@@ -72,7 +71,7 @@ fn run(absent: bool, cancel: bool) {
         }
         let image = session.image().unwrap();
         if absent {
-            if image.path() == ImagePath::Bytes {
+            if image.path() == ImagePath::Error {
                 break;
             }
         } else if let Some(id) = offer {
@@ -99,9 +98,9 @@ fn run(absent: bool, cancel: bool) {
                 }
             }
         } else if image.path() == ImagePath::Descriptor {
-            let source = create_sealed(2, 2).unwrap();
+            let source = create_isb(2, 2).unwrap();
             source.write_pixels(0, &[255; 16]).unwrap();
-            finish_sealed(&source).unwrap();
+            finish_isb(&source).unwrap();
             let result = session.image_begin(
                 ProducerMetadata {
                     resource: 21,
@@ -183,7 +182,6 @@ fn failure_keeps_session(case: peer::Case, cause: sophia_image_producer::CloseCa
             endpoint_dir: peer.dir.clone(),
             startup_deadline_ms: 3000,
             transfer_timeout_ms: 1000,
-            fallback_bytes: true,
             formats_capacity: 64,
         },
     )

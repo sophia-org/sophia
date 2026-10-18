@@ -1,5 +1,187 @@
 # C and Rust SDK API parity
 
+## Mapped ISB builder, 2026-10-18
+
+Both SDKs build an ISB in place, so producers fill pixels without a staging
+canvas or a `pwrite` copy. The Rust builder lives in the new leaf crate
+`sophia-isb` and is re-exported by `sophia-image-producer`.
+
+| Operation | C | Rust |
+| --- | --- | --- |
+| Create with a resource bound | `sophia_ip_isb_create_bounded(width, height, max_bytes, &fd, &pixels, &bytes)` | `create_mapped_isb(width, height, max_resource_bytes)` or `MappedIsb::create` |
+| Create without a bound | `sophia_ip_isb_create` (the same path, bound `UINT64_MAX`) | pass `u64::MAX` |
+| Fill | write through `pixels` | `MappedIsb::pixels_mut` |
+| Finish | `sophia_ip_isb_finish(fd, pixels, bytes)` | `MappedIsb::finish(self) -> OwnedFd` |
+| Abandon | `munmap(pixels, bytes)`, then `close(fd)` | drop the builder |
+
+Shared behavior. A zero dimension, a stride above `UINT32_MAX`, a size above
+the slice-length or pointer-difference limit (Rust `isize::MAX`, C
+`PTRDIFF_MAX` and `SIZE_MAX`) or the file-offset limit (`INT64_MAX`), or a size
+above the caller's bound (normally the role's granted `max_resource_bytes`) is
+an argument error before anything is allocated. On 64-bit targets the
+pointer and offset limits coincide; on 32-bit targets a single 4 GiB row is
+refused. The
+memfd is `CLOEXEC` and sealable. `fallocate` mode 0 sizes it and allocates
+every page, and GROW and SHRINK are sealed at once, so the backing cannot
+shrink beneath the mapping. The one shared writable mapping is marked
+`MADV_DONTFORK`, so a forked child holds no writable alias that would block
+F_SEAL_WRITE or outlive it. Finish unmaps, adds WRITE, GROW, SHRINK and SEAL,
+and reads the seals back before reporting success. Up-front allocation reports
+ordinary memory exhaustion at creation rather than as a fault while filling.
+That narrows `SIGBUS` exposure; it does not rule out hardware memory errors or
+kernel reclaim faults, and neither SDK claims it does.
+
+A forked child has no copy of the mapping. It must not touch an inherited
+builder: Rust callers must neither use nor drop it (`std::mem::forget`), since
+dropping would unmap whatever the child has since mapped there, and C callers
+must neither access nor `munmap` the pixels. The child also inherits the
+unsealed fd until `exec` (`CLOEXEC`), and must close it or `exec` without
+writing to it. `fork` is already `unsafe` in Rust; the builder adds no safe
+path to either state.
+
+Ownership differs idiomatically. C callers hold the fd throughout and keep it
+on every finish result; REFUSED means the seals are missing and the fd must not
+be offered. Rust exposes no fd before `finish`, which consumes the builder and
+closes the fd on any error (`IsbError::Refused(errno)` or
+`IsbError::Unsealed(seals)`); `create_mapped_isb` maps these to
+`ProducerError::Argument` and `ProducerError::Refused`. Rust's writable view
+borrows the builder, so no write can follow `finish` (a `compile_fail`
+doctest pins error E0505); C relies on caller discipline.
+
+The existing C `sophia_ip_isb_create` keeps its signature but now takes the
+hardened path: it allocates up front, seals size at creation, excludes the
+mapping from fork and refuses a stride above `UINT32_MAX`. Callers must not
+resize or remap the fd; no SDK caller or test did. Rust's `pwrite`-based
+`IsbSource` / `create_isb` / `finish_isb` remain for compatibility and still
+copy every byte. `sophia-isb` is the only Rust crate that permits `unsafe`: it
+denies it at the crate level and allows it only in its private `mapping`
+module. Every other crate, including `sophia-image-producer`, keeps the
+workspace `forbid`.
+
+Independent tests. Rust `sophia-isb`: exact pixels and length through sealing,
+every seal verified with write, grow, shrink, `fallocate` and further-seal
+refusal, bounds (exact size accepted, one byte under refused, stride and
+overflow refused), kernel `smaps` flags `rd wr sh dc` on the live mapping, a
+cross-thread finish, the borrowed-view compile failure, and one FD/mapping
+accounting test covering refusal before allocation, abandonment, finish and
+a mapping refused under a lowered address-space limit after the memfd was
+allocated. `sophia-image-producer`: a mapped source is admitted and crosses
+the socket with exactly the bytes written through the mapping. C
+`isb_mapped_test`: the same bounds, pixel, seal and cleanup cases with output
+sentinels, size seals while mapped, a writable remap refused after finish, a
+real `fork` in which finish succeeds while the child lives and the child's
+write faults, and a negative control that restores inheritance and observes
+F_SEAL_WRITE fail with EBUSY.
+
+Evidence (Sophia `isb-client-migration-20261018`):
+`claude-mapped-isb-rs-workspace-test.log`, `claude-mapped-isb-rs-clippy.log`,
+`claude-mapped-isb-rs-fmt.log` and `claude-mapped-isb-c-check.log`. These are
+device-free SDK checks. They make no performance or native-presentation claim,
+and Sophia and comparator adoption are separate.
+
+## ISB-only resource APIs, 2026-10-18
+
+This supersedes the byte-upload operation maps and B3 upload-window history
+below. Shell and lock clients no longer open upload files or expose byte-upload
+helpers. Shell ResourceBegin/Chunk/End and lock ResourceBegin/End are refused
+locally before spending a submission identity. Passive record codecs remain
+available for negative conformance tests; portal transfer APIs are unaffected.
+
+| Operation | C | Rust |
+| --- | --- | --- |
+| Shell image submission | `sophia_ss_image_begin` | `ShellConnection::image_begin` |
+| Owning native session image submission | attach `sophia_ss_image` to the session | `NativeLauncherSession::enable_image`, `image_begin` |
+| Adopt settled launcher pixels | `sophia_ns_adopt_image` | `adopt_native_image` / owning session `adopt_image` |
+| Lock image submission | `sophia_lc_image_begin` | `Session::image_begin` |
+| Cancel an image offer | role image adapter cancel | role image adapter cancel |
+| Resource retirement | native resource retire / lock ResourceRetire | native resource retire / lock ResourceRetire |
+
+Image submission transfers source custody only on success; Busy/refusal leaves
+the source with the caller. Adoption still requires Accepted and settled
+Retained disposition, consumes the offer only on success, and keeps retirement
+waiting for ResourceReleased. Both SDKs preserve late matching Accepted without
+resurrecting a retiring resource. Public struct layouts changed: rebuild C
+clients and bindings.
+
+The independent C and Rust lock conformance peers each passed sealed-image
+submission, presentation, chord/entry events and unlock against Sophia's current
+production export. Protected launch tests separately cover revocation with an
+ImageBegin staged locally before custody and replacement with a fresh epoch.
+These are device-free tests, not physical-locking or performance qualification.
+Evidence: `isb-client-migration-20261018/isb-only-{c,rust}-lock-conformance-01.log`
+and the corresponding `lock-auth-export` logs. SDK source publication and Sophia
+verified-pin adoption remain separate from the runtime's pending full gate.
+
+
+## Native ISB resource adoption, 2026-10-18
+
+Rust `ShellConnection::adopt_native_image` and C `sophia_ns_adopt_image`
+transfer a producer-verified Settled, Accepted, Retained offer into the native
+launcher's bounded resource registry. They check the role connection, content
+grant, dimensions, byte bound, duplicate resource identity and registry capacity.
+Success forgets the offer inside the operation; failure leaves the offer and
+registry slot untouched. No caller-supplied acceptance claim is used.
+
+Image metadata's `admission_epoch` is the content grant epoch, not the
+connection epoch. Callers obtain it from negotiated ContentLimits. The two
+epochs can differ; the producer knows only the connection epoch, while the
+server and native adoption helper check the content grant.
+
+An already retained image can be adopted after image-channel closure while its
+role connection remains live. Role closure, stale grants and unaccepted or
+unsettled offers refuse adoption. Retirement still waits for ResourceReleased;
+forgetting an offer neither releases the resource nor permits replay after
+release. A matching late Accepted is an idempotent no-op even during retirement.
+A wrong offer transaction, downgrade to Admitted or contradictory rejection
+fails the lifecycle.
+
+Both SDKs independently exercise settlement, rejection, cancellation, closure,
+capacity, grant and dimension bounds, duplicate identity, retirement, release
+and contradictory statuses through scripted 9P and real SEQPACKET peers. C
+consumes its retained application-event head before awaiting a later journal
+read; Rust buffers observations separately. C's late-status control supplies a
+repeated Accepted through the peer; Rust also covers its original buffered
+Accepted arriving at the lifecycle after adoption. These establish local SDK
+custody, not authenticated production admission or physical presentation.
+
+C consumers must rebuild: `sophia_ns_resource` now carries the adopted offer.
+The former byte-upload APIs are removed in the ISB-only series above; image
+adapters never select them as fallback.
+
+## ISB-only image setup and content roles, 2026-10-18
+
+The image producer in both SDKs now returns Error after every channel closure;
+there is no byte-fallback configuration or Bytes path. A closed adapter cannot
+be replaced on the same connection. Existing cancellation, journal-loss and
+SourceReleased custody rules still apply. Legacy byte APIs remain temporarily
+for migrating callers and are not selected by an image adapter.
+
+Rust `ShellConnection::enable_image` and C `sophia_ss_image_attach` allow setup
+after negotiated Limits. Clients pass the real role bounds and transfer timeout,
+then wait for Hello/ChannelReady. Both require the r9 sealed and content grants;
+setup never adds authority. C also supports attaching during negotiation, and
+Rust's existing image constructors remain available. Times stay in the caller's
+monotonic domain. Endpoint directories belong to the admitted role connection.
+
+Bar, dock and launcher use the same shell image channel. Launcher exact masks
+and C dock exact masks now admit their existing role grants plus sealed at r9;
+no other grant is added. Rust catalog operations accept the known r8 and r9
+revisions with their existing capability. Protocol introduction constants and
+wire encodings are unchanged. Metadata-only connections retain their behavior.
+
+Independent scripted C/Rust controls drive dock and launcher from Limits through
+real SEQPACKET Hello, ImageBegin, descriptor transfer, Accepted and Retained
+settlement, using each role's ordinary content observation path. They also
+exercise missing grants, invalid role masks, closure and cancellation. These are
+supplied-authority fixtures, not protected launch or native presentation proof.
+Consumers must rebuild for the removed configuration field and path variant.
+
+ISB terminology (2026-10-18): both SDKs expose the same Immutable Shared Buffer
+construction and finalization operations, through Rust `create_isb` /
+`finish_isb` and C `sophia_ip_isb_create` / `sophia_ip_isb_finish`. Existing image
+producer, shell-adapter and lock-adapter scenarios exercise the renamed APIs.
+The naming change preserves source-kind encodings and custody behavior.
+
 ## Producer transport and revision preconditions, 2026-10-17
 
 The producer accepts only the implemented shell r9 or lock r2 selection and
@@ -361,6 +543,8 @@ mapping makes F_ADD_SEALS(F_SEAL_WRITE) fail with EBUSY, a received sealed mappi
 survives closing both producer and receiver FDs, and a new shared writable
 mapping fails EPERM. Rust keeps its unsafe-code
 prohibition and checks the resulting seal requirement without mapping memory.
+(Since the 2026-10-18 mapped builder, `sophia-isb` alone permits `unsafe`, in
+its private mapping module.)
 
 These tests use no new public API and do not implement the proposed transport.
 They establish kernel prerequisites only, not codec, authentication, admission,

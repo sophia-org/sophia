@@ -1,12 +1,17 @@
 //! t306: characterize a provider candidate across real lock-object publication.
 //! This is a custody/pacing test, not proof that returning native heads retire.
+//! The image arrives through sealed-image custody with a supplied worker
+//! completion; descriptor and sealing checks live in lock_image_transport.
 use std::time::{Duration, Instant};
 
 use sophia_9p::{Errno, ReadOutcome};
 use sophia_engine::{SessionLockEpoch, SessionLockImageIdentity};
 use sophia_protocol::lock_files::*;
 use sophia_protocol::{DisplayHeadId, OutputId, Size};
-use sophia_runtime::lock_files::{LockFileCustody, LockFileSettings, LockInbound};
+use sophia_runtime::SharedPixels;
+use sophia_runtime::lock_files::{
+    LockFileCustody, LockFileSettings, LockImageSettings, LockImageSource, LockInbound,
+};
 
 use super::super::lock_provider::LockPublication;
 use crate::session_lock::SessionLockPhase;
@@ -53,7 +58,7 @@ impl Fixture {
         let object = publication
             .update(super::locked(None), Some(1), || Some(snapshot.clone()))
             .unwrap();
-        let custody = LockFileCustody::new(LockFileSettings {
+        let mut custody = LockFileCustody::new(LockFileSettings {
             epoch: CONNECTION,
             limits: crate::session_lock_object::session_lock_file_limits(Some(&snapshot)),
             reserved_chords: Vec::new(),
@@ -66,6 +71,7 @@ impl Fixture {
         frames.connected(CONNECTION);
         frames.set_pacing_diagnostics(true);
         frames.retain_pacing(&object.allocations);
+        custody.configure_image(image_settings(&custody)).unwrap();
         let mut fixture = Self {
             publication,
             custody,
@@ -78,9 +84,10 @@ impl Fixture {
         fixture.submit(
             LockFileKind::Negotiate,
             &LockNegotiate {
-                minimum_revision: 1,
-                maximum_revision: 1,
-                requested_capabilities: LOCK_FILE_CAPABILITY_PRESENT,
+                minimum_revision: 2,
+                maximum_revision: 2,
+                requested_capabilities: LOCK_FILE_CAPABILITY_PRESENT
+                    | LOCK_FILE_CAPABILITY_SEALED_MEMORY,
                 chords: Vec::new(),
             }
             .encode()
@@ -91,13 +98,15 @@ impl Fixture {
             Some(LockInbound::Negotiated { .. })
         ));
         fixture.events();
+        fixture.custody.image_channel_ready(5, 1).unwrap();
+        fixture.events();
         fixture.upload();
         fixture
     }
 
     fn submit(&mut self, kind: LockFileKind, body: &[u8]) {
         self.submission += 1;
-        let bytes = encode_lock_file_record(
+        let bytes = encode_lock_file_record_at_revision(
             LockFileHeader {
                 kind,
                 connection_epoch: CONNECTION,
@@ -105,6 +114,7 @@ impl Fixture {
                 sequence: 0,
             },
             body,
+            self.custody.revision(),
         )
         .unwrap();
         self.custody.submit(&bytes, self.now).unwrap();
@@ -122,7 +132,12 @@ impl Fixture {
         let mut rest = bytes.as_slice();
         while !rest.is_empty() {
             let size = u32::from_le_bytes(rest[..4].try_into().unwrap()) as usize;
-            let record = decode_lock_file_record(&rest[..size], LockFileClass::Event).unwrap();
+            let record = decode_lock_file_record_at_revision(
+                &rest[..size],
+                LockFileClass::Event,
+                self.custody.revision(),
+            )
+            .unwrap();
             events.push((record.header.kind, record.body.to_vec()));
             rest = &rest[size..];
         }
@@ -136,30 +151,55 @@ impl Fixture {
     }
 
     fn upload(&mut self) {
-        self.submit(
-            LockFileKind::ResourceBegin,
-            &LockResourceBegin {
-                transaction: 100,
-                resource: resource(),
-                width_px: 4,
-                height_px: 2,
-                slot: 0,
-            }
-            .encode()
-            .unwrap(),
+        let allocation = self.allocation(1);
+        let metadata = LockImageMetadata {
+            offer_id: 1,
+            resource: resource().id,
+            resource_generation: resource().generation,
+            admission_epoch: self.object.lock_epoch,
+            output_id: allocation.output_id,
+            allocation_id: allocation.allocation_id,
+            topology_generation: self.object.topology_generation,
+            source_kind: 1,
+            source_format: 1,
+            width: 4,
+            height: 2,
+            stride: 16,
+            plane_count: 1,
+            descriptor_count: 1,
+            declared_bytes: 32,
+            modifier: 0,
+        };
+        self.submit(LockFileKind::ImageBegin, &metadata.encode().unwrap());
+        let admission = self.custody.image_admission(self.now).unwrap().unwrap();
+        self.custody.admit_image(1, 1, admission.deadline).unwrap();
+        let mut planes = [LockImagePlane {
+            offset: 0,
+            stride: 0,
+            fd_index: 0,
+        }; LOCK_IMAGE_MAX_PLANES];
+        planes[0].stride = 16;
+        let source = LockImagePacket::Source {
+            connection_epoch: CONNECTION,
+            channel_generation: 5,
+            metadata,
+            planes,
+        };
+        assert_eq!(
+            self.custody.image_source(&source, 1),
+            Ok(LockImageSource::Submit { job: 1 })
         );
-        let binding = self.custody.upload_binding(0).unwrap();
-        assert_eq!(self.custody.write_upload(0, binding, 0, &[7; 32]), Ok(32));
-        self.submit(
-            LockFileKind::ResourceEnd,
-            &LockResourceStep {
-                transaction: 100,
-                resource: resource(),
-                total_bytes: Some(32),
-            }
-            .encode()
-            .unwrap(),
-        );
+        self.custody.image_source_submitted(1).unwrap();
+        // Supplied validation result: the pixels a sealed 4x2 source holds.
+        self.custody
+            .image_completed(
+                1,
+                Ok(SharedPixels::from(std::sync::Arc::<[u8]>::from(vec![
+                    7;
+                    32
+                ]))),
+            )
+            .unwrap();
         let Some(LockInbound::ResourceReady {
             resource,
             width_px,
@@ -167,7 +207,7 @@ impl Fixture {
             pixels,
         }) = self.custody.take_inbound()
         else {
-            panic!("custody must admit the uploaded image");
+            panic!("custody must admit the sealed image");
         };
         self.frames
             .resource_ready_shared(CONNECTION, resource, width_px, height_px, pixels);
@@ -270,6 +310,55 @@ impl Fixture {
         let images = self.frames.images();
         let placement = &images[&OutputId::from_raw(1)];
         (placement.image.identity, placement.generation)
+    }
+}
+
+/// Sealed-only image settings within the custody's own limits.
+fn image_settings(custody: &LockFileCustody) -> LockImageSettings {
+    let limits = custody.limits();
+    let topology = custody.lock().0.topology_generation;
+    let offers = u32::from(limits.upload_slots).min(4);
+    LockImageSettings {
+        discovery: LockImageDiscovery {
+            connection_epoch: CONNECTION,
+            channel_generation: 5,
+            endpoint: "image.sock".into(),
+            source_kinds: 1,
+            max_offers: offers,
+            max_packets_per_turn: 8,
+            hello_timeout_ms: 1000,
+            validation_timeout_ms: 100,
+            validation_chunk_bytes: 65536,
+            capture_interest_timeout_ms: 200,
+            formats_generation: topology,
+            limits_generation: 3,
+        },
+        limits: LockImageLimits {
+            channel_generation: 5,
+            limits_generation: 3,
+            max_resource_bytes: limits.max_resource_bytes,
+            max_sealed_backing_bytes: 2 * limits.max_resource_bytes,
+            max_dma_source_bytes: 0,
+            max_renderer_allocation_bytes: 0,
+            max_renderer_entries: 0,
+            max_offers: offers,
+            max_validation_jobs: offers,
+            max_capture_jobs: 0,
+            max_admitted_outputs: u32::from(limits.max_outputs),
+            max_format_rows_per_output: 1,
+            max_width: limits.max_width_px,
+            max_height: limits.max_height_px,
+            validation_timeout_ms: 100,
+            capture_interest_timeout_ms: 200,
+            validation_chunk_bytes: 65536,
+            max_packets_per_turn: 8,
+        },
+        formats: LockImageFormats {
+            channel_generation: 5,
+            formats_generation: topology,
+            limits_generation: 3,
+            rows: Vec::new(),
+        },
     }
 }
 

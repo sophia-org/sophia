@@ -25,8 +25,12 @@ pub mod authentication;
 extern crate self as sophia_9p;
 pub mod connection;
 pub mod export;
+#[cfg(feature = "comparator-journal-trace")]
+pub mod journal_trace;
 #[cfg(feature = "comparator-progress")]
 pub mod progress;
+#[cfg(feature = "comparator-request-attribution")]
+pub mod request_attribution;
 #[cfg(feature = "comparator-wire-trace")]
 pub mod wire_trace;
 

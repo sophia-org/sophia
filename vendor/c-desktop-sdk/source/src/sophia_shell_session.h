@@ -2,14 +2,13 @@
 #define SOPHIA_SHELL_SESSION_H
 #include "sophia_shell_files_client.h"
 
-/* Native shell session over one admitted fd. It owns every submission and
- * upload of its file client; nothing is replayed and there is no reconnect.
+/* Native shell session over one admitted fd. It owns every submission custody of its file client; nothing is replayed and there is no reconnect.
  * Local admission is not custody: custody is the server's Submitted event for
  * that submission, observed by this session. Tickets are local and monotonic.
  * The library reads no clock: callers pass CLOCK_MONOTONIC milliseconds. */
 #define SOPHIA_SS_SLOTS 64u
 #define SOPHIA_SS_OUTCOMES 256u
-/* Four upload writes plus journal, ACK, object, record and paired submit. */
+/* Journal, ACK, object, record, paired submit and image discovery requests. */
 #define SOPHIA_SS_REQUESTS 9u
 #define SOPHIA_SS_FIDS 32u
 /* Default inline transaction capacity. Larger descriptor candidates require
@@ -90,9 +89,6 @@ struct sophia_ss {
     uint64_t next_ticket, flight_ticket, flight_id, last_consumed, acked_seen;
     uint64_t now_ms, retry_at, ack_clock, refused_denied, reservation;
     uint32_t retry_delay;
-    uint64_t upload_retry_at, upload_seen;
-    uint32_t upload_retry_delay;
-    uint8_t upload_waiting, upload_progress;
     uint8_t flight, waiting, progress, object_requested, refused, reserved;
     struct sophia_ss_entry entries[SOPHIA_SS_SLOTS];
     /* holds: announcements owed a fetch; seen: the last verified fetch. */
@@ -120,7 +116,7 @@ int sophia_ss_open_fd_staging(struct sophia_ss *, int fd, const struct sophia_ss
                               void *storage, size_t bytes, void *transaction, size_t capacity);
 /* Continue on an authenticated root without version/attach. wire must be live,
  * quiescent and retain only root, with >=8 slots, >=FIDS fids and the
- * configured msize. Eight slots limit uploads to three concurrent writes.
+ * configured msize. At least eight request slots are required.
  * It and its storage must be disjoint from all session buffers
  * and remain exclusive/alive until close. The caller owns the wire and fd.
  * Storage sizing is unchanged; the reserved internal wire area is unused. */
@@ -132,7 +128,7 @@ int sophia_ss_open_attached_staging(struct sophia_ss *, struct sophia_9p_client 
 int sophia_ss_poll_fd(const struct sophia_ss *);
 /* POLLIN while live, plus POLLOUT only while 9P output is queued; 0 when final. */
 short sophia_ss_poll_events(const struct sophia_ss *);
-/* -1, or milliseconds until a submit or upload deferred by EAGAIN may be retried. It
+/* -1, or milliseconds until a submit deferred by EAGAIN may be retried. It
  * reports nothing about health: see obligations. */
 int sophia_ss_timeout(const struct sophia_ss *, uint64_t now_ms);
 /* One service pass: bounded (at most byte_budget bytes and 32 syscalls each
@@ -216,15 +212,6 @@ int sophia_ss_obligations(const struct sophia_ss *, struct sophia_ss_obligations
  * verified is discharged at once, together with any older one it supersedes. */
 int sophia_ss_object(struct sophia_ss *, uint16_t kind, uint64_t generation, uint64_t qid);
 int sophia_ss_object_result(struct sophia_ss *, const struct sophia_sf_record **);
-/* As sophia_sf_client_upload_*, including chunk borrowing. Begin, End and
- * Cancel share the single submission slot and are ticketed like any record;
- * they are accepted only in READY with nothing queued, reserved or in flight. */
-int sophia_ss_upload_begin(struct sophia_ss *, struct sophia_sf_resource_begin, uint64_t *ticket);
-int sophia_ss_upload_chunk(struct sophia_ss *, const void *, size_t);
-int sophia_ss_upload_ready(const struct sophia_ss *);
-int sophia_ss_upload_pending(const struct sophia_ss *);
-int sophia_ss_upload_end(struct sophia_ss *, uint64_t transaction, uint64_t *ticket);
-int sophia_ss_upload_cancel(struct sophia_ss *, uint64_t transaction, uint64_t *ticket);
 /* Ends the session locally without closing fd: queued records become
  * DROPPED_UNSENT, an issued submit without Submitted UNKNOWN_DISCONNECTED. */
 void sophia_ss_close(struct sophia_ss *);

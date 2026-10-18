@@ -11,7 +11,17 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 use crate::export::ReadOutcome;
+#[cfg(feature = "comparator-journal-trace")]
+use crate::journal_trace::{self as trace, ReadSpan};
 use crate::records::Errno;
+
+/// Without the trace, the read loop's span is empty and compiles away.
+#[cfg(not(feature = "comparator-journal-trace"))]
+struct ReadSpan;
+#[cfg(not(feature = "comparator-journal-trace"))]
+impl ReadSpan {
+    fn touch(&mut self, _sequence: u64, _entered_at: usize, _left_at: usize, _len: usize) {}
+}
 
 /// The most a journal may hold once one more record is added.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -46,6 +56,10 @@ pub struct Journal {
     floor: u64,
     next: u64,
     acknowledged: u64,
+    #[cfg(feature = "comparator-journal-trace")]
+    trace: u64,
+    #[cfg(feature = "comparator-journal-trace")]
+    parked: std::sync::atomic::AtomicU32,
 }
 
 /// A local reservation. The mutable borrow forbids another journal change
@@ -74,6 +88,14 @@ impl PreparedBatch<'_> {
     /// can observe a prefix of a batch through this exclusive journal borrow.
     pub fn commit(self) -> u64 {
         let journal = self.journal;
+        #[cfg(feature = "comparator-journal-trace")]
+        trace::record(trace::Event::Commit {
+            journal: journal.trace,
+            first: journal.next,
+            last: self.next - 1,
+            start: journal.tail,
+            end: self.tail,
+        });
         journal.records.extend(self.records);
         journal.bytes += self.bytes;
         journal.next = self.next;
@@ -87,6 +109,14 @@ impl PreparedRecord<'_> {
     pub fn commit(self) -> u64 {
         let journal = self.journal;
         let sequence = journal.next;
+        #[cfg(feature = "comparator-journal-trace")]
+        trace::record(trace::Event::Commit {
+            journal: journal.trace,
+            first: sequence,
+            last: sequence,
+            start: journal.tail,
+            end: self.tail,
+        });
         journal.bytes += self.bytes.len();
         journal.records.push_back(Retained {
             sequence,
@@ -115,7 +145,17 @@ impl Journal {
             floor: tail,
             next: next_sequence,
             acknowledged: next_sequence.saturating_sub(1),
+            #[cfg(feature = "comparator-journal-trace")]
+            trace: trace::open(epoch, next_sequence, tail),
+            #[cfg(feature = "comparator-journal-trace")]
+            parked: std::sync::atomic::AtomicU32::new(0),
         }
+    }
+
+    /// This journal's identity in the comparator journal trace.
+    #[cfg(feature = "comparator-journal-trace")]
+    pub fn trace_id(&self) -> u64 {
+        self.trace
     }
 
     pub fn epoch(&self) -> u64 {
@@ -228,6 +268,40 @@ impl Journal {
         count: u32,
         bytes: &mut Vec<u8>,
     ) -> Result<ReadOutcome, Errno> {
+        #[cfg(feature = "comparator-journal-trace")]
+        let mut span = ReadSpan::default();
+        #[cfg(not(feature = "comparator-journal-trace"))]
+        let mut span = ReadSpan;
+        let outcome = self.gather(offset, count, bytes, &mut span);
+        #[cfg(feature = "comparator-journal-trace")]
+        {
+            use std::sync::atomic::Ordering::Relaxed;
+            let result = match &outcome {
+                Ok(ReadOutcome::Pending) => {
+                    self.parked.fetch_add(1, Relaxed);
+                    return outcome;
+                }
+                Ok(_) => trace::ReadResult::Ready,
+                Err(Errno::ESTALE) => trace::ReadResult::Stale,
+                Err(_) => trace::ReadResult::Invalid,
+            };
+            let delivered = match &outcome {
+                Ok(ReadOutcome::Ready(ready)) => ready.len() as u32,
+                _ => 0,
+            };
+            let parked = self.parked.swap(0, Relaxed);
+            trace::read(self.trace, offset, count, delivered, span, result, parked);
+        }
+        outcome
+    }
+
+    fn gather(
+        &self,
+        offset: u64,
+        count: u32,
+        bytes: &mut Vec<u8>,
+        span: &mut ReadSpan,
+    ) -> Result<ReadOutcome, Errno> {
         bytes.clear();
         if offset < self.floor {
             return Err(Errno::ESTALE);
@@ -252,6 +326,7 @@ impl Journal {
             }
             let start = offset.saturating_sub(record.start) as usize;
             let take = (count as usize - bytes.len()).min(record.bytes.len() - start);
+            span.touch(record.sequence, start, start + take, record.bytes.len());
             bytes.extend_from_slice(&record.bytes[start..start + take]);
             if bytes.len() == count as usize {
                 break;
@@ -265,6 +340,26 @@ impl Journal {
     /// Acknowledgement releases transport retention only and never confirms
     /// what a record meant.
     pub fn ack(&mut self, epoch: u64, sequence: u64) -> Result<bool, Errno> {
+        let released = self.release(epoch, sequence);
+        #[cfg(feature = "comparator-journal-trace")]
+        trace::record(trace::Event::Ack {
+            journal: self.trace,
+            epoch,
+            requested: sequence,
+            result: match released {
+                Ok(true) => trace::AckResult::Advanced,
+                Ok(false) => trace::AckResult::Repeat,
+                Err(Errno::ESTALE) => trace::AckResult::Stale,
+                Err(_) => trace::AckResult::Invalid,
+            },
+            acknowledged: self.acknowledged,
+            floor: self.floor,
+            last_committed: self.next.saturating_sub(1),
+        });
+        released
+    }
+
+    fn release(&mut self, epoch: u64, sequence: u64) -> Result<bool, Errno> {
         if epoch != self.epoch {
             return Err(Errno::ESTALE);
         }

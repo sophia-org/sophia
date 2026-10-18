@@ -1,5 +1,7 @@
 use sophia_protocol::*;
 use sophia_runtime::*;
+#[path = "content_isb.rs"]
+mod isb;
 
 pub const GRANT: ContentGrant = ContentGrant {
     connection_epoch: 2,
@@ -192,48 +194,23 @@ pub fn resources(registry: &mut ContentEpochRegistry) {
 }
 pub fn upload(registry: &mut ContentEpochRegistry, grant: ContentGrant, value: u8) {
     let store = registry.resources_mut(grant).unwrap();
-    store
-        .begin(
-            tx(1),
-            ContentResourceBegin {
-                grant,
-                resource: RESOURCE,
-                width_px: 2,
-                height_px: 1,
-                rendered_scale_numerator: 1,
-                rendered_scale_denominator: 1,
-                pixel_format: 1,
-                chunk_count: 1,
-                total_bytes: 8,
-            },
-            0,
-        )
-        .unwrap();
-    store
-        .chunk(
-            tx(2),
-            &ContentResourceChunk {
-                grant,
-                resource: RESOURCE,
-                ordinal: 0,
-                offset: 0,
-                bytes: vec![0, 0, value, 255, 0, 128, 0, 128],
-            },
-            0,
-        )
-        .unwrap();
-    store
-        .end(
-            tx(3),
-            &ContentResourceEnd {
-                grant,
-                resource: RESOURCE,
-                total_bytes: 8,
-                chunk_count: 1,
-            },
-            0,
-        )
-        .unwrap();
+    isb::accept(
+        store,
+        tx(1),
+        ContentResourceBegin {
+            grant,
+            resource: RESOURCE,
+            width_px: 2,
+            height_px: 1,
+            rendered_scale_numerator: 1,
+            rendered_scale_denominator: 1,
+            pixel_format: 1,
+            chunk_count: 1,
+            total_bytes: 8,
+        },
+        &[0, 0, value, 255, 0, 128, 0, 128],
+        0,
+    );
     while store.take_event().is_some() {}
 }
 pub fn registry() -> ContentEpochRegistry {

@@ -14,7 +14,7 @@ use sophia_runtime::{
 };
 
 const MIB: u64 = 1024 * 1024;
-mod images;
+pub(crate) mod images;
 pub(crate) use images::content_now_msec;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -66,7 +66,7 @@ struct Connection {
     attempt: Option<(ContentGrant, ComponentConnectionPhase)>,
     readiness: Cell<Option<(ComponentConnectionKey, sophia_9p::unix::Observation)>>,
     limits: Option<ContentLimits>,
-    images: Option<sophia_runtime::ShellSealedImageOwner>,
+    images: Option<sophia_runtime::ShellIsbImageOwner>,
 }
 
 /// Bounded registration for one component in the owner's combined poll set.

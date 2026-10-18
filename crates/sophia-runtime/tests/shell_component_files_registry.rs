@@ -88,8 +88,7 @@ fn two_file_connections_share_actual_stores_and_keep_neighbor_live_through_retir
     b.transport
         .reserve_content(&mut registry, replacement.clone())
         .unwrap();
-    // A fresh protected-peer authorization is required for the new connection.
-    b.transport.authorize_protected_peer(&evidence()).unwrap();
+    // connect supplies a fresh authenticated peer owner for the successor.
     b.connect(&mut registry, replacement);
     assert_eq!(a.transport.content_grant(), Some(bar.grant));
     assert_eq!(a_pixels.bytes(), [30, 0, 0, 255]);
@@ -115,7 +114,17 @@ fn file_peer_cannot_route_a_foreign_grant_into_its_neighbors_store() {
         .unwrap();
     a.connect(&mut registry, bar.clone());
     b.connect(&mut registry, menu.clone());
-    a.send_upload(menu.grant, 1, 30);
+    a.client
+        .as_mut()
+        .unwrap()
+        .send_content(
+            TransactionId::from_raw(1),
+            &ShellContentRecord::ResourceCancel(ContentResourceCancel {
+                grant: menu.grant,
+                resource: resource(1),
+            }),
+        )
+        .unwrap();
     let before = registry.accounting();
     // The file wire delivers the submission over later turns; serve until the
     // owner reaches a verdict, driving the client's pipelined writes too.

@@ -104,7 +104,7 @@ pub struct LockFileTransport {
     /// keeps a failed bind from retrying within the epoch.
     pub(super) image: Option<ImageService>,
     image_bound: bool,
-    /// Sealed images of ended epochs still read somewhere; the next epoch
+    /// ISB images of ended epochs still read somewhere; the next epoch
     /// inherits them against its budgets.
     pub(super) orphans: OrphanLeases,
     /// Validates sealed sources for every epoch; created with the policy.
@@ -160,10 +160,10 @@ impl LockFileTransport {
         })
     }
 
-    /// Offer sealed images to later authenticated connections. The policy
+    /// Offer ISB images to later authenticated connections. The policy
     /// is checked now against these lock limits, so a later epoch cannot
     /// fail its setup on it. Legacy connections never receive a channel.
-    pub fn enable_sealed_images(
+    pub fn enable_isb_images(
         &mut self,
         policy: LockImagePolicy,
     ) -> Result<(), LockFileTransportError> {
@@ -388,7 +388,7 @@ impl LockFileTransport {
         // Released leases return their budget before admissions run.
         let custody = server.export_mut().files_mut().custody_mut();
         self.orphans.poll();
-        journalled |= custody.collect_sealed_leases().unwrap_or(false);
+        journalled |= custody.collect_isb_leases().unwrap_or(false);
         if let Some(worker) = &mut self.worker {
             journalled |= worker.serve(custody, now);
         }
@@ -489,13 +489,13 @@ impl LockFileTransport {
         self.worker.as_ref().map_or(0, ImageWorker::pending)
     }
 
-    /// Sealed images of this and earlier epochs still charged, retiring or
+    /// ISB images of this and earlier epochs still charged, retiring or
     /// orphaned.
-    pub fn sealed_leases_pending(&self) -> usize {
+    pub fn isb_leases_pending(&self) -> usize {
         self.orphans.len()
             + self
                 .export()
-                .map_or(0, |export| export.custody().sealed_leases_pending())
+                .map_or(0, |export| export.custody().isb_leases_pending())
     }
 
     /// Between connections: takes ended epochs' worker completions and
@@ -570,3 +570,6 @@ fn service_image(
 
 #[path = "transport_wait.rs"]
 mod wait;
+
+#[path = "../../tests/support/lock_image_cancel_worker.rs"]
+mod cancel_tests;

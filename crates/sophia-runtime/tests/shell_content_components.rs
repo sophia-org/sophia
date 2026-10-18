@@ -1,5 +1,7 @@
 use sophia_protocol::*;
 use sophia_runtime::*;
+#[path = "support/content_isb.rs"]
+mod isb;
 
 const MIB: u64 = 1024 * 1024;
 
@@ -30,48 +32,23 @@ fn upload(registry: &mut ContentEpochRegistry, epoch: u64, value: u8) -> Content
     };
     let store = registry.resources_mut(grant).unwrap();
     let tx = TransactionId::from_raw(1);
-    store
-        .begin(
-            tx,
-            ContentResourceBegin {
-                grant,
-                resource,
-                width_px: 1,
-                height_px: 1,
-                rendered_scale_numerator: 1,
-                rendered_scale_denominator: 1,
-                pixel_format: 1,
-                chunk_count: 1,
-                total_bytes: 4,
-            },
-            0,
-        )
-        .unwrap();
-    store
-        .chunk(
-            tx,
-            &ContentResourceChunk {
-                grant,
-                resource,
-                ordinal: 0,
-                offset: 0,
-                bytes: vec![value, 0, 0, 255],
-            },
-            1,
-        )
-        .unwrap();
-    store
-        .end(
-            tx,
-            &ContentResourceEnd {
-                grant,
-                resource,
-                total_bytes: 4,
-                chunk_count: 1,
-            },
-            2,
-        )
-        .unwrap();
+    isb::accept(
+        store,
+        tx,
+        ContentResourceBegin {
+            grant,
+            resource,
+            width_px: 1,
+            height_px: 1,
+            rendered_scale_numerator: 1,
+            rendered_scale_denominator: 1,
+            pixel_format: 1,
+            chunk_count: 1,
+            total_bytes: 4,
+        },
+        &[value, 0, 0, 255],
+        0,
+    );
     store.lease(grant, resource).unwrap()
 }
 

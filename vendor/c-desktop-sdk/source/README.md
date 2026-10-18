@@ -1,5 +1,24 @@
 # Sophia desktop SDK for C
 
+CPU images use **Immutable Shared Buffers (ISB)**, currently backed by sealed
+memfds. The buffer builders are `create_isb` / `finish_isb` in Rust and
+`sophia_ip_isb_create` / `sophia_ip_isb_finish` in C. Names changed together;
+source-kind numbers, discovery strings and seal enforcement are unchanged.
+Image adapters require ISB and never select byte fallback. Shell clients may
+enable the adapter after negotiated Limits, including dock and launcher roles.
+Shell and lock byte-upload APIs have been removed. CPU images require the ISB adapters; passive legacy record codecs remain available for conformance checks.
+
+Mapped ISB builders fill pixels in place, with no staging copy: Rust's
+`create_mapped_isb` (the `sophia-isb` crate's `MappedIsb`) and C's
+`sophia_ip_isb_create_bounded`. Both check dimensions and the caller's resource
+bound before allocating, seal the size at creation, exclude the mapping from
+`fork` and verify every seal on finish; see
+[the mapped builder contract](API-PARITY.md#mapped-isb-builder-2026-10-18).
+
+Native launchers can adopt a settled ISB into their resource lifecycle with
+Rust's `adopt_native_image` or C's `sophia_ns_adopt_image`; see
+[the adoption contract and coverage](API-PARITY.md#native-isb-resource-adoption-2026-10-18).
+
 The [2026-10-17 release audit](RELEASE-QUALIFICATION.md) records verified
 C/Rust capability parity, exact tested revisions and remaining limits.
 
@@ -141,7 +160,7 @@ lifetimes, deadlines and evidence limits.
 
 The bounded shell session (`sophia_shell_session.h`) provides atomic local queue
 admission, per-record custody tickets, paced retries, object acknowledgement
-barriers, uploads, and poll integration. Applications still consume events,
+barriers, sealed-image adapters, and poll integration. Applications still consume events,
 fetch announced objects, acknowledge progress, and enforce role deadlines.
 The native launcher layer (`sophia_shell_native_session.h`) adds opening,
 allocation, candidate, focus and input acknowledgement state. Its unit tests
@@ -261,8 +280,8 @@ scope. This does not accept the draft contract or qualify physical locking.
 
 `sophia_lock_client.h` owns one lock provider attach: it reads `api` and
 `limits`, negotiates (with any UI chords), and handles submission custody,
-cumulative acknowledgements, lock object fetches and uploads to
-`upload/<slot>`. Negotiated, Refused and Submitted are consumed internally;
+cumulative acknowledgements and lock object fetches. CPU pixels use the
+revision-2 adapter in `sophia_lock_image.h`. Negotiated, Refused and Submitted are consumed internally;
 every other event is acknowledged only after the caller consumes it. An
 ObjectPublished is presented only after the SDK has read that exact lock
 object. One whose object was already replaced is consumed unread, because
@@ -271,18 +290,11 @@ sees the secret's characters and cannot enter or leave the locked state. The
 client does not discover the socket (`SOPHIA_LOCK_9P_SOCKET`) or reconnect;
 a replacement process gets a new connection and a new client.
 
-### Bounded lock uploads
+### Sealed lock images
 
-`sophia_lc_upload_window(client, writes)` opts into up to eight ordered Twrites
-on the same upload fid. The default remains one. Reserve at least five wire
-request slots beyond the upload window for event reads, acknowledgements,
-submission custody and object reads. The caller still supplies one borrowed
-chunk; ready means every byte was acknowledged, never merely queued.
-
-Cancellation can interrupt a chunk: no further writes are issued, outstanding
-replies drain, and Cancel follows on the same transaction. Keep the chunk alive
-until pending ends (or dispose a terminal connection). A positive short write
-is retried in single-write mode. In pipelined mode it cancels that resource,
-because later requests may already name offsets beyond the peer's cursor. It
-never replays an ambiguous write or publishes incomplete pixels. No wire
-contract changed. Callers must recompile for the enlarged 0.x client struct.
+Attach `sophia_lc_image` after initializing the client and before Negotiated.
+Poll its descriptor beside the role descriptor, call image dispatch after role
+service, and honor its timeout. `sophia_lc_image_begin` takes the sealed source
+only on success. Observe ResourceStatus and SourceReleased before forgetting a
+settled offer; Accepted alone does not end source custody. The metadata's
+admission epoch is the lock epoch. Byte-upload helpers have been removed.

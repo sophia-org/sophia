@@ -75,6 +75,8 @@ impl Drop for Guard {
 }
 
 pub fn record(output: &mut impl Write, sequence: u64) -> io::Result<()> {
+    #[cfg(feature = "comparator-request-attribution")]
+    record_requests(output, sequence)?;
     for (name, totals) in NAMES.iter().zip(&TOTALS) {
         let before = super::nanos(rustix::time::ClockId::Monotonic) / 1000;
         let calls = totals.calls.load(Ordering::Acquire);
@@ -86,6 +88,30 @@ pub fn record(output: &mut impl Write, sequence: u64) -> io::Result<()> {
         writeln!(
             buffer,
             "sophia_comparator_profile schema=1 phase={name} sequence={sequence} before_usec={before} after_usec={after} completed_scopes={calls} thread_cpu_ns={cpu} process_allocations_during_scopes={allocations}"
+        )?;
+        let len = buffer.position() as usize;
+        output.write_all(&bytes[..len])?;
+    }
+    Ok(())
+}
+
+#[cfg(feature = "comparator-request-attribution")]
+fn record_requests(output: &mut impl Write, sequence: u64) -> io::Result<()> {
+    use sophia_9p::request_attribution::{NAMES, snapshot};
+    let before = super::nanos(rustix::time::ClockId::Monotonic) / 1000;
+    let counts = snapshot();
+    let after = super::nanos(rustix::time::ClockId::Monotonic) / 1000;
+    for (site, counts) in NAMES.into_iter().zip(counts) {
+        let mut bytes = [0u8; 1024];
+        let mut buffer = io::Cursor::new(bytes.as_mut_slice());
+        writeln!(
+            buffer,
+            "sophia_comparator_request_profile schema=1 mode=profiling site={site} sequence={sequence} before_usec={before} after_usec={after} completed_scopes={} thread_cpu_ns={} process_allocations_during_scopes={} process_reallocations_during_scopes={} process_bytes_during_scopes={} nested=true",
+            counts.calls,
+            counts.thread_cpu_ns,
+            counts.process_allocations,
+            counts.process_reallocations,
+            counts.process_bytes
         )?;
         let len = buffer.position() as usize;
         output.write_all(&bytes[..len])?;

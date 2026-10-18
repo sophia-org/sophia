@@ -1,8 +1,7 @@
 //! t294: the lock provider's files over the 9P export interface. Only the
 //! admitted connection attaches, once; the root vocabulary is fixed; an open
 //! lock object keeps the generation it opened; a candidate is staged, then
-//! submitted; and an upload writer is fenced from any later binding of its
-//! slot.
+//! submitted; retired byte upload records cannot acquire custody.
 use sophia_9p::connection::ConnectionId;
 use sophia_9p::export::*;
 use sophia_9p::{Errno, OpenFlags, ReadOutcome};
@@ -172,23 +171,11 @@ fn the_root_vocabulary_is_fixed() {
             "events",
             "transaction",
             "submit",
-            "ack",
-            "upload"
+            "ack"
         ]
     );
-    let uploads = export
-        .lookup(&Node::Root, WalkName::Child(b"upload"))
-        .unwrap();
-    let mut directory = export.open(&uploads, READ).unwrap();
-    let slots: Vec<_> = export
-        .readdir(&uploads, &mut directory, 0, 32)
-        .unwrap()
-        .into_iter()
-        .map(|entry| entry.name)
-        .collect();
-    assert_eq!(slots, [b"0".to_vec(), b"1".to_vec()]);
     assert_eq!(
-        export.lookup(&uploads, WalkName::Child(b"2")),
+        export.lookup(&Node::Root, WalkName::Child(b"upload")),
         Err(Errno::ENOENT)
     );
     assert_eq!(
@@ -242,131 +229,64 @@ fn one_candidate_is_staged_at_a_time() {
 }
 
 #[test]
-fn an_upload_writer_is_fenced_from_a_later_binding_of_its_slot() {
+fn byte_begin_and_end_refuse_without_submitted_receipts() {
     let mut export = attached();
     negotiate(&mut export);
-    assert_eq!(
-        export.open(&Node::Upload(0), WRITE).err(),
-        Some(Errno::ESTALE),
-        "nothing bound"
-    );
-    let begin = |id| {
-        LockResourceBegin {
-            transaction: id,
-            resource: LockResourceId { id, generation: 1 },
-            width_px: 2,
-            height_px: 1,
-            slot: 0,
-        }
-        .encode()
-        .unwrap()
-    };
-    submit(&mut export, 2, LockFileKind::ResourceBegin, &begin(1));
-    let mut first = export.open(&Node::Upload(0), WRITE).unwrap();
-    assert_eq!(
-        export.write(&Node::Upload(0), &mut first, 0, &[1; 4]),
-        Ok(4)
-    );
-    let cancel = LockResourceStep {
-        transaction: 1,
+    let begin = LockResourceBegin {
+        transaction: 3,
         resource: LockResourceId {
             id: 1,
             generation: 1,
         },
-        total_bytes: None,
+        width_px: 2,
+        height_px: 1,
+        slot: 0,
     }
     .encode()
     .unwrap();
-    submit(&mut export, 3, LockFileKind::ResourceCancel, &cancel);
-    submit(&mut export, 4, LockFileKind::ResourceBegin, &begin(2));
-    assert_eq!(
-        export.write(&Node::Upload(0), &mut first, 0, &[1; 8]),
-        Err(Errno::ESTALE)
-    );
-    let mut second = export.open(&Node::Upload(0), WRITE).unwrap();
-    assert_eq!(
-        export.write(&Node::Upload(0), &mut second, 0, &[2; 8]),
-        Ok(8)
-    );
-}
-
-#[test]
-fn an_upload_received_in_place_counts_only_once_accepted() {
-    let mut export = attached();
-    negotiate(&mut export);
-    let begin = |id| {
-        LockResourceBegin {
-            transaction: id,
-            resource: LockResourceId { id, generation: 1 },
-            width_px: 2,
-            height_px: 1,
-            slot: 0,
-        }
-        .encode()
-        .unwrap()
-    };
-    submit(&mut export, 2, LockFileKind::ResourceBegin, &begin(1));
-    let mut upload = export.open(&Node::Upload(0), WRITE).unwrap();
-    let node = Node::Upload(0);
-    // Other files are never received in place.
-    let mut ack = export.open(&Node::Ack, WRITE).unwrap();
-    assert_eq!(
-        export.write_destination(&Node::Ack, &mut ack, 0, 16, 0),
-        Ok(None)
-    );
-    // Only at the cursor, and only within the declared size.
-    assert_eq!(
-        export.write_destination(&node, &mut upload, 4, 4, 0),
-        Err(Errno::EINVAL)
-    );
-    assert_eq!(
-        export.write_destination(&node, &mut upload, 0, 9, 0),
-        Err(Errno::EINVAL)
-    );
-    let first = export
-        .write_destination(&node, &mut upload, 0, 8, 0)
-        .unwrap()
-        .unwrap();
-    assert_eq!(first.len(), 8);
-    first[..4].fill(5);
-    let rest = export
-        .write_destination(&node, &mut upload, 0, 8, 4)
-        .unwrap()
-        .unwrap();
-    assert_eq!(rest.len(), 4);
-    rest.fill(6);
-    // Nothing counts yet: the cursor has not moved.
-    assert_eq!(
-        export.write(&node, &mut upload, 8, &[0]),
-        Err(Errno::EINVAL)
-    );
-    assert_eq!(export.write_received(&node, &mut upload, 0, 8), Ok(8));
-    // Accepted once: the cursor has moved past it.
-    assert_eq!(
-        export.write_received(&node, &mut upload, 0, 8),
-        Err(Errno::EINVAL)
-    );
-    // A later binding of the slot fences the old writer.
-    let cancel = LockResourceStep {
-        transaction: 1,
+    let end = LockResourceStep {
+        transaction: 3,
         resource: LockResourceId {
             id: 1,
             generation: 1,
         },
-        total_bytes: None,
+        total_bytes: Some(8),
     }
     .encode()
     .unwrap();
-    submit(&mut export, 3, LockFileKind::ResourceCancel, &cancel);
-    submit(&mut export, 4, LockFileKind::ResourceBegin, &begin(2));
-    assert_eq!(
-        export.write_destination(&node, &mut upload, 0, 8, 0),
-        Err(Errno::ESTALE)
-    );
-    assert_eq!(
-        export.write_received(&node, &mut upload, 0, 8),
-        Err(Errno::ESTALE)
-    );
+    let before = export.describe(&Node::Events, None).size;
+    for (kind, body) in [
+        (LockFileKind::ResourceBegin, begin),
+        (LockFileKind::ResourceEnd, end),
+    ] {
+        let candidate = encode_lock_file_record(
+            LockFileHeader {
+                kind,
+                connection_epoch: EPOCH,
+                submission_id: 2,
+                sequence: 0,
+            },
+            &body,
+        )
+        .unwrap();
+        let mut staging = export.open(&Node::Transaction, READ_WRITE).unwrap();
+        export
+            .write(&Node::Transaction, &mut staging, 0, &candidate)
+            .unwrap();
+        let control = encode_lock_file_submit(LockFileSubmit {
+            connection_epoch: EPOCH,
+            submission_id: 2,
+            candidate_bytes: candidate.len() as u32,
+        })
+        .unwrap();
+        let mut handle = export.open(&Node::Submit, WRITE).unwrap();
+        assert_eq!(
+            export.write(&Node::Submit, &mut handle, 0, &control),
+            Err(Errno::EINVAL)
+        );
+        assert_eq!(export.describe(&Node::Events, None).size, before);
+        export.release(Node::Transaction, Some(staging));
+    }
 }
 
 #[test]

@@ -1,5 +1,7 @@
 use sophia_protocol::*;
 use sophia_runtime::*;
+#[path = "support/content_isb.rs"]
+mod isb;
 
 #[path = "support/content_shutdown.rs"]
 mod shutdown;
@@ -52,33 +54,13 @@ fn resource_begin(id: u64) -> ContentResourceBegin {
 }
 
 fn upload(store: &mut ContentResourceStore, id: u64) {
-    let begin = resource_begin(id);
-    store.begin(tx(1), begin.clone(), 0).unwrap();
-    store
-        .chunk(
-            tx(2),
-            &ContentResourceChunk {
-                grant: grant(),
-                resource: begin.resource,
-                ordinal: 0,
-                offset: 0,
-                bytes: vec![0, 0, 255, 255, 0, 128, 0, 128],
-            },
-            0,
-        )
-        .unwrap();
-    store
-        .end(
-            tx(3),
-            &ContentResourceEnd {
-                grant: grant(),
-                resource: begin.resource,
-                total_bytes: 8,
-                chunk_count: 1,
-            },
-            0,
-        )
-        .unwrap();
+    isb::accept(
+        store,
+        tx(1),
+        resource_begin(id),
+        &[0, 0, 255, 255, 0, 128, 0, 128],
+        0,
+    );
     while store.take_event().is_some() {}
 }
 
@@ -265,6 +247,12 @@ fn complete_candidate_holds_pixels_through_native_retirement() {
 
     candidates.presented(output(), 1, 40, 20, 30).unwrap();
     resources.collect();
+    assert_eq!(resources.usage().retiring, 8);
+    assert!(matches!(
+        resources.take_event().unwrap().record,
+        ShellContentRecord::ResourceReleased(_)
+    ));
+    resources.confirm_isb_release(resource_id(1)).unwrap();
     assert_eq!(resources.usage().retiring, 0);
     let events: Vec<_> = std::iter::from_fn(|| candidates.take_event()).collect();
     assert!(events.iter().any(|event| matches!(
@@ -452,6 +440,12 @@ fn revocation_keeps_submitted_storage_and_emits_no_dead_peer_outcome() {
     assert_eq!(resources.usage().retiring, 8);
     drop(render);
     resources.collect();
+    assert_eq!(resources.usage().retiring, 8);
+    assert!(matches!(
+        resources.take_event().unwrap().record,
+        ShellContentRecord::ResourceReleased(_)
+    ));
+    resources.confirm_isb_release(resource_id(1)).unwrap();
     assert_eq!(resources.usage().retiring, 0);
 }
 
@@ -511,6 +505,12 @@ fn resource_retired_during_assembly_cannot_acquire_a_new_candidate_pin() {
         Err(ContentCandidateError::Stale)
     );
     resources.collect();
+    assert_eq!(resources.usage().retiring, 8);
+    assert!(matches!(
+        resources.take_event().unwrap().record,
+        ShellContentRecord::ResourceReleased(_)
+    ));
+    resources.confirm_isb_release(resource_id(1)).unwrap();
     assert_eq!(resources.usage().retiring, 0);
 }
 

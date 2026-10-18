@@ -26,6 +26,8 @@ fn proof() -> ShellGpuContentProof {
         pixels: ShellGpuProofPixels::FullSurfaceRaster,
         discrete_input: false,
         timeout: SHELL_GPU_PROOF_DEFAULT_TIMEOUT,
+        factotum_agent: "/absent/factotum".into(),
+        factotum_pam_helper: "/absent/pam-helper".into(),
     }
 }
 
@@ -199,6 +201,12 @@ fn full_surface_raster_requires_exact_size_and_varied_bytes() {
 
 #[path = "../../../sophia-conformance/tests/support/c_file_peer.rs"]
 mod c_file_peer;
+// Supplied afid verdicts for the peer's authenticated attach; the real
+// Factotum startup is not exercised by this test.
+// Other reusable cross-crate fixtures instantiate their own supplied authority.
+#[allow(clippy::duplicate_mod)]
+#[path = "../../../sophia-runtime/tests/support/image_test_authority.rs"]
+mod authority;
 
 /// Proof records, as the session host would receive them.
 static RECORDS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
@@ -304,7 +312,8 @@ fn serve_with_c_peer(
         .protection_evidence()
         .ok_or("no protection evidence")?
         .clone();
-    owner.authorize_protected_peer(&protection)?;
+    // serve configures the image channel; this only installs the afid owner.
+    owner.authorize_authenticated_peer(&protection, Box::new(authority::Factory))?;
     let stand_in = super::super::gpu::ShellGpuLaunchEvidence {
         epoch: 1,
         major: 0,
@@ -322,6 +331,7 @@ fn serve_with_c_peer(
         &protection,
         &stand_in,
         "0123456789abcdef0123456789abcdef",
+        || Ok(()),
     );
     let _ = supervisor.terminate();
     let _ = std::fs::remove_dir_all(&scratch);
@@ -346,7 +356,7 @@ fn the_proof_loop_serves_a_protected_independent_file_peer() {
         "status=complete",
         "protected=true",
         "wire=9p2000.L",
-        "revision=6",
+        "revision=9",
         "renders=2",
         "pixels=full_surface_raster",
         "end=client_exits",

@@ -455,9 +455,8 @@ fn stable_geometry_comparison_cost() {
 fn worker_slot_damage_history_does_not_own_copied_shell_pixels() {
     use sophia_engine::{CompositorContentImage, CompositorNodeId};
     use sophia_protocol::{
-        ContentGrant, ContentLimits, ContentResourceBegin, ContentResourceChunk,
-        ContentResourceEnd, ContentResourceId, ContentResourceRetire, ShellContentRecord,
-        TransactionId,
+        ContentGrant, ContentLimits, ContentResourceBegin, ContentResourceId,
+        ContentResourceRetire, ShellContentRecord, TransactionId,
     };
 
     let grant = ContentGrant {
@@ -470,48 +469,23 @@ fn worker_slot_damage_history_does_not_own_copied_shell_pixels() {
     };
     let mut resources =
         sophia_runtime::ContentResourceStore::new(ContentLimits::prototype(grant)).unwrap();
-    resources
-        .begin(
-            TransactionId::from_raw(1),
-            ContentResourceBegin {
-                grant,
-                resource,
-                width_px: 1,
-                height_px: 1,
-                rendered_scale_numerator: 1,
-                rendered_scale_denominator: 1,
-                pixel_format: 1,
-                chunk_count: 1,
-                total_bytes: 4,
-            },
-            0,
-        )
-        .unwrap();
-    resources
-        .chunk(
-            TransactionId::from_raw(2),
-            &ContentResourceChunk {
-                grant,
-                resource,
-                ordinal: 0,
-                offset: 0,
-                bytes: vec![0x7f; 4],
-            },
-            0,
-        )
-        .unwrap();
-    resources
-        .end(
-            TransactionId::from_raw(3),
-            &ContentResourceEnd {
-                grant,
-                resource,
-                total_bytes: 4,
-                chunk_count: 1,
-            },
-            0,
-        )
-        .unwrap();
+    isb::accept(
+        &mut resources,
+        TransactionId::from_raw(1),
+        ContentResourceBegin {
+            grant,
+            resource,
+            width_px: 1,
+            height_px: 1,
+            rendered_scale_numerator: 1,
+            rendered_scale_denominator: 1,
+            pixel_format: 1,
+            chunk_count: 1,
+            total_bytes: 4,
+        },
+        &[0x7f; 4],
+        0,
+    );
     while resources.take_event().is_some() {}
 
     let output = slot_damage_output();

@@ -21,9 +21,6 @@ pub mod startup;
 /// Provisional submission lane; public admission policy belongs to Session.
 #[doc(hidden)]
 pub mod submission;
-/// Provisional upload lifecycle and bounded write window.
-#[doc(hidden)]
-pub mod upload;
 pub use session::{Obligations, Session, SessionError, SessionState};
 mod connecting;
 pub use connecting::Connecting;

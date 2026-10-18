@@ -11,6 +11,7 @@ repository.workspace = true
 [dependencies]
 rustix = { workspace = true, features = ["event", "fs", "net", "std"] }
 sophia-shell-protocol.workspace = true
+sophia-isb.workspace = true
 sophia-lock-protocol = { path = "../sophia-lock-protocol", version = "0.3.0" }
 
 [lints]

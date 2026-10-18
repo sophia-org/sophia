@@ -10,6 +10,9 @@ mod sdk;
 #[path = "authenticated_component_external.rs"]
 mod external;
 
+#[path = "authenticated_component_custody.rs"]
+mod custody;
+
 fn owner(launches: &LaunchCoordinator) -> (ShellComponentProcesses, std::path::PathBuf) {
     let directory = std::env::temp_dir().join(format!(
         "shell-launch-{}-{}",

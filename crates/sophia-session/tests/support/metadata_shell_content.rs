@@ -2,8 +2,16 @@
 
 use super::*;
 use sophia_protocol::*;
-use sophia_runtime::{ContentCandidateContext, ContentCandidateStore, ContentResourceStore};
+use sophia_runtime::{
+    ContentCandidateContext, ContentCandidateStore, ContentResourceStore, IsbPixelValidation,
+    ValidatedIsbPixels,
+};
 
+// The independently reusable native-launcher fixture also includes this
+// cross-crate helper; neither fixture owns the other's module tree.
+#[allow(clippy::duplicate_mod)]
+#[path = "../../../sophia-runtime/tests/support/content_isb.rs"]
+mod isb;
 #[path = "metadata_shell_popout.rs"]
 mod popout;
 
@@ -126,48 +134,24 @@ fn allocation() -> ContentAllocationSnapshot {
 fn render_bundle() -> ContentRenderBundle {
     let limits = ContentLimits::prototype(GRANT);
     let mut resources = ContentResourceStore::new(limits.clone()).unwrap();
-    resources
-        .begin(
-            tx(1),
-            ContentResourceBegin {
-                grant: GRANT,
-                resource: RESOURCE,
-                width_px: 2,
-                height_px: 1,
-                rendered_scale_numerator: 1,
-                rendered_scale_denominator: 1,
-                pixel_format: 1,
-                chunk_count: 1,
-                total_bytes: 8,
-            },
-            0,
-        )
-        .unwrap();
-    resources
-        .chunk(
-            tx(2),
-            &ContentResourceChunk {
-                grant: GRANT,
-                resource: RESOURCE,
-                ordinal: 0,
-                offset: 0,
-                bytes: vec![0, 0, 255, 255, 0, 128, 0, 128],
-            },
-            0,
-        )
-        .unwrap();
-    resources
-        .end(
-            tx(3),
-            &ContentResourceEnd {
-                grant: GRANT,
-                resource: RESOURCE,
-                total_bytes: 8,
-                chunk_count: 1,
-            },
-            0,
-        )
-        .unwrap();
+    // The pixels arrive as a real sealed mapping, validated before admission.
+    isb::accept(
+        &mut resources,
+        tx(1),
+        ContentResourceBegin {
+            grant: GRANT,
+            resource: RESOURCE,
+            width_px: 2,
+            height_px: 1,
+            rendered_scale_numerator: 1,
+            rendered_scale_denominator: 1,
+            pixel_format: 1,
+            chunk_count: 1,
+            total_bytes: 8,
+        },
+        &[0, 0, 255, 255, 0, 128, 0, 128],
+        0,
+    );
     let mut candidates = ContentCandidateStore::new(limits).unwrap();
     candidates.grant_permit(tx(4), OUTPUT, 1, 1, 0).unwrap();
     candidates

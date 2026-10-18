@@ -152,14 +152,6 @@ impl ShellComponentTransport {
 macro_rules! transport_facade {
     ($transport:ty) => {
         impl $transport {
-            pub fn finish_content_after_backend_drop<B>(
-                &mut self,
-                backend: B,
-            ) -> Result<ShellContentShutdown, B> {
-                self.state
-                    .finish_content_after_backend_drop(&mut self.content_epochs, backend)
-            }
-
             pub fn content_accounting(&self) -> ShellContentAccounting {
                 self.state.content_accounting(&self.content_epochs)
             }
@@ -173,3 +165,27 @@ macro_rules! transport_facade {
 }
 transport_facade!(ShellSessionTransport);
 transport_facade!(crate::shell_transport::ShellTransportConnection<'_>);
+
+impl ShellSessionTransport {
+    pub fn finish_content_after_backend_drop<B>(
+        &mut self,
+        backend: B,
+    ) -> Result<ShellContentShutdown, B> {
+        // Worker completion must return custody before the registry can retire.
+        if self.pending_images() != 0 {
+            return Err(backend);
+        }
+        self.state
+            .finish_content_after_backend_drop(&mut self.content_epochs, backend)
+    }
+}
+
+impl crate::shell_transport::ShellTransportConnection<'_> {
+    pub fn finish_content_after_backend_drop<B>(
+        &mut self,
+        backend: B,
+    ) -> Result<ShellContentShutdown, B> {
+        self.state
+            .finish_content_after_backend_drop(self.content_epochs, backend)
+    }
+}

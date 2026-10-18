@@ -52,9 +52,13 @@ pub fn exec_client(client: &Path, args: &[OsString]) -> Result<(), Box<dyn std::
     {
         return Err("GPU proof child lacks its absolute 9P shell endpoint".into());
     }
-    inspect_fds(Path::new("/proc/self/fd"))?;
+    // This locator is not an authentication verdict. The client must still
+    // authenticate through the inherited relay and attach an afid.
+    let launch_fd: i32 = std::env::var(sophia_runtime::LAUNCH_AUTH_FD_ENV)?.parse()?;
+    drop(sophia_runtime::inherited_launch_channel()?);
+    inspect_fds(Path::new("/proc/self/fd"), Some(launch_fd))?;
     crate::session_println!(
-        "sophia_shell_gpu_domain schema=1 status=observed observation_id={} grant_epoch={} device_major={} device_minor={} dri_entries=1 device_inventory=bounded input_absent=true x11_socket_dir_absent=true user_runtime_dir_absent=true display_environment_absent=true inherited_devices=none inherited_sockets=none",
+        "sophia_shell_gpu_domain schema=1 status=observed observation_id={} grant_epoch={} device_major={} device_minor={} dri_entries=1 device_inventory=bounded input_absent=true x11_socket_dir_absent=true user_runtime_dir_absent=true display_environment_absent=true inherited_devices=none inherited_sockets=launch-auth-only",
         observation,
         epoch,
         major,
@@ -120,14 +124,17 @@ fn inspect_devices(path: &Path, selected: &Path, remaining: &mut usize) -> std::
     Ok(())
 }
 
-fn inspect_fds(path: &Path) -> std::io::Result<()> {
+fn inspect_fds(path: &Path, launch_fd: Option<i32>) -> std::io::Result<()> {
     for (index, entry) in fs::read_dir(path)?.enumerate() {
         if index >= INVENTORY_BOUND {
             return Err(refusal("GPU proof descriptor inventory exceeded bound"));
         }
-        let metadata = fs::metadata(entry?.path())?;
+        let entry = entry?;
+        let metadata = fs::metadata(entry.path())?;
         let kind = metadata.file_type();
-        if kind.is_socket()
+        let launch =
+            launch_fd.is_some_and(|fd| fd >= 3 && entry.file_name() == fd.to_string().as_str());
+        if (kind.is_socket() && !launch)
             || kind.is_block_device()
             || (kind.is_char_device()
                 && !matches!(

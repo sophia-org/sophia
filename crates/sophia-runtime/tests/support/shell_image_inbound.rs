@@ -1,5 +1,5 @@
 use super::*;
-use sophia_protocol::ContentResourceRetire;
+use sophia_protocol::{ContentResourceCancel, ContentResourceRetire};
 
 #[test]
 fn undisclosed_image_snapshots_follow_facts_before_negotiation() {

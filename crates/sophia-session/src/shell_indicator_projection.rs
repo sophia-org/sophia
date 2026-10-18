@@ -10,6 +10,7 @@ use sophia_protocol::{OutputId, ShellIndicator, ShellIndicatorSnapshot, ShellOut
 
 /// Compare the wire projection without cloning labels or building a snapshot.
 /// Focus may change without an indicator generation change.
+#[cfg_attr(not(feature = "native-session"), allow(dead_code))]
 pub fn indicator_snapshot_matches(
     snapshot: &ShellIndicatorSnapshot,
     publication: &sophia_engine::PolicyIndicatorPublication,

@@ -9,8 +9,11 @@ rust-version.workspace = true
 [features]
 comparator-progress = []
 comparator-wire-trace = []
+comparator-journal-trace = []
+comparator-request-attribution = ["dep:stats_alloc", "rustix/time"]
 
 [dependencies]
+stats_alloc = { version = "=0.1.10", optional = true }
 rustix = { workspace = true, features = ["event", "net", "pipe", "std"] }
 sophia-9p-records = { workspace = true }
 

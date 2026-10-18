@@ -1,6 +1,6 @@
 /* The image-channel producer against a scripted owner over a real
  * SEQPACKET socketpair: the discovery barrier, offers, sealed sources,
- * deadlines, refusals, contradictions, fallback causes and FD custody. */
+ * deadlines, refusals, contradictions, closure causes and FD custody. */
 #define _GNU_SOURCE
 #include "sophia_image_producer.h"
 #undef NDEBUG
@@ -100,7 +100,7 @@ static void make_set(struct set *s, uint16_t role, uint64_t limits_generation, u
                                     &s->formats_bytes) == SOPHIA_IC_OK);
 }
 
-static struct sophia_ip_config config(uint16_t role, int fallback)
+static struct sophia_ip_config config(uint16_t role)
 {
     struct sophia_ip_config c;
     memset(&c, 0, sizeof c);
@@ -114,7 +114,6 @@ static struct sophia_ip_config config(uint16_t role, int fallback)
     c.bounds.transfer_slots = offers_bound;
     c.transfer_timeout_ms = TRANSFER;
     c.startup_deadline_ms = STARTUP;
-    c.fallback_bytes = fallback;
     return c;
 }
 
@@ -209,9 +208,9 @@ static struct sophia_ic_expect expect(uint16_t role)
 static uint64_t now;
 
 /* A READY producer on role, with the owner's end in o. */
-static void ready(struct sophia_ip *p, struct owner *o, uint16_t role, int fallback)
+static void ready(struct sophia_ip *p, struct owner *o, uint16_t role)
 {
-    struct sophia_ip_config c = config(role, fallback);
+    struct sophia_ip_config c = config(role);
     struct set s;
     struct sophia_ic_record r;
     struct sophia_ic_packet packet;
@@ -266,10 +265,10 @@ static int sealed(uint32_t w, uint32_t h)
     void *pixels;
     size_t bytes;
     int fd;
-    assert(sophia_ip_sealed_create(w, h, &fd, &pixels, &bytes) == SOPHIA_IPR_OK);
+    assert(sophia_ip_isb_create(w, h, &fd, &pixels, &bytes) == SOPHIA_IPR_OK);
     assert(bytes == (size_t)w * h * 4);
     memset(pixels, 0x40, bytes);
-    assert(sophia_ip_sealed_finish(fd, pixels, bytes) == SOPHIA_IPR_OK);
+    assert(sophia_ip_isb_finish(fd, pixels, bytes) == SOPHIA_IPR_OK);
     return fd;
 }
 
@@ -314,43 +313,41 @@ static void drop(struct sophia_ip *p, struct owner *o)
 static void init_arguments(void)
 {
     struct sophia_ip p;
-    struct sophia_ip_config c = config(SOPHIA_IC_ROLE_SHELL, 1);
+    struct sophia_ip_config c = config(SOPHIA_IC_ROLE_SHELL);
     c.revision = 8;
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_ARGUMENT);
     c.revision = 10;
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_ARGUMENT);
-    c = config(SOPHIA_IC_ROLE_LOCK, 1);
+    c = config(SOPHIA_IC_ROLE_LOCK);
     c.revision = 1;
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_ARGUMENT);
     c.revision = 3;
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_ARGUMENT);
-    c = config(SOPHIA_IC_ROLE_SHELL, 1);
+    c = config(SOPHIA_IC_ROLE_SHELL);
     c.granted_kinds = 4;
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_ARGUMENT);
-    c = config(SOPHIA_IC_ROLE_SHELL, 1);
+    c = config(SOPHIA_IC_ROLE_SHELL);
     assert(sophia_ip_init(&p, &c, STARTUP) == SOPHIA_IPR_ARGUMENT);
     c.transfer_timeout_ms = 0;
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_ARGUMENT);
-    c = config(3, 1);
+    c = config(3);
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_ARGUMENT);
 }
 
 static void discovery_outcomes(void)
 {
     struct sophia_ip p;
-    struct sophia_ip_config c = config(SOPHIA_IC_ROLE_SHELL, 1);
+    struct sophia_ip_config c = config(SOPHIA_IC_ROLE_SHELL);
     struct set s, mixed;
     make_set(&s, SOPHIA_IC_ROLE_SHELL, LIMITS_GEN, SOPHIA_IC_KIND_BIT_SEALED);
-    /* Absent: clean, bytes only under the caller's policy. */
+    /* Absent: image admission fails for this epoch. */
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_OK);
     assert(sophia_ip_discover(&p, NULL, 0, NULL, 0, NULL, 0, ENOENT, 1, START) == SOPHIA_IPR_CLOSED);
-    assert(sophia_ip_cause(&p) == SOPHIA_IPX_ABSENT && sophia_ip_path(&p) == SOPHIA_IPP_BYTES);
-    c.fallback_bytes = 0;
+    assert(sophia_ip_cause(&p) == SOPHIA_IPX_ABSENT && sophia_ip_path(&p) == SOPHIA_IPP_ERROR);
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_OK);
     assert(sophia_ip_discover(&p, NULL, 0, NULL, 0, NULL, 0, ENOENT, 1, START) == SOPHIA_IPR_CLOSED);
     assert(sophia_ip_path(&p) == SOPHIA_IPP_ERROR);
-    /* Denied or malformed: an error even with fallback. */
-    c.fallback_bytes = 1;
+    /* Denied or malformed discovery also ends image admission. */
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_OK);
     assert(sophia_ip_discover(&p, NULL, 0, NULL, 0, NULL, 0, EACCES, 1, START) == SOPHIA_IPR_CLOSED);
     assert(sophia_ip_cause(&p) == SOPHIA_IPX_DISCOVERY && sophia_ip_path(&p) == SOPHIA_IPP_ERROR);
@@ -377,18 +374,18 @@ static void discovery_outcomes(void)
     assert(discover(&p, &s, 1, START) == SOPHIA_IPR_CLOSED);
     assert(sophia_ip_cause(&p) == SOPHIA_IPX_DISCOVERY);
     /* Role bounds below the limits object: incoherent. */
-    c = config(SOPHIA_IC_ROLE_SHELL, 1);
+    c = config(SOPHIA_IC_ROLE_SHELL);
     c.bounds.max_width = 256;
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_OK);
     assert(discover(&p, &s, 1, START) == SOPHIA_IPR_CLOSED);
     assert(sophia_ip_cause(&p) == SOPHIA_IPX_DISCOVERY);
     /* No sealed source available: clean unavailability. */
-    c = config(SOPHIA_IC_ROLE_SHELL, 1);
+    c = config(SOPHIA_IC_ROLE_SHELL);
     make_set(&mixed, SOPHIA_IC_ROLE_SHELL, LIMITS_GEN, SOPHIA_IC_KIND_BIT_DMABUF);
     c.granted_kinds = 3;
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_OK);
     assert(discover(&p, &mixed, 1, START) == SOPHIA_IPR_CLOSED);
-    assert(sophia_ip_cause(&p) == SOPHIA_IPX_UNAVAILABLE && sophia_ip_path(&p) == SOPHIA_IPP_BYTES);
+    assert(sophia_ip_cause(&p) == SOPHIA_IPX_UNAVAILABLE && sophia_ip_path(&p) == SOPHIA_IPP_ERROR);
     /* Discovery naming a kind negotiation did not grant is incoherent,
      * not silently narrowed. */
     c.granted_kinds = SOPHIA_IC_KIND_BIT_DMABUF;
@@ -408,7 +405,7 @@ static void discovery_outcomes(void)
     assert(discover(&p, &mixed, 1, START) == SOPHIA_IPR_CLOSED);
     assert(sophia_ip_cause(&p) == SOPHIA_IPX_UNAVAILABLE);
     /* The startup deadline is an error, as is a clock that goes back. */
-    c = config(SOPHIA_IC_ROLE_SHELL, 1);
+    c = config(SOPHIA_IC_ROLE_SHELL);
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_OK);
     assert(discover(&p, &s, 1, START - 1) == SOPHIA_IPR_ARGUMENT);
     assert(discover(&p, &s, 1, STARTUP) == SOPHIA_IPR_CLOSED);
@@ -425,7 +422,7 @@ static void barrier(void)
     uint64_t offer;
     unsigned base = fd_count();
     int fd;
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     /* A second Ready contradicts the barrier. */
     r = channel_event(SOPHIA_IC_CHANNEL_READY, GEN, 1);
     assert(sophia_ip_record(&p, &r, ++now) == SOPHIA_IPR_CLOSED);
@@ -437,11 +434,11 @@ static void barrier(void)
     drop(&p, &o);
     assert(fd_count() == base);
     /* Ready for another generation, or before Hello is sent. */
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     drop(&p, &o);
     {
         struct sophia_ip q;
-        struct sophia_ip_config c = config(SOPHIA_IC_ROLE_SHELL, 1);
+        struct sophia_ip_config c = config(SOPHIA_IC_ROLE_SHELL);
         struct set s;
         int sv[2];
         make_set(&s, SOPHIA_IC_ROLE_SHELL, LIMITS_GEN, 1);
@@ -517,7 +514,7 @@ static void offer_lifecycle(uint16_t role)
     uint64_t offer, second;
     unsigned base = fd_count(), cursor = 0;
     int fd;
-    ready(&p, &o, role, 1);
+    ready(&p, &o, role);
     offer = begin(&p, &m);
     assert(offer == 1 && state(&p, offer) == SOPHIA_IPO_BEGUN);
     assert(sophia_ip_timeout(&p, now) == TRANSFER);
@@ -587,10 +584,10 @@ static void begin_refusals(void)
     int fd, raw;
     void *pixels;
     size_t bytes;
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     base = fd_count();
     /* The caller keeps its fd on every refusal. */
-    assert(sophia_ip_sealed_create(16, 16, &raw, &pixels, &bytes) == SOPHIA_IPR_OK);
+    assert(sophia_ip_isb_create(16, 16, &raw, &pixels, &bytes) == SOPHIA_IPR_OK);
     assert(sophia_ip_begin(&p, &m, raw, now, body, &offer) == SOPHIA_IPR_REFUSED); /* unsealed */
     assert(fcntl(raw, F_GETFD) >= 0 && m.offer == 0 && offer == 0);
     assert(fcntl(raw, F_ADD_SEALS, F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL) == 0);
@@ -651,7 +648,7 @@ static void statuses(void)
     unsigned base;
     uint8_t buf[256];
     int fd;
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     base = fd_count();
     begin(&p, &a);
     begin(&p, &b);
@@ -680,25 +677,24 @@ static void statuses(void)
     /* Reason 13: the offer is refused and the channel cleanly unavailable. */
     assert(sophia_ip_resource_status(&p, 82, 1, SOPHIA_IPS_REJECTED, 1, now) == SOPHIA_IPR_OK);
     assert(state(&p, c.offer) == SOPHIA_IPO_REFUSED);
-    assert(sophia_ip_cause(&p) == SOPHIA_IPX_UNAVAILABLE && sophia_ip_path(&p) == SOPHIA_IPP_BYTES);
-    p.config.fallback_bytes = 0;
+    assert(sophia_ip_cause(&p) == SOPHIA_IPX_UNAVAILABLE && sophia_ip_path(&p) == SOPHIA_IPP_ERROR);
     assert(sophia_ip_path(&p) == SOPHIA_IPP_ERROR);
     drop(&p, &o);
     /* Accepted before a source was sent contradicts custody. */
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     a = image(90, 16, 16);
     begin(&p, &a);
     assert(sophia_ip_resource_status(&p, 90, 1, SOPHIA_IPS_ACCEPTED, 0, now) == SOPHIA_IPR_CLOSED);
     assert(sophia_ip_cause(&p) == SOPHIA_IPX_FAULT && state(&p, a.offer) == SOPHIA_IPO_BEGUN);
     drop(&p, &o);
     /* A second status, a release before admission, or a resource mismatch. */
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     a = image(91, 16, 16);
     begin(&p, &a);
     r = released(&a, SOPHIA_IC_BEFORE_USE);
     assert(sophia_ip_record(&p, &r, now) == SOPHIA_IPR_CLOSED);
     drop(&p, &o);
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     a = image(92, 16, 16);
     begin(&p, &a);
     r = admitted(&a);
@@ -707,7 +703,7 @@ static void statuses(void)
     r.value.released.resource_generation = 2;
     assert(sophia_ip_record(&p, &r, now) == SOPHIA_IPR_CLOSED);
     drop(&p, &o);
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     a = image(93, 16, 16);
     begin(&p, &a);
     r = admitted(&a);
@@ -715,7 +711,7 @@ static void statuses(void)
     assert(sophia_ip_record(&p, &r, now) == SOPHIA_IPR_CLOSED);
     assert(state(&p, a.offer) == SOPHIA_IPO_BEGUN);
     drop(&p, &o);
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     a = image(94, 16, 16);
     begin(&p, &a);
     r = admitted(&a);
@@ -725,7 +721,7 @@ static void statuses(void)
     assert(sophia_ip_record(&p, &r, now) == SOPHIA_IPR_CLOSED); /* second admission */
     drop(&p, &o);
     /* The role refused the ImageBegin transaction. */
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     a = image(95, 16, 16);
     begin(&p, &a);
     assert(sophia_ip_begin_refused(&p, a.offer + 1, now) == SOPHIA_IPR_REFUSED);
@@ -749,7 +745,7 @@ static void deadlines(void)
     uint64_t t0;
     uint8_t buf[256];
     int fd;
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     assert(sophia_ip_timeout(&p, now) == -1);
     t0 = now;
     begin(&p, &a);
@@ -818,7 +814,7 @@ static void send_failures(void)
     unsigned base;
     uint8_t junk = 1;
     /* The owner hangs up: the next send is ambiguous, never replayed. */
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     base = fd_count();
     begin(&p, &a);
     r = admitted(&a);
@@ -827,26 +823,26 @@ static void send_failures(void)
     assert(sophia_ip_dispatch(&p, POLLOUT, ++now) ==
            (SOPHIA_IP_CHANGED_CHANNEL | SOPHIA_IP_CHANGED_OFFERS));
     assert(state(&p, a.offer) == SOPHIA_IPO_AMBIGUOUS);
-    assert(sophia_ip_cause(&p) == SOPHIA_IPX_UNAVAILABLE && sophia_ip_path(&p) == SOPHIA_IPP_BYTES);
+    assert(sophia_ip_cause(&p) == SOPHIA_IPX_UNAVAILABLE && sophia_ip_path(&p) == SOPHIA_IPP_ERROR);
     assert(fd_count() == base - 2); /* socket and source both closed */
     assert(sophia_ip_dispatch(&p, POLLOUT, ++now) == 0);
     r = released(&a, SOPHIA_IC_CANCELLED);
     assert(sophia_ip_record(&p, &r, ++now) == SOPHIA_IPR_OK);
     assert(state(&p, a.offer) == SOPHIA_IPO_SETTLED);
     /* Hangup seen by poll before any send. */
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     close(o.sock);
     assert(sophia_ip_dispatch(&p, POLLIN | POLLHUP, ++now) == SOPHIA_IP_CHANGED_CHANNEL);
     assert(sophia_ip_cause(&p) == SOPHIA_IPX_UNAVAILABLE);
     /* The owner never writes on the channel: data is a fault. */
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     assert(send(o.sock, &junk, 1, 0) == 1);
     assert(sophia_ip_dispatch(&p, POLLIN, ++now) == SOPHIA_IP_CHANGED_CHANNEL);
     assert(sophia_ip_cause(&p) == SOPHIA_IPX_FAULT && sophia_ip_path(&p) == SOPHIA_IPP_ERROR);
     drop(&p, &o);
     /* ChannelClosed: peer and revoked are clean, protocol is a fault, and a
      * later clean cause never replaces a fault. */
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     r = channel_event(SOPHIA_IC_CHANNEL_CLOSED, GEN, SOPHIA_IC_CLOSED_REVOKED);
     assert(sophia_ip_record(&p, &r, ++now) == SOPHIA_IPR_OK);
     assert(sophia_ip_cause(&p) == SOPHIA_IPX_UNAVAILABLE);
@@ -860,7 +856,7 @@ static void send_failures(void)
     assert(sophia_ip_record(&p, &r, ++now) == SOPHIA_IPR_OK);
     assert(sophia_ip_cause(&p) == SOPHIA_IPX_FAULT);
     drop(&p, &o);
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     r = channel_event(SOPHIA_IC_CHANNEL_CLOSED, GEN, SOPHIA_IC_CLOSED_HELLO_TIMEOUT);
     assert(sophia_ip_record(&p, &r, ++now) == SOPHIA_IPR_OK);
     assert(sophia_ip_cause(&p) == SOPHIA_IPX_FAULT);
@@ -871,7 +867,7 @@ static void send_failures(void)
 static void hello_backpressure(void)
 {
     struct sophia_ip p;
-    struct sophia_ip_config c = config(SOPHIA_IC_ROLE_LOCK, 0);
+    struct sophia_ip_config c = config(SOPHIA_IC_ROLE_LOCK);
     struct set s;
     uint8_t junk = 0, b[256];
     int sv[2], dup_fd, n = 0, fd;
@@ -947,12 +943,12 @@ static void sealed_helpers(void)
     void *pixels;
     size_t bytes;
     int fd;
-    assert(sophia_ip_sealed_create(0, 1, &fd, &pixels, &bytes) == SOPHIA_IPR_ARGUMENT);
-    assert(sophia_ip_sealed_create(UINT32_MAX, UINT32_MAX, &fd, &pixels, &bytes) ==
+    assert(sophia_ip_isb_create(0, 1, &fd, &pixels, &bytes) == SOPHIA_IPR_ARGUMENT);
+    assert(sophia_ip_isb_create(UINT32_MAX, UINT32_MAX, &fd, &pixels, &bytes) ==
            SOPHIA_IPR_ARGUMENT);
-    assert(sophia_ip_sealed_create(4, 2, &fd, &pixels, &bytes) == SOPHIA_IPR_OK && bytes == 32);
-    assert(sophia_ip_sealed_finish(fd, NULL, bytes) == SOPHIA_IPR_ARGUMENT);
-    assert(sophia_ip_sealed_finish(fd, pixels, bytes) == SOPHIA_IPR_OK);
+    assert(sophia_ip_isb_create(4, 2, &fd, &pixels, &bytes) == SOPHIA_IPR_OK && bytes == 32);
+    assert(sophia_ip_isb_finish(fd, NULL, bytes) == SOPHIA_IPR_ARGUMENT);
+    assert(sophia_ip_isb_finish(fd, pixels, bytes) == SOPHIA_IPR_OK);
     assert((fcntl(fd, F_GET_SEALS) & SEALS) == SEALS);
     assert(write(fd, "x", 1) < 0 && errno == EPERM);
     assert(ftruncate(fd, 64) < 0);
@@ -976,7 +972,7 @@ static void bounds_and_order(void)
     int fd;
     /* Two transfer slots: the third live offer is BUSY. */
     offers_bound = 2;
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     a = image(120, 16, 16);
     b = image(121, 16, 16);
     begin(&p, &a);
@@ -1019,7 +1015,7 @@ static void bounds_and_order(void)
     drop(&p, &o);
     offers_bound = 4;
     /* An expired BEGUN offer is reported changed once, not every dispatch. */
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     a = image(123, 16, 16);
     begin(&p, &a);
     assert(sophia_ip_dispatch(&p, 0, now + TRANSFER) == SOPHIA_IP_CHANGED_OFFERS);
@@ -1028,7 +1024,7 @@ static void bounds_and_order(void)
     drop(&p, &o);
     /* A channel granting both kinds still takes sealed sources only. */
     channel_kinds = 3;
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     dma = image(124, 16, 16);
     dma.source_kind = SOPHIA_IC_SOURCE_DMABUF;
     dma.source_format = 0x34325241;
@@ -1040,7 +1036,7 @@ static void bounds_and_order(void)
     channel_kinds = SOPHIA_IC_KIND_BIT_SEALED;
     /* Channel events before attach are faults, Closed included. */
     {
-        struct sophia_ip_config cfg = config(SOPHIA_IC_ROLE_SHELL, 1);
+        struct sophia_ip_config cfg = config(SOPHIA_IC_ROLE_SHELL);
         struct set s;
         make_set(&s, SOPHIA_IC_ROLE_SHELL, LIMITS_GEN, 1);
         assert(sophia_ip_init(&p, &cfg, START) == SOPHIA_IPR_OK);
@@ -1068,7 +1064,7 @@ static void cancellation(void)
     uint8_t buf[256];
     unsigned base;
     int fd;
-    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
     base = fd_count();
     begin(&p, &a);
     /* Arguments: unknown offers and a clock that went backward. */

@@ -13,6 +13,23 @@ impl LiveMetadataShell {
         let terminate = self.stop_process();
         disconnect?;
         terminate?;
+        // Disconnect cancels validation authority, but the worker still owns
+        // its source until it returns a real completion. Keep the registry
+        // alive and charged throughout that bounded drain.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            self.transport.service_images(
+                crate::shell_component_connections::content_now_msec(),
+                Instant::now(),
+            )?;
+            if self.transport.pending_images() == 0 {
+                break;
+            }
+            if Instant::now() >= deadline {
+                return Err("shell image worker did not return shutdown custody".into());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
         Ok(())
     }
 

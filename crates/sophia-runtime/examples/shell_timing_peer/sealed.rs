@@ -2,7 +2,7 @@
 //! workload, resource IDs and pixel bytes match the byte path; only the
 //! transfer differs. There is no byte fallback: a closed or byte-only
 //! channel fails the run.
-use sophia_image_producer::{ResourceStatusKind, create_sealed, finish_sealed};
+use sophia_image_producer::{ResourceStatusKind, create_mapped_isb};
 use sophia_protocol::{ContentLimits, ContentResourceId};
 use sophia_shell_client::{
     ImageChannelState, ImagePath, OfferState, ProducerMetadata, ProducerRoleBounds,
@@ -73,7 +73,6 @@ pub fn image_config(
         bounds: config.bounds,
         transfer_timeout_ms: config.transfer_timeout_ms,
         startup_deadline_ms: origin_ms + wait.as_millis() as u64,
-        fallback_bytes: false,
         formats_capacity: 64,
     })
 }
@@ -101,8 +100,7 @@ pub fn wait_ready(client: &mut ShellConnection, wait: Duration) -> Result<()> {
         let adapter = client.image_adapter().ok_or("image adapter absent")?;
         match (adapter.channel(), adapter.path()) {
             (Some(ImageChannelState::Ready), Some(ImagePath::Descriptor)) => return Ok(()),
-            (Some(ImageChannelState::Closed), _)
-            | (_, Some(ImagePath::Bytes | ImagePath::Error)) => {
+            (Some(ImageChannelState::Closed), _) | (_, Some(ImagePath::Error)) => {
                 return Err("sealed image channel unavailable".into());
             }
             _ => {}
@@ -116,13 +114,10 @@ pub fn wait_ready(client: &mut ShellConnection, wait: Duration) -> Result<()> {
 }
 
 /// Pixel preparation, kept before the offer is journalled like the byte path.
-pub fn prepare(width: u32, height: u32, bytes: &[u8]) -> Result<OwnedFd> {
-    let source = create_sealed(width, height).map_err(|e| format!("{e:?}"))?;
-    source
-        .write_pixels(0, bytes)
-        .map_err(|e| format!("{e:?}"))?;
-    finish_sealed(&source).map_err(|e| format!("{e:?}"))?;
-    Ok(source.into_fd())
+pub fn prepare(width: u32, height: u32, max_bytes: u64, generation: u64) -> Result<OwnedFd> {
+    let mut source = create_mapped_isb(width, height, max_bytes).map_err(|e| format!("{e:?}"))?;
+    super::canvas::fill_pixels(source.pixels_mut(), generation);
+    source.finish().map_err(|e| format!("{e:?}").into())
 }
 
 pub fn begin(

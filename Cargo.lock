@@ -1346,9 +1346,11 @@ dependencies = [
  "input",
  "libseat",
  "rustix",
+ "sophia-9p",
  "sophia-drm-clock",
  "sophia-drm-out-fence",
  "sophia-engine",
+ "sophia-linux-peer",
  "sophia-protocol",
  "sophia-renderer-live",
  "sophia-runtime",
@@ -1458,6 +1460,7 @@ version = "0.1.0"
 dependencies = [
  "rustix",
  "sha2",
+ "sophia-linux-peer",
  "sophia-portal",
  "sophia-protocol",
  "sophia-runtime",
@@ -1491,6 +1494,7 @@ name = "sophia-image-producer"
 version = "0.3.0"
 dependencies = [
  "rustix",
+ "sophia-isb",
  "sophia-lock-protocol",
  "sophia-shell-protocol",
 ]
@@ -1500,6 +1504,13 @@ name = "sophia-input-authority"
 version = "0.1.0"
 dependencies = [
  "sophia-protocol",
+]
+
+[[package]]
+name = "sophia-isb"
+version = "0.3.0"
+dependencies = [
+ "rustix",
 ]
 
 [[package]]
@@ -1565,6 +1576,7 @@ dependencies = [
  "parley",
  "rustix",
  "sophia-engine",
+ "sophia-linux-peer",
  "sophia-protocol",
  "sophia-renderer-native-egl",
  "sophia-runtime",
@@ -1635,6 +1647,7 @@ dependencies = [
  "sophia-factotum-pam",
  "sophia-input-authority",
  "sophia-launch-client",
+ "sophia-linux-peer",
  "sophia-lock-protocol",
  "sophia-namespace-client",
  "sophia-portal",

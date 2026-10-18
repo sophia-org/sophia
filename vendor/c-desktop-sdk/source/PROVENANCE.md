@@ -1,5 +1,87 @@
 # Extraction and contract provenance
 
+## Mapped ISB builder, 2026-10-18
+
+Adds in-place ISB construction to both SDKs: the Rust leaf crate `sophia-isb`
+(`MappedIsb`, re-exported with `create_mapped_isb` by `sophia-image-producer`)
+and C `sophia_ip_isb_create_bounded`, with the existing C create on the same
+hardened path. Existing APIs are unchanged in signature; the Rust `pwrite`
+builder remains. Source bases: Rust `fbde253ef297e282357080600a560f1824cd6b50`,
+C `14c8fce5d0d75d21b43ee6eb7a01232c0abd1399`. Published revisions are recorded
+by Sophia's import manifest and evidence.
+[API-PARITY.md](API-PARITY.md#mapped-isb-builder-2026-10-18) records the
+contract, ownership differences, tests and evidence limits.
+
+## Byte-upload API retirement, 2026-10-18
+
+This working series follows the accepted ISB-only amendment and removes the
+shell and lock byte writers, their public helpers, retry state and upload fids.
+Passive protocol values remain for conformance/refusal tests. Native launcher
+resources enter the lifecycle only through settled-image adoption. The Rust
+owning session now exposes its image adapter and adoption operations directly.
+
+Source bases: C `a1c41aa0217037b0578f6606f589ed9846ee9247`, Rust
+`9495fc426951bf168dcf827c67a231a5028e508c`; Sophia export qualification uses the
+ISB-only worktree based on `001265f6d8a4e49eccb959c451e77b28cf0d3205`.
+The paired Rust removal is signed and published as
+`fbde253ef297e282357080600a560f1824cd6b50`. The C r9 launcher/dock peer also
+passes sealed submission through the owning shell session against the shared
+production fixture (`isb-only-c-roles-01.log`). The API parity update records
+the changed operations and evidence limits.
+Older upload-window evidence below describes the retired implementation.
+
+
+## Native ISB adoption, 2026-10-18
+
+The paired native-launcher adoption APIs consume a verified settled offer only
+after role, grant, bounds, duplicate and registry-capacity checks. They preserve
+retirement across matching late Accepted observations and fail closed on
+contradictory status. See API-PARITY.md for the exact custody contract and the
+different C/Rust event-consumption controls.
+
+Final device-hidden validation passes: Rust workspace all-target tests and
+strict Clippy, Rust formatting, and C's full `make check`. The Rust adoption
+target includes six controls; the C shell image target independently covers
+the same cases. The initial C fixture failure was a retained ResourceStatus
+blocking a later SourceReleased read; consuming that application head fixes
+the fixture without weakening producer settlement. The supplied deferred
+Limits grant is now 3, matching its existing metadata and status fixtures.
+
+Logs are under Sophia's development-evidence directory,
+`isb-client-migration-20261018/cli-rust-final-tests.log`,
+`cli-rust-final-clippy.log` and `cli-c-final-check.log`. Earlier failed runs
+remain retained. No production-export, authenticated-launch, native-cost or
+physical-presentation acceptance is claimed by these SDK checks.
+
+## ISB-only producer and role setup, 2026-10-18
+
+This implements the accepted ISB amendment in signed Sophia
+`9941d4c838e388e4944452ffaab06f69eae2c84f`; the already-pinned spec copies are
+unchanged. C and Rust remove producer byte fallback together and permit shell
+image setup after negotiated Limits. Dock and launcher keep their role grants
+at r9; existing cancellation and retained backing custody are unchanged.
+API-PARITY.md distinguishes the independent scripted controls from production
+client migration and native acceptance, which remain separate work.
+
+Device-hidden `make check` passes with strict compiler warnings, including the
+new role and deferred-attachment controls. The first role fixture used a
+four-byte generic Limits object beside larger image discovery bounds and was
+correctly refused; the fixture now publishes matching content bounds. Diff
+checks pass. Logs are retained as `isb-client-migration-20261018` in the owning
+Sophia development-evidence directory. The independent Rust suite passes.
+
+## ISB naming, 2026-10-18
+
+niltempus approved Immutable Shared Buffers (ISB) as the name of the production
+CPU image architecture. The coordinated Sophia working tree based on signed
+`0045f3436` supplies the updated image, shell and lock contract text; exact bytes are
+in `spec/SHA256SUMS`. Both independent SDKs rename the source builders together:
+Rust `IsbSource`, `create_isb`, `finish_isb`; C `sophia_ip_isb_create` and
+`sophia_ip_isb_finish`. Callers must rebuild against these names. Wire values,
+seal checks, ownership, failure handling and generated/golden codecs are
+unchanged. Sophia's byte-upload retirement is accepted but remains pending;
+this naming change does not claim it is implemented.
+
 ## Lock sealed-source refusal names, 2026-10-17
 
 The lock KDL, lock contract and shared image contract are copied from the

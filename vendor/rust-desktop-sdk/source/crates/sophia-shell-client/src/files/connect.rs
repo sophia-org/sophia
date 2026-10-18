@@ -315,7 +315,6 @@ impl FileWire {
         super::native_launcher::validate_negotiated(native_launcher, options, &negotiated)?;
 
         let mut inbox = VecDeque::new();
-        let mut upload_slots = 0u8;
         if negotiated.limits_published {
             let (tag, fid) = pipeline.walk(root, &[b"limits"])?;
             match wait_ok(&mut pipeline, tag, deadline)? {
@@ -350,9 +349,7 @@ impl FileWire {
                     "Limits grant from another connection epoch",
                 ));
             }
-            upload_slots = limits
-                .max_open_transfers
-                .min(u32::from(SHELL_FILE_MAX_UPLOAD_SLOTS)) as u8;
+
             inbox.push_back(Inbound::Content(
                 sophia_shell_protocol::TransactionId::INVALID,
                 ShellContentRecord::Limits(limits),
@@ -393,7 +390,6 @@ impl FileWire {
             ack_fid,
             reusable_transactions: transaction_fid.is_some(),
             transaction_fid,
-            upload_slots,
             next_submission_id: 2,
             read_tag: None,
             read_offset,
@@ -423,12 +419,10 @@ impl FileWire {
             submitted_sequence: 0,
             pending: VecDeque::new(),
             staged: Vec::new(),
-            staged_begins: Default::default(),
             current: None,
             backoff: super::RETRY_FIRST,
             custody: Vec::new(),
             retire: 0,
-            uploads: Default::default(),
             forgettable: pending_forgettable.into_iter().collect(),
             image_enabled: false,
             image_fetch: None,

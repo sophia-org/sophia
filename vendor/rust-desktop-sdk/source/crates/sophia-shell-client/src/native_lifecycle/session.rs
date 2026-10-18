@@ -26,8 +26,8 @@ pub struct NativeObligations {
 /// automatic when `next_event` returns the fetched catalog/facts; renderers must
 /// install that value before presenting. No reconnect or implicit I/O on receive.
 pub struct NativeLauncherSession {
-    connection: ShellConnection,
-    lifecycle: NativeLauncherLifecycle,
+    pub(super) connection: ShellConnection,
+    pub(super) lifecycle: NativeLauncherLifecycle,
     head: Option<NativeLauncherObservation>,
     head_ms: u64,
     candidate_ms: u64,
@@ -260,40 +260,6 @@ impl NativeLauncherSession {
         let a = self
             .connection
             .release_native_allocation(&mut self.lifecycle, tx, now_ms)?;
-        self.next_transaction += 1;
-        Ok(a)
-    }
-    pub fn begin_resource(
-        &mut self,
-        begin: ContentResourceBegin,
-    ) -> Result<Admission, ShellClientError> {
-        let tx = self.transaction(1)?;
-        let a = self
-            .connection
-            .begin_native_resource(&mut self.lifecycle, tx, begin)?;
-        self.next_transaction += 1;
-        Ok(a)
-    }
-    pub fn upload_chunk(&mut self, bytes: &[u8]) -> Result<Admission, ShellClientError> {
-        self.connection
-            .upload_native_chunk(&mut self.lifecycle, bytes)
-    }
-    pub fn end_resource(&mut self) -> Result<Admission, ShellClientError> {
-        let tx = self.transaction(1)?;
-        let a = self
-            .connection
-            .end_native_resource(&mut self.lifecycle, tx)?;
-        self.next_transaction += 1;
-        Ok(a)
-    }
-    pub fn cancel_resource(
-        &mut self,
-        resource: ContentResourceId,
-    ) -> Result<Admission, ShellClientError> {
-        let tx = self.transaction(1)?;
-        let a = self
-            .connection
-            .cancel_native_resource(&mut self.lifecycle, tx, resource)?;
         self.next_transaction += 1;
         Ok(a)
     }

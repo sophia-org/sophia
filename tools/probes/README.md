@@ -55,6 +55,12 @@ declared raster pattern. Neither proves GPU execution by itself. Client adapter
 and rendering evidence belongs to the external client verifier, and the proof
 always reports `native_presentation=false`.
 
+The r9 proof requires `--factotum-agent=/absolute/path` and
+`--factotum-pam-helper=/absolute/path`. The launched client authenticates through
+its inherited relay, attaches an afid, and uses sealed-image admission. The
+domain observation permits only that declared launch socket among inherited
+sockets (`inherited_sockets=launch-auth-only`); it grants no display connection.
+
 Named-client GPU proofs, workload budgets, native launcher and dock acceptance
 recipes live in the niltempus repository. Its gates pin Sophia's public proof
 interface and retain the workload and verifier controls. Physical acceptance

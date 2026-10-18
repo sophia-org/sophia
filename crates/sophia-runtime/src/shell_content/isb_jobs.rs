@@ -6,22 +6,22 @@ use std::os::fd::OwnedFd;
 use std::time::Instant;
 
 struct Pending {
-    admission: SealedImageAdmission,
-    result: Option<Result<ValidatedSealedPixels, ContentStoreError>>,
-    failure: Option<SealedValidationFailure>,
+    admission: IsbImageAdmission,
+    result: Option<Result<ValidatedIsbPixels, ContentStoreError>>,
+    failure: Option<IsbValidationFailure>,
     submitted: bool,
     stopped: Option<ContentReason>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SealedImageWithdrawal {
+pub enum IsbImageWithdrawal {
     Cancelled,
     Expired,
     ChannelLost,
     AllocationLost,
 }
 
-impl SealedImageWithdrawal {
+impl IsbImageWithdrawal {
     fn reason(self) -> ContentReason {
         match self {
             Self::Cancelled | Self::ChannelLost => ContentReason::Cancelled,
@@ -37,36 +37,38 @@ impl SealedImageWithdrawal {
 /// worker completion continues to occupy a slot until its exact resource owner
 /// consumes it. In particular, clock regression cannot discard a mapping.
 #[derive(Default)]
-pub struct SealedImageJobs {
+pub struct IsbImageJobs {
     pending: [Option<Pending>; 4],
 }
 
 #[derive(Debug)]
-pub struct SealedImageSettlement {
-    pub admission: SealedImageAdmission,
+pub struct IsbImageSettlement {
+    pub admission: IsbImageAdmission,
     pub outcome: Result<(), ContentStoreError>,
     /// Retained separately from the store outcome for SourceReleased policy.
-    pub validation_failure: Option<SealedValidationFailure>,
+    pub validation_failure: Option<IsbValidationFailure>,
     /// First owner-side cause; late cancellation cannot overwrite expiry.
     pub stopped: Option<ContentReason>,
 }
 
-impl SealedImageJobs {
+impl IsbImageJobs {
     /// Journal and offer credits must already be held by the channel owner.
     /// No ImageAdmitted is published here. Failure leaves no table entry.
     pub fn reserve(
         &mut self,
         registry: &mut ContentEpochRegistry,
-        worker: &mut SealedValidationWorker,
+        worker: &mut IsbValidationWorker,
         grant: ContentGrant,
         metadata: ShellImageMetadata,
         now: u64,
         deadline: Instant,
-    ) -> Result<u64, SealedImageAdmissionError> {
-        let slot = self.pending.iter_mut().find(|slot| slot.is_none()).ok_or(
-            SealedImageAdmissionError::Worker(SealedSubmitFailure::Capacity),
-        )?;
-        let admission = registry.reserve_sealed_image(grant, metadata, worker, now, deadline)?;
+    ) -> Result<u64, IsbImageAdmissionError> {
+        let slot = self
+            .pending
+            .iter_mut()
+            .find(|slot| slot.is_none())
+            .ok_or(IsbImageAdmissionError::Worker(IsbSubmitFailure::Capacity))?;
+        let admission = registry.reserve_isb_image(grant, metadata, worker, now, deadline)?;
         let job = admission.worker_job;
         *slot = Some(Pending {
             admission,
@@ -83,17 +85,17 @@ impl SealedImageJobs {
     /// a second source to the worker.
     pub fn submit(
         &mut self,
-        worker: &mut SealedValidationWorker,
+        worker: &mut IsbValidationWorker,
         job: u64,
         source: OwnedFd,
-    ) -> Result<(), (SealedSubmitFailure, OwnedFd)> {
+    ) -> Result<(), (IsbSubmitFailure, OwnedFd)> {
         let Some(pending) = self.pending.iter_mut().flatten().find(|pending| {
             pending.admission.worker_job == job
                 && !pending.submitted
                 && pending.stopped.is_none()
                 && pending.result.is_none()
         }) else {
-            return Err((SealedSubmitFailure::Invalid, source));
+            return Err((IsbSubmitFailure::Invalid, source));
         };
         worker.submit_reserved(job, source)?;
         pending.submitted = true;
@@ -109,9 +111,9 @@ impl SealedImageJobs {
     pub fn withdraw(
         &mut self,
         registry: &mut ContentEpochRegistry,
-        worker: &mut SealedValidationWorker,
+        worker: &mut IsbValidationWorker,
         job: u64,
-        cause: SealedImageWithdrawal,
+        cause: IsbImageWithdrawal,
         now: u64,
     ) -> Result<(), ContentStoreError> {
         let pending = self
@@ -121,7 +123,7 @@ impl SealedImageJobs {
             .find(|pending| pending.admission.worker_job == job)
             .ok_or(ContentStoreError::Stale)?;
         let metadata = &pending.admission.metadata;
-        let reason = registry.stop_sealed_image(
+        let reason = registry.stop_isb_image(
             pending.admission.grant,
             ContentResourceId {
                 id: metadata.resource,
@@ -149,8 +151,8 @@ impl SealedImageJobs {
     /// to the newest connection.
     pub fn receive(
         &mut self,
-        completion: SealedValidationCompletion,
-    ) -> Result<(), SealedValidationCompletion> {
+        completion: IsbValidationCompletion,
+    ) -> Result<(), IsbValidationCompletion> {
         let Some(pending) = self.pending.iter_mut().flatten().find(|pending| {
             pending.admission.worker_job == completion.job
                 && pending.submitted
@@ -176,7 +178,7 @@ impl SealedImageJobs {
     pub fn expire(
         &mut self,
         registry: &mut ContentEpochRegistry,
-        worker: &mut SealedValidationWorker,
+        worker: &mut IsbValidationWorker,
         instant: Instant,
         now: u64,
     ) -> Result<(), ContentStoreError> {
@@ -192,7 +194,7 @@ impl SealedImageJobs {
         let mut first_error = None;
         for job in jobs.into_iter().flatten() {
             if let Err(error) =
-                self.withdraw(registry, worker, job, SealedImageWithdrawal::Expired, now)
+                self.withdraw(registry, worker, job, IsbImageWithdrawal::Expired, now)
             {
                 first_error.get_or_insert(error);
             }
@@ -206,7 +208,7 @@ impl SealedImageJobs {
     pub fn withdraw_epoch(
         &mut self,
         registry: &mut ContentEpochRegistry,
-        worker: &mut SealedValidationWorker,
+        worker: &mut IsbValidationWorker,
         grant: ContentGrant,
         now: u64,
     ) -> Result<(), ContentStoreError> {
@@ -217,13 +219,9 @@ impl SealedImageJobs {
         });
         let mut first_error = None;
         for job in jobs.into_iter().flatten() {
-            if let Err(error) = self.withdraw(
-                registry,
-                worker,
-                job,
-                SealedImageWithdrawal::ChannelLost,
-                now,
-            ) {
+            if let Err(error) =
+                self.withdraw(registry, worker, job, IsbImageWithdrawal::ChannelLost, now)
+            {
                 first_error.get_or_insert(error);
             }
         }
@@ -237,7 +235,7 @@ impl SealedImageJobs {
         &mut self,
         registry: &mut ContentEpochRegistry,
         now: u64,
-    ) -> Option<SealedImageSettlement> {
+    ) -> Option<IsbImageSettlement> {
         for slot in &mut self.pending {
             let Some(pending) = slot.as_mut().filter(|pending| pending.result.is_some()) else {
                 continue;
@@ -248,15 +246,15 @@ impl SealedImageJobs {
             if pending.stopped.is_none()
                 && matches!(
                     pending.failure,
-                    Some(SealedValidationFailure::Timeout | SealedValidationFailure::Cancelled)
+                    Some(IsbValidationFailure::Timeout | IsbValidationFailure::Cancelled)
                 )
             {
-                let reason = if pending.failure == Some(SealedValidationFailure::Timeout) {
+                let reason = if pending.failure == Some(IsbValidationFailure::Timeout) {
                     ContentReason::Timeout
                 } else {
                     ContentReason::Cancelled
                 };
-                match registry.stop_sealed_image(
+                match registry.stop_isb_image(
                     pending.admission.grant,
                     ContentResourceId {
                         id: metadata.resource,
@@ -269,7 +267,7 @@ impl SealedImageJobs {
                     Err(_) => continue,
                 }
             }
-            let outcome = registry.complete_sealed(
+            let outcome = registry.complete_isb(
                 pending.admission.grant,
                 ContentResourceId {
                     id: metadata.resource,
@@ -280,7 +278,7 @@ impl SealedImageJobs {
             );
             if pending.result.is_none() {
                 let pending = slot.take().expect("consumed job occupies its slot");
-                return Some(SealedImageSettlement {
+                return Some(IsbImageSettlement {
                     admission: pending.admission,
                     outcome,
                     validation_failure: pending.failure,
@@ -295,7 +293,7 @@ impl SealedImageJobs {
         self.pending.iter().flatten().count()
     }
 
-    pub fn admissions(&self) -> impl Iterator<Item = &SealedImageAdmission> {
+    pub fn admissions(&self) -> impl Iterator<Item = &IsbImageAdmission> {
         self.pending
             .iter()
             .flatten()
@@ -309,13 +307,13 @@ impl SealedImageJobs {
     pub fn observe_store_stops(
         &mut self,
         registry: &mut ContentEpochRegistry,
-        worker: &mut SealedValidationWorker,
+        worker: &mut IsbValidationWorker,
         now: u64,
     ) -> Result<(), ContentStoreError> {
         let jobs = self.pending.each_ref().map(|slot| {
             let pending = slot.as_ref()?;
             let admission = &pending.admission;
-            registry.sealed_stop_reason(
+            registry.isb_stop_reason(
                 admission.grant,
                 ContentResourceId {
                     id: admission.metadata.resource,
@@ -327,7 +325,7 @@ impl SealedImageJobs {
         let mut first_error = None;
         for job in jobs.into_iter().flatten() {
             if let Err(error) =
-                self.withdraw(registry, worker, job, SealedImageWithdrawal::Cancelled, now)
+                self.withdraw(registry, worker, job, IsbImageWithdrawal::Cancelled, now)
             {
                 first_error.get_or_insert(error);
             }

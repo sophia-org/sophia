@@ -2,15 +2,19 @@
  * Sophia's production lock export. Unlike lock_files_peer.c, every record and
  * custody rule here is the SDK's own: this driver uses only its public API.
  * lock_client_c_sdk.rs plays Session and checks what reached it. */
+#define _POSIX_C_SOURCE 200809L
 #include "sophia_lock_client.h"
+#include "sophia_lock_image.h"
 #include <assert.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <time.h>
 
 /* Each wait is bounded: 1000 passes of at most 5 ms, well inside the test's
  * deadline, so a failure names its step. */
@@ -19,6 +23,30 @@
 static struct sophia_9p_client wire;
 static struct sophia_lc_client client;
 static int fd;
+static struct sophia_lc_image image;
+static uint64_t now_ms(void) {
+  struct timespec t;
+  assert(!clock_gettime(CLOCK_MONOTONIC, &t));
+  return (uint64_t)t.tv_sec * 1000 + (uint64_t)t.tv_nsec / 1000000;
+}
+
+static void auth_reply(struct sophia_9p_handle request, uint8_t type) {
+  uint64_t deadline = now_ms() + 5000;
+  for (;;) {
+    struct sophia_9p_reply reply;
+    struct pollfd p = {fd, POLLIN, 0};
+    int result;
+    assert(now_ms() < deadline);
+    if (sophia_9p_wants_write(&wire)) p.events |= POLLOUT;
+    assert(poll(&p, 1, 2) >= 0);
+    assert(!sophia_9p_service(&wire, 65536));
+    result = sophia_9p_peek(&wire, &reply);
+    if (result == SOPHIA_9P_AGAIN) continue;
+    assert(!result && reply.handle.serial == request.serial && reply.type == type && !reply.error);
+    assert(!sophia_9p_consume(&wire, request));
+    return;
+  }
+}
 
 static void fail(const char *step) {
   fprintf(stderr,
@@ -29,18 +57,18 @@ static void fail(const char *step) {
 }
 
 static void turn(const char *step) {
-  struct pollfd p;
-  p.fd = fd;
-  p.events = POLLIN;
-  p.revents = 0;
+  struct pollfd p[2] = {{fd, POLLIN, 0},
+    {sophia_lc_image_poll_fd(&image), sophia_lc_image_poll_events(&image), 0}};
   if (sophia_9p_wants_write(&wire))
-    p.events |= POLLOUT;
-  (void)poll(&p, 1, 5);
+    p[0].events |= POLLOUT;
+  assert(poll(p, 2, 5) >= 0);
   /* Any nonzero result is terminal and latches. */
   if (sophia_lc_service(&client, 65536) ||
       sophia_lc_state(&client) == SOPHIA_LC_STALE ||
       sophia_lc_state(&client) == SOPHIA_LC_FAILED ||
       sophia_lc_state(&client) == SOPHIA_LC_REFUSED)
+    fail(step);
+  if (sophia_lc_image_dispatch(&image, p[1].revents, now_ms()) < 0)
     fail(step);
 }
 
@@ -64,15 +92,6 @@ static void consume(const char *step) {
     fail(step);
 }
 
-static void until(int (*done)(const struct sophia_lc_client *), int want,
-                  const char *step) {
-  unsigned i;
-  for (i = 0; i < PASSES && done(&client) != want; ++i)
-    turn(step);
-  if (done(&client) != want)
-    fail(step);
-}
-
 static void submit(const struct sophia_lf_record *r, const char *step) {
   unsigned i;
   int status = SOPHIA_9P_BUSY;
@@ -89,17 +108,37 @@ int main(int argc, char **argv) {
   struct sockaddr_un address;
   static uint8_t storage[1u << 20];
   struct sophia_lf_negotiate offer;
-  struct sophia_lf_resource_begin begin;
+  struct sophia_lc_image_config config = {0};
+  struct sophia_ic_metadata metadata = {0};
+  struct sophia_ip_offer_info info;
+  struct sophia_9p_handle request;
+  uint32_t afid, root;
+  uint8_t formats[65536];
+  char directory[sizeof address.sun_path], *slash;
+  int image_dir, source, result;
+  void *pixels;
+  size_t size;
+  uint64_t offer_id;
   struct sophia_lf_record r;
   const struct sophia_lf_record *e;
   const struct sophia_lf_lock *lock;
   uint64_t generation, permit;
-  uint8_t pixels[16];
   char admitted;
   unsigned i;
   assert(argc == 2 && strlen(argv[1]) < sizeof address.sun_path);
   /* Session admits this process by pidfd before it connects. */
-  assert(read(STDIN_FILENO, &admitted, 1) == 1 && admitted == 'G');
+  if (getenv("SOPHIA_TEST_READY_FILE")) {
+    uint64_t deadline = now_ms() + 5000;
+    for (;;) {
+      FILE *gate = fopen(getenv("SOPHIA_TEST_READY_FILE"), "r");
+      int ready = gate ? fgetc(gate) : EOF;
+      struct timespec pause = {0, 1000000};
+      if (gate) fclose(gate);
+      if (ready == 'G') break;
+      assert(now_ms() < deadline);
+      nanosleep(&pause, NULL);
+    }
+  } else assert(read(STDIN_FILENO, &admitted, 1) == 1 && admitted == 'G');
   memset(&address, 0, sizeof address);
   address.sun_family = AF_UNIX;
   strcpy(address.sun_path, argv[1]);
@@ -108,12 +147,29 @@ int main(int argc, char **argv) {
   assert(!fcntl(fd, F_SETFL, O_NONBLOCK));
   assert(!sophia_9p_init(&wire, fd, 8192, 8, 32, storage, sizeof storage));
   memset(&offer, 0, sizeof offer);
-  offer.minimum_revision = offer.maximum_revision = 1;
-  offer.capabilities = SOPHIA_LF_CAP_PRESENT | SOPHIA_LF_CAP_CHORDS;
+  offer.minimum_revision = offer.maximum_revision = 2;
+  offer.capabilities = SOPHIA_LF_CAP_PRESENT | SOPHIA_LF_CAP_CHORDS | SOPHIA_LF_CAP_IMAGE_SEALED;
   offer.chord_count = 1;
   offer.chords[0].keysym = 0x62;
   offer.chords[0].modifiers = SOPHIA_LF_MOD_ALT;
-  assert(!sophia_lc_init(&client, &wire, &offer));
+  assert(!sophia_9p_version(&wire, &request)); auth_reply(request, 101);
+  assert(!sophia_9p_auth(&wire, "", "", &request, &afid)); auth_reply(request, 103);
+  assert(!sophia_9p_attach_with_afid(&wire, afid, "", "", &request, &root)); auth_reply(request, 105);
+  assert(!sophia_9p_clunk(&wire, afid, &request)); auth_reply(request, 121);
+  assert(!sophia_lc_init_attached(&client, &wire, root, &offer));
+  strcpy(directory, argv[1]); slash = strrchr(directory, '/');
+  assert(slash); slash[slash == directory ? 1 : 0] = 0;
+  image_dir = open(directory, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+  assert(image_dir >= 0);
+  config.endpoint_dir = image_dir;
+  config.formats = formats; config.formats_capacity = sizeof formats;
+  config.producer.bounds.max_resource_bytes = 64;
+  config.producer.bounds.max_width = config.producer.bounds.max_height = 4;
+  config.producer.bounds.max_outputs = config.producer.bounds.transfer_slots = 1;
+  config.producer.transfer_timeout_ms = 5000;
+  config.producer.startup_deadline_ms = now_ms() + 5000;
+  assert(!sophia_lc_image_init(&image, &config));
+  assert(!sophia_lc_image_attach(&client, &image));
 
   e = await(SOPHIA_LF_OBJECT_PUBLISHED, "first lock object");
   lock = sophia_lc_lock(&client, &generation);
@@ -124,33 +180,35 @@ int main(int argc, char **argv) {
     fail("first lock object contents");
   consume("first lock object");
 
-  /* A 2x2 image in two chunks; End carries the Begin's transaction. */
-  memset(&begin, 0, sizeof begin);
-  begin.transaction = 1;
-  begin.resource.id = 1;
-  begin.resource.generation = 1;
-  begin.width_px = begin.height_px = 2;
-  if (sophia_lc_upload_begin(&client, &begin))
-    fail("upload begin");
-  e = await(SOPHIA_LF_RESOURCE_STATUS, "admitted");
-  if (e->value.resource_status.status != SOPHIA_LF_ADMITTED)
-    fail("admitted status");
-  consume("admitted");
-  memset(pixels, 0x7f, sizeof pixels);
-  until(sophia_lc_upload_ready, 1, "first chunk ready");
-  if (sophia_lc_upload_chunk(&client, pixels, 6))
-    fail("first chunk");
-  until(sophia_lc_upload_ready, 1, "second chunk ready");
-  if (sophia_lc_upload_chunk(&client, pixels + 6, 10))
-    fail("second chunk");
-  until(sophia_lc_upload_ready, 1, "end ready");
-  if (sophia_lc_upload_end(&client))
-    fail("upload end");
+  assert(!sophia_ip_isb_create(2, 2, &source, &pixels, &size));
+  memset(pixels, 0x7f, size);
+  assert(!sophia_ip_isb_finish(source, pixels, size));
+  metadata.resource_id = metadata.resource_generation = 1;
+  metadata.admission_epoch = 3;
+  metadata.output = metadata.allocation = metadata.topology_generation = 1;
+  metadata.source_kind = metadata.source_format = 1;
+  metadata.width = metadata.height = 2; metadata.stride = 8;
+  metadata.plane_count = metadata.descriptor_count = 1;
+  metadata.logical_bytes = 16;
+  for (i = 0; i < PASSES; ++i) {
+    result = sophia_lc_image_begin(&image, &metadata, source, now_ms(), &offer_id);
+    if (!result) break;
+    if (result != SOPHIA_IPR_BUSY && result != SOPHIA_IPR_AGAIN) fail("image begin");
+    turn("image readiness");
+  }
+  if (i == PASSES) fail("image begin timeout");
   e = await(SOPHIA_LF_RESOURCE_STATUS, "accepted");
   if (e->value.resource_status.status != SOPHIA_LF_ACCEPTED)
     fail("accepted status");
   consume("accepted");
-  until(sophia_lc_upload_pending, 0, "upload settled");
+  for (i = 0; i < PASSES; ++i) {
+    assert(!sophia_ip_offer(&image.producer, offer_id, &info));
+    if (info.state == SOPHIA_IPO_SETTLED) break;
+    turn("image settlement");
+  }
+  if (i == PASSES || info.status != SOPHIA_IPS_ACCEPTED || info.disposition != 1)
+    fail("image settlement");
+  assert(!sophia_ip_forget(&image.producer, offer_id));
 
   memset(&r, 0, sizeof r);
   r.header.kind = SOPHIA_LF_FRAME_DEMAND;
@@ -174,7 +232,7 @@ int main(int argc, char **argv) {
   r.value.candidate.allocation_generation = 1;
   r.value.candidate.candidate_generation = 1;
   r.value.candidate.pacing_permit = permit;
-  r.value.candidate.resource = begin.resource;
+  r.value.candidate.resource.id = r.value.candidate.resource.generation = 1;
   submit(&r, "candidate");
   e = await(SOPHIA_LF_CANDIDATE_OUTCOME, "outcome");
   if (e->value.candidate_outcome.status != SOPHIA_LF_PRESENTED)
@@ -198,5 +256,9 @@ int main(int argc, char **argv) {
   for (i = 0; i < 50; ++i)
     turn("final acknowledgement");
   puts("lock_client_c_sdk status=done");
+  sophia_ip_close(&image.producer);
+  close(image_dir);
+  sophia_9p_close(&wire);
+  close(fd);
   return 0;
 }

@@ -1,4 +1,4 @@
-//! Explicit owner admission of the image transport; legacy callers remain byte-only.
+//! Explicit owner admission of the authenticated image transport.
 use super::{ShellComponentTransport, ShellTransportError, files};
 use sophia_protocol::shell_files::{
     ShellImageDiscovery, ShellImageFormats, ShellImageLimits, ShellImageRoleBounds,

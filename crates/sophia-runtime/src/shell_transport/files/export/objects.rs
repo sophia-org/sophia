@@ -61,11 +61,9 @@ impl ShellFiles {
             (b"transaction-reuse", Node::TransactionReuse),
             (b"submit", Node::Submit),
             (b"ack", Node::Ack),
-            (b"upload", Node::Uploads),
         ];
         if self.descriptor && !self.content {
-            entries
-                .retain(|(_, node)| !matches!(node, Node::Limits | Node::Outputs | Node::Uploads));
+            entries.retain(|(_, node)| !matches!(node, Node::Limits | Node::Outputs));
         }
         if (self.descriptor
             && self.negotiated

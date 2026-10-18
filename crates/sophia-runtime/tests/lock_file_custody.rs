@@ -9,6 +9,9 @@ use sophia_9p::{Errno, ReadOutcome};
 use sophia_protocol::lock_files::*;
 use sophia_runtime::lock_files::*;
 
+#[path = "support/lock_custody_images.rs"]
+mod images;
+
 const EPOCH: u64 = 7;
 const LOCK: u64 = 4;
 const QID: u64 = 90;
@@ -61,21 +64,7 @@ fn r1_refuses_image_begin_before_epoch_or_submission_checks() {
         }
     }
     // Refused image records neither replace accepted custody nor spend id 2.
-    let begin = LockResourceBegin {
-        transaction: 1,
-        resource: LockResourceId {
-            id: 1,
-            generation: 1,
-        },
-        width_px: 4,
-        height_px: 2,
-        slot: 0,
-    }
-    .encode()
-    .unwrap();
-    provider
-        .submit(LockFileKind::ResourceBegin, &begin)
-        .unwrap();
+    provider.demand(1).unwrap();
     assert_eq!(provider.submission, 2);
     assert!(provider.kinds().contains(&LockFileKind::Submitted));
 }
@@ -154,7 +143,7 @@ impl Provider {
 
     fn submit(&mut self, kind: LockFileKind, body: &[u8]) -> Result<(), Errno> {
         self.submission += 1;
-        let bytes = encode_lock_file_record(
+        let bytes = encode_lock_file_record_at_revision(
             LockFileHeader {
                 kind,
                 connection_epoch: EPOCH,
@@ -162,6 +151,7 @@ impl Provider {
                 sequence: 0,
             },
             body,
+            self.custody.revision(),
         )
         .unwrap();
         self.custody.submit(&bytes, self.now)
@@ -181,7 +171,12 @@ impl Provider {
         let mut rest = bytes.as_slice();
         while !rest.is_empty() {
             let size = u32::from_le_bytes(rest[..4].try_into().unwrap()) as usize;
-            let record = decode_lock_file_record(&rest[..size], LockFileClass::Event).unwrap();
+            let record = decode_lock_file_record_at_revision(
+                &rest[..size],
+                LockFileClass::Event,
+                self.custody.revision(),
+            )
+            .unwrap();
             events.push((record.header.kind, record.body.to_vec()));
             rest = &rest[size..];
         }
@@ -194,12 +189,6 @@ impl Provider {
             })
             .unwrap();
         events
-    }
-
-    /// Writes through the slot's current binding, or a stale one.
-    fn write(&mut self, slot: u8, offset: u64, data: &[u8]) -> Result<u32, Errno> {
-        let binding = self.custody.upload_binding(slot).unwrap_or(u64::MAX);
-        self.custody.write_upload(slot, binding, offset, data)
     }
 
     fn kinds(&mut self) -> Vec<LockFileKind> {
@@ -220,7 +209,7 @@ impl Provider {
 
     fn ready(lock: LockObject) -> Self {
         let mut provider = Self::new(lock);
-        provider.negotiate(Vec::new()).unwrap();
+        provider.image_ready();
         provider.events();
         assert!(matches!(
             provider.custody.take_inbound(),
@@ -240,29 +229,6 @@ impl Provider {
         .encode()
         .unwrap();
         self.submit(LockFileKind::ResourceBegin, &body)
-    }
-
-    fn end(&mut self, id: u64, total_bytes: u64) -> Result<(), Errno> {
-        let body = LockResourceStep {
-            transaction: 100 + id,
-            resource: resource(id),
-            total_bytes: Some(total_bytes),
-        }
-        .encode()
-        .unwrap();
-        self.submit(LockFileKind::ResourceEnd, &body)
-    }
-
-    /// A whole 4x2 image in slot 0.
-    fn upload(&mut self, id: u64) {
-        self.begin(id, 4, 2, 0).unwrap();
-        assert_eq!(self.write(0, 0, &[7; 32]), Ok(32));
-        self.end(id, 32).unwrap();
-        self.events();
-        assert!(matches!(
-            self.custody.take_inbound(),
-            Some(LockInbound::ResourceReady { .. })
-        ));
     }
 
     fn demand(&mut self, demand_id: u64) -> Result<(), Errno> {
@@ -328,7 +294,7 @@ fn outcome(events: &[(LockFileKind, Vec<u8>)]) -> LockCandidateOutcome {
 fn negotiation_grants_present_and_the_requested_chords_then_publishes_the_lock() {
     let mut provider = Provider::new(locked(LOCK, 1));
     // Nothing but negotiation is accepted first.
-    assert_eq!(provider.begin(1, 4, 2, 0), Err(Errno::EACCES));
+    assert_eq!(provider.demand(1), Err(Errno::EACCES));
     let chord = LockChordRequest {
         keysym: 0x62,
         modifiers: SUPER,
@@ -415,19 +381,19 @@ fn a_negotiation_session_cannot_honour_is_refused_and_ends_the_connection() {
 #[test]
 fn an_exact_repeat_changes_nothing_and_an_older_submission_is_stale() {
     let mut provider = Provider::ready(locked(LOCK, 1));
-    let begin = LockResourceBegin {
+    let begin = LockFrameDemand {
         transaction: 1,
-        resource: resource(1),
-        width_px: 4,
-        height_px: 2,
-        slot: 0,
+        lock_epoch: LOCK,
+        allocation_id: 11,
+        allocation_generation: 1,
+        demand_id: 1,
     }
     .encode()
     .unwrap();
     let record = |submission_id, body: &[u8]| {
         encode_lock_file_record(
             LockFileHeader {
-                kind: LockFileKind::ResourceBegin,
+                kind: LockFileKind::FrameDemand,
                 connection_epoch: EPOCH,
                 submission_id,
                 sequence: 0,
@@ -457,217 +423,23 @@ fn an_exact_repeat_changes_nothing_and_an_older_submission_is_stale() {
 }
 
 #[test]
-fn an_upload_becomes_an_image_only_when_every_byte_arrived() {
+fn byte_upload_records_are_refused_without_custody() {
     let mut provider = Provider::ready(locked(LOCK, 1));
-    provider.begin(1, 4, 2, 0).unwrap();
-    let events = provider.events();
-    let status = LockResourceStatus::decode(&events[1].1).unwrap();
-    assert_eq!(status.status, LockResourceState::Admitted);
-    assert_eq!(status.admitted_bytes, 32);
-    let first = provider.custody.upload_binding(0).unwrap();
-    assert_eq!(provider.write(0, 0, &[1; 20]), Ok(20));
-    assert_eq!(
-        provider.write(0, 0, &[1; 4]),
-        Err(Errno::EINVAL),
-        "only at the cursor"
-    );
-    assert_eq!(
-        provider.write(0, 20, &[1; 13]),
-        Err(Errno::EINVAL),
-        "never past the declared size"
-    );
-    assert_eq!(provider.write(1, 0, &[1]), Err(Errno::ESTALE));
-    // Short: refused, and the slot is free again.
-    provider.end(1, 32).unwrap();
-    let status = LockResourceStatus::decode(&provider.events()[1].1).unwrap();
-    assert_eq!(
-        (status.status, status.reason),
-        (LockResourceState::Rejected, reason::SIZE_MISMATCH)
-    );
-    assert!(provider.custody.upload_binding(0).is_none());
-    assert!(provider.custody.take_inbound().is_none());
-
-    provider.begin(2, 4, 2, 0).unwrap();
-    assert_eq!(
-        provider.custody.write_upload(0, first, 0, &[9; 32]),
-        Err(Errno::ESTALE),
-        "a writer of the earlier binding is fenced"
-    );
-    provider.write(0, 0, &[9; 32]).unwrap();
-    provider.end(2, 32).unwrap();
-    let events = provider.events();
-    let status = LockResourceStatus::decode(&events.last().unwrap().1).unwrap();
-    assert_eq!(status.status, LockResourceState::Accepted);
-    match provider.custody.take_inbound() {
-        Some(LockInbound::ResourceReady {
-            resource: ready,
-            width_px: 4,
-            height_px: 2,
-            pixels,
-        }) => {
-            assert_eq!(ready, resource(2));
-            assert_eq!(&*pixels, &[9; 32]);
-        }
-        other => panic!("{other:?}"),
-    }
-}
-
-#[test]
-fn image_storage_is_reused_only_after_session_lets_it_go() {
-    let mut provider = Provider::ready(locked(LOCK, 1));
-    let ready = |provider: &mut Provider, id: u64, fill: u8| {
-        provider.begin(id, 4, 2, 0).unwrap();
-        assert_eq!(provider.write(0, 0, &[fill; 32]), Ok(32));
-        provider.end(id, 32).unwrap();
-        provider.events();
-        loop {
-            match provider.custody.take_inbound() {
-                Some(LockInbound::ResourceReady { pixels, .. }) => break pixels,
-                Some(_) => continue,
-                None => panic!("upload {id} became no image"),
-            }
-        }
-    };
-    let retire = |provider: &mut Provider, id: u64| {
-        let step = LockResourceStep {
-            transaction: 200 + id,
-            resource: resource(id),
-            total_bytes: None,
-        }
-        .encode()
-        .unwrap();
-        provider
-            .submit(LockFileKind::ResourceRetire, &step)
-            .unwrap();
-        provider.events();
-        while provider.custody.take_inbound().is_some() {}
-    };
-    let first = ready(&mut provider, 1, 1);
-    let shown = first.as_ptr();
-    retire(&mut provider, 1);
-    // Session still shows the retired image: its storage is not reused.
-    let second = ready(&mut provider, 2, 2);
-    assert_ne!(second.as_ptr(), shown);
-    assert_eq!(&*first, &[1; 32], "a shown image never changes");
-    drop(first);
-    // Once Session lets it go, the next upload of that size writes in place.
-    let third = ready(&mut provider, 3, 3);
-    assert_eq!(third.as_ptr(), shown);
-    assert_eq!(&*third, &[3; 32]);
-    assert_eq!(&*second, &[2; 32]);
-}
-
-#[test]
-fn storage_kept_for_reuse_stays_within_the_live_limit() {
-    let mut provider = Provider::ready(locked(LOCK, 1));
-    let ready = |provider: &mut Provider, id: u64, width_px: u32| {
-        let len = width_px as usize * 2 * 4;
-        provider.begin(id, width_px, 2, 0).unwrap();
-        assert_eq!(provider.write(0, 0, &vec![1; len]), Ok(len as u32));
-        provider.end(id, len as u64).unwrap();
-        provider.events();
-        loop {
-            match provider.custody.take_inbound() {
-                Some(LockInbound::ResourceReady { pixels, .. }) => break pixels,
-                Some(_) => continue,
-                None => panic!("upload {id} became no image"),
-            }
-        }
-    };
-    let retire = |provider: &mut Provider, id: u64| {
-        let step = LockResourceStep {
-            transaction: 200 + id,
-            resource: resource(id),
-            total_bytes: None,
-        }
-        .encode()
-        .unwrap();
-        provider
-            .submit(LockFileKind::ResourceRetire, &step)
-            .unwrap();
-        provider.events();
-        while provider.custody.take_inbound().is_some() {}
-    };
-    // Three retired images, released by Session, all kept for reuse. The
-    // watches only observe them.
-    let kept: Vec<_> = (1..=3)
-        .map(|id| {
-            let pixels = ready(&mut provider, id, 4);
-            let observed = pixels.watch();
-            drop(pixels);
-            retire(&mut provider, id);
-            observed
-        })
-        .collect();
-    assert!(kept.iter().all(|storage| !storage.released()));
-    // Three live images of another size fill the limit: none of the kept
-    // storage may stay beside them.
-    for id in 4..=6 {
-        drop(ready(&mut provider, id, 2));
-    }
-    assert!(
-        kept.iter().all(|storage| storage.released()),
-        "spare storage beyond the live limit was kept"
-    );
-}
-
-#[test]
-fn uploads_are_bounded_by_the_epoch_limits() {
-    let mut provider = Provider::ready(locked(LOCK, 1));
-    for (width, height) in [(65, 1), (1, 65)] {
-        provider.begin(1, width, height, 0).unwrap();
-        let status = LockResourceStatus::decode(&provider.events()[1].1).unwrap();
-        assert_eq!(
-            (status.status, status.reason),
-            (LockResourceState::Rejected, reason::BUDGET)
-        );
-    }
-    assert_eq!(
-        provider.begin(1, 4, 2, 2),
-        Err(Errno::EINVAL),
-        "no such slot"
-    );
-    provider.begin(1, 4, 2, 0).unwrap();
-    assert_eq!(provider.begin(2, 4, 2, 0), Err(Errno::EINVAL), "slot busy");
-    assert_eq!(
-        provider.begin(1, 4, 2, 1),
-        Err(Errno::EINVAL),
-        "same resource"
-    );
-    provider.events();
-    // Three live resources at most, uploads included.
-    provider.write(0, 0, &[0; 32]).unwrap();
-    provider.end(1, 32).unwrap();
-    provider.upload(2);
-    provider.upload(3);
-    provider.begin(4, 4, 2, 0).unwrap();
-    let status = LockResourceStatus::decode(&provider.events()[1].1).unwrap();
-    assert_eq!(status.reason, reason::BUDGET);
-    // Retiring one makes room, and Session is told.
-    let retire = LockResourceStep {
-        transaction: 9,
-        resource: resource(2),
-        total_bytes: None,
+    let before = provider.custody.position();
+    assert_eq!(provider.begin(1, 4, 2, 0), Err(Errno::EINVAL));
+    let end = LockResourceStep {
+        transaction: 101,
+        resource: resource(1),
+        total_bytes: Some(32),
     }
     .encode()
     .unwrap();
-    provider
-        .submit(LockFileKind::ResourceRetire, &retire)
-        .unwrap();
-    assert_eq!(provider.events()[1].0, LockFileKind::ResourceReleased);
-    while let Some(inbound) = provider.custody.take_inbound() {
-        if let LockInbound::ResourceRetired(retired) = inbound {
-            assert_eq!(retired, resource(2));
-        }
-    }
-    provider.begin(4, 4, 2, 0).unwrap();
-    let status = LockResourceStatus::decode(&provider.events()[1].1).unwrap();
-    assert_eq!(status.status, LockResourceState::Admitted);
     assert_eq!(
-        provider.submit(LockFileKind::ResourceRetire, &retire),
-        Err(Errno::EINVAL),
-        "already retired"
+        provider.submit(LockFileKind::ResourceEnd, &end),
+        Err(Errno::EINVAL)
     );
+    assert_eq!(provider.custody.position(), before);
+    assert!(provider.custody.take_inbound().is_none());
 }
 
 #[test]
@@ -709,9 +481,16 @@ fn a_permitted_candidate_for_the_current_allocation_reaches_session() {
 fn a_candidate_that_does_not_match_what_session_granted_is_rejected() {
     let mut provider = Provider::ready(locked(LOCK, 1));
     provider.upload(1);
-    provider.begin(2, 2, 2, 0).unwrap();
-    provider.write(0, 0, &[0; 16]).unwrap();
-    provider.end(2, 16).unwrap();
+    // An image retained from the old allocation must not fit the new one.
+    let mut smaller = locked(LOCK, 1);
+    smaller.topology_generation = 4;
+    smaller.allocations[0].pixel_width = 2;
+    provider.custody.publish_lock(smaller, QID + 1).unwrap();
+    provider.events();
+    provider.upload(2);
+    let mut restored = locked(LOCK, 1);
+    restored.topology_generation = 5;
+    provider.custody.publish_lock(restored, QID + 2).unwrap();
     provider.events();
     while provider.custody.take_inbound().is_some() {}
     let permit = provider.permitted(1);

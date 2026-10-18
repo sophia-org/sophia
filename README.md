@@ -4,6 +4,13 @@ Sophia is a secure Linux desktop inspired by Plan 9, with atomic display transac
 
 Window managers and shells talk to Sophia through small file trees served by one shared 9P2000.L core. Each role keeps its own endpoint and its own permissions. You can write one in whatever language you like without touching the compositor.
 
+CPU images use [Immutable Shared Buffers (ISB)](docs/sophia-image-channel.md):
+the client prepares immutable pixels and passes a handle over a local image
+channel, while 9P carries control and lifetime events. The Linux implementation
+uses sealed memfds. The older shell and lock byte-upload paths have been removed.
+Sharing the backing avoids a separate resource copy in Sophia,
+but pixel preparation and rendering can still involve copies.
+
 X11 is a full frontend, not a compatibility layer. Sophia's X server is new code, written from scratch in Rust. It owns X11 resources and delivery rules, while Engine only ever sees surfaces, buffers and layout transactions.
 
 The project site is [sophia.gg](https://sophia.gg). If you want to write a window manager, a shell or a whole desktop, start with [Building on Sophia](docs/building-on-sophia.md).

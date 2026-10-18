@@ -6,7 +6,7 @@ pub(super) fn upload(
     resource: ContentResourceId,
 ) -> sophia_runtime::ContentResourceLease {
     store
-        .begin(
+        .begin_isb(
             TransactionId::from_raw(1),
             ContentResourceBegin {
                 grant,
@@ -27,27 +27,10 @@ pub(super) fn upload(
     assert!(usage.staging + usage.resident + usage.retiring <= 128);
     assert!(usage.backing <= 128);
     store
-        .chunk(
-            TransactionId::from_raw(2),
-            &ContentResourceChunk {
-                grant,
-                resource,
-                ordinal: 0,
-                offset: 0,
-                bytes: vec![0xff; 32],
-            },
-            0,
-        )
-        .unwrap();
-    store
-        .end(
-            TransactionId::from_raw(3),
-            &ContentResourceEnd {
-                grant,
-                resource,
-                chunk_count: 1,
-                total_bytes: 32,
-            },
+        .complete_isb(
+            grant,
+            resource,
+            &mut Some(Ok(crate::test_content_isb::validated(&[0xff; 32]))),
             0,
         )
         .unwrap();
@@ -157,6 +140,9 @@ pub(super) fn released(store: &mut sophia_runtime::ContentResourceStore) -> Vec<
             ShellContentRecord::ResourceReleased(value) => result.push(value.resource),
             other => panic!("unexpected retirement event: {other:?}"),
         }
+    }
+    for resource in &result {
+        store.confirm_isb_release(*resource).unwrap();
     }
     result
 }

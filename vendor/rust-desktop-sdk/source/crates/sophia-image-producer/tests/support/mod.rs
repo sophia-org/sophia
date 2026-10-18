@@ -9,7 +9,7 @@ use rustix::net::{
 };
 use sophia_image_producer::{
     DiscoveryRead, ImageProducer, ImageProducerConfig, ImageRole, ProducerMetadata,
-    ProducerRoleBounds, ReadyEvents, create_sealed, finish_sealed,
+    ProducerRoleBounds, ReadyEvents, create_isb, finish_isb,
 };
 use sophia_lock_protocol::lock_files::{LockImageDiscovery, LockImageFormats, LockImageLimits};
 use sophia_shell_protocol::shell_files::{
@@ -38,7 +38,6 @@ pub fn config(role: ImageRole) -> ImageProducerConfig {
         bounds: bounds(),
         transfer_timeout_ms: 1_000,
         startup_deadline_ms: 10_000,
-        fallback_bytes: true,
     }
 }
 
@@ -183,9 +182,9 @@ pub fn metadata(resource: u64) -> ProducerMetadata {
 }
 
 pub fn sealed_fd() -> OwnedFd {
-    let source = create_sealed(2, 2).unwrap();
+    let source = create_isb(2, 2).unwrap();
     source.write_pixels(0, &[7u8; 16]).unwrap();
-    finish_sealed(&source).unwrap();
+    finish_isb(&source).unwrap();
     source.into_fd()
 }
 

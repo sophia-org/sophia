@@ -1,3 +1,5 @@
+// Comparator only: retains the frozen IPC byte resource path beside production ISB.
+// Never merge this baseline adapter back into production.
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 
@@ -227,9 +229,9 @@ impl ContentResourceStore {
 
     /// Reserves the same bounded resource custody without allocating a byte
     /// upload buffer. ImageAdmitted/SourceReleased belong to the offer owner.
-    /// Every successful reservation needs complete_sealed, including when no
+    /// Every successful reservation needs complete_isb, including when no
     /// worker was started, so cancellation never releases a worker's charge.
-    pub fn begin_sealed(
+    pub fn begin_isb(
         &mut self,
         transaction: TransactionId,
         description: ContentResourceBegin,
@@ -425,11 +427,11 @@ impl ContentResourceStore {
     /// The result is taken only after the grant, clock and transfer match.
     /// If it remains Some on return, the caller still owns the completion and
     /// must retry or route it to its actual owner; an error alone is not custody.
-    pub fn complete_sealed(
+    pub fn complete_isb(
         &mut self,
         grant: ContentGrant,
         resource: ContentResourceId,
-        result: &mut Option<Result<super::ValidatedSealedPixels, ContentStoreError>>,
+        result: &mut Option<Result<super::ValidatedIsbPixels, ContentStoreError>>,
         now: u64,
     ) -> Result<(), ContentStoreError> {
         if grant != self.limits.grant || result.is_none() {
@@ -506,7 +508,7 @@ impl ContentResourceStore {
 
     /// The descriptor owner withdraws interest without releasing validation
     /// custody. This also works on a revoked store retained for worker cleanup.
-    pub(super) fn stop_sealed(
+    pub(super) fn stop_isb(
         &mut self,
         resource: ContentResourceId,
         reason: ContentReason,
@@ -523,7 +525,7 @@ impl ContentResourceStore {
         Ok(stopped.get_or_insert((reason, transfer.transaction)).0)
     }
 
-    pub(super) fn sealed_stop_reason(&self, resource: ContentResourceId) -> Option<ContentReason> {
+    pub(super) fn isb_stop_reason(&self, resource: ContentResourceId) -> Option<ContentReason> {
         match &self.transfers.get(&resource)?.source {
             TransferSource::Sealed { stopped } => stopped.map(|(reason, _)| reason),
             TransferSource::Bytes => None,
@@ -695,7 +697,7 @@ impl ContentResourceStore {
     /// Called by the image owner only after the corresponding ResourceReleased
     /// record has entered the live journal. Queueing the event is insufficient.
     /// Epoch revocation instead drops this obligation with the dead journal.
-    pub fn confirm_sealed_release(
+    pub fn confirm_isb_release(
         &mut self,
         resource: ContentResourceId,
     ) -> Result<(), ContentStoreError> {
@@ -716,7 +718,7 @@ impl ContentResourceStore {
         Ok(())
     }
 
-    pub(crate) fn sealed_release_pending(&self, resource: ContentResourceId) -> bool {
+    pub(crate) fn isb_release_pending(&self, resource: ContentResourceId) -> bool {
         self.accepted
             .get(&resource)
             .is_some_and(|value| value.release_pending)

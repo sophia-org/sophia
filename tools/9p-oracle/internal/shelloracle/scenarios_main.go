@@ -60,8 +60,7 @@ func (r *runner) mainScenario() {
 	rejected := s.expect(32)
 	r.check(15, u64(rejected.body, 0) == 41 && u64(rejected.body, 24) == 2 && u16(rejected.body, 32) == 2)
 	s.ack(rejected)
-	r.uploads(s)
-	smallResource(s)
+	r.images(s, 4)
 	id = s.submit(263, demand(90, 1))
 	s.custody(id, 263)
 	permit := s.expect(36)
@@ -103,78 +102,60 @@ func (r *runner) mainScenario() {
 	r.check(32, u16(cancelled.body, 56) == 3 && u16(cancelled.body, 58) == 11 && u64(cancelled.body, 40) == 2 && u64(cancelled.body, 48) == u64(permit.body, 48))
 	s.ack(cancelled)
 }
-func (r *runner) uploads(s *session) {
-	id := s.submit(258, resourceBegin(1))
-	s.custody(id, 258)
-	admitted := s.status(1, 1)
-	r.check(17, u64(admitted.body, 48) == 65536)
-	s.w.file(20, 1, "upload", "0")
-	pixels := make([]byte, 65536)
-	n := wrote(s.w.write(20, 0, pixels[:1000]))
-	r.check(18, n == 1000)
-	offset := 1000
-	short := false
-	bounded := true
-	for offset < len(pixels) {
-		end := offset + int(s.w.msize) - 23
-		if end > len(pixels) {
-			end = len(pixels)
-		}
-		n = wrote(s.w.write(20, uint64(offset), pixels[offset:end]))
-		need(n > 0 && int(n) <= end-offset, "upload progress")
-		if int(n) < end-offset {
-			short = true
-			need(offset+int(n) == 57344, "canonical boundary")
-		}
-		bounded = bounded && end-offset <= 4073
-		offset += int(n)
-	}
-	r.check(19, bounded && offset == 65536)
-	r.check(20, short)
-	end := resourceIdentity(56, 1, 80)
-	p64(end, 40, 65536)
-	p32(end, 48, 2)
-	id = s.submit(259, end)
-	s.custody(id, 259)
-	s.status(1, 2)
-	r.check(21, true)
-	r.check(24, errno(s.w.write(20, 0, pixels[:4])) == 116)
-	id = s.submit(258, resourceBegin(2))
-	s.custody(id, 258)
-	s.status(2, 1)
-	s.w.file(21, 1, "upload", "0")
-	id = s.submit(260, resourceIdentity(40, 2, 82))
-	s.custody(id, 260)
-	s.status(2, 4)
-	r.check(22, true)
-	r.check(25, errno(s.w.write(21, 0, pixels[:4])) == 116)
-	id = s.submit(258, resourceBegin(3))
-	s.custody(id, 258)
-	s.status(3, 1)
-	s.w.file(22, 1, "upload", "0")
-	s.w.clunk(20)
-	s.w.clunk(21)
-	r.check(26, wrote(s.w.write(22, 0, pixels[:4])) == 4)
-	s.w.clunk(22)
-	s.status(3, 4)
-	r.check(23, true)
-}
-func smallResource(s *session) {
-	b := resourceBegin(5)
-	p32(b, 48, 2)
-	p32(b, 52, 1)
-	p32(b, 68, 1)
-	p64(b, 72, 8)
-	id := s.submit(258, b)
-	s.custody(id, 258)
-	s.status(5, 1)
-	s.w.file(23, 1, "upload", "0")
-	need(wrote(s.w.write(23, 0, make([]byte, 8))) == 8, "small resource write")
-	b = resourceIdentity(56, 5, 86)
-	p64(b, 40, 8)
-	p32(b, 48, 1)
-	id = s.submit(259, b)
-	s.custody(id, 259)
-	s.status(5, 2)
-	s.w.clunk(23)
+
+// images judges sealed image transfer at the current output topology. Every
+// accepted image arrives as a sealed memfd over the authenticated channel.
+func (r *runner) images(s *session, topology uint64) {
+	r.check(17, s.discover())
+	// ImageBegin before Hello is busy and leaves no custody.
+	early := imageMetadata(1, 1, topology, 16, 8)
+	raw := s.encoded(kindImageBegin, s.nextID, early)
+	s.stage(raw, 0)
+	busy := errno(s.submitRaw(raw)) == 16
+	s.w.clunk(5)
+	s.noEvents()
+	ready := s.hello()
+	r.check(18, busy && u64(ready.body, 0) == s.discovery.generation && u32(ready.body, 8) == 1)
+	m := imageMetadata(s.nextOffer(), 1, topology, 16, 8)
+	custody, admitted := s.admit(m)
+	r.check(19, u16(custody.body, 8) == kindImageBegin && identical(admitted.body, m))
+	pixels := make([]byte, 16*8*4)
+	sent := s.source(m, memfd(pixels, true))
+	status, release := s.settle(m)
+	r.check(20, sent == 200 && u16(status.body, 40) == 2 && u16(status.body, 42) == 0)
+	r.check(21, u32(release.body, 24) == 1)
+	// Bad backing refuses the offer, not the channel.
+	m = imageMetadata(s.nextOffer(), 2, topology, 16, 8)
+	s.admit(m)
+	sent = s.source(m, memfd(pixels, false))
+	status, release = s.settle(m)
+	r.check(22, sent == 200 && u16(status.body, 40) == 3 && u16(status.body, 42) != 0 && u32(release.body, 24) == 3)
+	m = imageMetadata(s.nextOffer(), 3, topology, 16, 8)
+	s.admit(m)
+	sent = s.source(m, memfd(pixels[:len(pixels)-4], true))
+	status, release = s.settle(m)
+	r.check(23, sent == 200 && u16(status.body, 40) == 3 && u16(status.body, 42) != 0 && u32(release.body, 24) == 3)
+	// Retired byte uploads: no upload directory, Begin/End refused before custody.
+	walk := make([]byte, 10, 18)
+	p32(walk, 0, 1)
+	p32(walk, 4, 20)
+	p16(walk, 8, 1)
+	walk = append(walk, 6, 0)
+	walk = append(walk, "upload"...)
+	absent := errno(s.w.rpc(110, walk)) == 2
+	raw = s.encoded(258, s.nextID, resourceBegin(4))
+	s.stage(raw, 0)
+	begin := errno(s.submitRaw(raw)) == 22
+	s.w.clunk(5)
+	s.noEvents()
+	r.check(24, absent && begin)
+	end := resourceIdentity(56, 4, 85)
+	p64(end, 40, 8)
+	p32(end, 48, 1)
+	raw = s.encoded(259, s.nextID, end)
+	s.stage(raw, 0)
+	r.check(25, errno(s.submitRaw(raw)) == 22)
+	s.w.clunk(5)
+	s.noEvents()
+	r.check(26, sealedResource(s, 5, topology))
 }

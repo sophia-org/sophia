@@ -16,7 +16,6 @@ pub struct LockImageConfig {
     pub endpoint_dir: PathBuf,
     pub startup_deadline_ms: u64,
     pub transfer_timeout_ms: u32,
-    pub fallback_bytes: bool,
     pub formats_capacity: usize,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -84,7 +83,6 @@ impl LockImageAdapter {
                 },
                 transfer_timeout_ms: config.transfer_timeout_ms,
                 startup_deadline_ms: config.startup_deadline_ms,
-                fallback_bytes: config.fallback_bytes,
             },
             now,
         )?;
@@ -109,11 +107,7 @@ impl LockImageAdapter {
     }
     pub fn path(&self) -> ImagePath {
         if self.unavailable {
-            if self.config.fallback_bytes {
-                ImagePath::Bytes
-            } else {
-                ImagePath::Error
-            }
+            ImagePath::Error
         } else {
             self.producer.path()
         }

@@ -22,6 +22,9 @@ udev = { version = "0.9.3", optional = true }
 tracing.workspace = true
 
 [dev-dependencies]
+sophia-9p = { path = "../sophia-9p" }
+rustix = { workspace = true, features = ["fs", "std"] }
+sophia-linux-peer = { path = "../sophia-linux-peer" }
 stats_alloc = "=0.1.10"
 drm-ffi = "0.9.1"
 sophia-runtime = { path = "../sophia-runtime" }

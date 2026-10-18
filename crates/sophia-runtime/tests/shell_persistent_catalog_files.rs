@@ -8,6 +8,8 @@ use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
 use sophia_runtime::*;
 
+#[path = "support/shell_required_image.rs"]
+mod image;
 #[path = "support/shell_file_peer.rs"]
 mod shell_file_peer;
 use shell_file_peer::Peer;
@@ -183,14 +185,7 @@ fn dock_allocation() -> ContentAllocationSnapshot {
 fn catalog_object_candidate_and_activate_cross_the_file_wire() {
     let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
     let (mut transport, directory) = dock_transport();
-    transport
-        .authorize_protected_peer(&ProtectionDomainEvidence {
-            backend: ProtectionBackendKind::Bubblewrap,
-            supervisor_pid: std::process::id(),
-            peer_pid: std::process::id(),
-            roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
-        })
-        .unwrap();
+    let mut image_owner = image::configure(&mut transport, &limits());
     transport
         .reserve_content_with_profile(
             &mut registry,
@@ -202,22 +197,22 @@ fn catalog_object_candidate_and_activate_cross_the_file_wire() {
 
     let peer = std::thread::spawn(move || {
         let mut peer = Peer::connect(&socket);
-        peer.setup();
+        image::setup(&mut peer);
 
         let offer = encode_shell_file_negotiate(
             header(ShellFileKind::Negotiate, GRANT.connection_epoch, 1),
             ShellV1ClientHello {
-                minimum_revision: 8,
-                maximum_revision: 8,
-                required_capabilities: CAPS,
+                minimum_revision: 9,
+                maximum_revision: 9,
+                required_capabilities: CAPS | (1 << 13),
             },
         )
         .unwrap();
         peer.submit_acknowledged(&offer, 1);
         let negotiated = peer.next_event();
         let value = decode_shell_file_negotiated(&negotiated).unwrap();
-        assert_eq!(value.welcome.selected_revision, 8);
-        assert_eq!(value.welcome.capabilities, CAPS);
+        assert_eq!(value.welcome.selected_revision, 9);
+        assert_eq!(value.welcome.capabilities, CAPS | (1 << 13));
         peer.ack(&negotiated);
         peer.open(6, b"limits", 0);
         assert_eq!(
@@ -301,62 +296,33 @@ fn catalog_object_candidate_and_activate_cross_the_file_wire() {
         assert_eq!(result.status, 1);
         peer.ack(&event);
 
-        // Resource upload for the candidate's one placement.
-        let begin_resource = encode_shell_file_resource_begin(
-            header(ShellFileKind::ResourceBegin, GRANT.connection_epoch, 3),
-            &ShellFileResourceBegin {
-                transaction: tx(21),
-                slot: 0,
-                record: ShellContentRecord::ResourceBegin(ContentResourceBegin {
-                    grant: GRANT,
-                    resource: RESOURCE,
-                    width_px: 2,
-                    height_px: 1,
-                    rendered_scale_numerator: 1,
-                    rendered_scale_denominator: 1,
-                    pixel_format: 1,
-                    chunk_count: 1,
-                    total_bytes: 8,
-                }),
+        let image_socket =
+            image::ready(&mut peer, socket.parent().unwrap(), GRANT.connection_epoch);
+        image::upload(
+            &mut peer,
+            &image_socket,
+            GRANT.connection_epoch,
+            3,
+            ShellImageMetadata {
+                offer_id: 1,
+                resource: RESOURCE.id,
+                resource_generation: RESOURCE.generation,
+                admission_epoch: GRANT.content_grant_epoch,
+                output_id: OUTPUT.id,
+                allocation_id: ALLOCATION.id,
+                topology_generation: 5,
+                source_kind: 1,
+                source_format: 1,
+                width: 2,
+                height: 1,
+                stride: 8,
+                plane_count: 1,
+                descriptor_count: 1,
+                declared_bytes: 8,
+                modifier: 0,
             },
-        )
-        .unwrap();
-        peer.submit_acknowledged(&begin_resource, 3);
-        let admitted = peer.next_event();
-        let ShellContentRecord::ResourceStatus(status) =
-            decode_shell_file_resource_status(&admitted).unwrap().record
-        else {
-            panic!("resource status");
-        };
-        assert_eq!(status.status, 1);
-        peer.ack(&admitted);
-        assert_eq!(peer.open_path(10, &[b"upload", b"0"], 1).0, 13);
-        assert_eq!(
-            peer.write_at(10, 0, &[0, 0, 255, 255, 0, 128, 0, 128]).0,
-            119
+            &[0, 0, 255, 255, 0, 128, 0, 128],
         );
-        let end_resource = encode_shell_file_resource_end(
-            header(ShellFileKind::ResourceEnd, GRANT.connection_epoch, 4),
-            &ShellFileTransactionRecord {
-                transaction: tx(22),
-                record: ShellContentRecord::ResourceEnd(ContentResourceEnd {
-                    grant: GRANT,
-                    resource: RESOURCE,
-                    total_bytes: 8,
-                    chunk_count: 1,
-                }),
-            },
-        )
-        .unwrap();
-        peer.submit_acknowledged(&end_resource, 4);
-        let accepted = peer.next_event();
-        let ShellContentRecord::ResourceStatus(status) =
-            decode_shell_file_resource_status(&accepted).unwrap().record
-        else {
-            panic!("resource status");
-        };
-        assert_eq!(status.status, 2);
-        peer.ack(&accepted);
 
         // Pacing.
         let demand = encode_shell_file_transaction(
@@ -470,7 +436,7 @@ fn catalog_object_candidate_and_activate_cross_the_file_wire() {
 
     let start = Instant::now();
     let welcome = negotiate(&mut transport, &mut registry, GRANT.connection_epoch, &peer);
-    assert_eq!(welcome.capabilities, CAPS);
+    assert_eq!(welcome.capabilities, CAPS | (1 << 13));
     assert!(
         transport
             .connection(&mut registry)
@@ -500,6 +466,9 @@ fn catalog_object_candidate_and_activate_cross_the_file_wire() {
     // The resource upload and the pacing demand share this wait: the peer
     // submits the resource fully before it ever submits the demand.
     while transport.next_content_demand(&registry).is_none() {
+        image_owner
+            .service(&mut transport, &mut registry, 0, Instant::now())
+            .unwrap();
         transport
             .service_content_resources(&mut registry, 0)
             .unwrap();

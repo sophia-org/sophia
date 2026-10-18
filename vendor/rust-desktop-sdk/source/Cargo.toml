@@ -10,6 +10,7 @@ members = [
     "crates/sophia-9p-records",
     "crates/sophia-desktop-ids",
     "crates/sophia-image-producer",
+    "crates/sophia-isb",
     "crates/sophia-lock-protocol",
     "crates/sophia-lock-client",
     "crates/sophia-launch-client",
@@ -37,6 +38,7 @@ rustix = { version = "1.1", default-features = false }
 sophia-9p-client = { path = "crates/sophia-9p-client", version = "0.3.0" }
 sophia-9p-records = { path = "crates/sophia-9p-records", version = "0.3.0" }
 sophia-desktop-ids = { path = "crates/sophia-desktop-ids", version = "0.3.0" }
+sophia-isb = { path = "crates/sophia-isb", version = "0.3.0" }
 sophia-shell-protocol = { path = "crates/sophia-shell-protocol", version = "0.3.0" }
 sophia-wm-protocol = { path = "crates/sophia-wm-protocol", version = "0.3.0" }
 sophia-output-protocol = { path = "crates/sophia-output-protocol", version = "0.3.0" }

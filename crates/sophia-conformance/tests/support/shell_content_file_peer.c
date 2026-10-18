@@ -16,6 +16,10 @@
  *                                 below is encoded by hand from the offsets in
  *                                 protocol/sophia-shell-files-v1.kdl
  *
+ * Every mode attaches with an authenticated afid and negotiates shell r9 with
+ * sealed images (bit 13). Pixels reach the owner only as a sealed memfd over
+ * the image channel, through the SDK's image adapter; there is no byte upload.
+ *
  * All but content-malformed use the public session API. PEER_MUTATION builds
  * red controls that the host must refuse. content-lifecycle encodes, from the
  * file contract, the scenario Sophia's socket test client ran in its
@@ -23,8 +27,9 @@
  * sophia_shell_content_live_client.c); no code is shared with that client. */
 #define _POSIX_C_SOURCE 200809L
 #include "sophia_desktop_connection.h"
-#include "sophia_shell_session.h"
+#include "sophia_shell_image.h"
 #include <errno.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,6 +51,9 @@
 #define CAP_DESCRIPTOR_SWITCHER 1u
 #define CAP_CONTENT_SURFACE 128u
 #define CAP_CONTENT_DISCRETE_INPUT 256u
+#define CAP_SEALED_IMAGES 0x2000u
+#define SHELL_REVISION 9u
+#define MSIZE 16384u
 #define EVENT_QUEUE 16u
 #define DEADLINE_MS 10000u
 
@@ -89,6 +97,12 @@ static int connect_admitted(const char *path, uint64_t deadline)
 
 struct scenario {
     struct sophia_ss s;
+    /* The caller-owned authenticated wire and the session's image adapter. */
+    struct sophia_9p_client wire;
+    struct sophia_ss_image image;
+    uint8_t formats[65536];
+    void *wire_storage;
+    int fd, image_dir;
     uint64_t deadline, epoch, content_epoch;
     uint64_t output_id, output_generation, facts_generation;
     uint32_t output_width, output_height, thickness;
@@ -111,13 +125,20 @@ struct scenario {
 
 static void service(struct scenario *c)
 {
-    struct pollfd p = {sophia_ss_poll_fd(&c->s), sophia_ss_poll_events(&c->s), 0};
+    struct pollfd p[2] = {{sophia_ss_poll_fd(&c->s), sophia_ss_poll_events(&c->s), 0},
+                          {sophia_ss_image_poll_fd(&c->image),
+                           sophia_ss_image_poll_events(&c->image), 0}};
     int timeout = sophia_ss_timeout(&c->s, now_ms()), r;
+    int64_t image_timeout = sophia_ss_image_timeout(&c->image, now_ms());
     require(now_ms() < c->deadline, "scenario deadline");
+    if (image_timeout >= 0 && (timeout < 0 || image_timeout < timeout))
+        timeout = (int)image_timeout;
     if (timeout < 0 || timeout > 2)
         timeout = 2;
-    require(poll(&p, 1, timeout) >= 0, "session poll");
-    r = sophia_ss_dispatch(&c->s, p.revents, 65536, now_ms());
+    require(poll(p, 2, timeout) >= 0, "session poll");
+    /* The image adapter first, then the session, as the adapter requires. */
+    require(sophia_ss_image_dispatch(&c->image, p[1].revents, now_ms()) >= 0, "image dispatch");
+    r = sophia_ss_dispatch(&c->s, p[0].revents, 65536, now_ms());
     if (r)
         fprintf(stderr, "session ended: result=%d state=%d\n", r, sophia_ss_state(&c->s));
     require(!r, "session ended");
@@ -183,6 +204,8 @@ static void handle_event(struct scenario *c, const struct sophia_sf_record *e)
     case SOPHIA_SF_RESOURCE_STATUS: {
         const struct sophia_sf_resource_status *r = &e->value.resource_status;
         require(r->resource_id == 1 && r->resource_generation == 1, "resource status identity");
+        if (r->status != 1 && r->status != 2)
+            fprintf(stderr, "resource status %u reason %u\n", r->status, r->reason);
         require(r->status == 1 || r->status == 2, "resource was not admitted and accepted");
         if (r->status == 1)
             c->admitted = 1;
@@ -279,22 +302,92 @@ static void pump(struct scenario *c)
     require(!r || r == SOPHIA_9P_BUSY, "ack");
 }
 
+/* One reply on the caller-owned wire, before the session takes it over. */
+static void wire_reply(struct scenario *c, struct sophia_9p_handle request, uint8_t type)
+{
+    for (;;) {
+        struct sophia_9p_reply reply;
+        struct pollfd p = {c->wire.fd, POLLIN, 0};
+        int r;
+        require(now_ms() < c->deadline, "attach deadline");
+        if (sophia_9p_wants_write(&c->wire))
+            p.events |= POLLOUT;
+        require(poll(&p, 1, 2) >= 0, "attach poll");
+        require(!sophia_9p_service(&c->wire, 65536), "attach service");
+        r = sophia_9p_peek(&c->wire, &reply);
+        if (r == SOPHIA_9P_AGAIN)
+            continue;
+        require(!r && reply.handle.serial == request.serial && reply.type == type && !reply.error,
+                "authenticated attach refused");
+        require(!sophia_9p_consume(&c->wire, request), "attach consume");
+        return;
+    }
+}
+
 static void open_scenario(struct scenario *c, const char *path, void **storage)
 {
-    struct sophia_ss_config config = {{5, 6, CAP_DESCRIPTOR_SWITCHER | CAP_CONTENT_SURFACE},
-                                      SOPHIA_SF_BAR, 16384, 8, 65536, NULL, 0};
-    if (c->required)
-        config.offer.required_capabilities = c->required;
+    struct sophia_ss_config config = {
+        {SHELL_REVISION, SHELL_REVISION,
+         CAP_DESCRIPTOR_SWITCHER | CAP_CONTENT_SURFACE | CAP_SEALED_IMAGES},
+        SOPHIA_SF_BAR, MSIZE, 8, 65536, NULL, 0};
+    struct sophia_ss_image_config image = {0};
+    struct sophia_9p_handle request;
     size_t bytes = sophia_ss_storage_bytes(config.msize, config.queue_bytes);
-    int fd;
+    size_t wire_bytes = sophia_9p_storage_bytes(MSIZE, 8);
+    uint32_t afid, root;
+    char directory[256], *slash;
+    if (c->required)
+        config.offer.required_capabilities = c->required | CAP_SEALED_IMAGES;
     c->deadline = now_ms() + DEADLINE_MS;
     *storage = malloc(bytes);
-    require(*storage != NULL, "storage");
-    fd = connect_admitted(path, c->deadline);
-    require(fd >= 0, "connected fd");
-    require(!sophia_ss_open_fd(&c->s, fd, &config, *storage, bytes), "session open");
+    c->wire_storage = malloc(wire_bytes);
+    require(*storage != NULL && c->wire_storage != NULL, "storage");
+    c->fd = connect_admitted(path, c->deadline);
+    require(c->fd >= 0, "connected fd");
+    /* Sealed images are granted only on an attach through an afid. */
+    require(!sophia_9p_init(&c->wire, c->fd, MSIZE, 8, 32, c->wire_storage, wire_bytes),
+            "9P init");
+    require(!sophia_9p_version(&c->wire, &request), "version");
+    wire_reply(c, request, 101);
+    require(!sophia_9p_auth(&c->wire, "", "", &request, &afid), "auth");
+    wire_reply(c, request, 103);
+    require(!sophia_9p_attach_with_afid(&c->wire, afid, "", "", &request, &root), "attach");
+    wire_reply(c, request, 105);
+    require(!sophia_9p_clunk(&c->wire, afid, &request), "afid clunk");
+    wire_reply(c, request, 121);
+    require(!sophia_ss_open_attached(&c->s, &c->wire, root, &config, *storage, bytes),
+            "session open");
+    /* The image endpoint lives beside the 9P socket. */
+    require(strlen(path) < sizeof(directory), "socket path");
+    strcpy(directory, path);
+    slash = strrchr(directory, '/');
+    require(slash != NULL, "socket directory");
+    slash[slash == directory ? 1 : 0] = 0;
+    c->image_dir = open(directory, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    require(c->image_dir >= 0, "image directory");
+    image.endpoint_dir = c->image_dir;
+    image.formats = c->formats;
+    image.formats_capacity = sizeof(c->formats);
+    image.producer.bounds.max_resource_bytes = 4194304;
+    image.producer.bounds.max_width = image.producer.bounds.max_height = 8192;
+    image.producer.bounds.max_outputs = 16;
+    image.producer.bounds.transfer_slots = 4;
+    image.producer.transfer_timeout_ms = 5000;
+    image.producer.startup_deadline_ms = c->deadline;
+    require(!sophia_ss_image_init(&c->image, &image), "image init");
+    require(!sophia_ss_image_attach(&c->s, &c->image), "image attach");
     while (!(c->epoch && c->have_output))
         pump(c);
+}
+
+static void close_scenario(struct scenario *c)
+{
+    sophia_ss_close(&c->s);
+    sophia_ip_close(&c->image.producer);
+    close(c->image_dir);
+    sophia_9p_close(&c->wire);
+    close(c->fd);
+    free(c->wire_storage);
 }
 
 static void request_panel(struct scenario *c)
@@ -315,25 +408,6 @@ static void request_panel(struct scenario *c)
     a->desired_height -= 1;
 #endif
     submit(c, &record);
-}
-
-static int upload(struct scenario *c)
-{
-    struct sophia_sf_resource_begin begin;
-    int r;
-    memset(&begin, 0, sizeof(begin));
-    begin.transaction = 1;
-    grant_fields(c, &begin.grant_connection_epoch, &begin.grant_content_epoch);
-    begin.resource_id = begin.resource_generation = 1;
-    begin.width_px = c->pixel_width;
-    begin.height_px = c->pixel_height;
-    begin.rendered_scale_numerator = begin.rendered_scale_denominator = 1;
-    begin.pixel_format = 1;
-    begin.chunk_count = 1;
-    begin.total_bytes = c->pixel_bytes;
-    r = sophia_ss_upload_begin(&c->s, begin, &c->ticket);
-    require(!r || r == SOPHIA_9P_BUSY, "upload begin");
-    return !r;
 }
 
 static void demand(struct scenario *c)
@@ -423,25 +497,52 @@ static void retire(struct scenario *c)
     submit(c, &record);
 }
 
-/* Stages shared by both scenarios, through the accepted resource. */
+/* Stages shared by both scenarios, through the accepted resource: one sealed
+ * memfd offer, accepted, and settled by the owner's retained release. */
 static void upload_resource(struct scenario *c)
 {
-    while (!upload(c))
-        pump(c);
-    while (!(c->admitted && custodied(c, c->ticket) && sophia_ss_upload_ready(&c->s)))
-        pump(c);
-    require(!sophia_ss_upload_chunk(&c->s, c->pixels, c->pixel_bytes), "upload chunk");
-    while (!sophia_ss_upload_ready(&c->s))
-        pump(c);
+    struct sophia_ic_metadata metadata;
+    struct sophia_ip_offer_info info;
+    uint64_t offer, ticket;
+    void *pixels;
+    size_t bytes;
+    int source, r;
+    require(!sophia_ip_isb_create(c->pixel_width, c->pixel_height, &source, &pixels, &bytes),
+            "sealed source");
+    require(bytes == c->pixel_bytes, "sealed source size");
+    memcpy(pixels, c->pixels, bytes);
+    require(!sophia_ip_isb_finish(source, pixels, bytes), "seal source");
+    memset(&metadata, 0, sizeof(metadata));
+    metadata.resource_id = metadata.resource_generation = 1;
+    metadata.admission_epoch = c->content_epoch;
+    metadata.output = c->output_id;
+    metadata.allocation = c->allocation_id;
+    metadata.topology_generation = c->facts_generation;
+    metadata.source_kind = metadata.source_format = 1;
+    metadata.width = c->pixel_width;
+    metadata.height = c->pixel_height;
+    metadata.stride = c->pixel_width * 4u;
+    metadata.plane_count = metadata.descriptor_count = 1;
+    metadata.logical_bytes = bytes;
+    /* AGAIN until ChannelReady; BUSY while the session queue is full. */
     for (;;) {
-        int r = sophia_ss_upload_end(&c->s, 2, &c->ticket);
-        require(!r || r == SOPHIA_9P_BUSY, "upload end");
-        if (!r)
+        r = sophia_ss_image_begin(&c->image, &metadata, source, now_ms(), &offer, &ticket);
+        if (r != SOPHIA_IPR_BUSY && r != SOPHIA_IPR_AGAIN)
             break;
         pump(c);
     }
-    while (!(c->accepted && custodied(c, c->ticket) && !sophia_ss_upload_pending(&c->s)))
+    require(!r, "image begin");
+    c->ticket = ticket;
+    for (;;) {
         pump(c);
+        require(!sophia_ip_offer(&c->image.producer, offer, &info), "image offer");
+        if (c->accepted && info.state == SOPHIA_IPO_SETTLED)
+            break;
+    }
+    require(info.status == SOPHIA_IPS_ACCEPTED && info.disposition == 1,
+            "image was not accepted and retained");
+    require(custodied(c, c->ticket), "image begin custody");
+    require(!sophia_ip_forget(&c->image.producer, offer), "image forget");
 }
 
 static void publish_resource(struct scenario *c)
@@ -490,13 +591,13 @@ static int content_proof(const char *path)
     require(c.outcome_kind == 3 && c.outcome_reason == 9,
             "expected exact renderer failure, not simulated presentation");
 #if PEER_MUTATION == 3
-    sophia_ss_close(&c.s);
+    close_scenario(&c);
     return 0;
 #endif
     retire(&c);
     while (!c.released)
         pump(&c);
-    sophia_ss_close(&c.s);
+    close_scenario(&c);
     free(storage);
     puts("c_content_files schema=1 status=complete wire=9p2000.L protected_socket=true "
          "native_presentation=false");
@@ -540,7 +641,7 @@ static int content_serve(void)
         render(&c);
 #if PEER_MUTATION == 3
         /* Red control: disconnect after the first outcome. */
-        sophia_ss_close(&c.s);
+        close_scenario(&c);
         return 0;
 #endif
         if (c.outcome_kind == 1) {
@@ -563,7 +664,7 @@ static int content_serve(void)
     retire(&c);
     while (!custodied(&c, c.ticket))
         pump(&c);
-    sophia_ss_close(&c.s);
+    close_scenario(&c);
     free(raster);
     free(storage);
     printf("c_content_serve schema=1 status=complete wire=9p2000.L presented=%u "
@@ -692,7 +793,7 @@ static void action(struct scenario *c, uint64_t epoch, uint16_t kind)
             "action target changed");
 #if PEER_MUTATION == 6
     if (kind == 2) {
-        sophia_ss_close(&c->s);
+        close_scenario(c);
         exit(0);
     }
 #endif
@@ -781,14 +882,14 @@ static int content_lifecycle(const char *path)
     (void)presented(&c);
     invalidated(&c, c.allocation_id, c.allocation_generation);
 #if PEER_MUTATION == 7
-    sophia_ss_close(&c.s);
+    close_scenario(&c);
     return 0;
 #endif
     retire(&c);
     while (!c.released)
         pump(&c);
     require(!c.queue_count, "unconsumed lifecycle events");
-    sophia_ss_close(&c.s);
+    close_scenario(&c);
     free(storage);
     puts("c_content_lifecycle schema=1 status=complete wire=9p2000.L candidates=4 action=1 "
          "dismissal=1 parent_loss=1 released=true native_presentation=false");
@@ -800,6 +901,7 @@ static int content_lifecycle(const char *path)
 #define TYPE_RLERROR 7u
 #define TYPE_RREAD 117u
 #define TYPE_RWRITE 119u
+#define E_NOENT 2u
 #define E_INVAL 22u
 #define E_STALE 116u
 #define E_ALREADY 114u
@@ -1052,15 +1154,14 @@ static int content_malformed(const char *path)
     static struct raw r;
     static const char *const api[] = {"api"}, *const events[] = {"events"},
                              *const submit[] = {"submit"}, *const ack[] = {"ack"},
-                             *const limits[] = {"limits"}, *const slot[] = {"upload", "0"};
-    static const uint8_t pixels[8] = {0, 0, 255, 255, 0, 128, 0, 128};
+                             *const limits[] = {"limits"}, *const upload[] = {"upload"};
     uint8_t record[160], big[256], s[24];
     const uint8_t *e;
     const char *field;
     struct sophia_9p_handle h;
     size_t storage_bytes = sophia_9p_storage_bytes(16384, 4);
     void *storage = malloc(storage_bytes);
-    uint32_t upload;
+    uint32_t afid, fid;
     int fd;
     require(storage != NULL, "storage");
     r.deadline = now_ms() + DEADLINE_MS;
@@ -1068,9 +1169,13 @@ static int content_malformed(const char *path)
     require(!sophia_9p_init(&r.c, fd, 16384, 4, 16, storage, storage_bytes), "9P init");
     require(!sophia_9p_version(&r.c, &h), "version");
     raw_wait(&r, h);
-    require(!sophia_9p_attach(&r.c, "", "", &h, &r.root), "attach");
+    require(!sophia_9p_auth(&r.c, "", "", &h, &afid), "auth");
+    raw_wait(&r, h);
+    require(r.type != TYPE_RLERROR, "auth refused");
+    require(!sophia_9p_attach_with_afid(&r.c, afid, "", "", &h, &r.root), "attach");
     raw_wait(&r, h);
     require(r.type != TYPE_RLERROR, "attach refused");
+    raw_clunk(&r, afid);
     r.api = raw_open(&r, api, 1, 0);
     raw_read(&r, r.api, 0, 512);
     r.data[r.count < sizeof(r.data) ? r.count : sizeof(r.data) - 1] = 0;
@@ -1082,14 +1187,14 @@ static int content_malformed(const char *path)
     r.submit = raw_open(&r, submit, 1, 1);
     r.ack = raw_open(&r, ack, 1, 1);
 
-    /* Negotiate: bar content without discrete input. */
+    /* Negotiate r9: bar content with sealed images, without discrete input. */
     header(record, 48, 256, r.epoch, ++r.submission);
-    put(record + 32, 5, 2);
-    put(record + 34, 6, 2);
-    put(record + 40, CAP_DESCRIPTOR_SWITCHER | CAP_CONTENT_SURFACE, 8);
+    put(record + 32, SHELL_REVISION, 2);
+    put(record + 34, SHELL_REVISION, 2);
+    put(record + 40, CAP_DESCRIPTOR_SWITCHER | CAP_CONTENT_SURFACE | CAP_SEALED_IMAGES, 8);
     raw_accepted(&r, record, 48);
     e = raw_event(&r, 16);
-    require(get(e, 2) == 6 && get(e + 4, 8) == r.epoch && get(e + 26, 2) == 1,
+    require(get(e, 2) == SHELL_REVISION && get(e + 4, 8) == r.epoch && get(e + 26, 2) == 1,
             "negotiated profile");
     r.limits = raw_open(&r, limits, 1, 0);
     raw_read(&r, r.limits, 0, 4096);
@@ -1139,6 +1244,15 @@ static int content_malformed(const char *path)
     expect(raw_submit(&r, record, 160), E_INVAL, "allocation_operation_out_of_range");
     allocation_request(record, &r, 1);
     expect(raw_submit(&r, record, 160), E_ALREADY, "replayed_submission_id");
+    /* Byte uploads are retired: no upload directory exists, and ResourceBegin
+     * and ResourceEnd are refused before custody. */
+    require(!sophia_9p_walk(&r.c, r.root, upload, 1, &h, &fid), "upload walk request");
+    raw_wait(&r, h);
+    expect(r.type == TYPE_RLERROR ? r.error : 0, E_NOENT, "upload_directory_absent");
+    resource_record(big, &r, 258, 112, 10);
+    expect(raw_submit(&r, big, 112), E_INVAL, "resource_begin_retired");
+    resource_record(big, &r, 259, 88, 10);
+    expect(raw_submit(&r, big, 88), E_INVAL, "resource_end_retired");
 
     /* The same attach still accepts independently encoded valid records. */
     allocation_request(record, &r, 10);
@@ -1149,33 +1263,9 @@ static int content_malformed(const char *path)
             "allocation was not granted exactly");
     raw_ack(&r);
 
-    resource_record(big, &r, 258, 112, 11);
-    raw_accepted(&r, big, 112);
-    e = raw_event(&r, 33);
-    require(get(e + 24, 8) == 1 && get(e + 40, 2) == 1, "resource not admitted");
-    raw_ack(&r);
-    upload = raw_open(&r, slot, 2, 1);
-    expect(raw_write(&r, upload, 4, pixels + 4, 4), E_INVAL, "upload_gap");
-    memcpy(big, pixels, 8);
-    memset(big + 8, 0, 4);
-    expect(raw_write(&r, upload, 0, big, 12), E_INVAL, "upload_past_declared_length");
-    require(!raw_write(&r, upload, 0, pixels, 8), "canonical upload");
-    resource_record(big, &r, 259, 88, 12);
-    raw_accepted(&r, big, 88);
-    e = raw_event(&r, 33);
-    require(get(e + 24, 8) == 1 && get(e + 40, 2) == 2 && get(e + 48, 8) == 8,
-            "resource not accepted");
-    raw_ack(&r);
-    raw_clunk(&r, upload);
-
-    resource_record(big, &r, 261, 72, 13);
-    raw_accepted(&r, big, 72);
-    e = raw_event(&r, 34);
-    require(get(e + 24, 8) == 1 && !get(e + 40, 2), "resource release");
-    raw_ack(&r);
     close(fd);
     free(storage);
-    puts("c_content_files_controls schema=1 status=complete wire=9p2000.L refused=15 "
+    puts("c_content_files_controls schema=1 status=complete wire=9p2000.L refused=16 "
          "accepted_after_refusal=true");
     return 0;
 }

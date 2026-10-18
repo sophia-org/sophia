@@ -1,5 +1,7 @@
 //! Supplied admission and paused client I/O, not process scheduling or timing.
-use super::{Client, WAIT};
+//! File peers offer sealed images on their own authenticated channels; IPC
+//! peers upload bytes.
+use super::{Client, WAIT, image, image_metadata, sealed_comparable};
 use sophia_protocol::*;
 use sophia_runtime::*;
 use std::sync::mpsc;
@@ -20,6 +22,7 @@ fn limits(epoch: u64, first: bool) -> ContentLimits {
 
 struct Peer {
     host: ShellComponentTransport,
+    images: Option<ShellIsbImageOwner>,
     limits: ContentLimits,
     commands: mpsc::Sender<Option<(u64, u8)>>,
     replies: mpsc::Receiver<Vec<ShellContentRecord>>,
@@ -46,21 +49,34 @@ impl Peer {
             roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
         })
         .unwrap();
+        let images = files.then(|| image::configure(&mut host, &limits));
         host.reserve_content(registry, limits.clone()).unwrap();
         let socket = host.socket_path().to_owned();
         let expected = limits.clone();
+        let endpoint = directory.clone();
         let (commands, requests) = mpsc::channel::<Option<(u64, u8)>>();
         let (responses, replies) = mpsc::channel();
         let thread = std::thread::spawn(move || {
             let mut client = Client::connect(&socket, files);
             let first = client.receive();
             assert_eq!(first, ShellContentRecord::Limits(expected.clone()));
+            client.enable_image(&endpoint, &expected);
             responses.send(vec![first]).unwrap();
             // No I/O occurs between commands, including SDK polling. A peer
             // with no pending command is a deliberately stopped reader.
             while let Some((id, color)) = requests.recv_timeout(WAIT).unwrap() {
                 let grant = expected.grant;
                 let resource = ContentResourceId { id, generation: 1 };
+                if files {
+                    let status = client.offer_image(
+                        image_metadata(grant, resource, (1, 1), (1, 1, 1)),
+                        &[color, 0, 0, 255],
+                    );
+                    assert!(matches!(&status, ShellContentRecord::ResourceStatus(s)
+                        if s.grant == grant && s.resource == resource && s.status == 2));
+                    responses.send(vec![status]).unwrap();
+                    continue;
+                }
                 client.send(
                     id,
                     &ShellContentRecord::ResourceBegin(ContentResourceBegin {
@@ -116,6 +132,9 @@ impl Peer {
             assert!(start.elapsed() < WAIT);
             std::thread::yield_now();
         }
+        if files {
+            image::supply_allocation(registry, limits.grant);
+        }
         loop {
             host.service_owner_turn(registry).unwrap();
             if let Ok(records) = replies.try_recv() {
@@ -127,6 +146,7 @@ impl Peer {
         }
         Self {
             host,
+            images,
             limits,
             commands,
             replies,
@@ -171,6 +191,11 @@ fn uploads(
         for peer in peers.iter_mut().filter(|p| p.thread.is_some()) {
             peer.host.service_owner_turn(registry).unwrap();
             peer.host.service_content_resources(registry, 0).unwrap();
+            if let Some(images) = peer.images.as_mut() {
+                images
+                    .service(&mut peer.host, registry, 0, Instant::now())
+                    .unwrap();
+            }
             let accounting = peer.host.content_accounting(registry);
             assert!(accounting.response_records <= peer.limits.max_control_records as usize);
             assert!(accounting.response_bytes <= peer.limits.max_output_queue_bytes as usize);
@@ -222,7 +247,10 @@ fn roundtrip(files: bool) -> Vec<ShellContentRecord> {
     );
 
     let mut saturated_at = None;
-    for generation in 1..=10000 {
+    // File peers' supplied image allocation already published generation 1
+    // of a 200x100 output; republishing that geometry keeps its allocation.
+    let (first, width, height) = if files { (2, 200, 100) } else { (1, 64, 64) };
+    for generation in first..first + 10000 {
         let result = peers[2].host.publish_content_output_facts(
             &mut registry,
             TransactionId::from_raw(generation),
@@ -232,8 +260,8 @@ fn roundtrip(files: bool) -> Vec<ShellContentRecord> {
                     id: 1,
                     generation: 1,
                 },
-                local_width: 64,
-                local_height: 64,
+                local_width: width,
+                local_height: height,
                 scale_numerator: 1,
                 scale_denominator: 1,
                 scale_generation: 1,
@@ -299,5 +327,5 @@ fn roundtrip(files: bool) -> Vec<ShellContentRecord> {
 
 #[test]
 fn stopped_reader_and_replacement_preserve_two_neighbors_on_both_wires() {
-    assert_eq!(roundtrip(true), roundtrip(false));
+    assert_eq!(roundtrip(true), sealed_comparable(roundtrip(false)));
 }

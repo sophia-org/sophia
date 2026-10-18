@@ -29,10 +29,8 @@ use crate::custody::Custody;
 use crate::outbox::ClientOutbox;
 
 impl FileWire {
-    /// Begins the next queued unit once nothing else is in flight. A queued
-    /// slot write whose resource is not yet open stays at the front,
-    /// blocking later units too (submissions are sequential per attach, and
-    /// upload order matters for the same resource).
+    /// Begins the next queued record once nothing else is in flight.
+    /// Submissions remain sequential per attach.
     pub(super) fn start_next_outbound(
         &mut self,
         output: &mut ClientOutbox,
@@ -43,16 +41,6 @@ impl FileWire {
         let Some(kind) = self.pending.front().copied() else {
             return Ok(false);
         };
-        if let QueuedKind::SlotWrite { resource, .. } = kind
-            && super::open_fid_for(&self.uploads, resource).is_none()
-            && self
-                .uploads
-                .iter()
-                .flatten()
-                .any(|upload| upload.resource == resource)
-        {
-            return Ok(false);
-        }
         // A record needs the `transaction` node, which the export keeps busy
         // until the previous submission's `Submitted` is acknowledged. The
         // export serves a connection's requests in order, so the covering
@@ -107,9 +95,6 @@ impl FileWire {
                     accepted: false,
                 }
             }
-            QueuedKind::SlotWrite { resource, offset } => Current::SlotWrite(
-                super::uploads::Window::new(resource, offset, output.take_front_bytes(), ticket),
-            ),
         };
         self.current = Some(current);
         self.pending.pop_front();
@@ -122,13 +107,6 @@ impl FileWire {
     pub(super) fn settle_current(&mut self, custody: Custody) {
         let ticket = match self.current.take() {
             Some(Current::Submission { ticket, .. }) => ticket,
-            Some(Current::SlotWrite(window)) => {
-                for unit in window.units.into_iter().flatten() {
-                    self.custody.push((unit.ticket, custody));
-                    self.retire += 1;
-                }
-                return;
-            }
             None => return,
         };
         self.custody.push((ticket, custody));
@@ -244,7 +222,6 @@ impl FileWire {
                 phase: SubmissionPhase::RetryWait { not_before, .. },
                 ..
             }) => Some(*not_before),
-            Some(Current::SlotWrite(window)) => window.not_before.map(|(at, _)| at),
             _ => None,
         }
     }
@@ -489,27 +466,6 @@ impl FileWire {
                     Reply::Error(errno) => {
                         // A definitive refusal: nothing was journaled.
                         let errno = errno.0;
-                        if let Some(Current::Submission {
-                            kind: ShellFileKind::ResourceBegin,
-                            bytes,
-                            ..
-                        }) = &self.current
-                        {
-                            let begin = sophia_shell_protocol::shell_files::decode_shell_file_resource_begin(bytes)?;
-                            if let sophia_shell_protocol::ShellContentRecord::ResourceBegin(value) =
-                                begin.record
-                            {
-                                let slot = &mut self.uploads[begin.slot as usize];
-                                // No admission event will release this local claim.
-                                // A queued payload then settles DroppedUnsent.
-                                if slot.is_some_and(|upload| {
-                                    upload.resource == value.resource
-                                        && matches!(upload.state, super::UploadState::Pending)
-                                }) {
-                                    *slot = None;
-                                }
-                            }
-                        }
                         self.forget(fid)?;
                         self.transaction_fid = None;
                         self.backoff = RETRY_FIRST;

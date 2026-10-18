@@ -13,6 +13,16 @@
 ))]
 compile_error!("ordered wire traces must not be enabled in CPU/allocation campaigns");
 
+#[cfg(all(
+    feature = "comparator-journal-trace",
+    any(
+        feature = "comparator-cpu-counting",
+        feature = "comparator-allocation-counting",
+        feature = "comparator-profiling"
+    )
+))]
+compile_error!("journal identity traces must not be enabled in CPU/allocation campaigns");
+
 pub mod authenticated_files;
 pub mod broker_files;
 #[cfg(target_os = "linux")]
@@ -116,3 +126,6 @@ pub use shell_content::*;
 
 #[cfg(feature = "comparator-counters")]
 pub mod comparator_counters;
+#[cfg(all(test, target_os = "linux"))]
+#[path = "../tests/support/content_isb.rs"]
+mod test_content_isb;

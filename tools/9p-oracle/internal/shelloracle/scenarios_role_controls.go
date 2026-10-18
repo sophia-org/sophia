@@ -8,9 +8,9 @@ import (
 func (r *runner) roleFatal(name string, native bool) {
 	s := r.connect(name, 4096)
 	defer s.close()
-	revision, mask, kind := uint16(8), uint64(0x11a2), uint16(270)
+	revision, mask, kind := uint16(9), uint64(0x31a2), uint16(270)
 	if native {
-		revision, mask, kind = 7, 0x9a0, 267
+		revision, mask, kind = 9, 0x29a0, 267
 	}
 	roleNegotiate(s, revision, mask, mask)
 	s.phase("publish")
@@ -20,7 +20,7 @@ func (r *runner) roleFatal(name string, native bool) {
 		s.ack(s.expect(38))
 	}
 	roleAllocation(s, native)
-	smallResource(s)
+	smallResource(s, 3)
 	s.phase("hold-candidates")
 	id := s.submit(kind, roleCandidate(native, 999, 1, 3, 1))
 	s.ack(s.custody(id, kind))

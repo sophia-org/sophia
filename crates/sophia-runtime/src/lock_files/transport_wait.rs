@@ -30,8 +30,7 @@ impl LockFileTransport {
                     .and_then(|export| export.custody().image_deadline()),
             )
             .chain(
-                (self.sealed_leases_pending() != 0)
-                    .then(|| now + crate::lock_files::SEALED_LEASE_POLL),
+                (self.isb_leases_pending() != 0).then(|| now + crate::lock_files::ISB_LEASE_POLL),
             )
             .min();
         let mut fds = vec![PollFd::new(wake, PollFlags::IN)];

@@ -30,10 +30,10 @@ $(BUILD)/src/%.o: src/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
 
-$(BUILD)/libsophia-9p.a: $(call objects,$(NINE_P))
-	$(AR) rcs $@ $^
-$(BUILD)/libsophia-desktop.a: $(call objects,$(FILES) $(ADMIN_FILES) $(PORTAL_FILES) $(BROKER_FILES))
-	$(AR) rcs $@ $^
+$(BUILD)/libsophia-9p.a: $(call objects,$(NINE_P)) GNUmakefile
+	archive_dir=$$(mktemp -d "$(@D)/archive.XXXXXX") && $(AR) rcs "$$archive_dir/library.a" $(filter %.o,$^) && mv "$$archive_dir/library.a" "$@" && rmdir "$$archive_dir"
+$(BUILD)/libsophia-desktop.a: $(call objects,$(FILES) $(ADMIN_FILES) $(PORTAL_FILES) $(BROKER_FILES)) GNUmakefile
+	archive_dir=$$(mktemp -d "$(@D)/archive.XXXXXX") && $(AR) rcs "$$archive_dir/library.a" $(filter %.o,$^) && mv "$$archive_dir/library.a" "$@" && rmdir "$$archive_dir"
 $(BUILD)/%.pc: pkgconfig/%.pc.in GNUmakefile
 	@mkdir -p $(@D)
 	sed -e 's|@PREFIX@|$(PREFIX)|g' -e 's|@LIBDIR@|$(LIBDIR)|g' -e 's|@INCLUDEDIR@|$(INCLUDEDIR)|g' -e 's|@VERSION@|$(VERSION)|g' $< > $@
@@ -43,8 +43,9 @@ FILE_TESTS += namespace_test
 FILE_TESTS += image_channel_codec_test
 FILE_TESTS += image_receipt_test
 FILE_TESTS += image_producer_test
+FILE_TESTS += isb_mapped_test
 FILE_TESTS += shell_image_test
-FILE_TESTS += shell_upload_window_test
+FILE_TESTS += shell_byte_refusal_test
 FILE_TESTS += descriptor_draft_codec_test
 FILE_TESTS += broker_discovery_test
 FILE_TESTS += broker_events_test

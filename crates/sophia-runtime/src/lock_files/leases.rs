@@ -1,5 +1,5 @@
-//! Sealed images that left the lock's resources while something may still
-//! read them. A retired sealed image keeps its live place and its backing
+//! ISB images that left the lock's resources while something may still
+//! read them. A retired ISB image keeps its live place and its backing
 //! bytes against the epoch's budgets until every `SharedPixels` clone of it
 //! has gone (Session's lock frames, a candidate, an undelivered event);
 //! only then is its `ResourceReleased` journalled, with the credit its
@@ -8,7 +8,7 @@
 //! budgets until released. An entry only moves between these states; none
 //! is added outside a live place, so the total stays within the
 //! live-resource limit. Nothing here waits: owners poll at
-//! [`SEALED_LEASE_POLL`] while any entry is held.
+//! [`ISB_LEASE_POLL`] while any entry is held.
 use std::time::Duration;
 
 use sophia_9p::Errno;
@@ -17,16 +17,16 @@ use sophia_protocol::lock_files::*;
 use super::{LockFileCustody, reason};
 use crate::{SharedPixels, SharedPixelsWatch};
 
-/// How often an owner checks held sealed leases for release.
-pub const SEALED_LEASE_POLL: Duration = Duration::from_millis(50);
+/// How often an owner checks held ISB leases for release.
+pub const ISB_LEASE_POLL: Duration = Duration::from_millis(50);
 
-/// The charge of one sealed backing until its last clone goes.
-pub(super) struct SealedLease {
+/// The charge of one ISB backing until its last clone goes.
+pub(super) struct IsbLease {
     bytes: u64,
     watch: SharedPixelsWatch,
 }
 
-impl SealedLease {
+impl IsbLease {
     pub(super) fn new(pixels: &SharedPixels) -> Self {
         Self {
             bytes: pixels.len() as u64,
@@ -35,21 +35,21 @@ impl SealedLease {
     }
 }
 
-/// A retired sealed image whose `ResourceReleased` waits on its lease.
+/// A retired ISB image whose `ResourceReleased` waits on its lease.
 struct Retiring {
     transaction: u64,
     resource: LockResourceId,
-    lease: SealedLease,
+    lease: IsbLease,
 }
 
 #[derive(Default)]
-pub(super) struct SealedLeases {
+pub(super) struct IsbLeases {
     retiring: Vec<Retiring>,
     /// Inherited from earlier epochs; released silently.
-    orphans: Vec<SealedLease>,
+    orphans: Vec<IsbLease>,
 }
 
-impl SealedLeases {
+impl IsbLeases {
     pub(super) fn len(&self) -> usize {
         self.retiring.len() + self.orphans.len()
     }
@@ -80,7 +80,7 @@ impl SealedLeases {
         resource: LockResourceId,
         pixels: SharedPixels,
     ) {
-        let lease = SealedLease::new(&pixels);
+        let lease = IsbLease::new(&pixels);
         drop(pixels);
         self.retiring.push(Retiring {
             transaction,
@@ -106,7 +106,7 @@ impl SealedLeases {
     }
 
     /// Every lease, retiring ones turned orphan.
-    pub(super) fn take(&mut self) -> Vec<SealedLease> {
+    pub(super) fn take(&mut self) -> Vec<IsbLease> {
         let mut leases: Vec<_> = self
             .retiring
             .drain(..)
@@ -120,7 +120,7 @@ impl SealedLeases {
 /// Orphan leases held between connections. Each came from a live place of
 /// an ended epoch, so their number stays within the live-resource limit.
 #[derive(Default)]
-pub(super) struct OrphanLeases(Vec<SealedLease>);
+pub(super) struct OrphanLeases(Vec<IsbLease>);
 
 impl OrphanLeases {
     pub(super) fn len(&self) -> usize {
@@ -133,10 +133,10 @@ impl OrphanLeases {
         !self.0.is_empty()
     }
 
-    /// Takes the ending epoch's leases: its live sealed images, retiring
+    /// Takes the ending epoch's leases: its live ISB images, retiring
     /// images and inherited orphans.
     pub(super) fn adopt(&mut self, custody: &mut LockFileCustody) {
-        self.0.extend(custody.resources.take_sealed_leases());
+        self.0.extend(custody.resources.take_isb_leases());
         self.poll();
     }
 
@@ -148,11 +148,11 @@ impl OrphanLeases {
 }
 
 impl LockFileCustody {
-    /// Journals `ResourceReleased` for retired sealed images whose last
+    /// Journals `ResourceReleased` for retired ISB images whose last
     /// clone has gone, spending the credits their retirement held, and
     /// drops released orphans. Owners call this every turn and on ACK. On
     /// `EAGAIN` the releases wait for journal room.
-    pub fn collect_sealed_leases(&mut self) -> Result<bool, Errno> {
+    pub fn collect_isb_leases(&mut self) -> Result<bool, Errno> {
         let released = self.resources.leases.released();
         if released.is_empty() || self.live().is_err() {
             return Ok(false);
@@ -177,8 +177,8 @@ impl LockFileCustody {
         Ok(true)
     }
 
-    /// Sealed images retiring or inherited, still charged to this epoch.
-    pub fn sealed_leases_pending(&self) -> usize {
+    /// ISB images retiring or inherited, still charged to this epoch.
+    pub fn isb_leases_pending(&self) -> usize {
         self.resources.leases.len()
     }
 }

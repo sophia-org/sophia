@@ -1,4 +1,4 @@
-//! Clockless sealed-image producer for one Sophia image channel.
+//! Clockless ISB (Immutable Shared Buffers) image producer for one Sophia image channel.
 //!
 //! The producer serves one role connection: it consumes one discovery
 //! set, owns the SEQPACKET side socket after attach, sends `Hello`,
@@ -17,14 +17,15 @@
 //! at `begin` even when granted; this crate is the sealed CPU plane.
 
 mod io;
+mod isb;
 mod offers;
 mod producer;
 mod role;
-mod sealed;
 
 pub use io::connect;
+pub use isb::{IsbSource, create_isb, create_mapped_isb, finish_isb};
 pub use producer::ImageProducer;
-pub use sealed::{SealedSource, create_sealed, finish_sealed};
+pub use sophia_isb::{IsbError, MappedIsb};
 
 /// The role this producer speaks on its channel.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,8 +62,8 @@ pub enum ChannelState {
     Closed,
 }
 
-/// Why the channel closed. Absent, Unavailable and Exhausted are
-/// clean: the byte path may serve images if the caller allows it.
+/// Why the channel closed. Every closure ends image admission for this epoch;
+/// recovery needs a new authenticated connection, never a byte fallback.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CloseCause {
     None,
@@ -100,7 +101,6 @@ pub enum OfferState {
 pub enum ImagePath {
     Descriptor,
     Wait,
-    Bytes,
     Error,
 }
 
@@ -136,8 +136,6 @@ pub struct ImageProducerConfig {
     pub transfer_timeout_ms: u32,
     /// Absolute monotonic deadline: discovery through `ChannelReady`.
     pub startup_deadline_ms: u64,
-    /// Caller policy: may a clean closure fall back to byte upload?
-    pub fallback_bytes: bool,
 }
 
 /// The role's own bounds from its negotiated limits, caller-supplied.

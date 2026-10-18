@@ -1,5 +1,9 @@
 #![cfg(feature = "libdrm-events")]
 
+use sophia_runtime::{ContentResourceStore, IsbPixelValidation, ValidatedIsbPixels};
+#[path = "../../sophia-runtime/tests/support/content_isb.rs"]
+mod isb;
+
 use std::{
     io,
     os::fd::{BorrowedFd, OwnedFd},

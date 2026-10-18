@@ -15,6 +15,96 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+t331 is implementing the October 18 Immutable Shared Buffer migration.
+t338 is closed; its [delivery resumption](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#current-resumption)
+owns that result. The [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#immutable-shared-buffers--october-18)
+requires production CPU images to use sealed sources without byte fallback.
+
+The ISB-only SDK revisions are signed and published: Rust
+`fbde253ef297e282357080600a560f1824cd6b50`, C
+`14c8fce5d0d75d21b43ee6eb7a01232c0abd1399`. Both remove shell/lock byte
+writers and public upload helpers, refusing retired candidates before spending
+submission identities. Passive codecs remain for negative controls. Native
+launchers adopt settled Accepted/Retained offers atomically; failed adoption
+preserves custody, and late matching Accepted cannot resurrect retirement.
+Admission uses the content grant epoch, not the connection epoch. Rust's owning
+session exposes image setup, submission, cancellation and adoption. C consumers
+must rebuild against changed public layouts. Both snapshots are imported and
+verified in the uncommitted Sophia worktree.
+
+The already published client migrations remain Provlita
+`be198914684362fac2a39c454aa8f657664803b3`, Lom
+`dcac836e72e75467bbd7fd8e4543e71d03a0a84b`, Bemenu
+`7abb08cbdf2752dc9a3ad6b8f6b8cd754b5b2656` and Kleis
+`919bc9f9a70838abd4b3bff04c402ec807679db0`. These use the preceding ISB SDK
+pins; compatibility with the new removal pins still needs their external gates.
+Finished Bemenu/Kleis migration worktrees were removed.
+
+Sophia removal work is on `performance/t331-isb-only`, based on
+`001265f6d8a4e49eccb959c451e77b28cf0d3205`. Exports no longer expose upload
+slots and refuse byte Begin/End before custody. Resource stores retain sealed
+mappings and leases only. Stopped validation retains its charge until completion;
+retirement retains backing until ResourceReleased enters the journal. Store,
+reconnect, native and composition fixtures use real sealed mappings.
+
+Evidence is under
+`~/.local/state/sophia/development-evidence/isb-client-migration-20261018/`.
+The pinned runtime all-target run passes (`isb-only-runtime-pinned-08.log`);
+workspace compilation passes (`isb-only-workspace-check-04.log`). Both SDK
+workspace/full checks, Rust strict Clippy and formatting pass. Independent C/Rust
+lock peers pass sealed submission, presentation and unlock; protected-launch
+peers each pass three revocation/replacement cases. C launcher/dock and native
+adoption export gates pass. Engine/renderer composition tests pass. Claude's
+independent Go oracle passes 96 checks, including ten replacement image/refusal
+controls, with Go tests/vet and scoped strict Clippy clean
+(`claude-oracle-test-04.log`, `claude-oracle-go-tests-01.log`).
+
+Integration now includes the shared C peer and all three hosts. Conformance
+passes 4/4 and backend receipt/mutant controls 3/3. Session component accounting
+passes 10/10 with actual bar/native allocations and sealed images. The GPU proof
+loop passes 15 controls and its CLI passes six. Production proof launch now uses
+Factotum/Startup and requires absolute agent and PAM-helper paths; only the
+declared authentication relay is permitted among inherited sockets. Test hosts
+supply afid verdicts explicitly and do not claim real launch acceptance.
+The new proof-specific Factotum/Startup-to-client path has been reviewed but
+not run against a real GPU launch; generic launch tests do not substitute for it.
+
+The migration exposed an admission race: ChannelReady could precede the image
+owner's admission opt-in. Ready-but-not-enabled now returns EAGAIN before
+custody, preserving offer/submission identities for retry. The deterministic
+channel test covers retry and closed-channel refusal. QEMU's lock stand-in now
+uses authenticated sealed-image churn with a live allocation; compilation and
+14 tool controls are not renewed QEMU timing evidence. Strict Clippy passes for
+runtime, backend, conformance, Session and CLI with native-session/test-support;
+formatting and both snapshot manifests pass. The full native workspace run
+exposed stale reconnect fixtures and ambient configuration dependencies. A
+private-config rerun cleared the latter; reconnect fixtures now pass all ten
+controls using real allocations and sealed uploads. The descriptor transport needed a
+retained image worker: it now services completions across reconnects, forwards
+worker readiness while paused, and drains custody before final shutdown.
+Runtime all-target tests pass (`isb-only-descriptor-runtime-tests.log`). Native
+Session reruns pass 1,055 library tests, 27 launch-authentication tests and 14
+component-connection tests (`isb-only-session-private-02.log`); strict Clippy is
+clean (`isb-only-final-clippy-11.log`, including native-session/test-support;
+`isb-only-session-default-clippy-03.log` for default Session features). The final
+Session run also passes all seven process-owner integration controls
+(`isb-only-session-final.log`). Both protected process-custody and launcher
+evidence controls now use the real authenticated launch owner, with sealed
+images and explicit settlement before retirement (`isb-only-custody-final.log`).
+The obsolete byte-upload peer is removed. The metadata compatibility path reports
+CPU content unavailable instead of granting an unusable path. Publication identity
+and remote verification are recorded in `isb-only-publication.txt` beside the logs.
+
+Next: update external client pins and gates, then carry the production changes
+to the isolated comparator and
+rerun the matched campaign. All four +10% cost gates remain open. Per-request
+allocation attribution and journal read pairing are still required. Preserve the
+red panel result and frozen comparator `6c87721fa` (integration `4b16974`) under
+`~/.local/state/sophia/development-evidence/t331-b3-20261017/native-candidate/`.
+No installed desktop or physical acceptance claim is made.
+
+## Historical implementation checkpoint — before t338 closure
+
 t338 remains in implementation. Codex owns shell/Session integration; Claude
 owns the lock runtime lane. Muse remains quota-limited and has not started the
 Rust producer. The [delivery plan's current resumption](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#current-resumption)

@@ -1,6 +1,6 @@
 use sophia_lock_protocol::{BinaryCodecError, lock_files::*};
 
-/// Typed candidate bodies. Upload lifecycle and admission checks belong to
+/// Typed candidate bodies. Image lifecycle and admission checks belong to
 /// the developing session; constructing a value grants no resource authority.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Candidate {
@@ -76,12 +76,8 @@ impl Candidate {
                 }
                 (LockFileKind::Negotiate, offer.encode()?)
             }
-            Self::ResourceBegin(v) => (LockFileKind::ResourceBegin, v.encode()?),
-            Self::ResourceEnd(v) => {
-                if v.total_bytes.is_none() {
-                    return Err(BinaryCodecError::InvalidRecord("end_total"));
-                }
-                (LockFileKind::ResourceEnd, v.encode()?)
+            Self::ResourceBegin(_) | Self::ResourceEnd(_) => {
+                return Err(BinaryCodecError::InvalidRecord("byte_upload_retired"));
             }
             Self::ResourceCancel(v) | Self::ResourceRetire(v) => {
                 if v.total_bytes.is_some() {

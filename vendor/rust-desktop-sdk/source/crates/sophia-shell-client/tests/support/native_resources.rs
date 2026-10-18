@@ -1,63 +1,92 @@
 use super::*;
 
-#[test]
-fn refused_begins_release_upload_slots_without_a_status_event() {
-    let (mut c, mut p, mut l) = setup();
-    for n in 1..=6 {
-        let mut begin = begin();
-        begin.resource.id = n;
-        let id = begin.resource;
-        let a = c.begin_native_resource(&mut l, tx(80 + n), begin).unwrap();
-        refuse(&mut c, &mut p, a.first);
-        l.service(&c).unwrap();
-        assert_eq!(l.resource_state(id), None);
+struct ImagePeer {
+    _owner: std::os::fd::OwnedFd,
+    dir: std::path::PathBuf,
+}
+impl Drop for ImagePeer {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
-
-#[test]
-fn payload_queued_behind_a_refused_begin_does_not_stall_the_queue() {
-    let (mut c, mut p, mut l) = setup();
-    let a = c.begin_native_resource(&mut l, tx(80), begin()).unwrap();
-    let payload = c
-        .enqueue_content_tracked(
-            tx(81),
-            &ShellContentRecord::ResourceChunk(ContentResourceChunk {
-                grant: b().grant,
-                resource: resource(),
-                ordinal: 0,
-                offset: 0,
-                bytes: vec![1, 2, 3, 4],
-            }),
-        )
+fn image_ready() -> (ShellConnection, Peer, NativeLauncherLifecycle, ImagePeer) {
+    use crate::image_peer as image;
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let name = format!("native-scene-{}", NEXT.fetch_add(1, Ordering::Relaxed));
+    let (c, p, dir, listener) = image::connect_role_image(
+        &name,
+        4096,
+        Profile {
+            role: "launcher",
+            revision: 9,
+            capabilities: CAPS | image::SEALED,
+            limits_published: true,
+        },
+        false,
+    );
+    let (mut c, mut p, mut l) = setup_with((c, p));
+    let owner = image::drive_to_ready(&mut c, &mut p, &listener);
+    let mut m = image::metadata();
+    m.resource = resource().id;
+    m.admission_epoch = b().grant.content_grant_epoch;
+    c.image_begin(m, image::sealed_fd(), Instant::now())
         .unwrap();
-    let tail = c
-        .enqueue_native_input_response(tx(82), ack(), None)
-        .unwrap();
-    refuse(&mut c, &mut p, a.first);
-    drive(&mut c, &mut p, |c, _| {
-        c.custody(payload.first) == Some(Custody::DroppedUnsent)
+    image::answer_submit(&mut c, &mut p, ShellFileKind::ImageBegin);
+    let m = ShellImageMetadata::decode(&p.transactions.last().unwrap()[32..]).unwrap();
+    let event = p.event_image(ShellFileKind::ImageAdmitted, &m.encode().unwrap());
+    p.push(event);
+    image::drive(&mut c, &mut p, |c, _| {
+        c.image_adapter().unwrap().offer(m.offer_id).unwrap().state == OfferState::Sent
+    });
+    let (_, fds) = image::recv_packet(&owner);
+    assert_eq!(fds.len(), 1);
+    let body = encode_shell_file_resource_status_body(&ShellFileTransactionRecord {
+        transaction: tx(m.offer_id),
+        record: ShellContentRecord::ResourceStatus(ContentResourceStatus {
+            grant: b().grant,
+            resource: resource(),
+            status: 2,
+            reason: 0,
+            next_ordinal: 0,
+            admitted_bytes: m.declared_bytes,
+        }),
     })
     .unwrap();
-    commit(&mut c, &mut p, tail.first);
-    assert!(p.uploads.is_empty());
+    let event = p.event(ShellFileKind::ResourceStatus, &body);
+    p.push(event);
+    let body = ShellSourceReleased {
+        offer_id: m.offer_id,
+        resource: m.resource,
+        resource_generation: m.resource_generation,
+        disposition: ShellSourceDisposition::Retained,
+    }
+    .encode()
+    .unwrap();
+    let event = p.event_image(ShellFileKind::SourceReleased, &body);
+    p.push(event);
+    image::drive(&mut c, &mut p, |c, _| {
+        c.image_adapter().unwrap().offer(m.offer_id).unwrap().state == OfferState::Settled
+    });
+    assert_eq!(
+        c.adopt_native_image(&mut l, m.offer_id).unwrap(),
+        resource()
+    );
+    while let Some(value) = c.take_native_launcher_observation().unwrap() {
+        l.observe(&value).unwrap();
+    }
+    (c, p, l, ImagePeer { _owner: owner, dir })
 }
-
-fn scene_ready() -> (ShellConnection, Peer, NativeLauncherLifecycle, NativeScene) {
-    let (mut c, mut p, mut l) = setup();
+fn scene_ready() -> (
+    ShellConnection,
+    Peer,
+    NativeLauncherLifecycle,
+    NativeScene,
+    ImagePeer,
+) {
+    let (mut c, mut p, mut l, image) = image_ready();
     let a = c.allocate_native(&mut l, tx(70), params(), 900).unwrap();
     commit(&mut c, &mut p, a.first);
     apply_allocation(&mut l, 1, 1);
-    let a = c.begin_native_resource(&mut l, tx(80), begin()).unwrap();
-    commit(&mut c, &mut p, a.first);
-    status(&mut c, &mut p, &mut l, 1);
-    let a = c.upload_native_chunk(&mut l, &[1, 2, 3, 4]).unwrap();
-    drive(&mut c, &mut p, |c, _| {
-        c.custody(a.first) == Some(Custody::Stored)
-    })
-    .unwrap();
-    let a = c.end_native_resource(&mut l, tx(81)).unwrap();
-    commit(&mut c, &mut p, a.first);
-    status(&mut c, &mut p, &mut l, 2);
     let mut value = candidate().candidate;
     value.candidate.placements[0].resource = resource();
     let scene = NativeScene {
@@ -66,7 +95,7 @@ fn scene_ready() -> (ShellConnection, Peer, NativeLauncherLifecycle, NativeScene
         rows: value.rows,
         selected: value.selected,
     };
-    (c, p, l, scene)
+    (c, p, l, scene, image)
 }
 fn permit(l: &mut NativeLauncherLifecycle, id: u64, state: u16) {
     l.observe(&NativeLauncherObservation::Content(
@@ -87,7 +116,7 @@ fn permit(l: &mut NativeLauncherLifecycle, id: u64, state: u16) {
 
 #[test]
 fn local_permit_expiry_waits_for_authoritative_end() {
-    let (mut c, mut p, mut l, scene) = scene_ready();
+    let (mut c, mut p, mut l, scene, _image) = scene_ready();
     let a = c.demand_native_frame(&mut l, tx(90), 1, 1000).unwrap();
     commit(&mut c, &mut p, a.first);
     permit(&mut l, 1, 1);
@@ -111,7 +140,7 @@ fn local_permit_expiry_waits_for_authoritative_end() {
 #[test]
 fn expiry_and_candidate_refusal_work_in_either_observation_order() {
     for expiry_first in [false, true] {
-        let (mut c, mut p, mut l, scene) = scene_ready();
+        let (mut c, mut p, mut l, scene, _image) = scene_ready();
         let a = c.demand_native_frame(&mut l, tx(90), 1, 1000).unwrap();
         commit(&mut c, &mut p, a.first);
         permit(&mut l, 1, 1);
@@ -145,7 +174,7 @@ fn expiry_and_candidate_refusal_work_in_either_observation_order() {
 
 #[test]
 fn scene_uses_owned_resources_and_consumes_permit_only_on_admission() {
-    let (mut c, mut p, mut l, mut scene) = scene_ready();
+    let (mut c, mut p, mut l, mut scene, _image) = scene_ready();
     let a = c.demand_native_frame(&mut l, tx(90), 1, 1000).unwrap();
     commit(&mut c, &mut p, a.first);
     permit(&mut l, 1, 1);
@@ -254,44 +283,6 @@ fn resource() -> ContentResourceId {
         generation: 1,
     }
 }
-fn begin() -> ContentResourceBegin {
-    ContentResourceBegin {
-        grant: b().grant,
-        resource: resource(),
-        width_px: 1,
-        height_px: 1,
-        rendered_scale_numerator: 1,
-        rendered_scale_denominator: 1,
-        pixel_format: 1,
-        chunk_count: 1,
-        total_bytes: 4,
-    }
-}
-fn status(c: &mut ShellConnection, p: &mut Peer, l: &mut NativeLauncherLifecycle, state: u16) {
-    let body = encode_shell_file_resource_status_body(&ShellFileTransactionRecord {
-        transaction: tx(80),
-        record: ShellContentRecord::ResourceStatus(ContentResourceStatus {
-            grant: b().grant,
-            resource: resource(),
-            status: state,
-            reason: if state <= 2 { 0 } else { 11 },
-            next_ordinal: if state == 2 { 1 } else { 0 },
-            admitted_bytes: if state == 2 { 4 } else { 0 },
-        }),
-    })
-    .unwrap();
-    let event = p.event(ShellFileKind::ResourceStatus, &body);
-    p.push(event);
-    drive(c, p, |c, _| {
-        if let Some(v) = c.take_native_launcher_observation().unwrap() {
-            l.observe(&v).unwrap();
-            true
-        } else {
-            false
-        }
-    })
-    .unwrap();
-}
 fn refuse(c: &mut ShellConnection, p: &mut Peer, ticket: Ticket) {
     drive(c, p, |_, p| !p.submits.is_empty()).unwrap();
     let held = p.submits.pop_front().unwrap();
@@ -385,39 +376,8 @@ fn late_allocation_grant_remains_orphaned_until_invalidation() {
 }
 
 #[test]
-fn resource_upload_waits_for_stored_and_survives_close_until_release() {
-    let (mut c, mut p, mut l) = setup();
-    let a = c.begin_native_resource(&mut l, tx(80), begin()).unwrap();
-    assert_eq!(
-        l.resource_state(resource()),
-        Some(NativeResourceState::Begun)
-    );
-    assert!(c.begin_native_resource(&mut l, tx(81), begin()).is_err());
-    assert!(c.upload_native_chunk(&mut l, &[1, 2]).is_err());
-    commit(&mut c, &mut p, a.first);
-    status(&mut c, &mut p, &mut l, 1);
-    assert!(c.end_native_resource(&mut l, tx(81)).is_err());
-    // Two caller writes for one declared layout chunk; transport can split further.
-    for bytes in [&[1, 2][..], &[3, 4][..]] {
-        let a = c.upload_native_chunk(&mut l, bytes).unwrap();
-        assert!(matches!(
-            c.upload_native_chunk(&mut l, bytes),
-            Err(ShellClientError::QueueSaturated)
-        ));
-        drive(&mut c, &mut p, |c, _| {
-            c.custody(a.first) == Some(Custody::Stored)
-        })
-        .unwrap();
-        l.service(&c).unwrap();
-    }
-    assert_eq!(p.uploads.get("upload/0").unwrap(), &[1, 2, 3, 4]);
-    let a = c.end_native_resource(&mut l, tx(81)).unwrap();
-    assert_eq!(
-        l.resource_state(resource()),
-        Some(NativeResourceState::Admitted)
-    );
-    commit(&mut c, &mut p, a.first);
-    status(&mut c, &mut p, &mut l, 2);
+fn adopted_resource_survives_close_until_authoritative_release() {
+    let (mut c, mut p, mut l, _image) = image_ready();
     assert_eq!(
         l.resource_state(resource()),
         Some(NativeResourceState::Accepted)
@@ -457,59 +417,4 @@ fn resource_upload_waits_for_stored_and_survives_close_until_release() {
     ))
     .unwrap();
     assert_eq!(l.resource_state(resource()), None);
-}
-
-#[test]
-fn refused_payload_cannot_end_or_replay_and_can_be_cancelled() {
-    let (mut c, mut p, mut l) = setup();
-    let a = c.begin_native_resource(&mut l, tx(80), begin()).unwrap();
-    commit(&mut c, &mut p, a.first);
-    status(&mut c, &mut p, &mut l, 1);
-    p.upload_replies.push_back(Err(22));
-    let a = c.upload_native_chunk(&mut l, &[1, 2, 3, 4]).unwrap();
-    drive(&mut c, &mut p, |c, _| {
-        c.custody(a.first) == Some(Custody::Refused(22))
-    })
-    .unwrap();
-    l.service(&c).unwrap();
-    assert!(c.end_native_resource(&mut l, tx(81)).is_err());
-    assert!(c.upload_native_chunk(&mut l, &[1, 2, 3, 4]).is_err());
-    let a = c
-        .cancel_native_resource(&mut l, tx(82), resource())
-        .unwrap();
-    commit(&mut c, &mut p, a.first);
-    status(&mut c, &mut p, &mut l, 4);
-    assert_eq!(l.resource_state(resource()), None);
-}
-
-#[test]
-fn refused_end_can_be_cancelled_by_resource_identity() {
-    let (mut c, mut p, mut l) = setup();
-    let a = c.begin_native_resource(&mut l, tx(80), begin()).unwrap();
-    commit(&mut c, &mut p, a.first);
-    status(&mut c, &mut p, &mut l, 1);
-    let a = c.upload_native_chunk(&mut l, &[1, 2, 3, 4]).unwrap();
-    drive(&mut c, &mut p, |c, _| {
-        c.custody(a.first) == Some(Custody::Stored)
-    })
-    .unwrap();
-    let a = c.end_native_resource(&mut l, tx(81)).unwrap();
-    refuse(&mut c, &mut p, a.first);
-    l.service(&c).unwrap();
-    let a = c
-        .cancel_native_resource(&mut l, tx(82), resource())
-        .unwrap();
-    assert_eq!(
-        l.resource_state(resource()),
-        Some(NativeResourceState::Admitted)
-    );
-    assert!(c.begin_native_resource(&mut l, tx(83), begin()).is_err());
-    commit(&mut c, &mut p, a.first);
-    status(&mut c, &mut p, &mut l, 4);
-    assert_eq!(l.resource_state(resource()), None);
-    assert!(
-        c.cancel_native_resource(&mut l, tx(83), resource())
-            .is_err()
-    );
-    c.begin_native_resource(&mut l, tx(84), begin()).unwrap();
 }

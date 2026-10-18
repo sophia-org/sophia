@@ -1,5 +1,22 @@
 # Desktop SDK coverage
 
+The [ISB-only update](API-PARITY.md#isb-only-resource-apis-2026-10-18)
+supersedes historical shell/lock byte-upload coverage below. Current coverage
+includes local refusal without ticket spending, sealed-image adapters, native
+adoption, and independent C/Rust lock production-export presentation. Portal
+uploads are unchanged. Native/performance acceptance remains separate.
+
+Native launcher ISB adoption is available through `sophia_ns_adopt_image`,
+paired with Rust's `adopt_native_image`. The [API map](API-PARITY.md) records
+settled-offer custody, failure behavior and independent scripted coverage.
+Production client migration and export qualification remain separate gates.
+
+Mapped ISB construction is available through `sophia_ip_isb_create_bounded`
+and the hardened `sophia_ip_isb_create`, paired with Rust's `MappedIsb` /
+`create_mapped_isb`. The [mapped builder map](API-PARITY.md#mapped-isb-builder-2026-10-18)
+records bounds, seals, fork exclusion, ownership and `isb_mapped_test` coverage.
+No performance result is claimed.
+
 The [launch operation map](LAUNCH-PARITY.md) compares C's caller-driven
 authentication with Rust, including partial I/O, deadlines and relay ownership.
 

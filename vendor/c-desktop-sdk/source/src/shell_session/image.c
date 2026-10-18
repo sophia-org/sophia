@@ -1,4 +1,4 @@
-/* The optional sealed-image adapter: discovery through the session's 9P
+/* The ISB image adapter: discovery through the session's 9P
  * wire, producer attach, journal routing and ImageBegin tickets. */
 #include "internal.h"
 #include "../shell_files/session_internal.h"
@@ -9,6 +9,7 @@
 
 #define SEALED_BIT (UINT64_C(1) << 13)
 #define DMA_BIT (UINT64_C(1) << 14)
+#define CONTENT_BIT (UINT64_C(1) << 7)
 
 enum { STAGE_NEGOTIATING, STAGE_DISCOVERING, STAGE_CONNECTING, STAGE_RUNNING };
 
@@ -29,11 +30,18 @@ int sophia_ss_image_attach(struct sophia_ss *s, struct sophia_ss_image *img)
     if (!s || !img || img->session)
         return SOPHIA_IPR_ARGUMENT;
     o = &s->files.offer;
-    if (s->files.profile != SOPHIA_SF_BAR || o->minimum_revision > 9 || o->maximum_revision < 9 ||
-        !(o->required_capabilities & SEALED_BIT) || (o->required_capabilities & DMA_BIT))
+    if (o->minimum_revision > 9 || o->maximum_revision < 9 ||
+        (o->required_capabilities & (SEALED_BIT | CONTENT_BIT)) != (SEALED_BIT | CONTENT_BIT) ||
+        (o->required_capabilities & DMA_BIT))
         return SOPHIA_IPR_ARGUMENT;
-    if (s->state != SOPHIA_SS_NEGOTIATING || s->files.negotiated || s->image)
+    if ((s->state != SOPHIA_SS_NEGOTIATING && s->state != SOPHIA_SS_READY) || s->image)
         return SOPHIA_IPR_BUSY;
+    if (s->files.negotiated &&
+        (s->files.welcome.selected_revision != SOPHIA_SF_REVISION_IMAGE_CHANNEL ||
+         (s->files.welcome.capabilities & (SEALED_BIT | CONTENT_BIT)) !=
+             (SEALED_BIT | CONTENT_BIT) ||
+         (s->files.welcome.capabilities & DMA_BIT)))
+        return SOPHIA_IPR_ARGUMENT;
     img->session = s;
     s->image = img;
     s->files.image_mode = 1;

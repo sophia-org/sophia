@@ -23,6 +23,7 @@ const INTERACTION: u64 = 1;
 
 pub struct Fixture {
     transport: ShellComponentTransport,
+    image_owner: Option<ShellIsbImageOwner>,
     registry: ContentEpochRegistry,
     grant: ContentGrant,
     state: u8,
@@ -58,6 +59,7 @@ impl Fixture {
             )
             .unwrap(),
             registry: ContentEpochRegistry::new(64 * 1024 * 1024).unwrap(),
+            image_owner: None,
             grant: ContentGrant {
                 connection_epoch: 60,
                 content_grant_epoch: 1,
@@ -76,14 +78,11 @@ impl Fixture {
         self.transport.socket_path()
     }
     pub fn authorize(&mut self, pid: u32) {
-        self.transport
-            .authorize_protected_peer(&ProtectionDomainEvidence {
-                backend: ProtectionBackendKind::Bubblewrap,
-                supervisor_pid: std::process::id(),
-                peer_pid: pid,
-                roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
-            })
-            .unwrap();
+        self.image_owner = Some(crate::shell_required_image::configure_for_peer(
+            &mut self.transport,
+            &ContentLimits::prototype(self.grant),
+            pid,
+        ));
         self.transport
             .reserve_content_with_profile(
                 &mut self.registry,
@@ -300,6 +299,12 @@ impl Fixture {
             return Ok(());
         }
         self.transport.poll_io(&mut self.registry)?;
+        self.image_owner.as_mut().unwrap().service(
+            &mut self.transport,
+            &mut self.registry,
+            NOW,
+            std::time::Instant::now(),
+        )?;
         if let Some(closed) = self.transport.native_launcher_closed_opening() {
             // Resource records stay serviceable after close.
             self.transport

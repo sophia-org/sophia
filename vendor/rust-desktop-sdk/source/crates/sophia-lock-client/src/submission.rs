@@ -87,9 +87,7 @@ impl Submission {
     pub fn latest(&self) -> Option<(u64, Custody)> {
         self.latest
     }
-    pub(crate) fn kind(&self) -> Option<LockFileKind> {
-        self.value.as_ref().map(Prepared::kind)
-    }
+
     pub fn idle(&self) -> bool {
         self.stage == Stage::Idle
     }
@@ -99,7 +97,7 @@ impl Submission {
     pub fn waiting_for_ack(&self, acked: u64) -> bool {
         self.stage == Stage::Open && acked < self.submitted_sequence
     }
-    /// Internal admission: the session restricts public kinds and owns upload sequencing.
+    /// Internal admission: the session restricts public kinds and owns image sequencing.
     pub fn admit(&mut self, candidate: &Candidate) -> Result<u64, Error> {
         let value = self.prepare(candidate)?;
         Ok(self.admit_prepared(value))

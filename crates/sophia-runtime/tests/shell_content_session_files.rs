@@ -1,13 +1,6 @@
-//! Resource, candidate and action lifecycle over `sophia_shell_fs_v1`: the
-//! single-shell `ShellSessionTransport` negotiated with
-//! `accept_files_with_content_policy`, and the SDK's `connect_files` client.
-//! These preserve the owner assertions from the socket SDK fixtures retired
-//! in t265.
-//!
-//! One wire difference is deliberate: 9P admits a candidate only as one
-//! grouped transaction (`enqueue_content_group`), where the socket case sends
-//! Begin, Chunk and End as transactions 20, 21 and 22. The SDK refuses a lone
-//! part over files (see `shell_client_file_wire.rs`).
+//! Session-owned resource, candidate and action lifecycle over the file wire.
+//! Each component borrows one registry; sealed pixels use the authenticated SDK
+//! image adapter. Renderer completions and authentication verdicts are supplied.
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -15,6 +8,14 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sophia_protocol::*;
 use sophia_runtime::*;
 use sophia_shell_client::{Custody, ShellClientOptions, ShellConnection};
+
+#[allow(dead_code)]
+#[path = "support/shell_required_image.rs"]
+mod image;
+#[path = "support/shell_sdk_image.rs"]
+mod sdk_image;
+#[path = "support/shell_file_peer.rs"]
+mod shell_file_peer;
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -39,27 +40,38 @@ fn evidence() -> ProtectionDomainEvidence {
     }
 }
 
-fn session() -> ShellSessionTransport {
-    let mut session = ShellSessionTransport::bind_for_supervised_uid(
+fn session() -> (ShellComponentTransport, ContentEpochRegistry) {
+    let mut registry = ContentEpochRegistry::new(64 * 1024 * 1024).unwrap();
+    let mut session = ShellComponentTransport::bind_for_supervised_uid(
         directory(),
         rustix::process::geteuid().as_raw(),
     )
     .unwrap();
     session.authorize_protected_peer(&evidence()).unwrap();
     session
+        .reserve_content(
+            &mut registry,
+            ContentLimits::prototype(ContentGrant {
+                connection_epoch: 1,
+                content_grant_epoch: 1,
+            }),
+        )
+        .unwrap();
+    (session, registry)
 }
 
 fn connect(socket: std::path::PathBuf, capabilities: u64) -> ShellConnection {
-    ShellConnection::connect_files(
-        socket,
-        ShellClientOptions {
-            minimum_revision: 5,
-            maximum_revision: 6,
-            required_capabilities: capabilities,
-            handshake_timeout: Duration::from_secs(2),
-        },
-    )
-    .unwrap()
+    let options = ShellClientOptions {
+        minimum_revision: if capabilities & (1 << 13) != 0 { 9 } else { 5 },
+        maximum_revision: if capabilities & (1 << 13) != 0 { 9 } else { 6 },
+        required_capabilities: capabilities,
+        handshake_timeout: Duration::from_secs(2),
+    };
+    if capabilities & (1 << 13) != 0 {
+        sdk_image::authenticated_client(&socket, options).unwrap()
+    } else {
+        ShellConnection::connect_files(socket, options).unwrap()
+    }
 }
 
 const CONTENT: u64 =
@@ -84,63 +96,45 @@ fn resource_id(id: u64) -> ContentResourceId {
     ContentResourceId { id, generation: 1 }
 }
 
-fn small_upload(grant: ContentGrant, resource: ContentResourceId) -> [ShellContentRecord; 3] {
-    [
-        ShellContentRecord::ResourceBegin(ContentResourceBegin {
-            grant,
-            resource,
-            width_px: 2,
-            height_px: 1,
-            rendered_scale_numerator: 1,
-            rendered_scale_denominator: 1,
-            pixel_format: 1,
-            chunk_count: 1,
-            total_bytes: 8,
-        }),
-        ShellContentRecord::ResourceChunk(ContentResourceChunk {
-            grant,
-            resource,
-            ordinal: 0,
-            offset: 0,
-            bytes: vec![0, 0, 255, 255, 0, 128, 0, 128],
-        }),
-        ShellContentRecord::ResourceEnd(ContentResourceEnd {
-            grant,
-            resource,
-            total_bytes: 8,
-            chunk_count: 1,
-        }),
-    ]
-}
-
-fn statuses(client: &mut ShellConnection) -> Vec<u16> {
-    let mut statuses = Vec::new();
-    while statuses.len() < 2 {
-        if let ShellContentRecord::ResourceStatus(status) = next_content(client) {
-            statuses.push(status.status);
-        }
-    }
-    statuses
-}
-
 #[test]
 fn admitted_resource_transfer_settles_and_releases_over_the_file_wire() {
-    let mut session = session();
+    let (mut session, mut registry) = session();
+    let expected = ContentLimits::prototype(ContentGrant {
+        connection_epoch: 1,
+        content_grant_epoch: 1,
+    });
+    let mut image_owner = image::configure(&mut session, &expected);
     let socket = session.socket_path().to_path_buf();
     let (done_tx, done_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel::<()>();
     let client = std::thread::spawn(move || {
-        let mut client = connect(socket, CONTENT);
+        let mut client = connect(socket.clone(), CONTENT | (1 << 13));
         let ShellContentRecord::Limits(limits) = next_content(&mut client) else {
             panic!("expected limits");
         };
+        sdk_image::enable(&mut client, socket.parent().unwrap(), &limits);
         let resource = resource_id(1);
-        for record in small_upload(limits.grant, resource) {
-            client
-                .send_content(TransactionId::from_raw(7), &record)
-                .unwrap();
-        }
-        assert_eq!(statuses(&mut client), [1, 2]);
+        sdk_image::upload(
+            &mut client,
+            sophia_shell_client::ProducerMetadata {
+                resource: resource.id,
+                resource_generation: resource.generation,
+                admission_epoch: limits.grant.content_grant_epoch,
+                output_id: 1,
+                allocation_id: 1,
+                topology_generation: 1,
+                source_kind: 1,
+                source_format: 1,
+                width: 2,
+                height: 1,
+                stride: 8,
+                plane_count: 1,
+                descriptor_count: 1,
+                declared_bytes: 8,
+                ..Default::default()
+            },
+            &[0, 0, 255, 255, 0, 128, 0, 128],
+        );
         client
             .send_content(
                 TransactionId::from_raw(8),
@@ -162,15 +156,22 @@ fn admitted_resource_transfer_settles_and_releases_over_the_file_wire() {
         release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
     });
 
-    session
-        .accept_files_with_content_policy(1, Duration::from_secs(2), granted(false))
-        .unwrap();
+    accept(&mut session, &mut registry, granted(false)).unwrap();
+    image::supply_allocation(&mut registry, expected.grant);
     let start = Instant::now();
     while done_rx.try_recv().is_err() {
-        session
-            .service_content_resources(start.elapsed().as_millis() as u64)
+        image_owner
+            .service(
+                &mut session,
+                &mut registry,
+                start.elapsed().as_millis() as u64,
+                Instant::now(),
+            )
             .unwrap();
-        let accounting = session.content_accounting();
+        session
+            .service_content_resources(&mut registry, start.elapsed().as_millis() as u64)
+            .unwrap();
+        let accounting = session.content_accounting(&registry);
         let limits = ContentLimits::prototype(session.content_grant().unwrap());
         assert_eq!(accounting.epochs.active_epochs, 1);
         assert!(accounting.response_records <= limits.max_control_records as usize);
@@ -179,10 +180,15 @@ fn admitted_resource_transfer_settles_and_releases_over_the_file_wire() {
         assert!(start.elapsed() < Duration::from_secs(5));
         std::thread::yield_now();
     }
-    session.disconnect().unwrap();
+    session.disconnect(&mut registry).unwrap();
+    registry.collect();
     release_tx.send(()).unwrap();
     client.join().unwrap();
-    assert!(session.collect_content_accounting().quiescent());
+    assert!(
+        session
+            .collect_content_accounting(&mut registry)
+            .quiescent()
+    );
 }
 
 #[test]
@@ -307,11 +313,16 @@ fn snapshot(output: ContentOutputId, allocation: ContentAllocationId) -> Content
 }
 
 fn candidate_roundtrip(renderer_failed: bool) {
-    let mut session = session();
+    let (mut session, mut registry) = session();
+    let expected = ContentLimits::prototype(ContentGrant {
+        connection_epoch: 1,
+        content_grant_epoch: 1,
+    });
+    let mut image_owner = image::configure(&mut session, &expected);
     let socket = session.socket_path().to_path_buf();
     let (uploaded_tx, uploaded_rx) = mpsc::channel();
     let client = std::thread::spawn(move || {
-        let mut client = connect(socket, CONTENT);
+        let mut client = connect(socket.clone(), CONTENT | (1 << 13));
         let ShellContentRecord::Limits(limits) = next_content(&mut client) else {
             panic!("expected limits");
         };
@@ -329,13 +340,29 @@ fn candidate_roundtrip(renderer_failed: bool) {
             panic!("expected allocation result");
         };
         assert_eq!(allocation.status, 1);
+        sdk_image::enable(&mut client, socket.parent().unwrap(), &limits);
         let resource = resource_id(1);
-        for record in small_upload(limits.grant, resource) {
-            client
-                .send_content(TransactionId::from_raw(7), &record)
-                .unwrap();
-        }
-        assert_eq!(statuses(&mut client), [1, 2]);
+        sdk_image::upload(
+            &mut client,
+            sophia_shell_client::ProducerMetadata {
+                resource: resource.id,
+                resource_generation: resource.generation,
+                admission_epoch: limits.grant.content_grant_epoch,
+                output_id: output.id,
+                allocation_id: allocation.allocation.id,
+                topology_generation: facts.facts_generation,
+                source_kind: 1,
+                source_format: 1,
+                width: 2,
+                height: 1,
+                stride: 8,
+                plane_count: 1,
+                descriptor_count: 1,
+                declared_bytes: 8,
+                ..Default::default()
+            },
+            &[0, 0, 255, 255, 0, 128, 0, 128],
+        );
         client
             .send_content(
                 TransactionId::from_raw(9),
@@ -382,9 +409,7 @@ fn candidate_roundtrip(renderer_failed: bool) {
         );
     });
 
-    let welcome = session
-        .accept_files_with_content_policy(1, Duration::from_secs(2), granted(false))
-        .unwrap();
+    let welcome = accept(&mut session, &mut registry, granted(false)).unwrap();
     let grant = session.content_grant().unwrap();
     let start = Instant::now();
     let output = ContentOutputId {
@@ -393,6 +418,7 @@ fn candidate_roundtrip(renderer_failed: bool) {
     };
     session
         .publish_content_output_facts(
+            &mut registry,
             TransactionId::from_raw(5),
             3,
             vec![ContentOutputFactsEntry {
@@ -405,9 +431,13 @@ fn candidate_roundtrip(renderer_failed: bool) {
             }],
         )
         .unwrap();
-    while session.next_content_allocation_request().is_none() {
+    while session.next_content_allocation_request(&registry).is_none() {
         session
-            .service_content_allocation_requests(&[], start.elapsed().as_millis() as u64)
+            .service_content_allocation_requests(
+                &mut registry,
+                &[],
+                start.elapsed().as_millis() as u64,
+            )
             .unwrap();
         assert!(start.elapsed() < Duration::from_secs(5));
         std::thread::yield_now();
@@ -417,80 +447,100 @@ fn candidate_roundtrip(renderer_failed: bool) {
         generation: 1,
     };
     session
-        .grant_content_allocation(1, snapshot(output, allocation_id), &[])
+        .grant_content_allocation(&mut registry, 1, snapshot(output, allocation_id), &[])
         .unwrap();
     while uploaded_rx.try_recv().is_err() {
+        image_owner
+            .service(
+                &mut session,
+                &mut registry,
+                start.elapsed().as_millis() as u64,
+                Instant::now(),
+            )
+            .unwrap();
         session
-            .service_content_resources(start.elapsed().as_millis() as u64)
+            .service_content_resources(&mut registry, start.elapsed().as_millis() as u64)
             .unwrap();
         assert!(start.elapsed() < Duration::from_secs(5));
         std::thread::yield_now();
     }
-    let allocations = session.content_allocation_snapshots();
+    let allocations = session.content_allocation_snapshots(&registry);
     let context = ContentCandidateContext {
         output,
         facts_generation: 3,
         interaction_generation: 4,
         allocations: &allocations,
     };
-    while session.next_content_demand().is_none() {
+    while session.next_content_demand(&registry).is_none() {
         session
-            .service_content_demands(&[output], &allocations)
+            .service_content_demands(&mut registry, &[output], &allocations)
             .unwrap();
         assert!(start.elapsed() < Duration::from_secs(5));
         std::thread::yield_now();
     }
     session
-        .grant_content_demand(TransactionId::from_raw(19), output, 1, 10)
+        .grant_content_demand(&mut registry, TransactionId::from_raw(19), output, 1, 10)
         .unwrap();
     let mut processed = 0;
     while processed < 3 {
         processed += session
-            .service_content_candidates(&[context], 11 + u64::try_from(processed).unwrap())
+            .service_content_candidates(
+                &mut registry,
+                &[context],
+                11 + u64::try_from(processed).unwrap(),
+            )
             .unwrap();
         assert!(start.elapsed() < Duration::from_secs(5));
         std::thread::yield_now();
     }
-    let render = session.begin_content_submission(output, 1, 20).unwrap();
+    let render = session
+        .begin_content_submission(&mut registry, output, 1, 20)
+        .unwrap();
     assert_eq!(render.resource(resource_id(1)).unwrap().bytes().len(), 8);
     session
-        .content_prepared(grant, output, 1, 7, 8, 21)
+        .content_prepared(&mut registry, grant, output, 1, 7, 8, 21)
         .unwrap();
     if renderer_failed {
-        session.content_renderer_failed(grant, output, 1).unwrap();
+        session
+            .content_renderer_failed(&mut registry, grant, output, 1)
+            .unwrap();
     } else {
         session
-            .content_presented(grant, output, 1, 9, 7, 8)
+            .content_presented(&mut registry, grant, output, 1, 9, 7, 8)
             .unwrap();
     }
     while !client.is_finished() {
-        session.poll_io().unwrap();
+        session.poll_io(&mut registry).unwrap();
         assert!(start.elapsed() < Duration::from_secs(5));
         std::thread::yield_now();
     }
-    session.disconnect().unwrap();
+    session.disconnect(&mut registry).unwrap();
+    registry.collect();
     client.join().unwrap();
     // The GPU preflight's disconnect / held renderer / release sequence.
     // Neither repeated disconnect nor collection can release a live consumer.
-    assert!(session.content_reserved_bytes() > 0);
-    assert!(session.content_backing_reserved_bytes() > 0);
-    session.disconnect().unwrap();
+    assert!(session.content_reserved_bytes(&registry) > 0);
+    assert!(session.content_backing_reserved_bytes(&registry) > 0);
+    session.disconnect(&mut registry).unwrap();
+    registry.collect();
     assert_eq!(render.resource(resource_id(1)).unwrap().bytes().len(), 8);
-    assert!(session.content_reserved_bytes() > 0);
-    assert!(!session.content_accounting().quiescent());
+    assert!(session.content_reserved_bytes(&registry) > 0);
+    assert!(!session.content_accounting(&registry).quiescent());
     drop(render);
-    session.disconnect().unwrap();
-    assert_eq!(session.content_reserved_bytes(), 0);
-    assert_eq!(session.content_backing_reserved_bytes(), 0);
-    assert!(session.content_accounting().quiescent());
-    session.disconnect().unwrap();
-    assert!(session.content_accounting().quiescent());
-    assert_eq!(welcome.selected_revision, 6);
+    session.disconnect(&mut registry).unwrap();
+    registry.collect();
+    assert_eq!(session.content_reserved_bytes(&registry), 0);
+    assert_eq!(session.content_backing_reserved_bytes(&registry), 0);
+    assert!(session.content_accounting(&registry).quiescent());
+    session.disconnect(&mut registry).unwrap();
+    registry.collect();
+    assert!(session.content_accounting(&registry).quiescent());
+    assert_eq!(welcome.selected_revision, 9);
 }
 
 #[test]
 fn invalid_allocation_request_over_files_gets_a_correlated_result_and_the_peer_stays() {
-    let mut session = session();
+    let (mut session, mut registry) = session();
     let socket = session.socket_path().to_path_buf();
     let (result_tx, result_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel::<()>();
@@ -525,11 +575,10 @@ fn invalid_allocation_request_over_files_gets_a_correlated_result_and_the_peer_s
         // Hold the connection open until the owner has checked it.
         release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
     });
-    session
-        .accept_files_with_content_policy(1, Duration::from_secs(2), granted(false))
-        .unwrap();
+    accept(&mut session, &mut registry, granted(false)).unwrap();
     session
         .publish_content_output_facts(
+            &mut registry,
             TransactionId::from_raw(39),
             1,
             vec![ContentOutputFactsEntry {
@@ -548,7 +597,11 @@ fn invalid_allocation_request_over_files_gets_a_correlated_result_and_the_peer_s
     let start = Instant::now();
     while result_rx.try_recv().is_err() {
         session
-            .service_content_allocation_requests(&[], start.elapsed().as_millis() as u64)
+            .service_content_allocation_requests(
+                &mut registry,
+                &[],
+                start.elapsed().as_millis() as u64,
+            )
             .unwrap();
         assert!(!client.is_finished(), "client ended before its result");
         assert!(start.elapsed() < Duration::from_secs(5));
@@ -557,17 +610,18 @@ fn invalid_allocation_request_over_files_gets_a_correlated_result_and_the_peer_s
     // The rejection closed nothing: the owner still serves the same peer.
     assert!(session.supports_content());
     session
-        .service_content_allocation_requests(&[], start.elapsed().as_millis() as u64)
+        .service_content_allocation_requests(&mut registry, &[], start.elapsed().as_millis() as u64)
         .unwrap();
-    session.poll_io().unwrap();
+    session.poll_io(&mut registry).unwrap();
     release_tx.send(()).unwrap();
     client.join().unwrap();
-    session.disconnect().unwrap();
+    session.disconnect(&mut registry).unwrap();
+    registry.collect();
 }
 
 #[test]
 fn a_discrete_action_and_its_exact_ack_cross_the_file_wire_to_the_owner() {
-    let mut session = session();
+    let (mut session, mut registry) = session();
     let socket = session.socket_path().to_path_buf();
     let (seen_tx, seen_rx) = mpsc::channel();
     let (ack_tx, ack_rx) = mpsc::channel::<()>();
@@ -618,9 +672,7 @@ fn a_discrete_action_and_its_exact_ack_cross_the_file_wire_to_the_owner() {
             }
         }
     });
-    session
-        .accept_files_with_content_policy(1, Duration::from_secs(2), granted(true))
-        .unwrap();
+    accept(&mut session, &mut registry, granted(true)).unwrap();
     let grant = session.content_grant().unwrap();
     let action = ContentAction {
         grant,
@@ -643,21 +695,24 @@ fn a_discrete_action_and_its_exact_ack_cross_the_file_wire_to_the_owner() {
         reason: ContentReason::None as u16,
     };
     session
-        .send_content_action(TransactionId::from_raw(50), &action)
+        .send_content_action(&mut registry, TransactionId::from_raw(50), &action)
         .unwrap();
     let start = Instant::now();
     while seen_rx.try_recv().is_err() {
-        session.poll_io().unwrap();
+        session.poll_io(&mut registry).unwrap();
         assert!(start.elapsed() < Duration::from_secs(5));
         std::thread::yield_now();
     }
     // Control: the owner reports no acknowledgement the client has not sent.
     for _ in 0..16 {
-        assert_eq!(session.poll_content_action_ack().unwrap(), None);
+        assert_eq!(
+            session.poll_content_action_ack(&mut registry).unwrap(),
+            None
+        );
     }
     ack_tx.send(()).unwrap();
     let ack = loop {
-        if let Some(ack) = session.poll_content_action_ack().unwrap() {
+        if let Some(ack) = session.poll_content_action_ack(&mut registry).unwrap() {
             break ack;
         }
         assert!(start.elapsed() < Duration::from_secs(5));
@@ -669,5 +724,22 @@ fn a_discrete_action_and_its_exact_ack_cross_the_file_wire_to_the_owner() {
     assert_eq!(ack.1.grant, grant);
     assert_eq!(ack.1.action_id, action.action_id);
     client.join().unwrap();
-    session.disconnect().unwrap();
+    session.disconnect(&mut registry).unwrap();
+    registry.collect();
+}
+
+fn accept(
+    session: &mut ShellComponentTransport,
+    registry: &mut ContentEpochRegistry,
+    policy: ShellContentAdmissionPolicy,
+) -> Result<ShellV1ServerWelcome, ShellTransportError> {
+    session.begin_file_negotiation(registry, 1, Duration::from_secs(2), policy)?;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if let Some(welcome) = session.poll_negotiation(registry, 65536)? {
+            return Ok(welcome);
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
 }

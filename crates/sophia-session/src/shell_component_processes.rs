@@ -136,6 +136,14 @@ impl ShellComponentProcesses {
                 .protection_evidence()
                 .ok_or("missing component protection evidence")?
                 .clone();
+            // The unauthenticated compatibility path has no image channel.
+            // Advertise that limit instead of granting unusable CPU content.
+            let policy = match policy {
+                ShellContentAdmissionPolicy::Granted { .. } => {
+                    ShellContentAdmissionPolicy::Unavailable
+                }
+                other => other,
+            };
             self.connections
                 .begin_negotiation(key, &evidence, Duration::from_secs(5), policy)
                 .map_err(|e| e.to_string())?;

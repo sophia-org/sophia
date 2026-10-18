@@ -183,7 +183,11 @@ fn outcome(kind: u16) -> NativeLauncherObservation {
     )
 }
 fn setup() -> (ShellConnection, Peer, NativeLauncherLifecycle) {
-    let (mut c, p) = ready();
+    setup_with(ready())
+}
+fn setup_with(
+    (mut c, p): (ShellConnection, Peer),
+) -> (ShellConnection, Peer, NativeLauncherLifecycle) {
     let Some(NativeLauncherObservation::Content(_, ShellContentRecord::Limits(limits))) =
         c.take_native_launcher_observation().unwrap()
     else {

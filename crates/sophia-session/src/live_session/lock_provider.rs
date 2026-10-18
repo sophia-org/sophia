@@ -96,7 +96,7 @@ impl LockProvider {
             1,
             limits,
         )?;
-        transport.enable_sealed_images(crate::session_lock_object::session_lock_image_policy(
+        transport.enable_isb_images(crate::session_lock_object::session_lock_image_policy(
             &limits,
         ))?;
         let mut domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::LockProvider])?

@@ -8,7 +8,9 @@ use std::io::Read as _;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-const VALID: [&str; 9] = [
+const VALID: [&str; 11] = [
+    "--factotum-agent=/absent/factotum",
+    "--factotum-pam-helper=/absent/pam-helper",
     "--transport=9p2000.L",
     "--client=/absent/shell-client",
     "--output=800x600",

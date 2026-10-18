@@ -54,6 +54,8 @@ impl ShellComponentTransport {
                 .resources_mut(self.store_grant)
                 .ok_or(ShellTransportError::MissingCapability)?;
             let outcome = match &record {
+                // Isolated IPC baseline only; production 9P refuses byte records
+                // before they can reach this retained comparator adapter.
                 ShellContentRecord::ResourceBegin(value) => {
                     store.begin(transaction, value.clone(), now_msec)
                 }

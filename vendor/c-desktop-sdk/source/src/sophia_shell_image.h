@@ -3,9 +3,9 @@
 #include "sophia_image_producer.h"
 #include "sophia_shell_session.h"
 
-/* Optional sealed-image adapter for a BAR shell session at revision 9.
- * The caller owns this struct, attaches it to one live session before its
- * negotiation completes, and keeps both alive and unmoved until the session
+/* ISB image adapter for a content-granted shell session at revision 9.
+ * The caller owns this struct, attaches it to one live session before image
+ * use, and keeps both alive and unmoved until the session
  * is final and the adapter is closed. Nothing here reads a clock: every call
  * takes CLOCK_MONOTONIC milliseconds, as the session does.
  *
@@ -30,7 +30,7 @@
 struct sophia_ss_image_config {
     /* role, revision and connection_epoch are set from the session;
      * granted_kinds from the negotiated capabilities. The rest is the
-     * caller's: bounds, transfer timeout, startup deadline, fallback. */
+     * caller's: bounds, transfer timeout and startup deadline. */
     struct sophia_ip_config producer;
     /* Borrowed directory fd holding the role's 9P socket. */
     int endpoint_dir;
@@ -58,9 +58,13 @@ struct sophia_ss_image {
 
 /* Validates and copies config; touches no session. */
 int sophia_ss_image_init(struct sophia_ss_image *, const struct sophia_ss_image_config *);
-/* After sophia_ss_open_*, before negotiation completes. The session's offer
- * must be BAR, span revision 9, require bit 13 and not bit 14. One adapter
- * per session. ARGUMENT or BUSY changes nothing. */
+/* After sophia_ss_open_*, during negotiation or in READY. Attaching after
+ * negotiation lets callers derive bounds and transfer timeout from Limits.
+ * The offer must span revision 9, require content and bit 13 but not bit 14;
+ * a completed negotiation must grant r9, content and bit 13 without bit 14.
+ * Role/grant checks remain with the
+ * session. One adapter per session, never replaced after closure. ARGUMENT or
+ * BUSY changes nothing. ChannelReady still gates every image offer. */
 int sophia_ss_image_attach(struct sophia_ss *, struct sophia_ss_image *);
 /* The producer's socket, or -1. Poll it beside the session's fd. */
 int sophia_ss_image_poll_fd(const struct sophia_ss_image *);

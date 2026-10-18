@@ -1,5 +1,7 @@
 use sophia_protocol::*;
 use sophia_runtime::*;
+#[path = "support/content_isb.rs"]
+mod isb;
 
 fn grant() -> ContentGrant {
     ContentGrant {
@@ -32,30 +34,20 @@ fn chunk(id: u64) -> ContentResourceChunk {
         bytes: vec![0, 0, 255, 255, 0, 128, 0, 128],
     }
 }
-fn end(id: u64) -> ContentResourceEnd {
-    ContentResourceEnd {
-        grant: grant(),
-        resource: begin(id).resource,
-        total_bytes: 8,
-        chunk_count: 1,
-    }
-}
 fn owner() -> ContentResourceStore {
     ContentResourceStore::new(ContentLimits::prototype(grant())).unwrap()
 }
 fn upload(store: &mut ContentResourceStore, id: u64) {
-    store.begin(tx(), begin(id), 0).unwrap();
-    store.chunk(tx(), &chunk(id), 0).unwrap();
-    store.end(tx(), &end(id), 0).unwrap();
+    isb::accept(store, tx(), begin(id), &chunk(id).bytes, 0);
 }
 fn drain(store: &mut ContentResourceStore) -> Vec<ContentResourceEvent> {
     std::iter::from_fn(|| store.take_event()).collect()
 }
 
 #[test]
-fn incomplete_pixels_never_acquire_a_lease_and_end_moves_credit_once() {
+fn incomplete_pixels_never_acquire_a_lease_and_completion_moves_credit_once() {
     let mut store = owner();
-    store.begin(tx(), begin(1), 0).unwrap();
+    store.begin_isb(tx(), begin(1), 0).unwrap();
     assert_eq!(
         store.usage(),
         ContentMemoryUsage {
@@ -67,9 +59,14 @@ fn incomplete_pixels_never_acquire_a_lease_and_end_moves_credit_once() {
         }
     );
     assert!(store.lease(grant(), begin(1).resource).is_err());
-    store.chunk(tx(), &chunk(1), 0).unwrap();
-    assert!(store.lease(grant(), begin(1).resource).is_err());
-    store.end(tx(), &end(1), 0).unwrap();
+    store
+        .complete_isb(
+            grant(),
+            begin(1).resource,
+            &mut Some(Ok(isb::validated(&chunk(1).bytes))),
+            0,
+        )
+        .unwrap();
     assert_eq!(
         store.usage(),
         ContentMemoryUsage {
@@ -84,8 +81,16 @@ fn incomplete_pixels_never_acquire_a_lease_and_end_moves_credit_once() {
         store.lease(grant(), begin(1).resource).unwrap().bytes(),
         chunk(1).bytes
     );
-    assert_eq!(store.end(tx(), &end(1), 0), Err(ContentStoreError::Stale));
-    assert_eq!(drain(&mut store).len(), 2);
+    assert_eq!(
+        store.complete_isb(
+            grant(),
+            begin(1).resource,
+            &mut Some(Ok(isb::validated(&chunk(1).bytes))),
+            0
+        ),
+        Err(ContentStoreError::Stale)
+    );
+    assert_eq!(drain(&mut store).len(), 1);
 }
 
 #[test]
@@ -111,9 +116,12 @@ fn retirement_waits_for_every_consumer_and_emits_one_release() {
     assert_eq!(renderer.bytes(), chunk(1).bytes);
     drop(renderer);
     store.collect();
+    assert!(!store.quiescent());
+    assert_eq!(store.usage().backing, 8);
+    let events = drain(&mut store);
+    store.confirm_isb_release(begin(1).resource).unwrap();
     assert!(store.quiescent());
     assert_eq!(store.usage().backing, 0);
-    let events = drain(&mut store);
     assert!(matches!(
         events.as_slice(),
         [ContentResourceEvent {
@@ -138,7 +146,7 @@ fn revoke_never_manufactures_gpu_completion_or_resurrects_old_epoch() {
     assert!(drain(&mut store).is_empty());
     assert!(store.lease(grant(), begin(1).resource).is_err());
     assert_eq!(
-        store.begin(tx(), begin(2), 0),
+        store.begin_isb(tx(), begin(2), 0),
         Err(ContentStoreError::Revoked)
     );
     assert_eq!(lease.bytes(), chunk(1).bytes);
@@ -151,79 +159,51 @@ fn revoke_never_manufactures_gpu_completion_or_resurrects_old_epoch() {
 }
 
 #[test]
-fn timeout_settles_the_begin_and_releases_reserved_capacity() {
+fn timeout_retains_reserved_capacity_until_validation_returns() {
     let mut store = owner();
-    store.begin(tx(), begin(1), 100).unwrap();
+    store.begin_isb(tx(), begin(1), 100).unwrap();
     drain(&mut store);
-    store.expire(599).unwrap();
+    store.expire(5099).unwrap();
     assert!(!store.quiescent());
-    store.expire(600).unwrap();
+    store.expire(5100).unwrap();
+    assert!(!store.quiescent());
+    assert_eq!(store.usage().staging, 8);
+    assert_eq!(
+        store.complete_isb(
+            grant(),
+            begin(1).resource,
+            &mut Some(Ok(isb::validated(&chunk(1).bytes))),
+            5100
+        ),
+        Err(ContentStoreError::Stale)
+    );
     assert!(store.quiescent());
     let events = drain(&mut store);
     assert!(
         matches!(&events[0].record, ShellContentRecord::ResourceStatus(s) if s.status == 3 && s.reason == 6)
     );
     assert_eq!(store.usage(), ContentMemoryUsage::default());
-    store.expire(601).unwrap();
+    store.expire(5101).unwrap();
     assert!(drain(&mut store).is_empty());
     assert_eq!(
-        store.begin(tx(), begin(1), 601),
+        store.begin_isb(tx(), begin(1), 5101),
         Err(ContentStoreError::Stale)
     );
     let mut next = begin(1);
     next.resource.generation = 2;
-    store.begin(tx(), next, 601).unwrap();
+    store.begin_isb(tx(), next, 5101).unwrap();
 }
 
 #[test]
-fn malformed_or_duplicate_chunks_settle_without_partial_acceptance() {
-    for variant in 0..4 {
-        let mut store = owner();
-        store.begin(tx(), begin(1), 0).unwrap();
-        drain(&mut store);
-        let mut bytes = chunk(1);
-        match variant {
-            0 => bytes.offset = 4,
-            1 => bytes.ordinal = 1,
-            2 => {
-                bytes.bytes.pop();
-            }
-            _ => bytes.bytes[3] = 0,
-        }
-        assert_eq!(
-            store.chunk(tx(), &bytes, 1),
-            Err(ContentStoreError::Malformed)
-        );
-        assert!(store.quiescent());
-        assert_eq!(drain(&mut store).len(), 1);
-        assert!(store.lease(grant(), begin(1).resource).is_err());
-    }
-    let mut store = owner();
-    store.begin(tx(), begin(1), 0).unwrap();
-    store.chunk(tx(), &chunk(1), 0).unwrap();
-    assert_eq!(
-        store.chunk(tx(), &chunk(1), 0),
-        Err(ContentStoreError::Malformed)
-    );
-    assert!(store.quiescent());
-}
-
-#[test]
-fn rejected_begin_burns_the_generation_without_evicting_replay_state() {
+fn rejected_reservation_preserves_the_generation_for_retry() {
     let mut store = owner();
     let mut invalid = begin(1);
     invalid.total_bytes = 9;
     assert_eq!(
-        store.begin(tx(), invalid, 0),
+        store.begin_isb(tx(), invalid, 0),
         Err(ContentStoreError::Malformed)
     );
-    assert_eq!(
-        store.begin(tx(), begin(1), 0),
-        Err(ContentStoreError::Stale)
-    );
-    let mut next = begin(1);
-    next.resource.generation = 2;
-    store.begin(tx(), next, 0).unwrap();
+    store.begin_isb(tx(), begin(1), 0).unwrap();
     assert_eq!(store.usage().staging, 8);
 }
 
@@ -232,13 +212,19 @@ fn outcome_capacity_is_reserved_before_accepting_a_transfer() {
     let mut limits = ContentLimits::prototype(grant());
     limits.max_control_records = 3;
     let mut store = ContentResourceStore::new(limits).unwrap();
-    store.begin(tx(), begin(1), 0).unwrap();
+    store.begin_isb(tx(), begin(1), 0).unwrap();
     assert_eq!(
-        store.begin(tx(), begin(2), 0),
+        store.begin_isb(tx(), begin(2), 0),
         Err(ContentStoreError::Budget)
     );
-    store.chunk(tx(), &chunk(1), 0).unwrap();
-    store.end(tx(), &end(1), 0).unwrap();
+    store
+        .complete_isb(
+            grant(),
+            begin(1).resource,
+            &mut Some(Ok(isb::validated(&chunk(1).bytes))),
+            0,
+        )
+        .unwrap();
     // Even a peer that stops draining feedback cannot prevent terminal release.
     store
         .retire(
@@ -249,19 +235,33 @@ fn outcome_capacity_is_reserved_before_accepting_a_transfer() {
             },
         )
         .unwrap();
-    assert_eq!(drain(&mut store).len(), 3);
-    store.begin(tx(), begin(3), 0).unwrap();
+    assert_eq!(drain(&mut store).len(), 2);
+    store.confirm_isb_release(begin(1).resource).unwrap();
+    store.begin_isb(tx(), begin(3), 0).unwrap();
 }
 
 #[test]
 fn a_foreign_grant_cannot_abort_the_live_transfer() {
     let mut store = owner();
-    store.begin(tx(), begin(1), 0).unwrap();
-    let mut wrong = chunk(1);
-    wrong.grant.content_grant_epoch += 1;
-    assert_eq!(store.chunk(tx(), &wrong, 0), Err(ContentStoreError::Stale));
-    store.chunk(tx(), &chunk(1), 0).unwrap();
-    store.end(tx(), &end(1), 0).unwrap();
+    store.begin_isb(tx(), begin(1), 0).unwrap();
+    let wrong = ContentGrant {
+        content_grant_epoch: 99,
+        ..grant()
+    };
+    let mut result = Some(Ok(isb::validated(&chunk(1).bytes)));
+    assert_eq!(
+        store.complete_isb(wrong, begin(1).resource, &mut result, 0),
+        Err(ContentStoreError::Stale)
+    );
+    assert!(result.is_some());
+    store
+        .complete_isb(
+            grant(),
+            begin(1).resource,
+            &mut Some(Ok(isb::validated(&chunk(1).bytes))),
+            0,
+        )
+        .unwrap();
     assert_eq!(store.usage().resident, 8);
 }
 
@@ -312,7 +312,10 @@ fn inventory_reads_preserve_real_staging_and_last_consumer_custody() {
     let mut pool = ContentEpochPool::new(64 * 1024 * 1024).unwrap();
     assert!(pool.accounting().quiescent());
     pool.admit(ContentLimits::prototype(grant())).unwrap();
-    pool.active_mut().unwrap().begin(tx(), begin(1), 0).unwrap();
+    pool.active_mut()
+        .unwrap()
+        .begin_isb(tx(), begin(1), 0)
+        .unwrap();
     let staged = pool.accounting();
     assert_eq!(
         (staged.transfers, staged.resources, staged.resource_ids),
@@ -323,8 +326,14 @@ fn inventory_reads_preserve_real_staging_and_last_consumer_custody() {
     assert!(staged.response_records > 0);
     assert_eq!(pool.accounting(), staged); // Observation does not drain a response or collect.
     let store = pool.active_mut().unwrap();
-    store.chunk(tx(), &chunk(1), 1).unwrap();
-    store.end(tx(), &end(1), 2).unwrap();
+    store
+        .complete_isb(
+            grant(),
+            begin(1).resource,
+            &mut Some(Ok(isb::validated(&chunk(1).bytes))),
+            2,
+        )
+        .unwrap();
     let consumer = store.lease(grant(), begin(1).resource).unwrap();
     let live = pool.accounting();
     assert_eq!(
@@ -386,13 +395,7 @@ fn tiny_pinned_epochs_also_meet_a_metadata_bound() {
         let owner = pool.active_mut().unwrap();
         let mut b = begin(1);
         b.grant = g;
-        let mut c = chunk(1);
-        c.grant = g;
-        let mut e = end(1);
-        e.grant = g;
-        owner.begin(tx(), b, 0).unwrap();
-        owner.chunk(tx(), &c, 0).unwrap();
-        owner.end(tx(), &e, 0).unwrap();
+        isb::accept(owner, tx(), b, &chunk(1).bytes, 0);
         leases.push(owner.lease(g, begin(1).resource).unwrap());
         pool.disconnect();
     }
@@ -413,7 +416,7 @@ fn tiny_pinned_epochs_also_meet_a_metadata_bound() {
 #[test]
 fn cancelled_transfer_echoes_the_cancel_not_the_original_begin() {
     let mut store = owner();
-    store.begin(tx(), begin(1), 0).unwrap();
+    store.begin_isb(tx(), begin(1), 0).unwrap();
     drain(&mut store);
     let cancel_tx = TransactionId::from_raw(42);
     store
@@ -425,6 +428,16 @@ fn cancelled_transfer_echoes_the_cancel_not_the_original_begin() {
             },
         )
         .unwrap();
+    assert!(drain(&mut store).is_empty());
+    assert_eq!(
+        store.complete_isb(
+            grant(),
+            begin(1).resource,
+            &mut Some(Err(ContentStoreError::Malformed)),
+            0
+        ),
+        Err(ContentStoreError::Stale)
+    );
     assert_eq!(drain(&mut store)[0].transaction, cancel_tx);
     store.collect();
     assert!(drain(&mut store).is_empty());
@@ -453,34 +466,7 @@ fn partial_retirement_reopens_exactly_the_reserved_global_headroom() {
                 chunk_count: 128,
                 total_bytes: 4194304,
             };
-            owner.begin(tx(), b.clone(), 0).unwrap();
-            for ordinal in 0..128 {
-                owner
-                    .chunk(
-                        tx(),
-                        &ContentResourceChunk {
-                            grant: g,
-                            resource: b.resource,
-                            ordinal,
-                            offset: u64::from(ordinal) * 32768,
-                            bytes: vec![0; 32768],
-                        },
-                        0,
-                    )
-                    .unwrap();
-            }
-            owner
-                .end(
-                    tx(),
-                    &ContentResourceEnd {
-                        grant: g,
-                        resource: b.resource,
-                        total_bytes: 4194304,
-                        chunk_count: 128,
-                    },
-                    0,
-                )
-                .unwrap();
+            isb::accept(owner, tx(), b.clone(), &vec![0; b.total_bytes as usize], 0);
             leases.push(owner.lease(g, b.resource).unwrap());
             drain(owner);
         }

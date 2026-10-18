@@ -15,6 +15,7 @@ pub struct Peer {
     tag: u16,
     offset: u64,
     queued: VecDeque<Vec<u8>>,
+    revision: u16,
 }
 
 impl Peer {
@@ -35,7 +36,12 @@ impl Peer {
             tag: 0,
             offset: 0,
             queued: VecDeque::new(),
+            revision: 8,
         }
+    }
+
+    pub fn set_revision(&mut self, revision: u16) {
+        self.revision = revision;
     }
 
     pub fn rpc(&mut self, kind: u8, body: &[u8]) -> io::Result<(u8, Vec<u8>)> {
@@ -228,6 +234,42 @@ impl Peer {
             .collect()
     }
 
+    /// One Twrite whose reply is deliberately left unread, for tests
+    /// that must stage request bytes in the socket while the owner
+    /// holds its turns. The tag sequence advances exactly as for an
+    /// answered write; the caller must consume the reply with
+    /// [`Self::read_reply`] before any other request is answered, so
+    /// a write reply is never mistaken for an event.
+    pub fn write_unanswered(&mut self, fid: u32, bytes: &[u8]) -> u16 {
+        self.tag += 1;
+        let mut request = ((23 + bytes.len()) as u32).to_le_bytes().to_vec();
+        request.push(118);
+        request.extend(self.tag.to_le_bytes());
+        request.extend(fid.to_le_bytes());
+        request.extend(0u64.to_le_bytes());
+        request.extend((bytes.len() as u32).to_le_bytes());
+        request.extend_from_slice(bytes);
+        self.stream.write_all(&request).unwrap();
+        self.tag
+    }
+
+    /// Consumes one outstanding reply, asserting it answers
+    /// `expected_tag`. Replies arrive in request order.
+    pub fn read_reply(&mut self, expected_tag: u16) -> (u8, Vec<u8>) {
+        let mut header = [0; 7];
+        self.stream.read_exact(&mut header).unwrap();
+        assert_eq!(
+            u16::from_le_bytes(header[5..].try_into().unwrap()),
+            expected_tag,
+            "reply answers an unexpected tag"
+        );
+        let size = u32::from_le_bytes(header[..4].try_into().unwrap()) as usize;
+        assert!((7..=65536).contains(&size));
+        let mut body = vec![0; size - 7];
+        self.stream.read_exact(&mut body).unwrap();
+        (header[4], body)
+    }
+
     pub fn read(&mut self, fid: u32, offset: u64) -> Vec<u8> {
         self.try_read(fid, offset).unwrap()
     }
@@ -249,7 +291,9 @@ impl Peer {
     /// Stages `bytes` in a fresh transaction fid and submits them. Returns
     /// the submit reply; the transaction stays open until `clear`.
     pub fn submit(&mut self, bytes: &[u8]) -> (u8, Vec<u8>) {
-        let record = decode_shell_file_record(bytes, ShellFileClass::Candidate).unwrap();
+        let record =
+            decode_shell_file_record_at_revision(bytes, ShellFileClass::Candidate, self.revision)
+                .unwrap();
         self.open(5, b"transaction", 2);
         assert_eq!(self.write(5, bytes).0, 119);
         let submit = encode_shell_file_submit(ShellFileSubmit {
@@ -297,7 +341,9 @@ impl Peer {
     }
 
     pub fn try_ack(&mut self, bytes: &[u8]) -> io::Result<()> {
-        let record = decode_shell_file_record(bytes, ShellFileClass::Event).unwrap();
+        let record =
+            decode_shell_file_record_at_revision(bytes, ShellFileClass::Event, self.revision)
+                .unwrap();
         let ack = encode_shell_file_ack(ShellFileAck {
             connection_epoch: record.header.connection_epoch,
             sequence: record.header.sequence,
@@ -322,7 +368,7 @@ impl Peer {
         assert_eq!(self.submit(bytes).0, 119);
         let submitted = self.next_event();
         assert_eq!(
-            decode_shell_file_submitted(&submitted)
+            decode_shell_file_submitted_at_revision(&submitted, self.revision)
                 .unwrap()
                 .submission_id,
             id

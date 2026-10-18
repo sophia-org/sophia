@@ -20,7 +20,7 @@ fn source(bytes: &[u8]) -> OwnedFd {
     .unwrap();
     file.into()
 }
-fn ready(worker: &SealedValidationWorker) {
+fn ready(worker: &IsbValidationWorker) {
     use rustix::event::{PollFd, PollFlags, Timespec};
     let mut fds = [PollFd::from_borrowed_fd(worker.readiness(), PollFlags::IN)];
     assert_eq!(
@@ -35,7 +35,7 @@ fn ready(worker: &SealedValidationWorker) {
         1
     );
 }
-fn completion(worker: &mut SealedValidationWorker) -> SealedValidationCompletion {
+fn completion(worker: &mut IsbValidationWorker) -> IsbValidationCompletion {
     let end = Instant::now() + Duration::from_secs(3);
     loop {
         if let Some(result) = worker.take_completed().unwrap() {
@@ -48,7 +48,7 @@ fn completion(worker: &mut SealedValidationWorker) -> SealedValidationCompletion
 
 #[test]
 fn finished_but_uncollected_work_still_consumes_its_credit() {
-    let mut worker = SealedValidationWorker::new(1, 65540).unwrap();
+    let mut worker = IsbValidationWorker::new(1, 65540).unwrap();
     let bytes = vec![0; 65540];
     let deadline = Instant::now() + Duration::from_secs(3);
     let job = worker
@@ -59,7 +59,7 @@ fn finished_but_uncollected_work_still_consumes_its_credit() {
     let extra = source(&[0; 4]);
     let fd = extra.as_raw_fd();
     let (error, returned) = worker.submit(extra, 4, deadline).unwrap_err();
-    assert_eq!(error, SealedSubmitFailure::Capacity);
+    assert_eq!(error, IsbSubmitFailure::Capacity);
     assert_eq!(returned.as_raw_fd(), fd);
     drop(returned);
     let done = completion(&mut worker);
@@ -74,7 +74,7 @@ fn finished_but_uncollected_work_still_consumes_its_credit() {
 
 #[test]
 fn invalid_sources_and_expired_deadlines_return_one_terminal_completion() {
-    let mut worker = SealedValidationWorker::new(4, 8).unwrap();
+    let mut worker = IsbValidationWorker::new(4, 8).unwrap();
     let future = Instant::now() + Duration::from_secs(3);
     let past = Instant::now() - Duration::from_millis(1);
     let expired = worker.submit(source(&[0; 8]), 8, past).unwrap();
@@ -91,11 +91,11 @@ fn invalid_sources_and_expired_deadlines_return_one_terminal_completion() {
         assert_eq!(
             result.result.err(),
             Some(if id == expired {
-                SealedValidationFailure::Timeout
+                IsbValidationFailure::Timeout
             } else if id == wrong_size {
-                SealedValidationFailure::SizeMismatch
+                IsbValidationFailure::SizeMismatch
             } else {
-                SealedValidationFailure::Malformed
+                IsbValidationFailure::Malformed
             })
         );
     }
@@ -105,7 +105,7 @@ fn invalid_sources_and_expired_deadlines_return_one_terminal_completion() {
 
 #[test]
 fn cancellation_never_removes_the_completion_obligation() {
-    let mut worker = SealedValidationWorker::new(1, 4 << 20).unwrap();
+    let mut worker = IsbValidationWorker::new(1, 4 << 20).unwrap();
     let job = worker
         .submit(
             source(&vec![0; 4 << 20]),
@@ -120,7 +120,7 @@ fn cancellation_never_removes_the_completion_obligation() {
     // Completion can win the cancellation race. The resource owner must
     // still reject that result if its reservation was already cancelled.
     if let Err(error) = done.result {
-        assert_eq!(error, SealedValidationFailure::Cancelled);
+        assert_eq!(error, IsbValidationFailure::Cancelled);
     }
     assert!(!worker.cancel(job));
     assert!(worker.take_completed().unwrap().is_none());
@@ -128,16 +128,13 @@ fn cancellation_never_removes_the_completion_obligation() {
 
 #[test]
 fn admission_reserves_all_worker_credits_before_any_source_arrives() {
-    let mut worker = SealedValidationWorker::new(4, 8).unwrap();
+    let mut worker = IsbValidationWorker::new(4, 8).unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
     let ids: Vec<_> = (0..4)
         .map(|_| worker.reserve(8, deadline).unwrap())
         .collect();
     assert_eq!(worker.pending(), 4);
-    assert_eq!(
-        worker.reserve(8, deadline),
-        Err(SealedSubmitFailure::Capacity)
-    );
+    assert_eq!(worker.reserve(8, deadline), Err(IsbSubmitFailure::Capacity));
     assert!(worker.take_completed().unwrap().is_none());
     assert!(worker.release_reserved(ids[1]));
     let replacement = worker.reserve(8, deadline).unwrap();
@@ -145,7 +142,7 @@ fn admission_reserves_all_worker_credits_before_any_source_arrives() {
     let stale_fd = source(&[0; 8]);
     let raw = stale_fd.as_raw_fd();
     let (error, returned) = worker.submit_reserved(ids[1], stale_fd).unwrap_err();
-    assert_eq!(error, SealedSubmitFailure::Invalid);
+    assert_eq!(error, IsbSubmitFailure::Invalid);
     assert_eq!(returned.as_raw_fd(), raw);
     drop(returned);
     for id in [ids[3], replacement, ids[0], ids[2]] {
@@ -165,7 +162,7 @@ fn admission_reserves_all_worker_credits_before_any_source_arrives() {
 
 #[test]
 fn reserved_source_cannot_renew_the_admission_deadline_or_reenter_after_cancel() {
-    let mut worker = SealedValidationWorker::new(2, 8).unwrap();
+    let mut worker = IsbValidationWorker::new(2, 8).unwrap();
     let expired = worker
         .reserve(8, Instant::now() - Duration::from_millis(1))
         .unwrap();
@@ -178,15 +175,15 @@ fn reserved_source_cannot_renew_the_admission_deadline_or_reenter_after_cancel()
     let duplicate = source(&[0; 8]);
     assert_eq!(
         worker.submit_reserved(cancelled, duplicate).unwrap_err().0,
-        SealedSubmitFailure::Invalid
+        IsbSubmitFailure::Invalid
     );
     assert_eq!(
         completion(&mut worker).result.err(),
-        Some(SealedValidationFailure::Timeout)
+        Some(IsbValidationFailure::Timeout)
     );
     assert_eq!(
         completion(&mut worker).result.err(),
-        Some(SealedValidationFailure::Cancelled)
+        Some(IsbValidationFailure::Cancelled)
     );
     assert_eq!(worker.pending(), 0);
 }
@@ -207,7 +204,7 @@ fn worker_completion_reaches_its_disconnected_registry_owner() {
     registry
         .resources_mut(grant)
         .unwrap()
-        .begin_sealed(
+        .begin_isb(
             TransactionId::from_raw(1),
             ContentResourceBegin {
                 grant,
@@ -223,7 +220,7 @@ fn worker_completion_reaches_its_disconnected_registry_owner() {
             0,
         )
         .unwrap();
-    let mut worker = SealedValidationWorker::new(1, 8).unwrap();
+    let mut worker = IsbValidationWorker::new(1, 8).unwrap();
     let id = worker
         .reserve(8, Instant::now() + Duration::from_secs(3))
         .unwrap();
@@ -234,7 +231,7 @@ fn worker_completion_reaches_its_disconnected_registry_owner() {
     assert_eq!(done.job, id);
     let mut pixels = Some(done.result.map_err(|_| ContentStoreError::Malformed));
     assert_eq!(
-        registry.complete_sealed(grant, resource, &mut pixels, 1),
+        registry.complete_isb(grant, resource, &mut pixels, 1),
         Err(ContentStoreError::Revoked)
     );
     assert!(pixels.is_none());
@@ -246,16 +243,15 @@ fn worker_completion_reaches_its_disconnected_registry_owner() {
 #[test]
 fn published_validation_budget_can_split_pixels_without_skipping_components() {
     use sophia_linux_peer::SealedMapping;
-    let mut bytes = vec![0; SEALED_PIXEL_VALIDATION_BYTES + 4];
-    bytes[SEALED_PIXEL_VALIDATION_BYTES] = 1;
+    let mut bytes = vec![0; ISB_PIXEL_VALIDATION_BYTES + 4];
+    bytes[ISB_PIXEL_VALIDATION_BYTES] = 1;
     let mut capped =
-        SealedPixelValidation::new(SealedMapping::map(source(&bytes), bytes.len()).unwrap())
-            .unwrap();
+        IsbPixelValidation::new(SealedMapping::map(source(&bytes), bytes.len()).unwrap()).unwrap();
     assert!(!capped.step_with_budget(usize::MAX).unwrap());
     assert!(capped.step_with_budget(usize::MAX).is_err());
     for budget in [1, 2, 3, 5, 7] {
         let mut scan =
-            SealedPixelValidation::new(SealedMapping::map(source(&[0; 8]), 8).unwrap()).unwrap();
+            IsbPixelValidation::new(SealedMapping::map(source(&[0; 8]), 8).unwrap()).unwrap();
         for unit in 1..=8usize.div_ceil(budget) {
             assert_eq!(scan.step_with_budget(budget).unwrap(), unit * budget >= 8);
         }
@@ -266,15 +262,15 @@ fn published_validation_budget_can_split_pixels_without_skipping_components() {
             let mut bytes = [0; 8];
             bytes[component] = 1;
             let mut scan =
-                SealedPixelValidation::new(SealedMapping::map(source(&bytes), 8).unwrap()).unwrap();
+                IsbPixelValidation::new(SealedMapping::map(source(&bytes), 8).unwrap()).unwrap();
             while let Ok(complete) = scan.step_with_budget(budget) {
                 assert!(!complete, "invalid component was skipped");
             }
             assert!(scan.finish().is_err());
         }
     }
-    assert!(SealedValidationWorker::with_validation_budget(1, 8, 0).is_err());
-    let mut worker = SealedValidationWorker::with_validation_budget(1, 8, 3).unwrap();
+    assert!(IsbValidationWorker::with_validation_budget(1, 8, 0).is_err());
+    let mut worker = IsbValidationWorker::with_validation_budget(1, 8, 3).unwrap();
     worker
         .submit(source(&[0; 8]), 8, Instant::now() + Duration::from_secs(3))
         .unwrap();

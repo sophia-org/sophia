@@ -32,11 +32,8 @@ impl Canvas {
         if self.bytes.is_empty() {
             self.bytes = vec![0; self.capacity];
         }
-        let shade = (generation % 128) as u8;
         let prefix = &mut self.bytes[..length];
-        for (index, byte) in prefix.iter_mut().enumerate() {
-            *byte = if index % 4 == 3 { 255 } else { shade };
-        }
+        fill_pixels(prefix, generation);
         Ok(prefix)
     }
 
@@ -44,5 +41,13 @@ impl Canvas {
     #[allow(dead_code)]
     pub fn allocated(&self) -> usize {
         self.bytes.len()
+    }
+}
+
+/// Identical pixel work for the IPC canvas and directly mapped ISB backing.
+pub fn fill_pixels(bytes: &mut [u8], generation: u64) {
+    let shade = (generation % 128) as u8;
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        *byte = if index % 4 == 3 { 255 } else { shade };
     }
 }

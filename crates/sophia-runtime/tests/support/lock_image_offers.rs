@@ -1,12 +1,12 @@
 //! t338 lock slice 4a: sealed offers in custody, from receipt to their
-//! terminal status and source release, and the retired sealed image lease.
+//! terminal status and source release, and the retired ISB image lease.
 //! The test acts as owner: it reserves worker jobs, reports hand-overs and
 //! supplies results. No worker or socket runs here.
 use std::sync::Arc;
 use std::time::Duration;
 
 use super::*;
-use sophia_runtime::{SealedValidationFailure, SharedPixels};
+use sophia_runtime::{IsbValidationFailure, SharedPixels};
 
 const RESOURCE_CANCEL: LockFileKind = LockFileKind::ResourceCancel;
 
@@ -218,15 +218,15 @@ fn source_packets_fault_on_foreign_or_unadmitted_identity_and_stale_after_settli
 fn worker_failures_reject_with_invalid_source_or_validation_timeout() {
     for (failure, reason) in [
         (
-            SealedValidationFailure::Malformed,
+            IsbValidationFailure::Malformed,
             LOCK_RESOURCE_REASON_INVALID_SOURCE,
         ),
         (
-            SealedValidationFailure::Timeout,
+            IsbValidationFailure::Timeout,
             LOCK_RESOURCE_REASON_VALIDATION_TIMEOUT,
         ),
         (
-            SealedValidationFailure::Cancelled,
+            IsbValidationFailure::Cancelled,
             LOCK_RESOURCE_REASON_VALIDATION_TIMEOUT,
         ),
     ] {
@@ -457,60 +457,37 @@ fn admission_refuses_offers_that_no_longer_fit_the_lock() {
 }
 
 #[test]
-fn offers_share_identities_and_the_live_limit_with_uploads_but_no_slot() {
+fn offers_share_identities_and_the_live_limit_with_accepted_images() {
     let mut provider = ready();
-    provider.image_begin(1).unwrap();
-    provider.image_begin(2).unwrap();
+    provider.validating(1, 11);
+    provider.custody.image_completed(11, Ok(pixels())).unwrap();
     provider.events();
-    // A third offer exceeds max_offers: receipt then budget, at once.
+    provider.validating(2, 12);
+    provider.custody.image_completed(12, Ok(pixels())).unwrap();
+    provider.events();
+    // Two accepted images and one offer fill the three live places.
     provider.image_begin(3).unwrap();
+    provider.events();
+    provider.image_begin(4).unwrap();
     let events = provider.events();
     assert_eq!(kinds(&events)[0], LockFileKind::Submitted);
     assert_eq!(status(&events, 1), (LockResourceState::Rejected, 6));
-    let begin = |transaction, resource, slot| {
-        LockResourceBegin {
-            transaction,
-            resource,
-            width_px: 4,
-            height_px: 2,
-            slot,
-        }
-        .encode()
-        .unwrap()
-    };
-    // An upload may not take an offered identity.
+    let mut duplicate = metadata(5);
+    duplicate.resource = resource(1).id;
     assert_eq!(
-        provider.submit(LockFileKind::ResourceBegin, &begin(40, resource(1), 0)),
+        provider.submit(LockFileKind::ImageBegin, &duplicate.encode().unwrap()),
         Err(Errno::EINVAL)
     );
-    // Two offers and one upload fill the three live places.
-    let upload = LockResourceId {
-        id: 60,
-        generation: 1,
+    // Byte admission is refused even when it names a fresh identity.
+    let begin = LockResourceBegin {
+        transaction: 40,
+        resource: resource(40),
+        width_px: 4,
+        height_px: 2,
+        slot: 0,
     };
-    provider
-        .submit(LockFileKind::ResourceBegin, &begin(40, upload, 0))
-        .unwrap();
     assert_eq!(
-        status(&provider.events(), 1),
-        (LockResourceState::Admitted, 0)
-    );
-    let other = LockResourceId {
-        id: 61,
-        generation: 1,
-    };
-    provider
-        .submit(LockFileKind::ResourceBegin, &begin(41, other, 1))
-        .unwrap();
-    assert_eq!(
-        status(&provider.events(), 1),
-        (LockResourceState::Rejected, 6)
-    );
-    // An offer may not take the upload's identity either.
-    let mut taken = metadata(4);
-    taken.resource = upload.id;
-    assert_eq!(
-        provider.submit(LockFileKind::ImageBegin, &taken.encode().unwrap()),
+        provider.submit(LockFileKind::ResourceBegin, &begin.encode().unwrap()),
         Err(Errno::EINVAL)
     );
 }
@@ -539,8 +516,8 @@ fn a_retired_sealed_image_stays_charged_until_its_last_reader_lets_go() {
         provider.custody.take_inbound(),
         Some(LockInbound::ResourceRetired(retired)) if retired == resource(1)
     ));
-    assert_eq!(provider.custody.sealed_leases_pending(), 1);
-    assert_eq!(provider.custody.collect_sealed_leases(), Ok(false));
+    assert_eq!(provider.custody.isb_leases_pending(), 1);
+    assert_eq!(provider.custody.collect_isb_leases(), Ok(false));
     // Its identity and live place stay taken: with two offers live the
     // limit of three is full.
     let mut again = metadata(5);
@@ -549,30 +526,18 @@ fn a_retired_sealed_image_stays_charged_until_its_last_reader_lets_go() {
         provider.submit(LockFileKind::ImageBegin, &again.encode().unwrap()),
         Err(Errno::EINVAL)
     );
-    provider.image_begin(6).unwrap();
+    provider.validating(6, 16);
+    provider.custody.image_completed(16, Ok(pixels())).unwrap();
+    provider.events();
     provider.image_begin(7).unwrap();
     provider.events();
-    let upload = LockResourceBegin {
-        transaction: 40,
-        resource: LockResourceId {
-            id: 60,
-            generation: 1,
-        },
-        width_px: 4,
-        height_px: 2,
-        slot: 0,
-    }
-    .encode()
-    .unwrap();
-    provider
-        .submit(LockFileKind::ResourceBegin, &upload)
-        .unwrap();
+    provider.image_begin(8).unwrap();
     assert_eq!(
         status(&provider.events(), 1),
         (LockResourceState::Rejected, 6)
     );
     drop(held);
-    assert_eq!(provider.custody.collect_sealed_leases(), Ok(true));
+    assert_eq!(provider.custody.collect_isb_leases(), Ok(true));
     let events = provider.events();
     assert_eq!(kinds(&events), [LockFileKind::ResourceReleased]);
     assert_eq!(
@@ -583,13 +548,8 @@ fn a_retired_sealed_image_stays_charged_until_its_last_reader_lets_go() {
             reason: 0,
         }
     );
-    assert_eq!(provider.custody.sealed_leases_pending(), 0);
-    // The place is free again.
-    provider
-        .submit(LockFileKind::ResourceBegin, &upload)
-        .unwrap();
-    assert_eq!(
-        status(&provider.events(), 1),
-        (LockResourceState::Admitted, 0)
-    );
+    assert_eq!(provider.custody.isb_leases_pending(), 0);
+    // The place is free again, even with an accepted image and offer live.
+    provider.image_begin(9).unwrap();
+    assert_eq!(kinds(&provider.events()), [LockFileKind::Submitted]);
 }

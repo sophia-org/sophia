@@ -98,7 +98,6 @@ impl Session {
         image.producer.cancel(offer, now)?;
         let id = self.submission.admit_prepared(prepared);
         self.now = now;
-        self.image_cancel_submission = Some(id);
         self.dirty = true;
         Ok(id)
     }

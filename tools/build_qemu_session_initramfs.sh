@@ -94,6 +94,8 @@ SDK_SOURCE="$ROOT_DIR/vendor/c-desktop-sdk/source/src"
 cc -std=c11 -O2 -Wall -Wextra -Werror -I"$SDK_SOURCE" \
     "$ROOT_DIR/tools/qemu_lock_provider_standin.c" \
     "$SDK_SOURCE"/lock_files/*.c "$SDK_SOURCE"/nine_p/*.c \
+    "$SDK_SOURCE"/image_channel/*.c "$SDK_SOURCE"/image_producer/*.c \
+    "$SDK_SOURCE"/launch_auth/*.c \
     -o "$GUEST_TOOLS/sophia-qemu-lock-provider"
 cc -std=c11 -O2 -Wall -Wextra -Werror "$ROOT_DIR/tools/qemu_line_stamp.c" \
     -o "$GUEST_TOOLS/sophia-qemu-line-stamp"

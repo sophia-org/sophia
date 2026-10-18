@@ -29,7 +29,9 @@ class ServiceControlTest(unittest.TestCase):
         cls.directory = tempfile.TemporaryDirectory()
         binary = Path(cls.directory.name) / "control"
         sources = sorted(str(p) for p in (SDK / "lock_files").glob("*.c")) + \
-            sorted(str(p) for p in (SDK / "nine_p").glob("*.c"))
+            sorted(str(p) for p in (SDK / "nine_p").glob("*.c")) + \
+            sorted(str(p) for p in (SDK / "image_channel").glob("*.c")) + \
+            sorted(str(p) for p in (SDK / "image_producer").glob("*.c"))
         subprocess.run(["cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", f"-I{SDK}", f"-I{TOOLS}",
                         str(TOOLS / "tests/qemu_lock_provider_service_control.c"), *sources,
                         "-o", str(binary)], check=True, timeout=300)

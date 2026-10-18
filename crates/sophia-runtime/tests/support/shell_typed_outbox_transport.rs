@@ -83,30 +83,22 @@ impl Owner {
                 .inbound_is_empty(),
         )
     }
-    fn begin_resource(&mut self, peer: &mut Peer) {
+    fn cancel_resource(&mut self, peer: &mut Peer) {
         let grant = self.transport.store_grant;
         peer.submit(
             &mut self.transport,
-            ShellFileKind::ResourceBegin,
+            ShellFileKind::ResourceCancel,
             |header| {
-                encode_shell_file_resource_begin(
+                encode_shell_file_resource_cancel(
                     header,
-                    &ShellFileResourceBegin {
+                    &ShellFileTransactionRecord {
                         transaction: tx(3),
-                        slot: 0,
-                        record: ShellContentRecord::ResourceBegin(ContentResourceBegin {
+                        record: ShellContentRecord::ResourceCancel(ContentResourceCancel {
                             grant,
                             resource: ContentResourceId {
                                 id: 1,
                                 generation: 1,
                             },
-                            width_px: 1,
-                            height_px: 1,
-                            rendered_scale_numerator: 1,
-                            rendered_scale_denominator: 1,
-                            pixel_format: 1,
-                            chunk_count: 1,
-                            total_bytes: 4,
                         }),
                     },
                 )
@@ -206,6 +198,55 @@ fn control(limit: usize) -> Class {
         limit,
         oversize: ShellTransportError::ContentQueueSaturated,
     }
+}
+
+#[test]
+fn borrowed_content_charges_match_encoding_and_preserve_refusals() {
+    let mut cases = vec![
+        rejected_allocation(grant(1)),
+        native_input("hello", grant(1)),
+    ];
+    for outputs in 0..=25 {
+        cases.push(OutboundRecord::Content(
+            tx(1),
+            ShellContentRecord::OutputFacts(ContentOutputFacts {
+                grant: grant(1),
+                facts_generation: 1,
+                outputs: (0..outputs).map(|index| entry(index + 1)).collect(),
+            }),
+        ));
+    }
+    cases.push(OutboundRecord::Content(
+        tx(1),
+        ShellContentRecord::OutputFacts(ContentOutputFacts {
+            grant: grant(1),
+            facts_generation: 1,
+            outputs: vec![entry(1), entry(1)],
+        }),
+    ));
+    cases.push(OutboundRecord::Content(
+        tx(1),
+        ShellContentRecord::Limits(ContentLimits::prototype(grant(1))),
+    ));
+    let mut invalid_transaction = rejected_allocation(grant(1));
+    if let OutboundRecord::Content(transaction, _) = &mut invalid_transaction {
+        *transaction = tx(0);
+    }
+    cases.push(invalid_transaction);
+    let mut accepted = 0;
+    let mut refused = 0;
+    for record in cases {
+        match (record.native(), record.body_len()) {
+            (Ok((_, encoded)), Ok(length)) => {
+                assert_eq!(encoded.len(), length);
+                accepted += 1;
+            }
+            (Err(_), Err(_)) => refused += 1,
+            other => panic!("charge validation diverged for {record:?}: {other:?}"),
+        }
+    }
+    assert!(accepted > 16);
+    assert!(refused >= 4);
 }
 
 #[test]
@@ -339,7 +380,7 @@ fn disconnect_releases_typed_records_file_input_and_snapshots() {
     let mut epochs = registry();
     let mut owner = Owner::new(&mut epochs, 1, 64);
     let mut peer = owner.attach_files();
-    owner.begin_resource(&mut peer);
+    owner.cancel_resource(&mut peer);
     assert_eq!(owner.inbox(), 1);
     let facts = owner
         .transport
@@ -355,7 +396,7 @@ fn disconnect_releases_typed_records_file_input_and_snapshots() {
             > 0
     );
     // The snapshot and its announcement are still unread, and a submitted
-    // Begin still belongs to the export. Further typed records stay queued.
+    // Cancel still belongs to the export. Further typed records stay queued.
     for outputs in [3, 4] {
         let admitted = owner
             .transport
@@ -428,10 +469,40 @@ fn a_saturated_or_disconnected_neighbour_does_not_spend_another_owners_budget() 
 #[test]
 fn a_resource_request_stays_queued_until_its_response_credits_exist() {
     let mut epochs = registry();
-    let mut owner = Owner::new(&mut epochs, 1, 2);
+    let mut owner = Owner::new(&mut epochs, 1, 3);
     let mut peer = owner.attach_files();
-    owner.begin_resource(&mut peer);
-    // Begin owes up to three responses; two record credits cannot hold them.
+    owner.cancel_resource(&mut peer);
+    // A live sealed reservation owns both available response credits.
+    // Cancelling an unrelated resource must wait for its own refusal credit.
+    let store_grant = owner.transport.store_grant;
+    epochs
+        .resources_mut(store_grant)
+        .unwrap()
+        .begin_isb(
+            tx(4),
+            ContentResourceBegin {
+                grant: store_grant,
+                resource: ContentResourceId {
+                    id: 2,
+                    generation: 1,
+                },
+                width_px: 1,
+                height_px: 1,
+                rendered_scale_numerator: 1,
+                rendered_scale_denominator: 1,
+                pixel_format: 1,
+                chunk_count: 1,
+                total_bytes: 4,
+            },
+            0,
+        )
+        .unwrap();
+    owner
+        .transport
+        .content_limits
+        .as_mut()
+        .unwrap()
+        .max_control_records = 2;
     assert_eq!(
         owner
             .transport
@@ -444,7 +515,7 @@ fn a_resource_request_stays_queued_until_its_response_credits_exist() {
     let store_grant = owner.transport.store_grant;
     assert_eq!(
         epochs.resources(store_grant).unwrap().control_occupancy(),
-        0
+        2
     );
     owner
         .transport

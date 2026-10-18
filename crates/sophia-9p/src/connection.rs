@@ -270,6 +270,9 @@ impl<E: Export> Connection<E> {
     /// there is room for its reply. Each retry is checked against its epoch
     /// first, so revocation ends a waiting read.
     pub fn retry_waiting(&mut self, export: &mut E) -> Result<(), Fatal> {
+        #[cfg(feature = "comparator-request-attribution")]
+        let _profile =
+            crate::request_attribution::enter(crate::request_attribution::Site::RetryReads);
         let mut index = 0;
         while index < self.waiting.len() {
             let waiting = self.waiting[index];
@@ -408,6 +411,9 @@ impl<E: Export> Connection<E> {
     }
 
     fn send(&mut self, tag: Tag, reply: &Reply) -> Result<(), Fatal> {
+        #[cfg(feature = "comparator-request-attribution")]
+        let _profile =
+            crate::request_attribution::enter(crate::request_attribution::Site::EncodeReply);
         #[cfg(feature = "comparator-wire-trace")]
         crate::wire_trace::reply(self.id.0, tag.0, reply);
         let start = self.output.len();
@@ -442,6 +448,8 @@ impl<E: Export> Connection<E> {
         tag: Tag,
         request: Request<'_>,
     ) -> Result<Option<Reply>, Fatal> {
+        #[cfg(feature = "comparator-request-attribution")]
+        let _profile = crate::request_attribution::request(&request);
         #[cfg(feature = "comparator-wire-trace")]
         crate::wire_trace::request(self.id.0, tag.0, &request);
         #[cfg(feature = "comparator-progress")]

@@ -2,16 +2,20 @@
 //! t295: the pinned C SDK's lock provider client against the production lock
 //! export. `lock_files_c.rs` proves the contract with hand-encoded records;
 //! this test proves the vendored SDK client itself: negotiation with a chord,
-//! lock object fetches, a two-chunk upload, demand and permit, a presented
+//! lock object fetches, a sealed image, demand and permit, a presented
 //! candidate, entry and chord events, and the republish to unlocking. The
 //! test plays Session through the production worker.
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 use sophia_protocol::lock_files::*;
 use sophia_runtime::lock_files::*;
+use sophia_runtime::{
+    ProcessLaunchSpec, ProcessSupervisor, SupervisedProcessKind, SupervisorCommand,
+};
+#[path = "support/image_test_authority.rs"]
+mod authority;
 
 struct Scratch(PathBuf);
 
@@ -132,16 +136,37 @@ fn exchange(scratch: &Scratch, client: &Path, language: &str) {
         },
     )
     .unwrap();
-    let mut child = Command::new(client)
-        .arg(transport.socket_path())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
+    transport
+        .enable_isb_images(LockImagePolicy {
+            hello_timeout_ms: 2000,
+            validation_timeout_ms: 5000,
+            validation_chunk_bytes: 65536,
+            capture_interest_timeout_ms: 500,
+            max_sealed_backing_bytes: 256,
+        })
         .unwrap();
-    transport.authorize_supervised_pid(child.id()).unwrap();
+    let gate = scratch.0.join("ready");
+    let spec = ProcessLaunchSpec::new(client)
+        .arg(transport.socket_path())
+        .env("SOPHIA_TEST_READY_FILE", &gate);
+    let mut child = ProcessSupervisor::new(SupervisedProcessKind::LockProvider, spec);
+    child
+        .apply(SupervisorCommand::StartProcess {
+            process: SupervisedProcessKind::LockProvider,
+            delay: Duration::ZERO,
+        })
+        .unwrap();
+    // Supplied afid admission isolates SDK interoperability from launch auth.
+    transport
+        .authorize_assignee(
+            LockFileAssignee::from_supervisor(&child)
+                .unwrap()
+                .with_authentication(Box::new(authority::Factory)),
+        )
+        .unwrap();
     let service = LockFileService::spawn(transport, locked(), Vec::new()).unwrap();
     // Admitted: release the client's gate.
-    child.stdin.take().unwrap().write_all(b"G").unwrap();
+    std::fs::write(gate, b"G").unwrap();
 
     let deadline = Instant::now() + Duration::from_secs(15);
     let mut chords = None;
@@ -149,11 +174,11 @@ fn exchange(scratch: &Scratch, client: &Path, language: &str) {
     let mut presented = false;
     let status = loop {
         if Instant::now() >= deadline {
-            let _ = child.kill();
+            let _ = child.terminate();
             panic!("the {language} SDK client did not finish");
         }
-        if let Some(status) = child.try_wait().unwrap() {
-            break status;
+        if child.poll().unwrap().is_some() {
+            break child.take_exit_status().unwrap();
         }
         match service.event_timeout(Duration::from_millis(5)) {
             Ok(LockFileServiceEvent::Connected {
@@ -216,13 +241,7 @@ fn exchange(scratch: &Scratch, client: &Path, language: &str) {
             Err(_) => {}
         }
     };
-    let mut stdout = String::new();
-    std::io::Read::read_to_string(child.stdout.as_mut().unwrap(), &mut stdout).unwrap();
-    assert!(status.success(), "{status:?} {stdout}");
-    assert!(
-        stdout.contains(&format!("lock_client_{language}_sdk status=done")),
-        "{stdout}"
-    );
+    assert!(status.success(), "{language} peer: {status:?}");
     assert_eq!(
         chords,
         Some(vec![LockChordRequest {

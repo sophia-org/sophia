@@ -2,8 +2,43 @@
 //! the IPC fixture at ec56ef5eb are retained; typed custody replaces writes.
 //! Each synchronous fixture loop models a fresh owner pass: input turn first,
 //! then resource/role service and publication flush, as in the Session owner.
+//! Pixels arrive only as sealed images over the authenticated channel, admitted
+//! by the owner's own image worker against a live allocation.
 use super::*;
-use sophia_shell_client::{Admission, Custody, ShellClientOptions, ShellConnection};
+use crate::shell_component_connections::content_now_msec;
+use sophia_shell_client::{
+    Admission, Custody, NativeLauncherObservation, ProducerMetadata, ShellClientOptions,
+    ShellConnection,
+};
+
+/// The actual owner of one connection. Each visit runs that owner's image
+/// service before lending the connection view, as the Session owner pass does.
+pub(super) trait Owner {
+    fn visit<R>(&mut self, service: impl FnOnce(&mut ShellTransportConnection<'_>, u64) -> R) -> R;
+}
+
+pub(super) struct Component<'a>(
+    pub &'a mut ShellComponentSession,
+    pub ComponentConnectionKey,
+);
+
+impl Owner for Component<'_> {
+    fn visit<R>(&mut self, service: impl FnOnce(&mut ShellTransportConnection<'_>, u64) -> R) -> R {
+        for failure in self.0.processes.turn_connected() {
+            assert!(failure.is_none(), "owner turn failed: {failure:?}");
+        }
+        let now = content_now_msec();
+        self.0.with_service(self.1, |_, t| service(t, now)).unwrap()
+    }
+}
+
+impl Owner for super::super::super::LiveMetadataShell {
+    fn visit<R>(&mut self, service: impl FnOnce(&mut ShellTransportConnection<'_>, u64) -> R) -> R {
+        let now = content_now_msec();
+        self.transport.service_images(now, Instant::now()).unwrap();
+        service(&mut self.transport.connection(), now)
+    }
+}
 
 pub(super) fn read(
     transport: &mut ShellTransportConnection<'_>,
@@ -12,7 +47,9 @@ pub(super) fn read(
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         transport.service_owner_turn().unwrap();
-        transport.service_content_resources(0).unwrap();
+        transport
+            .service_content_resources(content_now_msec())
+            .unwrap();
         transport.poll_io().unwrap();
         if let Some(record) = peer.poll_content().unwrap() {
             return record;
@@ -31,7 +68,9 @@ fn flush(
     loop {
         peer.poll_io().unwrap();
         transport.service_owner_turn().unwrap();
-        transport.service_content_resources(0).unwrap();
+        transport
+            .service_content_resources(content_now_msec())
+            .unwrap();
         transport.poll_io().unwrap();
         let mut complete = true;
         for ticket in admission.tickets() {
@@ -60,14 +99,12 @@ pub(super) fn send(
     flush(transport, peer, admission);
 }
 
+/// Shell r9 with sealed images, over an afid-authenticated attach.
 pub(super) fn client(socket: std::path::PathBuf, slot: usize) -> (ShellConnection, ContentLimits) {
-    let revision = match slot {
-        0 => 6,
-        1 => 7,
-        2 => 8,
-        _ => panic!("role"),
-    };
+    assert!(slot <= 2, "role");
+    // Bit 13: sealed images, required for every content attach at r9.
     let capabilities = SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+        | (1 << 13)
         | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
         | match slot {
             0 => {
@@ -86,11 +123,11 @@ pub(super) fn client(socket: std::path::PathBuf, slot: usize) -> (ShellConnectio
             }
             _ => unreachable!(),
         };
-    let mut peer = ShellConnection::connect_files(
-        socket,
+    let mut peer = sdk_image::authenticated_client(
+        &socket,
         ShellClientOptions {
-            minimum_revision: revision,
-            maximum_revision: revision,
+            minimum_revision: 9,
+            maximum_revision: 9,
             required_capabilities: capabilities,
             handshake_timeout: Duration::from_secs(3),
         },
@@ -102,6 +139,7 @@ pub(super) fn client(socket: std::path::PathBuf, slot: usize) -> (ShellConnectio
             let ShellContentRecord::Limits(limits) = record else {
                 panic!("Limits");
             };
+            sdk_image::enable(&mut peer, socket.parent().unwrap(), &limits);
             return (peer, limits);
         }
         assert!(Instant::now() < deadline, "Limits fetch missing");
@@ -148,58 +186,180 @@ pub(super) fn connect(
     (key, peer)
 }
 
-pub(super) fn upload(
-    transport: &mut ShellTransportConnection<'_>,
-    peer: &mut ShellConnection,
-) -> ContentResourceLease {
-    upload_id(transport, peer, RESOURCE)
+pub(super) fn upload(owner: &mut impl Owner, peer: &mut ShellConnection) -> ContentResourceLease {
+    upload_id(owner, peer, RESOURCE)
 }
 
 pub(super) fn upload_id(
-    transport: &mut ShellTransportConnection<'_>,
+    owner: &mut impl Owner,
     peer: &mut ShellConnection,
     resource: ContentResourceId,
 ) -> ContentResourceLease {
-    let grant = transport.content_grant().unwrap();
-    for record in [
-        ShellContentRecord::ResourceBegin(ContentResourceBegin {
-            grant,
-            resource,
-            width_px: 1,
-            height_px: 1,
-            rendered_scale_numerator: 1,
-            rendered_scale_denominator: 1,
-            pixel_format: 1,
-            chunk_count: 1,
-            total_bytes: 4,
-        }),
-        ShellContentRecord::ResourceChunk(ContentResourceChunk {
-            grant,
-            resource,
-            ordinal: 0,
-            offset: 0,
-            bytes: vec![1, 2, 3, 255],
-        }),
-        ShellContentRecord::ResourceEnd(ContentResourceEnd {
-            grant,
-            resource,
-            total_bytes: 4,
-            chunk_count: 1,
-        }),
-    ] {
-        send(transport, peer, record);
+    upload_sealed(owner, peer, resource, 1, 1, &[1, 2, 3, 255])
+}
+
+/// One sealed memfd offer for a live allocation at facts generation 1. The
+/// SDK peer awaits Accepted and its retained release; the owner admits it.
+fn upload_sealed(
+    owner: &mut impl Owner,
+    peer: &mut ShellConnection,
+    resource: ContentResourceId,
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+) -> ContentResourceLease {
+    let grant = owner.visit(|t, _| t.content_grant().unwrap());
+    let metadata = ProducerMetadata {
+        resource: resource.id,
+        resource_generation: resource.generation,
+        admission_epoch: grant.content_grant_epoch,
+        output_id: OUTPUT.id,
+        allocation_id: ALLOCATION.id,
+        topology_generation: 1,
+        source_kind: 1,
+        source_format: 1,
+        width,
+        height,
+        stride: width * 4,
+        plane_count: 1,
+        descriptor_count: 1,
+        declared_bytes: pixels.len() as u64,
+        ..Default::default()
+    };
+    std::thread::scope(|scope| {
+        let worker = scope.spawn(|| sdk_image::upload(peer, metadata, pixels));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !worker.is_finished() {
+            owner.visit(|t, now| {
+                t.service_owner_turn().unwrap();
+                t.service_content_resources(now).unwrap();
+                t.poll_io().unwrap();
+            });
+            assert!(Instant::now() < deadline, "sealed image admission hung");
+            std::thread::yield_now();
+        }
+        worker.join().unwrap();
+    });
+    owner.visit(|t, _| t.lease_content_resource(grant, resource).unwrap())
+}
+
+/// The launcher's native opening allocation: facts, then the opening, then the
+/// peer's native request granted by the fixture's supplied placement policy.
+pub(super) fn allocate_native(owner: &mut impl Owner, peer: &mut ShellConnection) {
+    let grant = owner.visit(|t, _| t.content_grant().unwrap());
+    let opening = NativeLauncherOpening {
+        grant,
+        output: OUTPUT,
+        opening: 1,
+        catalog_generation: 1,
+        state_revision: 1,
+    };
+    owner.visit(|t, _| {
+        t.publish_content_output_facts(
+            TransactionId::from_raw(2),
+            1,
+            vec![ContentOutputFactsEntry {
+                output: OUTPUT,
+                local_width: 64,
+                local_height: 32,
+                scale_numerator: 1,
+                scale_denominator: 1,
+                scale_generation: 1,
+            }],
+        )
+        .unwrap();
+        t.publish_native_launcher_opening(TransactionId::from_raw(79), opening)
+            .unwrap();
+    });
+    peer.enqueue_native_launcher_tracked(
+        &sophia_protocol::shell_files::ShellFileNativeLauncherRecord {
+            transaction: TransactionId::from_raw(80),
+            record: ShellNativeLauncherRecord::AllocationRequest(NativeLauncherAllocationRequest {
+                grant,
+                output: OUTPUT,
+                opening: 1,
+                request_id: 1,
+                prior: ContentAllocationId::default(),
+                operation: 1,
+                edge: 1,
+                desired_width: 64,
+                desired_height: 16,
+                margins: ContentMargins::default(),
+            }),
+        },
+    )
+    .unwrap();
+    let catalog = ShellApplicationCatalog {
+        connection_epoch: grant.connection_epoch,
+        generation: 1,
+        entries: Vec::new(),
+    };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        owner.visit(|t, now| {
+            t.service_owner_turn().unwrap();
+            t.service_native_launcher_content(
+                ContentCandidateContext {
+                    output: OUTPUT,
+                    facts_generation: 1,
+                    interaction_generation: 1,
+                    allocations: &[],
+                },
+                NativeLauncherCandidateContext {
+                    opening,
+                    state_revision: 1,
+                    catalog: &catalog,
+                },
+                now,
+            )
+            .unwrap();
+            if let Some((_, request)) = t.next_content_allocation_request() {
+                t.grant_content_allocation(
+                    request.allocation_request_id,
+                    ContentAllocationSnapshot {
+                        native_opening: Some(1),
+                        output: OUTPUT,
+                        allocation: ALLOCATION,
+                        scale_generation: 1,
+                        scale_numerator: 1,
+                        scale_denominator: 1,
+                        role: 3,
+                        edge: 1,
+                        margins: ContentMargins::default(),
+                        logical: ContentLogicalRect {
+                            x: 0,
+                            y: 0,
+                            width: 64,
+                            height: 16,
+                        },
+                        pixel: ContentPixelRect {
+                            x: 0,
+                            y: 0,
+                            width: 64,
+                            height: 16,
+                        },
+                        parent: ContentAllocationId::default(),
+                        anchor_parent_rect: ContentPixelRect::default(),
+                        allowed_reservation_extent: 0,
+                    },
+                    &[],
+                )
+                .unwrap();
+            }
+            t.poll_io().unwrap();
+        });
+        peer.poll_io().unwrap();
+        if let Some(NativeLauncherObservation::Content(
+            _,
+            ShellContentRecord::AllocationResult(result),
+        )) = peer.take_native_launcher_observation().unwrap()
+        {
+            assert_eq!(result.status, 1, "{result:?}");
+            return;
+        }
+        assert!(Instant::now() < deadline, "native allocation not granted");
+        std::thread::yield_now();
     }
-    transport.service_owner_turn().unwrap();
-    transport.service_content_resources(0).unwrap();
-    transport.poll_io().unwrap();
-    for status in [1, 2] {
-        let (_, ShellContentRecord::ResourceStatus(value)) = read(transport, peer) else {
-            panic!("resource status");
-        };
-        assert_eq!(value.status, status);
-        assert_eq!(value.grant, grant);
-    }
-    transport.lease_content_resource(grant, resource).unwrap()
 }
 
 pub(super) fn allocate(transport: &mut ShellTransportConnection<'_>, peer: &mut ShellConnection) {
@@ -207,77 +367,20 @@ pub(super) fn allocate(transport: &mut ShellTransportConnection<'_>, peer: &mut 
 }
 
 pub(super) fn upload_maximum(
-    transport: &mut ShellTransportConnection<'_>,
+    owner: &mut impl Owner,
     peer: &mut ShellConnection,
     id: u64,
 ) -> ContentResourceLease {
-    let grant = transport.content_grant().unwrap();
-    let description = ContentResourceBegin {
-        grant,
-        resource: ContentResourceId { id, generation: 1 },
-        width_px: 1024,
-        height_px: 1024,
-        rendered_scale_numerator: 1,
-        rendered_scale_denominator: 1,
-        pixel_format: 1,
-        chunk_count: 69,
-        total_bytes: 4 * 1024 * 1024,
-    };
-    let layout = description
-        .layout(transport.content_limits().unwrap())
-        .unwrap();
-    send(
-        transport,
+    let pin = upload_sealed(
+        owner,
         peer,
-        ShellContentRecord::ResourceBegin(description.clone()),
+        ContentResourceId { id, generation: 1 },
+        1024,
+        1024,
+        &vec![0; 4 * 1024 * 1024],
     );
-    transport.service_owner_turn().unwrap();
-    transport.service_content_resources(0).unwrap();
-    transport.poll_io().unwrap();
-    let (_, ShellContentRecord::ResourceStatus(status)) = read(transport, peer) else {
-        panic!("begin status")
-    };
-    assert_eq!(status.status, 1);
-    let mut offset = 0;
-    for ordinal in 0..layout.chunk_count {
-        let bytes = (layout.total_bytes - offset)
-            .min(u64::from(layout.row_bytes) * u64::from(layout.rows_per_chunk));
-        send(
-            transport,
-            peer,
-            ShellContentRecord::ResourceChunk(ContentResourceChunk {
-                grant,
-                resource: description.resource,
-                ordinal,
-                offset,
-                bytes: vec![0; bytes as usize],
-            }),
-        );
-        transport.service_owner_turn().unwrap();
-        transport.service_content_resources(0).unwrap();
-        transport.poll_io().unwrap();
-        offset += bytes;
-    }
-    send(
-        transport,
-        peer,
-        ShellContentRecord::ResourceEnd(ContentResourceEnd {
-            grant,
-            resource: description.resource,
-            total_bytes: description.total_bytes,
-            chunk_count: layout.chunk_count,
-        }),
-    );
-    transport.service_owner_turn().unwrap();
-    transport.service_content_resources(0).unwrap();
-    transport.poll_io().unwrap();
-    let (_, ShellContentRecord::ResourceStatus(status)) = read(transport, peer) else {
-        panic!("end status")
-    };
-    assert_eq!(status.status, 2);
-    transport
-        .lease_content_resource(grant, description.resource)
-        .unwrap()
+    assert_eq!(pin.description().total_bytes, 4 * 1024 * 1024);
+    pin
 }
 
 pub(super) fn allocate_extent(
@@ -320,7 +423,7 @@ pub(super) fn allocate_extent(
         }),
     );
     transport
-        .service_content_allocation_requests(&[], 0)
+        .service_content_allocation_requests(&[], content_now_msec())
         .unwrap();
     let (_, request) = transport.next_content_allocation_request().unwrap();
     transport
@@ -374,7 +477,7 @@ pub(super) fn candidate(
             OUTPUT,
             generation,
             generation,
-            0,
+            content_now_msec(),
         )
         .unwrap();
     transport.poll_io().unwrap();
@@ -447,13 +550,13 @@ pub(super) fn candidate(
                     interaction_generation: 1,
                     allocations: &allocations,
                 }],
-                0
+                content_now_msec()
             )
             .unwrap(),
         3
     );
     transport
-        .begin_content_submission(OUTPUT, generation, 0)
+        .begin_content_submission(OUTPUT, generation, content_now_msec())
         .unwrap()
 }
 

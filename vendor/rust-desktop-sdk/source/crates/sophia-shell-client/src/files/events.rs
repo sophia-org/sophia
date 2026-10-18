@@ -557,7 +557,6 @@ impl FileWire {
                 }
             }
             Event::ResourceStatus(resource, status, reason, item) => {
-                self.observe_resource_status(resource, status)?;
                 if self.image_enabled {
                     use sophia_image_producer::ResourceStatusKind;
                     let mapped = match status {

@@ -1,8 +1,15 @@
 //! Comparison-tree feasibility, not timing acceptance. Both wires feed the
 //! current resource owner with identical typed records and supplied admission.
+//! Pixels travel each wire's own way: IPC uploads bytes, the file wire offers
+//! sealed images on its authenticated image channel. Byte staging's begun
+//! status has no sealed counterpart, so comparisons set it aside; every
+//! other record must match.
 use sophia_protocol::*;
 use sophia_runtime::*;
-use sophia_shell_client::{ShellClientError, ShellClientOptions, ShellConnection};
+use sophia_shell_client::{
+    ImageChannelState, OfferState, ProducerMetadata, ShellClientError, ShellClientOptions,
+    ShellConnection,
+};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -10,10 +17,57 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 const WAIT: Duration = Duration::from_secs(10);
+// The session owner needs the factory itself; `image` keeps its copy private.
+#[allow(clippy::duplicate_mod)]
+#[path = "support/image_test_authority.rs"]
+mod authority;
 #[path = "support/comparator_components.rs"]
 mod components;
+#[allow(dead_code)]
+#[path = "support/shell_required_image.rs"]
+mod image;
 #[path = "support/comparator_measurement.rs"]
 mod measurement;
+#[allow(dead_code)]
+#[path = "support/shell_sdk_image.rs"]
+mod sdk_image;
+#[path = "support/shell_file_peer.rs"]
+mod shell_file_peer;
+
+/// The sealed-memory image capability; the authenticated attach that the
+/// image channel requires is supplied by `sdk_image::authenticated_client`.
+const SEALED_MEMORY: u64 = 1 << 13;
+
+/// The records both wires answer with: byte staging's begun status removed.
+fn sealed_comparable(mut records: Vec<ShellContentRecord>) -> Vec<ShellContentRecord> {
+    records.retain(|r| !matches!(r, ShellContentRecord::ResourceStatus(s) if s.status == 1));
+    records
+}
+
+fn image_metadata(
+    grant: ContentGrant,
+    resource: ContentResourceId,
+    (width, height): (u32, u32),
+    (output_id, allocation_id, topology_generation): (u64, u64, u64),
+) -> ProducerMetadata {
+    ProducerMetadata {
+        resource: resource.id,
+        resource_generation: resource.generation,
+        admission_epoch: grant.content_grant_epoch,
+        output_id,
+        allocation_id,
+        topology_generation,
+        source_kind: 1,
+        source_format: 1,
+        width,
+        height,
+        stride: width * 4,
+        plane_count: 1,
+        descriptor_count: 1,
+        declared_bytes: u64::from(width) * u64::from(height) * 4,
+        ..Default::default()
+    }
+}
 enum Client {
     Files(Box<ShellConnection>),
     Ipc(UnixStream),
@@ -32,12 +86,12 @@ impl Client {
             };
         if files {
             Self::Files(Box::new(
-                ShellConnection::connect_files(
+                sdk_image::authenticated_client(
                     path,
                     ShellClientOptions {
-                        minimum_revision: 5,
-                        maximum_revision: 6,
-                        required_capabilities: caps,
+                        minimum_revision: 9,
+                        maximum_revision: 9,
+                        required_capabilities: caps | SEALED_MEMORY,
                         handshake_timeout: WAIT,
                     },
                 )
@@ -85,6 +139,44 @@ impl Client {
                 .write_all(&encode_shell_content_frame(tx, record).unwrap())
                 .unwrap(),
         }
+    }
+    /// Files only: open the image channel the owner configured in `directory`.
+    fn enable_image(&mut self, directory: &Path, limits: &ContentLimits) {
+        if let Self::Files(client) = self {
+            sdk_image::enable(client, directory, limits);
+        }
+    }
+    /// Files only: offer `pixels` as one sealed source, and return the status
+    /// answering it once the offer ends.
+    fn offer_image(&mut self, metadata: ProducerMetadata, pixels: &[u8]) -> ShellContentRecord {
+        let Self::Files(client) = self else {
+            unreachable!("the byte wire has no image channel")
+        };
+        let deadline = Instant::now() + WAIT;
+        while client.image_adapter().unwrap().channel() != Some(ImageChannelState::Ready) {
+            client.poll_io().unwrap();
+            assert!(Instant::now() < deadline, "image channel not ready");
+            std::thread::yield_now();
+        }
+        let offer = client
+            .image_begin(metadata, sdk_image::source(pixels), Instant::now())
+            .unwrap()
+            .offer;
+        let mut status = None;
+        loop {
+            if let Some((_, record)) = client.poll_content().unwrap() {
+                assert!(status.replace(record).is_none(), "one status per offer");
+            }
+            let info = client.image_adapter().unwrap().offer(offer).unwrap();
+            // An accepted offer settles; a refused one ends refused.
+            if status.is_some() && matches!(info.state, OfferState::Settled | OfferState::Refused) {
+                break;
+            }
+            assert!(Instant::now() < deadline, "image offer unsettled: {info:?}");
+            std::thread::yield_now();
+        }
+        client.image_forget(offer).unwrap();
+        status.unwrap()
     }
     fn receive(&mut self) -> ShellContentRecord {
         match self {
@@ -172,12 +264,14 @@ fn measured_exchange(
     })
     .unwrap();
     let mut epochs = ContentEpochRegistry::new(64 * 1024 * 1024).unwrap();
+    let directory = root.clone();
     let grant = ContentGrant {
         connection_epoch: 1,
         content_grant_epoch: 1,
     };
-    host.reserve_content(&mut epochs, ContentLimits::prototype(grant))
-        .unwrap();
+    let limits = ContentLimits::prototype(grant);
+    let mut images = files.then(|| image::configure(&mut host, &limits));
+    host.reserve_content(&mut epochs, limits).unwrap();
     let socket = host.socket_path().to_owned();
     let (done_tx, done_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel();
@@ -196,10 +290,30 @@ fn measured_exchange(
             panic!("missing limits")
         };
         assert_eq!(limits.grant, grant);
+        client.enable_image(&directory, limits);
         let chunk_bytes = (limits.max_chunk_bytes / (width * 4) * (width * 4)) as usize;
         let chunks = bytes.len().div_ceil(chunk_bytes) as u32;
         let mut report = vec![first];
+        let metadata = image_metadata(grant, resource, (width, height), (1, 1, 1));
         let measurement = measurement::Window::begin();
+        if files {
+            let accepted = client.offer_image(metadata, &bytes);
+            let sample = measurement.end();
+            assert!(
+                matches!(&accepted, ShellContentRecord::ResourceStatus(s) if s.status == 2),
+                "files={files} size={width}x{height} response={accepted:?}"
+            );
+            report.push(accepted);
+            return finish_exchange(
+                client,
+                report,
+                sample,
+                metadata,
+                &bytes,
+                chunks,
+                (done_tx, release_rx),
+            );
+        }
         client.send(
             1,
             &ShellContentRecord::ResourceBegin(ContentResourceBegin {
@@ -248,37 +362,15 @@ fn measured_exchange(
             "files={files} size={width}x{height} response={accepted:?}"
         );
         report.push(accepted);
-        done_tx.send(()).unwrap();
-        release_rx.recv_timeout(WAIT).unwrap();
-        client.send(
-            1001,
-            &ShellContentRecord::ResourceRetire(ContentResourceRetire { grant, resource }),
-        );
-        let released = client.receive();
-        assert!(matches!(&released, ShellContentRecord::ResourceReleased(r) if r.reason == 0));
-        report.push(released);
-        // Retirement must not make the same generation admissible again.
-        client.send(
-            1002,
-            &ShellContentRecord::ResourceBegin(ContentResourceBegin {
-                grant,
-                resource,
-                width_px: width,
-                height_px: height,
-                rendered_scale_numerator: 1,
-                rendered_scale_denominator: 1,
-                pixel_format: 1,
-                chunk_count: chunks,
-                total_bytes: bytes.len() as u64,
-            }),
-        );
-        let stale = client.receive();
-        assert!(matches!(&stale, ShellContentRecord::ResourceStatus(s)
-            if s.status == 3 && s.reason == ContentReason::Stale as u16));
-        report.push(stale);
-        done_tx.send(()).unwrap();
-        release_rx.recv_timeout(WAIT).unwrap();
-        (report, sample)
+        finish_exchange(
+            client,
+            report,
+            sample,
+            metadata,
+            &bytes,
+            chunks,
+            (done_tx, release_rx),
+        )
     });
     let policy = ShellContentAdmissionPolicy::Granted {
         discrete_input: false,
@@ -294,11 +386,19 @@ fn measured_exchange(
         assert!(start.elapsed() < WAIT);
         std::thread::yield_now();
     }
+    if files {
+        image::supply_allocation(&mut epochs, grant);
+    }
     let mut phase = 0;
     while phase < 2 {
         host.service_owner_turn(&mut epochs).unwrap();
-        host.service_content_resources(&mut epochs, start.elapsed().as_millis() as u64)
-            .unwrap();
+        let now = start.elapsed().as_millis() as u64;
+        host.service_content_resources(&mut epochs, now).unwrap();
+        if let Some(images) = images.as_mut() {
+            images
+                .service(&mut host, &mut epochs, now, Instant::now())
+                .unwrap();
+        }
         if done_rx.try_recv().is_ok() {
             if phase == 0 {
                 let lease = host
@@ -325,12 +425,68 @@ fn measured_exchange(
     report
 }
 
+/// Retire the accepted resource, then show the retired generation is not
+/// admissible again: by byte upload on IPC, by a sealed offer on files.
+fn finish_exchange(
+    mut client: Client,
+    mut report: Vec<ShellContentRecord>,
+    sample: measurement::Sample,
+    metadata: ProducerMetadata,
+    bytes: &[u8],
+    chunk_count: u32,
+    (done_tx, release_rx): (mpsc::Sender<()>, mpsc::Receiver<()>),
+) -> (Vec<ShellContentRecord>, measurement::Sample) {
+    let grant = ContentGrant {
+        connection_epoch: 1,
+        content_grant_epoch: metadata.admission_epoch,
+    };
+    let resource = ContentResourceId {
+        id: metadata.resource,
+        generation: metadata.resource_generation,
+    };
+    done_tx.send(()).unwrap();
+    release_rx.recv_timeout(WAIT).unwrap();
+    client.send(
+        1001,
+        &ShellContentRecord::ResourceRetire(ContentResourceRetire { grant, resource }),
+    );
+    let released = client.receive();
+    assert!(matches!(&released, ShellContentRecord::ResourceReleased(r) if r.reason == 0));
+    report.push(released);
+    // Retirement must not make the same generation admissible again.
+    let stale = if matches!(client, Client::Files(_)) {
+        client.offer_image(metadata, bytes)
+    } else {
+        client.send(
+            1002,
+            &ShellContentRecord::ResourceBegin(ContentResourceBegin {
+                grant,
+                resource,
+                width_px: metadata.width,
+                height_px: metadata.height,
+                rendered_scale_numerator: 1,
+                rendered_scale_denominator: 1,
+                pixel_format: 1,
+                chunk_count,
+                total_bytes: bytes.len() as u64,
+            }),
+        );
+        client.receive()
+    };
+    assert!(matches!(&stale, ShellContentRecord::ResourceStatus(s)
+            if s.status == 3 && s.reason == ContentReason::Stale as u16));
+    report.push(stale);
+    done_tx.send(()).unwrap();
+    release_rx.recv_timeout(WAIT).unwrap();
+    (report, sample)
+}
+
 #[test]
 fn current_resource_owner_has_equal_results_on_both_wires() {
     for (width, height) in [(2, 1), (1920, 24), (1024, 1024)] {
         assert_eq!(
             exchange(true, width, height),
-            exchange(false, width, height)
+            sealed_comparable(exchange(false, width, height))
         );
     }
 }
@@ -338,6 +494,8 @@ fn current_resource_owner_has_equal_results_on_both_wires() {
 fn resource_id(id: u64) -> ContentResourceId {
     ContentResourceId { id, generation: 1 }
 }
+
+const SMALL_PIXELS: [u8; 8] = [0, 0, 255, 255, 0, 128, 0, 128];
 
 fn small_upload(grant: ContentGrant, resource: ContentResourceId) -> [ShellContentRecord; 3] {
     [
@@ -357,7 +515,7 @@ fn small_upload(grant: ContentGrant, resource: ContentResourceId) -> [ShellConte
             resource,
             ordinal: 0,
             offset: 0,
-            bytes: vec![0, 0, 255, 255, 0, 128, 0, 128],
+            bytes: SMALL_PIXELS.to_vec(),
         }),
         ShellContentRecord::ResourceEnd(ContentResourceEnd {
             grant,
@@ -479,6 +637,76 @@ fn snapshot(output: ContentOutputId, allocation: ContentAllocationId) -> Content
     }
 }
 
+/// A session owner's authenticated image channel: the role fixtures' shape
+/// (`image::configure`), for the owner that keeps its own image worker.
+fn configure_session_images(session: &mut ShellSessionTransport, limits: &ContentLimits) {
+    use sophia_protocol::shell_files::*;
+    session
+        .authorize_authenticated_peer(&image_evidence(), Box::new(authority::Factory))
+        .unwrap();
+    let offers = limits.max_open_transfers.min(4);
+    session
+        .configure_image_channel(
+            ShellImageDiscovery {
+                connection_epoch: limits.grant.connection_epoch,
+                channel_generation: 2,
+                endpoint: "image.sock".into(),
+                source_kinds: 1,
+                max_offers: offers,
+                max_packets_per_turn: 8,
+                hello_timeout_ms: 2000,
+                validation_timeout_ms: 2000,
+                validation_chunk_bytes: 65536,
+                capture_interest_timeout_ms: 500,
+                formats_generation: 1,
+                limits_generation: 1,
+            },
+            ShellImageLimits {
+                channel_generation: 2,
+                limits_generation: 1,
+                max_resource_bytes: limits.max_resource_bytes,
+                max_sealed_backing_bytes: limits.max_resident_bytes + limits.max_retiring_bytes,
+                max_dma_source_bytes: 0,
+                max_renderer_allocation_bytes: 0,
+                max_renderer_entries: 0,
+                max_offers: offers,
+                max_validation_jobs: offers,
+                max_capture_jobs: 0,
+                max_admitted_outputs: limits.max_outputs,
+                max_format_rows_per_output: 1,
+                max_width: limits.max_width_px,
+                max_height: limits.max_height_px,
+                validation_timeout_ms: 2000,
+                capture_interest_timeout_ms: 500,
+                validation_chunk_bytes: 65536,
+                max_packets_per_turn: 8,
+            },
+            ShellImageFormats {
+                channel_generation: 2,
+                formats_generation: 1,
+                limits_generation: 1,
+                rows: vec![],
+            },
+            ShellImageRoleBounds {
+                max_resource_bytes: limits.max_resource_bytes,
+                max_width: limits.max_width_px,
+                max_height: limits.max_height_px,
+                max_admitted_outputs: limits.max_outputs,
+                transfer_slots: offers,
+            },
+        )
+        .unwrap();
+}
+
+fn image_evidence() -> ProtectionDomainEvidence {
+    ProtectionDomainEvidence {
+        backend: ProtectionBackendKind::Bubblewrap,
+        supervisor_pid: std::process::id(),
+        peer_pid: std::process::id(),
+        roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
+    }
+}
+
 fn candidate_roundtrip(files: bool, renderer_failed: bool) -> Vec<ShellContentRecord> {
     let root = std::env::temp_dir().join(format!(
         "candidate-comparator-{}-{files}-{renderer_failed}",
@@ -495,6 +723,16 @@ fn candidate_roundtrip(files: bool, renderer_failed: bool) -> Vec<ShellContentRe
             roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
         })
         .unwrap();
+    if files {
+        configure_session_images(
+            &mut session,
+            &ContentLimits::prototype(ContentGrant {
+                connection_epoch: 1,
+                content_grant_epoch: 1,
+            }),
+        );
+    }
+    let directory = root.clone();
     let socket = session.socket_path().to_path_buf();
     let (uploaded_tx, uploaded_rx) = mpsc::channel();
     let (finish_tx, finish_rx) = mpsc::channel();
@@ -508,6 +746,7 @@ fn candidate_roundtrip(files: bool, renderer_failed: bool) -> Vec<ShellContentRe
             panic!("expected output facts");
         };
         let output = facts.outputs[0].output;
+        client.enable_image(&directory, &limits);
         report.push(ShellContentRecord::Limits(limits.clone()));
         report.push(ShellContentRecord::OutputFacts(facts.clone()));
         client.send(6, &allocation_request(limits.grant, output));
@@ -517,15 +756,29 @@ fn candidate_roundtrip(files: bool, renderer_failed: bool) -> Vec<ShellContentRe
         assert_eq!(allocation.status, 1);
         report.push(ShellContentRecord::AllocationResult(allocation.clone()));
         let resource = resource_id(1);
-        for record in small_upload(limits.grant, resource) {
-            client.send(7, &record);
-        }
-        for expected in [1, 2] {
-            let status = client.receive();
-            assert!(
-                matches!(&status, ShellContentRecord::ResourceStatus(s) if s.status == expected)
+        if files {
+            let status = client.offer_image(
+                image_metadata(
+                    limits.grant,
+                    resource,
+                    (2, 1),
+                    (output.id, allocation.allocation.id, facts.facts_generation),
+                ),
+                &SMALL_PIXELS,
             );
+            assert!(matches!(&status, ShellContentRecord::ResourceStatus(s) if s.status == 2));
             report.push(status);
+        } else {
+            for record in small_upload(limits.grant, resource) {
+                client.send(7, &record);
+            }
+            for expected in [1, 2] {
+                let status = client.receive();
+                assert!(
+                    matches!(&status, ShellContentRecord::ResourceStatus(s) if s.status == expected)
+                );
+                report.push(status);
+            }
         }
         client.send(
             9,
@@ -640,9 +893,11 @@ fn candidate_roundtrip(files: bool, renderer_failed: bool) -> Vec<ShellContentRe
         .grant_content_allocation(1, snapshot(output, allocation_id), &[])
         .unwrap();
     while uploaded_rx.try_recv().is_err() {
-        session
-            .service_content_resources(start.elapsed().as_millis() as u64)
-            .unwrap();
+        let now = start.elapsed().as_millis() as u64;
+        session.service_content_resources(now).unwrap();
+        if files {
+            session.service_images(now, Instant::now()).unwrap();
+        }
         assert!(start.elapsed() < Duration::from_secs(5));
         std::thread::yield_now();
     }
@@ -756,7 +1011,8 @@ fn candidate_roundtrip(files: bool, renderer_failed: bool) -> Vec<ShellContentRe
     assert!(session.content_accounting().quiescent());
     session.disconnect().unwrap();
     assert!(session.content_accounting().quiescent());
-    assert_eq!(welcome.selected_revision, 6);
+    // The authenticated file attach that carries images is revision 9.
+    assert_eq!(welcome.selected_revision, if files { 9 } else { 6 });
     drop(session);
     if root.exists() {
         std::fs::remove_dir_all(root).unwrap();
@@ -769,7 +1025,7 @@ fn current_candidate_owner_has_equal_completion_and_lease_results() {
     for renderer_failed in [false, true] {
         assert_eq!(
             candidate_roundtrip(true, renderer_failed),
-            candidate_roundtrip(false, renderer_failed)
+            sealed_comparable(candidate_roundtrip(false, renderer_failed))
         );
     }
 }

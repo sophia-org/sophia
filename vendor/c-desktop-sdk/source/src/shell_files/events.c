@@ -29,10 +29,13 @@ int sf_session_event_parse(struct sophia_sf_client *c)
         if (v->connection_epoch != c->epoch ||
             (c->profile == SOPHIA_SF_DESCRIPTOR && !sf_descriptor_welcome(c, v)))
             return SOPHIA_9P_INVALID;
-        if ((c->profile == SOPHIA_SF_LAUNCHER || c->profile == SOPHIA_SF_DOCK) &&
-            (v->selected_revision != (c->profile == SOPHIA_SF_LAUNCHER ? 7 : 8) ||
-             v->capabilities != c->offer.required_capabilities))
-            return SOPHIA_9P_INVALID;
+        if (c->profile == SOPHIA_SF_LAUNCHER || c->profile == SOPHIA_SF_DOCK) {
+            unsigned revision = c->offer.required_capabilities & (UINT64_C(1) << 13)
+                                    ? 9 : c->profile == SOPHIA_SF_LAUNCHER ? 7 : 8;
+            if (v->selected_revision != revision ||
+                v->capabilities != c->offer.required_capabilities)
+                return SOPHIA_9P_INVALID;
+        }
         c->welcome = *v;
         c->negotiated = 1;
         if (v->limits_published) {
@@ -55,11 +58,6 @@ int sf_session_event_parse(struct sophia_sf_client *c)
         c->submitted_sequence = r->header.sequence;
         if (c->submit_replied)
             c->submit_stage = 4;
-        break;
-    case SOPHIA_SF_RESOURCE_STATUS:
-        status = sf_session_upload_event(c, r);
-        if (status)
-            return status;
         break;
     default:
         break;

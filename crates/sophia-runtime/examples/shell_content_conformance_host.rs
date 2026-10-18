@@ -2,8 +2,9 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use sophia_protocol::{
-    ContentAllocationId, ContentLogicalRect, ContentMargins, ContentOutputFactsEntry,
-    ContentOutputId, ContentPixelRect, ContentReason, ContentResourceId, TransactionId,
+    ContentAllocationId, ContentGrant, ContentLimits, ContentLogicalRect, ContentMargins,
+    ContentOutputFactsEntry, ContentOutputId, ContentPixelRect, ContentReason, ContentResourceId,
+    TransactionId,
 };
 use sophia_runtime::{
     ContentAllocationSnapshot, ContentCandidateContext, ContentEpochRegistry, ContentRenderBundle,
@@ -11,6 +12,15 @@ use sophia_runtime::{
     ProtectionPath, ShellComponentTransport, ShellContentAdmissionPolicy, SupervisedProcessKind,
     SupervisorCommand, SupervisorEvent,
 };
+
+// The client's pixels arrive only as sealed images over the authenticated
+// channel. Its afid verdicts are supplied by the shared test authority; this
+// host makes no launch-authentication claim.
+#[allow(dead_code)]
+#[path = "../tests/support/shell_required_image.rs"]
+mod image;
+#[path = "../tests/support/shell_file_peer.rs"]
+mod shell_file_peer;
 
 /// The client's only endpoint is a `sophia_shell_fs_v1` export. The socket
 /// wire is retired here: its selection and variable are refused, never mapped.
@@ -78,7 +88,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .protection_evidence()
         .ok_or("shell process has no protection evidence")?
         .clone();
-    owner.authorize_protected_peer(&evidence)?;
+    let limits = ContentLimits::prototype(ContentGrant {
+        connection_epoch: 1,
+        content_grant_epoch: 1,
+    });
+    let mut image_owner = image::configure_for_peer(&mut owner, &limits, evidence.peer_pid);
     owner.begin_file_negotiation(
         &epochs,
         1,
@@ -128,6 +142,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if Instant::now() >= deadline {
             return Err("content client did not settle before the host deadline".into());
         }
+        // The image owner runs on every turn, even after disconnect.
+        transport.service_isb_images(
+            &mut image_owner,
+            started.elapsed().as_millis() as u64,
+            Instant::now(),
+        )?;
         match transport.service_content_resources(started.elapsed().as_millis() as u64) {
             Ok(_) => {}
             Err(sophia_runtime::ShellTransportError::NotConnected)

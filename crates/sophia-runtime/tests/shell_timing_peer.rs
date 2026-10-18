@@ -1,10 +1,32 @@
 //! Real child, supplied admission and completion. No native display claim.
 use sophia_protocol::*;
 use sophia_runtime::*;
+
+fn request_profile(wire: &str, probe: bool, stage: &str) {
+    #[cfg(feature = "comparator-request-attribution")]
+    {
+        use sophia_9p::request_attribution::{NAMES, snapshot};
+        for (site, value) in NAMES.into_iter().zip(snapshot()) {
+            println!(
+                "supplied_owner_requests schema=1 wire={wire} probe={probe} stage={stage} site={site} calls={} thread_cpu_ns={} process_allocations={} process_reallocations={} process_bytes={} nested=true",
+                value.calls,
+                value.thread_cpu_ns,
+                value.process_allocations,
+                value.process_reallocations,
+                value.process_bytes
+            );
+        }
+    }
+    #[cfg(not(feature = "comparator-request-attribution"))]
+    let _ = (wire, probe, stage);
+}
 #[path = "support/shell_timing_image_authority.rs"]
 mod image_authority;
 #[path = "support/shell_timing_image_relay.rs"]
 mod image_relay;
+#[cfg(feature = "comparator-journal-trace")]
+#[path = "support/shell_journal_trace.rs"]
+mod journal_trace;
 #[cfg(feature = "comparator-wire-trace")]
 #[path = "support/shell_timing_trace.rs"]
 mod ordered_trace;
@@ -132,14 +154,17 @@ fn refuses_sealed_source_without_its_file_launch_or_with_bytes() {
 
 #[test]
 #[ignore = "requires explicit prebuilt SOPHIA_TIMING_PEER_BINARY; device-hidden"]
-fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
+fn supplied_owner_records_every_offer_and_terminal_on_ipc_baseline() {
     const FRAMES: u64 = 64;
     const PANEL_WIDTH: u32 = 1920;
     #[cfg(feature = "comparator-counters")]
     let sampler = sophia_runtime::comparator_counters::Sampler::start().unwrap();
     let binary = std::env::var_os("SOPHIA_TIMING_PEER_BINARY").expect("explicit peer binary");
     assert!(std::path::Path::new(&binary).is_absolute());
-    for (files, probe) in [(true, false), (false, false), (true, true), (false, true)] {
+    // Files use the authenticated ISB controls below. Byte-files captures stay
+    // reproducible on the frozen historical branch, not this production merge.
+    for (files, probe) in [(false, false), (false, true)] {
+        request_profile("ipc", probe, "begin");
         #[cfg(feature = "comparator-wire-trace")]
         sophia_9p::wire_trace::begin();
         #[cfg(feature = "comparator-progress")]
@@ -465,6 +490,7 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
         assert!(host.collect_content_accounting().quiescent());
         drop(host);
         std::fs::remove_dir_all(root).unwrap();
+        request_profile("ipc", probe, "end");
     }
     #[cfg(feature = "comparator-counters")]
     sampler.finish().unwrap();
@@ -481,6 +507,9 @@ fn supplied_authority_sealed_source_keeps_the_paired_workload() {
     let binary = std::env::var_os("SOPHIA_TIMING_PEER_BINARY").expect("explicit peer binary");
     assert!(std::path::Path::new(&binary).is_absolute());
     for probe in [false, true] {
+        request_profile("isb", probe, "begin");
+        #[cfg(feature = "comparator-journal-trace")]
+        let trace = journal_trace::begin(JOURNAL_TRACE_EVENTS);
         let root =
             std::env::temp_dir().join(format!("timing-peer-sealed-{}-{probe}", std::process::id()));
         std::fs::create_dir(&root).unwrap();
@@ -637,7 +666,10 @@ fn supplied_authority_sealed_source_keeps_the_paired_workload() {
         }
         assert!(host.collect_content_accounting(&mut epochs).quiescent());
         drop(host);
+        #[cfg(feature = "comparator-journal-trace")]
+        journal_trace::finish(trace, if probe { "isb-4mib" } else { "isb" });
         std::fs::remove_dir_all(root).unwrap();
+        request_profile("isb", probe, "end");
     }
 }
 
@@ -648,13 +680,13 @@ fn supplied_authority_sealed_source_keeps_the_paired_workload() {
 /// one reuse.
 #[test]
 #[ignore = "requires explicit prebuilt SOPHIA_TIMING_PEER_BINARY; device-hidden"]
-fn supplied_owner_places_a_512_high_panel_on_both_wires() {
+fn supplied_owner_places_a_512_high_panel_on_ipc_baseline() {
     const FRAMES: u64 = 3;
     const PANEL_WIDTH: u32 = 1920;
     const PANEL_HEIGHT: u32 = 512;
     let binary = std::env::var_os("SOPHIA_TIMING_PEER_BINARY").expect("explicit peer binary");
     assert!(std::path::Path::new(&binary).is_absolute());
-    for files in [true, false] {
+    for files in [false] {
         let root =
             std::env::temp_dir().join(format!("timing-peer-large-{}-{files}", std::process::id()));
         std::fs::create_dir(&root).unwrap();
@@ -835,6 +867,8 @@ fn supplied_authority_sealed_source_places_a_512_high_panel() {
     const PANEL_HEIGHT: u32 = 512;
     let binary = std::env::var_os("SOPHIA_TIMING_PEER_BINARY").expect("explicit peer binary");
     assert!(std::path::Path::new(&binary).is_absolute());
+    #[cfg(feature = "comparator-journal-trace")]
+    let trace = journal_trace::begin(JOURNAL_TRACE_EVENTS);
     let root =
         std::env::temp_dir().join(format!("timing-peer-sealed-large-{}", std::process::id()));
     std::fs::create_dir(&root).unwrap();
@@ -975,8 +1009,272 @@ fn supplied_authority_sealed_source_places_a_512_high_panel() {
     }
     assert!(host.collect_content_accounting(&mut epochs).quiescent());
     drop(host);
+    #[cfg(feature = "comparator-journal-trace")]
+    journal_trace::finish(trace, "isb-512");
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// The journal trace classifier, on synthetic traces whose answers are
+/// known: same-turn and later-turn outcomes and deliveries, a continuation
+/// and an explicit reread, a command without an answer key, and a keyed
+/// command still unanswered.
+#[cfg(feature = "comparator-journal-trace")]
+#[test]
+fn journal_trace_classifies_by_record_semantics() {
+    use sophia_9p::journal_trace::{AckResult, Event, ReadResult, RoleKey, RolePhase, RoleRecord};
+    const J: u64 = 3;
+    let key = |class, id| RoleKey {
+        class,
+        id,
+        generation: 0,
+    };
+    let role = |sequence, phase, kind, key, status, related| {
+        Event::Role(RoleRecord {
+            journal: J,
+            sequence,
+            phase,
+            kind,
+            transaction: 0,
+            key,
+            status,
+            related,
+        })
+    };
+    let commit = |sequence: u64| Event::Commit {
+        journal: J,
+        first: sequence,
+        last: sequence,
+        start: (sequence - 1) * 10,
+        end: sequence * 10,
+    };
+    let read = |offset, delivered, first, last, starts_inside, ends_inside| Event::Read {
+        journal: J,
+        offset,
+        requested: 64,
+        delivered,
+        first,
+        last,
+        starts_inside,
+        ends_inside,
+        result: ReadResult::Ready,
+        parked: 1,
+    };
+    let ack = |requested, result| Event::Ack {
+        journal: J,
+        epoch: 1,
+        requested,
+        result,
+        acknowledged: requested,
+        floor: requested * 10,
+        last_committed: 3,
+    };
+    let tx_role = |sequence, phase, kind, key, status, related, transaction| match role(
+        sequence, phase, kind, key, status, related,
+    ) {
+        Event::Role(record) => Event::Role(RoleRecord {
+            transaction,
+            ..record
+        }),
+        _ => unreachable!(),
+    };
+    let allocation = |id| key("allocation_request", id);
+    let generation = key("candidate_generation", 7);
+    let resource = RoleKey {
+        class: "resource",
+        id: 4,
+        generation: 1,
+    };
+    let events = vec![
+        Event::Opened {
+            journal: J,
+            epoch: 1,
+            next_sequence: 1,
+            tail: 0,
+        },
+        Event::Mark { label: 1 },
+        commit(1),
+        role(1, RolePhase::Appended, 4, RoleKey::NONE, 0, 0),
+        role(1, RolePhase::Submitted, 34, generation, 0, 11),
+        commit(2),
+        role(2, RolePhase::Outcome, 35, generation, 1, 0),
+        read(0, 20, 1, 2, false, false),
+        Event::Mark { label: 2 },
+        ack(2, AckResult::Advanced),
+        role(1, RolePhase::Released, 4, key("submission", 11), 0, 2),
+        commit(3),
+        role(3, RolePhase::Outcome, 35, generation, 2, 0),
+        Event::Mark { label: 3 },
+        // Record 3 is delivered a turn after its commit, in two reads.
+        read(20, 4, 3, 3, false, true),
+        read(24, 6, 3, 3, true, false),
+        // Rereading record 1 delivers nothing new.
+        read(0, 10, 1, 1, false, false),
+        ack(2, AckResult::Repeat),
+        commit(4),
+        role(4, RolePhase::Submitted, 50, RoleKey::NONE, 0, 12),
+        commit(5),
+        tx_role(5, RolePhase::Submitted, 40, allocation(9), 0, 13, 21),
+        // A host-initiated answer has no submission.
+        commit(6),
+        role(6, RolePhase::Outcome, 41, allocation(8), 0, 0),
+        // A resubmission under the same key takes the answer by its
+        // transaction; the first stays explicitly unanswered.
+        commit(7),
+        tx_role(7, RolePhase::Submitted, 40, allocation(9), 0, 14, 22),
+        commit(8),
+        tx_role(8, RolePhase::Outcome, 41, allocation(9), 0, 0, 22),
+        // A late answer to an image offer joins the offer by its
+        // transaction, though a cancel has taken the resource key since.
+        commit(9),
+        tx_role(9, RolePhase::Submitted, 60, resource, 0, 15, 30),
+        commit(10),
+        tx_role(10, RolePhase::Submitted, 61, resource, 0, 16, 31),
+        commit(11),
+        tx_role(11, RolePhase::Outcome, 62, resource, 1, 0, 30),
+        // Neither holder carries this transaction, and without one two
+        // holders cannot be told apart: both stay unmatched.
+        commit(12),
+        tx_role(12, RolePhase::Outcome, 62, resource, 2, 0, 32),
+        commit(13),
+        role(13, RolePhase::Outcome, 62, resource, 3, 0),
+    ];
+    let summary = journal_trace::analyze(&events, 0);
+    assert_eq!(summary["violations"], serde_json::json!([]));
+    let classes: Vec<_> = summary["submissions"][0]["outcomes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| {
+            (
+                o["sequence"].clone(),
+                o["status"].clone(),
+                o["class"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        classes,
+        [
+            (2.into(), 1.into(), "same_turn".into()),
+            (3.into(), 2.into(), "later_turn".into())
+        ]
+    );
+    assert_eq!(
+        summary["submissions"][0]["released"],
+        serde_json::json!({"ack": 2, "ordinal": 10, "turn": 2})
+    );
+    assert_eq!(
+        summary["submitted_by_kind"],
+        serde_json::json!({
+            "34": {"submitted": 1, "first_outcome_same_turn": 1, "outcomes": 2},
+            "40": {"submitted": 2, "superseded_without_outcome": 1,
+                "first_outcome_same_turn": 1, "outcomes": 1, "unreleased": 2},
+            "50": {"submitted": 1, "no_outcome_key": 1, "outcomes": 0, "unreleased": 1},
+            "60": {"submitted": 1, "first_outcome_same_turn": 1, "outcomes": 1, "unreleased": 1},
+            "61": {"submitted": 1, "keyed_without_outcome": 1, "outcomes": 0, "unreleased": 1},
+        })
+    );
+    assert_eq!(summary["submissions"][2]["superseded_by"], 7);
+    assert_eq!(
+        summary["submissions"][3]["outcomes"][0]["join"],
+        "key_and_transaction"
+    );
+    assert_eq!(summary["submissions"][4]["outcomes"][0]["sequence"], 11);
+    assert_eq!(summary["submissions"][0]["outcomes"][0]["join"], "key_only");
+    let unmatched: Vec<_> = summary["unmatched_outcomes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| {
+            (
+                o["sequence"].clone(),
+                o["reason"].clone(),
+                o["candidates"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        unmatched,
+        [
+            (6.into(), "no_submission".into(), serde_json::json!([])),
+            (
+                12.into(),
+                "transaction_mismatch".into(),
+                serde_json::json!([9, 10])
+            ),
+            (
+                13.into(),
+                "ambiguous_key".into(),
+                serde_json::json!([9, 10])
+            ),
+        ]
+    );
+    let journal = &summary["journals"][0];
+    assert_eq!(
+        journal["delivery"],
+        serde_json::json!({"same_turn": 2, "later_turn": 1, "undelivered": 10})
+    );
+    assert_eq!(
+        journal["reads"],
+        serde_json::json!({"advance": 2, "continuation": 1, "reread": 1,
+            "skip": 0, "stale": 0, "invalid": 0})
+    );
+    assert_eq!(journal["delivered_through"], 3);
+    // Parked reads count toward the next record a read completes: one before
+    // records 1 and 2, two before record 3 across its split, and the
+    // reread's after the last delivery.
+    assert_eq!(journal["parked_before_delivery"], 3);
+    assert_eq!(journal["parked_after_last_delivery"], 1);
+    assert_eq!(journal["acks"]["repeat"], 1);
+    assert_eq!(journal["kinds"]["4"], 1);
+
+    // An acknowledgement past the delivered records, a release without its
+    // acknowledgement, and overflow are each violations.
+    let broken = vec![
+        events[0],
+        commit(1),
+        read(0, 10, 1, 1, false, false),
+        commit(2),
+        ack(2, AckResult::Advanced),
+        role(1, RolePhase::Released, 4, RoleKey::NONE, 0, 1),
+    ];
+    let summary = journal_trace::analyze(&broken, 1);
+    // A read that skips record 2 does not deliver it, so acknowledging
+    // record 3 is not covered.
+    let skipped = vec![
+        events[0],
+        commit(1),
+        commit(2),
+        commit(3),
+        read(0, 10, 1, 1, false, false),
+        read(20, 10, 3, 3, false, false),
+        ack(3, AckResult::Advanced),
+    ];
+    let skipped = journal_trace::analyze(&skipped, 0);
+    assert_eq!(
+        skipped["violations"],
+        serde_json::json!([
+            "journal 3 read at 20 skips from 10",
+            "journal 3 ack 3 passes delivered 1",
+        ])
+    );
+    assert_eq!(skipped["journals"][0]["reads"]["skip"], 1);
+    assert_eq!(skipped["journals"][0]["delivered_through"], 1);
+    assert_eq!(
+        summary["violations"],
+        serde_json::json!([
+            "journal 3 ack 2 passes delivered 1",
+            "journal 3 release of 1 follows no ack 1",
+            "journal 3 released unknown receipt 1",
+            "1 trace events did not fit",
+        ])
+    );
+}
+
+/// Journal trace storage per traced run, reserved up front. Turn marks
+/// coalesce, so the busy owner loop does not consume it.
+#[cfg(feature = "comparator-journal-trace")]
+const JOURNAL_TRACE_EVENTS: usize = 1 << 18;
 
 fn sealed_image_config(
     limits: &ContentLimits,
@@ -1047,7 +1345,7 @@ fn run_sealed_owner(
     child: &mut std::process::Child,
     frames: u64,
     panel_height: u32,
-) -> Result<(u64, ShellSealedImageOwner, Option<ContentRenderBundle>), String> {
+) -> Result<(u64, ShellIsbImageOwner, Option<ContentRenderBundle>), String> {
     const PANEL_WIDTH: u32 = 1920;
     let output = ContentOutputId {
         id: 1,
@@ -1058,7 +1356,7 @@ fn run_sealed_owner(
         generation: 1,
     };
     let limits = host.content_limits().cloned().ok_or("no content limits")?;
-    let mut image_owner = ShellSealedImageOwner::new(limits.max_resource_bytes as usize, 65536)
+    let mut image_owner = ShellIsbImageOwner::new(limits.max_resource_bytes as usize, 65536)
         .map_err(|e| e.to_string())?;
     host.publish_content_output_facts(
         epochs,
@@ -1079,9 +1377,16 @@ fn run_sealed_owner(
     let mut mismatched = 0;
     let mut held = None;
     let mut stage = "start";
+    #[cfg(feature = "comparator-journal-trace")]
+    let mut turn = 0;
     while child.try_wait().map_err(|e| e.to_string())?.is_none() {
         if start.elapsed() > Duration::from_secs(30) {
             return Err("peer deadline".into());
+        }
+        #[cfg(feature = "comparator-journal-trace")]
+        {
+            turn += 1;
+            sophia_9p::journal_trace::mark(turn);
         }
         let result = (|| -> Result<(), ShellTransportError> {
             stage = "owner turn";

@@ -1,7 +1,7 @@
 #![cfg(feature = "native-session")]
 
 use sophia_runtime::{
-    ProcessLaunchSpec, ProcessSupervisor, ProtectionDevice, ProtectionDomainRole,
+    LaunchChannel, ProcessLaunchSpec, ProcessSupervisor, ProtectionDevice, ProtectionDomainRole,
     ProtectionDomainSpec, ProtectionPath, SupervisedProcessKind, SupervisorCommand,
     SupervisorEvent,
 };
@@ -29,6 +29,7 @@ fn protected_proof_exec_checks_exclusions_before_releasing_the_client() {
     fs::set_permissions(&client, fs::Permissions::from_mode(0o700)).unwrap();
     for case in [
         "valid",
+        "no_launch_channel",
         "extra_drm",
         "missing_device",
         "input",
@@ -126,12 +127,18 @@ fn protected_proof_exec_checks_exclusions_before_releasing_the_client() {
             spec = spec.env("SOPHIA_SHELL_SOCKET", "/run/shell/socket.sock");
         }
         let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::Shell, spec);
-        supervisor
-            .apply(SupervisorCommand::StartProcess {
-                process: SupervisedProcessKind::Shell,
-                delay: Duration::ZERO,
-            })
-            .unwrap();
+        // Supplied channel custody tests the exec boundary, not authentication.
+        let (_relay, channel) = LaunchChannel::reserve(1).unwrap();
+        if case == "no_launch_channel" {
+            supervisor
+                .apply(SupervisorCommand::StartProcess {
+                    process: SupervisedProcessKind::Shell,
+                    delay: Duration::ZERO,
+                })
+                .unwrap();
+        } else {
+            supervisor.start_with_launch_channel(channel).unwrap();
+        }
         assert!(supervisor.protection_evidence().is_some());
         let deadline = Instant::now() + Duration::from_secs(5);
         while supervisor.poll().unwrap() != Some(SupervisorEvent::ProcessExited) {
@@ -213,12 +220,8 @@ fn valid_proof_ran(root: &Path, inherited: &[i32]) -> bool {
         .process_group()
         .protection_domain(domain);
     let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::Shell, spec);
-    supervisor
-        .apply(SupervisorCommand::StartProcess {
-            process: SupervisedProcessKind::Shell,
-            delay: Duration::ZERO,
-        })
-        .unwrap();
+    let (_relay, channel) = LaunchChannel::reserve(1).unwrap();
+    supervisor.start_with_launch_channel(channel).unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     while supervisor.poll().unwrap() != Some(SupervisorEvent::ProcessExited) {
         assert!(Instant::now() < deadline, "proof child deadline");

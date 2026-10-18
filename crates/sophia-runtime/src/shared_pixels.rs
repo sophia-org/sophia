@@ -1,15 +1,16 @@
 //! Immutable CPU pixels whose backing follows every renderer lease.
+//! ISB (Immutable Shared Buffers) retain a validated sealed memfd mapping.
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
 
 #[derive(Clone)]
 enum Backing {
     Bytes(Arc<[u8]>),
-    Sealed(Arc<sophia_linux_peer::SealedMapping>),
+    Isb(Arc<sophia_linux_peer::SealedMapping>),
 }
 
-/// Cloning retains backing without copying pixels. A sealed backing can only
-/// enter through a completed `ValidatedSealedPixels` scan; the mapping remains
+/// Cloning retains backing without copying pixels. An ISB backing can only
+/// enter through a completed `ValidatedIsbPixels` scan; the mapping remains
 /// alive until the last consumer drops its handle.
 #[derive(Clone)]
 pub struct SharedPixels(Backing);
@@ -20,14 +21,14 @@ pub struct SharedPixelsWatch(WeakBacking);
 
 enum WeakBacking {
     Bytes(Weak<[u8]>),
-    Sealed(Weak<sophia_linux_peer::SealedMapping>),
+    Isb(Weak<sophia_linux_peer::SealedMapping>),
 }
 
 impl SharedPixelsWatch {
     pub fn released(&self) -> bool {
         match &self.0 {
             WeakBacking::Bytes(bytes) => bytes.strong_count() == 0,
-            WeakBacking::Sealed(mapping) => mapping.strong_count() == 0,
+            WeakBacking::Isb(mapping) => mapping.strong_count() == 0,
         }
     }
 }
@@ -42,12 +43,12 @@ impl SharedPixels {
     pub fn watch(&self) -> SharedPixelsWatch {
         SharedPixelsWatch(match &self.0 {
             Backing::Bytes(bytes) => WeakBacking::Bytes(Arc::downgrade(bytes)),
-            Backing::Sealed(mapping) => WeakBacking::Sealed(Arc::downgrade(mapping)),
+            Backing::Isb(mapping) => WeakBacking::Isb(Arc::downgrade(mapping)),
         })
     }
 
-    pub(crate) fn sealed(mapping: sophia_linux_peer::SealedMapping) -> Self {
-        Self(Backing::Sealed(Arc::new(mapping)))
+    pub(crate) fn isb(mapping: sophia_linux_peer::SealedMapping) -> Self {
+        Self(Backing::Isb(Arc::new(mapping)))
     }
 }
 
@@ -56,7 +57,7 @@ impl Deref for SharedPixels {
     fn deref(&self) -> &[u8] {
         match &self.0 {
             Backing::Bytes(bytes) => bytes,
-            Backing::Sealed(mapping) => mapping.bytes(),
+            Backing::Isb(mapping) => mapping.bytes(),
         }
     }
 }

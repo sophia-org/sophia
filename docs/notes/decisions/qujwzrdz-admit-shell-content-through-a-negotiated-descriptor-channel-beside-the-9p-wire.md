@@ -7,6 +7,46 @@ tags: [adr, shell, gpu, performance, 9p]
 ---
 # Admit shell content through a negotiated descriptor channel beside the 9P wire
 
+## Accepted amendment — Immutable Shared Buffers, October 18, 2026
+
+niltempus confirmed that Sophia need not support image-producing clients that
+cannot use the sealed channel. Production shell and lock CPU image uploads
+therefore use **Immutable Shared Buffers (ISB)**, currently backed by sealed
+memfds. niltempus approved this name on October 18. The byte-upload compatibility
+requirement and
+caller-selected byte fallback are withdrawn. There is no size threshold or
+per-frame bytes/sealed selection policy. 9P continues to carry authenticated
+control, admission, status and resource lifecycle; the separate channel carries
+sealed source descriptors.
+
+An image-producing client must negotiate the role's sealed capability and
+establish ChannelReady before submitting images. An unavailable channel is an
+explicit failure. ChannelClosed disables image admission for that epoch;
+recovery requires a fresh authenticated epoch. Existing cancellation, drain,
+retained-backing and final-release obligations still apply. Channel failure
+does not make a sealed source writable or permit early resource destruction.
+Lock coverage and authentication remain independent of provider image success.
+
+The measured small-bar, bulk and large-presented pilots inform this choice but
+do not close t331. Sealed reduces allocations in those workloads and has a
+combined CPU advantage over IPC in the tested bulk and large-presented arms;
+the small-bar CPU/allocation gaps remain optimization work. No single dominant
+cost or universal performance advantage has been established. Optimize sealed
+and the shared control path under the existing gates.
+
+The [t331 migration sequence](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#immutable-shared-buffers--october-18)
+owns removal from production runtime, both independent SDKs and their clients.
+Byte uploads remain temporarily in the implementation while that migration is
+completed, and in the isolated comparator for historical comparisons. This
+amendment records the decision; it does not claim the removal is implemented.
+Existing record numbers are not reassigned. DMA-BUF capture remains a separate
+future source kind with its own completion contract; a writable pool is not
+introduced by this decision.
+
+The October 17 sections below retain the original rationale and delivery
+history. Their requirements to support byte-only clients or byte fallback are
+superseded by this amendment. The immutable content and custody rules remain.
+
 ## Context
 
 The shell content contract carries pixels as premultiplied BGRA bytes in bounded

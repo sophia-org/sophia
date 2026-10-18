@@ -1,7 +1,8 @@
 #ifndef SOPHIA_IMAGE_PRODUCER_H
 #define SOPHIA_IMAGE_PRODUCER_H
 /* Image-channel producer for one role connection: discovery, Hello and the
- * ChannelReady barrier, up to four offers, sealed sources and their custody.
+ * ChannelReady barrier, up to four offers, Immutable Shared Buffers (ISB)
+ * and their custody.
  * Single thread, no allocator, no clock. Callers pass CLOCK_MONOTONIC
  * milliseconds; a now_ms smaller than the previous call is ARGUMENT.
  *
@@ -44,9 +45,8 @@ enum sophia_ip_channel {
     SOPHIA_IPC_CLOSED
 };
 
-/* Why the channel closed. ABSENT, UNAVAILABLE and EXHAUSTED are clean: the
- * byte path may serve images if the caller allows it. The rest are errors
- * even with fallback enabled. */
+/* Why the channel closed. Every closure ends image admission for this epoch.
+ * Recovery needs a new authenticated connection, never a byte fallback. */
 enum sophia_ip_cause {
     SOPHIA_IPX_NONE,
     SOPHIA_IPX_ABSENT,       /* discovery object absent (ENOENT) */
@@ -77,8 +77,8 @@ enum sophia_ip_offer_state {
 enum sophia_ip_path {
     SOPHIA_IPP_DESCRIPTOR,
     SOPHIA_IPP_WAIT,  /* the barrier is still in progress */
-    SOPHIA_IPP_BYTES, /* clean closure and the caller allows fallback */
-    SOPHIA_IPP_ERROR
+    /* Value 2 was the retired byte fallback. */
+    SOPHIA_IPP_ERROR = 3
 };
 
 /* ResourceStatus outcomes as the role client reports them. */
@@ -96,7 +96,6 @@ struct sophia_ip_config {
     struct sophia_ic_role_bounds bounds; /* the role's negotiated limits */
     uint32_t transfer_timeout_ms;        /* the role's transfer deadline, nonzero */
     uint64_t startup_deadline_ms;        /* absolute: discovery through ChannelReady */
-    int fallback_bytes;                  /* caller policy for clean closure */
 };
 
 struct sophia_ip_offer_info {
@@ -212,12 +211,29 @@ enum sophia_ip_cause sophia_ip_cause(const struct sophia_ip *);
 enum sophia_ip_path sophia_ip_path(const struct sophia_ip *);
 
 /* A fresh sealable memfd of width*height*4 bytes, mapped writable for the
- * caller to fill. On OK the caller owns *fd and the mapping; otherwise
- * nothing was created. */
-int sophia_ip_sealed_create(uint32_t width, uint32_t height, int *fd, void **pixels,
-                            size_t *bytes);
-/* Unmaps pixels, then adds WRITE, GROW, SHRINK and SEAL seals. The caller
- * keeps fd on every result. ARGUMENT leaves the mapping in place; REFUSED
- * means the mapping is gone but sealing failed, so fd must not be offered. */
-int sophia_ip_sealed_finish(int fd, void *pixels, size_t bytes);
+ * caller to fill in place. ARGUMENT, before anything is allocated, for a zero
+ * dimension, a stride above UINT32_MAX, a size above SIZE_MAX, PTRDIFF_MAX or
+ * INT64_MAX, or a size above max_bytes (normally the role's granted
+ * max_resource_bytes). The backing is
+ * allocated up front, so ordinary memory exhaustion is REFUSED here rather
+ * than a fault while filling; this narrows SIGBUS exposure but does not rule
+ * out hardware memory errors. GROW and SHRINK are sealed at once, so the
+ * backing cannot shrink beneath the mapping, and the mapping is not inherited
+ * by fork, so a child holds no writable alias. A forked child therefore has no
+ * mapping at *pixels: it must not access it or munmap it, and it inherits the
+ * unsealed fd until exec closes it (CLOEXEC), so it must close fd or exec
+ * without writing to it. Do not resize or remap fd. On
+ * OK the caller owns *fd and the mapping: finish it, or abandon it with
+ * munmap(*pixels, *bytes) and close(*fd); never offer an unfinished fd.
+ * Otherwise nothing was created and the outputs are unchanged. */
+int sophia_ip_isb_create_bounded(uint32_t width, uint32_t height, uint64_t max_bytes, int *fd,
+                                 void **pixels, size_t *bytes);
+/* sophia_ip_isb_create_bounded with no resource bound. */
+int sophia_ip_isb_create(uint32_t width, uint32_t height, int *fd, void **pixels,
+                         size_t *bytes);
+/* Unmaps pixels, then adds WRITE, GROW, SHRINK and SEAL seals and reads them
+ * back. The caller keeps fd on every result. ARGUMENT leaves the mapping in
+ * place; REFUSED means the mapping is gone but the seals are missing, so fd
+ * must not be offered. */
+int sophia_ip_isb_finish(int fd, void *pixels, size_t bytes);
 #endif

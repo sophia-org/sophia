@@ -134,6 +134,10 @@ pub(super) struct LiveMetadataShell {
 
 impl LiveMetadataShell {
     pub(super) fn poll(&mut self) -> Result<LiveMetadataShellPoll, Box<dyn std::error::Error>> {
+        self.transport.service_images(
+            crate::shell_component_connections::content_now_msec(),
+            Instant::now(),
+        )?;
         if !shell_reconnect_allowed(self.presentation_paused) {
             return Ok(LiveMetadataShellPoll::Unavailable);
         }
@@ -167,6 +171,7 @@ impl LiveMetadataShell {
         if self.presentation_paused
             || (!self.connected && !self.authentication.as_ref().is_some_and(|a| a.negotiating))
         {
+            self.transport.visit_image_worker(visit);
             return;
         }
         self.transport.visit_poll_fds(visit)
@@ -189,7 +194,7 @@ impl LiveMetadataShell {
                 .min(Duration::from_millis(10));
         }
         if !self.connected || self.presentation_paused {
-            return Duration::MAX;
+            return self.transport.image_wait(now);
         }
         self.transport.authentication_wait(now)
     }

@@ -964,8 +964,13 @@ The generic `shell-gpu-content-proof` and `shell_content_conformance_host CLIENT
 serve only `sophia_shell_fs_v1` over 9P2000.L, and their records name
 `wire=9p2000.L`. Both still accept `--transport=9p2000.L` for existing callers.
 They refuse `--transport=current-ipc` and a set `SOPHIA_SHELL_SOCKET`; there is
-no socket fallback. The proof's client receives only `SOPHIA_SHELL_9P_SOCKET`.
-The host exercises allocation, upload, candidate refusal and lease-backed
+no socket fallback. The proof requires absolute `--factotum-agent` and
+`--factotum-pam-helper` paths for authenticated launch. Its client receives
+`SOPHIA_SHELL_9P_SOCKET` and the inherited launch-authentication relay, then
+attaches with an afid and transfers sealed images through the advertised image
+endpoint. The conformance host supplies authentication verdicts explicitly;
+it does not establish real launch-authentication acceptance.
+The host exercises allocation, sealed-image admission, candidate refusal and lease-backed
 retirement without a display or GPU, and passes the client
 `content-proof --socket PATH` naming its 9P export.
 

@@ -1,4 +1,4 @@
-//! Sealed image admission and worker custody against the real allocation owner.
+//! ISB image admission and worker custody against the real allocation owner.
 use super::*;
 
 fn image_registry() -> ContentEpochRegistry {
@@ -43,8 +43,8 @@ fn expiry_continues_after_another_epochs_clock_error() {
             content_grant_epoch: 2,
         };
         add_image_epoch(&mut registry, other);
-        let mut worker = SealedValidationWorker::new(2, 16000).unwrap();
-        let mut jobs = SealedImageJobs::default();
+        let mut worker = IsbValidationWorker::new(2, 16000).unwrap();
+        let mut jobs = IsbImageJobs::default();
         let deadline = Instant::now() + Duration::from_secs(3);
         jobs.reserve(
             &mut registry,
@@ -93,8 +93,8 @@ fn expiry_continues_after_another_epochs_clock_error() {
 fn delivered_success_has_no_remaining_validation_deadline() {
     use std::time::{Duration, Instant};
     let mut registry = image_registry();
-    let mut worker = SealedValidationWorker::new(1, 16000).unwrap();
-    let mut jobs = SealedImageJobs::default();
+    let mut worker = IsbValidationWorker::new(1, 16000).unwrap();
+    let mut jobs = IsbImageJobs::default();
     let deadline = Instant::now() + Duration::from_secs(3);
     let job = jobs
         .reserve(
@@ -127,8 +127,8 @@ fn resource_cancel_reaches_unsent_and_submitted_worker_custody() {
     use std::time::{Duration, Instant};
     for submitted in [false, true] {
         let mut registry = image_registry();
-        let mut worker = SealedValidationWorker::new(1, 16000).unwrap();
-        let mut jobs = SealedImageJobs::default();
+        let mut worker = IsbValidationWorker::new(1, 16000).unwrap();
+        let mut jobs = IsbImageJobs::default();
         let metadata = image_metadata();
         let deadline = Instant::now() + Duration::from_secs(3);
         let job = jobs
@@ -187,9 +187,9 @@ fn resource_cancel_reaches_unsent_and_submitted_worker_custody() {
 fn unsent_withdrawal_with_wrong_worker_preserves_a_retryable_credit() {
     use std::time::{Duration, Instant};
     let mut registry = image_registry();
-    let mut worker = SealedValidationWorker::new(1, 16000).unwrap();
-    let mut wrong = SealedValidationWorker::new(1, 16000).unwrap();
-    let mut jobs = SealedImageJobs::default();
+    let mut worker = IsbValidationWorker::new(1, 16000).unwrap();
+    let mut wrong = IsbValidationWorker::new(1, 16000).unwrap();
+    let mut jobs = IsbImageJobs::default();
     let job = jobs
         .reserve(
             &mut registry,
@@ -205,7 +205,7 @@ fn unsent_withdrawal_with_wrong_worker_preserves_a_retryable_credit() {
             &mut registry,
             &mut wrong,
             job,
-            SealedImageWithdrawal::Cancelled,
+            IsbImageWithdrawal::Cancelled,
             1
         ),
         Err(ContentStoreError::Incomplete)
@@ -216,7 +216,7 @@ fn unsent_withdrawal_with_wrong_worker_preserves_a_retryable_credit() {
         &mut registry,
         &mut worker,
         job,
-        SealedImageWithdrawal::ChannelLost,
+        IsbImageWithdrawal::ChannelLost,
         1,
     )
     .unwrap();
@@ -253,7 +253,7 @@ fn image_metadata() -> sophia_protocol::shell_files::ShellImageMetadata {
 fn sealed_admission_checks_live_allocation_and_rolls_back_worker_credit_on_refusal() {
     use std::time::{Duration, Instant};
     let mut registry = image_registry();
-    let mut worker = SealedValidationWorker::new(2, 16000).unwrap();
+    let mut worker = IsbValidationWorker::new(2, 16000).unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
     for field in 0..5 {
         let mut metadata = image_metadata();
@@ -266,7 +266,7 @@ fn sealed_admission_checks_live_allocation_and_rolls_back_worker_credit_on_refus
         }
         assert!(
             registry
-                .reserve_sealed_image(grant(), metadata, &mut worker, 0, deadline)
+                .reserve_isb_image(grant(), metadata, &mut worker, 0, deadline)
                 .is_err()
         );
         assert_eq!(worker.pending(), 0);
@@ -276,7 +276,7 @@ fn sealed_admission_checks_live_allocation_and_rolls_back_worker_credit_on_refus
         );
     }
     let admitted = registry
-        .reserve_sealed_image(grant(), image_metadata(), &mut worker, 0, deadline)
+        .reserve_isb_image(grant(), image_metadata(), &mut worker, 0, deadline)
         .unwrap();
     assert_eq!(admitted.metadata, image_metadata());
     assert_eq!(admitted.deadline, deadline);
@@ -291,7 +291,7 @@ fn sealed_admission_checks_live_allocation_and_rolls_back_worker_credit_on_refus
     );
     assert!(
         registry
-            .reserve_sealed_image(grant(), image_metadata(), &mut worker, 0, deadline)
+            .reserve_isb_image(grant(), image_metadata(), &mut worker, 0, deadline)
             .is_err()
     );
     assert_eq!(
@@ -306,7 +306,7 @@ fn sealed_admission_checks_live_allocation_and_rolls_back_worker_credit_on_refus
     };
     let mut result = Some(Err(ContentStoreError::Malformed));
     assert_eq!(
-        registry.complete_sealed(grant(), resource, &mut result, 1),
+        registry.complete_isb(grant(), resource, &mut result, 1),
         Err(ContentStoreError::Malformed)
     );
     assert!(result.is_none());
@@ -317,24 +317,24 @@ fn sealed_admission_checks_live_allocation_and_rolls_back_worker_credit_on_refus
 fn exhausted_worker_does_not_consume_resource_generation() {
     use std::time::{Duration, Instant};
     let mut registry = image_registry();
-    let mut worker = SealedValidationWorker::new(1, 16000).unwrap();
+    let mut worker = IsbValidationWorker::new(1, 16000).unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
     let occupied = worker.reserve(4, deadline).unwrap();
     assert_eq!(
         registry
-            .reserve_sealed_image(grant(), image_metadata(), &mut worker, 0, deadline)
+            .reserve_isb_image(grant(), image_metadata(), &mut worker, 0, deadline)
             .unwrap_err(),
-        SealedImageAdmissionError::Worker(SealedSubmitFailure::Capacity)
+        IsbImageAdmissionError::Worker(IsbSubmitFailure::Capacity)
     );
     worker.release_reserved(occupied);
     let admitted = registry
-        .reserve_sealed_image(grant(), image_metadata(), &mut worker, 0, deadline)
+        .reserve_isb_image(grant(), image_metadata(), &mut worker, 0, deadline)
         .unwrap();
     assert!(registry.disconnect(grant()));
     worker.release_reserved(admitted.worker_job);
     let mut result = Some(Err(ContentStoreError::Revoked));
     assert_eq!(
-        registry.complete_sealed(
+        registry.complete_isb(
             grant(),
             ContentResourceId {
                 id: 1,
@@ -353,8 +353,8 @@ fn owner_job_table_keeps_completions_across_clock_retry_and_disconnect() {
     use std::time::{Duration, Instant};
     for disconnect in [false, true] {
         let mut registry = image_registry();
-        let mut worker = SealedValidationWorker::new(1, 16000).unwrap();
-        let mut jobs = SealedImageJobs::default();
+        let mut worker = IsbValidationWorker::new(1, 16000).unwrap();
+        let mut jobs = IsbImageJobs::default();
         let deadline = Instant::now() + Duration::from_secs(3);
         let job = jobs
             .reserve(
@@ -392,7 +392,7 @@ fn owner_job_table_keeps_completions_across_clock_retry_and_disconnect() {
         assert_eq!(settlement.admission.worker_job, job);
         assert_eq!(
             settlement.validation_failure,
-            Some(SealedValidationFailure::Malformed)
+            Some(IsbValidationFailure::Malformed)
         );
         assert_eq!(
             settlement.outcome,
@@ -405,15 +405,15 @@ fn owner_job_table_keeps_completions_across_clock_retry_and_disconnect() {
         assert_eq!(jobs.pending(), 0);
         assert!(jobs.reconcile(&mut registry, 11).is_none());
         assert_eq!(registry.accounting().retired_epochs, 0);
-        let duplicate = SealedValidationCompletion {
+        let duplicate = IsbValidationCompletion {
             job,
-            result: Err(SealedValidationFailure::Cancelled),
+            result: Err(IsbValidationFailure::Cancelled),
         };
         let returned = jobs.receive(duplicate).err().unwrap();
         assert_eq!(returned.job, job);
         assert!(matches!(
             returned.result,
-            Err(SealedValidationFailure::Cancelled)
+            Err(IsbValidationFailure::Cancelled)
         ));
     }
 }
@@ -422,8 +422,8 @@ fn owner_job_table_keeps_completions_across_clock_retry_and_disconnect() {
 fn completed_worker_jobs_still_hold_owner_table_capacity() {
     use std::time::{Duration, Instant};
     let mut registry = image_registry();
-    let mut worker = SealedValidationWorker::new(1, 16000).unwrap();
-    let mut jobs = SealedImageJobs::default();
+    let mut worker = IsbValidationWorker::new(1, 16000).unwrap();
+    let mut jobs = IsbImageJobs::default();
     let deadline = Instant::now() + Duration::from_secs(3);
     for id in 1..=4 {
         let mut metadata = image_metadata();
@@ -454,9 +454,7 @@ fn completed_worker_jobs_still_hold_owner_table_capacity() {
     metadata.resource = 5;
     assert_eq!(
         jobs.reserve(&mut registry, &mut worker, grant(), metadata, 0, deadline),
-        Err(SealedImageAdmissionError::Worker(
-            SealedSubmitFailure::Capacity
-        ))
+        Err(IsbImageAdmissionError::Worker(IsbSubmitFailure::Capacity))
     );
     assert_eq!(worker.pending(), 0);
     assert!(registry.disconnect(grant()));
@@ -489,17 +487,17 @@ fn image_source() -> std::os::fd::OwnedFd {
 fn withdrawing_an_unsent_offer_releases_worker_credit_but_waits_for_store_handoff() {
     use std::time::{Duration, Instant};
     for (cause, reason) in [
-        (SealedImageWithdrawal::Cancelled, ContentReason::Cancelled),
-        (SealedImageWithdrawal::Expired, ContentReason::Timeout),
-        (SealedImageWithdrawal::ChannelLost, ContentReason::Cancelled),
+        (IsbImageWithdrawal::Cancelled, ContentReason::Cancelled),
+        (IsbImageWithdrawal::Expired, ContentReason::Timeout),
+        (IsbImageWithdrawal::ChannelLost, ContentReason::Cancelled),
         (
-            SealedImageWithdrawal::AllocationLost,
+            IsbImageWithdrawal::AllocationLost,
             ContentReason::AllocationLost,
         ),
     ] {
         let mut registry = image_registry();
-        let mut worker = SealedValidationWorker::new(1, 16000).unwrap();
-        let mut jobs = SealedImageJobs::default();
+        let mut worker = IsbValidationWorker::new(1, 16000).unwrap();
+        let mut jobs = IsbImageJobs::default();
         let job = jobs
             .reserve(
                 &mut registry,
@@ -521,14 +519,14 @@ fn withdrawing_an_unsent_offer_releases_worker_credit_but_waits_for_store_handof
         assert_eq!(jobs.pending(), 1);
         assert_eq!(registry.resources(grant()).unwrap().usage().backing, 16000);
         let (error, fd) = jobs.submit(&mut worker, job, image_source()).unwrap_err();
-        assert_eq!(error, SealedSubmitFailure::Invalid);
+        assert_eq!(error, IsbSubmitFailure::Invalid);
         drop(fd);
         // A later cancellation cannot replace the original expiry/cause.
         jobs.withdraw(
             &mut registry,
             &mut worker,
             job,
-            SealedImageWithdrawal::Cancelled,
+            IsbImageWithdrawal::Cancelled,
             10,
         )
         .unwrap();
@@ -561,8 +559,8 @@ fn cancellation_waits_for_submitted_validation_and_overrides_an_uncommitted_succ
     use std::time::{Duration, Instant};
     for already_completed in [false, true] {
         let mut registry = image_registry();
-        let mut worker = SealedValidationWorker::new(1, 16000).unwrap();
-        let mut jobs = SealedImageJobs::default();
+        let mut worker = IsbValidationWorker::new(1, 16000).unwrap();
+        let mut jobs = IsbImageJobs::default();
         let deadline = Instant::now() + Duration::from_secs(3);
         let job = jobs
             .reserve(
@@ -580,7 +578,7 @@ fn cancellation_waits_for_submitted_validation_and_overrides_an_uncommitted_succ
                 &mut registry,
                 &mut worker,
                 job,
-                SealedImageWithdrawal::Cancelled,
+                IsbImageWithdrawal::Cancelled,
                 1,
             )
             .unwrap();
@@ -602,7 +600,7 @@ fn cancellation_waits_for_submitted_validation_and_overrides_an_uncommitted_succ
             &mut registry,
             &mut worker,
             job,
-            SealedImageWithdrawal::Cancelled,
+            IsbImageWithdrawal::Cancelled,
             1,
         )
         .unwrap();
@@ -618,8 +616,8 @@ fn deadlines_and_epoch_loss_retire_unsent_jobs_without_waiting_for_a_source() {
     use std::time::{Duration, Instant};
     for disconnect in [false, true] {
         let mut registry = image_registry();
-        let mut worker = SealedValidationWorker::new(1, 16000).unwrap();
-        let mut jobs = SealedImageJobs::default();
+        let mut worker = IsbValidationWorker::new(1, 16000).unwrap();
+        let mut jobs = IsbImageJobs::default();
         let deadline = Instant::now() + Duration::from_secs(3);
         jobs.reserve(
             &mut registry,
@@ -667,8 +665,8 @@ fn deadlines_and_epoch_loss_retire_unsent_jobs_without_waiting_for_a_source() {
 fn worker_timeout_is_not_reported_as_malformed_source() {
     use std::time::{Duration, Instant};
     let mut registry = image_registry();
-    let mut worker = SealedValidationWorker::new(1, 16000).unwrap();
-    let mut jobs = SealedImageJobs::default();
+    let mut worker = IsbValidationWorker::new(1, 16000).unwrap();
+    let mut jobs = IsbImageJobs::default();
     let job = jobs
         .reserve(
             &mut registry,
@@ -690,7 +688,7 @@ fn worker_timeout_is_not_reported_as_malformed_source() {
     };
     assert!(matches!(
         completion.result,
-        Err(SealedValidationFailure::Timeout)
+        Err(IsbValidationFailure::Timeout)
     ));
     assert!(jobs.receive(completion).is_ok());
     let settlement = jobs.reconcile(&mut registry, 0).unwrap();

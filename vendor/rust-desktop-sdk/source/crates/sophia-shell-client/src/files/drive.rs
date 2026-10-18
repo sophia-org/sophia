@@ -127,15 +127,6 @@ impl FileWire {
     /// the wire is unknown; resource bytes partly or possibly written are
     /// unknown; everything else never left the client.
     fn classify_terminal(&mut self, output: &ClientOutbox) {
-        if matches!(self.current, Some(Current::SlotWrite(_))) {
-            let Some(Current::SlotWrite(window)) = self.current.take() else {
-                unreachable!()
-            };
-            for unit in window.units.into_iter().flatten() {
-                self.custody.push((unit.ticket, unit.terminal_custody()));
-                self.retire += 1;
-            }
-        }
         if self.retire > 0 || self.current.is_some() || !self.pending.is_empty() {
             let current = match &self.current {
                 Some(Current::Submission {
@@ -150,7 +141,6 @@ impl FileWire {
                     ..
                 }) => Some(Custody::Unknown),
                 Some(Current::Submission { .. }) => Some(Custody::DroppedUnsent),
-                Some(Current::SlotWrite(_)) => unreachable!("classified above"),
                 None => None,
             };
             // Units already settled this pass sit ahead of the current one.
@@ -236,7 +226,6 @@ impl FileWire {
             progressed |= self.start_next_outbound(output)?;
             progressed |= self.queue_submit_with_record()?;
             progressed |= self.drive_submit_retry()?;
-            progressed |= self.drive_slot_write(output)?;
             progressed |= self.drive_object_fetch()?;
             progressed |= self.drive_image_fetch()?;
             progressed |= self.process_buffered_event(inbox)?;
@@ -296,12 +285,6 @@ impl FileWire {
                 continue;
             }
             if self.on_submission_reply(tag, &reply)? {
-                continue;
-            }
-            if self.on_slot_open_reply(tag, &reply)? {
-                continue;
-            }
-            if self.on_slot_write_reply(tag, &reply)? {
                 continue;
             }
             if self.on_object_fetch_reply(tag, &reply, inbox)? {

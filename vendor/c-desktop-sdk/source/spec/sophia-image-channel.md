@@ -6,19 +6,101 @@ ownership and layout contract for the separately negotiated image channel.
 The [design and evidence](notes/plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md)
 record the decisions, exact fixtures and remaining implementation gates.
 
-**Implementation status:** production and both SDKs still advertise the existing
-shell r1–r8 and lock r1 paths. Passive image codecs do not expose a live channel
-or enable its records on those connections. t338 owns sealed-memory implementation;
-t339/t304 own DMA-BUF after the renderer safe-completion seam. Contract acceptance
-is not a runtime release or performance result. The existing 9P `api` line stays
+**Implementation status:** t338 delivered negotiated sealed-memory support for
+shell r9, lock r2 and both SDKs. The runtime and SDK byte-upload paths still
+exist. On October 18 niltempus accepted
+[Immutable Shared Buffers (ISB) for production CPU images](notes/decisions/qujwzrdz-admit-shell-content-through-a-negotiated-descriptor-channel-beside-the-9p-wire.md#accepted-amendment--immutable-shared-buffers-october-18-2026):
+clients without the sealed channel need not be supported, and byte fallback is
+no longer required or part of the target architecture. The
+[t331 migration](notes/plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#immutable-shared-buffers--october-18)
+remains implementation work. The requirements below describe that accepted
+target; this amendment alone does not remove existing code. t339/t304 own
+DMA-BUF after the renderer safe-completion seam. The 9P `api` line stays
 unchanged: `fd_transfer=none` describes the 9P stream, not this separate socket.
 
 The shell KDL's ResourceStatus ceiling includes r9 value 13. Explicit
 revision-aware C and Rust codec entry points admit it only for Rejected at r9;
 the independent Go oracle also checks the negotiated revision. Legacy entry
-points and Sophia's existing emission path retain 12. All other reason fields
-retain their bounds. Image-kind KDL rows describe passive codec support, not
-negotiated production service; the exact tables here govern both.
+points retain 12. All other reason fields retain their bounds. The exact tables
+here govern the image records admitted by negotiated production service.
+
+## Immutable Shared Buffers (ISB) at a glance
+
+**Name:** Immutable Shared Buffers (ISB) is the CPU image architecture. The
+current Linux backing is a sealed memfd. `sealed` in existing discovery values,
+capability names, source-kind identifiers and retained measurement schemas
+names that backing mechanism; this terminology change does not change wire
+bytes or reinterpret old captures. Runtime owners and SDK buffer builders use
+ISB names. Linux seal operations retain their technical names.
+
+```text
+              SOPHIA ISB IMAGE PATH     (negotiated shell r9 / lock r2)
+
+ +------------------------------------------------------------------------+
+ | SHELL COMPONENT / LOCK PROVIDER  (supervised, sandboxed peer)          |
+ |                                                                        |
+ | Prepare pixels -> fresh memfd -> seal WRITE | GROW | SHRINK | SEAL     |
+ | Send its descriptor only after ImageAdmitted.                          |
+ +-------------+------------------------------------+---------------------+
+               |                                    |
+       9P2000.L control/events              SEQPACKET side socket
+               |                                    |
+ +-------------v------------------+   +-------------v---------------------+
+ | Authenticated role root        |   | Discovered endpoint (image.sock)  |
+ |                                |   |                                   |
+ | image-channel: endpoint, kinds |   | Hello: 40 bytes, no FDs           |
+ | image-limits: budgets          |   |   role, epoch, channel generation |
+ | image-formats: formats         |   |                                   |
+ |                                |   | Source: 200 bytes + one FD        |
+ | Peer -> ImageBegin             |   |   via SCM_RIGHTS (sealed source)  |
+ | Peer <- ChannelReady           |   |   header + metadata + plane rows  |
+ | Peer <- ImageAdmitted          |   |                                   |
+ | Peer <- ResourceStatus         |   | No pixel payload in the packet.   |
+ | Peer <- SourceReleased         |   +-------------+---------------------+
+ | Peer <- ResourceReleased       |                 |
+ | Peer <- ChannelClosed          |                 |
+ +-------------+------------------+                 |
+               |                                    |
+ +-------------v------------------------------------v---------------------+
+ | SOPHIA SESSION / ROLE RESOURCE OWNER                                   |
+ |                                                                        |
+ | Hello: verify peer custody and authenticated epoch -> ChannelReady     |
+ | ImageBegin: reserve role budget + journal slots -> ImageAdmitted       |
+ | Source: match admission; check seals and exact backing size            |
+ |         -> read-only mapping                                           |
+ |         -> worker validates premultiplied BGRA under the deadline      |
+ |         -> retain mapping as immutable resource backing                |
+ |                                                                        |
+ | ResourceStatus(Accepted) -> SourceReleased(retained backing)           |
+ |   Offer settled; Sophia still owns the backing.                        |
+ |                                                                        |
+ | Candidates reference the resource -> composition / presentation        |
+ | Retirement or revocation stops new references.                         |
+ | Last consumer ends -> ResourceReleased (while the journal is live)     |
+ +------------------------------------------------------------------------+
+```
+
+**Ordering:** consume ChannelReady before ImageBegin, then ImageAdmitted before
+sending Source. On success, Accepted precedes SourceReleased. A live journal
+owes exactly one SourceReleased per admitted offer, including cancellation or
+expiry before Source arrives. Journal loss leaves that release unknown to the
+producer; it does not prove cleanup. SourceReleased never makes a sealed file
+writable. ResourceReleased is the separate, later end of resource custody.
+
+**Required image path:** production CPU images use ISB, backed by sealed memory. An absent
+channel fails image setup; ChannelClosed disables image admission for the rest
+of the epoch. Recovery requires a fresh authenticated epoch. Neither case
+selects byte upload. Existing offer settlement and backing custody still apply.
+
+**Copies and limits:** the sealed Source packet is 200 bytes plus one FD;
+Hello is a separate 40-byte channel handshake. Retaining the mapping avoids a
+copy into a separate resource backing. This is not an end-to-end zero-copy
+claim: preparing the sealed file and subsequent rendering still have costs.
+Admission uses the role's advertised limits and deadlines. DMA-BUF has separate
+import and safe-completion requirements and is outside this picture.
+
+The normative sections below govern where this picture simplifies: exact record
+layouts, limits and refusal categories are theirs, not the diagram's.
 
 ## Namespace and reviewed vectors
 
@@ -63,11 +145,13 @@ permission. DMA-BUF also requires the independently granted render device;
 sealed memory does not grant or require GPU execution. Shell r9 must extend the
 bar/launcher/dock profile matrix explicitly, preserving their existing minimum
 requirements; a higher revision cannot turn one role into another. Lock r2
-retains the rendering-only role. Old clients continue using old revisions and
-byte records. Unknown or required-but-unavailable capabilities remain a refusal.
-An application that permits byte fallback may select it after discovery; the
-SDK must never silently remove a required capability. ENOENT means the optional
-object is absent; access, staleness and malformed-object failures do not.
+retains the rendering-only role. Production CPU image producers require the
+sealed capability and ChannelReady; byte-only image producers are unsupported.
+This adds no image requirement to clients that do not produce images. Unknown
+or required-but-unavailable capabilities remain a refusal. The SDK must never
+silently remove a required capability. ENOENT means the required object is
+absent and image setup fails; access, staleness and malformed-object failures
+also fail setup. None of these selects a byte-upload path.
 
 The channel's first packet is Hello, with no descriptors, carrying the protocol
 version, role, 9P connection epoch and channel generation. The receiver checks
@@ -87,9 +171,9 @@ Unauthorized connection attempts are rejected without disabling another peer's
 valid channel or spending its channel generation.
 
 A 9P disconnect, epoch replacement, revocation or assignee death stops new offers
-and closes the channel. A channel-only failure disables descriptor admission for
-that epoch; the still-authorized 9P byte path may continue. Channel loss withdraws
-interest in every live offer. Unsent or synchronously held sources release with
+and closes the channel. A channel-only failure disables image admission for
+that epoch; the still-authorized 9P control and journal remain live. Channel loss
+withdraws interest in every live offer. Unsent or synchronously held sources release with
 disposition 4; validation already in flight retains custody until its worker
 returns, and submitted GPU work releases with disposition 5 only after proven
 safe cleanup. Socket closure alone never proves that cleanup.
@@ -97,8 +181,8 @@ A new 9P epoch gets a new channel generation
 and cannot resume an old offer.
 This deliberately makes recovery conservative: a transient failure of the
 authorized channel disables descriptors for the rest of that 9P epoch. The SDK
-uses bytes, where the caller permits fallback, and leaves a full 9P reconnect to
-the application. ChannelClosed on the still-live journal names the generation;
+reports channel failure and leaves a full 9P reconnect to the application.
+ChannelClosed on the still-live journal names the generation;
 ImageBegin also refuses with `image_channel_unavailable` while disabled. Reserve
 one ChannelClosed event slot when admitting Hello. Offers admitted but unsent
 are cancelled with a pre-use release; already submitted GPU work drains safely.
@@ -165,9 +249,9 @@ and let socket teardown release its queued rights. Expiry must not leave FDs
 pinned in an unread backlog indefinitely. Bound both socket backlog and
 per-dispatch packet/validation work so another role can make progress.
 
-### Sealed memory first
+### Immutable Shared Buffers (ISB)
 
-The source is one sealable file of exactly the admitted tight BGRA8 byte length.
+An ISB source is one sealable file of exactly the admitted tight BGRA8 byte length.
 Require F_SEAL_WRITE, F_SEAL_GROW, F_SEAL_SHRINK and F_SEAL_SEAL before mapping.
 F_SEAL_FUTURE_WRITE alone is insufficient. Validate seals and size before creating
 a read-only mapping, use checked width/height/stride arithmetic and enforce the
@@ -217,7 +301,7 @@ renderer image and sends Accepted plus SourceReleased in journal order. The
 standalone job must not require a candidate or a display flip to complete.
 Timeout can reject presentation interest, but is not proof that GPU reads ended.
 A timed-out GPU job retains a bounded quarantine charge until safe cleanup; once
-that bound is reached, stop admitting descriptor work and keep fallback/input
+that bound is reached, stop admitting descriptor work and keep control/input
 alive. Do not busy-wait for completion or free backing still used by the GPU.
 
 After a pre-import refusal, no GPU read exists and release can be immediate.
@@ -252,9 +336,9 @@ than four FDs per offer in the first phase. The role's existing transfer deadlin
 bounds descriptor arrival and validation; packet retries never renew it. Numeric
 renderer reservations, capture deadlines and per-pass work budgets must be
 published in the limits object and justified against supported topology
-before implementation. Zero available budget means refusal and byte fallback,
-not eviction of another role's live image. Covering and unlock work never wait
-for an image reservation, renderer job or provider acknowledgement.
+before implementation. Zero available budget means refusal; it permits neither
+byte fallback nor eviction of another role's live image. Covering and unlock
+work never wait for an image reservation, renderer job or provider acknowledgement.
 
 ## Byte layout, version 1
 
@@ -434,9 +518,9 @@ remaining global capacity, not a new fixed global allowance.
 These are additional objects; the existing role objects keep their layouts.
 Expose three read-only files in the authenticated role root: `image-channel`,
 `image-limits` and `image-formats`. No file grants authority by being readable.
-Legacy exports may omit all three; ENOENT on `image-channel` selects the byte
-path only when the caller permits fallback. Once it exists, a missing companion,
-malformed object or access error is a failure, not optional discovery.
+Legacy exports may omit all three; they cannot serve production image producers
+under the sealed-only requirement. ENOENT on `image-channel`, a missing companion,
+malformed object or access error fails image setup without byte fallback.
 
 `image-channel` is at most 2048 bytes, ASCII with LF line endings and a final LF.
 The first line is exactly `sophia-image-channel version=1`. Remaining lines use

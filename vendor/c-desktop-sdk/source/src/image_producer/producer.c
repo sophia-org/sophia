@@ -319,6 +319,5 @@ enum sophia_ip_path sophia_ip_path(const struct sophia_ip *p)
         return SOPHIA_IPP_DESCRIPTOR;
     if (p->channel != SOPHIA_IPC_CLOSED)
         return SOPHIA_IPP_WAIT;
-    return clean((enum sophia_ip_cause)p->cause) && p->config.fallback_bytes ? SOPHIA_IPP_BYTES
-                                                                             : SOPHIA_IPP_ERROR;
+    return SOPHIA_IPP_ERROR;
 }

@@ -75,6 +75,11 @@ impl Wire {
             if std::env::var_os("SOPHIA_SHELL_SOCKET").is_some() {
                 return Err("ambiguous shell wire".into());
             }
+            if sealed.is_none() {
+                return Err(
+                    "byte file uploads are retired; use the frozen historical candidate".into(),
+                );
+            }
             let socket =
                 std::env::var_os("SOPHIA_SHELL_9P_SOCKET").ok_or("missing file endpoint")?;
             if let Some(fd) = auth {
@@ -417,11 +422,20 @@ fn run() -> Result<()> {
             if chunk_bytes == 0 {
                 return Err("row exceeds chunk limit".into());
             }
-            let bytes = canvas.fill(usize::try_from(length)?, generation)?;
-            let chunks = bytes.len().div_ceil(chunk_bytes) as u32;
+            let chunks = usize::try_from(length)?.div_ceil(chunk_bytes) as u32;
             let source = match sealed {
-                Some(_) => Some(sealed::prepare(width, height, bytes)?),
+                Some(_) => Some(sealed::prepare(
+                    width,
+                    height,
+                    limits.max_resource_bytes,
+                    generation,
+                )?),
                 None => None,
+            };
+            let bytes = if source.is_none() {
+                canvas.fill(usize::try_from(length)?, generation)?
+            } else {
+                &[]
             };
             // Preserve the attempt before sending. This conservative interval includes
             // flushing the offer journal, but excludes pixel preparation above.

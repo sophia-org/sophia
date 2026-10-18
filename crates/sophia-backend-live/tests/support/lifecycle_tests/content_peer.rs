@@ -3,12 +3,19 @@
 //!
 //! The independent C peer is built from the pinned SDK without its IPC
 //! library. It drives the actual component registry and production owners.
+//! It attaches through an afid whose verdicts are supplied here, and its
+//! pixels arrive only as a sealed image the actual image owner admits.
 use super::*;
 use sophia_runtime::*;
 use std::path::{Path, PathBuf};
 
 #[path = "../../../../sophia-conformance/tests/support/c_file_peer.rs"]
 mod c_file_peer;
+#[allow(dead_code)]
+#[path = "../../../../sophia-runtime/tests/support/shell_required_image.rs"]
+mod image;
+#[path = "../../../../sophia-runtime/tests/support/shell_file_peer.rs"]
+mod shell_file_peer;
 
 // Exercise the very same allocation-to-frame mapping used by the session,
 // without creating a production API solely for an integration fixture.
@@ -140,7 +147,11 @@ fn run(client: &Path, wrong_action_epoch: bool) -> Result<(), Box<dyn std::error
     let policy = ShellContentAdmissionPolicy::Granted {
         discrete_input: true,
     };
-    owner.0.authorize_protected_peer(evidence)?;
+    let limits = ContentLimits::prototype(ContentGrant {
+        connection_epoch: 1,
+        content_grant_epoch: 1,
+    });
+    let mut image_owner = image::configure_for_peer(&mut owner.0, &limits, evidence.peer_pid);
     owner
         .0
         .begin_file_negotiation(&owner.1, 1, Duration::from_secs(5), policy)?;
@@ -218,6 +229,7 @@ fn run(client: &Path, wrong_action_epoch: bool) -> Result<(), Box<dyn std::error
             break;
         }
         let turn = (|| -> Result<(), Box<dyn std::error::Error>> {
+            transport.service_isb_images(&mut image_owner, now, Instant::now())?;
             transport.service_content_resources(now)?;
             transport.service_content_allocation_requests(&receipts, now)?;
             while let Some((_, request)) = transport.next_content_allocation_request() {

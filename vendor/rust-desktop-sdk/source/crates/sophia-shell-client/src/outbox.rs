@@ -302,9 +302,6 @@ impl ClientOutbox {
             .and_then(|frame| frame.bytes.take())
             .expect("the current file operation takes its payload once")
     }
-    pub(crate) fn ticket_at(&self, index: usize) -> u64 {
-        self.frames[index].ticket
-    }
     /// The front unit's ticket.
     pub(crate) fn front_ticket(&self) -> Option<u64> {
         self.frames.front().map(|frame| frame.ticket)

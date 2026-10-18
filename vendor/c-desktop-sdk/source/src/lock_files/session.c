@@ -106,7 +106,6 @@ int sophia_lc_internal_parse(struct sophia_lc_client *c) {
       c->object_stage = LC_OBJECT_WALK;
       break;
     case SOPHIA_LF_RESOURCE_STATUS:
-      sophia_lc_internal_upload_status(c, &r->value.resource_status);
       sophia_lc_internal_image_status(c, &r->value.resource_status);
       break;
     case SOPHIA_LF_CHORD:

@@ -3,6 +3,7 @@
 use super::super::super::outbound::OutboundRecord;
 use super::{Fixture, GRANT};
 use crate::shell_transport::wire::CatalogCandidatePart;
+use crate::test_content_isb as isb;
 use crate::{ContentAllocationSnapshot, ContentCandidateContext};
 use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
@@ -145,48 +146,23 @@ fn context(allocations: &[ContentAllocationSnapshot]) -> ContentCandidateContext
 fn catalog_wire_assembly_reaches_real_submission_and_exact_response_fifo() {
     let mut f = fixture();
     let resources = f.epochs.resources_mut(GRANT).unwrap();
-    resources
-        .begin(
-            tx(10),
-            ContentResourceBegin {
-                grant: GRANT,
-                resource: RESOURCE,
-                width_px: 1,
-                height_px: 1,
-                rendered_scale_numerator: 1,
-                rendered_scale_denominator: 1,
-                pixel_format: 1,
-                chunk_count: 1,
-                total_bytes: 4,
-            },
-            0,
-        )
-        .unwrap();
-    resources
-        .chunk(
-            tx(11),
-            &ContentResourceChunk {
-                grant: GRANT,
-                resource: RESOURCE,
-                ordinal: 0,
-                offset: 0,
-                bytes: vec![0, 0, 0, 255],
-            },
-            0,
-        )
-        .unwrap();
-    resources
-        .end(
-            tx(12),
-            &ContentResourceEnd {
-                grant: GRANT,
-                resource: RESOURCE,
-                total_bytes: 4,
-                chunk_count: 1,
-            },
-            0,
-        )
-        .unwrap();
+    isb::accept(
+        resources,
+        tx(10),
+        ContentResourceBegin {
+            grant: GRANT,
+            resource: RESOURCE,
+            width_px: 1,
+            height_px: 1,
+            rendered_scale_numerator: 1,
+            rendered_scale_denominator: 1,
+            pixel_format: 1,
+            chunk_count: 1,
+            total_bytes: 4,
+        },
+        &[0, 0, 0, 255],
+        0,
+    );
     while resources.take_event().is_some() {}
     enqueue_candidate(&mut f, begin());
     let allocations = [allocation()];

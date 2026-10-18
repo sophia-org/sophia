@@ -2,6 +2,8 @@
 //! controls do not claim transport or native completion.
 use sophia_protocol::*;
 use sophia_runtime::*;
+#[path = "support/content_isb.rs"]
+mod isb;
 
 const MIB: u64 = 1024 * 1024;
 const CAP: u64 = 64 * MIB;
@@ -66,32 +68,7 @@ fn upload(store: &mut ContentResourceStore, id: u64) -> ContentResourceLease {
     let g = store.grant();
     let resource = begin(g, id).resource;
     let tx = TransactionId::from_raw(id);
-    store.begin(tx, begin(g, id), 0).unwrap();
-    store
-        .chunk(
-            tx,
-            &ContentResourceChunk {
-                grant: g,
-                resource,
-                ordinal: 0,
-                offset: 0,
-                bytes: vec![0; 4],
-            },
-            0,
-        )
-        .unwrap();
-    store
-        .end(
-            tx,
-            &ContentResourceEnd {
-                grant: g,
-                resource,
-                total_bytes: 4,
-                chunk_count: 1,
-            },
-            0,
-        )
-        .unwrap();
+    isb::accept(store, tx, begin(g, id), &[0; 4], 0);
     while store.take_event().is_some() {}
     store.lease(g, resource).unwrap()
 }
@@ -148,7 +125,7 @@ fn proposed_limits_preserve_nominal_profiles_and_every_nonbyte_relation() {
 }
 
 #[test]
-fn revocation_aborts_staging_but_keeps_both_pinned_source_classes() {
+fn revocation_retains_validation_and_both_pinned_source_classes() {
     let mut registry = ContentEpochRegistry::new(CAP).unwrap();
     registry.admit(nominal(1, 8, 16, 16)).unwrap();
     let store = registry.resources_mut(grant(1)).unwrap();
@@ -164,7 +141,7 @@ fn revocation_aborts_staging_but_keeps_both_pinned_source_classes() {
         .unwrap();
     let resident = upload(store, 2);
     store
-        .begin(TransactionId::from_raw(5), begin(grant(1), 3), 0)
+        .begin_isb(TransactionId::from_raw(5), begin(grant(1), 3), 0)
         .unwrap();
     assert_eq!(
         store.usage(),
@@ -177,6 +154,16 @@ fn revocation_aborts_staging_but_keeps_both_pinned_source_classes() {
         }
     );
     assert!(registry.disconnect(grant(1)));
+    assert_eq!(registry.accounting().memory.staging, 4);
+    assert_eq!(
+        registry.complete_isb(
+            grant(1),
+            begin(grant(1), 3).resource,
+            &mut Some(Err(ContentStoreError::Malformed)),
+            0
+        ),
+        Err(ContentStoreError::Revoked)
+    );
     assert_eq!(
         registry.accounting().memory,
         ContentMemoryUsage {
@@ -391,40 +378,15 @@ fn byte_saturation_recovers_only_after_a_real_source_consumer_ends() {
         description.total_bytes = 4 * MIB;
         // Dense rows: 15 rows fit in the unchanged 65,488-byte chunk ceiling.
         description.chunk_count = 69;
-        let layout = description.layout(&bar).unwrap();
+        description.layout(&bar).unwrap();
         let tx = TransactionId::from_raw(id);
-        store.begin(tx, description.clone(), 0).unwrap();
-        let mut offset = 0;
-        for ordinal in 0..layout.chunk_count {
-            let bytes = (layout.total_bytes - offset)
-                .min(u64::from(layout.row_bytes) * u64::from(layout.rows_per_chunk));
-            store
-                .chunk(
-                    tx,
-                    &ContentResourceChunk {
-                        grant: grant(1),
-                        resource: description.resource,
-                        ordinal,
-                        offset,
-                        bytes: vec![0; bytes as usize],
-                    },
-                    0,
-                )
-                .unwrap();
-            offset += bytes;
-        }
-        store
-            .end(
-                tx,
-                &ContentResourceEnd {
-                    grant: grant(1),
-                    resource: description.resource,
-                    total_bytes: description.total_bytes,
-                    chunk_count: layout.chunk_count,
-                },
-                0,
-            )
-            .unwrap();
+        isb::accept(
+            store,
+            tx,
+            description.clone(),
+            &vec![0; description.total_bytes as usize],
+            0,
+        );
         leases.push(store.lease(grant(1), description.resource).unwrap());
         if id <= 4 {
             store

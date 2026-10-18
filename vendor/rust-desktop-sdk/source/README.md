@@ -1,5 +1,24 @@
 # Sophia desktop SDK for Rust
 
+CPU images use **Immutable Shared Buffers (ISB)**, currently backed by sealed
+memfds. The buffer builders are `create_isb` / `finish_isb` in Rust and
+`sophia_ip_isb_create` / `sophia_ip_isb_finish` in C. Names changed together;
+source-kind numbers, discovery strings and seal enforcement are unchanged.
+Image adapters require ISB and never select byte fallback. Shell clients may
+enable the adapter after negotiated Limits, including dock and launcher roles.
+Shell and lock byte-upload APIs have been removed. CPU images require the ISB adapters; passive legacy protocol values remain available for conformance checks.
+
+Mapped ISB builders fill pixels in place, with no staging copy: Rust's
+`create_mapped_isb` (the `sophia-isb` crate's `MappedIsb`) and C's
+`sophia_ip_isb_create_bounded`. Both check dimensions and the caller's resource
+bound before allocating, seal the size at creation, exclude the mapping from
+`fork` and verify every seal on finish; see
+[the mapped builder contract](API-PARITY.md#mapped-isb-builder-2026-10-18).
+
+Native launchers can adopt a settled ISB into their resource lifecycle with
+Rust's `adopt_native_image` or C's `sophia_ns_adopt_image`; see
+[the adoption contract and coverage](API-PARITY.md#native-isb-resource-adoption-2026-10-18).
+
 The [2026-10-17 release audit](RELEASE-QUALIFICATION.md) records verified
 C/Rust capability parity, exact tested revisions and remaining limits.
 
@@ -29,7 +48,8 @@ Sophia checkout to build.
 | `sophia-launch-client` | Sophia's local launch-channel authentication: correlated afid exchange, bounded progress and an admitted role root. |
 | `sophia-namespace-client` | Bounded discovery parsing and Linux lookup against a pinned namespace directory; endpoint visibility confers no authority. |
 | `sophia-desktop-ids` | Identifiers every role contract shares. |
-| `sophia-image-producer` | Clockless sealed-memory descriptor producer for shell r9 and lock r2; role adapters remain under development. |
+| `sophia-image-producer` | Clockless ISB descriptor producer for shell r9 and lock r2; shell r9 and lock r2 adapters. |
+| `sophia-isb` | Mapped ISB builder: one private writable mapping, sealed and verified on finish. The only crate that permits `unsafe`, in its private mapping module. |
 | `sophia-shell-protocol` | The shell's typed records and the `sophia_shell_fs_v1` file contract codec. |
 | `sophia-shell-client` | The shell client over the file contract. |
 | `sophia-wm-protocol` | The WM file codecs and passive policy records. |
@@ -37,7 +57,7 @@ Sophia checkout to build.
 | `sophia-output-protocol` | Output file codecs and passive topology values. |
 | `sophia-output-client` | Output session with startup, submissions, journal and topology fetching; paired export and protected idle-revocation gates pass. |
 | `sophia-lock-protocol` | The lock provider's `sophia_lock_fs_v1` file contract codec (experimental; see Contracts). |
-| `sophia-lock-client` | Experimental lock session with startup, custody, events, object fetching and bounded uploads; paired export and protected idle-revocation gates pass. |
+| `sophia-lock-client` | Experimental lock session with startup, custody, events, object fetching and sealed-image submission; paired export and protected revocation gates pass. |
 
 Shell, WM and output have native clients; their release qualification differs.
 The lock provider now has an experimental session against its draft contract.
@@ -169,12 +189,12 @@ eligibility and the input ACK scheduling deadline. Call `service` after driving
 the connection to reconcile custody and disconnects. Publication notices disarm
 stale scenes before snapshot fetching completes.
 
-Use `allocate_native`/`release_native_allocation` for allocation ownership and
-`begin_native_resource`, `upload_native_chunk`, `end_native_resource`,
-`cancel_native_resource` and `retire_native_resource` for uploads and retirement.
-Uploads wait for Stored between caller writes; Accepted alone makes a resource
-placeable. Close invalidates local use of an allocation but does not release
-resources. The helper waits for the server's invalidation/release records.
+Use `allocate_native`/`release_native_allocation` for allocation ownership.
+Submit pixels through the image adapter, then call `adopt_native_image` after
+Accepted and settled Retained disposition. `NativeLauncherSession` also exposes
+`enable_image`, `image_begin`, `image_cancel`, `image_forget` and `adopt_image`.
+Use `retire_native_resource` for retirement. Closing an allocation invalidates
+local use but resources remain owned until the server releases them.
 
 `demand_native_frame`, `cancel_native_demand` and `present_native_scene` track
 permits and build candidates from current allocations and accepted resources.

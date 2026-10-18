@@ -69,7 +69,12 @@ func decodeRecord(bytes []byte, values bool, revision uint16) (r record, err err
 	need(len(bytes) >= 32 && len(bytes) <= 4194304 && int(u32(bytes, 0)) == len(bytes), "length")
 	need(u16(bytes, 4) == 1 && u64(bytes, 8) != 0, "header")
 	r = record{u16(bytes, 6), u64(bytes, 8), u64(bytes, 16), u64(bytes, 24), bytes[32:], bytes}
-	need((r.submission == 0 && ((r.kind < 16 && r.sequence == 0) || (r.kind >= 16 && r.kind < 256 && r.sequence != 0))) || (r.kind >= 266 && r.kind <= 272 && r.submission != 0 && r.sequence == 0), "record class")
+	need((r.submission == 0 && ((r.kind < 16 && r.sequence == 0) || (r.kind >= 16 && r.kind < 256 && r.sequence != 0))) || (r.kind >= 266 && r.kind <= 272 && r.submission != 0 && r.sequence == 0) || imageClass(r, revision), "record class")
+	// Image kinds have explicit classes and exist only under shell r9.
+	if imageKind(r.kind) {
+		validateImage(r)
+		return r, nil
+	}
 	if r.kind == 3 || r.kind == 4 || (r.kind >= 38 && r.kind <= 45) || (r.kind >= 266 && r.kind <= 272) {
 		if !values && (r.kind == 267 || r.kind == 270) {
 			validateRoleCandidateBytes(r.kind, r.body)
@@ -107,7 +112,8 @@ func decodeRecord(bytes []byte, values bool, revision uint16) (r record, err err
 		need(u16(b, 0) >= 1 && u16(b, 0) <= 4 && zero(b[2:8]), "Refused")
 	case 18:
 		nonzero64(b, 0)
-		need(u16(b, 8) >= 256 && u16(b, 8) <= 272 && zero(b[10:]), "Submitted")
+		kind := u16(b, 8)
+		need(((kind >= 256 && kind <= 272) || (revision >= 9 && kind == kindImageBegin)) && zero(b[10:]), "Submitted")
 	case 19:
 		need(u16(b, 0) >= 1 && u16(b, 0) <= 4 && zero(b[2:8]) && u64(b, 16) != 0, "ObjectPublished")
 	case 32:
@@ -188,6 +194,15 @@ func offer() []byte {
 	p16(b, 0, 5)
 	p16(b, 2, 6)
 	p64(b, 8, 1|1<<7|1<<8)
+	return b
+}
+
+// sealedOffer asks for shell r9 with sealed images required.
+func sealedOffer() []byte {
+	b := offer()
+	p16(b, 0, 9)
+	p16(b, 2, 9)
+	p64(b, 8, 1|1<<7|1<<8|sealedCapability)
 	return b
 }
 func allocation(tx, id, output uint64) []byte {

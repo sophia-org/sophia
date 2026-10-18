@@ -78,7 +78,7 @@ fn locked() -> LockObject {
 }
 
 #[test]
-fn an_independent_c_provider_negotiates_uploads_and_is_presented() {
+fn an_independent_c_provider_refuses_byte_uploads_without_custody() {
     let scratch = Scratch::new("presented");
     let peer = compile(&scratch.0);
     let mut transport = LockFileTransport::bind_for_supervised_uid(
@@ -141,17 +141,7 @@ fn an_independent_c_provider_negotiates_uploads_and_is_presented() {
                         expires_after: Duration::from_millis(250),
                     })
                     .unwrap(),
-                LockInbound::Candidate { candidate, .. } => service
-                    .command(LockFileServiceCommand::Outcome(LockCandidateOutcome {
-                        transaction: candidate.transaction,
-                        lock_epoch: candidate.lock_epoch,
-                        output_id: candidate.output_id,
-                        allocation_id: candidate.allocation_id,
-                        candidate_generation: candidate.candidate_generation,
-                        status: LockCandidateStatus::Presented,
-                        reason: 0,
-                    }))
-                    .unwrap(),
+                LockInbound::Candidate { .. } => panic!("absent resource reached Session"),
                 _ => {}
             },
             // The provider leaving once it has seen its outcome.
@@ -164,7 +154,7 @@ fn an_independent_c_provider_negotiates_uploads_and_is_presented() {
     std::io::Read::read_to_string(child.stdout.as_mut().unwrap(), &mut stdout).unwrap();
     assert!(status.success(), "{status:?} {stdout}");
     assert!(
-        stdout.contains("lock_files_peer status=presented"),
+        stdout.contains("lock_files_peer status=byte-refused"),
         "{stdout}"
     );
     assert_eq!(
@@ -174,5 +164,5 @@ fn an_independent_c_provider_negotiates_uploads_and_is_presented() {
             modifiers: 0b0100,
         }])
     );
-    assert!(ready, "the image reached Session whole");
+    assert!(!ready, "retired byte records must not create a resource");
 }

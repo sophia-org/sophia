@@ -14,6 +14,8 @@ pub(super) struct Client {
     pending: VecDeque<Observation>,
     epoch: u64,
     submission: u64,
+    directory: std::path::PathBuf,
+    image: Option<std::os::fd::OwnedFd>,
 }
 
 impl Client {
@@ -23,7 +25,41 @@ impl Client {
             pending: VecDeque::new(),
             epoch,
             submission: 0,
+            directory: path.parent().unwrap().to_owned(),
+            image: None,
         }
+    }
+
+    pub fn upload(&mut self) {
+        assert!(self.pending.is_empty());
+        let socket = image::ready(&mut self.wire, &self.directory, self.epoch);
+        let submission = self.header(ShellFileKind::ImageBegin).submission_id;
+        image::upload(
+            &mut self.wire,
+            &socket,
+            self.epoch,
+            submission,
+            ShellImageMetadata {
+                offer_id: 1,
+                resource: RESOURCE.id,
+                resource_generation: RESOURCE.generation,
+                admission_epoch: GRANT.content_grant_epoch,
+                output_id: OUTPUT.id,
+                allocation_id: ALLOCATION.id,
+                topology_generation: 5,
+                source_kind: 1,
+                source_format: 1,
+                width: 2,
+                height: 1,
+                stride: 8,
+                plane_count: 1,
+                descriptor_count: 1,
+                declared_bytes: 8,
+                modifier: 0,
+            },
+            &[0, 0, 255, 255, 0, 128, 0, 128],
+        );
+        self.image = Some(socket);
     }
 
     pub fn header(&mut self, kind: ShellFileKind) -> ShellFileHeader {
@@ -40,13 +76,15 @@ impl Client {
         assert_eq!(self.wire.submit(bytes).0, 119);
         loop {
             let event = self.wire.next_event();
-            let kind = decode_shell_file_record(&event, ShellFileClass::Event)
+            let kind = decode_shell_file_record_at_revision(&event, ShellFileClass::Event, 9)
                 .unwrap()
                 .header
                 .kind;
             if kind == ShellFileKind::Submitted {
                 assert_eq!(
-                    decode_shell_file_submitted(&event).unwrap().submission_id,
+                    decode_shell_file_submitted_at_revision(&event, 9)
+                        .unwrap()
+                        .submission_id,
                     self.submission
                 );
                 self.wire.ack(&event);
@@ -72,7 +110,7 @@ impl Client {
     }
 
     fn observe(&mut self, bytes: &[u8]) -> Observation {
-        let kind = decode_shell_file_record(bytes, ShellFileClass::Event)
+        let kind = decode_shell_file_record_at_revision(bytes, ShellFileClass::Event, 9)
             .unwrap()
             .header
             .kind;

@@ -20,7 +20,7 @@ impl Peer {
         std::thread::scope(|scope| {
             let client = &mut self.client;
             let worker = scope.spawn(move || {
-                client.wire.setup();
+                image::setup(&mut client.wire);
                 let offer =
                     encode_shell_file_negotiate(client.header(ShellFileKind::Negotiate), hello)
                         .unwrap();
@@ -90,49 +90,6 @@ impl Peer {
             self.read_content(r).1,
             ShellContentRecord::FramePermit(_)
         ));
-    }
-
-    pub fn begin_upload(&mut self, r: &mut ContentEpochRegistry, record: ContentResourceBegin) {
-        self.drive(r, |client| {
-            let bytes = encode_shell_file_resource_begin(
-                client.header(ShellFileKind::ResourceBegin),
-                &ShellFileResourceBegin {
-                    transaction: tx(20),
-                    slot: 0,
-                    record: ShellContentRecord::ResourceBegin(record),
-                },
-            )
-            .unwrap();
-            client.submit(&bytes);
-        });
-    }
-    pub fn upload_chunks(&mut self, r: &mut ContentEpochRegistry, chunks: &[Vec<u8>]) {
-        self.drive(r, |client| {
-            assert_eq!(client.wire.open_path(10, &[b"upload", b"0"], 1).0, 13);
-            let mut offset = 0;
-            for chunk in chunks {
-                let reply = client.wire.write_at(10, offset, chunk);
-                assert_eq!(reply.0, 119);
-                assert_eq!(
-                    u32::from_le_bytes(reply.1.try_into().unwrap()) as usize,
-                    chunk.len()
-                );
-                offset += chunk.len() as u64;
-            }
-        });
-    }
-    pub fn end_upload(&mut self, r: &mut ContentEpochRegistry, record: ContentResourceEnd) {
-        self.drive(r, |client| {
-            let bytes = encode_shell_file_resource_end(
-                client.header(ShellFileKind::ResourceEnd),
-                &ShellFileTransactionRecord {
-                    transaction: tx(20),
-                    record: ShellContentRecord::ResourceEnd(record),
-                },
-            )
-            .unwrap();
-            client.submit(&bytes);
-        });
     }
 }
 

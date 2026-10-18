@@ -8,6 +8,290 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
+On October 18 niltempus selected
+[Immutable Shared Buffers (ISB) for production CPU image uploads](../decisions/qujwzrdz-admit-shell-content-through-a-negotiated-descriptor-channel-beside-the-9p-wire.md#accepted-amendment--immutable-shared-buffers-october-18-2026).
+Byte-only client compatibility and byte fallback are no longer requirements.
+Their removal is tracked in the
+[t331 migration](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#immutable-shared-buffers--october-18).
+The historical fallback controls below remain evidence for the implemented
+t338 contract; they do not impose a continuing compatibility obligation.
+t338 stays closed, and its recorded measurements remain unchanged.
+
+On October 17, niltempus accepted closing t338 on the implemented sealed-memory
+path, its recorded SDK/export and custody controls, and this report-only paired
+panel CPU calibration. No CPU improvement threshold was imposed on t338.
+Repeatability and performance qualification remain with t331, including its
+unchanged IPC cost gates. This explicitly narrows the older panel/bulk and
+balanced-trial wording below for t338; it does not claim those measurements
+were performed or relax t331's criteria.
+
+The attended bytes/sealed panel calibration now has a valid paired report.
+`~/.local/state/t338/bytes-run-04` and `sealed-run-01` both captured successfully,
+retaining their selected host/supervisor/peer bindings and two environment
+receipts each. Both monitors ended normally after evidence. Production
+`report-calibration` exits 0: evidence digests, raw cost re-derivation,
+target-bound provenance, M5, measurement containment and matching environment
+fact values all pass. The build/test quiet window is released.
+
+The report is `~/.local/state/t338/calibration-03/paired-report.json`, SHA-256
+`6610a851a597327351fd9acf506bc560b989c9f24b25659ec2260aca3a1c705f`;
+`paired-summary.json` retains the compact result and scope. Both arms have
+1000 frames, 1920×24 content and 184,320,000 logical payload bytes, on DP-1 at
+1920×1080, nominal 120 Hz, timing-derived 119.880 Hz, scale 1 and committed VRR
+off. The 60-second session includes an approximately 8.36-second measured
+workload. CPU covers all Session and peer threads, including foreign code;
+other processes and allocations are not measured.
+
+| Path | CPU ms/frame | CPU ms/logical payload MiB |
+| --- | ---: | ---: |
+| Bytes | 1.402030–1.403942 | 7.975997–7.986867 |
+| Sealed | 1.549171–1.550824 | 8.813064–8.822466 |
+
+Sealed costs 10.34–10.61% more CPU in this pair, using conservative cross-bound
+ratios. These are counter bounds, not statistical confidence intervals. This
+is one sequential calibration pair, not balanced repeated trials or a t331/B9
+gate verdict, and it does not establish an improvement. Broader measurements
+listed below remain unproven by this CPU-only pair. The sealed peer at
+`180808d48` disables byte fallback and creates, writes and seals a fresh memfd
+per frame. The source construction and 1000 successful presented terminals
+establish use of that path; Session did not retain per-offer admission logs.
+The result does not generalize to a reused or registered-image design.
+
+The implementation evidence summarized below closes the earlier incomplete
+SDK/export and cancellation checkpoints:
+
+- Sophia `cbee1268d` pins Rust `e4f59e36` and C `d51b0336`; both snapshot checks,
+  Rust workspace tests, the C checks and role-adapter controls pass.
+- Lock `011f27c05`, `403606cdb`, `7f9c96917` and `bc667ecef` cover validation,
+  backing leases, successor budgets, wrong length, worker failure and teardown;
+  the final lock image transport suite passes 34 tests.
+- `49da1ded4` proves the C lock SDK through protected Factotum/afid admission,
+  exact accepted pixels and backing survival across revocation.
+- `d21d6b013` covers lock unsent cancellation, channel loss and submitted-job
+  cancellation. Shell `9ef582fee`, `5844f638b` and `c57dd321d` cover submitted
+  cancellation, first-cause timeout and teardown with uncollected completion.
+  Supplied owner schedules prove custody, not a particular worker scan position.
+- Exact Accepted-before-SourceReleased ordering and the sealed panel/4 MiB
+  fixture workloads pass at comparator `26d61cb58` and later pins. Supplied
+  fixture authority is distinct from the native calibration's retained bindings.
+
+## Earlier preparation and implementation checkpoints
+
+These paragraphs retain prior findings and then-outstanding work. The current
+resumption above supersedes their task status and measurement scope.
+
+`~/.local/state/t338/bytes-run-03` also completed the workload and restored
+the console, but observation failed: two descendants matched the host
+executable. Binding is absent and no receipts were accepted. The old error
+did not retain candidate identities, so their exact roles are not established.
+Source review found persistent same-image input-guard and metadata-broker
+roles, plus a transient launch-check role. No qualifying CPU evidence comes
+from this attempt, and no sealed native arm has run.
+
+The next runner correction requires both executable identity and the exact
+frozen host argv, retains those arguments and rechecks them. Multiple exact
+matches in one rooted tree remain Pending until only one remains; separate
+roots are refused with candidate pid, parent and start-time diagnostics.
+This selects a role, not a new source of authority. Device-free live controls
+pass for a same-image guard beside the selected host and for the protected
+peer beside a non-dumpable child. Fixture controls cover fork transitions.
+The correction is signed as external `niltempus b63e1d1`. The full xtask suite
+passes (381 tests, 11 ignored), as do strict all-target Clippy, formatting and
+both ignored live controls. An obsolete observer test call failed the first
+compile and was corrected before the passing suite. Full logs and exit-status
+records are retained under `~/.local/state/t338/calibration-03/`.
+
+The release runner was rebuilt from that clean signed revision. Fresh bytes
+and sealed plans keep the workload, host and peer artifacts unchanged. Their
+frozen descriptor SHA-256 is
+`a1fc1796235ee9c90566f6d78388ca13aeb944fe485c78487333d4076a90377f`;
+the bytes plan is `0a18bfa07322558c0b11606dec55e93c9d0c359e182e73d198603b01629f31a9`
+and sealed is `aff21530ea37fe9b66f660a316586659f049aa4a8db38e791de687f485d5c3d5`.
+The attended bytes arm `/tmp/t338-bytes-04` wrote the new
+`~/.local/state/t338/bytes-run-04` directory and passed the per-arm checks above.
+Do not reuse a failed
+run directory or launch another arm from calibration-02.
+
+The first native bytes attempt did not produce usable measurement evidence.
+The long evidence path first exceeded the Unix socket pathname limit before
+launch; that failed attempt remains under the calibration directory below as
+`bytes-run-01`. The shorter retry, `~/.local/state/t338/bytes-run-02`, ran the
+workload and restored the console, but its observer failed on
+`/proc/5865/exe: Permission denied`. Both `attempt.json` and `run/result.json`
+record failure; environment binding is absent and no receipts were accepted.
+The raw peer log contains 1000 presented frames, which is diagnostic only.
+No paired CPU result or sealed native run is claimed.
+
+The failed runner's Binder inspected every descendant's executable and treated a
+permission denial as fatal. Factotum and its PAM helper deliberately deny such
+inspection; the exited PID's exact role was not retained and is not inferred
+as fact. The correction in external `niltempus 1ab32c3` selects the verified
+host, its direct bubblewrap supervisor and that supervisor's sole peer child.
+Opaque nodes remain explicit, outside the selected subtree; uniqueness is
+limited to examined candidates. No process is made dumpable. The clock proof
+uses Linux's initial time namespace inode instead of inspecting root's PID 1.
+Twenty-three Binder fixtures, nine provider controls, strict Clippy and the
+full device-hidden xtask suite pass. A live, device-free process control also
+passes with PID 1's namespace unreadable: the sandboxed peer binds, the plain
+non-dumpable sibling stays unexamined, and recheck succeeds. This is not a
+native measurement. Failed runs stay retained.
+
+The rebuilt runner and fresh plans are under
+`~/.local/state/t338/calibration-02/`, including the full gate logs.
+The new frozen descriptor SHA-256 is
+`a725c2a72c73108723da734c3becd6b50a719055a821f64c74b594e6e812ac40`.
+Its bytes plan is `faa30ccd3ae9164b09a4ac2b0bb76c83fd6b819c7e944e81c4618ae143f193bd`;
+its sealed plan is `97d6a369453e7ae3caac4d0ad02917c3f8fc1e417d0062c4915548329c087101`.
+The workload and compositor/peer artifacts are unchanged. This descriptor was
+used by the failed `bytes-run-03` via `/tmp/t338-bytes-03` from tty4. It
+superseded the earlier descriptor below and is retained without modification.
+
+The operator selected **DP-1**, superseding the brief DP-2 answer, for
+1920×1080@120 Hz with VRR off. Read-only sysfs preparation maps the declared
+PCI device `0000:03:00.0` to `card0` and shows DP-1 connected with 1920×1080
+listed; this does not prove refresh or committed state.
+
+External `niltempus 0518ba3` now exposes two-arm calibration, using
+`7c168e1` with shared derivation `5963cf6` and target-bound provenance
+`b180c1a`. The full device-hidden xtask suite, strict all-target Clippy and
+formatting pass. Logs are `/tmp/t338-calibration-final-suite.log` and
+`/tmp/t338-calibration-final-clippy.log`. Nine calibration controls use supplied
+captures; they do not establish native authentication or performance.
+
+The rebuilt release runner and final plans are recorded under
+`~/.local/state/sophia/development-evidence/t338-panel-cpu-20261017-calibration-01/`.
+The frozen descriptor at `frozen/calibration.json` has SHA-256
+`12e86a4df69712b19aac33b06d978253cf9291cafc5d4ce6e9410f1c62de675f`.
+Its bytes plan is `bee2f6791bf7eaf292cb790bd51c64b05036086e30848c6e3727e0a81bfd3355`;
+the sealed plan is `202d2a2c43c6220c89462e8bb8fd817d25cf779842950848ecca1b769792d193`.
+Both use 1000 frames, 60 seconds, a 24-pixel panel, no bulk probe, tty4 and
+private display :94. Plans and binaries remain at their referenced paths;
+the frozen directory is not self-contained. This supersedes the preliminary
+plans below, whose runner was rebuilt. The failed native attempt above used
+these final plans.
+
+The two-arm route reuses authenticated observation and checks matching
+profile policy and environment fact values, then reports sealed-versus-bytes
+costs without a campaign gate verdict. The full 108-arm validation is
+unchanged. Claude and Muse are assisting with the process-binding correction;
+the daily desktop :77 is not a test target.
+
+Fresh CPU-only release host and peer builds pass at clean signed comparator
+`180808d48`; runner and preflight builds pass at clean signed external
+`niltempus 52df140`. Artifact paths, SHA-256 hashes, features and source heads
+are retained in
+`~/.local/state/sophia/development-evidence/t338-panel-cpu-20261017-preparation-01/build-artifacts.json`,
+beside the Cargo JSON output and build logs. Binaries remain in the cargo-slot
+pools. This is device-hidden build preparation, not calibration or paired CPU
+evidence. The attended run still needs a foreground-console quiet window.
+
+The campaign runner and provenance provider are signed in external
+`niltempus 297819c`, on monitor `b988ddb`, load qualification `9b25d2e`,
+frozen observation wiring `0084783` and provider `e20573e`. The runner executes
+one frozen arm per attended invocation; routine console, source, helper,
+runner-image and run-directory refusals happen before its single-use claim.
+The full device-hidden xtask suite passes. Final independent controls pass for
+the provider (6), observer (4) and native planner/runner (19), along with
+all-target strict Clippy and formatting. Logs are
+`/tmp/t338-campaign-live-wiring-suite.log`,
+`/tmp/t338-runner-provider-final-controls.log` and
+`/tmp/t338-runner-provider-final-clippy.log`.
+
+Follow-up `niltempus 52df140` passes the real monitor-to-provider composition
+control: actual pidfd datagrams feed monitor.finish, the retained record passes
+provenance and M5, and a span past the proven-alive opening is refused. Process
+bindings and static facts remain fixture-supplied; this is not native evidence.
+
+The task ledger's remaining t338 exit is paired panel CPU evidence for sealed
+versus bytes. The four unchanged IPC cost gates, allocation attribution and
+journal-read pairing belong to t331 after t338; diagnostic investigation may
+proceed while waiting, but does not add a prerequisite to the t338 evidence run.
+
+The monitor accepts pidfd-backed host datagrams only inside full supervised
+binding brackets and retains start/end captures separately. The provider
+rechecks identities, source provenance, receipt coverage, static equality and
+the zero-offset clock domain from those retained records. Normal process exit
+after evidence is allowed; the last proven-alive opening bounds measurement
+end. Load records must identify the same capturer, show 16 single-threaded
+children with all-online affinity and positive CPU progress, bracket the
+measurement, and end through requested TERM with complete reaping. Tests use
+supplied records or bounded monitor fixtures; no campaign load or physical
+session was launched. Arbitrary deserialized evidence is not authenticated.
+
+`run-campaign-arm` retains failed attempts and cleanup evidence;
+`report-campaign-condition` rebuilds each arm through the importer and existing
+paired gates. An unfinished claim blocks the campaign, and a failed arm is
+never replaced under the same identity. The published operator procedure is
+`niltempus/docs/physical-runners.md`. The runner, monitor, provider and importer
+now connect in source; their combined physical path still needs calibration.
+The generated 54-arm idle fixture proves freeze/import mechanics with supplied
+provenance, not a native campaign. No performance result is claimed.
+
+Sophia `d3cb848cf` and comparator `ecfa507df` send one self-pidfd with each
+environment datagram. The receiver checks the live handle as well as kernel
+credentials, refusing queued records from an exited sender after PID reuse.
+Sophia `ff6f445fe` and comparator `180808d48` add the separately armed,
+bounded `--output-environment-readback` path; the old output-role proof gate
+is unchanged. The failed native attempt above does not close an evidence gate,
+and this campaign cannot close 60 Hz B9.
+
+Environment readback is implemented in Sophia `21bcd211e` and emitted by
+Session `116d663b4`. Nominal refresh and timing-derived refresh stay distinct;
+GL strings come from the current context, VRR from committed CRTC state, and
+scale from applied owner state. The three pure emitter controls, both existing
+rollback-readback controls and native-session strict Clippy pass independently.
+The layout gate and lock cancellation control pass at `e395fe7c6`. These checks
+use no physical output and do not authenticate records in a shared raw log.
+
+External checkpoint `niltempus d371f48` includes M5 supplied-capture validation
+and bounded process captures (`ededd4e`, `5c49701`), plus schema-2 frozen output
+targets and a single-attempt hash chain. All 13 campaign controls and strict
+xtask Clippy pass. Failed arms remain recorded; unfinished claims block later
+arms. Capture controls reject reused, dead and malformed process identities.
+That checkpoint did not yet connect the attended runner, binding, delivery and
+importer; the newer checkpoint above does. Import requires a shared zero-offset
+monotonic clock domain before comparing process and kernel timestamps. A matching PID printed in a log is not writer authentication.
+No calibration or native campaign has run, and performance acceptance remains
+open. The operator's 120 Hz connector selection is still pending.
+
+External integration checkpoint `niltempus 2c4b625` publishes frozen campaign
+preparation and reopening checks, warmup-aware paired comparisons, supplied
+environment validation, a bounded single CPU worker and its load controller.
+The full xtask suite passes with devices and display access hidden
+(`/tmp/t338-campaign-environment-load-tests.log`); the final load controls also
+pass independently, 10/10. Tests start at most two helper workers, never the
+16-worker campaign. At that checkpoint, host GL identity and committed KMS
+environment emission, capture/run-order wiring and attended calibration were
+unfinished. No native
+run or performance acceptance is claimed. The 120 Hz output connector still
+needs operator confirmation; this campaign cannot close the separate 60 Hz gate.
+
+t338's sealed measurement peer found a production ordering defect: the shell
+owner could journal SourceReleased before the queued Accepted status. The SDK
+then settled the offer without retaining its status. Fix `06f8b5179` makes the
+export wait until the status hold has been consumed into the journal; the owner
+keeps the completed settlement while that handoff is pending. An exact-order
+wire assertion fails on the old implementation and all three shell transport
+tests pass with the fix. Runtime all-targets strict Clippy passes. The full
+runtime run at `d21d6b013` now passes after the lock cancellation controls were
+completed. Comparator fix `26d61cb58`
+also passes the sealed panel and 4 MiB peer workloads, 64 frames each, plus the
+byte/IPC baseline and launch-refusal controls. Four ignored tests pass on three
+repeated explicit, device-hidden runs. Their authority and relay verdicts are
+supplied; they prove neither Factotum nor a protected launch domain. Earlier
+successful raw-peer tests accepted either terminal order and did not prove
+usable SDK settlement. No sealed performance result is claimed.
+
+Lock cancellation checkpoint `d21d6b013` adds three distinct controls: real-wire
+unsent cancellation (including duplicate EINVAL), PeerDisconnect before the
+unsent offer's rejection, and submitted-worker cancellation with completion
+collection held by a supplied owner schedule. The last control asserts Submitted
+before collection, then Cancelled and exactly one release with disposition 4.
+It proves completion custody, not production turn timing or an in-flight CPU
+scan. Root independently reran that named control and the complete runtime
+suite successfully (`/tmp/t338-runtime-cancellation-final.log`). Included helper
+tests run in multiple binaries; they are not additional distinct controls.
+
 t338 remains open. Sophia `cbee1268d` adopts published Rust
 `e4f59e36f6c7acbbe2ee47ee011c665dea1a6176` and C
 `d51b0336649757eaf7bf6970c50c14786f0a4772`. Both snapshot checks pass,
@@ -34,25 +318,63 @@ Session `7bab56b0d` enables sealed lock images using the existing resource/live
 place envelope, the assembly timeout and 64 KiB validation units. It grants no
 unauthenticated channel. The seven lock-object/policy tests and native-session
 strict Clippy pass. The shared-pixel Session handoff is already in `85755e5c3`;
-the placed-image retirement control passes. Muse is now extending the protected
-C SDK provider test through real afid authentication, Hello, Source, Accepted
-and SourceReleased, retaining the received pixels across authority revocation.
-That test is not yet a passing qualification result.
+the placed-image retirement control passes. Protected C SDK test `49da1ded4`
+now proves real Factotum/afid authentication, Hello, Source, Accepted and
+SourceReleased disposition 1. It verifies exact 4×4 granted pixels and keeps
+them readable across authority revocation and provider replacement. The new
+test and all five authentication-module tests independently pass, including
+parallel execution after isolating each test's compiled C peer. This is a
+protected provider/export test, not native display or performance evidence.
 
-The latest lock audit found two remaining corrections: wrong sealed backing
-length must retain reason 4 rather than becoming invalid_source (10), and a
-dead worker must revoke live custody rather than strand validating offers.
-Codex owns the shared mapping/worker size distinction; Claude owns its lock
-reason mapping, worker-death handling and controls. Pending admission wait and
+The lock audit corrections are signed in `7f9c96917` and `bc667ecef`.
+Wrong sealed backing length retains reason 4 rather than invalid_source (10).
+Worker exit wakes its owner; a dead worker revokes live custody, is no longer
+polled, and refuses later offers with reason 9. All 34 lock image transport
+tests independently pass. The worker-failure controls inject the owner's
+failure transition; they do not prove an actual worker panic. Pending admission wait and
 post-admission validation have separate bounded deadlines; Source arrival never
 renews the latter. No contract relaxation is authorized by these fixes.
 
-Next are those corrections, protected SDK/export qualification, remaining
-submitted-worker shutdown/cancellation controls, and matched sealed-versus-byte
-native panel/bulk evidence. Claude is surveying the frozen comparator and
-external integration seams read-only. No native capture has begun and no
+Shell control `9ef582fee` submits a real sealed Source to the worker, then
+cancels over 9P while the supplied owner schedule withholds completion
+collection. No terminal event appears before collection; the actual completion
+settles once with cancellation and disposition 4, and a late Source drains.
+This proves completion custody, not that the CPU scan was still running.
+The separate worker-shutdown control returns to its FD baseline after submitted,
+reserved and uncollected jobs, while delivered pixels remain readable until
+their last owner drops them. Both shell transport tests, the shutdown control
+and targeted strict Clippy pass. Follow-up
+`5844f638b` advances the supplied owner clock to the original admission deadline
+after Source submission, then sends cancellation over 9P. Timeout remains the
+first cause through real completion collection, with release disposition 3.
+All three shell transport tests and targeted strict Clippy pass.
+Transport teardown control `c57dd321d` sends a real Source, withholds completion
+collection, disconnects and drops the transport, registry and worker, then
+requires the FD count to return to baseline. It runs alone in a bounded child
+process, so parallel tests cannot contaminate the count. All four shell
+transport tests and targeted strict Clippy pass. This covers uncollected
+handoff cleanup, not a particular scan position or simultaneous multi-offer
+transport teardown.
+
+Next are the remaining SDK/export and cancellation controls, and matched sealed-versus-byte
+native panel/bulk evidence. Comparator `c1b5faa71` merges the reviewed SDK/runtime
+while retaining both byte and IPC controls: its native-session check and both
+device-hidden peer tests pass. `93fb5991e` also carries the worker corrections.
+The generic sealed peer is published in `ae6dbdc2d`; comparator head `721ceea33`
+also restores its formatting/layout gates with an unchanged metadata-helper
+move. Root independently reran all four comparator tests successfully at that
+head (9.02 seconds). External integration `a1a3c38`
+binds request, peer configuration and captured journal to the byte or sealed
+source and wire; all 30 targeted tests and strict Clippy pass. Reports preserve
+logical accepted payload bytes and CPU/frame alongside existing cost fields.
+No new performance result follows from this merge or tooling.
+External preparation `1662e44` also requires the sealed peer's explicit image
+bounds and rejects missing, zero, unknown or overflowing fields; its 12 native
+preparation tests and strict Clippy pass. The peer still must compare those
+bounds against the negotiated content limits.
+No native capture has begun and no
 installed desktop has changed. All four unchanged t331 +10% gates, per-request
-allocation attribution and journal-read pairing remain required; the earlier
+allocation attribution and journal-read pairing remain required for t331; the earlier
 red panel result is permission to proceed, not a performance pass. DMA remains
 outside this slice.
 
@@ -718,6 +1040,13 @@ still depends on the shared design and t289; shell/lock release gates stay intac
 The user-selected planning work does not make t331 complete.
 
 ## Measurement and red controls
+
+For the October 17 t338 completion, the owner accepted the narrower panel
+CPU-pair exit recorded in Current resumption. The broader measurement programme
+in this section remains performance-qualification work under t331 (with
+idle/power under t336), not an unperformed claim attached to t338 completion.
+The implementation red controls retain the evidence and limitations recorded
+above; this scope decision does not waive custody or SDK parity requirements.
 
 Keep the frozen byte/IPC pilot and its gates. Descriptor qualification is a new
 comparison against the same byte path on identical content, dimensions, cadence,

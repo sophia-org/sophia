@@ -30,7 +30,7 @@ mod transport;
 pub use export::{LockFileAttachment, LockFileExport, LockFileHandle, LockFileNode, LockFileQids};
 pub use image::{LockImageReadiness, LockImageSettings};
 pub use image_service::LockImagePolicy;
-pub use leases::SEALED_LEASE_POLL;
+pub use leases::ISB_LEASE_POLL;
 pub use offers::{LockImageAdmission, LockImageSource, LockImageWorkerAction};
 #[cfg(target_os = "linux")]
 pub use service::{
@@ -40,7 +40,7 @@ pub use service::{
 pub use transport::{LockFileAssignee, LockFileTransport, LockFileTransportError};
 
 use presentation::{CandidatePlan, Presentation};
-use resources::{ResourcePlan, Resources};
+use resources::Resources;
 
 /// Reasons of the contract's open vocabulary.
 pub mod reason {
@@ -159,7 +159,7 @@ impl LockFileCustody {
             revision: 1,
             image: None,
             accepted: None,
-            resources: Resources::new(settings.limits),
+            resources: Resources::new(),
             presentation: Presentation::default(),
             inbound: VecDeque::with_capacity(LOCK_FILE_INBOUND),
             ack_deadline: None,
@@ -238,7 +238,7 @@ impl LockFileCustody {
     }
 
     /// Journal credits held for events owed later: presentation answers,
-    /// the image channel's terminal events and retiring sealed images'
+    /// the image channel's terminal events and retiring ISB images'
     /// releases.
     fn credits(&self) -> usize {
         self.presentation.credits()
@@ -364,10 +364,10 @@ impl LockFileCustody {
         let body = record.body;
         match kind {
             LockFileKind::Negotiate => self.negotiate(receipt, body)?,
-            LockFileKind::ResourceBegin
-            | LockFileKind::ResourceEnd
-            | LockFileKind::ResourceCancel
-            | LockFileKind::ResourceRetire => {
+            LockFileKind::ResourceBegin | LockFileKind::ResourceEnd => {
+                return Err(Errno::EINVAL);
+            }
+            LockFileKind::ResourceCancel | LockFileKind::ResourceRetire => {
                 self.negotiated()?;
                 self.resource_step(receipt, kind, body)?;
             }
@@ -423,7 +423,7 @@ impl LockFileCustody {
         };
         let Some(refusal) = refusal else {
             let selected = selected.expect("selected without refusal");
-            // Sealed images only when configured and requested; DMA never.
+            // Isb images only when configured and requested; DMA never.
             let sealed = if selected == image::IMAGE_REVISION {
                 LOCK_FILE_CAPABILITY_SEALED_MEMORY
             } else {
@@ -470,54 +470,22 @@ impl LockFileCustody {
         kind: LockFileKind,
         body: &[u8],
     ) -> Result<(), Errno> {
-        let invalid = |_| Errno::EINVAL;
-        let plan = match kind {
-            LockFileKind::ResourceBegin => {
-                let offered: Vec<_> = self
-                    .image
-                    .as_ref()
-                    .map(|image| image.offers.resources().collect())
-                    .unwrap_or_default();
-                self.resources
-                    .plan_begin(LockResourceBegin::decode(body).map_err(invalid)?, &offered)?
-            }
-            LockFileKind::ResourceEnd => self
-                .resources
-                .plan_end(LockResourceStep::decode(body, true).map_err(invalid)?)?,
-            LockFileKind::ResourceCancel => {
-                let step = LockResourceStep::decode(body, false).map_err(invalid)?;
-                if let Some(index) = self.image_offer_for(step.transaction, step.resource) {
-                    return self.cancel_image(receipt, index);
-                }
-                self.resources.plan_cancel(step)?
-            }
-            _ => self
-                .resources
-                .plan_retire(LockResourceStep::decode(body, false).map_err(invalid)?)?,
-        };
-        let retired = match plan {
-            ResourcePlan::Retire { resource, .. } => Some(resource),
-            _ => None,
-        };
-        // A sealed image's release waits for its last reader; its
-        // retirement holds the credit for it.
-        if retired.is_some_and(|resource| self.resources.is_sealed(resource)) {
-            self.journal_events(&[receipt], self.credits() + 1)?;
-        } else {
-            self.journal_events(&[receipt, plan.event()?], self.credits())?;
+        let step = LockResourceStep::decode(body, false).map_err(|_| Errno::EINVAL)?;
+        if kind == LockFileKind::ResourceCancel {
+            let index = self
+                .image_offer_for(step.transaction, step.resource)
+                .ok_or(Errno::EINVAL)?;
+            return self.cancel_image(receipt, index);
         }
-        if let Some((resource, image)) = self.resources.apply(plan) {
-            self.inbound.push_back(LockInbound::ResourceReady {
-                resource,
-                width_px: image.width_px,
-                height_px: image.height_px,
-                pixels: image.pixels,
-            });
+        if self.resources.image(step.resource).is_none() {
+            return Err(Errno::EINVAL);
         }
-        if let Some(resource) = retired {
-            self.inbound
-                .push_back(LockInbound::ResourceRetired(resource));
-        }
+        // Retirement reserves its release before custody moves. The pixels
+        // remain charged until the last reader releases the immutable backing.
+        self.journal_events(&[receipt], self.credits() + 1)?;
+        self.resources.retire(step.transaction, step.resource);
+        self.inbound
+            .push_back(LockInbound::ResourceRetired(step.resource));
         Ok(())
     }
 
@@ -565,54 +533,6 @@ impl LockFileCustody {
         self.presentation.apply_demand(demand);
         self.inbound.push_back(LockInbound::Demand(demand));
         Ok(())
-    }
-
-    /// Appends upload bytes for `binding` of `slot`.
-    pub fn write_upload(
-        &mut self,
-        slot: u8,
-        binding: u64,
-        offset: u64,
-        data: &[u8],
-    ) -> Result<u32, Errno> {
-        self.live()?;
-        self.negotiated()?;
-        self.resources.write(slot, binding, offset, data)
-    }
-
-    /// Where a write of `len` bytes at `offset` to `slot` is received in
-    /// place: the image's own storage from `received` on. It counts only
-    /// once [`Self::upload_received`] accepts it.
-    pub fn upload_destination(
-        &mut self,
-        slot: u8,
-        binding: u64,
-        offset: u64,
-        len: u32,
-        received: u32,
-    ) -> Result<&mut [u8], Errno> {
-        self.live()?;
-        self.negotiated()?;
-        self.resources
-            .write_destination(slot, binding, offset, len, received)
-    }
-
-    /// Accepts a write received whole through [`Self::upload_destination`].
-    pub fn upload_received(
-        &mut self,
-        slot: u8,
-        binding: u64,
-        offset: u64,
-        len: u32,
-    ) -> Result<u32, Errno> {
-        self.live()?;
-        self.negotiated()?;
-        self.resources.write_received(slot, binding, offset, len)
-    }
-
-    /// The binding `slot` holds: an upload fid opened now writes to it.
-    pub fn upload_binding(&self, slot: u8) -> Option<u64> {
-        self.resources.binding(slot)
     }
 
     fn publication_body(&self, generation: u64, qid: u64) -> Result<Vec<u8>, Errno> {

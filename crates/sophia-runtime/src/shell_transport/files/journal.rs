@@ -143,7 +143,10 @@ impl Journal {
         body: &[u8],
         credited: bool,
     ) -> Result<u64, Errno> {
-        Ok(self.prepare_append(kind, body, credited)?.commit())
+        let sequence = self.prepare_append(kind, body, credited)?.commit();
+        #[cfg(feature = "comparator-journal-trace")]
+        self.trace_appended(sequence, kind);
+        Ok(sequence)
     }
 
     /// Finish every fallible journal check before the owner reserves a resource
@@ -215,7 +218,33 @@ impl Journal {
         limits.bytes += held;
         let prepared = self.custody.prepare(bytes, limits)?;
         self.held[slot] = None;
-        Ok(prepared.commit())
+        let sequence = prepared.commit();
+        #[cfg(feature = "comparator-journal-trace")]
+        self.trace_appended(sequence, kind);
+        Ok(sequence)
+    }
+
+    /// This journal's identity in the comparator journal trace.
+    #[cfg(feature = "comparator-journal-trace")]
+    pub(in crate::shell_transport) fn trace_id(&self) -> u64 {
+        self.custody.trace_id()
+    }
+
+    /// Labels a committed record with its kind. Records committed through
+    /// [`Self::prepare_append`] by other owners stay unlabeled.
+    #[cfg(feature = "comparator-journal-trace")]
+    fn trace_appended(&self, sequence: u64, kind: ShellFileKind) {
+        use sophia_9p::journal_trace::{RoleKey, RolePhase, RoleRecord, role};
+        role(RoleRecord {
+            journal: self.custody.trace_id(),
+            sequence,
+            phase: RolePhase::Appended,
+            kind: kind as u16,
+            transaction: 0,
+            key: RoleKey::NONE,
+            status: 0,
+            related: 0,
+        });
     }
 
     pub(in crate::shell_transport) fn read(
