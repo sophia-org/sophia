@@ -86,9 +86,10 @@ Replacement binaries and short-path campaigns `isb60b`/`isb120b` are frozen.
 The replacement's first 12 arms captured successfully, with terminal recovery
 verified for every arm. The first idle pair at 60 Hz exceeds the +10% limit for
 panel CPU, panel allocations and bulk CPU. Two separate diagnostic pairs have
-since completed; the first preview-store storage reuse fix is validated below.
-Continue eliminating measured per-pass bookkeeping before requesting another
-qualification block. Full cost and latency qualification remain open;
+since completed. Preview-store reuse, borrowed inventory comparison and the
+idle cursor no-work path are validated below. A fresh four-arm panel cost
+screening is prepared and awaits attendance; see `candidate-03/ready.json`.
+Full cost and latency qualification remain open;
 no installed desktop has been changed.
 
 ## October 18 repaired first-pair results
@@ -198,6 +199,18 @@ scoped formatting pass. Evidence: `idle-cursor-{tests,clippy}.log`. These contro
 and static review do not measure physical cursor latency or native cost savings.
 The next native cost screening will measure the combined bookkeeping changes
 before another full qualification block; frozen earlier captures remain intact.
+
+The cursor change is published as production `5c81e518c` and comparator
+`890215a3e3d4fcc2155f45c67afc63a03d792065`. Fresh CPU-only and Rust-global
+allocation release builds at that comparator revision exclude all profiling
+and trace features. Four panel plans (ISB then IPC, CPU then allocations) and
+device-hidden profile checks pass; both source trees match their signed declared
+revisions and are clean. The attended launcher is
+`~/dev/niltempus/.artifacts/t331-bookkeeping-20261018/run.sh`; evidence and hashes
+are under `t331-isb-cost-20261018/candidate-03/`. New run destinations are
+`~/.local/state/t331/book-{cpu,alloc}-{C,A}-01`. None has started. This is a
+four-arm cost screening without campaign environment readback, not the full
+three-pair idle/load cost and latency qualification.
 
 ## October 18 first attended block
 
