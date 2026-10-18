@@ -22,10 +22,11 @@ October 18 follow-up: the ISB-only integration is signed and published as
 both full client checks passed before signing and publication. The earlier
 client pins below describe the preceding migration checkpoint.
 
-The isolated comparator worktree is on `performance/t331-isb-cost`, merging
-that production checkpoint into `30b822381`. Its frozen historical branch and
-captures remain unchanged. Six supplied-owner peer controls pass after the
-merge; the actual native Session/CLI check also passes. New diagnostic-only
+The isolated comparator is signed and published on `performance/t331-isb-cost`
+at `bebb9db9b69b5eda1eae63e1124374f808abd8f6`, including the shared admission
+optimization and mapped SDK imports. Its frozen historical branch and captures
+remain unchanged. Six supplied-owner peer controls pass; the actual native
+Session/CLI check also passes. New diagnostic-only
 request scopes count thread CPU and process-wide allocations during each
 interval. A control verifies allocation/reallocation counts and zero overhead
 allocations for an empty scope; four paired supplied-owner runs pass. In those
@@ -53,7 +54,7 @@ all four unchanged +10% gates and the latency gates remain open. Muse is offline
 Codex owns integration/publication and Claude assists with bounded SDK and
 diagnostic work.
 
-The next shared optimization validates and sizes outbound content with the SDK's
+The shared optimization published as `4f243332f` validates and sizes outbound content with the SDK's
 borrowed value counter instead of allocating encoded buffers for admission.
 Production runtime all-target tests and strict Clippy pass; a differential
 control preserves encoded charges and refusals. The same change is on both
@@ -73,9 +74,42 @@ at `niltempus@879b672`: 72 arms per refresh rate, preserving both workloads,
 three restarted pairs, idle/load, separate CPU/allocation/latency methods, and
 all existing gates. Its campaign, comparison, provenance, historical pilot and
 calibration controls pass, with strict Clippy and formatting clean. Passive
-journal identity traces and their negative controls also pass. Freeze the
-comparator's signed source and optimized artifacts, then coordinate an attended
-native window. No installed desktop has been changed.
+journal identity traces and their negative controls also pass. The broader
+runtime gate passes 705 tests; the three older comparator fixtures now use
+authenticated ISB on the files side and pass separately, with their resource,
+lease and backpressure assertions preserved. Strict all-target Clippy and
+formatting pass. Optimized artifacts and both campaigns are now frozen, with
+zero native arms run. The next step is an attended tty4 window; all four cost
+gates and latency qualification remain open. No installed desktop has been changed.
+
+## October 18 frozen native campaigns
+
+The signed comparator `bebb9db9b69b5eda1eae63e1124374f808abd8f6` and external
+runner `879b6729375b9330304abadd867b85718b5025fd` bind three optimized host/peer
+builds: ordinary latency, CPU-only and Rust allocation counting. Diagnostic
+trace and attribution features are absent. The staged ordinary peer passes all
+six device-hidden controls; 24 explicit profiles and the core configuration
+pass the prepared Sophia checker. No native arm has run.
+
+Evidence is under
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/`:
+`final-artifacts.json`, `final-*-build.{jsonl,log}`,
+`frozen-latency-peer-controls.log`, `frozen-profile-checks-02.log`,
+`native-preparation.log`, `campaign-freeze.log` and `native-ready.json`.
+Binaries are staged outside evidence in the external integration checkout's
+ignored `.artifacts/t331-isb-cost-20261018/` directory.
+
+The 60 Hz campaign digest is
+`bc2fa379aa4acfec6e0cb6cf64d176a146d6bd5773088763ea1d73a2782b7a1b`;
+the 120 Hz digest is
+`c49da844db420dbee13b67e2dde60d82c7c31d144937a595926580b8b2fc1f54`.
+Each freezes 72 ordered arms across both workloads, three restarted pairs,
+idle/load and separate latency/CPU/allocation methods. Profiles explicitly
+select DP-1, card0, output 1, 1920×1080, scale 1 and VRR off, continuing the
+historical target without hardware autodetection. Runtime observations must
+still confirm it. `operator-commands.txt` contains the exact attended tty4
+commands. Preserve failed or incomplete attempts; a frozen matrix is not a
+passing measurement.
 
 ## October 18 journal read pairing
 

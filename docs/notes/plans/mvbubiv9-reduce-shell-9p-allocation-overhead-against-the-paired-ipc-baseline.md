@@ -76,8 +76,12 @@ supported. The [accepted amendment](../decisions/qujwzrdz-admit-shell-content-th
 selects Immutable Shared Buffers (ISB), backed by sealed memfds, for every
 production shell and lock CPU image upload.
 Remove byte fallback and byte-only compatibility rather than maintain a size
-threshold or adaptive transport choice. This migration is pending; recording
-the decision does not complete runtime or SDK removal and does not reopen t338.
+threshold or adaptive transport choice. The migration is published in Sophia
+`5632d5423c9344c709810e00697a3d464cad5600`; the subsequent mapped-builder import
+is `810223d79d9d34f86c06c2509bfdd3c8ac1e19ae`. SDK, client and export evidence is
+in the [current investigation](../investigations/2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#current-resumption).
+This completes neither t331's native cost gates nor its latency qualification,
+and does not reopen t338.
 
 1. Inventory production shell and lock byte-upload entry points, SDK APIs and
    actual client call sites. Require sealed capability and ChannelReady at
