@@ -8,6 +8,16 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
+Opt-in environment delivery is implemented in Sophia `d3cb848cf` and comparator
+`ecfa507df`, with the receiver in `niltempus be3ae85`. Each datagram carries a
+self-pidfd as well as kernel sender credentials. The receiver checks the live
+handle before accepting the numeric PID, so queued records from an exited
+sender cannot qualify after PID reuse. Four Session controls and eight receiver
+tests pass; strict Clippy passes for both. Supervised process binding is signed
+in `niltempus 8f5b649`, with 13 fixture controls. The runner must still bracket
+receipt validation with that binding and retain authenticated provenance; these
+modules do not yet qualify an arm. No physical run has occurred.
+
 Environment readback is implemented in Sophia `21bcd211e` and emitted by
 Session `116d663b4`. Nominal refresh and timing-derived refresh stay distinct;
 GL strings come from the current context, VRR from committed CRTC state, and
