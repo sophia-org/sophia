@@ -21,12 +21,14 @@ versus 114 IPC samples; peers have only 34 versus 14. Image validation and
 sealed-source preparation appear in the files samples, but this sparse pair
 cannot explain the remaining CPU gap. Kernel sampling and syscall tracing are
 now available after niltempus changed the host permissions. The next diagnostic
-pair is prepared with external runner `32c2d61`, at 997 Hz with 26 stackless
-syscall-entry tracepoints. From tty4, run
-`~/dev/niltempus/.artifacts/t331-kernel-20261018/run.sh`.
-The destinations `~/.local/state/t331/kern-{files,ipc}-01` are unused;
-`candidate-03/kernel-perf/ready.json` binds the inputs. Attendance and report
-validation remain pending; t331 remains open.
+pair completed with external runner `32c2d61`, at 997 Hz with 26 stackless
+syscall-entry tracepoints. Both `~/.local/state/t331/kern-{files,ipc}-01` reports
+pass event, loss, identity, interval and histogram validation. Session ppoll
+entries are 169,454 files versus 24,693 IPC over 1,000 frames; the peer adds
+54,333 versus zero. Stacks include launch-custody checks on waiting-read retries.
+Profiler overhead is substantial, so these CPU timings are not acceptance
+evidence. Review redundant retry work without weakening revocation boundaries;
+t331 remains open. Reports and summary are under `candidate-03/kernel-*`.
 
 October 18 follow-up: the ISB-only integration is signed and published as
 `5632d5423c9344c709810e00697a3d464cad5600`. Provlita
@@ -303,6 +305,50 @@ unsafe permissions and was rejected before launch; the corrected inputs use
 private permissions, and the rejected attempt remains in
 `kernel-perf-preparation-01`. The native wrapper and environment observer are
 unchanged. This pair supplies diagnostic evidence only.
+
+## October 18 kernel and syscall results
+
+Both captures completed and their reports passed all validation. Evidence:
+`candidate-03/kernel-{files,ipc}-report.json`, `kernel-profile-summary.json`,
+and the retained `~/.local/state/t331/kern-{files,ipc}-01` directories. The
+recorders noted 7 and 14 out-of-order events respectively; reports show zero
+lost samples and no lost-event warnings. CPU histogram totals equal the
+independently filtered raw counts. Data files are 214 and 166 MiB respectively.
+
+The following counts cover the verified 1,000-frame workload intervals, not
+the entire 60-second recordings:
+
+| Observation | Files | IPC |
+| --- | ---: | ---: |
+| Session CPU samples | 1,671 | 1,238 |
+| Session unknown leaves | 43 | 50 |
+| Peer CPU samples | 580 | 353 |
+| Peer unknown leaves | 0 | 0 |
+| Session ppoll entries | 169,454 | 24,693 |
+| Peer ppoll entries | 54,333 | 0 |
+| Session read entries | 73,618 | 25,396 |
+| Session recvmsg entries | 22,144 | 668 |
+| Peer recvfrom entries | 86,307 | 12,006 |
+| Peer sendto entries | 25,996 | 10,001 |
+| Peer memfd_create entries | 1,000 | 0 |
+| Session mmap entries | 1,015 | 13 |
+
+The files stacks include `LaunchCustody::is_live` through
+`Authority::authorize`, authenticated export checks, `read_now` and
+`retry_waiting`. This confirms the mechanism exists in the measured native
+path; it does not assign every ppoll entry to authentication. Validation has
+103 Session self samples; sealed-source preparation has 46 peer self samples.
+The corresponding IPC canvas fill has 49 peer self samples.
+
+Instrumentation cost is visible: functions named `perf_*` account for 302
+files Session self samples and 157 peer samples, versus 199 and 54 on IPC.
+These counts are a visible subset of profiler overhead, not a correction that
+can be subtracted to reconstruct uninstrumented timings. Kernel percentages
+and the profiled CPU gap therefore cannot establish the optimization budget.
+The useful result is the syscall-volume difference and the identified call
+paths. Next review waiting-read retry work while preserving authentication,
+delivery and revocation checks; any accepted change still needs an unprofiled
+paired measurement and the unchanged full qualification gates.
 
 ## October 18 first attended block
 
