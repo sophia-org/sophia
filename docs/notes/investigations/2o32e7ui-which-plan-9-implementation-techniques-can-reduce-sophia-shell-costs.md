@@ -47,8 +47,8 @@ The comparator now fills that backing directly with the same pixel routine as
 IPC; six paired peer controls and four canvas controls pass. Sophia's shell
 image, C lock and independent oracle export controls also pass
 (`mapped-export-tests.log`). This removes the staging copy but proves no cost
-improvement. Journal-read pairing still
-needs identity-based evidence. No native capture has run for this candidate;
+improvement. Journal-read pairing now has identity-based evidence, described
+below. No native capture has run for this candidate;
 all four unchanged +10% gates and the latency gates remain open. Muse is offline;
 Codex owns integration/publication and Claude assists with bounded SDK and
 diagnostic work.
@@ -67,6 +67,46 @@ not replace native cost or latency gates. Bemenu `2a1a73fbec1e0c5552d965b3b7aa3f
 and Kleis `5b314213dbb2733ec14d40d3e7c6f3fd5d9b8cee` now publish the mapped
 C SDK pin; both isolated client gates pass, including Kleis build and format
 checks. Its obsolete byte-upload C build input was removed.
+
+External qualification tooling now publishes schema-3 ISB-versus-IPC campaigns
+at `niltempus@879b672`: 72 arms per refresh rate, preserving both workloads,
+three restarted pairs, idle/load, separate CPU/allocation/latency methods, and
+all existing gates. Its campaign, comparison, provenance, historical pilot and
+calibration controls pass, with strict Clippy and formatting clean. Passive
+journal identity traces and their negative controls also pass. Freeze the
+comparator's signed source and optimized artifacts, then coordinate an attended
+native window. No installed desktop has been changed.
+
+## October 18 journal read pairing
+
+The comparator's opt-in trace records journal commit ranges, completed reads,
+ACKs and shell request/outcome identities without payloads or path-time
+allocation. It is excluded from cost builds. Synthetic controls cover joined
+and split reads, partial records, rereads, skipped reads, missing outcomes,
+ambiguous keys and transaction mismatches. Two controls and both supplied-owner
+ISB fixtures pass; the feature-enabled 9P suite passes 162 tests and strict
+Clippy is clean. These are device-hidden diagnostics, not native measurements.
+
+Evidence is under
+`~/.local/state/sophia/development-evidence/isb-client-migration-20261018/`:
+`claude-journal-pairing-{control,isb,clippy}.log` and
+`claude-journal-pairing-isb/{isb,isb-4mib,isb-512}.journal-trace.json`.
+All three traces report zero dropped records, unmatched outcomes or violations.
+Every matched outcome is delivered in a separate read from its receipt, joined
+by key and transaction identity. Every receipt and outcome has a covering ACK.
+The 64-frame panel trace has 708 commits, 643 reads and 644 ACKs; 578 reads
+complete one record and 65 complete two. Its 64 candidates produce 128 outcomes,
+and 64 ImageBegin requests produce 64 resource statuses. The bulk fixture has
+128 ImageBegin requests and 962 one-record reads plus 65 two-record reads.
+Negotiate, FrameDemand and ResourceRetire have no matching outcome by contract;
+their absence is not counted as a failed join.
+
+Raw commit/read/ACK tables retain ordinals, owner turns and spans so the joins
+can be audited. This establishes the supplied-owner delivery pattern, not its
+cost in a native Session. Read completion timing, batching and ACK policy are
+unchanged; the trace does not authorize changing them.
+
+## October 18 ISB-only integration checkpoint
 
 t331 is implementing the October 18 Immutable Shared Buffer migration.
 t338 is closed; its [delivery resumption](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#current-resumption)
