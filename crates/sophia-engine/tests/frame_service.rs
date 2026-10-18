@@ -21,7 +21,7 @@ fn request(
     presentation_queued: bool,
 ) -> OutputFrameServiceRequest {
     OutputFrameServiceRequest {
-        outputs,
+        outputs: outputs.into_iter().collect(),
         presentation_queued,
         software_frame_waiting: false,
         preparation_pending: false,
@@ -30,7 +30,7 @@ fn request(
 
 fn software_request(outputs: Vec<OutputFrameServiceObservation>) -> OutputFrameServiceRequest {
     OutputFrameServiceRequest {
-        outputs,
+        outputs: outputs.into_iter().collect(),
         presentation_queued: false,
         software_frame_waiting: true,
         preparation_pending: false,
@@ -365,5 +365,58 @@ fn output_set_and_primary_must_remain_stable_during_one_service_pass() {
             expected: OutputId::from_raw(1),
             actual: OutputId::from_raw(2),
         })
+    );
+}
+
+#[test]
+fn bounded_observations_keep_order_and_count_every_offered_output() {
+    let many = |count: u64| -> Vec<_> {
+        (1..=count)
+            .map(|raw| output(raw, raw == 1, OutputNativeFramePhase::Idle, false))
+            .collect()
+    };
+    let full = request(many(16), false);
+    assert_eq!(full.outputs.len(), OUTPUT_FRAME_SERVICE_CAPACITY);
+    assert_eq!(full.outputs.offered(), OUTPUT_FRAME_SERVICE_CAPACITY);
+    assert!(full.outputs.iter().map(|o| o.output.raw()).eq(1..=16));
+    assert!(OutputFrameServiceReducer::begin(&full).is_ok());
+
+    // Storage keeps the first 16 in order but reports the true count, as the
+    // unbounded list did, however far past the capacity the owner went.
+    let far = request(many(40), false);
+    assert_eq!(far.outputs.len(), OUTPUT_FRAME_SERVICE_CAPACITY);
+    assert_eq!(far.outputs.offered(), 40);
+    assert!(far.outputs.iter().map(|o| o.output.raw()).eq(1..=16));
+    assert_eq!(
+        OutputFrameServiceReducer::begin(&far),
+        Err(OutputFrameServiceError::CapacityExceeded {
+            capacity: OUTPUT_FRAME_SERVICE_CAPACITY,
+            actual: 40,
+        })
+    );
+    // A stored prefix equal to a valid request is still a different request.
+    assert_ne!(far.outputs, full.outputs);
+
+    // An over-capacity observation mid-service fails the same way.
+    let mut reducer = OutputFrameServiceReducer::begin(&full).unwrap();
+    assert_eq!(
+        reducer.next_effect(&request(many(17), false)),
+        Err(OutputFrameServiceError::CapacityExceeded {
+            capacity: OUTPUT_FRAME_SERVICE_CAPACITY,
+            actual: 17,
+        })
+    );
+    assert_eq!(
+        reducer.next_effect(&request(Vec::new(), false)),
+        Err(OutputFrameServiceError::EmptyOutputSet)
+    );
+    let mut pushed = sophia_engine::OutputFrameServiceObservations::new();
+    for observation in many(16) {
+        pushed.push(observation);
+    }
+    assert_eq!(pushed, full.outputs);
+    assert_eq!(
+        sophia_engine::OutputFrameServiceObservations::default().offered(),
+        0
     );
 }

@@ -5,7 +5,7 @@ use super::*;
 fn protected_mirror_sibling_is_polled_before_waiting_present() {
     let output = OutputId::from_raw(1);
     let mut request = OutputFrameServiceRequest {
-        outputs: vec![OutputFrameServiceObservation {
+        outputs: [OutputFrameServiceObservation {
             output,
             primary: true,
             native_phase: native_service_phase(
@@ -15,7 +15,9 @@ fn protected_mirror_sibling_is_polled_before_waiting_present() {
                 true,
             ),
             pending_frame: false,
-        }],
+        }]
+        .into_iter()
+        .collect(),
         presentation_queued: true,
         software_frame_waiting: false,
         preparation_pending: false,

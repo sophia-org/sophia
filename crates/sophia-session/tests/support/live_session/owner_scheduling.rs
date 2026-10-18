@@ -115,12 +115,14 @@ fn physical_input_alone_lets_an_idle_owner_sleep_until_rung() {
 #[test]
 fn native_frame_progress_preempts_metadata_only_authority_batches() {
     let request = OutputFrameServiceRequest {
-        outputs: vec![OutputFrameServiceObservation {
+        outputs: [OutputFrameServiceObservation {
             output: OutputId::from_raw(1),
             primary: true,
             native_phase: OutputNativeFramePhase::Idle,
             pending_frame: true,
-        }],
+        }]
+        .into_iter()
+        .collect(),
         presentation_queued: false,
         software_frame_waiting: false,
         preparation_pending: false,
@@ -134,12 +136,14 @@ fn native_frame_progress_preempts_metadata_only_authority_batches() {
     assert!(native_frame_service_requires_owner_progress(&in_flight));
 
     let idle = OutputFrameServiceRequest {
-        outputs: vec![OutputFrameServiceObservation {
+        outputs: [OutputFrameServiceObservation {
             output: OutputId::from_raw(1),
             primary: true,
             native_phase: OutputNativeFramePhase::Idle,
             pending_frame: false,
-        }],
+        }]
+        .into_iter()
+        .collect(),
         presentation_queued: false,
         software_frame_waiting: false,
         preparation_pending: false,
@@ -400,12 +404,14 @@ fn a_repaint_that_cannot_run_does_not_take_the_turn_from_authority() {
 #[test]
 fn native_frame_progress_cannot_consecutively_preempt_authority() {
     let pending = OutputFrameServiceRequest {
-        outputs: vec![OutputFrameServiceObservation {
+        outputs: [OutputFrameServiceObservation {
             output: OutputId::from_raw(1),
             primary: true,
             native_phase: OutputNativeFramePhase::InFlight,
             pending_frame: true,
-        }],
+        }]
+        .into_iter()
+        .collect(),
         presentation_queued: false,
         software_frame_waiting: false,
         preparation_pending: false,
@@ -428,12 +434,14 @@ fn native_frame_progress_cannot_consecutively_preempt_authority() {
     ));
 
     let idle = OutputFrameServiceRequest {
-        outputs: vec![OutputFrameServiceObservation {
+        outputs: [OutputFrameServiceObservation {
             output: OutputId::from_raw(1),
             primary: true,
             native_phase: OutputNativeFramePhase::Idle,
             pending_frame: false,
-        }],
+        }]
+        .into_iter()
+        .collect(),
         presentation_queued: false,
         software_frame_waiting: false,
         preparation_pending: false,
@@ -505,12 +513,14 @@ fn cold_preparation_requests_owner_progress_without_a_fake_pending_frame() {
 #[test]
 fn completion_only_work_preempts_saturated_ingress_at_its_service_deadline() {
     let pending = OutputFrameServiceRequest {
-        outputs: vec![OutputFrameServiceObservation {
+        outputs: [OutputFrameServiceObservation {
             output: OutputId::from_raw(1),
             primary: true,
             native_phase: OutputNativeFramePhase::InFlight,
             pending_frame: true,
-        }],
+        }]
+        .into_iter()
+        .collect(),
         presentation_queued: false,
         software_frame_waiting: false,
         preparation_pending: false,
@@ -550,12 +560,14 @@ fn completion_only_work_preempts_saturated_ingress_at_its_service_deadline() {
 #[test]
 fn native_event_waits_and_drained_work_have_no_short_polling_tail() {
     let mut request = OutputFrameServiceRequest {
-        outputs: vec![OutputFrameServiceObservation {
+        outputs: [OutputFrameServiceObservation {
             output: OutputId::from_raw(1),
             primary: true,
             native_phase: OutputNativeFramePhase::InFlight,
             pending_frame: true,
-        }],
+        }]
+        .into_iter()
+        .collect(),
         presentation_queued: false,
         software_frame_waiting: false,
         preparation_pending: false,

@@ -282,8 +282,11 @@ impl LiveProductionVisualRuntime {
         let presentation_queued = software_frame_waiting.is_none()
             && self.diagnostics().present_queued
             && !self.diagnostics().present_scheduling_blocked;
-        let outputs = (0..self.output_count())
-            .map(|index| {
+        // Inline storage: the owner rebuilds this request several times per
+        // pass. Errors stay in index order and end the build at the same point.
+        let mut outputs = OutputFrameServiceObservations::new();
+        for index in 0..self.output_count() {
+            outputs.push({
                 let output = self
                     .outputs
                     .output_id(index)
@@ -306,7 +309,7 @@ impl LiveProductionVisualRuntime {
                     .outputs
                     .output_native_cleanup_pending(index)
                     .ok_or("production output cleanup state was not registered")?;
-                Ok(OutputFrameServiceObservation {
+                OutputFrameServiceObservation {
                     output,
                     primary: output == primary,
                     native_phase: native_service_phase(
@@ -328,9 +331,9 @@ impl LiveProductionVisualRuntime {
                     // reducer can tell "this output owes a frame" apart from
                     // "something global is pending".
                     pending_frame,
-                })
-            })
-            .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+                }
+            });
+        }
         Ok(OutputFrameServiceRequest {
             outputs,
             presentation_queued,
