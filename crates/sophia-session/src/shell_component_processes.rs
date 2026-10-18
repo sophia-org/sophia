@@ -136,14 +136,7 @@ impl ShellComponentProcesses {
                 .protection_evidence()
                 .ok_or("missing component protection evidence")?
                 .clone();
-            // The unauthenticated compatibility path has no image channel.
-            // Advertise that limit instead of granting unusable CPU content.
-            let policy = match policy {
-                ShellContentAdmissionPolicy::Granted { .. } => {
-                    ShellContentAdmissionPolicy::Unavailable
-                }
-                other => other,
-            };
+            let policy = unauthenticated_policy(wire, policy);
             self.connections
                 .begin_negotiation(key, &evidence, Duration::from_secs(5), policy)
                 .map_err(|e| e.to_string())?;
@@ -298,5 +291,22 @@ impl ShellComponentProcesses {
         self.slots
             .get(key.slot)
             .is_some_and(|s| s.key == Some(key) && s.retained())
+    }
+}
+
+/// Content policy for a start without file authentication. The compatibility
+/// file path has no image channel, so it advertises that limit instead of
+/// granting unusable CPU content. The isolated comparison IPC baseline still
+/// uploads bytes on its own wire, so it keeps the grant. The native component
+/// Session checks explicit protected-legacy-baseline admission before starting it.
+fn unauthenticated_policy(
+    wire: ShellTransportSelection,
+    policy: ShellContentAdmissionPolicy,
+) -> ShellContentAdmissionPolicy {
+    match (wire, policy) {
+        (ShellTransportSelection::NineP2000L, ShellContentAdmissionPolicy::Granted { .. }) => {
+            ShellContentAdmissionPolicy::Unavailable
+        }
+        (_, policy) => policy,
     }
 }

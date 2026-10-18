@@ -584,3 +584,156 @@ fn component_scheduler_skips_unready_role_and_bounds_retries() {
     drop(owner);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+const COMPARISON_CHILD: &str = "comparison_start_child";
+
+/// The comparison baseline's actual `start`: a protected IPC child keeps its
+/// content grant through negotiation, while an unauthenticated file child is
+/// still refused content because that path has no image channel.
+#[test]
+#[ignore = "requires nested user namespaces; run explicitly inside the device-hidden fixture"]
+fn comparison_ipc_start_keeps_content_and_file_start_still_refuses_it() {
+    use sophia_config::ShellTransportSelection::{ComparisonIpc, NineP2000L};
+    use sophia_runtime::{ProtectionPath, ShellTransportError};
+    use std::time::{Duration, Instant};
+    let executable = std::env::current_exe().unwrap();
+    let directory = std::env::temp_dir().join(format!("comparison-start-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let mut owner = ShellComponentProcesses::new().unwrap();
+    for (name, role, wire) in [
+        ("ipc", ShellComponentRole::Bar, ComparisonIpc),
+        ("files", ShellComponentRole::Dock, NineP2000L),
+    ] {
+        owner
+            .add_with_transport(
+                name,
+                role,
+                &directory.join(name),
+                rustix::process::geteuid().as_raw(),
+                wire,
+            )
+            .unwrap();
+    }
+    let prepare = |_: sophia_session::shell_component_connections::ComponentConnectionKey,
+                   socket: &std::path::Path| {
+        let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])
+            .map_err(|e| e.to_string())?
+            .path(ProtectionPath::read_only(socket.parent().unwrap()))
+            .map_err(|e| e.to_string())?
+            .path(ProtectionPath::read_only(&executable))
+            .map_err(|e| e.to_string())?;
+        let mut spec = ProcessLaunchSpec::new(&executable).protection_domain(domain);
+        spec.args = ["--exact", COMPARISON_CHILD, "--ignored", "--nocapture"]
+            .map(Into::into)
+            .to_vec();
+        Ok(spec)
+    };
+    let policy = ShellContentAdmissionPolicy::Granted {
+        discrete_input: false,
+    };
+    let ipc = owner.start(0, prepare, policy).unwrap();
+    let files = owner.start(1, prepare, policy).unwrap();
+    let mut refused = None;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while owner.phase(ipc).unwrap() != ComponentConnectionPhase::Connected || refused.is_none() {
+        let visit = owner.visit(65536);
+        for (key, result) in visit.negotiations.into_iter().flatten() {
+            if key == files {
+                refused = Some(result.unwrap_err());
+            } else {
+                result.unwrap();
+            }
+        }
+        assert!(
+            visit.processes.iter().flatten().all(|event| !matches!(
+                event,
+                ComponentProcessEvent::Failed(k, _) if *k == ipc
+            )),
+            "{:?}",
+            visit.processes
+        );
+        assert!(Instant::now() < deadline, "comparison start deadline");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    // The baseline keeps the Granted policy and its reserved grant.
+    owner
+        .with_connection(ipc, |t| {
+            assert_eq!(t.content_grant(), Some(ipc.grant));
+            assert_eq!(t.content_limits().map(|l| l.grant), Some(ipc.grant));
+        })
+        .unwrap();
+    assert!(owner.process_retained(ipc));
+    // An unauthenticated file start has no image channel, so its sealed
+    // content request is refused before any grant.
+    assert!(
+        matches!(refused.unwrap(), ShellTransportError::MissingCapability),
+        "file start must refuse content"
+    );
+    for key in [ipc, files] {
+        let _ = owner.request_stop(key);
+    }
+    while owner.process_retained(ipc) || owner.process_retained(files) {
+        owner.visit(65536);
+        assert!(Instant::now() < deadline, "comparison reap deadline");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(owner.collect().quiescent());
+    drop(owner);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+/// Run by the parent above inside its protection domain: request content
+/// on whichever endpoint the owner supplied, then hold the connection.
+#[test]
+#[ignore = "parent invokes this child under the protected shell supervisor"]
+fn comparison_start_child() {
+    use sophia_protocol::*;
+    use std::io::{Read, Write};
+    let capabilities =
+        SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
+    if let Some(socket) = std::env::var_os("SOPHIA_SHELL_SOCKET") {
+        let mut stream = std::os::unix::net::UnixStream::connect(socket).unwrap();
+        stream
+            .write_all(
+                &encode_shell_v1_client_hello_frame(ShellV1ClientHello {
+                    minimum_revision: 5,
+                    maximum_revision: 6,
+                    required_capabilities: capabilities,
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        let mut header = [0; SOPHIA_IPC_HEADER_LEN];
+        stream.read_exact(&mut header).unwrap();
+        let size = u32::from_le_bytes(header[16..20].try_into().unwrap()) as usize;
+        let mut frame = header.to_vec();
+        frame.resize(SOPHIA_IPC_HEADER_LEN + size, 0);
+        stream
+            .read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
+            .unwrap();
+        let welcome = decode_shell_v1_server_welcome_frame(&frame).unwrap();
+        assert_ne!(
+            welcome.capabilities & SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE,
+            0
+        );
+        // Hold the connection until the owner revokes it.
+        let _ = stream.read_to_end(&mut Vec::new());
+    } else {
+        let socket = std::env::var_os("SOPHIA_SHELL_9P_SOCKET").unwrap();
+        let result = sophia_shell_client::ShellConnection::connect_files(
+            socket,
+            // The file wire's only revision; its content requires sealed
+            // images (bit 13).
+            sophia_shell_client::ShellClientOptions {
+                minimum_revision: 9,
+                maximum_revision: 9,
+                required_capabilities: capabilities | 1 << 13,
+                handshake_timeout: std::time::Duration::from_secs(5),
+            },
+        );
+        assert!(
+            result.is_err(),
+            "unauthenticated file content must be refused"
+        );
+    }
+}
