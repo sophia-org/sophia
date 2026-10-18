@@ -69,6 +69,82 @@ Task state and execution order remain in todo.md.
 
 ## Implementation sequence
 
+### Immutable Shared Buffers — October 18
+
+niltempus confirmed that clients unable to use the sealed channel need not be
+supported. The [accepted amendment](../decisions/qujwzrdz-admit-shell-content-through-a-negotiated-descriptor-channel-beside-the-9p-wire.md#accepted-amendment--immutable-shared-buffers-october-18-2026)
+selects Immutable Shared Buffers (ISB), backed by sealed memfds, for every
+production shell and lock CPU image upload.
+Remove byte fallback and byte-only compatibility rather than maintain a size
+threshold or adaptive transport choice. This migration is pending; recording
+the decision does not complete runtime or SDK removal and does not reopen t338.
+
+1. Inventory production shell and lock byte-upload entry points, SDK APIs and
+   actual client call sites. Require sealed capability and ChannelReady at
+   image setup, and make absent or failed channels explicit errors. Preserve
+   role grants and metadata-only clients; do not infer image authority from a
+   revision number alone.
+2. Migrate both SDKs in their independent repositories, then import signed
+   snapshots and migrate production clients. Remove byte-upload and fallback
+   APIs and server dispatch/storage once their callers have moved. Preserve
+   control records such as cancellation and retirement that the sealed path
+   shares. Do not patch vendored snapshots or reuse retired record numbers.
+3. Replace production fallback controls with required-channel refusal and
+   recovery controls. Cover absent/malformed discovery, ChannelClosed before
+   Source and during validation, cancellation, timeouts, epoch replacement,
+   revocation, retained pixels and final release. Keep lock coverage independent
+   of image failure. Prove the normal owner path through both SDKs and verify
+   that removed byte-upload entry points cannot admit production images.
+4. Keep byte and IPC implementations only where needed by the isolated
+   comparator and retained historical evidence. They do not require production
+   compatibility switches. Preserve all frozen plans, captures and unsuccessful
+   arms; never reinterpret an old bytes capture as sealed.
+5. Attribute per-request allocations and repeated service work on the sealed
+   and common control paths, then remove measured avoidable work. Keep the
+   journal-read-pairing investigation. The four existing CPU/MiB and
+   allocations/frame gates compare the production sealed files path with IPC
+   on matched panel and bulk workloads; thresholds, accounting, latency budgets
+   and acceptance sampling rules remain unchanged. New native runs are prepared
+   only for a concrete optimization or qualification question.
+
+The October 18 report-only pilots are retained under
+`~/.local/state/t331/{panel-pilot-01,bulk-pilot-01,large-surface-pilot-01}/pilot-report.json`.
+They show fewer allocations with sealed than files bytes in all three workloads,
+and lower combined CPU than IPC for the bulk and large-presented workloads.
+The small-bar gaps remain. These pilots do not satisfy the full acceptance
+matrix or establish a single cause of the cost. Corrected process-attributed
+profiles and counter replay are under
+`~/.local/state/t331/attribution-followup-20261018/`; use
+`corrected-profiles/`, not the superseded schema-1 profile reports.
+
+### Follow-up: remove Rust's canvas-to-memfd copy
+
+Removing Rust's canvas-to-memfd copy remains an optimization, tracked under t331;
+the ISB naming and architecture change does not implement it.
+The current benchmark peer fills a reusable canvas and the Rust SDK copies its
+contents into the memfd with `pwrite`. A mapped builder could let it draw directly
+into the future ISB backing before sealing, removing that preparation copy. The
+C builder already provides this writable-mapping boundary and unmaps it before
+sealing. Any Rust implementation must preserve bounded ownership and complete
+write exclusion before admission; this is a proposed optimization, not a measured
+saving or a reusable mutable pool.
+
+1. Add a bounded writable-mapping builder in the independent Rust SDK, then
+   migrate the producer to fill that backing directly. Finalization must end
+   every writable view and unmap it before sealing and offering the descriptor.
+2. Match the C builder's custody contract. Cover exact size and pixel contents,
+   successful seal enforcement, and mapping/descriptor cleanup on failure or
+   abandonment. Verify that finalized storage cannot regain a writable view.
+3. Compare the complete preparation and upload path with the retained baseline,
+   using identical pixels, dimensions and cadence. Keep creation, filling,
+   sealing and validation inside the accounting; report producer and Session
+   costs separately. Removing a copy does not itself prove a performance gain
+   or end-to-end zero-copy rendering.
+
+Immutable accepted-resource reuse remains part of the content model. A changed
+image still gets a fresh sealed source; mutable pools and DMA-BUF retain their
+separate design and custody gates.
+
 ### Journal-read pairing evidence — October 17
 
 For a steady submission, pairing means the events-file replies carrying its

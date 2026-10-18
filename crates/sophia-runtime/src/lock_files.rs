@@ -30,7 +30,7 @@ mod transport;
 pub use export::{LockFileAttachment, LockFileExport, LockFileHandle, LockFileNode, LockFileQids};
 pub use image::{LockImageReadiness, LockImageSettings};
 pub use image_service::LockImagePolicy;
-pub use leases::SEALED_LEASE_POLL;
+pub use leases::ISB_LEASE_POLL;
 pub use offers::{LockImageAdmission, LockImageSource, LockImageWorkerAction};
 #[cfg(target_os = "linux")]
 pub use service::{
@@ -238,7 +238,7 @@ impl LockFileCustody {
     }
 
     /// Journal credits held for events owed later: presentation answers,
-    /// the image channel's terminal events and retiring sealed images'
+    /// the image channel's terminal events and retiring ISB images'
     /// releases.
     fn credits(&self) -> usize {
         self.presentation.credits()
@@ -423,7 +423,7 @@ impl LockFileCustody {
         };
         let Some(refusal) = refusal else {
             let selected = selected.expect("selected without refusal");
-            // Sealed images only when configured and requested; DMA never.
+            // Isb images only when configured and requested; DMA never.
             let sealed = if selected == image::IMAGE_REVISION {
                 LOCK_FILE_CAPABILITY_SEALED_MEMORY
             } else {
@@ -499,9 +499,9 @@ impl LockFileCustody {
             ResourcePlan::Retire { resource, .. } => Some(resource),
             _ => None,
         };
-        // A sealed image's release waits for its last reader; its
+        // An ISB image's release waits for its last reader; its
         // retirement holds the credit for it.
-        if retired.is_some_and(|resource| self.resources.is_sealed(resource)) {
+        if retired.is_some_and(|resource| self.resources.is_isb(resource)) {
             self.journal_events(&[receipt], self.credits() + 1)?;
         } else {
             self.journal_events(&[receipt, plan.event()?], self.credits())?;

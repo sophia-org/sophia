@@ -5,7 +5,7 @@ use std::os::fd::OwnedFd;
 
 use sophia_image_producer::{
     ChannelState, CloseCause, DiscoveryRead, ImagePath, ImageProducer, ImageProducerConfig,
-    ImageRole, ProducerError, create_sealed,
+    ImageRole, ProducerError, create_isb,
 };
 use support::{
     config, discovery_text, formats_body, limits_body, metadata, present, sealed_fd, seqpacket_pair,
@@ -120,7 +120,7 @@ fn begin_refusal_returns_the_source_descriptor() {
 
 #[test]
 fn sealed_write_is_bounded_and_exact() {
-    let source = create_sealed(2, 2).unwrap();
+    let source = create_isb(2, 2).unwrap();
     assert_eq!(source.bytes(), 16);
     // Out-of-bounds writes are refused before any byte moves.
     assert_eq!(
@@ -135,7 +135,7 @@ fn sealed_write_is_bounded_and_exact() {
     let stat = rustix::fs::fstat(&fd).unwrap();
     assert_eq!(stat.st_size, 16);
 
-    let source = create_sealed(2, 2).unwrap();
+    let source = create_isb(2, 2).unwrap();
     source.write_pixels(0, &[1u8; 8]).unwrap();
     source.write_pixels(8, &[2u8; 8]).unwrap();
     let mut back = [0u8; 16];

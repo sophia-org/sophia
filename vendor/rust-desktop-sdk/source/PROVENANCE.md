@@ -1,5 +1,17 @@
 # Provenance
 
+## ISB naming, 2026-10-18
+
+niltempus approved Immutable Shared Buffers (ISB) as the name of the production
+CPU image architecture. The coordinated Sophia working tree based on signed
+`0045f3436` supplies the updated image, shell and lock contract text; exact bytes are
+in `spec/SHA256SUMS`. Both independent SDKs rename the source builders together:
+Rust `IsbSource`, `create_isb`, `finish_isb`; C `sophia_ip_isb_create` and
+`sophia_ip_isb_finish`. Callers must rebuild against these names. Wire values,
+seal checks, ownership, failure handling and generated/golden codecs are
+unchanged. Sophia's byte-upload retirement is accepted but remains pending;
+this naming change does not claim it is implemented.
+
 ## Lock sealed-source refusal names, 2026-10-17
 
 The lock KDL, lock contract and shared image contract are copied from the

@@ -1,7 +1,7 @@
 //! Shared worker shutdown with real sealed descriptors. This separate binary
 //! keeps the FD baseline independent of parallel runtime tests. It proves
 //! submitted/queued and completed custody cleanup, not a particular scan offset.
-use sophia_runtime::SealedValidationWorker;
+use sophia_runtime::IsbValidationWorker;
 use std::os::fd::OwnedFd;
 use std::time::{Duration, Instant};
 
@@ -33,7 +33,7 @@ fn await_descriptors(expected: usize) {
     }
 }
 
-fn drop_without_joining(worker: SealedValidationWorker) {
+fn drop_without_joining(worker: IsbValidationWorker) {
     let (done, receiver) = std::sync::mpsc::channel();
     let owner = std::thread::spawn(move || {
         drop(worker);
@@ -50,7 +50,7 @@ fn shutdown_reclaims_submitted_sources_and_preserves_delivered_pixels() {
     let baseline = descriptors();
     for _ in 0..4 {
         let bytes = 4 << 20;
-        let mut worker = SealedValidationWorker::with_validation_budget(4, bytes, 1).unwrap();
+        let mut worker = IsbValidationWorker::with_validation_budget(4, bytes, 1).unwrap();
         let deadline = Instant::now() + Duration::from_secs(60);
         for _ in 0..3 {
             worker
@@ -65,7 +65,7 @@ fn shutdown_reclaims_submitted_sources_and_preserves_delivered_pixels() {
 
     // A completed result can still be queued: shutdown must drop that mapping
     // too, even when the owner never takes its completion.
-    let mut uncollected = SealedValidationWorker::new(1, 8).unwrap();
+    let mut uncollected = IsbValidationWorker::new(1, 8).unwrap();
     uncollected
         .submit(source(8), 8, Instant::now() + Duration::from_secs(3))
         .unwrap();
@@ -91,7 +91,7 @@ fn shutdown_reclaims_submitted_sources_and_preserves_delivered_pixels() {
     drop_without_joining(uncollected);
     await_descriptors(baseline);
 
-    let mut worker = SealedValidationWorker::new(1, 8).unwrap();
+    let mut worker = IsbValidationWorker::new(1, 8).unwrap();
     worker
         .submit(source(8), 8, Instant::now() + Duration::from_secs(3))
         .unwrap();

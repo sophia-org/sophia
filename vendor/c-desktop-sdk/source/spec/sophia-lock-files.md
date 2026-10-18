@@ -224,8 +224,11 @@ longer grants, including replacements caused by a changed import-format set.
 ## Separate image descriptor channel
 
 The [shared image-channel contract](sophia-image-channel.md) is accepted for lock
-r2 with capability bits 2 (sealed memory) and 3 (DMA-BUF). Existing byte records
-and rendering-only authority remain unchanged. `Negotiated.selected_revision`
+r2 with capability bits 2 (sealed memory) and 3 (DMA-BUF). CPU images use
+Immutable Shared Buffers (ISB), currently implemented with sealed memfds. The
+accepted ISB architecture requires this channel and withdraws byte fallback;
+the existing byte-upload implementation awaits retirement under t331.
+Rendering-only authority remains unchanged. `Negotiated.selected_revision`
 explicitly selects 1 or 2; image bits 2/3 may be granted only at revision 2.
 The client checks that selection against its offered revision range and grants
 against its request before changing event decoding. A capability alone never
@@ -236,8 +239,9 @@ ResourceStatus Rejected uses reason 9 `image_channel_unavailable`, reason 10
 11 `validation_timeout` for an admitted source that misses its arrival/validation
 deadline. A wrong backing length uses the existing `size_mismatch` reason 4.
 These descriptor reasons apply at r2; unknown reasons retain the existing
-open-vocabulary rule and never imply success. Byte-only callers retain r1.
-Sealed backing is immutable; mutable DMA-BUF sources require a renderer-owned
+open-vocabulary rule and never imply success. The r1 byte record definitions
+describe the legacy implementation; they do not impose continued support for
+byte-only image producers. ISB backing is immutable; mutable DMA-BUF sources require a renderer-owned
 capture and proven safe completion before release. No socket closure, timeout or
 lock transition substitutes for that proof. Descriptor failure cannot delay
 covering or unlock. A format-only topology change has the same allocation and

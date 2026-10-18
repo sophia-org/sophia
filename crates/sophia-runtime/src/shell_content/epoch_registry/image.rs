@@ -1,21 +1,21 @@
 //! Atomic resource/worker reservation for a decoded sealed ImageBegin.
 use super::*;
-use crate::{ContentAllocationError, SealedSubmitFailure, SealedValidationWorker};
+use crate::{ContentAllocationError, IsbSubmitFailure, IsbValidationWorker};
 use sophia_protocol::TransactionId;
 use sophia_protocol::shell_files::ShellImageMetadata;
 use std::time::Instant;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SealedImageAdmissionError {
+pub enum IsbImageAdmissionError {
     Allocation(ContentAllocationError),
     Resource(ContentStoreError),
-    Worker(SealedSubmitFailure),
+    Worker(IsbSubmitFailure),
 }
 
 /// Owner custody, not a journal event. The owner must publish ImageAdmitted
 /// before allowing Source and reconcile this job even after losing the peer.
 #[derive(Debug)]
-pub struct SealedImageAdmission {
+pub struct IsbImageAdmission {
     pub metadata: ShellImageMetadata,
     pub worker_job: u64,
     pub grant: ContentGrant,
@@ -23,7 +23,7 @@ pub struct SealedImageAdmission {
 }
 
 impl ContentEpochRegistry {
-    pub(in crate::shell_content) fn sealed_stop_reason(
+    pub(in crate::shell_content) fn isb_stop_reason(
         &self,
         grant: ContentGrant,
         resource: sophia_protocol::ContentResourceId,
@@ -33,10 +33,10 @@ impl ContentEpochRegistry {
             .chain(&self.retired)
             .find(|epoch| epoch.resources.grant() == grant)?
             .resources
-            .sealed_stop_reason(resource)
+            .isb_stop_reason(resource)
     }
 
-    pub(in crate::shell_content) fn stop_sealed_image(
+    pub(in crate::shell_content) fn stop_isb_image(
         &mut self,
         grant: ContentGrant,
         resource: sophia_protocol::ContentResourceId,
@@ -49,7 +49,7 @@ impl ContentEpochRegistry {
             .find(|epoch| epoch.resources.grant() == grant)
             .ok_or(ContentStoreError::Stale)?
             .resources
-            .stop_sealed(resource, reason, now)
+            .stop_isb(resource, reason, now)
     }
 
     /// Reserve the live resource and a worker credit without receiving an FD.
@@ -58,39 +58,37 @@ impl ContentEpochRegistry {
     /// output/allocation and topology; a supplied snapshot is not authority.
     /// `deadline` is fixed by the owner from the original admission time and
     /// the smaller of the transfer and validation timeouts.
-    pub fn reserve_sealed_image(
+    pub fn reserve_isb_image(
         &mut self,
         grant: ContentGrant,
         metadata: ShellImageMetadata,
-        worker: &mut SealedValidationWorker,
+        worker: &mut IsbValidationWorker,
         now: u64,
         deadline: Instant,
-    ) -> Result<SealedImageAdmission, SealedImageAdmissionError> {
+    ) -> Result<IsbImageAdmission, IsbImageAdmissionError> {
         let epoch = self
             .active
             .iter_mut()
             .find(|epoch| epoch.resources.grant() == grant)
-            .ok_or(SealedImageAdmissionError::Resource(
-                ContentStoreError::Stale,
-            ))?;
+            .ok_or(IsbImageAdmissionError::Resource(ContentStoreError::Stale))?;
         let description = epoch
             .allocations
-            .sealed_image_description(&metadata)
-            .map_err(SealedImageAdmissionError::Allocation)?;
+            .isb_image_description(&metadata)
+            .map_err(IsbImageAdmissionError::Allocation)?;
         let bytes = usize::try_from(description.total_bytes)
-            .map_err(|_| SealedImageAdmissionError::Resource(ContentStoreError::Malformed))?;
+            .map_err(|_| IsbImageAdmissionError::Resource(ContentStoreError::Malformed))?;
         let job = worker
             .reserve(bytes, deadline)
-            .map_err(SealedImageAdmissionError::Worker)?;
-        if let Err(error) = epoch.resources.begin_sealed(
-            TransactionId::from_raw(metadata.offer_id),
-            description,
-            now,
-        ) {
+            .map_err(IsbImageAdmissionError::Worker)?;
+        if let Err(error) =
+            epoch
+                .resources
+                .begin_isb(TransactionId::from_raw(metadata.offer_id), description, now)
+        {
             worker.release_reserved(job);
-            return Err(SealedImageAdmissionError::Resource(error));
+            return Err(IsbImageAdmissionError::Resource(error));
         }
-        Ok(SealedImageAdmission {
+        Ok(IsbImageAdmission {
             metadata,
             worker_job: job,
             grant,

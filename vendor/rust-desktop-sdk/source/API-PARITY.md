@@ -1,5 +1,11 @@
 # C and Rust SDK API parity
 
+ISB terminology (2026-10-18): both SDKs expose the same Immutable Shared Buffer
+construction and finalization operations, through Rust `create_isb` /
+`finish_isb` and C `sophia_ip_isb_create` / `sophia_ip_isb_finish`. Existing image
+producer, shell-adapter and lock-adapter scenarios exercise the renamed APIs.
+The naming change preserves source-kind encodings and custody behavior.
+
 ## Opt-in sealed-image role adapters, Rust, 2026-10-17
 
 The BAR shell adapter (`9cc9678`, corrected by `1e1eecf`) and lock adapter

@@ -1,5 +1,12 @@
 # Sophia desktop SDK for Rust
 
+CPU images use **Immutable Shared Buffers (ISB)**, currently backed by sealed
+memfds. The buffer builders are `create_isb` / `finish_isb` in Rust and
+`sophia_ip_isb_create` / `sophia_ip_isb_finish` in C. Names changed together;
+source-kind numbers, discovery strings and seal enforcement are unchanged.
+Byte-upload removal is a separate pending migration under Sophia's accepted
+ISB architecture; the current library still contains that path.
+
 The [2026-10-17 release audit](RELEASE-QUALIFICATION.md) records verified
 C/Rust capability parity, exact tested revisions and remaining limits.
 
@@ -29,7 +36,7 @@ Sophia checkout to build.
 | `sophia-launch-client` | Sophia's local launch-channel authentication: correlated afid exchange, bounded progress and an admitted role root. |
 | `sophia-namespace-client` | Bounded discovery parsing and Linux lookup against a pinned namespace directory; endpoint visibility confers no authority. |
 | `sophia-desktop-ids` | Identifiers every role contract shares. |
-| `sophia-image-producer` | Clockless sealed-memory descriptor producer for shell r9 and lock r2; role adapters remain under development. |
+| `sophia-image-producer` | Clockless ISB descriptor producer for shell r9 and lock r2; role adapters remain under development. |
 | `sophia-shell-protocol` | The shell's typed records and the `sophia_shell_fs_v1` file contract codec. |
 | `sophia-shell-client` | The shell client over the file contract. |
 | `sophia-wm-protocol` | The WM file codecs and passive policy records. |

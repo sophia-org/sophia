@@ -20,7 +20,7 @@ use rustix::net::{
     AddressFamily, RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, SocketAddrUnix,
     SocketFlags, SocketType, accept_with, listen, recvmsg, socket_with,
 };
-use sophia_image_producer::{create_sealed, finish_sealed};
+use sophia_image_producer::{create_isb, finish_isb};
 use sophia_shell_client::*;
 use sophia_shell_protocol::shell_files::*;
 use sophia_shell_protocol::*;
@@ -300,9 +300,9 @@ fn metadata() -> ProducerMetadata {
 }
 
 fn sealed_fd() -> OwnedFd {
-    let source = create_sealed(2, 2).unwrap();
+    let source = create_isb(2, 2).unwrap();
     source.write_pixels(0, &[7u8; 16]).unwrap();
-    finish_sealed(&source).unwrap();
+    finish_isb(&source).unwrap();
     source.into_fd()
 }
 

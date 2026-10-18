@@ -5,21 +5,22 @@ use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, ftruncate, memfd_create
 use crate::ProducerError;
 use crate::io::c_name;
 
-/// A sealed source under construction or ready to offer.
+/// An Immutable Shared Buffer (ISB) under construction or ready to offer.
+/// Linux implements its immutable backing with a sealed memfd.
 ///
 /// This safe builder replaces the C mapping helper: callers fill the
 /// memfd with `write_pixels` (writes at exact offsets through the
-/// file, no mapping), then `finish_sealed` adds the four seals.
+/// file, no mapping), then `finish_isb` adds the four seals.
 /// Because no writable shared mapping can exist through this API,
 /// `F_SEAL_WRITE` cannot be refused for a mapping this crate made;
 /// descriptors mapped writable elsewhere must be unmapped by their
 /// owner before sealing, which this crate cannot observe.
-pub struct SealedSource {
+pub struct IsbSource {
     fd: OwnedFd,
     bytes: u64,
 }
 
-impl SealedSource {
+impl IsbSource {
     pub fn fd(&self) -> std::os::fd::BorrowedFd<'_> {
         self.fd.as_fd()
     }
@@ -60,7 +61,7 @@ impl SealedSource {
 }
 
 /// Create a sealable memfd of `width * height * 4` bytes.
-pub fn create_sealed(width: u32, height: u32) -> Result<SealedSource, ProducerError> {
+pub fn create_isb(width: u32, height: u32) -> Result<IsbSource, ProducerError> {
     if width == 0 || height == 0 {
         return Err(ProducerError::Argument);
     }
@@ -72,13 +73,13 @@ pub fn create_sealed(width: u32, height: u32) -> Result<SealedSource, ProducerEr
     let fd = memfd_create(&name, MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING)
         .map_err(|_| ProducerError::Refused)?;
     ftruncate(&fd, bytes).map_err(|_| ProducerError::Refused)?;
-    Ok(SealedSource { fd, bytes })
+    Ok(IsbSource { fd, bytes })
 }
 
 /// Add WRITE, GROW, SHRINK and SEAL seals. On every result the
 /// caller keeps the descriptor; a refused seal means the descriptor
 /// must not be offered.
-pub fn finish_sealed(source: &SealedSource) -> Result<(), ProducerError> {
+pub fn finish_isb(source: &IsbSource) -> Result<(), ProducerError> {
     let seals = SealFlags::WRITE | SealFlags::GROW | SealFlags::SHRINK | SealFlags::SEAL;
     fcntl_add_seals(source.fd.as_fd(), seals).map_err(|_| ProducerError::Refused)
 }

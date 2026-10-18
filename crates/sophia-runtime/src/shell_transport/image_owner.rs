@@ -1,8 +1,8 @@
-//! Per-component image work survives channel closure and connection replacement.
+//! Per-component ISB (Immutable Shared Buffers) work survives channel closure
+//! and connection replacement.
 use super::{ShellComponentTransport, ShellTransportError};
 use crate::{
-    ContentEpochRegistry, SealedImageJobs, SealedImageSettlement, SealedImageWithdrawal,
-    SealedValidationWorker,
+    ContentEpochRegistry, IsbImageJobs, IsbImageSettlement, IsbImageWithdrawal, IsbValidationWorker,
 };
 use sophia_protocol::{ContentGrant, ContentReason};
 use std::os::fd::BorrowedFd;
@@ -12,18 +12,18 @@ use std::time::Instant;
 /// Call service on every owner turn, even after disconnect, with the same
 /// monotonic millisecond clock used by that component's resource store.
 /// Shutdown must drain pending work before dropping this owner or the registry.
-pub struct ShellSealedImageOwner {
-    jobs: SealedImageJobs,
-    worker: SealedValidationWorker,
-    releases: [Option<SealedImageSettlement>; 4],
+pub struct ShellIsbImageOwner {
+    jobs: IsbImageJobs,
+    worker: IsbValidationWorker,
+    releases: [Option<IsbImageSettlement>; 4],
     waiting: Option<(ContentGrant, u64, Instant, Option<u16>)>,
 }
 
-impl ShellSealedImageOwner {
+impl ShellIsbImageOwner {
     pub fn new(max_resource_bytes: usize, validation_bytes: usize) -> std::io::Result<Self> {
         Ok(Self {
-            jobs: SealedImageJobs::default(),
-            worker: SealedValidationWorker::with_validation_budget(
+            jobs: IsbImageJobs::default(),
+            worker: IsbValidationWorker::with_validation_budget(
                 4,
                 max_resource_bytes,
                 validation_bytes,
@@ -71,7 +71,7 @@ impl ShellSealedImageOwner {
         instant: Instant,
     ) -> Result<(), ShellTransportError> {
         let grant = transport.content_grant();
-        let ready = transport.sealed_image_channel_ready();
+        let ready = transport.isb_image_channel_ready();
         let mut lost = [None; 4];
         for (slot, admission) in lost.iter_mut().zip(self.jobs.admissions()) {
             if !ready || grant != Some(admission.grant) {
@@ -108,7 +108,7 @@ impl ShellSealedImageOwner {
                 *slot = None;
                 continue;
             }
-            match transport.release_sealed_image_source(settlement) {
+            match transport.release_isb_image_source(settlement) {
                 Ok(_) => *slot = None,
                 // The resource drain must journal the terminal status first.
                 // Keep the completed settlement for the next owner turn.
@@ -117,21 +117,21 @@ impl ShellSealedImageOwner {
             }
         }
         if ready {
-            transport.enable_sealed_image_admission()?;
-            while let Some((job, source)) = transport.take_sealed_image_source() {
+            transport.enable_isb_image_admission()?;
+            while let Some((job, source)) = transport.take_isb_image_source() {
                 if let Err((_, source)) = self.jobs.submit(&mut self.worker, job, source) {
                     drop(source);
                     self.jobs.withdraw(
                         epochs,
                         &mut self.worker,
                         job,
-                        SealedImageWithdrawal::Cancelled,
+                        IsbImageWithdrawal::Cancelled,
                         now,
                     )?;
                 }
             }
         }
-        let Some(metadata) = transport.pending_sealed_image_offer() else {
+        let Some(metadata) = transport.pending_isb_image_offer() else {
             self.waiting = None;
             return Ok(());
         };
@@ -163,7 +163,7 @@ impl ShellSealedImageOwner {
         } else if self.pending() == 4 {
             None
         } else {
-            match transport.admit_pending_sealed_image(
+            match transport.admit_pending_isb_image(
                 epochs,
                 &mut self.jobs,
                 &mut self.worker,

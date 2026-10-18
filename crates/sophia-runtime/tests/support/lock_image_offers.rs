@@ -1,12 +1,12 @@
 //! t338 lock slice 4a: sealed offers in custody, from receipt to their
-//! terminal status and source release, and the retired sealed image lease.
+//! terminal status and source release, and the retired ISB image lease.
 //! The test acts as owner: it reserves worker jobs, reports hand-overs and
 //! supplies results. No worker or socket runs here.
 use std::sync::Arc;
 use std::time::Duration;
 
 use super::*;
-use sophia_runtime::{SealedValidationFailure, SharedPixels};
+use sophia_runtime::{IsbValidationFailure, SharedPixels};
 
 const RESOURCE_CANCEL: LockFileKind = LockFileKind::ResourceCancel;
 
@@ -218,15 +218,15 @@ fn source_packets_fault_on_foreign_or_unadmitted_identity_and_stale_after_settli
 fn worker_failures_reject_with_invalid_source_or_validation_timeout() {
     for (failure, reason) in [
         (
-            SealedValidationFailure::Malformed,
+            IsbValidationFailure::Malformed,
             LOCK_RESOURCE_REASON_INVALID_SOURCE,
         ),
         (
-            SealedValidationFailure::Timeout,
+            IsbValidationFailure::Timeout,
             LOCK_RESOURCE_REASON_VALIDATION_TIMEOUT,
         ),
         (
-            SealedValidationFailure::Cancelled,
+            IsbValidationFailure::Cancelled,
             LOCK_RESOURCE_REASON_VALIDATION_TIMEOUT,
         ),
     ] {
@@ -539,8 +539,8 @@ fn a_retired_sealed_image_stays_charged_until_its_last_reader_lets_go() {
         provider.custody.take_inbound(),
         Some(LockInbound::ResourceRetired(retired)) if retired == resource(1)
     ));
-    assert_eq!(provider.custody.sealed_leases_pending(), 1);
-    assert_eq!(provider.custody.collect_sealed_leases(), Ok(false));
+    assert_eq!(provider.custody.isb_leases_pending(), 1);
+    assert_eq!(provider.custody.collect_isb_leases(), Ok(false));
     // Its identity and live place stay taken: with two offers live the
     // limit of three is full.
     let mut again = metadata(5);
@@ -572,7 +572,7 @@ fn a_retired_sealed_image_stays_charged_until_its_last_reader_lets_go() {
         (LockResourceState::Rejected, 6)
     );
     drop(held);
-    assert_eq!(provider.custody.collect_sealed_leases(), Ok(true));
+    assert_eq!(provider.custody.collect_isb_leases(), Ok(true));
     let events = provider.events();
     assert_eq!(kinds(&events), [LockFileKind::ResourceReleased]);
     assert_eq!(
@@ -583,7 +583,7 @@ fn a_retired_sealed_image_stays_charged_until_its_last_reader_lets_go() {
             reason: 0,
         }
     );
-    assert_eq!(provider.custody.sealed_leases_pending(), 0);
+    assert_eq!(provider.custody.isb_leases_pending(), 0);
     // The place is free again.
     provider
         .submit(LockFileKind::ResourceBegin, &upload)

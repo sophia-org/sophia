@@ -1119,8 +1119,12 @@ could not carry one. Using SCM_RIGHTS on the same socket would be a side
 channel outside the protocol. The separate
 [image descriptor channel](sophia-image-channel.md) is accepted for negotiated
 shell r9, with sealed-memory capability bit 13 and DMA-BUF bit 14. It retains
-the `api` line's `fd_transfer=none`, existing byte records and caller-selected
-fallback. Current production and SDKs remain on the byte path until t338.
+the `api` line's `fd_transfer=none`. t338 delivered the sealed path. The
+[October 18 amendment](notes/decisions/qujwzrdz-admit-shell-content-through-a-negotiated-descriptor-channel-beside-the-9p-wire.md#accepted-amendment--immutable-shared-buffers-october-18-2026)
+requires sealed memory for production CPU image uploads and withdraws byte-only
+compatibility and caller-selected byte fallback. The existing byte record
+definitions elsewhere in this document remain a description of implementation awaiting
+retirement under t331; their numeric identities must not be reused.
 
 A 4 MiB resource needs about 64 writes at a 64 KiB msize, compared with 65
 chunks today. Sealed import and DMA-BUF capture have separate admission,
@@ -1140,11 +1144,14 @@ unchanged and still cannot retract an already-open render-node descriptor.
 The C and Rust desktop SDKs expose native records over standard 9P2000.L.
 Client implementations and their dependency pins belong in their repositories.
 Revision 9 reserves image-channel capabilities 13 (sealed) and 14 (DMA-BUF);
-it does not allocate an overview capability. These are accepted contract additions,
-not currently advertised SDK/runtime support. ResourceStatus reason 13
+it does not allocate an overview capability. Sealed support is implemented;
+DMA-BUF retains its separate implementation gates. ResourceStatus reason 13
 (`image_channel_unavailable`) is valid only for Rejected after negotiated r9;
 earlier revisions and all other reason fields keep their existing bounds.
-Current codecs retain the <=12 check until t338 adds revision-aware r9 support.
+Legacy codec entry points retain the <=12 check; revision-aware r9 codecs admit 13.
+The table lists the earlier role boundaries. Production image producers must
+also satisfy the sealed-only requirement; removing byte-only admission from the
+implementation and both SDKs remains migration work.
 Skew is resolved by revision and capability negotiation, with no wire fallback.
 Supervisor replacement starts a fresh process and epoch; reconnect never replays
 unsettled submissions.

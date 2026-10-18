@@ -46,14 +46,14 @@ enum TransferSource {
     Bytes,
     // A stopped worker still owns its mapping until completion. Keep the
     // resource and every byte charged until the owner returns that completion.
-    Sealed {
+    Isb {
         stopped: Option<(ContentReason, TransactionId)>,
     },
 }
 
 enum PixelBacking {
     Bytes(Arc<Vec<u8>>),
-    Sealed(sophia_linux_peer::SealedMapping),
+    Isb(sophia_linux_peer::SealedMapping),
 }
 
 struct Pixels {
@@ -77,7 +77,7 @@ impl ContentResourceLease {
     pub fn bytes(&self) -> &[u8] {
         match &self.0.bytes {
             PixelBacking::Bytes(bytes) => bytes,
-            PixelBacking::Sealed(mapping) => mapping.bytes(),
+            PixelBacking::Isb(mapping) => mapping.bytes(),
         }
     }
     pub fn description(&self) -> &ContentResourceBegin {
@@ -227,9 +227,9 @@ impl ContentResourceStore {
 
     /// Reserves the same bounded resource custody without allocating a byte
     /// upload buffer. ImageAdmitted/SourceReleased belong to the offer owner.
-    /// Every successful reservation needs complete_sealed, including when no
+    /// Every successful reservation needs complete_isb, including when no
     /// worker was started, so cancellation never releases a worker's charge.
-    pub fn begin_sealed(
+    pub fn begin_isb(
         &mut self,
         transaction: TransactionId,
         description: ContentResourceBegin,
@@ -319,7 +319,7 @@ impl ContentResourceStore {
                 // transfer deadline bounds both arrival and validation.
                 idle_deadline: if sealed { deadline } else { idle_deadline },
                 source: if sealed {
-                    TransferSource::Sealed { stopped: None }
+                    TransferSource::Isb { stopped: None }
                 } else {
                     TransferSource::Bytes
                 },
@@ -425,11 +425,11 @@ impl ContentResourceStore {
     /// The result is taken only after the grant, clock and transfer match.
     /// If it remains Some on return, the caller still owns the completion and
     /// must retry or route it to its actual owner; an error alone is not custody.
-    pub fn complete_sealed(
+    pub fn complete_isb(
         &mut self,
         grant: ContentGrant,
         resource: ContentResourceId,
-        result: &mut Option<Result<super::ValidatedSealedPixels, ContentStoreError>>,
+        result: &mut Option<Result<super::ValidatedIsbPixels, ContentStoreError>>,
         now: u64,
     ) -> Result<(), ContentStoreError> {
         if grant != self.limits.grant || result.is_none() {
@@ -440,7 +440,7 @@ impl ContentResourceStore {
             .transfers
             .get(&resource)
             .ok_or(ContentStoreError::Stale)?;
-        let TransferSource::Sealed { stopped } = transfer.source else {
+        let TransferSource::Isb { stopped } = transfer.source else {
             return Err(ContentStoreError::Malformed);
         };
         let result = result.take().expect("completion checked");
@@ -474,7 +474,7 @@ impl ContentResourceStore {
             Accepted {
                 pixels: Arc::new(Pixels {
                     description: transfer.description,
-                    bytes: PixelBacking::Sealed(pixels.0),
+                    bytes: PixelBacking::Isb(pixels.0),
                 }),
                 retiring: false,
                 transaction: transfer.transaction,
@@ -506,7 +506,7 @@ impl ContentResourceStore {
 
     /// The descriptor owner withdraws interest without releasing validation
     /// custody. This also works on a revoked store retained for worker cleanup.
-    pub(super) fn stop_sealed(
+    pub(super) fn stop_isb(
         &mut self,
         resource: ContentResourceId,
         reason: ContentReason,
@@ -517,15 +517,15 @@ impl ContentResourceStore {
             .transfers
             .get_mut(&resource)
             .ok_or(ContentStoreError::Stale)?;
-        let TransferSource::Sealed { stopped } = &mut transfer.source else {
+        let TransferSource::Isb { stopped } = &mut transfer.source else {
             return Err(ContentStoreError::Malformed);
         };
         Ok(stopped.get_or_insert((reason, transfer.transaction)).0)
     }
 
-    pub(super) fn sealed_stop_reason(&self, resource: ContentResourceId) -> Option<ContentReason> {
+    pub(super) fn isb_stop_reason(&self, resource: ContentResourceId) -> Option<ContentReason> {
         match &self.transfers.get(&resource)?.source {
-            TransferSource::Sealed { stopped } => stopped.map(|(reason, _)| reason),
+            TransferSource::Isb { stopped } => stopped.map(|(reason, _)| reason),
             TransferSource::Bytes => None,
         }
     }
@@ -537,7 +537,7 @@ impl ContentResourceStore {
         request: Option<TransactionId>,
     ) {
         if let Some(transfer) = self.transfers.get_mut(&key)
-            && let TransferSource::Sealed { stopped } = &mut transfer.source
+            && let TransferSource::Isb { stopped } = &mut transfer.source
         {
             stopped.get_or_insert((reason, request.unwrap_or(transfer.transaction)));
             return;
@@ -646,7 +646,7 @@ impl ContentResourceStore {
         for resource in ready {
             let value = self.accepted.get_mut(&resource).expect("selected resource");
             let transaction = value.transaction;
-            let defer = !self.revoked && matches!(value.pixels.bytes, PixelBacking::Sealed(_));
+            let defer = !self.revoked && matches!(value.pixels.bytes, PixelBacking::Isb(_));
             if defer {
                 // Keep the backing and its byte charge until ResourceReleased
                 // enters the journal, not merely the outbound FIFO.
@@ -695,7 +695,7 @@ impl ContentResourceStore {
     /// Called by the image owner only after the corresponding ResourceReleased
     /// record has entered the live journal. Queueing the event is insufficient.
     /// Epoch revocation instead drops this obligation with the dead journal.
-    pub fn confirm_sealed_release(
+    pub fn confirm_isb_release(
         &mut self,
         resource: ContentResourceId,
     ) -> Result<(), ContentStoreError> {
@@ -716,7 +716,7 @@ impl ContentResourceStore {
         Ok(())
     }
 
-    pub(crate) fn sealed_release_pending(&self, resource: ContentResourceId) -> bool {
+    pub(crate) fn isb_release_pending(&self, resource: ContentResourceId) -> bool {
         self.accepted
             .get(&resource)
             .is_some_and(|value| value.release_pending)

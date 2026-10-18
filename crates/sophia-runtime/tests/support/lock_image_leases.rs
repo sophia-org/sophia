@@ -1,5 +1,5 @@
 #![cfg(test)]
-//! Sealed leases move from live image to retiring to orphan without adding
+//! ISB leases move from live image to retiring to orphan without adding
 //! entries, and the next epoch's resources count orphans against the same
 //! live-resource and sealed-byte budgets until every clone has gone.
 use super::*;
@@ -50,19 +50,19 @@ fn orphans_keep_their_places_and_bytes_in_the_next_epoch_until_released() {
     let mut ended = Resources::new(limits());
     let live = pixels(64);
     let retired = pixels(16);
-    ended.insert_sealed(id(1), 4, 4, live.clone());
-    ended.insert_sealed(id(2), 2, 2, retired.clone());
+    ended.insert_isb(id(1), 4, 4, live.clone());
+    ended.insert_isb(id(2), 2, 2, retired.clone());
     ended.apply(ResourcePlan::Retire {
         transaction: 5,
         resource: id(2),
     });
     // Retiring keeps its identity, place, bytes and release credit.
     assert!(ended.holds(id(2)));
-    assert_eq!((ended.live(), ended.sealed_bytes()), (2, 80));
+    assert_eq!((ended.live(), ended.isb_bytes()), (2, 80));
     assert_eq!(ended.leases.credits(), 1);
     assert!(budget(&ended.plan_begin(begin(id(3)), &[]).unwrap()));
 
-    let mut orphans = OrphanLeases(ended.take_sealed_leases());
+    let mut orphans = OrphanLeases(ended.take_isb_leases());
     drop(ended);
     assert_eq!(orphans.len(), 2);
     assert!(orphans.poll());
@@ -71,24 +71,24 @@ fn orphans_keep_their_places_and_bytes_in_the_next_epoch_until_released() {
     next.leases.orphans.append(&mut orphans.0);
     // Orphans hold places and bytes but no identity and no credit.
     assert!(!next.holds(id(1)));
-    assert_eq!((next.live(), next.sealed_bytes()), (2, 80));
+    assert_eq!((next.live(), next.isb_bytes()), (2, 80));
     assert_eq!(next.leases.credits(), 0);
     assert!(budget(&next.plan_begin(begin(id(3)), &[]).unwrap()));
     // One reader lets go: one place and its bytes return, silently.
     drop(retired);
     assert!(next.leases.released().is_empty());
-    assert_eq!((next.live(), next.sealed_bytes()), (1, 64));
+    assert_eq!((next.live(), next.isb_bytes()), (1, 64));
     assert!(!budget(&next.plan_begin(begin(id(3)), &[]).unwrap()));
     drop(live);
     next.leases.released();
-    assert_eq!((next.live(), next.sealed_bytes()), (0, 0));
+    assert_eq!((next.live(), next.isb_bytes()), (0, 0));
 }
 
 #[test]
 fn a_retiring_lease_is_released_only_after_its_last_clone() {
     let mut resources = Resources::new(limits());
     let held = pixels(32);
-    resources.insert_sealed(id(1), 4, 2, held.clone());
+    resources.insert_isb(id(1), 4, 2, held.clone());
     let candidate = held.clone();
     resources.apply(ResourcePlan::Retire {
         transaction: 7,

@@ -514,13 +514,13 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
     });
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut negotiated = false;
-    let mut jobs = SealedImageJobs::default();
-    let mut validation = SealedValidationWorker::new(4, 4 << 20).unwrap();
+    let mut jobs = IsbImageJobs::default();
+    let mut validation = IsbValidationWorker::new(4, 4 << 20).unwrap();
     let mut stored = false;
     let mut pending_release = None;
     let mut source_submitted = Some(source_submitted);
     let mut collect = !matches!(coordinated, 4..=6);
-    let mut image_owner = ShellSealedImageOwner::new(4 << 20, 65536).unwrap();
+    let mut image_owner = ShellIsbImageOwner::new(4 << 20, 65536).unwrap();
     while !worker.is_finished() {
         assert!(Instant::now() < deadline, "image wire stalled");
         if !negotiated {
@@ -534,14 +534,14 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                 Err(error) => panic!("resource service: {error}"),
             }
             if let Some(settlement) = pending_release.as_ref() {
-                match transport.release_sealed_image_source(settlement) {
+                match transport.release_isb_image_source(settlement) {
                     Ok(_) => pending_release = None,
                     Err(ShellTransportError::ContentQueueSaturated) => {}
                     Err(error) => panic!("release: {error}"),
                 }
             }
             if receive_sealed.try_recv().is_ok() {
-                supply_sealed(&mut epochs);
+                supply_isb(&mut epochs);
             }
             if receive_admission.try_recv().is_ok() {
                 if (1..=3).contains(&coordinated) {
@@ -550,7 +550,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                         .service(&mut transport, &mut epochs, 0, Instant::now())
                         .unwrap();
                 } else {
-                    transport.enable_sealed_image_admission().unwrap();
+                    transport.enable_isb_image_admission().unwrap();
                 }
                 enabled_admission.send(()).unwrap();
             }
@@ -577,13 +577,13 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                 std::thread::yield_now();
                 continue;
             }
-            if transport.pending_sealed_image_offer().is_some() {
+            if transport.pending_isb_image_offer().is_some() {
                 // A coherent packet is not an allocation grant. Failure after
                 // journal preparation must return both terminal holds and
                 // leave the same offer retryable, without ImageAdmitted.
                 assert!(
                     transport
-                        .admit_pending_sealed_image(
+                        .admit_pending_isb_image(
                             &mut epochs,
                             &mut jobs,
                             &mut validation,
@@ -596,7 +596,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                 assert_eq!(validation.pending(), 0);
                 supply_allocation(&mut epochs);
                 transport
-                    .admit_pending_sealed_image(
+                    .admit_pending_isb_image(
                         &mut epochs,
                         &mut jobs,
                         &mut validation,
@@ -607,9 +607,9 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
             }
             jobs.observe_store_stops(&mut epochs, &mut validation, 0)
                 .unwrap();
-            if let Some((job, source)) = transport.take_sealed_image_source() {
+            if let Some((job, source)) = transport.take_isb_image_source() {
                 assert!(
-                    transport.take_sealed_image_source().is_none(),
+                    transport.take_isb_image_source().is_none(),
                     "Source is take-once"
                 );
                 jobs.submit(&mut validation, job, source).unwrap();
@@ -667,7 +667,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                 stored = true;
                 assert!(
                     matches!(
-                        transport.release_sealed_image_source(&settlement),
+                        transport.release_isb_image_source(&settlement),
                         Err(ShellTransportError::ContentQueueSaturated)
                     ),
                     "release must wait for the queued status to reach the journal"
@@ -714,9 +714,9 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
         assert_eq!(
             usage.backing,
             if admit_source { 0 } else { 8 },
-            "retired sealed backing is released; only byte fallback remains"
+            "retired ISB backing is released; only byte fallback remains"
         );
-        assert_eq!(usage.retiring, 0, "journal custody released sealed backing");
+        assert_eq!(usage.retiring, 0, "journal custody released ISB backing");
     }
     drop(transport);
     assert!(
@@ -725,7 +725,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
     );
 }
 
-fn supply_sealed(epochs: &mut ContentEpochRegistry) {
+fn supply_isb(epochs: &mut ContentEpochRegistry) {
     use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, memfd_create};
     use std::io::Write;
     let mut file = std::fs::File::from(
@@ -742,7 +742,7 @@ fn supply_sealed(epochs: &mut ContentEpochRegistry) {
     )
     .unwrap();
     let mapping = sophia_linux_peer::SealedMapping::map(file.into(), 8).unwrap();
-    let mut validation = SealedPixelValidation::new(mapping).unwrap();
+    let mut validation = IsbPixelValidation::new(mapping).unwrap();
     assert!(validation.step().unwrap());
     let grant = ContentGrant {
         connection_epoch: 1,
@@ -754,7 +754,7 @@ fn supply_sealed(epochs: &mut ContentEpochRegistry) {
     };
     let store = epochs.resources_mut(grant).unwrap();
     store
-        .begin_sealed(
+        .begin_isb(
             TransactionId::from_raw(99),
             ContentResourceBegin {
                 grant,
@@ -771,7 +771,7 @@ fn supply_sealed(epochs: &mut ContentEpochRegistry) {
         )
         .unwrap();
     store
-        .complete_sealed(
+        .complete_isb(
             grant,
             resource,
             &mut Some(Ok(validation.finish().unwrap())),

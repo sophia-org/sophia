@@ -450,7 +450,7 @@ impl Files {
     }
 }
 
-/// A 4x4 sealed image for the one allocation of [`locked`].
+/// A 4x4 ISB image for the one allocation of [`locked`].
 fn offer_metadata(offer: u64) -> LockImageMetadata {
     LockImageMetadata {
         offer_id: offer,
@@ -522,7 +522,7 @@ enum Ending {
 
 fn run_ready(label: &str, ending: Ending) {
     let (mut transport, directory) = transport(label);
-    transport.enable_sealed_images(policy(2000)).unwrap();
+    transport.enable_isb_images(policy(2000)).unwrap();
     let (mut provider, stream) = Provider::start(&mut transport, &directory);
     let (files, socket, provider) = pump(
         &mut transport,
@@ -597,7 +597,7 @@ fn a_ready_channel_closes_when_the_provider_exits() {
 
 fn run_failed_hello(label: &str, bad_generation: bool) {
     let (mut transport, directory) = transport(label);
-    transport.enable_sealed_images(policy(100)).unwrap();
+    transport.enable_isb_images(policy(100)).unwrap();
     let (mut provider, stream) = Provider::start(&mut transport, &directory);
     pump(
         &mut transport,
@@ -634,7 +634,7 @@ fn a_missing_hello_times_out() {
 #[test]
 fn a_legacy_connection_never_gets_a_channel() {
     let (mut transport, directory) = transport("legacy");
-    transport.enable_sealed_images(policy(2000)).unwrap();
+    transport.enable_isb_images(policy(2000)).unwrap();
     transport
         .authorize_supervised_pid(std::process::id())
         .unwrap();

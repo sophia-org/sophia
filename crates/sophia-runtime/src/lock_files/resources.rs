@@ -8,7 +8,7 @@ use std::sync::Arc;
 use sophia_9p::Errno;
 use sophia_protocol::lock_files::*;
 
-use super::leases::{SealedLease, SealedLeases};
+use super::leases::{IsbLease, IsbLeases};
 use super::reason;
 use crate::SharedPixels;
 
@@ -148,8 +148,8 @@ pub(super) struct Resources {
     /// resources and spare storage together stay within the epoch's
     /// live-resource limit.
     spare: Vec<Arc<[u8]>>,
-    /// Sealed images retired or inherited, charged until released.
-    pub(super) leases: SealedLeases,
+    /// ISB images retired or inherited, charged until released.
+    pub(super) leases: IsbLeases,
 }
 
 impl Resources {
@@ -160,7 +160,7 @@ impl Resources {
             images: BTreeMap::new(),
             next_binding: 0,
             spare: Vec::new(),
-            leases: SealedLeases::default(),
+            leases: IsbLeases::default(),
         }
     }
 
@@ -224,28 +224,28 @@ impl Resources {
             || self.leases.holds(resource)
     }
 
-    /// Whether `resource` is a live sealed image.
-    pub(super) fn is_sealed(&self, resource: LockResourceId) -> bool {
+    /// Whether `resource` is a live ISB image.
+    pub(super) fn is_isb(&self, resource: LockResourceId) -> bool {
         self.images
             .get(&resource)
             .is_some_and(|image| image.storage.is_none())
     }
 
-    /// Leases of the live sealed images and of those retiring or
+    /// Leases of the live ISB images and of those retiring or
     /// inherited, as the epoch ends.
-    pub(super) fn take_sealed_leases(&mut self) -> Vec<SealedLease> {
+    pub(super) fn take_isb_leases(&mut self) -> Vec<IsbLease> {
         let mut leases: Vec<_> = self
             .images
             .values()
             .filter(|image| image.storage.is_none())
-            .map(|image| SealedLease::new(&image.pixels))
+            .map(|image| IsbLease::new(&image.pixels))
             .collect();
         leases.extend(self.leases.take());
         leases
     }
 
-    /// Bytes of sealed images, live or still leased.
-    pub(super) fn sealed_bytes(&self) -> u64 {
+    /// Bytes of ISB images, live or still leased.
+    pub(super) fn isb_bytes(&self) -> u64 {
         self.images
             .values()
             .filter(|image| image.storage.is_none())
@@ -254,9 +254,9 @@ impl Resources {
             + self.leases.bytes()
     }
 
-    /// A validated sealed image, admitted within the live-resource limit
+    /// A validated ISB image, admitted within the live-resource limit
     /// as an offer before it became one.
-    pub(super) fn insert_sealed(
+    pub(super) fn insert_isb(
         &mut self,
         resource: LockResourceId,
         width_px: u32,
@@ -417,7 +417,7 @@ impl Resources {
                 resource,
             } => {
                 // Session may still show it; the storage is reused only once
-                // every other holder has let it go. A sealed image stays
+                // every other holder has let it go. An ISB image stays
                 // charged until then.
                 match self.images.remove(&resource) {
                     Some(Image {

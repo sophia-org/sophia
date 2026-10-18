@@ -294,7 +294,7 @@ impl LockFileExport {
         })
     }
 
-    /// Configure the sealed image channel before negotiation; see
+    /// Configure the ISB image channel before negotiation; see
     /// [`LockFileCustody::configure_image`]. Its files appear only after
     /// negotiation discloses the channel.
     pub fn configure_image(&mut self, settings: LockImageSettings) -> Result<(), Errno> {

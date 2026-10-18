@@ -1,4 +1,4 @@
-//! Clockless sealed-image producer for one Sophia image channel.
+//! Clockless ISB (Immutable Shared Buffers) image producer for one Sophia image channel.
 //!
 //! The producer serves one role connection: it consumes one discovery
 //! set, owns the SEQPACKET side socket after attach, sends `Hello`,
@@ -17,14 +17,14 @@
 //! at `begin` even when granted; this crate is the sealed CPU plane.
 
 mod io;
+mod isb;
 mod offers;
 mod producer;
 mod role;
-mod sealed;
 
 pub use io::connect;
+pub use isb::{IsbSource, create_isb, finish_isb};
 pub use producer::ImageProducer;
-pub use sealed::{SealedSource, create_sealed, finish_sealed};
 
 /// The role this producer speaks on its channel.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

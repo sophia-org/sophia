@@ -1,4 +1,4 @@
-//! Sealed image offers of one connection epoch, from the `ImageBegin`
+//! ISB image offers of one connection epoch, from the `ImageBegin`
 //! receipt to their terminal status and source release. Custody decides and
 //! journals; the owner holds the validation worker and reports its
 //! reservations and results here. Each live offer holds two journal
@@ -12,7 +12,7 @@ use sophia_9p::Errno;
 use sophia_protocol::lock_files::*;
 
 use super::{LockFileCustody, LockImageReadiness, LockInbound, reason};
-use crate::{SealedValidationFailure, SharedPixels};
+use crate::{IsbValidationFailure, SharedPixels};
 
 /// The contract's `topology` reason: the offer names an earlier topology.
 const TOPOLOGY: u16 = 7;
@@ -83,7 +83,7 @@ impl Offers {
         self.live.iter().map(Offer::resource)
     }
 
-    /// Declared bytes of offers that hold sealed backing or a reservation.
+    /// Declared bytes of offers that hold ISB backing or a reservation.
     fn reserved_bytes(&self) -> u64 {
         self.live
             .iter()
@@ -314,7 +314,7 @@ impl LockFileCustody {
                         && allocation.allocation_id == metadata.allocation_id
                 })
             };
-            let sealed = self.resources.sealed_bytes() + offers.reserved_bytes();
+            let sealed = self.resources.isb_bytes() + offers.reserved_bytes();
             let refusal = if now >= offer.deadline {
                 Some(LOCK_RESOURCE_REASON_VALIDATION_TIMEOUT)
             } else if metadata.admission_epoch != self.lock.lock_epoch {
@@ -464,7 +464,7 @@ impl LockFileCustody {
     pub fn image_completed(
         &mut self,
         job: u64,
-        result: Result<SharedPixels, SealedValidationFailure>,
+        result: Result<SharedPixels, IsbValidationFailure>,
     ) -> Result<u64, Errno> {
         self.live()?;
         let offers = self.offers().ok_or(Errno::ESTALE)?;
@@ -483,15 +483,15 @@ impl LockFileCustody {
                 CancelledBeforeImport,
             ),
             (None, Ok(_)) => (Accepted, reason::NONE, Retained),
-            (None, Err(SealedValidationFailure::Malformed)) => (
+            (None, Err(IsbValidationFailure::Malformed)) => (
                 Rejected,
                 LOCK_RESOURCE_REASON_INVALID_SOURCE,
                 RefusedBeforeUse,
             ),
-            (None, Err(SealedValidationFailure::SizeMismatch)) => {
+            (None, Err(IsbValidationFailure::SizeMismatch)) => {
                 (Rejected, reason::SIZE_MISMATCH, RefusedBeforeUse)
             }
-            (None, Err(SealedValidationFailure::Timeout | SealedValidationFailure::Cancelled)) => (
+            (None, Err(IsbValidationFailure::Timeout | IsbValidationFailure::Cancelled)) => (
                 Rejected,
                 LOCK_RESOURCE_REASON_VALIDATION_TIMEOUT,
                 RefusedBeforeUse,
@@ -509,7 +509,7 @@ impl LockFileCustody {
             let resource = offer.resource();
             let (width_px, height_px) = (offer.metadata.width, offer.metadata.height);
             self.resources
-                .insert_sealed(resource, width_px, height_px, pixels.clone());
+                .insert_isb(resource, width_px, height_px, pixels.clone());
             self.inbound.push_back(LockInbound::ResourceReady {
                 resource,
                 width_px,

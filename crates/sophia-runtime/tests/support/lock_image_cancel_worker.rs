@@ -333,7 +333,7 @@ fn locked() -> LockObject {
     }
 }
 
-/// A 4x4 sealed image for the one allocation of [`locked`].
+/// A 4x4 ISB image for the one allocation of [`locked`].
 fn offer_metadata(offer: u64) -> LockImageMetadata {
     LockImageMetadata {
         offer_id: offer,
@@ -753,7 +753,7 @@ fn dispatch_then_serve(transport: &mut LockFileTransport) {
             );
             let custody = server.export_mut().files_mut().custody_mut();
             transport.orphans.poll();
-            journalled |= custody.collect_sealed_leases().unwrap_or(false);
+            journalled |= custody.collect_isb_leases().unwrap_or(false);
             if let Some(worker) = &mut transport.worker {
                 journalled |= worker.serve(custody, now);
             }
@@ -797,7 +797,7 @@ fn dispatch_then_serve(transport: &mut LockFileTransport) {
 #[test]
 fn cancel_while_validating_settles_on_the_real_completion() {
     let (mut transport, directory) = transport("cancel-worker");
-    transport.enable_sealed_images(policy(2000)).unwrap();
+    transport.enable_isb_images(policy(2000)).unwrap();
     let (mut provider, stream) = Provider::start(&mut transport, &directory);
     let source_sent = Arc::new(AtomicBool::new(false));
     let job_held = Arc::new(AtomicBool::new(false));

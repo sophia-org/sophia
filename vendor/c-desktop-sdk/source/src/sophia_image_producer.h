@@ -1,7 +1,8 @@
 #ifndef SOPHIA_IMAGE_PRODUCER_H
 #define SOPHIA_IMAGE_PRODUCER_H
 /* Image-channel producer for one role connection: discovery, Hello and the
- * ChannelReady barrier, up to four offers, sealed sources and their custody.
+ * ChannelReady barrier, up to four offers, Immutable Shared Buffers (ISB)
+ * and their custody.
  * Single thread, no allocator, no clock. Callers pass CLOCK_MONOTONIC
  * milliseconds; a now_ms smaller than the previous call is ARGUMENT.
  *
@@ -214,10 +215,10 @@ enum sophia_ip_path sophia_ip_path(const struct sophia_ip *);
 /* A fresh sealable memfd of width*height*4 bytes, mapped writable for the
  * caller to fill. On OK the caller owns *fd and the mapping; otherwise
  * nothing was created. */
-int sophia_ip_sealed_create(uint32_t width, uint32_t height, int *fd, void **pixels,
-                            size_t *bytes);
+int sophia_ip_isb_create(uint32_t width, uint32_t height, int *fd, void **pixels,
+                         size_t *bytes);
 /* Unmaps pixels, then adds WRITE, GROW, SHRINK and SEAL seals. The caller
  * keeps fd on every result. ARGUMENT leaves the mapping in place; REFUSED
  * means the mapping is gone but sealing failed, so fd must not be offered. */
-int sophia_ip_sealed_finish(int fd, void *pixels, size_t bytes);
+int sophia_ip_isb_finish(int fd, void *pixels, size_t bytes);
 #endif

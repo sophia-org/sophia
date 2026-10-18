@@ -4,7 +4,7 @@ use std::os::fd::AsFd;
 
 use sophia_image_producer::{
     ChannelState, CloseCause, ImageEvent, ImageRole, OfferState, ProducerError, ReadyEvents,
-    ResourceStatusKind, create_sealed,
+    ResourceStatusKind, create_isb,
 };
 use sophia_shell_protocol::shell_files::ShellImagePacket;
 use support::{config, metadata, nothing_waiting, ready_producer, recv_packet, sealed_fd};
@@ -283,7 +283,7 @@ fn lock_role_runs_the_same_custody_flow() {
 #[test]
 fn unsealed_source_is_refused_in_ready_and_returned() {
     let (mut producer, _peer) = ready_producer(ImageRole::Shell);
-    let unsealed = create_sealed(2, 2).unwrap().into_fd();
+    let unsealed = create_isb(2, 2).unwrap().into_fd();
     let (error, returned) = producer.begin(metadata(21), unsealed, 4).unwrap_err();
     assert_eq!(error, ProducerError::Refused);
     drop(returned);

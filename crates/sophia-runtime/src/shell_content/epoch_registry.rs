@@ -7,7 +7,7 @@ use super::{
 };
 use sophia_protocol::{ContentGrant, ContentLimits};
 mod image;
-pub use image::{SealedImageAdmission, SealedImageAdmissionError};
+pub use image::{IsbImageAdmission, IsbImageAdmissionError};
 
 pub struct ContentEpochRegistry {
     active: Vec<ContentEpoch>,
@@ -203,11 +203,11 @@ impl ContentEpochRegistry {
     /// Reconcile worker custody with the exact grant, including disconnected
     /// epochs. This does not reopen retired stores for ordinary requests. An
     /// unmatched or mistimed result remains owned by the caller for recovery.
-    pub fn complete_sealed(
+    pub fn complete_isb(
         &mut self,
         grant: ContentGrant,
         resource: sophia_protocol::ContentResourceId,
-        result: &mut Option<Result<super::ValidatedSealedPixels, ContentStoreError>>,
+        result: &mut Option<Result<super::ValidatedIsbPixels, ContentStoreError>>,
         now: u64,
     ) -> Result<(), ContentStoreError> {
         let epoch = self
@@ -216,9 +216,7 @@ impl ContentEpochRegistry {
             .chain(&mut self.retired)
             .find(|epoch| epoch.resources.grant() == grant)
             .ok_or(ContentStoreError::Stale)?;
-        let outcome = epoch
-            .resources
-            .complete_sealed(grant, resource, result, now);
+        let outcome = epoch.resources.complete_isb(grant, resource, result, now);
         self.collect();
         outcome
     }

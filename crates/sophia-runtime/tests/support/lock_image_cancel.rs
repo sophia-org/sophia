@@ -41,7 +41,7 @@ impl Files {
 #[test]
 fn an_unsent_offer_cancel_settles_once_and_its_duplicate_fails() {
     let (mut transport, directory) = transport("cancel-unsent");
-    transport.enable_sealed_images(policy(2000)).unwrap();
+    transport.enable_isb_images(policy(2000)).unwrap();
     let (mut provider, stream) = Provider::start(&mut transport, &directory);
     let provider = pump(
         &mut transport,
@@ -68,7 +68,7 @@ fn an_unsent_offer_cancel_settles_once_and_its_duplicate_fails() {
 #[test]
 fn channel_loss_rejects_an_unsent_offer_after_channel_closed() {
     let (mut transport, directory) = transport("cancel-close");
-    transport.enable_sealed_images(policy(2000)).unwrap();
+    transport.enable_isb_images(policy(2000)).unwrap();
     let (mut provider, stream) = Provider::start(&mut transport, &directory);
     let provider = pump(
         &mut transport,

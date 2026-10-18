@@ -27,7 +27,7 @@ fn sealed_policy_fits_the_topology_derived_role_limits() {
         limits,
     )
     .unwrap();
-    transport.enable_sealed_images(policy).unwrap();
+    transport.enable_isb_images(policy).unwrap();
     // Enabling the owner policy alone grants no unauthenticated channel.
     assert!(!directory.join("image.sock").exists());
     drop(transport);

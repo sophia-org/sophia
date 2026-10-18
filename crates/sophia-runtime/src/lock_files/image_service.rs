@@ -22,7 +22,7 @@ use crate::image_channel::{
     ImageHelloPending, receive_image_datagram,
 };
 
-/// What Session grants a protected provider's sealed image channel. Each
+/// What Session grants a protected provider's ISB image channel. Each
 /// epoch's discovery, limits and formats derive from this and the lock
 /// limits; legacy connections never receive a channel.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

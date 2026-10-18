@@ -266,10 +266,10 @@ static int sealed(uint32_t w, uint32_t h)
     void *pixels;
     size_t bytes;
     int fd;
-    assert(sophia_ip_sealed_create(w, h, &fd, &pixels, &bytes) == SOPHIA_IPR_OK);
+    assert(sophia_ip_isb_create(w, h, &fd, &pixels, &bytes) == SOPHIA_IPR_OK);
     assert(bytes == (size_t)w * h * 4);
     memset(pixels, 0x40, bytes);
-    assert(sophia_ip_sealed_finish(fd, pixels, bytes) == SOPHIA_IPR_OK);
+    assert(sophia_ip_isb_finish(fd, pixels, bytes) == SOPHIA_IPR_OK);
     return fd;
 }
 
@@ -590,7 +590,7 @@ static void begin_refusals(void)
     ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
     base = fd_count();
     /* The caller keeps its fd on every refusal. */
-    assert(sophia_ip_sealed_create(16, 16, &raw, &pixels, &bytes) == SOPHIA_IPR_OK);
+    assert(sophia_ip_isb_create(16, 16, &raw, &pixels, &bytes) == SOPHIA_IPR_OK);
     assert(sophia_ip_begin(&p, &m, raw, now, body, &offer) == SOPHIA_IPR_REFUSED); /* unsealed */
     assert(fcntl(raw, F_GETFD) >= 0 && m.offer == 0 && offer == 0);
     assert(fcntl(raw, F_ADD_SEALS, F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL) == 0);
@@ -947,12 +947,12 @@ static void sealed_helpers(void)
     void *pixels;
     size_t bytes;
     int fd;
-    assert(sophia_ip_sealed_create(0, 1, &fd, &pixels, &bytes) == SOPHIA_IPR_ARGUMENT);
-    assert(sophia_ip_sealed_create(UINT32_MAX, UINT32_MAX, &fd, &pixels, &bytes) ==
+    assert(sophia_ip_isb_create(0, 1, &fd, &pixels, &bytes) == SOPHIA_IPR_ARGUMENT);
+    assert(sophia_ip_isb_create(UINT32_MAX, UINT32_MAX, &fd, &pixels, &bytes) ==
            SOPHIA_IPR_ARGUMENT);
-    assert(sophia_ip_sealed_create(4, 2, &fd, &pixels, &bytes) == SOPHIA_IPR_OK && bytes == 32);
-    assert(sophia_ip_sealed_finish(fd, NULL, bytes) == SOPHIA_IPR_ARGUMENT);
-    assert(sophia_ip_sealed_finish(fd, pixels, bytes) == SOPHIA_IPR_OK);
+    assert(sophia_ip_isb_create(4, 2, &fd, &pixels, &bytes) == SOPHIA_IPR_OK && bytes == 32);
+    assert(sophia_ip_isb_finish(fd, NULL, bytes) == SOPHIA_IPR_ARGUMENT);
+    assert(sophia_ip_isb_finish(fd, pixels, bytes) == SOPHIA_IPR_OK);
     assert((fcntl(fd, F_GET_SEALS) & SEALS) == SEALS);
     assert(write(fd, "x", 1) < 0 && errno == EPERM);
     assert(ftruncate(fd, 64) < 0);

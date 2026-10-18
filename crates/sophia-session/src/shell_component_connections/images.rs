@@ -3,7 +3,7 @@ use super::Connection;
 use sophia_protocol::shell_files::{
     ShellImageDiscovery, ShellImageFormats, ShellImageLimits, ShellImageRoleBounds,
 };
-use sophia_runtime::{ShellSealedImageOwner, ShellTransportError};
+use sophia_runtime::{ShellIsbImageOwner, ShellTransportError};
 use std::sync::OnceLock;
 use std::time::Instant;
 
@@ -27,7 +27,7 @@ pub(super) fn configure(connection: &mut Connection) -> Result<(), ShellTranspor
         // is the role contract ceiling; each admission checks the current grant.
         let maximum = sophia_protocol::ContentLimits::prototype(limits.grant).max_resource_bytes;
         connection.images = Some(
-            ShellSealedImageOwner::new(maximum as usize, VALIDATION_BYTES as usize)
+            ShellIsbImageOwner::new(maximum as usize, VALIDATION_BYTES as usize)
                 .map_err(|error| ShellTransportError::Io(error.to_string()))?,
         );
     }

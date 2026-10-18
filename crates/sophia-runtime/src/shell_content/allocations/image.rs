@@ -3,7 +3,7 @@ use super::*;
 use sophia_protocol::shell_files::{SHELL_IMAGE_SOURCE_SEALED_MEMORY, ShellImageMetadata};
 
 impl ContentAllocationStore {
-    pub(crate) fn sealed_image_description(
+    pub(crate) fn isb_image_description(
         &self,
         metadata: &ShellImageMetadata,
     ) -> Result<ContentResourceBegin, ContentAllocationError> {
@@ -54,7 +54,7 @@ impl ContentAllocationStore {
             height_px: metadata.height,
             rendered_scale_numerator: allocation.scale_numerator,
             rendered_scale_denominator: allocation.scale_denominator,
-            pixel_format: 1, // Sealed metadata validation above requires tight BGRA8.
+            pixel_format: 1, // Isb metadata validation above requires tight BGRA8.
             chunk_count: metadata.height.div_ceil(rows),
             total_bytes: metadata.declared_bytes,
         };

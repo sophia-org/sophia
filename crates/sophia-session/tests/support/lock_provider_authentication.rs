@@ -377,7 +377,7 @@ fn slow_protected_spawn_does_not_block_and_cancelled_completion_cannot_authorize
 }
 
 #[test]
-fn sealed_image_offer_crosses_through_the_normal_provider_owner() {
+fn isb_image_offer_crosses_through_the_normal_provider_owner() {
     let peer = Peer::build();
     let directory = Directory::new("image");
     let reports = directory.0.join("reports");
@@ -396,7 +396,7 @@ fn sealed_image_offer_crosses_through_the_normal_provider_owner() {
     // The supplied test transport carries exactly the policy the
     // normal start path enables; with_service itself is unchanged.
     transport
-        .enable_sealed_images(crate::session_lock_object::session_lock_image_policy(
+        .enable_isb_images(crate::session_lock_object::session_lock_image_policy(
             &limits(),
         ))
         .unwrap();

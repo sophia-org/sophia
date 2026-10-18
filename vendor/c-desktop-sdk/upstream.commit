@@ -1,14 +1,14 @@
-tree c06f17a463ba1f9b42f8bcd272ce795d80e234e1
-parent f5e499c0f790f56dc7a4214755ef0237a75f1f7f
-author Mason Green <mason@greenm01.net> 1792277420 -0400
-committer Mason Green <mason@greenm01.net> 1792277420 -0400
+tree 95fe0eb50a0cd936f093a074a2db64b067e7df61
+parent d51b0336649757eaf7bf6970c50c14786f0a4772
+author Mason Green <mason@greenm01.net> 1792330694 -0400
+committer Mason Green <mason@greenm01.net> 1792330694 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatP7rBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKjPQEAw0q/ILdRjaL+StkztvAO
- HhqawmHBRbv43+nReoqwMpIBAPZzRYXzxcbmYv06nAbyS+kpLjT9llS1OS4Ot8S4
- 1isP
- =IDGy
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatTLxhsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKIVgEA5jIB3/UF+M+wGJWdkScU
+ Na12wdOdqIJcUL6HS/9tD1QA/16NI9sX+8NDTVziA5lzCoof8Wgqju8JwpA/efmH
+ XisN
+ =hO0W
  -----END PGP SIGNATURE-----
 
-fix(image): require supported revisions and packet sockets before custody
+Name CPU image buffers Immutable Shared Buffers (ISB)

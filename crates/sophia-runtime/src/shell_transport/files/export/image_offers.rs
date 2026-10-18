@@ -1,7 +1,7 @@
 //! Four live offers, each retaining its terminal journal credits and exact Source identity.
 use super::super::journal::JournalReservation;
 use super::*;
-use crate::{ContentEpochRegistry, SealedImageJobs, SealedValidationWorker};
+use crate::{ContentEpochRegistry, IsbImageJobs, IsbValidationWorker};
 use std::os::fd::OwnedFd;
 
 pub(in crate::shell_transport) const MAX_IMAGE_OFFERS: usize = 4;
@@ -118,8 +118,8 @@ impl ShellFiles {
         &mut self,
         grant: ContentGrant,
         epochs: &mut ContentEpochRegistry,
-        jobs: &mut SealedImageJobs,
-        worker: &mut SealedValidationWorker,
+        jobs: &mut IsbImageJobs,
+        worker: &mut IsbValidationWorker,
         now: u64,
         deadline: Instant,
     ) -> Result<u64, Errno> {
@@ -182,13 +182,11 @@ impl ShellFiles {
             let job = jobs
                 .reserve(epochs, worker, grant, metadata, now, deadline)
                 .map_err(|error| match error {
-                    crate::SealedImageAdmissionError::Worker(
-                        crate::SealedSubmitFailure::Capacity,
-                    )
-                    | crate::SealedImageAdmissionError::Resource(
-                        crate::ContentStoreError::Budget,
-                    ) => Errno::EAGAIN,
-                    crate::SealedImageAdmissionError::Resource(
+                    crate::IsbImageAdmissionError::Worker(crate::IsbSubmitFailure::Capacity)
+                    | crate::IsbImageAdmissionError::Resource(crate::ContentStoreError::Budget) => {
+                        Errno::EAGAIN
+                    }
+                    crate::IsbImageAdmissionError::Resource(
                         crate::ContentStoreError::Stale | crate::ContentStoreError::Revoked,
                     ) => Errno::ESTALE,
                     _ => Errno::EINVAL,

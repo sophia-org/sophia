@@ -1,5 +1,11 @@
 # C and Rust SDK API parity
 
+ISB terminology (2026-10-18): both SDKs expose the same Immutable Shared Buffer
+construction and finalization operations, through Rust `create_isb` /
+`finish_isb` and C `sophia_ip_isb_create` / `sophia_ip_isb_finish`. Existing image
+producer, shell-adapter and lock-adapter scenarios exercise the renamed APIs.
+The naming change preserves source-kind encodings and custody behavior.
+
 ## Producer transport and revision preconditions, 2026-10-17
 
 The producer accepts only the implemented shell r9 or lock r2 selection and

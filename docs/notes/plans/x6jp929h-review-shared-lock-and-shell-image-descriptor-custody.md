@@ -8,6 +8,15 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
+On October 18 niltempus selected
+[Immutable Shared Buffers (ISB) for production CPU image uploads](../decisions/qujwzrdz-admit-shell-content-through-a-negotiated-descriptor-channel-beside-the-9p-wire.md#accepted-amendment--immutable-shared-buffers-october-18-2026).
+Byte-only client compatibility and byte fallback are no longer requirements.
+Their removal is tracked in the
+[t331 migration](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#immutable-shared-buffers--october-18).
+The historical fallback controls below remain evidence for the implemented
+t338 contract; they do not impose a continuing compatibility obligation.
+t338 stays closed, and its recorded measurements remain unchanged.
+
 On October 17, niltempus accepted closing t338 on the implemented sealed-memory
 path, its recorded SDK/export and custody controls, and this report-only paired
 panel CPU calibration. No CPU improvement threshold was imposed on t338.

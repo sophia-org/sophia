@@ -207,7 +207,7 @@ static void run_image(struct sophia_lc_client *client, int endpoint_dir,
     int source = -1;
     void *pixels = NULL;
     size_t bytes = 0;
-    assert(sophia_ip_sealed_create(alloc->pixel_width, alloc->pixel_height,
+    assert(sophia_ip_isb_create(alloc->pixel_width, alloc->pixel_height,
                                    &source, &pixels, &bytes) == SOPHIA_IPR_OK);
     assert(bytes == (size_t)alloc->pixel_width * alloc->pixel_height * 4);
     /* Patterned RGB with a full alpha byte: a valid premultiplied
@@ -215,7 +215,7 @@ static void run_image(struct sophia_lc_client *client, int endpoint_dir,
     for (size_t i = 0; i < bytes; ++i)
         ((unsigned char *)pixels)[i] =
             (i % 4 == 3) ? 255 : (unsigned char)(i * 31 + 7);
-    assert(sophia_ip_sealed_finish(source, pixels, bytes) == SOPHIA_IPR_OK);
+    assert(sophia_ip_isb_finish(source, pixels, bytes) == SOPHIA_IPR_OK);
     struct sophia_ic_metadata meta;
     memset(&meta, 0, sizeof meta);
     meta.resource_id = 7;

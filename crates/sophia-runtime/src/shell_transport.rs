@@ -42,7 +42,7 @@ mod files;
 mod image_configuration;
 mod image_offers;
 mod image_owner;
-pub use image_owner::ShellSealedImageOwner;
+pub use image_owner::ShellIsbImageOwner;
 mod indicator_responses;
 pub(crate) mod outbound;
 mod outbox;
@@ -510,11 +510,11 @@ impl ShellComponentTransport {
                 sophia_protocol::ShellContentRecord::ResourceReleased(released),
             ) = published.record
                 && let Some(store) = resources.as_deref_mut()
-                && store.sealed_release_pending(released.resource)
+                && store.isb_release_pending(released.resource)
             {
                 // The journal now owns this exact terminal record. Merely
-                // queueing it could not release a sealed backing's charge.
-                store.confirm_sealed_release(released.resource)?;
+                // queueing it could not release an ISB backing's charge.
+                store.confirm_isb_release(released.resource)?;
             }
         }
         Ok(true)

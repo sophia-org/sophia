@@ -275,9 +275,9 @@ static int sealed(uint32_t w, uint32_t h)
     void *pixels;
     size_t bytes;
     int fd;
-    assert(sophia_ip_sealed_create(w, h, &fd, &pixels, &bytes) == SOPHIA_IPR_OK);
+    assert(sophia_ip_isb_create(w, h, &fd, &pixels, &bytes) == SOPHIA_IPR_OK);
     memset(pixels, 0x40, bytes);
-    assert(sophia_ip_sealed_finish(fd, pixels, bytes) == SOPHIA_IPR_OK);
+    assert(sophia_ip_isb_finish(fd, pixels, bytes) == SOPHIA_IPR_OK);
     return fd;
 }
 

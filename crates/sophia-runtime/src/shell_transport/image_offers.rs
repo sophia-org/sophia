@@ -1,6 +1,6 @@
 //! Explicit resource-owner hooks for the authenticated shell image channel.
 use super::{ShellComponentTransport, ShellTransportError};
-use crate::{ContentEpochRegistry, SealedImageJobs, SealedImageSettlement, SealedValidationWorker};
+use crate::{ContentEpochRegistry, IsbImageJobs, IsbImageSettlement, IsbValidationWorker};
 use sophia_protocol::ContentReason;
 use sophia_protocol::shell_files::{ShellImageMetadata, ShellSourceDisposition};
 use std::os::fd::OwnedFd;
@@ -23,7 +23,7 @@ fn wire_error(error: sophia_9p::Errno) -> ShellTransportError {
 impl ShellComponentTransport {
     /// False after channel closure or epoch loss. The owner must then withdraw
     /// this grant's pending jobs even if the 9P byte path remains connected.
-    pub fn sealed_image_channel_ready(&self) -> bool {
+    pub fn isb_image_channel_ready(&self) -> bool {
         self.wire.as_ref().is_some_and(|files| {
             matches!(
                 files.export().image_readiness(),
@@ -36,7 +36,7 @@ impl ShellComponentTransport {
     /// Explicit owner opt-in after authenticated ChannelReady. The owner must
     /// service pending offers, Sources, deadlines and completions every turn;
     /// configuration alone continues to select the receive/refuse behavior.
-    pub fn enable_sealed_image_admission(&mut self) -> Result<(), ShellTransportError> {
+    pub fn enable_isb_image_admission(&mut self) -> Result<(), ShellTransportError> {
         self.files_mut()
             .ok_or(ShellTransportError::NotConnected)?
             .export_mut()
@@ -44,7 +44,7 @@ impl ShellComponentTransport {
             .map_err(wire_error)
     }
 
-    pub fn pending_sealed_image_offer(&self) -> Option<ShellImageMetadata> {
+    pub fn pending_isb_image_offer(&self) -> Option<ShellImageMetadata> {
         self.wire.as_ref()?.export().pending_image_offer()
     }
 
@@ -54,11 +54,11 @@ impl ShellComponentTransport {
     /// The owner must reject permanent failures, and queued offers after
     /// channel closure, rather than retrying them indefinitely. Transient
     /// capacity retries must be bounded by the owner's offer deadline.
-    pub fn admit_pending_sealed_image(
+    pub fn admit_pending_isb_image(
         &mut self,
         epochs: &mut ContentEpochRegistry,
-        jobs: &mut SealedImageJobs,
-        worker: &mut SealedValidationWorker,
+        jobs: &mut IsbImageJobs,
+        worker: &mut IsbValidationWorker,
         now_msec: u64,
         now: Instant,
     ) -> Result<u64, ShellTransportError> {
@@ -79,7 +79,7 @@ impl ShellComponentTransport {
         Ok(job)
     }
 
-    pub fn refuse_pending_sealed_image(
+    pub fn refuse_pending_isb_image(
         &mut self,
         reason: ContentReason,
     ) -> Result<(), ShellTransportError> {
@@ -95,7 +95,7 @@ impl ShellComponentTransport {
     /// Validated packet shape and live offer identity, not validated pixels.
     /// Submit it to the paired jobs/worker; a refused handoff must drop the FD
     /// and withdraw its job. No source can be taken twice.
-    pub fn take_sealed_image_source(&mut self) -> Option<(u64, OwnedFd)> {
+    pub fn take_isb_image_source(&mut self) -> Option<(u64, OwnedFd)> {
         self.files_mut()?.export_mut().take_image_source()
     }
 
@@ -104,9 +104,9 @@ impl ShellComponentTransport {
     /// The ordinary resource-event drain spends the independent status credit.
     /// ContentQueueSaturated also means that status has not reached the journal
     /// yet; retain the settlement and retry after resource/output progress.
-    pub fn release_sealed_image_source(
+    pub fn release_isb_image_source(
         &mut self,
-        settlement: &SealedImageSettlement,
+        settlement: &IsbImageSettlement,
     ) -> Result<u64, ShellTransportError> {
         if settlement.admission.grant != self.store_grant {
             return Err(ShellTransportError::WrongContentGrant);

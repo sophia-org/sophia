@@ -30,10 +30,10 @@ wins when prose disagrees.
 
 ## Normative Architecture
 
-- [Shell and lock image channel](sophia-image-channel.md) specifies the accepted
-  descriptor custody and layouts. Sealed-memory implementation starts under
-  t338; current production remains on the byte path, and DMA-BUF waits for
-  proven renderer completion.
+- [Immutable Shared Buffers (ISB) and the shell/lock image channel](sophia-image-channel.md)
+  specifies descriptor custody and layouts. t338 delivered the sealed-memfd
+  implementation. ISB is the chosen CPU image architecture; retiring byte
+  uploads remains t331 migration work. DMA-BUF waits for proven renderer completion.
 - [Architecture](architecture.md) defines process ownership and the boundaries
   between Engine, protocol authorities, runtime, WM, portals, and chrome.
 - [Engine Architecture](engine-architecture.md) defines the domains inside

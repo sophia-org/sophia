@@ -7,7 +7,7 @@
 #include <unistd.h>
 #endif
 
-int sophia_ip_sealed_create(uint32_t width, uint32_t height, int *fd, void **pixels,
+int sophia_ip_isb_create(uint32_t width, uint32_t height, int *fd, void **pixels,
                             size_t *bytes)
 {
 #ifdef __linux__
@@ -49,7 +49,7 @@ int sophia_ip_sealed_create(uint32_t width, uint32_t height, int *fd, void **pix
 #endif
 }
 
-int sophia_ip_sealed_finish(int fd, void *pixels, size_t bytes)
+int sophia_ip_isb_finish(int fd, void *pixels, size_t bytes)
 {
 #ifdef __linux__
     /* F_SEAL_WRITE refuses while a writable shared mapping exists. */

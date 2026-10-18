@@ -1,5 +1,5 @@
 //! One bounded validation worker shared by an owner, never one thread per image.
-use super::{SealedPixelValidation, ValidatedSealedPixels};
+use super::{IsbPixelValidation, ValidatedIsbPixels};
 use sophia_linux_peer::SealedMapping;
 use sophia_wake::Wake;
 use std::io;
@@ -12,16 +12,16 @@ use std::sync::{
 use std::time::Instant;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SealedValidationFailure {
+pub enum IsbValidationFailure {
     Cancelled,
     Timeout,
     Malformed,
     SizeMismatch,
 }
 
-pub struct SealedValidationCompletion {
+pub struct IsbValidationCompletion {
     pub job: u64,
-    pub result: Result<ValidatedSealedPixels, SealedValidationFailure>,
+    pub result: Result<ValidatedIsbPixels, IsbValidationFailure>,
 }
 
 struct Job {
@@ -50,7 +50,7 @@ impl Drop for NotifyOnExit {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SealedSubmitFailure {
+pub enum IsbSubmitFailure {
     Capacity,
     Invalid,
     Closed,
@@ -59,9 +59,9 @@ pub enum SealedSubmitFailure {
 /// A successful submit owns the source until a completion is taken. The owner
 /// must reconcile every completion with its resource reservation, even after
 /// cancellation. Keep this pool alive while retired epochs still own jobs.
-pub struct SealedValidationWorker {
+pub struct IsbValidationWorker {
     sender: mpsc::SyncSender<Job>,
-    completed: mpsc::Receiver<SealedValidationCompletion>,
+    completed: mpsc::Receiver<IsbValidationCompletion>,
     pending: [Option<Pending>; 4],
     next_id: u64,
     max_jobs: usize,
@@ -69,9 +69,9 @@ pub struct SealedValidationWorker {
     wake: Wake,
 }
 
-impl SealedValidationWorker {
+impl IsbValidationWorker {
     pub fn new(max_jobs: usize, max_bytes: usize) -> io::Result<Self> {
-        Self::with_validation_budget(max_jobs, max_bytes, super::SEALED_PIXEL_VALIDATION_BYTES)
+        Self::with_validation_budget(max_jobs, max_bytes, super::ISB_PIXEL_VALIDATION_BYTES)
     }
 
     /// Use the published validation chunk budget. Larger budgets are safely
@@ -88,7 +88,7 @@ impl SealedValidationWorker {
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "sealed worker bounds",
+                "ISB worker bounds",
             ));
         }
         let wake = Wake::new()?;
@@ -98,7 +98,7 @@ impl SealedValidationWorker {
         // No callback or owner state enters this thread. Each job returns one
         // owned result before the worker starts another; the queue is bounded.
         std::thread::Builder::new()
-            .name("sealed-validation".into())
+            .name("isb-validation".into())
             .spawn(move || {
                 let _exit = NotifyOnExit(notify.clone());
                 // Declared after the guard so the sender drops first on unwind.
@@ -107,7 +107,7 @@ impl SealedValidationWorker {
                     let id = job.id;
                     let result = validate(job, validation_bytes);
                     if completion_sender
-                        .send(SealedValidationCompletion { job: id, result })
+                        .send(IsbValidationCompletion { job: id, result })
                         .is_err()
                     {
                         break;
@@ -132,7 +132,7 @@ impl SealedValidationWorker {
         source: OwnedFd,
         bytes: usize,
         deadline: Instant,
-    ) -> Result<u64, (SealedSubmitFailure, OwnedFd)> {
+    ) -> Result<u64, (IsbSubmitFailure, OwnedFd)> {
         let id = match self.reserve(bytes, deadline) {
             Ok(id) => id,
             Err(error) => return Err((error, source)),
@@ -149,19 +149,19 @@ impl SealedValidationWorker {
     /// Reserve a validation credit before ImageAdmitted. No FD is needed yet;
     /// the original byte bound and absolute deadline are fixed here. The owner
     /// must either submit the source or release this unsent reservation.
-    pub fn reserve(&mut self, bytes: usize, deadline: Instant) -> Result<u64, SealedSubmitFailure> {
+    pub fn reserve(&mut self, bytes: usize, deadline: Instant) -> Result<u64, IsbSubmitFailure> {
         if bytes == 0
             || !bytes.is_multiple_of(4)
             || bytes > self.max_bytes
             || self.next_id == u64::MAX
         {
-            return Err(SealedSubmitFailure::Invalid);
+            return Err(IsbSubmitFailure::Invalid);
         }
         let Some(slot) = self.pending[..self.max_jobs]
             .iter_mut()
             .find(|slot| slot.is_none())
         else {
-            return Err(SealedSubmitFailure::Capacity);
+            return Err(IsbSubmitFailure::Capacity);
         };
         let id = self.next_id;
         self.next_id += 1;
@@ -182,14 +182,14 @@ impl SealedValidationWorker {
         &mut self,
         id: u64,
         source: OwnedFd,
-    ) -> Result<(), (SealedSubmitFailure, OwnedFd)> {
+    ) -> Result<(), (IsbSubmitFailure, OwnedFd)> {
         let Some(pending) = self
             .pending
             .iter_mut()
             .flatten()
             .find(|pending| pending.id == id && !pending.submitted)
         else {
-            return Err((SealedSubmitFailure::Invalid, source));
+            return Err((IsbSubmitFailure::Invalid, source));
         };
         let job = Job {
             id,
@@ -203,9 +203,9 @@ impl SealedValidationWorker {
                 pending.submitted = true;
                 Ok(())
             }
-            Err(mpsc::TrySendError::Full(job)) => Err((SealedSubmitFailure::Capacity, job.source)),
+            Err(mpsc::TrySendError::Full(job)) => Err((IsbSubmitFailure::Capacity, job.source)),
             Err(mpsc::TrySendError::Disconnected(job)) => {
-                Err((SealedSubmitFailure::Closed, job.source))
+                Err((IsbSubmitFailure::Closed, job.source))
             }
         }
     }
@@ -246,7 +246,7 @@ impl SealedValidationWorker {
 
     /// Drain until None before polling readiness again. Clearing the wake
     /// precedes queue inspection, so a concurrent completion cannot be lost.
-    pub fn take_completed(&mut self) -> io::Result<Option<SealedValidationCompletion>> {
+    pub fn take_completed(&mut self) -> io::Result<Option<IsbValidationCompletion>> {
         self.wake.clear()?;
         match self.completed.try_recv() {
             Ok(completion) => {
@@ -271,7 +271,7 @@ impl SealedValidationWorker {
     }
 }
 
-impl Drop for SealedValidationWorker {
+impl Drop for IsbValidationWorker {
     fn drop(&mut self) {
         // Never join on the owner thread. Shutdown cancels bounded units and
         // drops both queues; the worker closes any abandoned source itself.
@@ -281,15 +281,12 @@ impl Drop for SealedValidationWorker {
     }
 }
 
-fn validate(
-    job: Job,
-    validation_bytes: usize,
-) -> Result<ValidatedSealedPixels, SealedValidationFailure> {
+fn validate(job: Job, validation_bytes: usize) -> Result<ValidatedIsbPixels, IsbValidationFailure> {
     let check = || {
         if job.cancelled.load(Ordering::Acquire) {
-            Err(SealedValidationFailure::Cancelled)
+            Err(IsbValidationFailure::Cancelled)
         } else if Instant::now() >= job.deadline {
-            Err(SealedValidationFailure::Timeout)
+            Err(IsbValidationFailure::Timeout)
         } else {
             Ok(())
         }
@@ -297,23 +294,23 @@ fn validate(
     check()?;
     let mapping = SealedMapping::map(job.source, job.bytes).map_err(|error| {
         if error.raw_os_error() == Some(rustix::io::Errno::MSGSIZE.raw_os_error()) {
-            SealedValidationFailure::SizeMismatch
+            IsbValidationFailure::SizeMismatch
         } else {
-            SealedValidationFailure::Malformed
+            IsbValidationFailure::Malformed
         }
     })?;
     let mut validation =
-        SealedPixelValidation::new(mapping).map_err(|_| SealedValidationFailure::Malformed)?;
+        IsbPixelValidation::new(mapping).map_err(|_| IsbValidationFailure::Malformed)?;
     loop {
         check()?;
         let complete = validation
             .step_with_budget(validation_bytes)
-            .map_err(|_| SealedValidationFailure::Malformed)?;
+            .map_err(|_| IsbValidationFailure::Malformed)?;
         if complete {
             check()?;
             return validation
                 .finish()
-                .map_err(|_| SealedValidationFailure::Malformed);
+                .map_err(|_| IsbValidationFailure::Malformed);
         }
     }
 }

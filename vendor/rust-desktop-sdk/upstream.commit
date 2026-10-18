@@ -1,14 +1,14 @@
-tree bf80efb1fac9f505a44df9e9c5c2ff8465da0b00
-parent 3d9855cd8608004f2501fdaf86bab480c93884f6
-author Mason Green <mason@greenm01.net> 1792278843 -0400
-committer Mason Green <mason@greenm01.net> 1792278843 -0400
+tree 6bbc3d701d4ed36c77a5a281d82dea9634d62153
+parent e4f59e36f6c7acbbe2ee47ee011c665dea1a6176
+author Mason Green <mason@greenm01.net> 1792330688 -0400
+committer Mason Green <mason@greenm01.net> 1792330688 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatQBOxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIq6wEA5sigqd/YGAHZ/h/qvRQQ
- pLk79L8UPPNjcuTy1BwbCVYA+waO7RBs6bzuZ2mEtShFWdC7kbGiQiL35RekpUNJ
- cuUH
- =RaH+
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatTLwBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK0MwEA7GJP5yt5jOSjUfyWFIll
+ xqkOg2XohFu+TflAO6Y76lMBAM4i+zwC020vH+QvjYda7a+LE+PHlNdt0OuV+yJc
+ yesB
+ =lcij
  -----END PGP SIGNATURE-----
 
-fix(lock-client): keep failed discovery cleanup distinct from absence
+Name CPU image buffers Immutable Shared Buffers (ISB)
