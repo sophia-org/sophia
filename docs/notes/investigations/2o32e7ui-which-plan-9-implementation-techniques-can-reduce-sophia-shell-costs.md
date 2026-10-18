@@ -110,6 +110,25 @@ The next step is to explain the native panel CPU/allocation excess and bulk CPU
 excess using separate diagnostic runs; preserve this candidate and its captures.
 Do not relax the gates or subtract measured overhead to make the result pass.
 
+The native counters locate the panel allocation excess in Session:
+1,514–1,517 operations/frame versus IPC's 1,145–1,147; peer counts are
+72–73 versus 71–72. Read-only review finds roughly 57–60 additional Session
+allocations per additional owner pass in both workloads. This is a correlation,
+not attribution: inspect per-pass work before changing protocol behavior.
+Authenticated requests also check live launch custody through pidfd polling,
+which the supplied-authority fixtures do not exercise. ISB's extra mapping and
+validation faults remain a separate bulk CPU hypothesis.
+
+A separate panel diagnostic pair is built from the same comparator revision
+with `comparator-request-attribution` (including phase profiling). Plans and
+artifact hashes are under `candidate-02/native-attribution/`; its launcher is
+`~/dev/niltempus/.artifacts/t331-native-attribution-20261018/run.sh`. Both
+profiles pass device-hidden configuration checks. It awaits an attended tty4
+run, uses the existing recovery wrapper, and produces diagnostic evidence only:
+no campaign environment readback or acceptance verdict. Frozen cost artifacts
+and campaigns remain unchanged. No authentication, polling or ACK policy was
+changed to prepare this diagnostic.
+
 ## October 18 first attended block
 
 The initial deep evidence path exceeded the Unix-socket address limit while
