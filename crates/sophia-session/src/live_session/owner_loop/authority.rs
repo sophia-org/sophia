@@ -1,6 +1,8 @@
 {
         let native_frame_service_request = match (runtime.as_ref(), native_scanout.as_ref()) {
             (Some(runtime), Some(native_scanout)) => {
+                #[cfg(feature = "comparator-profiling")]
+                let _profile = sophia_runtime::comparator_counters::phases::enter(sophia_runtime::comparator_counters::phases::Phase::NativeRequest);
                 Some(runtime.native_output_service_request(native_scanout)?)
             }
             _ => None,
@@ -14,6 +16,8 @@
         ) {
             (Some(runtime), Some(native), Some(request))
                 if seat_state == sophia_backend_live::LiveSeatState::Active => {
+                #[cfg(feature = "comparator-profiling")]
+                let _profile = sophia_runtime::comparator_counters::phases::enter(sophia_runtime::comparator_counters::phases::Phase::NativeWait);
                 runtime.native_completion_wait(native, request)
             }
             _ => sophia_backend_live::LiveNativeCompletionWait::default(),
@@ -95,6 +99,8 @@
                     runtime.released_surface_content_transaction()
                 })
             });
+        #[cfg(feature = "comparator-profiling")]
+        let authority_wait_profile = sophia_runtime::comparator_counters::phases::enter(sophia_runtime::comparator_counters::phases::Phase::AuthorityWait);
         let authority_batch = match take_authority_work(
             &mut initial_authority_batch,
             &mut pending_authority_batches,
@@ -111,6 +117,8 @@
                 include!("authority_receive.rs")
             }
         };
+        #[cfg(feature = "comparator-profiling")]
+        drop(authority_wait_profile);
         native_frame_service_preempted_previous_cycle = native_frame_service_preemption;
         // Nothing waiting, or the frame service already preempted: either way
         // the control path has no backlog to earn priority for.

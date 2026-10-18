@@ -171,12 +171,22 @@ impl ShellFileWire {
 
     fn service(&mut self, flush_only: bool) -> Result<(), ShellTransportError> {
         let readiness = self.readiness.take();
+        #[cfg(feature = "comparator-profiling")]
+        let authentication_profile = crate::comparator_counters::phases::enter(
+            crate::comparator_counters::phases::Phase::WireAuthentication,
+        );
         self.server
             .export_mut()
             .poll(Instant::now())
             .map_err(|_| ShellTransportError::NotConnected)?;
+        #[cfg(feature = "comparator-profiling")]
+        drop(authentication_profile);
         self.turns = self.turns.saturating_add(1);
         self.publication_pending = false;
+        #[cfg(feature = "comparator-profiling")]
+        let server_profile = crate::comparator_counters::phases::enter(
+            crate::comparator_counters::phases::Phase::WireServer,
+        );
         let live = if flush_only {
             self.server.flush()
         } else if let Some(readiness) = readiness {
@@ -185,15 +195,27 @@ impl ShellFileWire {
             self.server.turn(Some(Duration::ZERO))
         }
         .map_err(io_error)?;
+        #[cfg(feature = "comparator-profiling")]
+        drop(server_profile);
         if !live || self.server.connection_count() == 0 {
             self.export_mut().revoke();
             return Err(ShellTransportError::NotConnected);
         }
+        #[cfg(feature = "comparator-profiling")]
+        let authentication_profile = crate::comparator_counters::phases::enter(
+            crate::comparator_counters::phases::Phase::WireAuthentication,
+        );
         self.server
             .export_mut()
             .poll(Instant::now())
             .map_err(|_| ShellTransportError::NotConnected)?;
+        #[cfg(feature = "comparator-profiling")]
+        drop(authentication_profile);
         self.export_mut().expire();
+        #[cfg(feature = "comparator-profiling")]
+        let _image_profile = crate::comparator_counters::phases::enter(
+            crate::comparator_counters::phases::Phase::WireImage,
+        );
         self.service_image_channel(Instant::now());
         Ok(())
     }

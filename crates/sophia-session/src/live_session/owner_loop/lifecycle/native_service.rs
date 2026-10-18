@@ -1,6 +1,8 @@
 if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout.as_mut())
             && native_scanout.output_topology_allows_frame_service()
         {
+            #[cfg(feature = "comparator-profiling")]
+            let _profile = sophia_runtime::comparator_counters::phases::enter(sophia_runtime::comparator_counters::phases::Phase::LifecycleNative);
             if layout.pending.is_none() {
                 runtime.release_layout_deferred_presentations();
             }

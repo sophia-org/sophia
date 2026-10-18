@@ -18,8 +18,15 @@ pub enum Phase {
     Lifecycle,
     Wm,
     Authority,
+    NativeRequest,
+    NativeWait,
+    AuthorityWait,
+    LifecycleNative,
+    WireAuthentication,
+    WireServer,
+    WireImage,
 }
-const NAMES: [&str; 10] = [
+const NAMES: [&str; 17] = [
     "owner",
     "readiness",
     "components",
@@ -30,19 +37,26 @@ const NAMES: [&str; 10] = [
     "lifecycle",
     "wm",
     "authority",
+    "native_request",
+    "native_wait",
+    "authority_wait",
+    "lifecycle_native",
+    "wire_authentication",
+    "wire_server",
+    "wire_image",
 ];
 struct Totals {
     calls: AtomicU64,
     cpu: AtomicU64,
     allocations: AtomicU64,
 }
-static TOTALS: [Totals; 10] = [const {
+static TOTALS: [Totals; 17] = [const {
     Totals {
         calls: AtomicU64::new(0),
         cpu: AtomicU64::new(0),
         allocations: AtomicU64::new(0),
     }
-}; 10];
+}; 17];
 
 pub struct Guard {
     phase: Phase,
