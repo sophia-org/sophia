@@ -475,6 +475,13 @@ impl LiveProductionNativeScanout {
     /// side effect here keeps pointer traffic from entering a blocking atomic
     /// ioctl ahead of ready Present completions or primary submissions.
     pub(crate) fn service_idle_atomic_cursors(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // With no pending atomic cursor, every per-output service would be a
+        // no-op. Avoid building output and head collections on that owner turn.
+        if self.cursor_path != crate::HardwareCursorPath::AtomicPlane
+            || !self.heads.iter().any(|head| head.pending_cursor.is_some())
+        {
+            return Ok(());
+        }
         let outputs = self
             .heads
             .iter()
