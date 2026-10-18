@@ -175,6 +175,30 @@ pair. Those are the next bounded-storage candidates; preserve separate evidence
 for each change. Authentication, deadlines, service order and ACK behavior
 remain unchanged; t331 remains open.
 
+The next inventory change is published as production `6f367ceb8` and comparator
+`910414b7c`. It compares borrowed store/group pairs before constructing a map.
+All current keys must occur, and every supplied pair must match; conflicting
+duplicates fall back to collection, preserving the old last-entry-wins rule.
+Changed inventories are moved into place only after generation invalidation.
+Cleanup still runs on unchanged inventories. The isolated allocation control
+records 2,000 allocations for 1,000 old collections and zero for 1,000 unchanged
+borrowed comparisons. Both trees pass 35 preview tests and the allocation
+control; strict backend Clippy passes. Evidence:
+`preview-inventory-borrow-tests-03.log`,
+`preview-inventory-borrow-comparator-tests.log`, and
+`preview-inventory-borrow-clippy-02.log` under `candidate-02/`.
+
+A separate cursor change returns before constructing output/head collections
+when the path is non-atomic or no head has a pending atomic cursor. The old
+per-output service already returned or skipped every head before any mutation,
+clock read, commit or error in those cases. Pending cursors, including those on
+disabled heads, retain the existing path. The 13 cursor-owner controls and 316
+libdrm-event controls pass (one opt-in test remains ignored); strict Clippy and
+scoped formatting pass. Evidence: `idle-cursor-{tests,clippy}.log`. These controls
+and static review do not measure physical cursor latency or native cost savings.
+The next native cost screening will measure the combined bookkeeping changes
+before another full qualification block; frozen earlier captures remain intact.
+
 ## October 18 first attended block
 
 The initial deep evidence path exceeded the Unix-socket address limit while
