@@ -15,6 +15,14 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+The first user-space perf pair has completed and its process/time-filtered
+reports pass the raw-sample and histogram checks. Session has 153 files samples
+versus 114 IPC samples; peers have only 34 versus 14. Image validation and
+sealed-source preparation appear in the files samples, but this sparse pair
+cannot explain the remaining CPU gap. Kernel sampling and syscall tracing are
+now available after niltempus changed the host permissions. The next diagnostic
+capture will include them at a higher CPU sampling rate; t331 remains open.
+
 October 18 follow-up: the ISB-only integration is signed and published as
 `5632d5423c9344c709810e00697a3d464cad5600`. Provlita
 `78e14e3528137449aa83ad2ed6bc8768c6efefeb` and Lom
@@ -248,17 +256,29 @@ source trees are clean at the declared signed revisions.
 
 Prepared descriptors and hashes: `candidate-03/perf/ready.json`. Attended tty4
 launcher: `~/dev/niltempus/.artifacts/t331-perf-20261018/run.sh`. Fresh capture
-destinations are `~/.local/state/t331/perf-{files,ipc}-01`; neither has started.
-The normal recovery wrapper and environment observer remain active. After both
-captures, use the prepared runner's `report-cpu-profile` command to derive the
-per-process reports. These runs are diagnostic, not cost or latency acceptance.
+destinations are `~/.local/state/t331/perf-{files,ipc}-01`; both completed.
+The normal recovery wrapper and environment observer remained active. Reports
+are `candidate-03/perf-{files,ipc}-no-inline-report.json`; the summary is
+`perf-user-summary.json`. Inline expansion repeatedly invoked addr2line and
+made reporting slow; disabling that expansion preserved recorded callchains,
+symbols and exact sample-count checks. The original slow report attempts were
+stopped while processing peers. These runs are diagnostic, not cost or latency
+acceptance.
 
-Kernel sampling is denied by the host's `perf_event_paranoid=2`; syscall
-tracepoints are unavailable because tracefs/debugfs is not mounted. The failed
-read-only probes are retained as `perf-kernel-access.log` and
-`perf-syscall-access.log`. No host setting or capability was changed. This pair
-can locate user-space hotspots but cannot attribute kernel CPU or syscall time;
-existing process CPU and page-fault counters retain their broader scope.
+The original denied probes remain in `perf-kernel-access.log` and
+`perf-syscall-access.log`. After this pair, niltempus set
+`perf_event_paranoid=-1`, `kptr_restrict=0`, mounted tracefs and made syscall
+event metadata readable. Kernel-clock and syscall-read probes now pass. These
+permission changes do not add kernel information to the existing captures.
+Restore the original sysctls (2 and 1 respectively) and unmount tracefs after
+profiling.
+
+Within the workload interval, files Session has 153 samples (6 unknown leaves)
+and IPC 114 (9 unknown); peers have 34 and 14, both fully symbolized. All four
+reports have zero lost samples and agree with independently filtered raw sample
+counts. Files validation accounts for 16 Session self samples; sealed-source
+preparation accounts for 12 peer self samples. These are leads for a denser
+kernel-inclusive capture, not precise attribution of the CPU difference.
 
 ## October 18 first attended block
 
