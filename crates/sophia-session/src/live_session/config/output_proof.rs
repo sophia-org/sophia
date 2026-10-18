@@ -161,3 +161,79 @@ pub(super) fn validate_output_peer_loss_proof(
     }
     Ok(())
 }
+
+/// Environment observation needs neither a topology-changing peer nor a
+/// peer-loss injection. Keep its arm and bounded lifetime separate from that
+/// proof, while leaving the old readback prerequisites intact.
+pub(super) fn parse_output_readback(
+    args: &[String],
+    native: bool,
+    normal: bool,
+    output_process: bool,
+    runtime: Option<Duration>,
+    peer_loss: bool,
+    other_proof: bool,
+) -> Result<bool, String> {
+    let legacy = peer_loss || args.iter().any(|arg| arg == "--output-proof-readback");
+    if legacy {
+        validate_output_peer_loss_proof(
+            true,
+            native,
+            normal,
+            output_process,
+            runtime,
+            std::env::var_os("SOPHIA_FRAME_FED_OUTPUT_ARM").as_deref()
+                == Some(std::ffi::OsStr::new("1")),
+            other_proof,
+        )
+        .map_err(|reason| format!("--output-proof-readback: {reason}"))?;
+    }
+    let environment = args
+        .iter()
+        .any(|arg| arg == "--output-environment-readback");
+    let socket = std::env::var_os("SOPHIA_OUTPUT_ENVIRONMENT_SOCKET");
+    validate_environment_readback(
+        environment,
+        native,
+        normal,
+        runtime,
+        std::env::var_os("SOPHIA_OUTPUT_ENVIRONMENT_ARM").as_deref()
+            == Some(std::ffi::OsStr::new("1")),
+        socket.as_deref().map(std::path::Path::new),
+    )
+    .map_err(str::to_owned)?;
+    Ok(legacy || environment)
+}
+
+pub(super) fn validate_environment_readback(
+    requested: bool,
+    native: bool,
+    normal: bool,
+    runtime: Option<Duration>,
+    armed: bool,
+    socket: Option<&std::path::Path>,
+) -> Result<(), &'static str> {
+    if !requested {
+        return Ok(());
+    }
+    if !native || !normal || runtime.is_none_or(|duration| duration.is_zero()) {
+        return Err(
+            "--output-environment-readback requires native normal Session and a positive --max-runtime-ms",
+        );
+    }
+    if !armed {
+        return Err("set SOPHIA_OUTPUT_ENVIRONMENT_ARM=1 to arm --output-environment-readback");
+    }
+    if socket.is_none_or(|path| {
+        !path.is_absolute()
+            || path.file_name().is_none()
+            || path
+                .components()
+                .any(|part| matches!(part, std::path::Component::ParentDir))
+    }) {
+        return Err(
+            "--output-environment-readback requires an absolute SOPHIA_OUTPUT_ENVIRONMENT_SOCKET without parent traversal",
+        );
+    }
+    Ok(())
+}

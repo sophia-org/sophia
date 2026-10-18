@@ -716,17 +716,11 @@ impl PersistentXtermSessionConfig {
             wm_public_fault_after.is_some()
                 || wm_public_restart_after_action.is_some(),
         )?;
-        let output_proof_readback = output_proof_peer_loss_after_apply
-            || args.iter().any(|arg| arg == "--output-proof-readback");
-        if output_proof_readback {
-            validate_output_peer_loss_proof(
-                true, native_scanout, normal_session, output_process.is_some(), max_runtime,
-                std::env::var_os("SOPHIA_FRAME_FED_OUTPUT_ARM").as_deref()
-                    == Some(std::ffi::OsStr::new("1")),
-                wm_public_fault_after.is_some()
-                    || wm_public_restart_after_action.is_some(),
-            ).map_err(|reason| format!("--output-proof-readback: {reason}"))?;
-        }
+        let output_proof_readback = output_proof::parse_output_readback(
+            args, native_scanout, normal_session, output_process.is_some(), max_runtime,
+            output_proof_peer_loss_after_apply,
+            wm_public_fault_after.is_some() || wm_public_restart_after_action.is_some(),
+        )?;
         if native_scanout && std::env::var_os("SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE").is_none() {
             return Err(
                 "set SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 to run persistent native scanout"

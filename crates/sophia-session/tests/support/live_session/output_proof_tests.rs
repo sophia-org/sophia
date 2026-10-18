@@ -1,8 +1,47 @@
 use super::super::output_proof::{
-    OutputPeerLossObservation, OutputPeerLossProof, validate_output_peer_loss_proof,
+    OutputPeerLossObservation, OutputPeerLossProof, validate_environment_readback,
+    validate_output_peer_loss_proof,
 };
 use sophia_protocol::TransactionId;
 use std::time::{Duration, Instant};
+
+#[test]
+fn environment_readback_requires_its_own_bounded_native_arm_and_socket() {
+    let runtime = Some(Duration::from_secs(60));
+    let socket = Some(std::path::Path::new("/private/environment.sock"));
+    assert!(validate_environment_readback(true, true, true, runtime, true, socket).is_ok());
+    for (native, normal, bound, armed, path) in [
+        (false, true, runtime, true, socket),
+        (true, false, runtime, true, socket),
+        (true, true, None, true, socket),
+        (true, true, Some(Duration::ZERO), true, socket),
+        (true, true, runtime, false, socket),
+        (true, true, runtime, true, None),
+        (
+            true,
+            true,
+            runtime,
+            true,
+            Some(std::path::Path::new("relative.sock")),
+        ),
+        (
+            true,
+            true,
+            runtime,
+            true,
+            Some(std::path::Path::new("/private/../socket")),
+        ),
+        (true, true, runtime, true, Some(std::path::Path::new("/"))),
+    ] {
+        assert!(validate_environment_readback(true, native, normal, bound, armed, path).is_err());
+    }
+    assert!(validate_environment_readback(false, false, false, None, false, None).is_ok());
+    // Environment observation does not authorize the independent peer-loss
+    // proof without its required output-role process.
+    assert!(
+        validate_output_peer_loss_proof(true, true, true, false, runtime, true, false).is_err()
+    );
+}
 
 #[test]
 fn output_peer_loss_proof_requires_an_explicit_bounded_native_role() {
