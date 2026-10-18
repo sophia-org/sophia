@@ -15,8 +15,12 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
-October 18 implementation checkpoint: niltempus approved bounded owner-service
-batching and a separate bounded output-observation change. Dock, Launcher and
+October 18 implementation checkpoint: bounded publication batching is signed
+and published as production `2b60076d0` and comparator `6fb397748`.
+Inline output observations are separately signed and published as production
+`73dd4eba1` and comparator `43bcd5bef`; their patches have the same stable patch
+ID on both branches. These implement niltempus's approved optimization plan.
+Dock, Launcher and
 Bar visits now share publication flushes within each callback; catalog execution
 and direct activation remain immediate. Journal capacity still forces progress,
 and authentication and delivery checks remain intact. A boundary close becomes
@@ -31,7 +35,27 @@ retries do return Ready in the supplied-owner fixtures, so retry suppression is
 not part of this change. Native CPU and allocation pilots must measure batching
 and bounded observations separately before the unchanged qualification matrix.
 Evidence is in `candidate-03/batch-*.log`; no native performance improvement is
-claimed for either new slice. t331 remains open.
+claimed for either new slice. The final Session scope passes 965 tests with
+private XDG directories; runtime tests pass across 88 targets, and the backend
+suite passes. The engine's 12 focused tests include a zero-allocation and
+zero-reallocation control for valid and overflowing observation sets. Scoped
+strict Clippy passes for engine, backend, runtime and Session. The backend's
+native request-construction allocation claim remains static; the engine
+construction/reduction control is measured.
+
+The next step is separate four-arm panel screening for batching alone and then
+batching plus inline observations. Both CPU-only and Rust-allocation builds are
+staged, and all eight preparation/configuration checks pass. Exact hashes,
+plans and launchers are under `candidate-04-batch` and `candidate-05-output`.
+The attended tty4 launcher is `~/.local/state/t331/run-optimization-pilots.sh`;
+it uses new short `batch-*` and `out-*` destinations. These plans retain the
+earlier screening limitation: no environment readback and no qualification
+verdict. The batching source is frozen at
+`~/dev/sophia-t331-batch-pilot` without a separate build directory. Keep that
+worktree until its attended capture finishes, then remove it. The unchanged
+full cost and latency matrix remains required; t331 remains open.
+
+## October 18 preceding diagnostic checkpoint
 
 The first user-space perf pair has completed and its process/time-filtered
 reports pass the raw-sample and histogram checks. Session has 153 files samples
