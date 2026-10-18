@@ -1494,6 +1494,7 @@ name = "sophia-image-producer"
 version = "0.3.0"
 dependencies = [
  "rustix",
+ "sophia-isb",
  "sophia-lock-protocol",
  "sophia-shell-protocol",
 ]
@@ -1503,6 +1504,13 @@ name = "sophia-input-authority"
 version = "0.1.0"
 dependencies = [
  "sophia-protocol",
+]
+
+[[package]]
+name = "sophia-isb"
+version = "0.3.0"
+dependencies = [
+ "rustix",
 ]
 
 [[package]]

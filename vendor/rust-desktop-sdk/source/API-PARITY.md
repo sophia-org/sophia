@@ -1,5 +1,84 @@
 # C and Rust SDK API parity
 
+## Mapped ISB builder, 2026-10-18
+
+Both SDKs build an ISB in place, so producers fill pixels without a staging
+canvas or a `pwrite` copy. The Rust builder lives in the new leaf crate
+`sophia-isb` and is re-exported by `sophia-image-producer`.
+
+| Operation | C | Rust |
+| --- | --- | --- |
+| Create with a resource bound | `sophia_ip_isb_create_bounded(width, height, max_bytes, &fd, &pixels, &bytes)` | `create_mapped_isb(width, height, max_resource_bytes)` or `MappedIsb::create` |
+| Create without a bound | `sophia_ip_isb_create` (the same path, bound `UINT64_MAX`) | pass `u64::MAX` |
+| Fill | write through `pixels` | `MappedIsb::pixels_mut` |
+| Finish | `sophia_ip_isb_finish(fd, pixels, bytes)` | `MappedIsb::finish(self) -> OwnedFd` |
+| Abandon | `munmap(pixels, bytes)`, then `close(fd)` | drop the builder |
+
+Shared behavior. A zero dimension, a stride above `UINT32_MAX`, a size above
+the slice-length or pointer-difference limit (Rust `isize::MAX`, C
+`PTRDIFF_MAX` and `SIZE_MAX`) or the file-offset limit (`INT64_MAX`), or a size
+above the caller's bound (normally the role's granted `max_resource_bytes`) is
+an argument error before anything is allocated. On 64-bit targets the
+pointer and offset limits coincide; on 32-bit targets a single 4 GiB row is
+refused. The
+memfd is `CLOEXEC` and sealable. `fallocate` mode 0 sizes it and allocates
+every page, and GROW and SHRINK are sealed at once, so the backing cannot
+shrink beneath the mapping. The one shared writable mapping is marked
+`MADV_DONTFORK`, so a forked child holds no writable alias that would block
+F_SEAL_WRITE or outlive it. Finish unmaps, adds WRITE, GROW, SHRINK and SEAL,
+and reads the seals back before reporting success. Up-front allocation reports
+ordinary memory exhaustion at creation rather than as a fault while filling.
+That narrows `SIGBUS` exposure; it does not rule out hardware memory errors or
+kernel reclaim faults, and neither SDK claims it does.
+
+A forked child has no copy of the mapping. It must not touch an inherited
+builder: Rust callers must neither use nor drop it (`std::mem::forget`), since
+dropping would unmap whatever the child has since mapped there, and C callers
+must neither access nor `munmap` the pixels. The child also inherits the
+unsealed fd until `exec` (`CLOEXEC`), and must close it or `exec` without
+writing to it. `fork` is already `unsafe` in Rust; the builder adds no safe
+path to either state.
+
+Ownership differs idiomatically. C callers hold the fd throughout and keep it
+on every finish result; REFUSED means the seals are missing and the fd must not
+be offered. Rust exposes no fd before `finish`, which consumes the builder and
+closes the fd on any error (`IsbError::Refused(errno)` or
+`IsbError::Unsealed(seals)`); `create_mapped_isb` maps these to
+`ProducerError::Argument` and `ProducerError::Refused`. Rust's writable view
+borrows the builder, so no write can follow `finish` (a `compile_fail`
+doctest pins error E0505); C relies on caller discipline.
+
+The existing C `sophia_ip_isb_create` keeps its signature but now takes the
+hardened path: it allocates up front, seals size at creation, excludes the
+mapping from fork and refuses a stride above `UINT32_MAX`. Callers must not
+resize or remap the fd; no SDK caller or test did. Rust's `pwrite`-based
+`IsbSource` / `create_isb` / `finish_isb` remain for compatibility and still
+copy every byte. `sophia-isb` is the only Rust crate that permits `unsafe`: it
+denies it at the crate level and allows it only in its private `mapping`
+module. Every other crate, including `sophia-image-producer`, keeps the
+workspace `forbid`.
+
+Independent tests. Rust `sophia-isb`: exact pixels and length through sealing,
+every seal verified with write, grow, shrink, `fallocate` and further-seal
+refusal, bounds (exact size accepted, one byte under refused, stride and
+overflow refused), kernel `smaps` flags `rd wr sh dc` on the live mapping, a
+cross-thread finish, the borrowed-view compile failure, and one FD/mapping
+accounting test covering refusal before allocation, abandonment, finish and
+a mapping refused under a lowered address-space limit after the memfd was
+allocated. `sophia-image-producer`: a mapped source is admitted and crosses
+the socket with exactly the bytes written through the mapping. C
+`isb_mapped_test`: the same bounds, pixel, seal and cleanup cases with output
+sentinels, size seals while mapped, a writable remap refused after finish, a
+real `fork` in which finish succeeds while the child lives and the child's
+write faults, and a negative control that restores inheritance and observes
+F_SEAL_WRITE fail with EBUSY.
+
+Evidence (Sophia `isb-client-migration-20261018`):
+`claude-mapped-isb-rs-workspace-test.log`, `claude-mapped-isb-rs-clippy.log`,
+`claude-mapped-isb-rs-fmt.log` and `claude-mapped-isb-c-check.log`. These are
+device-free SDK checks. They make no performance or native-presentation claim,
+and Sophia and comparator adoption are separate.
+
 ## ISB-only resource APIs, 2026-10-18
 
 This supersedes the byte-upload operation maps and B3 upload-window history
@@ -163,7 +242,8 @@ The C producer and adapters pass the full C check; Rust role adapters remain
 unfinished, so complete role capability parity is still open.
 
 Rust's safe sealed builder writes exact bounded ranges using `pwrite` and then
-seals; it does not expose C's writable mapping helper. Existing sealed FDs are
+seals; it does not expose C's writable mapping helper (superseded by the
+2026-10-18 mapped builder above). Existing sealed FDs are
 also accepted after seal/type/size checks. This storage-construction difference
 must be included in producer-cost measurements; it is not a zero-copy claim.
 
@@ -350,6 +430,8 @@ mapping makes F_ADD_SEALS(F_SEAL_WRITE) fail with EBUSY, a received sealed mappi
 survives closing both producer and receiver FDs, and a new shared writable
 mapping fails EPERM. Rust keeps its unsafe-code
 prohibition and checks the resulting seal requirement without mapping memory.
+(Since the 2026-10-18 mapped builder, `sophia-isb` alone permits `unsafe`, in
+its private mapping module.)
 
 These tests use no new public API and do not implement the proposed transport.
 They establish kernel prerequisites only, not codec, authentication, admission,

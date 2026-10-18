@@ -211,12 +211,29 @@ enum sophia_ip_cause sophia_ip_cause(const struct sophia_ip *);
 enum sophia_ip_path sophia_ip_path(const struct sophia_ip *);
 
 /* A fresh sealable memfd of width*height*4 bytes, mapped writable for the
- * caller to fill. On OK the caller owns *fd and the mapping; otherwise
- * nothing was created. */
+ * caller to fill in place. ARGUMENT, before anything is allocated, for a zero
+ * dimension, a stride above UINT32_MAX, a size above SIZE_MAX, PTRDIFF_MAX or
+ * INT64_MAX, or a size above max_bytes (normally the role's granted
+ * max_resource_bytes). The backing is
+ * allocated up front, so ordinary memory exhaustion is REFUSED here rather
+ * than a fault while filling; this narrows SIGBUS exposure but does not rule
+ * out hardware memory errors. GROW and SHRINK are sealed at once, so the
+ * backing cannot shrink beneath the mapping, and the mapping is not inherited
+ * by fork, so a child holds no writable alias. A forked child therefore has no
+ * mapping at *pixels: it must not access it or munmap it, and it inherits the
+ * unsealed fd until exec closes it (CLOEXEC), so it must close fd or exec
+ * without writing to it. Do not resize or remap fd. On
+ * OK the caller owns *fd and the mapping: finish it, or abandon it with
+ * munmap(*pixels, *bytes) and close(*fd); never offer an unfinished fd.
+ * Otherwise nothing was created and the outputs are unchanged. */
+int sophia_ip_isb_create_bounded(uint32_t width, uint32_t height, uint64_t max_bytes, int *fd,
+                                 void **pixels, size_t *bytes);
+/* sophia_ip_isb_create_bounded with no resource bound. */
 int sophia_ip_isb_create(uint32_t width, uint32_t height, int *fd, void **pixels,
                          size_t *bytes);
-/* Unmaps pixels, then adds WRITE, GROW, SHRINK and SEAL seals. The caller
- * keeps fd on every result. ARGUMENT leaves the mapping in place; REFUSED
- * means the mapping is gone but sealing failed, so fd must not be offered. */
+/* Unmaps pixels, then adds WRITE, GROW, SHRINK and SEAL seals and reads them
+ * back. The caller keeps fd on every result. ARGUMENT leaves the mapping in
+ * place; REFUSED means the mapping is gone but the seals are missing, so fd
+ * must not be offered. */
 int sophia_ip_isb_finish(int fd, void *pixels, size_t bytes);
 #endif

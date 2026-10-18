@@ -1,5 +1,17 @@
 # Provenance
 
+## Mapped ISB builder, 2026-10-18
+
+Adds in-place ISB construction to both SDKs: the Rust leaf crate `sophia-isb`
+(`MappedIsb`, re-exported with `create_mapped_isb` by `sophia-image-producer`)
+and C `sophia_ip_isb_create_bounded`, with the existing C create on the same
+hardened path. Existing APIs are unchanged in signature; the Rust `pwrite`
+builder remains. Source bases: Rust `fbde253ef297e282357080600a560f1824cd6b50`,
+C `14c8fce5d0d75d21b43ee6eb7a01232c0abd1399`. Published revisions are recorded
+by Sophia's import manifest and evidence.
+[API-PARITY.md](API-PARITY.md#mapped-isb-builder-2026-10-18) records the
+contract, ownership differences, tests and evidence limits.
+
 ## Byte-upload API retirement, 2026-10-18
 
 This working series follows the accepted ISB-only amendment and removes the

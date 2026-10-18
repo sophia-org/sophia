@@ -2,15 +2,18 @@ use std::os::fd::{AsFd, OwnedFd};
 
 use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, ftruncate, memfd_create};
 
+use sophia_isb::{IsbError, MappedIsb};
+
 use crate::ProducerError;
 use crate::io::c_name;
 
 /// An Immutable Shared Buffer (ISB) under construction or ready to offer.
 /// Linux implements its immutable backing with a sealed memfd.
 ///
-/// This safe builder replaces the C mapping helper: callers fill the
-/// memfd with `write_pixels` (writes at exact offsets through the
-/// file, no mapping), then `finish_isb` adds the four seals.
+/// This builder fills the memfd with `write_pixels` (writes at exact
+/// offsets through the file, no mapping), then `finish_isb` adds the
+/// four seals. It copies every byte through `pwrite`; for in-place
+/// writes use [`create_mapped_isb`].
 /// Because no writable shared mapping can exist through this API,
 /// `F_SEAL_WRITE` cannot be refused for a mapping this crate made;
 /// descriptors mapped writable elsewhere must be unmapped by their
@@ -74,6 +77,24 @@ pub fn create_isb(width: u32, height: u32) -> Result<IsbSource, ProducerError> {
         .map_err(|_| ProducerError::Refused)?;
     ftruncate(&fd, bytes).map_err(|_| ProducerError::Refused)?;
     Ok(IsbSource { fd, bytes })
+}
+
+/// Create a mapped builder that is filled in place, matching C's
+/// `sophia_ip_isb_create_bounded`. Dimensions and `max_resource_bytes`
+/// (normally the role's granted `max_resource_bytes`) are checked before
+/// anything is allocated. The descriptor is reachable only through
+/// [`MappedIsb::finish`], which unmaps, seals and verifies; dropping the
+/// builder unmaps and closes it. See [`sophia_isb`] for the fork and
+/// `SIGBUS` guarantees and their limits.
+pub fn create_mapped_isb(
+    width: u32,
+    height: u32,
+    max_resource_bytes: u64,
+) -> Result<MappedIsb, ProducerError> {
+    MappedIsb::create(width, height, max_resource_bytes).map_err(|error| match error {
+        IsbError::Argument => ProducerError::Argument,
+        IsbError::Refused(_) | IsbError::Unsealed(_) => ProducerError::Refused,
+    })
 }
 
 /// Add WRITE, GROW, SHRINK and SEAL seals. On every result the

@@ -1,14 +1,14 @@
-tree c71b369a25624bddd81c7bd42d77adc8c6a70688
-parent a1c41aa0217037b0578f6606f589ed9846ee9247
-author Mason Green <mason@greenm01.net> 1792351168 -0400
-committer Mason Green <mason@greenm01.net> 1792351168 -0400
+tree ce4f2e92ebd3dc4b7bf60d1132803dc972121171
+parent 14c8fce5d0d75d21b43ee6eb7a01232c0abd1399
+author Mason Green <mason@greenm01.net> 1792355827 -0400
+committer Mason Green <mason@greenm01.net> 1792355827 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatUbwBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLecgD/ZGp6YMfmFE1f3uzlk0iX
- 2L6/OQXT5XP8lUw0Xz5hv1IA/1hgEFUgSjeiivbYgjGTuANJBDPQO1DRH57SnV+M
- shkM
- =HFF/
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatUt8xsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLE5AEAvSxxe195ucOWk75deIYd
+ +3UzgRn507gpL/eMbFu6EIEA/R4z+WCCnGOZ0pBIVJ7VoXMmHfSuWJ/f+BNW08cK
+ VHAO
+ =KLRM
  -----END PGP SIGNATURE-----
 
-Retire shell and lock byte writers and use sealed-image peers
+Bound and harden mapped ISB construction and finalization

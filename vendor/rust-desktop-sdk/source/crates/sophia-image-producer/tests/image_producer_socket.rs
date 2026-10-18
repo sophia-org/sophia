@@ -4,7 +4,7 @@ use std::os::fd::AsFd;
 
 use sophia_image_producer::{
     ChannelState, CloseCause, ImageEvent, ImageRole, OfferState, ProducerError, ReadyEvents,
-    ResourceStatusKind, create_isb,
+    ResourceStatusKind, create_isb, create_mapped_isb,
 };
 use sophia_shell_protocol::shell_files::ShellImagePacket;
 use support::{config, metadata, nothing_waiting, ready_producer, recv_packet, sealed_fd};
@@ -29,6 +29,33 @@ fn assert_source_packet(packet: &[u8], expect_offer: u64) {
     assert_eq!(metadata.height, 2);
     assert_eq!(metadata.stride, 8);
     assert_eq!(metadata.declared_bytes, 16);
+}
+
+/// A buffer filled in place passes the producer's seal and size checks and
+/// crosses with exactly the bytes written through the mapping.
+#[test]
+fn mapped_source_is_admitted_with_its_exact_pixels() {
+    assert_eq!(
+        create_mapped_isb(2, 2, 15).unwrap_err(),
+        ProducerError::Argument
+    );
+    let mut source = create_mapped_isb(2, 2, 16).unwrap();
+    let pixels: Vec<u8> = (1..=16).collect();
+    source.pixels_mut().copy_from_slice(&pixels);
+    let (mut producer, peer) = ready_producer(ImageRole::Shell);
+    let (offer, _, assigned) = producer
+        .begin(metadata(21), source.finish().unwrap(), 4)
+        .unwrap();
+    producer
+        .record(7, ImageEvent::ImageAdmitted { metadata: assigned }, 6)
+        .unwrap();
+    producer.dispatch(ReadyEvents::OUT, 7).unwrap();
+    let (packet, fds) = recv_packet(&peer);
+    assert_source_packet(&packet, offer);
+    assert_eq!(fds.len(), 1);
+    let mut back = [0u8; 16];
+    assert_eq!(rustix::io::pread(&fds[0], &mut back, 0).unwrap(), 16);
+    assert_eq!(back.as_slice(), pixels.as_slice());
 }
 
 fn fd_is_cloexec(fd: &std::os::fd::OwnedFd) -> bool {

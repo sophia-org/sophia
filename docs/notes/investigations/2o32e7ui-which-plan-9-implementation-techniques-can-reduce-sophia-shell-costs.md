@@ -15,6 +15,44 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+October 18 follow-up: the ISB-only integration is signed and published as
+`5632d5423c9344c709810e00697a3d464cad5600`. Provlita
+`78e14e3528137449aa83ad2ed6bc8768c6efefeb` and Lom
+`9245bd05b95cec795819fbb9cee14b472722dc9a` now pin Rust SDK `fbde253`;
+both full client checks passed before signing and publication. The earlier
+client pins below describe the preceding migration checkpoint.
+
+The isolated comparator worktree is on `performance/t331-isb-cost`, merging
+that production checkpoint into `30b822381`. Its frozen historical branch and
+captures remain unchanged. Six supplied-owner peer controls pass after the
+merge; the actual native Session/CLI check also passes. New diagnostic-only
+request scopes count thread CPU and process-wide allocations during each
+interval. A control verifies allocation/reallocation counts and zero overhead
+allocations for an empty scope; four paired supplied-owner runs pass. In those
+64-frame runs, journal reads, reply encoding and read retries allocate little;
+writes and outbound admission allocate more. Scopes overlap and must not be
+summed. These fixtures do not reproduce the full native Session loop and do not
+establish the cause of its cost gap. Evidence is under
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/`, especially
+`request-attribution-tests-01.log`, `request-attribution-baseline-01.log` and
+`comparator-native-check-01.log`.
+
+Mapped ISB builders are signed and published: Rust
+`c6ad4fa04395565297beeecaa18edc459ad9cb01`, C
+`25be47d4292db5da3f877f64d8cb782c43eb5d7c`. Both exact imports pass Sophia's
+snapshot checks. Rust passes 909 workspace tests and strict Clippy; C passes
+the full suite and Nim binding smoke test. The builders bound allocation,
+exclude the writable mapping from fork, and unmap before sealing and verifying.
+The comparator now fills that backing directly with the same pixel routine as
+IPC; six paired peer controls and four canvas controls pass. Sophia's shell
+image, C lock and independent oracle export controls also pass
+(`mapped-export-tests.log`). This removes the staging copy but proves no cost
+improvement. Journal-read pairing still
+needs identity-based evidence. No native capture has run for this candidate;
+all four unchanged +10% gates and the latency gates remain open. Muse is offline;
+Codex owns integration/publication and Claude assists with bounded SDK and
+diagnostic work.
+
 t331 is implementing the October 18 Immutable Shared Buffer migration.
 t338 is closed; its [delivery resumption](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#current-resumption)
 owns that result. The [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#immutable-shared-buffers--october-18)

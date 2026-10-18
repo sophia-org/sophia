@@ -8,6 +8,13 @@ Image adapters require ISB and never select byte fallback. Shell clients may
 enable the adapter after negotiated Limits, including dock and launcher roles.
 Shell and lock byte-upload APIs have been removed. CPU images require the ISB adapters; passive legacy protocol values remain available for conformance checks.
 
+Mapped ISB builders fill pixels in place, with no staging copy: Rust's
+`create_mapped_isb` (the `sophia-isb` crate's `MappedIsb`) and C's
+`sophia_ip_isb_create_bounded`. Both check dimensions and the caller's resource
+bound before allocating, seal the size at creation, exclude the mapping from
+`fork` and verify every seal on finish; see
+[the mapped builder contract](API-PARITY.md#mapped-isb-builder-2026-10-18).
+
 Native launchers can adopt a settled ISB into their resource lifecycle with
 Rust's `adopt_native_image` or C's `sophia_ns_adopt_image`; see
 [the adoption contract and coverage](API-PARITY.md#native-isb-resource-adoption-2026-10-18).
@@ -42,6 +49,7 @@ Sophia checkout to build.
 | `sophia-namespace-client` | Bounded discovery parsing and Linux lookup against a pinned namespace directory; endpoint visibility confers no authority. |
 | `sophia-desktop-ids` | Identifiers every role contract shares. |
 | `sophia-image-producer` | Clockless ISB descriptor producer for shell r9 and lock r2; shell r9 and lock r2 adapters. |
+| `sophia-isb` | Mapped ISB builder: one private writable mapping, sealed and verified on finish. The only crate that permits `unsafe`, in its private mapping module. |
 | `sophia-shell-protocol` | The shell's typed records and the `sophia_shell_fs_v1` file contract codec. |
 | `sophia-shell-client` | The shell client over the file contract. |
 | `sophia-wm-protocol` | The WM file codecs and passive policy records. |

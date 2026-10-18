@@ -43,6 +43,7 @@ FILE_TESTS += namespace_test
 FILE_TESTS += image_channel_codec_test
 FILE_TESTS += image_receipt_test
 FILE_TESTS += image_producer_test
+FILE_TESTS += isb_mapped_test
 FILE_TESTS += shell_image_test
 FILE_TESTS += shell_byte_refusal_test
 FILE_TESTS += descriptor_draft_codec_test

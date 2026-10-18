@@ -23,8 +23,9 @@ mod producer;
 mod role;
 
 pub use io::connect;
-pub use isb::{IsbSource, create_isb, finish_isb};
+pub use isb::{IsbSource, create_isb, create_mapped_isb, finish_isb};
 pub use producer::ImageProducer;
+pub use sophia_isb::{IsbError, MappedIsb};
 
 /// The role this producer speaks on its channel.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

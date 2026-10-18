@@ -8,6 +8,13 @@ Image adapters require ISB and never select byte fallback. Shell clients may
 enable the adapter after negotiated Limits, including dock and launcher roles.
 Shell and lock byte-upload APIs have been removed. CPU images require the ISB adapters; passive legacy record codecs remain available for conformance checks.
 
+Mapped ISB builders fill pixels in place, with no staging copy: Rust's
+`create_mapped_isb` (the `sophia-isb` crate's `MappedIsb`) and C's
+`sophia_ip_isb_create_bounded`. Both check dimensions and the caller's resource
+bound before allocating, seal the size at creation, exclude the mapping from
+`fork` and verify every seal on finish; see
+[the mapped builder contract](API-PARITY.md#mapped-isb-builder-2026-10-18).
+
 Native launchers can adopt a settled ISB into their resource lifecycle with
 Rust's `adopt_native_image` or C's `sophia_ns_adopt_image`; see
 [the adoption contract and coverage](API-PARITY.md#native-isb-resource-adoption-2026-10-18).
