@@ -83,9 +83,32 @@ its IPC pair failed during negotiation. The comparator's unauthenticated
 process-start path inherited production's content denial; the narrow IPC-only
 repair now passes a Session-start regression and its unfixed negative control.
 Replacement binaries and short-path campaigns `isb60b`/`isb120b` are frozen.
-No paired performance verdict
-exists. All four cost gates and latency qualification remain open; no installed
-desktop has been changed.
+The replacement's first 12 arms captured successfully, with terminal recovery
+verified for every arm. The first idle pair at 60 Hz exceeds the +10% limit for
+panel CPU, panel allocations and bulk CPU. Stop here for cost diagnosis before
+requesting more attended runs. Full cost and latency qualification remain open;
+no installed desktop has been changed.
+
+## October 18 repaired first-pair results
+
+Campaign `~/.local/state/t331/isb60b` captured all 12 first-pair arms on the
+repaired comparator `7b636c5ad9bf38c11d430f9d590baa08d52946f2`. Every recovery
+log reports restored termios and keyboard mode, restored keyd state and no
+emergency recovery. The bounded Session-plus-peer cost comparisons are:
+
+| Measure | ISB relative to IPC | First-pair +10% result |
+| --- | --- | --- |
+| Panel CPU per uploaded MiB | +36.30% to +36.67% | Exceeds limit |
+| Panel allocations per frame | +30.19% to +30.65% | Exceeds limit |
+| Bulk CPU per uploaded MiB | +11.43% to +11.47% | Exceeds limit |
+| Bulk allocations per frame | -46.93% to -46.86% | Within limit |
+
+Evidence: `t331-isb-cost-20261018/candidate-02/first-block-analysis.json`, with
+the immutable arm captures under the campaign root. These are single-pair
+diagnostics, not the three-pair idle/load verdict or complete latency gates.
+The next step is to explain the native panel CPU/allocation excess and bulk CPU
+excess using separate diagnostic runs; preserve this candidate and its captures.
+Do not relax the gates or subtract measured overhead to make the result pass.
 
 ## October 18 first attended block
 
