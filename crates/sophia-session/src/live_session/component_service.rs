@@ -159,7 +159,7 @@ pub(super) fn service_components(
     let active_output = wm.as_ref().and_then(LiveWmSession::active_output);
     for (key, role) in components.connected_roles().into_iter().flatten() {
         if role == sophia_config::ShellComponentRole::Dock {
-            let result = components.with_service(key, |service, transport| {
+            let result = components.with_service_batch(key, |service, transport| {
                 let ShellComponentService::Dock(dock) = service else {
                     return Err("catalog component role mismatch".into());
                 };
@@ -190,7 +190,7 @@ pub(super) fn service_components(
             continue;
         }
         if role == sophia_config::ShellComponentRole::ApplicationLauncher {
-            let result = components.with_service(key, |service, transport| {
+            let result = components.with_service_batch(key, |service, transport| {
                 let ShellComponentService::Launcher { content, actions } = service else {
                     return Err("native component role mismatch".into());
                 };
@@ -229,7 +229,7 @@ pub(super) fn service_components(
             }
             continue;
         }
-        let result = components.with_service(key, |service, transport| {
+        let result = components.with_service_batch(key, |service, transport| {
             let ShellComponentService::Bar(bar) = service else {
                 return Err(IndicatorServiceError::Poll(
                     "bar service role mismatch".into(),

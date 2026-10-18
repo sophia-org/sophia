@@ -17,6 +17,24 @@ engine optimization programme. Requested by niltempus on October 15.
 
 ## Task details
 
+### Approved owner-service optimization — October 18
+
+After reviewing native syscall evidence, niltempus explicitly approved service
+scheduling changes and directed implementation. This extends the earlier
+investigation-only scope to bounded publication batching inside the existing
+component-service callback. Preserve input/role order, force progress at journal
+capacity, flush before callback return, retain every operation/delivery check
+and every actual wire service's authentication polls, and preserve callback
+failure classification. Do not cache custody, suppress waiting-read retries,
+change authentication cadence, or change ACK/deadline policy.
+
+Add comparator-only service/retry counters, implement and validate batching,
+then replace temporary output-observation vectors with the existing bounded
+16-output capacity in a separate change. Carry shared changes onto both
+comparator paths without restoring IPC in production. Use separate unprofiled
+CPU and allocation pilots for each signed slice before the unchanged full
+qualification matrix. This approval does not alter any t331 exit threshold.
+
 ### t331 — Reduce shell allocation overhead
 
 On October 17 niltempus accepted leaving the panel allocation result red while

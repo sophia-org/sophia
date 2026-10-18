@@ -58,15 +58,25 @@ fn facts() -> Vec<ContentOutputFactsEntry> {
 
 #[test]
 fn a_record_the_journal_refused_stays_charged_and_leaves_once_in_order() {
-    queued_record_custody(false);
+    queued_record_custody(false, false, UNSOLICITED + 1);
 }
 
 #[test]
 fn owner_turns_preserve_fifo_and_charge_when_role_visits_share_input() {
-    queued_record_custody(true);
+    queued_record_custody(true, false, UNSOLICITED + 1);
 }
 
-fn queued_record_custody(owner_turns: bool) {
+#[test]
+fn publication_batch_preserves_saturated_fifo_and_credit() {
+    queued_record_custody(true, true, UNSOLICITED + 1);
+}
+
+#[test]
+fn publication_batch_flushes_once_even_when_callback_returns_error() {
+    queued_record_custody(true, true, 3);
+}
+
+fn queued_record_custody(owner_turns: bool, batch: bool, offered: u64) {
     let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
     let (mut transport, directory) = transport();
     let grant = ContentGrant {
@@ -104,7 +114,7 @@ fn queued_record_custody(owner_turns: bool) {
         // The reader stops until Session has filled the unsolicited share.
         resume.recv().unwrap();
         let mut generations = Vec::new();
-        for _ in 0..=UNSOLICITED {
+        for _ in 0..offered {
             let event = peer.next_event();
             let published = decode_shell_file_object_published(&event).unwrap();
             assert_eq!(published.object, ShellFileKind::Outputs);
@@ -146,21 +156,48 @@ fn queued_record_custody(owner_turns: bool) {
     if owner_turns {
         transport.service_owner_turn(&mut registry).unwrap();
     }
-    for generation in 1..=UNSOLICITED + 1 {
-        transport
-            .publish_content_output_facts(
-                &mut registry,
-                TransactionId::from_raw(100 + generation),
-                generation,
-                facts(),
-            )
-            .unwrap();
-        transport.poll_io(&mut registry).unwrap();
+    let before = transport.wire_turn_count();
+    let publish = |connection: &mut ShellTransportConnection<'_>| {
+        for generation in 1..=offered {
+            connection
+                .publish_content_output_facts(
+                    TransactionId::from_raw(100 + generation),
+                    generation,
+                    facts(),
+                )
+                .unwrap();
+            connection.poll_io().unwrap();
+        }
+    };
+    if batch {
+        let result = transport
+            .connection(&mut registry)
+            .with_publication_batch(|connection| {
+                assert_eq!(
+                    connection.with_publication_batch(|_| Ok(())),
+                    Err(ShellTransportError::InvalidServiceBatch)
+                );
+                assert_eq!(
+                    connection.service_owner_turn(),
+                    Err(ShellTransportError::InvalidServiceBatch)
+                );
+                publish(connection);
+                Err::<(), _>(ShellTransportError::WrongTransaction)
+            });
+        assert_eq!(result, Err(ShellTransportError::WrongTransaction));
+        assert_eq!(
+            transport.wire_turn_count() - before,
+            1,
+            "one boundary flush or one saturated-journal flush"
+        );
+    } else {
+        publish(&mut transport.connection(&mut registry));
     }
     // The last publication did not fit: it stays owned and charged here.
     let retained = transport.content_accounting(&registry);
-    assert_eq!(retained.response_records, 1);
-    assert_eq!(retained.response_bytes, 40 + 40);
+    let held = offered.saturating_sub(UNSOLICITED);
+    assert_eq!(retained.response_records as u64, held);
+    assert_eq!(retained.response_bytes as u64, held * (40 + 40));
     for _ in 0..8 {
         transport.poll_io(&mut registry).unwrap();
     }
@@ -178,7 +215,7 @@ fn queued_record_custody(owner_turns: bool) {
         std::thread::yield_now();
     }
     let generations = peer.join().unwrap();
-    assert_eq!(generations, (1..=UNSOLICITED + 1).collect::<Vec<_>>());
+    assert_eq!(generations, (1..=offered).collect::<Vec<_>>());
     assert_eq!(transport.content_accounting(&registry).response_records, 0);
     transport.disconnect(&mut registry).unwrap();
     std::fs::remove_dir_all(directory).unwrap();

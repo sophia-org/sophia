@@ -477,6 +477,24 @@ impl ShellComponentSession {
             .processes
             .with_connection(key, |transport| service(&mut ready.service, transport))?)
     }
+
+    /// A production role visit, after the owner input turn. Standalone
+    /// connection drivers keep using with_service and its immediate I/O.
+    pub fn with_service_batch<T, E>(
+        &mut self,
+        key: ComponentConnectionKey,
+        service: impl FnOnce(
+            &mut ShellComponentService,
+            &mut ShellTransportConnection<'_>,
+        ) -> std::result::Result<T, E>,
+    ) -> Result<std::result::Result<T, E>>
+    where
+        E: From<sophia_runtime::ShellTransportError>,
+    {
+        self.with_service(key, |role, transport| {
+            transport.with_publication_batch(|transport| service(role, transport))
+        })
+    }
     pub fn settle_revocations(
         &mut self,
         runtime: Option<&mut LiveProductionVisualRuntime>,

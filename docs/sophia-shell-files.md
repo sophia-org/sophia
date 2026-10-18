@@ -176,6 +176,23 @@ Paths, attach names, UIDs, fids and qids grant nothing. Authority comes from
 the endpoint's admitted peer and the role profile Session fixed before the
 peer connected.
 
+### Owner-visit publication batching
+
+Session may batch file publications within one bounded component-service
+callback after the owner input turn. Admission, journal order and queue charges
+do not change. Intermediate role visits may move records into the journal
+without flushing the socket; a full journal forces a flush of records that fit.
+Pending publications are flushed before the callback returns, including when
+the callback reports an error. Standalone connection drivers retain immediate
+service. Nested batches and new owner input turns inside a batch are refused.
+
+Every actual wire service retains its authentication polls, and operation and
+delivery checks remain in place. No liveness result is cached. Callback failures
+retain their classification if the final flush also fails; flush-only failures
+follow the component's existing service-failure path. Unwinding disconnects the
+batched connection. Batching adds no timer and changes no ACK, credit, timeout
+or resource-custody rule.
+
 ### Authenticated shell launches
 
 Normal Session launches of Bar, Dock and ApplicationLauncher require Factotum.

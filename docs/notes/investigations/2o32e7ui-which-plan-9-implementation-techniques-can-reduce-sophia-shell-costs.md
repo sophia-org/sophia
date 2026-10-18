@@ -15,6 +15,24 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+October 18 implementation checkpoint: niltempus approved bounded owner-service
+batching and a separate bounded output-observation change. Dock, Launcher and
+Bar visits now share publication flushes within each callback; catalog execution
+and direct activation remain immediate. Journal capacity still forces progress,
+and authentication and delivery checks remain intact. A boundary close becomes
+a per-role service failure; a callback error keeps precedence over a flush error.
+Supplied-authority controls prove live delivery, no delivery after revocation,
+callback-error precedence and disconnect on unwind. These are transport controls,
+not evidence of real Factotum launch authentication.
+
+The comparator-only ledger separates input, useful/empty/deferred flushes and
+waiting-read retry sources/outcomes. Its controls allocate nothing. Write-path
+retries do return Ready in the supplied-owner fixtures, so retry suppression is
+not part of this change. Native CPU and allocation pilots must measure batching
+and bounded observations separately before the unchanged qualification matrix.
+Evidence is in `candidate-03/batch-*.log`; no native performance improvement is
+claimed for either new slice. t331 remains open.
+
 The first user-space perf pair has completed and its process/time-filtered
 reports pass the raw-sample and histogram checks. Session has 153 files samples
 versus 114 IPC samples; peers have only 34 versus 14. Image validation and
