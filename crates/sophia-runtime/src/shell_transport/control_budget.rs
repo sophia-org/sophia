@@ -67,20 +67,20 @@ impl ShellComponentTransport {
         record: OutboundRecord,
         class: Class,
     ) -> Result<Admitted, ShellTransportError> {
-        let (_, body) = record.native()?;
+        let body_len = record.body_len()?;
         let (control, limit) = match class {
             Class::Bulk => (false, None),
             Class::Control { limit, oversize } => (true, Some((limit, oversize))),
         };
         if let Some((limit, oversize)) = limit
-            && SHELL_FILE_HEADER_BYTES + body.len() > limit
+            && SHELL_FILE_HEADER_BYTES + body_len > limit
         {
             return Err(oversize);
         }
         Ok(Admitted {
             record,
             control,
-            charge: body.len(),
+            charge: body_len,
         })
     }
 

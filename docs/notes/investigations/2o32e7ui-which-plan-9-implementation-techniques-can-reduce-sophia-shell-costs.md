@@ -53,6 +53,21 @@ all four unchanged +10% gates and the latency gates remain open. Muse is offline
 Codex owns integration/publication and Claude assists with bounded SDK and
 diagnostic work.
 
+The next shared optimization validates and sizes outbound content with the SDK's
+borrowed value counter instead of allocating encoded buffers for admission.
+Production runtime all-target tests and strict Clippy pass; a differential
+control preserves encoded charges and refusals. The same change is on both
+comparator wires. Across 64-frame supplied-owner runs, ISB admission allocation
+plus reallocation counts fell from 1,737 to 1 (panel) and 2,377 to 0 (bulk);
+IPC admission counts roughly halved. The remaining single allocation is within
+a process-wide interval, not proof of allocation by that function. See
+`request-attribution-borrowed-01.log`, `borrowed-charge-tests-02.log` and
+`borrowed-runtime-all-tests.log` in the current evidence directory. This does
+not replace native cost or latency gates. Bemenu `2a1a73fbec1e0c5552d965b3b7aa3fd6b2e4977b`
+and Kleis `5b314213dbb2733ec14d40d3e7c6f3fd5d9b8cee` now publish the mapped
+C SDK pin; both isolated client gates pass, including Kleis build and format
+checks. Its obsolete byte-upload C build input was removed.
+
 t331 is implementing the October 18 Immutable Shared Buffer migration.
 t338 is closed; its [delivery resumption](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#current-resumption)
 owns that result. The [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#immutable-shared-buffers--october-18)

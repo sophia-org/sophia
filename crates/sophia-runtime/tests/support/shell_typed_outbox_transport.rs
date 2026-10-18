@@ -201,6 +201,55 @@ fn control(limit: usize) -> Class {
 }
 
 #[test]
+fn borrowed_content_charges_match_encoding_and_preserve_refusals() {
+    let mut cases = vec![
+        rejected_allocation(grant(1)),
+        native_input("hello", grant(1)),
+    ];
+    for outputs in 0..=25 {
+        cases.push(OutboundRecord::Content(
+            tx(1),
+            ShellContentRecord::OutputFacts(ContentOutputFacts {
+                grant: grant(1),
+                facts_generation: 1,
+                outputs: (0..outputs).map(|index| entry(index + 1)).collect(),
+            }),
+        ));
+    }
+    cases.push(OutboundRecord::Content(
+        tx(1),
+        ShellContentRecord::OutputFacts(ContentOutputFacts {
+            grant: grant(1),
+            facts_generation: 1,
+            outputs: vec![entry(1), entry(1)],
+        }),
+    ));
+    cases.push(OutboundRecord::Content(
+        tx(1),
+        ShellContentRecord::Limits(ContentLimits::prototype(grant(1))),
+    ));
+    let mut invalid_transaction = rejected_allocation(grant(1));
+    if let OutboundRecord::Content(transaction, _) = &mut invalid_transaction {
+        *transaction = tx(0);
+    }
+    cases.push(invalid_transaction);
+    let mut accepted = 0;
+    let mut refused = 0;
+    for record in cases {
+        match (record.native(), record.body_len()) {
+            (Ok((_, encoded)), Ok(length)) => {
+                assert_eq!(encoded.len(), length);
+                accepted += 1;
+            }
+            (Err(_), Err(_)) => refused += 1,
+            other => panic!("charge validation diverged for {record:?}: {other:?}"),
+        }
+    }
+    assert!(accepted > 16);
+    assert!(refused >= 4);
+}
+
+#[test]
 fn the_registry_and_the_fifo_charge_output_facts_the_same_neutral_body_bytes() {
     let mut epochs = registry();
     let mut owner = Owner::new(&mut epochs, 1, 64);

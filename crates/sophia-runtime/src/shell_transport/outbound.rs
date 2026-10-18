@@ -46,6 +46,37 @@ pub(super) struct Admitted {
 }
 
 impl OutboundRecord {
+    /// Validate a content obligation and calculate its queue charge without
+    /// allocating the bytes that the export will encode when it takes custody.
+    pub(super) fn body_len(&self) -> Result<usize, ShellTransportError> {
+        let Self::Content(transaction, record) = self else {
+            return self.native().map(|(_, body)| body.len());
+        };
+        let refused = || ShellTransportError::WrongContentRecord;
+        if !transaction.is_valid() {
+            return Err(refused());
+        }
+        match record {
+            ShellContentRecord::ResourceStatus(_)
+            | ShellContentRecord::ResourceReleased(_)
+            | ShellContentRecord::OutputFacts(_)
+            | ShellContentRecord::AllocationResult(_) => {}
+            _ if shell_file_transaction_kind(record).is_some() => {}
+            _ => return Err(refused()),
+        }
+        let payload = sophia_protocol::shell::encoding::content::shell_content_value_bytes(record)
+            .map_err(|_| refused())?;
+        let body = payload.checked_add(8).ok_or_else(refused)?;
+        if matches!(record, ShellContentRecord::OutputFacts(_))
+            && body
+                > sophia_protocol::shell_files::SHELL_FILE_OUTPUTS_MAX_BYTES
+                    - sophia_protocol::shell_files::SHELL_FILE_HEADER_BYTES
+        {
+            return Err(refused());
+        }
+        Ok(body)
+    }
+
     /// The surviving native encoding: the file event or object kind, and its
     /// body. A record the file contract does not carry fails closed here; it
     /// never falls back to another wire's framing.
