@@ -37,9 +37,9 @@ Provlita `be198914684362fac2a39c454aa8f657664803b3` and Lom
 `dcac836e72e75467bbd7fd8e4543e71d03a0a84b` are signed and published with the
 Rust pin. Muse reports their client gates green. Bemenu
 `7abb08cbdf2752dc9a3ad6b8f6b8cd754b5b2656` and Kleis
-`919bc9f9a70838abd4b3bff04c402ec807679db0` are signed and published on their
-`migration/isb` branches, with worktrees in `~/dev/bemenu-isb` and
-`~/dev/kleis-isb`. Their master branches have not been advanced. Codex finished
+`919bc9f9a70838abd4b3bff04c402ec807679db0` are signed and published on master
+after fast-forward integration. Their finished migration worktrees were removed.
+Codex finished
 Kleis after Muse's quota stop. Bemenu's full strict gate passes, including
 independent executable sealed-FD transfer. Kleis's full tests, release build,
 formatting and strict C checks pass; its provider tests cover ImageBegin and
@@ -52,7 +52,7 @@ affected shell/lock SDK and image export tests pass 73 cases, with four
 existing external-peer tests skipped (`sophia-sdk-export-tests.log`). This
 still exercises legacy byte controls; it does not prove their removal.
 
-Next: integrate the two published client branches, complete removal of
+Next: complete removal of
 production byte APIs and server compatibility while preserving the isolated
 comparator, then
 rerun the native comparison. All four +10% cost gates remain unchanged and open;
