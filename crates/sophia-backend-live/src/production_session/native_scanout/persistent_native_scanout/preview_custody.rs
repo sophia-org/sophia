@@ -88,7 +88,12 @@ impl Drop for PreviewImages {
     }
 }
 impl PreviewImages {
-    pub(super) fn synchronize(&mut self, generation: u64, stores: &BTreeMap<u64, usize>) {
+    pub(super) fn synchronize(
+        &mut self,
+        generation: u64,
+        stores: impl Iterator<Item = (u64, usize)> + Clone,
+    ) {
+        let replacement = store_inventory::replacement(&self.live_stores, stores);
         if self
             .inventory_generation
             .is_some_and(|old| old != generation)
@@ -98,9 +103,12 @@ impl PreviewImages {
         self.inventory_generation = Some(generation);
         // Unchanged inventory is the common owner-turn case. Keep its storage,
         // but still reconcile epochs and retired snapshots below on every visit.
-        if self.live_stores != *stores {
-            self.live_stores = stores.clone();
+        if let Some(stores) = replacement
+            && self.live_stores != stores
+        {
+            self.live_stores = stores;
         }
+        let stores = &self.live_stores;
         self.retired_imports
             .retain(|store, _| stores.contains_key(store));
         self.epochs.retain(|(store, old_generation), epoch| {
@@ -305,6 +313,9 @@ impl LiveProductionNativeScanout {
 }
 
 include!("preview_preparation.rs");
+
+#[path = "store_inventory.rs"]
+mod store_inventory;
 
 #[cfg(test)]
 #[path = "../../../../tests/support/preview_store_reuse.rs"]
