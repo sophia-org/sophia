@@ -8,26 +8,45 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
-Opt-in environment delivery is implemented in Sophia `d3cb848cf` and comparator
-`ecfa507df`, with the receiver in `niltempus be3ae85`. Each datagram carries a
-self-pidfd as well as kernel sender credentials. The receiver checks the live
-handle before accepting the numeric PID, so queued records from an exited
-sender cannot qualify after PID reuse. Four Session controls and eight receiver
-tests pass; strict Clippy passes for both. Supervised process binding is signed
-in `niltempus 8f5b649`, with 13 fixture controls. The runner must still bracket
-receipt validation with that binding and retain authenticated provenance; these
-modules do not yet qualify an arm. No physical run has occurred.
+The campaign runner and provenance provider are signed in external
+`niltempus 297819c`, on monitor `b988ddb`, load qualification `9b25d2e`,
+frozen observation wiring `0084783` and provider `e20573e`. The runner executes
+one frozen arm per attended invocation; routine console, source, helper,
+runner-image and run-directory refusals happen before its single-use claim.
+The full device-hidden xtask suite passes. Final independent controls pass for
+the provider (6), observer (4) and native planner/runner (19), along with
+all-target strict Clippy and formatting. Logs are
+`/tmp/t338-campaign-live-wiring-suite.log`,
+`/tmp/t338-runner-provider-final-controls.log` and
+`/tmp/t338-runner-provider-final-clippy.log`.
 
-The importer and registrations are published at `niltempus 0f1d09f`; the full
-device-hidden xtask suite, all-target strict Clippy and formatting pass. Its
-generated 54-arm idle condition imports through the real freeze/attempt chain;
-tampered evidence and a failed arm refuse the condition. The environment
-provider in that test is a supplied verdict, not production authentication.
-Sophia `ff6f445fe` adds `--output-environment-readback`, armed separately with
-`SOPHIA_OUTPUT_ENVIRONMENT_ARM=1`, an absolute receiver socket and a bounded
-native normal Session. The old output-role proof gate is unchanged. The eight
-output-proof/config controls and strict Clippy pass. Runner use of this flag,
-environment monitoring and load qualification are the next integration work.
+The monitor accepts pidfd-backed host datagrams only inside full supervised
+binding brackets and retains start/end captures separately. The provider
+rechecks identities, source provenance, receipt coverage, static equality and
+the zero-offset clock domain from those retained records. Normal process exit
+after evidence is allowed; the last proven-alive opening bounds measurement
+end. Load records must identify the same capturer, show 16 single-threaded
+children with all-online affinity and positive CPU progress, bracket the
+measurement, and end through requested TERM with complete reaping. Tests use
+supplied records or bounded monitor fixtures; no campaign load or physical
+session was launched. Arbitrary deserialized evidence is not authenticated.
+
+`run-campaign-arm` retains failed attempts and cleanup evidence;
+`report-campaign-condition` rebuilds each arm through the importer and existing
+paired gates. An unfinished claim blocks the campaign, and a failed arm is
+never replaced under the same identity. The published operator procedure is
+`niltempus/docs/physical-runners.md`. The runner, monitor, provider and importer
+now connect in source; their combined physical path still needs calibration.
+The generated 54-arm idle fixture proves freeze/import mechanics with supplied
+provenance, not a native campaign. No performance result is claimed.
+
+Sophia `d3cb848cf` and comparator `ecfa507df` send one self-pidfd with each
+environment datagram. The receiver checks the live handle as well as kernel
+credentials, refusing queued records from an exited sender after PID reuse.
+Sophia `ff6f445fe` and comparator `180808d48` add the separately armed,
+bounded `--output-environment-readback` path; the old output-role proof gate
+is unchanged. No physical run has occurred. The operator's 1920×1080@120 Hz
+connector selection remains pending, and this campaign cannot close 60 Hz B9.
 
 Environment readback is implemented in Sophia `21bcd211e` and emitted by
 Session `116d663b4`. Nominal refresh and timing-derived refresh stay distinct;
@@ -42,10 +61,9 @@ and bounded process captures (`ededd4e`, `5c49701`), plus schema-2 frozen output
 targets and a single-attempt hash chain. All 13 campaign controls and strict
 xtask Clippy pass. Failed arms remain recorded; unfinished claims block later
 arms. Capture controls reject reused, dead and malformed process identities.
-The attended runner, supervised process binding, credential-checked environment
-delivery and evidence importer are still being connected. Import must prove a
-shared zero-offset monotonic clock domain before comparing process and kernel
-timestamps. A matching PID printed in a log is not writer authentication.
+That checkpoint did not yet connect the attended runner, binding, delivery and
+importer; the newer checkpoint above does. Import requires a shared zero-offset
+monotonic clock domain before comparing process and kernel timestamps. A matching PID printed in a log is not writer authentication.
 No calibration or native campaign has run, and performance acceptance remains
 open. The operator's 120 Hz connector selection is still pending.
 
