@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! In-crate while-validating cancel for the lock sealed-image path.
 //!
 //! Production `LockFileTransport::turn` serves the worker before it
