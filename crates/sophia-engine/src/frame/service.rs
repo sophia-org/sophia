@@ -21,9 +21,127 @@ pub struct OutputFrameServiceObservation {
     pub pending_frame: bool,
 }
 
+const UNUSED_OBSERVATION: OutputFrameServiceObservation = OutputFrameServiceObservation {
+    output: OutputId::from_raw(0),
+    primary: false,
+    native_phase: OutputNativeFramePhase::Idle,
+    pending_frame: false,
+};
+
+/// Observations stored inline, so the owner can build one per service pass
+/// without a heap allocation.
+///
+/// Observations past the capacity are not stored but are still counted. The
+/// validator then refuses the request with the same `CapacityExceeded` count
+/// an unbounded list would have produced.
+#[derive(Clone, Copy)]
+pub struct OutputFrameServiceObservations {
+    items: [OutputFrameServiceObservation; OUTPUT_FRAME_SERVICE_CAPACITY],
+    len: usize,
+    offered: usize,
+}
+
+impl OutputFrameServiceObservations {
+    pub const fn new() -> Self {
+        Self {
+            items: [UNUSED_OBSERVATION; OUTPUT_FRAME_SERVICE_CAPACITY],
+            len: 0,
+            offered: 0,
+        }
+    }
+
+    pub fn push(&mut self, observation: OutputFrameServiceObservation) {
+        if self.len < OUTPUT_FRAME_SERVICE_CAPACITY {
+            self.items[self.len] = observation;
+            self.len += 1;
+        }
+        self.offered = self.offered.saturating_add(1);
+    }
+
+    /// Every observation pushed, including any beyond the capacity.
+    pub const fn offered(&self) -> usize {
+        self.offered
+    }
+}
+
+impl Default for OutputFrameServiceObservations {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::ops::Deref for OutputFrameServiceObservations {
+    type Target = [OutputFrameServiceObservation];
+
+    fn deref(&self) -> &Self::Target {
+        &self.items[..self.len]
+    }
+}
+
+impl std::ops::DerefMut for OutputFrameServiceObservations {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.items[..self.len]
+    }
+}
+
+impl PartialEq for OutputFrameServiceObservations {
+    fn eq(&self, other: &Self) -> bool {
+        self.offered == other.offered && **self == **other
+    }
+}
+
+impl Eq for OutputFrameServiceObservations {}
+
+impl std::fmt::Debug for OutputFrameServiceObservations {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.offered == self.len {
+            f.debug_list().entries(self.iter()).finish()
+        } else {
+            f.debug_struct("OutputFrameServiceObservations")
+                .field("stored", &&**self)
+                .field("offered", &self.offered)
+                .finish()
+        }
+    }
+}
+
+impl Extend<OutputFrameServiceObservation> for OutputFrameServiceObservations {
+    fn extend<I: IntoIterator<Item = OutputFrameServiceObservation>>(&mut self, iter: I) {
+        for observation in iter {
+            self.push(observation);
+        }
+    }
+}
+
+impl FromIterator<OutputFrameServiceObservation> for OutputFrameServiceObservations {
+    fn from_iter<I: IntoIterator<Item = OutputFrameServiceObservation>>(iter: I) -> Self {
+        let mut observations = Self::new();
+        observations.extend(iter);
+        observations
+    }
+}
+
+impl<'a> IntoIterator for &'a OutputFrameServiceObservations {
+    type Item = &'a OutputFrameServiceObservation;
+    type IntoIter = std::slice::Iter<'a, OutputFrameServiceObservation>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut OutputFrameServiceObservations {
+    type Item = &'a mut OutputFrameServiceObservation;
+    type IntoIter = std::slice::IterMut<'a, OutputFrameServiceObservation>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OutputFrameServiceRequest {
-    pub outputs: Vec<OutputFrameServiceObservation>,
+    pub outputs: OutputFrameServiceObservations,
     pub presentation_queued: bool,
     /// A composed software present is waiting to be lowered onto head frames.
     /// Staging it requires every output to be natively idle, so it is a
@@ -221,13 +339,14 @@ impl OutputFrameServiceReducer {
 fn validate_output_frame_service_request(
     request: &OutputFrameServiceRequest,
 ) -> Result<(OutputSet, OutputId), OutputFrameServiceError> {
-    if request.outputs.is_empty() {
+    // `offered` counts observations the inline storage could not keep.
+    if request.outputs.offered() == 0 {
         return Err(OutputFrameServiceError::EmptyOutputSet);
     }
-    if request.outputs.len() > OUTPUT_FRAME_SERVICE_CAPACITY {
+    if request.outputs.offered() > OUTPUT_FRAME_SERVICE_CAPACITY {
         return Err(OutputFrameServiceError::CapacityExceeded {
             capacity: OUTPUT_FRAME_SERVICE_CAPACITY,
-            actual: request.outputs.len(),
+            actual: request.outputs.offered(),
         });
     }
 

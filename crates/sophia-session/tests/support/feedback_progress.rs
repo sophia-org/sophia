@@ -495,12 +495,14 @@ fn feedback_progress_precedes_no_engine_work_with_a_disarmed_native_deadline() {
     )
     .unwrap();
     let native_request = OutputFrameServiceRequest {
-        outputs: vec![OutputFrameServiceObservation {
+        outputs: [OutputFrameServiceObservation {
             output,
             primary: true,
             native_phase: OutputNativeFramePhase::Idle,
             pending_frame: false,
-        }],
+        }]
+        .into_iter()
+        .collect(),
         ..Default::default()
     };
     let deadline_armed = false;
