@@ -3,11 +3,13 @@ mod default_display;
 pub use composition_snapshot::*;
 mod dmabuf_sync;
 mod gl;
+mod gl_identity;
 mod image_custody;
 mod pixel_evidence;
 mod sampling;
 mod status;
 pub use dmabuf_sync::native_dmabuf_cpu_write_access;
+pub use gl_identity::{NativeGlIdentity, NativeGlIdentityState};
 pub use image_custody::NativeRendererImageCustody;
 
 #[cfg(feature = "gbm-platform")]

@@ -17,7 +17,7 @@ use super::{
 use sophia_renderer_live::{
     LiveCpuComposedFrame, LiveRendererScanoutBufferExportDetail,
     LiveRendererScanoutBufferExportStatus, NativeGbmOwnedScanoutBuffer,
-    NativeGbmRenderedScanoutContext, NativeGbmRenderedScanoutContextStatus,
+    NativeGbmRenderedScanoutContext, NativeGbmRenderedScanoutContextStatus, NativeGlIdentityState,
 };
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
@@ -48,6 +48,9 @@ where
     pub(super) output: LiveRendererWorkerOutputKey,
     context: Option<NativeGbmRenderedScanoutContext<R::Device>>,
     worker: Option<NativeGbmRendererWorker>,
+    /// GL identity from contexts this exporter no longer holds, so moving
+    /// to a worker cannot replace what an inline context reported.
+    retained_gl_identity: NativeGlIdentityState,
     worker_frame_kind: Option<PendingRenderedFrameKind>,
     context_status: Option<NativeGbmRenderedScanoutContextStatus>,
     context_open_attempts: usize,
@@ -161,6 +164,7 @@ where
             output: LiveRendererWorkerOutputKey::from_raw(0),
             context: None,
             worker: None,
+            retained_gl_identity: NativeGlIdentityState::Unobserved,
             worker_frame_kind: None,
             context_status: None,
             context_open_attempts: 0,
@@ -252,6 +256,7 @@ where
             import_devices,
         )?;
         self.worker = Some(core.attach(self.output));
+        self.retain_context_gl_identity();
         self.context = None;
         self.context_status = None;
         Ok(())
@@ -266,6 +271,7 @@ where
         self.invalidate_layout_probe();
         self.context_open_attempts = self.context_open_attempts.saturating_add(1);
         self.worker = Some(core.attach(self.output));
+        self.retain_context_gl_identity();
         self.context = None;
         self.context_status = None;
     }
@@ -379,6 +385,24 @@ where
         self.worker
             .as_ref()
             .map(NativeGbmRendererWorker::metrics_identity)
+    }
+
+    /// Every GL identity this output's contexts reported, merged. A
+    /// differing identity is a conflict, never a replacement.
+    pub fn gl_identity(&self) -> NativeGlIdentityState {
+        let mut state = self.retained_gl_identity.clone();
+        match (&self.worker, &self.context) {
+            (Some(worker), _) => state.merge(&worker.gl_identity()),
+            (None, Some(context)) => state.merge(context.gl_identity()),
+            (None, None) => {}
+        }
+        state
+    }
+
+    fn retain_context_gl_identity(&mut self) {
+        if let Some(context) = &self.context {
+            self.retained_gl_identity.merge(context.gl_identity());
+        }
     }
 
     pub fn persistent_render_stats(&self) -> sophia_renderer_live::LiveNativePersistentRenderStats {

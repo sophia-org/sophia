@@ -10,7 +10,7 @@ use sophia_renderer_live::{
     LiveRendererImageSnapshot, LiveRendererScanoutBufferDescriptor,
     LiveRendererScanoutBufferExportDetail, LiveRendererScanoutBufferExportStatus,
     NativeFrameTargetSetId, NativeGbmOwnedScanoutBuffer, NativeGbmOwnedScanoutBufferExportReport,
-    NativeGbmRenderedScanoutContext, NativeGbmRenderedScanoutContextStatus,
+    NativeGbmRenderedScanoutContext, NativeGbmRenderedScanoutContextStatus, NativeGlIdentityState,
 };
 use std::io;
 use std::os::fd::AsFd;
@@ -339,6 +339,7 @@ impl NativeGbmRendererWorkerCore {
             discarded_release: None,
             context_status: None,
             persistent_render_stats: LiveNativePersistentRenderStats::default(),
+            gl_identity: NativeGlIdentityState::Unobserved,
             head_imports: head_imports::HeadImportTrace::from_environment(),
             composition_nonzero_rgb_pixels: 0,
             frame_slot_metrics,
@@ -366,6 +367,9 @@ pub(super) struct NativeGbmRendererWorker {
     discarded_release: Option<DiscardedWorkerLease>,
     context_status: Option<NativeGbmRenderedScanoutContextStatus>,
     persistent_render_stats: LiveNativePersistentRenderStats,
+    /// Merged from every reply, so a context the worker reopens cannot
+    /// replace an identity an earlier context reported.
+    gl_identity: NativeGlIdentityState,
     /// Proof-only per-head import records (t307), off by default.
     head_imports: head_imports::HeadImportTrace,
     composition_nonzero_rgb_pixels: usize,
@@ -438,6 +442,10 @@ impl NativeGbmRendererWorker {
 
     pub const fn persistent_render_stats(&self) -> LiveNativePersistentRenderStats {
         self.persistent_render_stats
+    }
+
+    pub fn gl_identity(&self) -> NativeGlIdentityState {
+        self.gl_identity.clone()
     }
 
     pub const fn composition_nonzero_rgb_pixels(&self) -> usize {
@@ -569,6 +577,7 @@ impl NativeGbmRendererWorker {
                 self.metrics.max_request_age = self.metrics.max_request_age.max(age);
                 self.context_status = Some(result.context_status);
                 self.persistent_render_stats = result.persistent_render_stats;
+                self.gl_identity.merge(&result.gl_identity);
                 self.composition_nonzero_rgb_pixels = result.composition_nonzero_rgb_pixels;
                 if trace_worker_request(in_flight.request_id) {
                     tracing::debug!(
@@ -876,6 +885,8 @@ struct WorkerResult {
     correlation: LiveRendererFrameCorrelation,
     context_status: NativeGbmRenderedScanoutContextStatus,
     persistent_render_stats: LiveNativePersistentRenderStats,
+    /// Reference-counted clones only; no strings are copied per frame.
+    gl_identity: NativeGlIdentityState,
     composition_nonzero_rgb_pixels: usize,
     outcome: WorkerOutcome,
 }

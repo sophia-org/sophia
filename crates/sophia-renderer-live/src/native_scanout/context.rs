@@ -28,6 +28,11 @@ where
         self.inner.set_render_timing_enabled(enabled);
     }
 
+    /// The GL implementation strings this context's render targets reported.
+    pub fn gl_identity(&self) -> &sophia_renderer_native_egl::NativeGlIdentityState {
+        self.inner.gl_identity()
+    }
+
     pub fn persistent_render_stats(&self) -> LiveNativePersistentRenderStats {
         let stats = self.inner.persistent_render_stats();
         LiveNativePersistentRenderStats {

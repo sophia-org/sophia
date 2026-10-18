@@ -81,6 +81,7 @@ fn correlated_result(
         correlation,
         context_status: super::NativeGbmRenderedScanoutContextStatus::Ready,
         persistent_render_stats: super::LiveNativePersistentRenderStats::default(),
+        gl_identity: super::NativeGlIdentityState::Unobserved,
         composition_nonzero_rgb_pixels: 0,
         outcome,
     }

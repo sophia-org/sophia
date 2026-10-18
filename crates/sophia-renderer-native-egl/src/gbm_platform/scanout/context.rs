@@ -82,6 +82,9 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     transfer_stats: NativeImageTransferStats,
     image_bridges: Vec<NativeImageBridgeSlot>,
     transfer_sources: std::collections::BTreeMap<(u32, u64), usize>,
+    /// What every render target's context reported. A differing later
+    /// answer is kept as a conflict, never as a replacement.
+    gl_identity: crate::NativeGlIdentityState,
 }
 
 type NativeRendererImage = crate::NativeRendererImageCustody<
@@ -95,6 +98,9 @@ struct NativeRenderTarget {
     surface_format: gbm::Format,
     egl_context: khronos_egl::Context,
     pipeline: PersistentXrgb8888GlPipeline,
+    /// Read while this target's context was current, then folded into the
+    /// owning context's state.
+    gl_identity: Option<crate::NativeGlIdentity>,
 }
 
 /// Identifies one output's private target state within a device context.
@@ -250,6 +256,7 @@ where
             transfer_stats: NativeImageTransferStats::default(),
             image_bridges: Vec::new(),
             transfer_sources: std::collections::BTreeMap::new(),
+            gl_identity: crate::NativeGlIdentityState::Unobserved,
             buffer_age_supported,
             next_target_generation: 1,
             last_render_buffer_age: None,
@@ -295,6 +302,11 @@ where
 
     pub fn snapshot_reuse_stats(&self) -> NativeCaptureReuseStats {
         self.capture_reuse.stats()
+    }
+
+    /// The GL implementation strings this context's render targets reported.
+    pub fn gl_identity(&self) -> &crate::NativeGlIdentityState {
+        &self.gl_identity
     }
 
     pub fn persistent_render_stats(&self) -> NativeGbmPersistentRenderStats {
@@ -803,7 +815,7 @@ where
         NativeGbmScanoutBufferExportDetail,
     > {
         let started = Instant::now();
-        let created = create_native_render_target(
+        let mut created = create_native_render_target(
             NativeEglScanoutDevice {
                 egl: &self.egl,
                 display: self.display,
@@ -812,6 +824,11 @@ where
             spec,
         );
         self.stats.max_target_create = self.stats.max_target_create.max(started.elapsed());
+        if let Ok((target, _, _)) = &mut created
+            && let Some(identity) = target.gl_identity.take()
+        {
+            self.gl_identity.observe(std::sync::Arc::new(identity));
+        }
         if let Ok((_, _, surface_create_duration)) = &created {
             self.stats.target_creations = self.stats.target_creations.saturating_add(1);
             self.stats.gl_pipeline_creations = self.stats.gl_pipeline_creations.saturating_add(1);

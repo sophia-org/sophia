@@ -164,6 +164,7 @@ fn create_native_render_target<T: std::os::fd::AsFd>(
             .map_or(ptr::null(), |proc| proc as *const c_void)
     };
     let gl = unsafe { glow::Context::from_loader_function(loader) };
+    let gl_identity = query_current_gl_identity(egl);
     let pipeline = match unsafe { PersistentXrgb8888GlPipeline::new(gl, width, height) } {
         Ok(pipeline) => pipeline,
         Err(_) => {
@@ -181,10 +182,42 @@ fn create_native_render_target<T: std::os::fd::AsFd>(
             surface_format: candidate.format,
             egl_context,
             pipeline,
+            gl_identity,
         },
         surface,
         surface_create_duration,
     ))
+}
+
+/// The implementation strings of the context current on this thread.
+///
+/// `glGetString` is called directly rather than through glow, whose wrapper
+/// panics on a null or non-UTF-8 answer. Either answer means no identity.
+fn query_current_gl_identity(
+    egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
+) -> Option<crate::NativeGlIdentity> {
+    type GetString = unsafe extern "C" fn(u32) -> *const std::ffi::c_char;
+    let address = egl.get_proc_address("glGetString")?;
+    // SAFETY: EGL returned the address of glGetString, whose C signature is
+    // `const GLubyte *glGetString(GLenum)`.
+    let get_string: GetString = unsafe { std::mem::transmute(address) };
+    let read = |name: u32| {
+        // SAFETY: a context is current on this thread and `name` is a valid
+        // glGetString enum. A non-null answer is a static NUL-terminated string.
+        let raw = unsafe { get_string(name) };
+        if raw.is_null() {
+            return None;
+        }
+        unsafe { std::ffi::CStr::from_ptr(raw) }
+            .to_str()
+            .ok()
+            .map(str::to_owned)
+    };
+    crate::NativeGlIdentity::from_strings(
+        read(glow::VENDOR)?,
+        read(glow::RENDERER)?,
+        read(glow::VERSION)?,
+    )
 }
 
 fn create_native_frame_surface<T: std::os::fd::AsFd>(

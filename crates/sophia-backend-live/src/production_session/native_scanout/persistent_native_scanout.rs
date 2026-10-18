@@ -92,6 +92,7 @@ mod preview_recovery;
 pub use preview_recovery::LivePreviewFrameFailure;
 mod renderer_handoff;
 pub use preview_custody::LivePreviewImageRefusal;
+mod environment_readback;
 mod renderer_images;
 mod shutdown;
 mod state;
@@ -99,6 +100,7 @@ mod topology;
 mod topology_custody;
 mod topology_readback;
 pub use cursor::project_native_cursor_logical_viewport;
+pub use environment_readback::LiveProductionOutputEnvironmentReadback;
 pub use frame_damage::project_mirror_output_damage_snapshot;
 use frame_damage::{
     trace_native_head_retirement, trace_presented_mirror_head_damage, trace_presented_output_damage,
