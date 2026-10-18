@@ -92,7 +92,8 @@ completed with clean recovery. Allocations fell substantially, but the paired
 gap remains +20.44–21.00%; CPU remains +37.57–37.84%. See
 `candidate-03/screening-analysis.json`. Prioritize remaining wire-service and
 peer CPU costs, preserving authentication and service semantics, before another
-full qualification block.
+full qualification block. A separate symbolized perf pair is prepared below
+and awaits attendance; further source changes should wait for its hotspots.
 Full cost and latency qualification remain open;
 no installed desktop has been changed.
 
@@ -231,6 +232,33 @@ no corresponding closure: Session remains about 1.309 ms/frame versus IPC's
 screenings do not establish a statistically controlled between-candidate CPU
 change. Retain the unchanged +10% cost ceiling and full latency requirements;
 t331 is not complete.
+
+## October 18 sampling profiler preparation
+
+The existing external `run-cpu-profile` runner captures inherited user-space
+CPU samples at 199 Hz with 8 KiB DWARF stacks, then verifies and filters reports
+to the outer Session and peer process IDs and workload interval. Its explicit
+device-hidden inheritance/filtering control passes (`candidate-03/perf-control.log`).
+The comparator remains `890215a3e3d4fcc2155f45c67afc63a03d792065`; separate
+CPU-only release binaries were built with `CARGO_PROFILE_RELEASE_DEBUG=1`.
+Both have `.debug_info`, `.symtab` and `.eh_frame`; profiling/allocation/trace
+features are absent. Build records and artifacts are separate from acceptance
+binaries. Two observed panel plans and device-hidden configuration checks pass;
+source trees are clean at the declared signed revisions.
+
+Prepared descriptors and hashes: `candidate-03/perf/ready.json`. Attended tty4
+launcher: `~/dev/niltempus/.artifacts/t331-perf-20261018/run.sh`. Fresh capture
+destinations are `~/.local/state/t331/perf-{files,ipc}-01`; neither has started.
+The normal recovery wrapper and environment observer remain active. After both
+captures, use the prepared runner's `report-cpu-profile` command to derive the
+per-process reports. These runs are diagnostic, not cost or latency acceptance.
+
+Kernel sampling is denied by the host's `perf_event_paranoid=2`; syscall
+tracepoints are unavailable because tracefs/debugfs is not mounted. The failed
+read-only probes are retained as `perf-kernel-access.log` and
+`perf-syscall-access.log`. No host setting or capability was changed. This pair
+can locate user-space hotspots but cannot attribute kernel CPU or syscall time;
+existing process CPU and page-fault counters retain their broader scope.
 
 ## October 18 first attended block
 
