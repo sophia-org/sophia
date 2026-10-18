@@ -5,7 +5,6 @@ use crate::{
     journal::{Control, Event, Journal},
     startup::Opened,
     submission::{Custody, Submission},
-    upload::Upload,
 };
 use sophia_9p_client::pipeline::{IoBudget, IoInterest, Pipeline, PipelineError, Reply};
 use sophia_9p_records::{Fid, Tag};
@@ -27,8 +26,6 @@ pub struct Obligations {
     pub acked: u64,
     pub event_pending: bool,
     pub object_pending: bool,
-    pub upload_pending: bool,
-    pub upload_writes: usize,
     pub waiting_for_ack: bool,
     pub waiting_for_retry: bool,
     pub deadline: Option<u64>,
@@ -40,7 +37,6 @@ pub enum SessionError {
     Journal(crate::journal::Error),
     Submission(crate::submission::Error),
     Object(crate::object::Error),
-    Upload(crate::upload::Error),
     Protocol(&'static str),
     Remote(u32),
     ClockRegression,
@@ -63,14 +59,12 @@ convert!(PipelineError, Wire);
 convert!(crate::journal::Error, Journal);
 convert!(crate::submission::Error, Submission);
 convert!(crate::object::Error, Object);
-convert!(crate::upload::Error, Upload);
 
 /// Experimental lock session. Providers render; this grants no credential or
 /// unlock authority. Release and production qualification remain separate.
 pub struct Session {
     image: Option<crate::LockImageAdapter>,
     image_tag: Option<Tag>,
-    image_cancel_submission: Option<u64>,
     wire: Option<Pipeline>,
     root: Fid,
     events: Fid,
@@ -81,7 +75,6 @@ pub struct Session {
     limits: LockFileLimits,
     journal: Journal,
     submission: Submission,
-    upload: Upload,
     fetch: Option<crate::object::Fetch>,
     object: Option<LockObject>,
     generation: u64,
@@ -89,8 +82,6 @@ pub struct Session {
     ack_tag: Option<Tag>,
     tx_tag: Option<Tag>,
     object_tag: Option<Tag>,
-    upload_tag: Option<Tag>,
-    write_tags: [Option<Tag>; 8],
     status_sequence: u64,
     ack_pending: u64,
     acked: u64,
@@ -132,11 +123,9 @@ impl Session {
         }
         let mut submission = Submission::new(o.epoch, o.transaction, o.transaction_iounit)?;
         submission.admit(&Candidate::Negotiate(o.offer))?;
-        let upload = Upload::new(usize::from(o.pipeline.limits().max_outstanding))?;
         Ok(Self {
             image,
             image_tag: None,
-            image_cancel_submission: None,
             wire: Some(o.pipeline),
             root: o.root,
             events: o.events,
@@ -147,7 +136,6 @@ impl Session {
             limits: o.limits,
             journal,
             submission,
-            upload,
             fetch: None,
             object: None,
             generation: 0,
@@ -155,8 +143,6 @@ impl Session {
             ack_tag: None,
             tx_tag: None,
             object_tag: None,
-            upload_tag: None,
-            write_tags: [None; 8],
             status_sequence: 0,
             ack_pending: 0,
             acked: 0,
@@ -232,7 +218,7 @@ impl Session {
             Candidate::Present(_) | Candidate::FrameDemand(_) | Candidate::ResourceRetire(_)
         ) {
             return Err(SessionError::Protocol(
-                "candidate is owned by startup or upload",
+                "candidate is owned by startup or image adapter",
             ));
         }
         let id = self.submission.admit(candidate)?;
@@ -242,49 +228,6 @@ impl Session {
     pub fn retry_submission(&mut self) -> Result<(), SessionError> {
         self.live()?;
         self.submission.retry()?;
-        self.dirty = true;
-        Ok(())
-    }
-    pub fn upload_window(&mut self, writes: usize) -> Result<(), SessionError> {
-        self.live()?;
-        self.upload.set_window(writes)?;
-        Ok(())
-    }
-    pub fn upload_ready(&self) -> bool {
-        self.error.is_none() && self.upload.ready()
-    }
-    pub fn upload_pending(&self) -> bool {
-        self.error.is_none() && self.upload.pending()
-    }
-    pub fn upload_begin(&mut self, begin: LockResourceBegin) -> Result<(), SessionError> {
-        self.ready()?;
-        let s = &mut self.submission;
-        self.upload
-            .begin(begin, self.limits, |c| admit_upload(s, c))?;
-        self.dirty = true;
-        Ok(())
-    }
-    pub fn upload_chunk(&mut self, bytes: Vec<u8>) -> Result<(), (SessionError, Vec<u8>)> {
-        if let Err(e) = self.live() {
-            return Err((e, bytes));
-        }
-        self.upload.chunk(bytes).map_err(|(e, b)| (e.into(), b))?;
-        self.dirty = true;
-        Ok(())
-    }
-    pub fn take_upload_chunk(&mut self) -> Option<Vec<u8>> {
-        self.upload.take_chunk()
-    }
-    pub fn upload_end(&mut self) -> Result<(), SessionError> {
-        self.live()?;
-        let s = &mut self.submission;
-        self.upload.end(|c| admit_upload(s, c))?;
-        self.dirty = true;
-        Ok(())
-    }
-    pub fn upload_cancel(&mut self) -> Result<(), SessionError> {
-        self.live()?;
-        self.upload.cancel()?;
         self.dirty = true;
         Ok(())
     }
@@ -315,8 +258,6 @@ impl Session {
             acked: self.acked,
             event_pending: self.event().is_some(),
             object_pending: live && self.fetch.is_some(),
-            upload_pending: self.upload_pending(),
-            upload_writes: self.upload.writes_pending(),
             waiting_for_ack: live && self.submission.waiting_for_ack(self.acked),
             waiting_for_retry: live && self.submission.waiting_for_retry(),
             deadline: self.wake_deadline(),
@@ -375,7 +316,6 @@ impl Session {
     fn finish(&mut self, error: SessionError) -> Result<(), SessionError> {
         self.wire.take();
         self.submission.disconnect();
-        self.upload.disconnect();
         if let Some(image) = &mut self.image {
             image.settle_submission(self.submission.latest(), self.now);
             image.producer.journal_lost();
@@ -430,7 +370,6 @@ impl Session {
                     .status(*v, self.now)
                     .map_err(|_| SessionError::Protocol("invalid image status"))?;
             }
-            self.upload.status(*v);
             self.status_sequence = h.sequence;
         }
         Ok(())
@@ -439,8 +378,8 @@ impl Session {
         let mut progress = false;
         let mut tx = None;
         let mut failure = None;
-        // Five control lanes plus eight upload writes; bounded independently of
-        // the caller's pipeline capacity. Preserve valid custody before EOF.
+        // Bound reply draining independently of pipeline capacity.
+        // Preserve valid custody before EOF.
         for _ in 0..16 {
             let Some((tag, reply)) = self.wire.as_mut().and_then(Pipeline::take_reply) else {
                 break;
@@ -486,12 +425,6 @@ impl Session {
                     .ok_or(SessionError::Protocol("missing fetch"))?
                     .reply(reply)
                     .map_err(Into::into)
-            } else if self.upload_tag == Some(tag) {
-                self.upload_tag = None;
-                self.upload.reply(reply).map_err(Into::into)
-            } else if let Some(slot) = self.write_tags.iter().position(|t| *t == Some(tag)) {
-                self.write_tags[slot] = None;
-                self.upload.write_reply(slot, reply).map_err(Into::into)
             } else {
                 Err(SessionError::Protocol("unowned reply"))
             };
@@ -504,16 +437,9 @@ impl Session {
             failure = advanced.err();
         }
         if let Some(reply) = tx {
-            let kind = self.submission.kind();
             let result = self
                 .submission
                 .reply(reply, self.journal.welcome().is_some());
-            if matches!(self.submission.latest(), Some((_, Custody::Refused(_))))
-                && self.submission.latest().map(|(id, _)| id) != self.image_cancel_submission
-                && let Some(k) = kind
-            {
-                self.upload.refused(k);
-            }
             if failure.is_none() {
                 failure = result.err().map(Into::into);
             }
@@ -607,61 +533,6 @@ impl Session {
         }
         queued |= self.drive_image()?;
         queued |= self.drive_submission()?;
-        let wire = self.wire.as_mut().ok_or(SessionError::Closed)?;
-        // Queue control work before bulk writes, then revisit submission after
-        // Cancel admission so poll sees its new request without another wakeup.
-        for _ in 0..8 {
-            use crate::upload::Operation as Op;
-            let mut fid = Fid::NOFID;
-            let mut slot = None;
-            let result = match self.upload.operation(wire.msize())? {
-                Some(Op::Walk(n)) => {
-                    let name = [b'0' + n as u8];
-                    Some(wire.walk(self.root, &[b"upload", &name]).map(|(t, v)| {
-                        fid = v;
-                        t
-                    }))
-                }
-                Some(Op::Open(v)) => Some(wire.lopen(v, 1)),
-                Some(Op::Clunk(v)) => Some(wire.clunk(v)),
-                Some(Op::Write {
-                    slot: s,
-                    fid,
-                    offset,
-                    bytes,
-                }) => {
-                    slot = Some(s);
-                    Some(wire.write(fid, offset, bytes))
-                }
-                Some(Op::Cancel(v)) => {
-                    match self.submission.admit(&Candidate::ResourceCancel(v)) {
-                        Ok(_) => {
-                            self.upload.issued(wire.msize(), Fid::NOFID)?;
-                            queued = true;
-                        }
-                        Err(crate::submission::Error::Busy) => (),
-                        Err(e) => return Err(e.into()),
-                    }
-                    break;
-                }
-                None => break,
-            };
-            match result {
-                Some(Ok(t)) => {
-                    self.upload.issued(wire.msize(), fid)?;
-                    if let Some(s) = slot {
-                        self.write_tags[s] = Some(t);
-                    } else {
-                        self.upload_tag = Some(t);
-                    }
-                    queued = true;
-                }
-                Some(Err(e)) if busy(&e) => break,
-                Some(Err(e)) => return Err(e.into()),
-                None => (),
-            }
-        }
-        queued |= self.drive_submission()?;
         Ok(queued)
     }
 
@@ -695,13 +566,6 @@ impl Session {
         }
         Ok(queued)
     }
-}
-fn admit_upload(s: &mut Submission, c: &Candidate) -> Result<(), crate::upload::Error> {
-    s.admit(c).map(|_| ()).map_err(|e| match e {
-        crate::submission::Error::Busy => crate::upload::Error::Busy,
-        crate::submission::Error::Closed => crate::upload::Error::Closed,
-        _ => crate::upload::Error::Invalid,
-    })
 }
 pub(crate) fn busy(e: &PipelineError) -> bool {
     matches!(

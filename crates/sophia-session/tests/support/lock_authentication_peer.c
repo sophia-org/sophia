@@ -176,7 +176,6 @@ static void run_image(struct sophia_lc_client *client, int endpoint_dir,
     config.producer.bounds.transfer_slots = 1;
     config.producer.transfer_timeout_ms = 2000;
     config.producer.startup_deadline_ms = now_msec() + 60000;
-    config.producer.fallback_bytes = 0;
     config.endpoint_dir = endpoint_dir;
     config.formats = formats;
     config.formats_capacity = sizeof formats;

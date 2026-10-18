@@ -159,17 +159,61 @@ fn run_with_inventory(
     let (spec, gpu) = policy.prepare(&base, 1)?;
     let gpu = gpu.ok_or("direct proof produced no GPU grant evidence")?;
     require_expected_device(&gpu, proof.expected_device.as_deref())?;
-    let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::Shell, spec);
-    supervisor.apply(SupervisorCommand::StartProcess {
-        process: SupervisedProcessKind::Shell,
-        delay: Duration::ZERO,
-    })?;
+    use crate::launch_authentication::startup::{Recipe, Startup};
+    use crate::launch_authentication::{LaunchCoordinator, LaunchPolicy, Phase};
+    let wake = sophia_wake::Wake::new()?;
+    let factotum = super::super::SessionFactotum {
+        agent: proof.factotum_agent.clone(),
+        pam_helper: proof.factotum_pam_helper.clone(),
+        pam_service: "sophia-lock".into(),
+        user: std::env::var("LOGNAME").or_else(|_| std::env::var("USER"))?,
+    };
+    let (_authenticator, service) = super::super::lock_authenticator::start_session_authenticator(
+        Some(&factotum),
+        wake.notifier(),
+    );
+    let namespaces = std::sync::Arc::new(std::sync::Mutex::new(
+        sophia_runtime::NamespaceRegistry::new(1)?,
+    ));
+    let mut launches = LaunchCoordinator::new(service, namespaces);
+    let mut startup = Startup::new(
+        ProcessSupervisor::new(SupervisedProcessKind::Shell, spec),
+        SupervisorCommand::StartProcess {
+            process: SupervisedProcessKind::Shell,
+            delay: Duration::ZERO,
+        },
+        launches.endpoint(),
+        Recipe {
+            policy: LaunchPolicy {
+                principal: 7,
+                namespace: 1,
+                audience: 7,
+                role: ProtectionDomainRole::MetadataShell,
+            },
+            uname: b"shell".to_vec(),
+            aname: b"descriptor".to_vec(),
+        },
+        Instant::now(),
+    )?;
+    let started = loop {
+        let now = Instant::now();
+        if let Err(error) = launches.poll(now) {
+            startup.cancel(&mut launches, now, format!("proof launch: {error:?}"));
+        }
+        if let Some(started) = startup.poll(&mut launches, wake.notifier(), now)? {
+            break started;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    };
+    // Keep the spawn lease until the child is reaped on every return path.
+    let _lease = started.lease;
+    let mut supervisor = started.supervisor;
     let protection = supervisor
         .protection_evidence()
         .ok_or("shell process has no protection evidence")?
         .clone();
-    owner.authorize_protected_peer(&protection)?;
-    serve(
+    owner.authorize_authenticated_peer(&protection, started.factory)?;
+    let result = serve(
         proof,
         &mut owner,
         &mut epochs,
@@ -177,12 +221,25 @@ fn run_with_inventory(
         &protection,
         &gpu,
         &observation,
-    )
+        || {
+            launches
+                .poll(Instant::now())
+                .map_err(|e| format!("proof authority: {e:?}"))?;
+            if launches.phase(started.registration) != Some(Phase::Active) {
+                return Err("proof launch authority retired".into());
+            }
+            Ok(())
+        },
+    );
+    let _ = launches.revoke(started.registration, Instant::now());
+    let cleanup = supervisor.terminate();
+    result.and_then(|()| cleanup.map_err(Into::into))
 }
 
 /// Negotiate the protected, already launched client over the file export and
 /// answer the renders the parameters name. The device grant was established
 /// by the caller; nothing here reads or opens a device.
+#[allow(clippy::too_many_arguments)]
 fn serve(
     proof: &ShellGpuContentProof,
     owner: &mut ShellComponentTransport,
@@ -191,7 +248,15 @@ fn serve(
     protection: &ProtectionDomainEvidence,
     gpu: &super::gpu::ShellGpuLaunchEvidence,
     observation: &str,
+    mut poll_auth: impl FnMut() -> Result<(), Box<dyn std::error::Error>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let limits = sophia_protocol::ContentLimits::prototype(sophia_protocol::ContentGrant {
+        connection_epoch: 1,
+        content_grant_epoch: 1,
+    });
+    crate::shell_component_connections::images::configure_transport(owner, &limits)?;
+    let mut images =
+        sophia_runtime::ShellIsbImageOwner::new(limits.max_resource_bytes as usize, 65_536)?;
     owner.begin_file_negotiation(
         epochs,
         1,
@@ -200,6 +265,7 @@ fn serve(
     )?;
     // The owner's negotiation deadline bounds this; each visit is 64 KiB.
     let welcome = loop {
+        poll_auth()?;
         if let Some(welcome) = owner.poll_negotiation(epochs, 64 * 1024)? {
             break welcome;
         }
@@ -258,6 +324,15 @@ fn serve(
     while Instant::now() < deadline {
         let now = elapsed_msec(started);
         let done = verified == renders;
+        // A completed client may close its relay before its exit is reaped.
+        // No further render may be admitted once all expected renders exist.
+        if !done {
+            poll_auth()?;
+        }
+        // Channel custody and worker completion share the epoch registry
+        // with the role view borrowed below.
+        images.service(owner, epochs, now, Instant::now())?;
+        let mut transport = owner.connection(epochs);
         service_resources(&mut transport, now, done)
             .map_err(|error| format!("resource intake: {error}"))?;
         service_allocations(&mut transport, now, done)

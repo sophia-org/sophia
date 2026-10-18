@@ -30,16 +30,6 @@ enum {
 };
 enum { LC_OBJECT_IDLE, LC_OBJECT_WALK, LC_OBJECT_OPEN, LC_OBJECT_READ,
        LC_OBJECT_CLUNK };
-enum {
-  LC_UPLOAD_IDLE,
-  LC_UPLOAD_BEGUN, /* ResourceBegin submitted; waiting for admitted */
-  LC_UPLOAD_WALK,
-  LC_UPLOAD_OPEN,
-  LC_UPLOAD_READY,
-  LC_UPLOAD_WRITE,
-  LC_UPLOAD_ENDING, /* End or Cancel submitted; waiting for its status */
-  LC_UPLOAD_CLUNK
-};
 #define LC_EVENTS 0
 #define LC_TRANSACTION 1
 #define LC_SUBMIT 2
@@ -84,15 +74,6 @@ int sophia_lc_internal_parse(struct sophia_lc_client *);
 int sophia_lc_internal_object_drive(struct sophia_lc_client *);
 int sophia_lc_internal_object_reply(struct sophia_lc_client *,
                                     const struct sophia_9p_reply *);
-int sophia_lc_internal_upload_drive(struct sophia_lc_client *);
-int sophia_lc_internal_upload_reply(struct sophia_lc_client *,
-                                    const struct sophia_9p_reply *);
-int sophia_lc_internal_upload_write_reply(struct sophia_lc_client *,
-                                          const struct sophia_9p_reply *);
-void sophia_lc_internal_upload_status(struct sophia_lc_client *,
-                                      const struct sophia_lf_resource_status *);
-void sophia_lc_internal_upload_refused(struct sophia_lc_client *,
-                                       uint16_t kind);
 int sophia_lc_internal_drive(struct sophia_lc_client *);
 /* Image seams (image.c); inert while c->image is NULL. */
 int sophia_lc_internal_queue_image(struct sophia_lc_client *, const uint8_t *,

@@ -964,9 +964,6 @@ fn client_record(record: &ShellContentRecord) -> bool {
     matches!(
         record,
         ShellContentRecord::AllocationRequest(_)
-            | ShellContentRecord::ResourceBegin(_)
-            | ShellContentRecord::ResourceChunk(_)
-            | ShellContentRecord::ResourceEnd(_)
             | ShellContentRecord::ResourceCancel(_)
             | ShellContentRecord::ResourceRetire(_)
             | ShellContentRecord::CandidateBegin(_)

@@ -18,7 +18,6 @@ static inline void ss_consumed(struct sophia_ss *s, uint64_t sequence)
         s->ack_clock = s->now_ms;
     s->last_consumed = sequence;
     s->progress = 1;
-    s->upload_progress = 1;
 }
 int ss_status(const struct sophia_ss *);
 /* Free queue slot and bytes outside any reservation. */

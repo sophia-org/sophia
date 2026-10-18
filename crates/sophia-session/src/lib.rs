@@ -1,4 +1,13 @@
 mod output;
+// Shared supplied verdicts for authenticated image transport fixtures.
+#[cfg(all(test, feature = "native-session"))]
+#[allow(clippy::duplicate_mod)]
+#[path = "../../sophia-runtime/tests/support/image_test_authority.rs"]
+mod test_image_authority;
+#[cfg(all(test, feature = "native-session"))]
+#[allow(dead_code)]
+#[path = "../../sophia-runtime/tests/support/shell_sdk_image.rs"]
+pub(crate) mod test_sdk_image;
 pub use output::{SessionOutput, install as install_session_output};
 
 // Only the live session prints, so a default build compiles the macro without a

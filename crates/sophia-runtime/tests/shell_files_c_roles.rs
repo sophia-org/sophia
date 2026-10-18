@@ -1,4 +1,4 @@
-//! C r7/r8 sessions against the production file export and content owners.
+//! C r9 sessions against the production file export and content owners.
 //! Catalog admission is scripted; no Session launch-policy claim.
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -6,18 +6,35 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 #[allow(dead_code)]
+#[path = "support/shell_required_image.rs"]
+mod image;
+#[allow(dead_code)]
 #[path = "support/shell_files_oracle/process.rs"]
 mod process;
 #[allow(dead_code)]
 #[path = "support/shell_files_oracle/roles.rs"]
 mod roles;
+#[path = "support/shell_file_peer.rs"]
+mod shell_file_peer;
 
 fn compile(repo: &Path, root: &Path) -> PathBuf {
-    let bindings = repo.join("vendor/c-desktop-sdk/source/src");
+    let bindings = if let Some(source) = std::env::var_os("SOPHIA_C_SDK_SOURCE") {
+        let source = PathBuf::from(source);
+        assert!(source.is_absolute() && source.join("src/sophia_shell_session.h").is_file());
+        source.join("src")
+    } else {
+        repo.join("vendor/c-desktop-sdk/source/src")
+    };
     let output = root.join("c-role-peer");
     let mut command = Command::new(std::env::var_os("CC").unwrap_or_else(|| "cc".into()));
     command.args(["-std=c99", "-Wall", "-Wextra", "-Werror", "-pedantic"]);
-    for dir in ["nine_p", "shell_files", "image_channel", "image_producer"] {
+    for dir in [
+        "nine_p",
+        "shell_files",
+        "shell_session",
+        "image_channel",
+        "image_producer",
+    ] {
         let mut files = std::fs::read_dir(bindings.join(dir))
             .unwrap()
             .map(|f| f.unwrap().path())

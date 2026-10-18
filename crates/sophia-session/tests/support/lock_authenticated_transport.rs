@@ -5,9 +5,6 @@ use sophia_runtime::{ProtectionPath, lock_files::*};
 use sophia_session::launch_authentication::files::TransportBudget;
 use std::os::unix::fs::DirBuilderExt;
 
-#[path = "lock_upload_revocation.rs"]
-mod upload_revocation;
-
 #[path = "authentication_observation.rs"]
 mod observation;
 
@@ -24,9 +21,6 @@ enum PeerKind {
 
 pub(super) struct Peer(pub(super) PathBuf);
 impl Peer {
-    fn build(sdk: bool) -> Self {
-        Self::build_kind(if sdk { PeerKind::CSdk } else { PeerKind::Raw })
-    }
     fn build_kind(kind: PeerKind) -> Self {
         Self::build_child(kind, None)
     }

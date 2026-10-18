@@ -73,7 +73,6 @@ fn object() -> Vec<u8> {
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Mode {
     Normal,
-    Cancel,
     Short,
     Reject,
     Refuse,
@@ -415,64 +414,27 @@ fn begin() -> LockResourceBegin {
     }
 }
 #[test]
-fn upload_windows_keep_events_and_acks_progressing_and_drain_cancellation() {
-    for mode in [Mode::Normal, Mode::Cancel, Mode::Short, Mode::Reject] {
-        let (mut s, peer) = fixture(mode);
-        ready(&mut s);
-        s.upload_window(8).unwrap();
-        s.upload_begin(begin()).unwrap();
-        until(&mut s, |s| {
-            if s.event().is_some() {
-                s.consume().unwrap();
-            }
-            s.upload_ready() && !s.obligations().waiting_for_ack
-        });
-        let bytes: Vec<_> = (0..128).collect();
-        let ptr = bytes.as_ptr();
-        s.upload_chunk(bytes).unwrap();
-        let mut entry = false;
-        until(&mut s, |s| {
-            if let Some((_, e)) = s.event() {
-                if matches!(e, Event::Entry(_)) {
-                    entry = true;
-                    if mode == Mode::Cancel {
-                        s.upload_cancel().unwrap();
-                    }
-                }
-                s.consume().unwrap();
-            }
-            if mode == Mode::Normal {
-                entry && s.upload_ready()
-            } else {
-                entry && !s.upload_pending()
-            }
-        });
-        let returned = s.take_upload_chunk().unwrap();
-        assert_eq!(returned.as_ptr(), ptr);
-        if mode == Mode::Normal {
-            until(&mut s, |s| !s.obligations().waiting_for_ack);
-            s.upload_end().unwrap();
-            until(&mut s, |s| {
-                if s.event().is_some() {
-                    s.consume().unwrap();
-                }
-                !s.upload_pending()
-            });
-        }
-        assert_eq!(s.state(), SessionState::Ready);
-        drop(s);
-        let report = peer.join().unwrap();
-        assert!(report.controls_while_held);
-        assert_eq!(report.ended, usize::from(mode == Mode::Normal));
-        assert_eq!(
-            report.cancelled,
-            usize::from(matches!(mode, Mode::Cancel | Mode::Short))
-        );
-        if mode != Mode::Normal {
-            assert_eq!(report.writes, 8);
-        }
-    }
+fn retired_byte_candidates_do_not_spend_submission_identity() {
+    let (mut s, peer) = fixture(Mode::Normal);
+    ready(&mut s);
+    let before = s.latest_submission();
+    assert!(s.submit(&Candidate::ResourceBegin(begin())).is_err());
+    assert!(
+        s.submit(&Candidate::ResourceEnd(LockResourceStep {
+            transaction: 30,
+            resource: begin().resource,
+            total_bytes: Some(128),
+        }))
+        .is_err()
+    );
+    assert_eq!(s.latest_submission(), before);
+    assert_eq!(s.state(), SessionState::Ready);
+    drop(s);
+    let report = peer.join().unwrap();
+    assert_eq!(report.ended, 0);
+    assert_eq!(report.cancelled, 0);
 }
+
 #[test]
 fn terminal_ack_and_refusal_preserve_custody_and_settle_refusal_ack() {
     for mode in [Mode::AckShort, Mode::AckError, Mode::AckStale, Mode::Refuse] {
@@ -602,8 +564,6 @@ fn connecting_direct_attached_explicit_retry_and_refusal_keep_one_connection() {
                 assert!(c.welcome().is_some());
                 assert_eq!(c.latest_submission(), Some((1, Custody::Submitted)));
                 let mut s = c.take_session().unwrap();
-                assert!(s.upload_window(2).is_err());
-                s.upload_window(1).unwrap();
                 assert!(c.take_session().is_none());
                 ready(&mut s);
                 s.close();
@@ -613,44 +573,4 @@ fn connecting_direct_attached_explicit_retry_and_refusal_keep_one_connection() {
             assert_eq!(report.retries, usize::from(mode == Mode::NegotiationRetry));
         }
     }
-}
-
-#[test]
-fn drained_cancellation_queues_output_before_returning_with_spent_budget() {
-    let (mut s, peer) = fixture(Mode::Cancel);
-    ready(&mut s);
-    s.upload_window(8).unwrap();
-    s.upload_begin(begin()).unwrap();
-    until(&mut s, |s| {
-        if s.event().is_some() {
-            s.consume().unwrap();
-        }
-        s.upload_ready() && !s.obligations().waiting_for_ack
-    });
-    s.upload_chunk((0..128).collect()).unwrap();
-    until(&mut s, |s| matches!(s.event(), Some((_, Event::Entry(_)))));
-    assert_eq!(s.obligations().upload_writes, 8);
-    s.upload_cancel().unwrap();
-    s.consume().unwrap();
-    // One-byte budgets ensure the call decoding the last held reply cannot
-    // also send the newly queued Cancel transaction. POLLOUT must expose it.
-    let end = Instant::now() + Duration::from_secs(3);
-    loop {
-        assert!(Instant::now() < end);
-        s.dispatch(12, 1).unwrap();
-        if s.latest_submission() == Some((3, Custody::Staged)) {
-            break;
-        }
-        thread::yield_now();
-    }
-    assert_eq!(s.obligations().upload_writes, 0);
-    assert!(s.io_interest().unwrap().writable);
-    until(&mut s, |s| {
-        if s.event().is_some() {
-            s.consume().unwrap();
-        }
-        !s.upload_pending()
-    });
-    drop(s);
-    assert_eq!(peer.join().unwrap().cancelled, 1);
 }

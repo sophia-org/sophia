@@ -46,7 +46,9 @@ type wire struct {
 	fragment bool
 }
 
-func dial(path string, msize uint32) *wire {
+// dial attaches fid 1. An authenticated attach first opens afid 30 with
+// Tauth; the supplied fixture authority admits it on Tattach.
+func dial(path string, msize uint32, authenticated bool) *wire {
 	c, err := net.DialTimeout("unix", path, 3*time.Second)
 	must(err)
 	w := &wire{conn: c, msize: msize, pending: map[uint16]request{}, replies: map[uint16]response{}}
@@ -59,9 +61,17 @@ func dial(path string, msize uint32) *wire {
 	need(r.kind == 101 && len(r.body) == 14 && u16(r.body, 4) == 8 && string(r.body[6:]) == "9P2000.L", "version reply")
 	w.msize = u32(r.body, 0)
 	need(w.msize >= 4096 && w.msize <= msize, "negotiated msize")
+	afid := uint32(0xffffffff)
+	if authenticated {
+		afid = 30
+		a := make([]byte, 12)
+		p32(a, 0, afid)
+		p32(a, 8, 0xffffffff)
+		need(len(w.ok(102, a)) == 13, "auth shape")
+	}
 	b = make([]byte, 16)
 	p32(b, 0, 1)
-	p32(b, 4, 0xffffffff)
+	p32(b, 4, afid)
 	p32(b, 12, 0xffffffff)
 	need(len(w.ok(104, b)) == 13, "attach shape")
 	return w

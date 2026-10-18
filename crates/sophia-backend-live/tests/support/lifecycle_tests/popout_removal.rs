@@ -132,10 +132,18 @@ fn popout_withdrawal_preserves_parent_and_retains_old_pixels_until_replacement()
     assert_eq!(resources.usage().retiring, 32);
     drop(popup);
     resources.collect();
+    assert_eq!(resources.usage().retiring, 32);
+    assert_eq!(
+        released(&mut resources),
+        vec![ContentResourceId {
+            id: 2,
+            generation: 1
+        }]
+    );
     assert_eq!(
         resources.usage().retiring,
         0,
-        "the final independent lease releases its resource credit"
+        "the final lease and release journal confirmation end resource credit"
     );
     let mut wrong_grant = grant;
     wrong_grant.connection_epoch += 1;

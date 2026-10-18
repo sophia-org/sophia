@@ -35,30 +35,14 @@ struct Transfer {
     description: ContentResourceBegin,
     layout: ContentResourceLayout,
     transaction: TransactionId,
-    bytes: Vec<u8>,
-    ordinal: u32,
     deadline: u64,
-    idle_deadline: u64,
-    source: TransferSource,
-}
-
-enum TransferSource {
-    Bytes,
-    // A stopped worker still owns its mapping until completion. Keep the
-    // resource and every byte charged until the owner returns that completion.
-    Isb {
-        stopped: Option<(ContentReason, TransactionId)>,
-    },
-}
-
-enum PixelBacking {
-    Bytes(Arc<Vec<u8>>),
-    Isb(sophia_linux_peer::SealedMapping),
+    // A stopped worker retains its mapping and charge until completion.
+    stopped: Option<(ContentReason, TransactionId)>,
 }
 
 struct Pixels {
     description: ContentResourceBegin,
-    bytes: PixelBacking,
+    bytes: sophia_linux_peer::SealedMapping,
 }
 
 struct Accepted {
@@ -75,11 +59,9 @@ pub struct ContentResourceLease(Arc<Pixels>);
 
 impl ContentResourceLease {
     pub fn bytes(&self) -> &[u8] {
-        match &self.0.bytes {
-            PixelBacking::Bytes(bytes) => bytes,
-            PixelBacking::Isb(mapping) => mapping.bytes(),
-        }
+        self.0.bytes.bytes()
     }
+
     pub fn description(&self) -> &ContentResourceBegin {
         &self.0.description
     }
@@ -114,13 +96,6 @@ impl ContentResourceStore {
 
     pub(crate) fn additional_response_credit(&self, record: &ShellContentRecord) -> usize {
         match record {
-            ShellContentRecord::ResourceBegin(_) => 3,
-            ShellContentRecord::ResourceChunk(value) => {
-                usize::from(!self.transfers.contains_key(&value.resource))
-            }
-            ShellContentRecord::ResourceEnd(value) => {
-                usize::from(!self.transfers.contains_key(&value.resource))
-            }
             ShellContentRecord::ResourceCancel(value) => {
                 usize::from(!self.transfers.contains_key(&value.resource))
             }
@@ -214,36 +189,14 @@ impl ContentResourceStore {
         });
     }
 
-    /// Begin reserves staging, resident credit, a resource slot and all future
-    /// response capacity. Failed Begins still consume a valid generation.
-    pub fn begin(
-        &mut self,
-        transaction: TransactionId,
-        description: ContentResourceBegin,
-        now: u64,
-    ) -> Result<(), ContentStoreError> {
-        self.begin_source(transaction, description, now, false)
-    }
-
-    /// Reserves the same bounded resource custody without allocating a byte
-    /// upload buffer. ImageAdmitted/SourceReleased belong to the offer owner.
-    /// Every successful reservation needs complete_isb, including when no
-    /// worker was started, so cancellation never releases a worker's charge.
+    /// Reserve bounded custody for a sealed source. Every successful reservation
+    /// needs complete_isb, even if no worker starts; stopping cannot release a
+    /// worker's mapping or charge before that handoff.
     pub fn begin_isb(
         &mut self,
         transaction: TransactionId,
         description: ContentResourceBegin,
         now: u64,
-    ) -> Result<(), ContentStoreError> {
-        self.begin_source(transaction, description, now, true)
-    }
-
-    fn begin_source(
-        &mut self,
-        transaction: TransactionId,
-        description: ContentResourceBegin,
-        now: u64,
-        sealed: bool,
     ) -> Result<(), ContentStoreError> {
         self.check(description.grant, transaction)?;
         self.time(now)?;
@@ -263,11 +216,6 @@ impl ContentResourceStore {
         {
             return Err(ContentStoreError::Budget);
         }
-        if !sealed {
-            // Byte Begins retain their existing definitive-refusal semantics.
-            self.greatest_id = self.greatest_id.max(key.id);
-            self.high_water.insert(key.id, key.generation);
-        }
         let layout = description
             .layout(&self.limits)
             .map_err(|_| ContentStoreError::Malformed)?;
@@ -279,7 +227,7 @@ impl ContentResourceStore {
                 > self.limits.max_resident_bytes
             || self.usage.backing + bytes
                 > self.limits.max_resident_bytes + self.limits.max_retiring_bytes
-            || self.events.len() + self.response_credits + if sealed { 2 } else { 3 }
+            || self.events.len() + self.response_credits + 2
                 > self.limits.max_control_records as usize
         {
             return Err(ContentStoreError::Budget);
@@ -287,21 +235,9 @@ impl ContentResourceStore {
         let deadline = now
             .checked_add(u64::from(self.limits.transfer_timeout_ms))
             .ok_or(ContentStoreError::Malformed)?;
-        let idle_deadline = now
-            .checked_add(u64::from(self.limits.transfer_idle_timeout_ms))
-            .ok_or(ContentStoreError::Malformed)?;
-        let mut storage = Vec::new();
-        if !sealed {
-            storage
-                .try_reserve_exact(bytes as usize)
-                .map_err(|_| ContentStoreError::Budget)?;
-        }
-        // A sealed reservation may be retried before ImageAdmitted. Failed
-        // capacity/layout checks must not consume its resource generation.
-        if sealed {
-            self.greatest_id = self.greatest_id.max(key.id);
-            self.high_water.insert(key.id, key.generation);
-        }
+        // Refused capacity/layout checks do not consume the generation.
+        self.greatest_id = self.greatest_id.max(key.id);
+        self.high_water.insert(key.id, key.generation);
         self.usage.staging += bytes;
         self.usage.reserved_resident += bytes;
         self.usage.backing += bytes;
@@ -312,110 +248,10 @@ impl ContentResourceStore {
                 description,
                 layout,
                 transaction,
-                bytes: storage,
-                ordinal: 0,
                 deadline,
-                // A descriptor has no canonical chunk cadence. Its original
-                // transfer deadline bounds both arrival and validation.
-                idle_deadline: if sealed { deadline } else { idle_deadline },
-                source: if sealed {
-                    TransferSource::Isb { stopped: None }
-                } else {
-                    TransferSource::Bytes
-                },
+                stopped: None,
             },
         );
-        if !sealed {
-            self.status(transaction, key, 1, ContentReason::None, bytes);
-        }
-        Ok(())
-    }
-
-    /// Dense canonical chunks only. A malformed chunk terminates that transfer;
-    /// it cannot leave a partial accepted resource or consume unbounded storage.
-    pub fn chunk(
-        &mut self,
-        transaction: TransactionId,
-        chunk: &ContentResourceChunk,
-        now: u64,
-    ) -> Result<(), ContentStoreError> {
-        self.check(chunk.grant, transaction)?;
-        self.time(now)?;
-        self.expire(now)?;
-        let Some(transfer) = self.transfers.get_mut(&chunk.resource) else {
-            return Err(ContentStoreError::Stale);
-        };
-        if !matches!(transfer.source, TransferSource::Bytes) {
-            return Err(ContentStoreError::Malformed);
-        }
-        let remaining = transfer.layout.total_bytes - transfer.bytes.len() as u64;
-        let expected = remaining
-            .min(u64::from(transfer.layout.row_bytes) * u64::from(transfer.layout.rows_per_chunk));
-        if chunk.ordinal != transfer.ordinal
-            || chunk.offset != transfer.bytes.len() as u64
-            || chunk.bytes.len() as u64 != expected
-            || expected == 0
-            || chunk
-                .bytes
-                .chunks_exact(4)
-                .any(|p| p[0] > p[3] || p[1] > p[3] || p[2] > p[3])
-        {
-            self.abort(chunk.resource, ContentReason::Malformed, Some(transaction));
-            return Err(ContentStoreError::Malformed);
-        }
-        transfer.bytes.extend_from_slice(&chunk.bytes);
-        transfer.ordinal += 1;
-        transfer.idle_deadline = now
-            .saturating_add(u64::from(self.limits.transfer_idle_timeout_ms))
-            .min(transfer.deadline);
-        Ok(())
-    }
-
-    pub fn end(
-        &mut self,
-        transaction: TransactionId,
-        end: &ContentResourceEnd,
-        now: u64,
-    ) -> Result<(), ContentStoreError> {
-        self.check(end.grant, transaction)?;
-        self.time(now)?;
-        self.expire(now)?;
-        let Some(transfer) = self.transfers.get(&end.resource) else {
-            return Err(ContentStoreError::Stale);
-        };
-        if !matches!(transfer.source, TransferSource::Bytes) {
-            return Err(ContentStoreError::Malformed);
-        }
-        if end.total_bytes != transfer.layout.total_bytes
-            || end.chunk_count != transfer.layout.chunk_count
-            || transfer.bytes.len() as u64 != end.total_bytes
-            || transfer.ordinal != end.chunk_count
-        {
-            self.abort(end.resource, ContentReason::Incomplete, Some(transaction));
-            return Err(ContentStoreError::Incomplete);
-        }
-        let transfer = self
-            .transfers
-            .remove(&end.resource)
-            .expect("checked transfer");
-        let bytes = transfer.layout.total_bytes;
-        self.usage.staging -= bytes;
-        self.usage.reserved_resident -= bytes;
-        self.usage.resident += bytes;
-        self.response_credits -= 1;
-        self.accepted.insert(
-            end.resource,
-            Accepted {
-                pixels: Arc::new(Pixels {
-                    description: transfer.description,
-                    bytes: PixelBacking::Bytes(Arc::new(transfer.bytes)),
-                }),
-                retiring: false,
-                transaction,
-                release_pending: false,
-            },
-        );
-        self.status(transaction, end.resource, 2, ContentReason::None, bytes);
         Ok(())
     }
 
@@ -440,9 +276,7 @@ impl ContentResourceStore {
             .transfers
             .get(&resource)
             .ok_or(ContentStoreError::Stale)?;
-        let TransferSource::Isb { stopped } = transfer.source else {
-            return Err(ContentStoreError::Malformed);
-        };
+        let stopped = transfer.stopped;
         let result = result.take().expect("completion checked");
         if let Some((reason, transaction)) = stopped {
             // The result and its mapping drop only after the worker returned.
@@ -474,7 +308,7 @@ impl ContentResourceStore {
             Accepted {
                 pixels: Arc::new(Pixels {
                     description: transfer.description,
-                    bytes: PixelBacking::Isb(pixels.0),
+                    bytes: pixels.0,
                 }),
                 retiring: false,
                 transaction: transfer.transaction,
@@ -517,17 +351,17 @@ impl ContentResourceStore {
             .transfers
             .get_mut(&resource)
             .ok_or(ContentStoreError::Stale)?;
-        let TransferSource::Isb { stopped } = &mut transfer.source else {
-            return Err(ContentStoreError::Malformed);
-        };
-        Ok(stopped.get_or_insert((reason, transfer.transaction)).0)
+        Ok(transfer
+            .stopped
+            .get_or_insert((reason, transfer.transaction))
+            .0)
     }
 
     pub(super) fn isb_stop_reason(&self, resource: ContentResourceId) -> Option<ContentReason> {
-        match &self.transfers.get(&resource)?.source {
-            TransferSource::Isb { stopped } => stopped.map(|(reason, _)| reason),
-            TransferSource::Bytes => None,
-        }
+        self.transfers
+            .get(&resource)?
+            .stopped
+            .map(|(reason, _)| reason)
     }
 
     fn abort(
@@ -536,13 +370,11 @@ impl ContentResourceStore {
         reason: ContentReason,
         request: Option<TransactionId>,
     ) {
-        if let Some(transfer) = self.transfers.get_mut(&key)
-            && let TransferSource::Isb { stopped } = &mut transfer.source
-        {
-            stopped.get_or_insert((reason, request.unwrap_or(transfer.transaction)));
-            return;
+        if let Some(transfer) = self.transfers.get_mut(&key) {
+            transfer
+                .stopped
+                .get_or_insert((reason, request.unwrap_or(transfer.transaction)));
         }
-        self.abort_finished(key, reason, request);
     }
 
     fn abort_finished(
@@ -575,7 +407,7 @@ impl ContentResourceStore {
         let expired: Vec<_> = self
             .transfers
             .iter()
-            .filter(|(_, t)| now >= t.deadline || now >= t.idle_deadline)
+            .filter(|(_, t)| now >= t.deadline)
             .map(|(key, _)| *key)
             .collect();
         for key in expired {
@@ -646,7 +478,7 @@ impl ContentResourceStore {
         for resource in ready {
             let value = self.accepted.get_mut(&resource).expect("selected resource");
             let transaction = value.transaction;
-            let defer = !self.revoked && matches!(value.pixels.bytes, PixelBacking::Isb(_));
+            let defer = !self.revoked;
             if defer {
                 // Keep the backing and its byte charge until ResourceReleased
                 // enters the journal, not merely the outbound FIFO.

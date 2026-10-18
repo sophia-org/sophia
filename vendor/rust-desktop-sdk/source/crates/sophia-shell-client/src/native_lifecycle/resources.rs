@@ -10,8 +10,6 @@ pub struct NativeAllocationParams {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeResourceState {
-    Begun,
-    Admitted,
     Accepted,
     Retiring,
 }
@@ -30,19 +28,8 @@ pub(super) struct Resource {
     pub(super) id: ContentResourceId,
     pub(super) state: NativeResourceState,
     pub(super) ticket: Option<Ticket>,
-    pub(super) image_offer: Option<u64>,
+    pub(super) image_offer: u64,
 }
-#[derive(Clone, Copy)]
-pub(super) struct Upload {
-    id: ContentResourceId,
-    total: u64,
-    chunks: u32,
-    offset: u64,
-    ordinal: u32,
-    pending: Option<(Ticket, usize)>,
-    failed: bool,
-}
-
 impl NativeLauncherLifecycle {
     /// A current grant disappears from this view at close, before its eventual
     /// invalidation. Closing is not proof that old pixels or resources retired.
@@ -77,9 +64,6 @@ impl NativeLauncherLifecycle {
     pub(super) fn free_resource(&mut self, id: ContentResourceId) {
         if let Some(index) = self.resource_index(id) {
             self.resources[index] = None;
-        }
-        if self.upload.is_some_and(|u| u.id == id) {
-            self.upload = None;
         }
     }
     pub(super) fn allocation_result(
@@ -129,25 +113,14 @@ impl NativeLauncherLifecycle {
         let Some(index) = self.resource_index(value.resource) else {
             return Ok(());
         };
-        if let Some(offer) = self.resources[index].unwrap().image_offer {
-            // The producer already verified this Accepted before adoption.
-            // Ordered delivery may follow adoption, even after Retire was queued.
-            // It must never turn Retiring back into Accepted.
-            return if transaction == TransactionId::from_raw(offer)
-                && value.status == 2
-                && value.reason == 0
-            {
-                Ok(())
-            } else {
-                Err(ShellClientError::Protocol("adopted image status"))
-            };
+        let offer = self.resources[index].unwrap().image_offer;
+        // Adoption already verified Accepted. Late delivery cannot resurrect
+        // a Retiring resource; every contradictory status fails closed.
+        if transaction == TransactionId::from_raw(offer) && value.status == 2 && value.reason == 0 {
+            Ok(())
+        } else {
+            Err(ShellClientError::Protocol("adopted image status"))
         }
-        match value.status {
-            1 => self.resources[index].as_mut().unwrap().state = NativeResourceState::Admitted,
-            2 => self.resources[index].as_mut().unwrap().state = NativeResourceState::Accepted,
-            _ => self.free_resource(value.resource),
-        }
-        Ok(())
     }
     pub(super) fn service_resources(&mut self, connection: &ShellConnection) {
         if let Some((_, ticket, _, _, _)) = self.allocation.pending
@@ -170,31 +143,10 @@ impl NativeLauncherLifecycle {
                 continue;
             }
             self.resources[index].as_mut().unwrap().ticket = None;
-            if matches!(outcome, Some(Custody::Refused(_) | Custody::DroppedUnsent)) {
-                match resource.state {
-                    NativeResourceState::Begun => self.free_resource(resource.id),
-                    NativeResourceState::Retiring => {
-                        self.resources[index].as_mut().unwrap().state =
-                            NativeResourceState::Accepted
-                    }
-                    _ => {}
-                }
-            }
-        }
-        if let Some(upload) = &mut self.upload
-            && let Some((ticket, bytes)) = upload.pending
-        {
-            match connection.custody(ticket) {
-                Some(Custody::Queued | Custody::InFlight) => {}
-                Some(Custody::Stored) => {
-                    upload.offset += bytes as u64;
-                    upload.ordinal += 1;
-                    upload.pending = None;
-                }
-                _ => {
-                    upload.failed = true;
-                    upload.pending = None;
-                } // Never replay uncertain bytes.
+            if matches!(outcome, Some(Custody::Refused(_) | Custody::DroppedUnsent))
+                && resource.state == NativeResourceState::Retiring
+            {
+                self.resources[index].as_mut().unwrap().state = NativeResourceState::Accepted;
             }
         }
     }
@@ -279,146 +231,6 @@ impl ShellConnection {
         Ok(admission)
     }
 
-    /// Start one bounded upload. The helper fills the grant and retains at most
-    /// 16 resource identities. No resource is usable until Accepted arrives.
-    pub fn begin_native_resource(
-        &mut self,
-        lifecycle: &mut NativeLauncherLifecycle,
-        transaction: TransactionId,
-        mut begin: ContentResourceBegin,
-    ) -> Result<Admission, ShellClientError> {
-        lifecycle.service(self)?;
-        if lifecycle.upload.is_some() || lifecycle.resource_index(begin.resource).is_some() {
-            return Err(ShellClientError::InvalidArgument(
-                "native upload already active",
-            ));
-        }
-        let index = lifecycle
-            .resources
-            .iter()
-            .position(Option::is_none)
-            .ok_or(ShellClientError::QueueSaturated)?;
-        begin.grant = lifecycle.limits.grant;
-        begin
-            .layout(&lifecycle.limits)
-            .map_err(|_| ShellClientError::InvalidArgument("native resource layout"))?;
-        let upload = Upload {
-            id: begin.resource,
-            total: begin.total_bytes,
-            chunks: begin.chunk_count,
-            offset: 0,
-            ordinal: 0,
-            pending: None,
-            failed: false,
-        };
-        let admission =
-            self.enqueue_content_tracked(transaction, &ShellContentRecord::ResourceBegin(begin))?;
-        lifecycle.resources[index] = Some(Resource {
-            id: upload.id,
-            state: NativeResourceState::Begun,
-            ticket: Some(admission.first),
-            image_offer: None,
-        });
-        lifecycle.upload = Some(upload);
-        Ok(admission)
-    }
-
-    /// Admit one chunk, then wait for Stored before the next chunk or End.
-    /// No uncertain or refused payload is replayed. Cancel a failed upload.
-    pub fn upload_native_chunk(
-        &mut self,
-        lifecycle: &mut NativeLauncherLifecycle,
-        bytes: &[u8],
-    ) -> Result<Admission, ShellClientError> {
-        lifecycle.service(self)?;
-        let upload = lifecycle
-            .upload
-            .ok_or(ShellClientError::InvalidArgument("no native upload"))?;
-        if upload.pending.is_some() {
-            return Err(ShellClientError::QueueSaturated);
-        }
-        if upload.failed
-            || lifecycle.resource_state(upload.id) != Some(NativeResourceState::Admitted)
-            || bytes.is_empty()
-            || bytes.len() as u64 > upload.total - upload.offset
-        {
-            return Err(ShellClientError::InvalidArgument("native upload chunk"));
-        }
-        let record = ShellContentRecord::ResourceChunk(ContentResourceChunk {
-            grant: lifecycle.limits.grant,
-            resource: upload.id,
-            ordinal: upload.ordinal,
-            offset: upload.offset,
-            bytes: bytes.to_vec(),
-        });
-        // A slot write has no transaction record; its ticket still tracks Stored.
-        let admission = self.enqueue_content_tracked(TransactionId::INVALID, &record)?;
-        lifecycle.upload.as_mut().unwrap().pending = Some((admission.first, bytes.len()));
-        Ok(admission)
-    }
-
-    pub fn end_native_resource(
-        &mut self,
-        lifecycle: &mut NativeLauncherLifecycle,
-        transaction: TransactionId,
-    ) -> Result<Admission, ShellClientError> {
-        lifecycle.service(self)?;
-        let upload = lifecycle
-            .upload
-            .ok_or(ShellClientError::InvalidArgument("no native upload"))?;
-        if upload.pending.is_some() {
-            return Err(ShellClientError::QueueSaturated);
-        }
-        if upload.failed
-            || upload.offset != upload.total
-            || lifecycle.resource_state(upload.id) != Some(NativeResourceState::Admitted)
-        {
-            return Err(ShellClientError::InvalidArgument(
-                "native upload incomplete",
-            ));
-        }
-        let admission = self.enqueue_content_tracked(
-            transaction,
-            &ShellContentRecord::ResourceEnd(ContentResourceEnd {
-                grant: lifecycle.limits.grant,
-                resource: upload.id,
-                total_bytes: upload.total,
-                chunk_count: upload.chunks,
-            }),
-        )?;
-        lifecycle.upload = None;
-        Ok(admission)
-    }
-
-    /// Cancel a begun/admitted resource, including after a refused End. The
-    /// resource remains tracked until its terminal status or release arrives.
-    pub fn cancel_native_resource(
-        &mut self,
-        lifecycle: &mut NativeLauncherLifecycle,
-        transaction: TransactionId,
-        resource: ContentResourceId,
-    ) -> Result<Admission, ShellClientError> {
-        lifecycle.service(self)?;
-        if !matches!(
-            lifecycle.resource_state(resource),
-            Some(NativeResourceState::Begun | NativeResourceState::Admitted)
-        ) {
-            return Err(ShellClientError::InvalidArgument(
-                "native resource not staging",
-            ));
-        }
-        let admission = self.enqueue_content_tracked(
-            transaction,
-            &ShellContentRecord::ResourceCancel(ContentResourceCancel {
-                grant: lifecycle.limits.grant,
-                resource,
-            }),
-        )?;
-        if lifecycle.upload.is_some_and(|u| u.id == resource) {
-            lifecycle.upload = None;
-        }
-        Ok(admission)
-    }
     /// Retire only Accepted storage. Close does not retire it; ResourceReleased
     /// is the release barrier. A submit refusal restores Accepted on service.
     pub fn retire_native_resource(

@@ -29,7 +29,7 @@ fn all_ack_batches_keep_control_headroom_but_mixed_batches_cannot_spend_it() {
 }
 
 #[test]
-fn batch_total_bytes_are_bounded_before_admission() {
+fn oversized_byte_payload_is_refused_before_batch_admission() {
     let (mut connection, mut peer) = connect(bar(0));
     let chunk = ShellContentRecord::ResourceChunk(ContentResourceChunk {
         grant: grant(),
@@ -43,7 +43,7 @@ fn batch_total_bytes_are_bounded_before_admission() {
     });
     assert_eq!(
         connection.enqueue_content_batch(&[ContentBatchItem::Record(tx(1), &chunk); 2]),
-        Err(ShellClientError::QueueSaturated)
+        Err(ShellClientError::WrongDirection)
     );
     assert_eq!(connection.custody(Ticket(1)), None);
     let ticket = enqueue_demand(&mut connection, 2);
@@ -153,7 +153,7 @@ fn batch_count_and_reservation_size_are_checked_before_admission() {
     );
 }
 
-fn begin(id: u64) -> ShellContentRecord {
+pub(super) fn begin(id: u64) -> ShellContentRecord {
     ShellContentRecord::ResourceBegin(ContentResourceBegin {
         grant: grant(),
         resource: ContentResourceId { id, generation: 1 },
@@ -168,41 +168,33 @@ fn begin(id: u64) -> ShellContentRecord {
 }
 
 #[test]
-fn upload_slots_are_distinct_and_roll_back_on_failure_or_cancellation() {
-    let (mut connection, mut peer) = connect(Profile {
-        limits_published: true,
-        ..bar(0)
-    });
-    let _ = next(&mut connection, &mut peer, ShellConnection::take_content);
-    let first = begin(1);
-    let second = begin(2);
-    let invalid = permit_record();
-    let good = [
-        ContentBatchItem::Record(tx(1), &first),
-        ContentBatchItem::Record(tx(2), &second),
-    ];
-    let bad = [good[0], good[1], ContentBatchItem::Record(tx(3), &invalid)];
-    for _ in 0..8 {
-        assert!(connection.enqueue_content_batch(&bad).is_err());
-        assert!(
-            connection
-                .enqueue_content_batch(&[good[0], good[0]])
-                .is_err()
+fn byte_resource_in_a_batch_refuses_the_whole_batch_without_tickets() {
+    let (mut connection, mut peer) = connect(bar(0));
+    let control = demand(1);
+    let retired = begin(2);
+    for items in [
+        [
+            ContentBatchItem::Record(tx(1), &control),
+            ContentBatchItem::Record(tx(2), &retired),
+        ],
+        [
+            ContentBatchItem::Record(tx(2), &retired),
+            ContentBatchItem::Record(tx(1), &control),
+        ],
+    ] {
+        assert!(matches!(
+            connection.reserve_content_batch(&items),
+            Err(ShellClientError::WrongDirection)
+        ));
+        assert_eq!(
+            connection.enqueue_content_batch(&items),
+            Err(ShellClientError::WrongDirection)
         );
-        drop(connection.reserve_content_batch(&good).unwrap());
     }
-    let admission = connection.enqueue_content_batch(&good).unwrap();
-    assert_eq!(
-        admission,
-        Admission {
-            first: Ticket(1),
-            count: 2
-        }
-    );
-    let a = commit(&mut connection, &mut peer, Ticket(1));
-    let b = commit(&mut connection, &mut peer, Ticket(2));
-    assert_eq!(decode_shell_file_resource_begin(&a).unwrap().slot, 0);
-    assert_eq!(decode_shell_file_resource_begin(&b).unwrap().slot, 1);
+    let ticket = enqueue_demand(&mut connection, 3);
+    assert_eq!(ticket, Ticket(1));
+    commit(&mut connection, &mut peer, ticket);
+    assert_eq!(peer.transactions.len(), 1);
 }
 
 #[test]

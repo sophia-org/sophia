@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "../sophia_launch_auth.h"
 #include "../sophia_lock_client.h"
+#include "../sophia_lock_image.h"
 #include <assert.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -34,8 +35,11 @@ int main(void) {
   size_t bytes = sophia_9p_storage_bytes(4096, 8);
   void *role_storage = malloc(bytes), *relay_storage = malloc(bytes);
   int fd = socket(AF_UNIX, SOCK_STREAM, 0), observed = 0;
-  int upload = getenv("SOPHIA_TEST_LOCK_UPLOAD") && !strcmp(getenv("SOPHIA_TEST_LOCK_UPLOAD"), "1");
-  uint8_t pixels[16];
+  int upload = getenv("SOPHIA_TEST_LOCK_IMAGE") && !strcmp(getenv("SOPHIA_TEST_LOCK_IMAGE"), "1");
+  struct sophia_lc_image image;
+  struct sophia_lc_image_config image_config = {0};
+  uint8_t formats[65536];
+  int image_dir = -1;
   uint64_t deadline = now_ms() + 10000;
   unsigned round;
   assert(fd >= 0 && role_storage && relay_storage);
@@ -66,15 +70,34 @@ int main(void) {
     assert(!sophia_la_service(&auth, now_ms(), 65536));
   }
   }
-  offer.minimum_revision = offer.maximum_revision = 1;
-  offer.capabilities = SOPHIA_LF_CAP_PRESENT;
+  offer.minimum_revision = offer.maximum_revision = upload ? 2 : 1;
+  offer.capabilities = SOPHIA_LF_CAP_PRESENT | (upload ? SOPHIA_LF_CAP_IMAGE_SEALED : 0);
   assert(!sophia_lc_init_attached(&client, &role, sophia_la_root(&auth), &offer));
+  if (upload) {
+    char directory[sizeof address.sun_path], *slash;
+    strcpy(directory, socket_path);
+    slash = strrchr(directory, '/');
+    assert(slash); slash[slash == directory ? 1 : 0] = 0;
+    image_dir = open(directory, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    assert(image_dir >= 0);
+    image_config.endpoint_dir = image_dir;
+    image_config.formats = formats;
+    image_config.formats_capacity = sizeof formats;
+    image_config.producer.bounds.max_resource_bytes = 256;
+    image_config.producer.bounds.max_width = image_config.producer.bounds.max_height = 8;
+    image_config.producer.bounds.max_outputs = image_config.producer.bounds.transfer_slots = 1;
+    image_config.producer.transfer_timeout_ms = 5000;
+    image_config.producer.startup_deadline_ms = deadline;
+    assert(!sophia_lc_image_init(&image, &image_config));
+    assert(!sophia_lc_image_attach(&client, &image));
+  }
   do {
     const struct sophia_lf_record *event;
     struct pollfd pfd = {fd, POLLIN | (sophia_9p_wants_write(&role) ? POLLOUT : 0), 0};
     assert(now_ms() < deadline);
     assert(poll(&pfd, 1, 1) >= 0);
     assert(!sophia_lc_service(&client, 65536));
+    if (upload) assert(sophia_lc_image_dispatch(&image, 0, now_ms()) >= 0);
     if (!sophia_lc_event(&client, &event)) {
       uint64_t generation;
       const struct sophia_lf_lock *lock = sophia_lc_lock(&client, &generation);
@@ -87,43 +110,39 @@ int main(void) {
   } while (!observed || obligations.acked < 3);
   assert(sophia_lc_epoch(&client) == (getenv("SOPHIA_TEST_LOCK_EPOCH") ?
     strtoull(getenv("SOPHIA_TEST_LOCK_EPOCH"), NULL, 10) : 7));
-  assert(sophia_lc_welcome(&client)->granted_capabilities == SOPHIA_LF_CAP_PRESENT);
+  assert(sophia_lc_welcome(&client)->granted_capabilities == offer.capabilities);
   if (upload) {
-    struct sophia_lf_resource_begin begin = {0};
-    int status;
-    begin.transaction = 2;
-    begin.resource.id = begin.resource.generation = 1;
-    begin.width_px = begin.height_px = 2;
+    struct sophia_ic_metadata metadata = {0};
+    int source, status;
+    void *pixels;
+    size_t size;
+    uint64_t offer_id;
+    assert(!sophia_ip_isb_create(2, 2, &source, &pixels, &size));
+    memset(pixels, 0x5a, size);
+    assert(!sophia_ip_isb_finish(source, pixels, size));
+    metadata.resource_id = metadata.resource_generation = 1;
+    metadata.admission_epoch = 3;
+    metadata.output = metadata.allocation = metadata.topology_generation = 1;
+    metadata.source_kind = metadata.source_format = 1;
+    metadata.width = metadata.height = 2;
+    metadata.stride = 8;
+    metadata.plane_count = metadata.descriptor_count = 1;
+    metadata.logical_bytes = 16;
     do {
       assert(now_ms() < deadline);
-      status = sophia_lc_upload_begin(&client, &begin);
-      if (status == SOPHIA_9P_BUSY) assert(!sophia_lc_service(&client, 65536));
-    } while (status == SOPHIA_9P_BUSY);
-    assert(!status);
-    observed = 0;
-    while (!observed || !sophia_lc_upload_ready(&client)) {
-      const struct sophia_lf_record *event;
-      struct pollfd pfd = {fd, POLLIN | (sophia_9p_wants_write(&role) ? POLLOUT : 0), 0};
-      assert(now_ms() < deadline && poll(&pfd, 1, 1) >= 0);
-      assert(!sophia_lc_service(&client, 65536));
-      if (!sophia_lc_event(&client, &event)) {
-        assert(event->header.kind == SOPHIA_LF_RESOURCE_STATUS && event->value.resource_status.status == SOPHIA_LF_ADMITTED);
-        observed = 1;
-        assert(!sophia_lc_event_consume(&client));
+      status = sophia_lc_image_begin(&image, &metadata, source, now_ms(), &offer_id);
+      if (status == SOPHIA_IPR_BUSY || status == SOPHIA_IPR_AGAIN) {
+        struct timespec pause = {0, 1000000};
+        assert(!sophia_lc_service(&client, 65536));
+        assert(sophia_lc_image_dispatch(&image, 0, now_ms()) >= 0);
+        nanosleep(&pause, NULL);
       }
-    }
-    memset(pixels, 0x5a, sizeof pixels);
-    assert(!sophia_lc_upload_chunk(&client, pixels, 4));
-    while (!sophia_lc_upload_ready(&client)) {
-      struct pollfd pfd = {fd, POLLIN | (sophia_9p_wants_write(&role) ? POLLOUT : 0), 0};
-      assert(now_ms() < deadline && poll(&pfd, 1, 1) >= 0);
-      assert(!sophia_lc_service(&client, 65536));
-    }
-    assert(!sophia_lc_upload_chunk(&client, pixels + 4, 12));
+    } while (status == SOPHIA_IPR_BUSY || status == SOPHIA_IPR_AGAIN);
+    assert(!status);
+    /* Producer custody precedes any role submission: revoke while ImageBegin
+     * remains staged, before a source can cross the side channel. */
     assert(!sophia_lc_service(&client, 0));
-    assert(!sophia_lc_obligations(&client, &obligations));
-    assert(obligations.upload_pending && obligations.upload_writes == 1);
-    report(report_path, "upload-waiting\n");
+    report(report_path, "image-waiting\n");
     for (;;) {
       char text[32] = {0};
       FILE *f = fopen(report_path, "r");
@@ -139,21 +158,25 @@ int main(void) {
     struct pollfd pfd = {fd, POLLIN | (sophia_9p_wants_write(&role) ? POLLOUT : 0), 0};
     assert(now_ms() < deadline);
     assert(poll(&pfd, 1, 1) >= 0);
-    if (sophia_lc_service(&client, 65536)) break;
+    if (sophia_lc_service(&client, 65536)) {
+      if (upload) (void)sophia_lc_image_dispatch(&image, 0, now_ms());
+      break;
+    }
+    if (upload) assert(sophia_lc_image_dispatch(&image, 0, now_ms()) >= 0);
   }
   assert(sophia_lc_state(&client) == SOPHIA_LC_STALE || sophia_lc_state(&client) == SOPHIA_LC_FAILED);
   {
     uint64_t id;
     enum sophia_lc_submission custody;
     assert(!sophia_lc_submission(&client, &id, &custody, NULL));
-    assert(id == (upload ? 2u : 1u) && custody == SOPHIA_LC_SUBMISSION_CUSTODIED);
+    assert(id == (upload ? 2u : 1u));
+    assert(custody == (upload ? SOPHIA_LC_SUBMISSION_STAGED : SOPHIA_LC_SUBMISSION_CUSTODIED));
   }
   if (upload) {
-    assert(!sophia_lc_upload_pending(&client) && !sophia_lc_upload_ready(&client));
-    assert(!sophia_lc_obligations(&client, &obligations) && !obligations.upload_writes);
-    assert(sophia_lc_upload_end(&client) && sophia_lc_upload_cancel(&client));
+    sophia_ip_close(&image.producer);
+    close(image_dir);
   }
-  report(report_path, upload ? "upload-revoked\n" : "revoked\n");
+  report(report_path, upload ? "image-revoked\n" : "revoked\n");
   close(fd); close(STDIN_FILENO); free(role_storage); free(relay_storage);
   return 0;
 }

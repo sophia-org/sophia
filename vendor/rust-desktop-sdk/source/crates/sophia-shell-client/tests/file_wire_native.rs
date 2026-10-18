@@ -2,6 +2,10 @@
 #[allow(dead_code)]
 #[path = "support/file_wire_peer.rs"]
 mod peer;
+use peer as file_wire_peer;
+#[allow(dead_code)]
+#[path = "support/image_adapter_peer.rs"]
+mod image_peer;
 use peer::{CONTENT_GRANT_EPOCH, EPOCH, Object, Peer, Profile, WAIT};
 use sophia_shell_client::*;
 use sophia_shell_protocol::shell_files::*;

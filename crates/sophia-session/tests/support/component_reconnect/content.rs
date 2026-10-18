@@ -24,7 +24,14 @@ pub(in crate::live_session) fn prepare(
     fixture.admit(frame, LiveShellContentLayer::Shell).unwrap();
     let grant = transport.content_grant().unwrap();
     transport
-        .content_prepared(grant, bundle.output, bundle.candidate_generation, 1, 1, 0)
+        .content_prepared(
+            grant,
+            bundle.output,
+            bundle.candidate_generation,
+            1,
+            1,
+            crate::shell_component_connections::content_now_msec(),
+        )
         .unwrap();
     content.facts_generation = 1;
     content.published_facts = vec![output_facts_entry(descriptor).unwrap()];

@@ -8,10 +8,15 @@ use std::time::{Duration, Instant};
 
 #[path = "support/shell_files_oracle/fixture.rs"]
 mod fixture;
+#[allow(dead_code)] // Only configure_for_peer serves the external oracle.
+#[path = "support/shell_required_image.rs"]
+mod image;
 #[path = "support/shell_files_oracle/process.rs"]
 mod process;
 #[path = "support/shell_files_oracle/roles.rs"]
 mod roles;
+#[path = "support/shell_file_peer.rs"]
+mod shell_file_peer;
 #[path = "support/shell_files_oracle/verdict.rs"]
 mod verdict;
 

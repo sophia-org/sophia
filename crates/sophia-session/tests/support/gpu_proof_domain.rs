@@ -31,19 +31,29 @@ fn device_and_descriptor_inventories_refuse_overflow() {
     }
     let mut remaining = INVENTORY_BOUND;
     inspect_devices(&fixture.0, Path::new("/absent"), &mut remaining).unwrap();
-    inspect_fds(&fixture.0).unwrap();
+    inspect_fds(&fixture.0, None).unwrap();
     fs::write(fixture.0.join("overflow"), []).unwrap();
     let mut remaining = INVENTORY_BOUND;
     assert!(inspect_devices(&fixture.0, Path::new("/absent"), &mut remaining).is_err());
-    assert!(inspect_fds(&fixture.0).is_err());
+    assert!(inspect_fds(&fixture.0, None).is_err());
 }
 
 #[test]
 fn descriptor_observation_refuses_socket_and_missing_selected_device() {
     let fixture = Fixture::new();
     fs::write(fixture.0.join("ordinary"), []).unwrap();
-    inspect_fds(&fixture.0).unwrap();
+    inspect_fds(&fixture.0, None).unwrap();
     let _socket = UnixListener::bind(fixture.0.join("socket")).unwrap();
-    assert!(inspect_fds(&fixture.0).is_err());
+    assert!(inspect_fds(&fixture.0, None).is_err());
     assert!(inspect(&fixture.0, "/dev/dri/renderD128", 226, 128).is_err());
+}
+
+#[test]
+fn descriptor_observation_allows_only_the_declared_launch_socket() {
+    let fixture = Fixture::new();
+    let _launch = UnixListener::bind(fixture.0.join("3")).unwrap();
+    inspect_fds(&fixture.0, Some(3)).unwrap();
+    assert!(inspect_fds(&fixture.0, Some(4)).is_err());
+    let _extra = UnixListener::bind(fixture.0.join("4")).unwrap();
+    assert!(inspect_fds(&fixture.0, Some(3)).is_err());
 }

@@ -1,7 +1,8 @@
+use super::image;
 use sophia_protocol::*;
 use sophia_runtime::*;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub const NAMES: [&str; 8] = [
     "main",
@@ -25,6 +26,12 @@ pub struct Fixture {
     pub action_acked: bool,
     pub presented: bool,
     pub revoked: bool,
+    image_owner: Option<ShellIsbImageOwner>,
+}
+/// Fixtures whose oracle attach negotiates shell r9 sealed images. The rest
+/// judge metadata-only behavior at their earlier revisions.
+fn sealed(name: &str) -> bool {
+    matches!(name, "main" | "missing" | "cancelled")
 }
 fn output() -> ContentOutputId {
     ContentOutputId {
@@ -60,19 +67,25 @@ impl Fixture {
             action_acked: false,
             presented: false,
             revoked: false,
+            image_owner: None,
         }
     }
     pub fn authorize(&mut self, pid: u32) {
+        let limits = ContentLimits::prototype(self.grant);
+        if sealed(self.name) {
+            self.image_owner = Some(image::configure_for_peer(&mut self.transport, &limits, pid));
+        } else {
+            self.transport
+                .authorize_protected_peer(&ProtectionDomainEvidence {
+                    backend: ProtectionBackendKind::Bubblewrap,
+                    supervisor_pid: std::process::id(),
+                    peer_pid: pid,
+                    roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
+                })
+                .unwrap();
+        }
         self.transport
-            .authorize_protected_peer(&ProtectionDomainEvidence {
-                backend: ProtectionBackendKind::Bubblewrap,
-                supervisor_pid: std::process::id(),
-                peer_pid: pid,
-                roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
-            })
-            .unwrap();
-        self.transport
-            .reserve_content(&mut self.registry, ContentLimits::prototype(self.grant))
+            .reserve_content(&mut self.registry, limits)
             .unwrap();
     }
     pub fn phase(&mut self, phase: &str) -> Result<bool, String> {
@@ -235,6 +248,10 @@ impl Fixture {
                 )?;
             }
         }
+        // Pixels reach the store only through the oracle's sealed Source.
+        if let Some(owner) = &mut self.image_owner {
+            owner.service(&mut self.transport, &mut self.registry, 10, Instant::now())?;
+        }
         self.transport
             .service_content_resources(&mut self.registry, 10)?;
         let allocations = self.transport.content_allocation_snapshots(&self.registry);
@@ -276,7 +293,8 @@ impl Fixture {
                         })
                         .unwrap()
                         .bytes(),
-                    &[0; 8]
+                    // The bytes the oracle sealed and sent, not a seeded value.
+                    &[0, 0, 255, 255, 0, 128, 0, 128]
                 );
                 self.transport.content_prepared(
                     &mut self.registry,

@@ -1,5 +1,7 @@
 //! Production file export with supplied protection and renderer completions.
 use super::shell_file_peer;
+#[path = "shell_required_image.rs"]
+mod image;
 use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
 use sophia_runtime::*;
@@ -19,7 +21,8 @@ static NEXT: AtomicU64 = AtomicU64::new(0);
 pub(crate) const CAPS: u64 = SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
     | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
     | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
-    | SOPHIA_SHELL_CAPABILITY_NATIVE_LAUNCHER;
+    | SOPHIA_SHELL_CAPABILITY_NATIVE_LAUNCHER
+    | (1 << 13);
 
 pub(crate) fn empty() -> ContentEpochRegistry {
     ContentEpochRegistry::new(64 * 1024 * 1024).unwrap()
@@ -28,6 +31,7 @@ pub(crate) struct Peer {
     pub transport: ShellComponentTransport,
     client: Client,
     limits: ContentLimits,
+    image_owner: ShellIsbImageOwner,
 }
 
 impl Peer {
@@ -46,14 +50,7 @@ impl Peer {
             rustix::process::geteuid().as_raw(),
         )
         .unwrap();
-        transport
-            .authorize_protected_peer(&ProtectionDomainEvidence {
-                backend: ProtectionBackendKind::Bubblewrap,
-                supervisor_pid: std::process::id(),
-                peer_pid: std::process::id(),
-                roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
-            })
-            .unwrap();
+        let image_owner = image::configure(&mut transport, &limits);
         transport
             .reserve_content_with_profile(r, limits.clone(), profile)
             .unwrap();
@@ -62,6 +59,7 @@ impl Peer {
             transport,
             client,
             limits,
+            image_owner,
         }
     }
 
@@ -80,12 +78,12 @@ impl Peer {
         std::thread::scope(|scope| {
             let client = &mut self.client;
             let worker = scope.spawn(move || {
-                client.wire.setup();
+                image::setup(&mut client.wire);
                 let offer = encode_shell_file_negotiate(
                     client.header(ShellFileKind::Negotiate),
                     ShellV1ClientHello {
-                        minimum_revision: 7,
-                        maximum_revision: 7,
+                        minimum_revision: 9,
+                        maximum_revision: 9,
                         required_capabilities: CAPS,
                     },
                 )
@@ -115,7 +113,7 @@ impl Peer {
                 std::thread::yield_now();
             }
             assert_eq!(worker.join().unwrap(), welcome);
-            assert_eq!(welcome.selected_revision, 7);
+            assert_eq!(welcome.selected_revision, 9);
             assert_eq!(welcome.capabilities, CAPS);
             assert_eq!(welcome.connection_epoch, self.limits.grant.connection_epoch);
         });
@@ -295,67 +293,21 @@ impl Peer {
         vec![allocation()]
     }
     pub fn upload(&mut self, r: &mut ContentEpochRegistry) {
-        self.drive(r, |client| {
-            let bytes = encode_shell_file_resource_begin(
-                client.header(ShellFileKind::ResourceBegin),
-                &ShellFileResourceBegin {
-                    transaction: tx(20),
-                    slot: 0,
-                    record: ShellContentRecord::ResourceBegin(ContentResourceBegin {
-                        grant: GRANT,
-                        resource: RESOURCE,
-                        width_px: 2,
-                        height_px: 1,
-                        rendered_scale_numerator: 1,
-                        rendered_scale_denominator: 1,
-                        pixel_format: 1,
-                        chunk_count: 1,
-                        total_bytes: 8,
-                    }),
-                },
-            )
-            .unwrap();
-            client.submit(&bytes);
+        std::thread::scope(|scope| {
+            let client = &mut self.client;
+            let worker = scope.spawn(move || client.upload());
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !worker.is_finished() {
+                self.transport.poll_io(r).unwrap();
+                self.image_owner
+                    .service(&mut self.transport, r, 0, Instant::now())
+                    .unwrap();
+                self.transport.service_content_resources(r, 0).unwrap();
+                assert!(Instant::now() < deadline, "native sealed image hung");
+                std::thread::yield_now();
+            }
+            worker.join().unwrap();
         });
-        assert_eq!(self.transport.service_content_resources(r, 0).unwrap(), 1);
-        assert!(
-            matches!(self.read_content(r).1, ShellContentRecord::ResourceStatus(v) if v.status == 1)
-        );
-        self.drive(r, |client| {
-            assert_eq!(client.wire.open_path(10, &[b"upload", b"0"], 1).0, 13);
-            assert_eq!(
-                client
-                    .wire
-                    .write_at(10, 0, &[0, 0, 255, 255, 0, 128, 0, 128])
-                    .0,
-                119
-            );
-            // Keep the upload fid through End: clunking an unfinished upload
-            // cancels it in the production export.
-            let bytes = encode_shell_file_resource_end(
-                client.header(ShellFileKind::ResourceEnd),
-                &ShellFileTransactionRecord {
-                    transaction: tx(20),
-                    record: ShellContentRecord::ResourceEnd(ContentResourceEnd {
-                        grant: GRANT,
-                        resource: RESOURCE,
-                        total_bytes: 8,
-                        chunk_count: 1,
-                    }),
-                },
-            )
-            .unwrap();
-            client.submit(&bytes);
-        });
-        let mut processed = 0;
-        while processed < 2 {
-            let count = self.transport.service_content_resources(r, 0).unwrap();
-            assert!(count > 0 && processed + count <= 2);
-            processed += count;
-        }
-        assert!(
-            matches!(self.read_content(r).1, ShellContentRecord::ResourceStatus(v) if v.status == 2)
-        );
         assert_eq!(
             self.transport
                 .lease_content_resource(r, GRANT, RESOURCE)

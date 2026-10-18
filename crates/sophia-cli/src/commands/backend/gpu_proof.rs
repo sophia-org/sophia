@@ -110,6 +110,8 @@ fn parse(
         None => SHELL_GPU_PROOF_DEFAULT_TIMEOUT,
     };
     Ok(ShellGpuContentProof {
+        factotum_agent: required(args, "--factotum-agent", "/absolute/path")?.into(),
+        factotum_pam_helper: required(args, "--factotum-pam-helper", "/absolute/path")?.into(),
         client: PathBuf::from(client),
         client_args: client_args(args),
         config: arg_value(args, "--config").map(PathBuf::from),

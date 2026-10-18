@@ -1,7 +1,8 @@
 //! Generic protected-admission peer. The supervisor's test bootstrap moves the
 //! original launch channel onto stdin without changing process identity.
+use sophia_image_producer::{ChannelState, ProducerMetadata, create_isb, finish_isb};
 use sophia_lock_client::{
-    Connecting, SessionError, SessionState, journal::Event, protocol::lock_files::*,
+    Connecting, ImageError, LockImageConfig, SessionState, protocol::lock_files::*,
 };
 use std::{
     os::unix::net::UnixStream,
@@ -13,7 +14,9 @@ fn main() {
     let stdin = std::io::stdin();
     rustix::io::fcntl_setfd(&stdin, rustix::io::FdFlags::CLOEXEC).unwrap();
     let relay = UnixStream::from(rustix::io::fcntl_dupfd_cloexec(&stdin, 3).unwrap());
-    let stream = UnixStream::connect(std::env::var_os("SOPHIA_TEST_LOCK_SOCKET").unwrap()).unwrap();
+    let socket = std::path::PathBuf::from(std::env::var_os("SOPHIA_TEST_LOCK_SOCKET").unwrap());
+    let image = std::env::var("SOPHIA_TEST_LOCK_IMAGE").as_deref() == Ok("1");
+    let stream = UnixStream::connect(&socket).unwrap();
     let auth_clock = Instant::now();
     let mut auth =
         sophia_launch_client::Client::new(stream, relay, b"lock", b"lock-provider", 0, 5000)
@@ -41,15 +44,30 @@ fn main() {
         admitted.role,
         admitted.root,
         LockNegotiate {
-            minimum_revision: 1,
-            maximum_revision: 1,
-            requested_capabilities: LOCK_FILE_CAPABILITY_PRESENT,
+            minimum_revision: if image { 2 } else { 1 },
+            maximum_revision: if image { 2 } else { 1 },
+            requested_capabilities: LOCK_FILE_CAPABILITY_PRESENT
+                | if image {
+                    LOCK_FILE_CAPABILITY_SEALED_MEMORY
+                } else {
+                    0
+                },
             chords: Vec::new(),
         },
         0,
         5000,
     )
     .unwrap();
+    if image {
+        connecting
+            .enable_images(LockImageConfig {
+                endpoint_dir: socket.parent().unwrap().to_owned(),
+                startup_deadline_ms: 5000,
+                transfer_timeout_ms: 5000,
+                formats_capacity: 65536,
+            })
+            .unwrap();
+    }
     while !connecting.ready() {
         assert!(Instant::now() < deadline, "lock negotiation deadline");
         connecting
@@ -67,6 +85,11 @@ fn main() {
     assert_eq!(
         session.welcome().unwrap().granted_capabilities,
         LOCK_FILE_CAPABILITY_PRESENT
+            | if image {
+                LOCK_FILE_CAPABILITY_SEALED_MEMORY
+            } else {
+                0
+            }
     );
     let mut observed = false;
     while !observed || session.obligations().acked < 3 || session.obligations().deadline.is_some() {
@@ -83,65 +106,60 @@ fn main() {
         std::thread::sleep(Duration::from_millis(1));
     }
     let report = std::path::PathBuf::from(std::env::var_os("SOPHIA_TEST_LOCK_REPORT").unwrap());
-    let upload = std::env::var("SOPHIA_TEST_LOCK_UPLOAD").as_deref() == Ok("1");
-    let mut chunk_pointer = None;
-    if upload {
-        let begin = LockResourceBegin {
-            transaction: 2,
-            resource: LockResourceId {
-                id: 1,
-                generation: 1,
-            },
-            width_px: 2,
-            height_px: 2,
-            slot: 0,
+    let upload = image;
+    if image {
+        while session.image().unwrap().producer().channel() != ChannelState::Ready {
+            assert!(Instant::now() < deadline, "image channel deadline");
+            session
+                .dispatch(start.elapsed().as_millis() as u64, 65536)
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let source = create_isb(2, 2).unwrap();
+        source.write_pixels(0, &[0x5a; 16]).unwrap();
+        finish_isb(&source).unwrap();
+        let metadata = ProducerMetadata {
+            offer_id: 0,
+            resource: 1,
+            resource_generation: 1,
+            admission_epoch: 3,
+            output_id: 1,
+            allocation_id: 1,
+            topology_generation: 1,
+            source_kind: 1,
+            source_format: 1,
+            width: 2,
+            height: 2,
+            stride: 8,
+            plane_count: 1,
+            descriptor_count: 1,
+            declared_bytes: 16,
+            modifier: 0,
         };
+        let mut source = source.into_fd();
         loop {
             assert!(Instant::now() < deadline);
-            match session.upload_begin(begin) {
-                Ok(()) => break,
-                Err(SessionError::Upload(sophia_lock_client::upload::Error::Busy)) => (),
-                Err(e) => panic!("upload begin: {e:?}"),
+            match session.image_begin(metadata, source, start.elapsed().as_millis() as u64) {
+                Ok(_) => break,
+                Err(e) if e.error == ImageError::Busy => {
+                    source = e.source.unwrap();
+                    session
+                        .dispatch(start.elapsed().as_millis() as u64, 65536)
+                        .unwrap();
+                }
+                Err(e) => panic!("image begin: {e:?}"),
             }
-            session
-                .dispatch(start.elapsed().as_millis() as u64, 65536)
-                .unwrap();
         }
-        let mut admitted = false;
-        while !admitted || !session.upload_ready() {
-            assert!(Instant::now() < deadline);
-            session
-                .dispatch(start.elapsed().as_millis() as u64, 65536)
-                .unwrap();
-            if let Some((_, event)) = session.event() {
-                assert!(
-                    matches!(event, Event::ResourceStatus(v) if v.status == LockResourceState::Admitted)
-                );
-                admitted = true;
-                session.consume().unwrap();
-            }
-            std::thread::sleep(Duration::from_millis(1));
-        }
-        // A real four-byte prefix has settled; the remaining resource is not
-        // publishable. Queue its tail with no I/O, then wait for revocation.
-        session.upload_chunk(vec![0x5a; 4]).unwrap();
-        while !session.upload_ready() {
-            assert!(Instant::now() < deadline);
-            session
-                .dispatch(start.elapsed().as_millis() as u64, 65536)
-                .unwrap();
-            std::thread::sleep(Duration::from_millis(1));
-        }
-        assert_eq!(session.take_upload_chunk().unwrap(), vec![0x5a; 4]);
-        let tail = vec![0x5a; 12];
-        chunk_pointer = Some(tail.as_ptr());
-        session.upload_chunk(tail).unwrap();
+        // The source belongs to the producer, but the role has not received
+        // ImageBegin. Revoke before any submission custody can be established.
         session
             .dispatch(start.elapsed().as_millis() as u64, 0)
             .unwrap();
-        assert_eq!(session.obligations().upload_writes, 1);
-        assert!(session.take_upload_chunk().is_none());
-        std::fs::write(&report, b"upload-waiting\n").unwrap();
+        assert_eq!(
+            session.latest_submission(),
+            Some((2, sophia_lock_client::submission::Custody::Staged))
+        );
+        std::fs::write(&report, b"image-waiting\n").unwrap();
         while std::fs::read_to_string(&report).unwrap() != "continue\n" {
             assert!(Instant::now() < deadline);
             std::thread::sleep(Duration::from_millis(1));
@@ -162,21 +180,18 @@ fn main() {
         session.latest_submission(),
         Some((
             if upload { 2 } else { 1 },
-            sophia_lock_client::submission::Custody::Submitted
+            if upload {
+                sophia_lock_client::submission::Custody::DroppedUnsent
+            } else {
+                sophia_lock_client::submission::Custody::Submitted
+            }
         ))
     );
     assert!(session.fd().is_none() && session.event().is_none());
-    if upload {
-        assert!(!session.upload_pending() && !session.upload_ready());
-        assert_eq!(session.obligations().upload_writes, 0);
-        assert!(session.upload_end().is_err() && session.upload_cancel().is_err());
-        let returned = session.take_upload_chunk().unwrap();
-        assert_eq!(Some(returned.as_ptr()), chunk_pointer);
-    }
     std::fs::write(
         &report,
         if upload {
-            b"upload-revoked\n".as_slice()
+            b"image-revoked\n".as_slice()
         } else {
             b"revoked\n".as_slice()
         },

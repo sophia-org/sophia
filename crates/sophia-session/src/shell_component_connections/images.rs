@@ -1,4 +1,4 @@
-//! Session policy for sealed images and the clock shared with byte resources.
+//! Session policy for sealed images and content accounting clocks.
 use super::Connection;
 use sophia_protocol::shell_files::{
     ShellImageDiscovery, ShellImageFormats, ShellImageLimits, ShellImageRoleBounds,
@@ -19,8 +19,6 @@ pub(super) fn configure(connection: &mut Connection) -> Result<(), ShellTranspor
         .limits
         .as_ref()
         .ok_or(ShellTransportError::MissingCapability)?;
-    let offers = limits.max_open_transfers.min(4);
-    let generation = limits.grant.connection_epoch;
     const VALIDATION_BYTES: u32 = 65_536;
     if connection.images.is_none() {
         // The worker survives reduced reconnect grants. Its hard resource cap
@@ -31,7 +29,41 @@ pub(super) fn configure(connection: &mut Connection) -> Result<(), ShellTranspor
                 .map_err(|error| ShellTransportError::Io(error.to_string()))?,
         );
     }
-    connection.transport.configure_image_channel(
+    configure_transport(&mut connection.transport, limits)
+}
+
+pub(crate) fn configure_transport(
+    transport: &mut sophia_runtime::ShellComponentTransport,
+    limits: &sophia_protocol::ContentLimits,
+) -> Result<(), ShellTransportError> {
+    configure_with(limits, |d, l, f, b| {
+        transport.configure_image_channel(d, l, f, b)
+    })
+}
+
+#[cfg(feature = "native-session")]
+pub(crate) fn configure_legacy(
+    transport: &mut sophia_runtime::ShellSessionTransport,
+    limits: &sophia_protocol::ContentLimits,
+) -> Result<(), ShellTransportError> {
+    configure_with(limits, |d, l, f, b| {
+        transport.configure_image_channel(d, l, f, b)
+    })
+}
+
+fn configure_with(
+    limits: &sophia_protocol::ContentLimits,
+    configure: impl FnOnce(
+        ShellImageDiscovery,
+        ShellImageLimits,
+        ShellImageFormats,
+        ShellImageRoleBounds,
+    ) -> Result<(), ShellTransportError>,
+) -> Result<(), ShellTransportError> {
+    let offers = limits.max_open_transfers.min(4);
+    let generation = limits.grant.connection_epoch;
+    const VALIDATION_BYTES: u32 = 65_536;
+    configure(
         ShellImageDiscovery {
             connection_epoch: generation,
             channel_generation: generation,

@@ -328,8 +328,8 @@ static void disclosure(void)
     ticket = 1234;
     assert(sophia_ss_submit(&r.s, &v, 1, &ticket) == SOPHIA_9P_ARGUMENT);
     assert(ticket == 1234 && !r.s.queued && r.s.next_ticket == 1);
-    struct sophia_sf_resource_begin resource = {0};
-    assert(sophia_ss_upload_begin(&r.s, resource, &ticket) == SOPHIA_9P_ARGUMENT);
+    v.header.kind = SOPHIA_SF_RESOURCE_BEGIN;
+    assert(sophia_ss_submit(&r.s, &v, 1, &ticket) == SOPHIA_9P_ARGUMENT);
     assert(r.p.submits == 1 && r.s.files.next_submission == 2);
     v = candidate(1);
     v.header.kind = SOPHIA_SF_REFERENCE_CANDIDATE;

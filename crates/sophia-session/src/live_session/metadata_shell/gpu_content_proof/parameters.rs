@@ -165,6 +165,9 @@ impl ShellGpuProofPixels {
 /// the content seam, without DRM master or native presentation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ShellGpuContentProof {
+    /// Absolute paths for the real launch authenticator and its PAM helper.
+    pub factotum_agent: PathBuf,
+    pub factotum_pam_helper: PathBuf,
     /// Absolute path of the client executable. It is served only
     /// `sophia_shell_fs_v1` over 9P2000.L at `SOPHIA_SHELL_9P_SOCKET`.
     pub client: PathBuf,
@@ -288,6 +291,8 @@ impl ShellGpuContentProof {
     pub fn validate(&self) -> Result<(), ShellGpuProofError> {
         let limits = shell_gpu_proof_content_limits();
         for (name, path) in [
+            ("factotum agent", Some(&self.factotum_agent)),
+            ("factotum PAM helper", Some(&self.factotum_pam_helper)),
             ("client", Some(&self.client)),
             ("config", self.config.as_ref()),
             ("render node", Some(&self.render_node)),

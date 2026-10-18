@@ -12,16 +12,29 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 type session struct {
 	w                               *wire
 	runner                          *runner
-	fixture                         string
+	fixture, endpoint               string
 	epoch, offset, sequence, nextID uint64
 	revision                        uint16
 	queue                           []record
 	last                            []byte
+	// Shell r9 sealed-image state; image is the SEQPACKET channel fd or -1.
+	sealed    bool
+	image     int
+	offers    uint64
+	discovery discovery
+}
+
+// sealedFixture names attaches that negotiate shell r9 sealed images over an
+// authenticated afid. Metadata-only fixtures keep their earlier revisions.
+func sealedFixture(name string) bool {
+	return name == "main" || name == "missing" || name == "cancelled" || strings.HasPrefix(name, "launcher") || strings.HasPrefix(name, "dock")
 }
 
 var apiLine = regexp.MustCompile(`^sophia-shell-files version=1 role=([a-z][a-z0-9_-]*) epoch=([1-9][0-9]*) fd_transfer=none\n$`)
@@ -42,8 +55,9 @@ func (r *runner) connect(name string, msize uint32) *session {
 	endpoint, err := os.ReadFile(filepath.Join(r.root, name+".endpoint"))
 	must(err)
 	need(len(endpoint) > 0 && len(endpoint) < 256, "endpoint length")
-	w := dial(string(endpoint), msize)
-	s := &session{w: w, runner: r, fixture: name, nextID: 1}
+	sealed := sealedFixture(name)
+	w := dial(string(endpoint), msize, sealed)
+	s := &session{w: w, runner: r, fixture: name, endpoint: string(endpoint), nextID: 1, sealed: sealed, image: -1}
 	// Read the complete bounded line, including EOF, before emitting any records.
 	w.file(10, 0, "api")
 	var api []byte
@@ -72,7 +86,12 @@ func (r *runner) connect(name string, msize uint32) *session {
 	w.file(4, 1, "ack")
 	return s
 }
-func (s *session) close() { s.w.conn.Close() }
+func (s *session) close() {
+	if s.image >= 0 {
+		unix.Close(s.image)
+	}
+	s.w.conn.Close()
+}
 func (s *session) phase(op string) {
 	c, err := net.DialTimeout("unix", filepath.Join(s.runner.root, "control.sock"), 3*time.Second)
 	must(err)
@@ -86,7 +105,8 @@ func (s *session) phase(op string) {
 }
 func (s *session) encoded(kind uint16, id uint64, body []byte) []byte {
 	b := append([]byte(nil), body...)
-	if kind != 256 {
+	// ImageBegin carries resource_id @8 and its own admission epoch @24.
+	if kind != 256 && kind != kindImageBegin {
 		at := 8
 		if kind == 258 {
 			at = 16
@@ -143,7 +163,8 @@ func (s *session) readEvents() []byte {
 		e, err := decodeAt(append([]byte(nil), rest[:n]...), s.revision)
 		must(err)
 		need(e.kind >= 16 && e.epoch == s.epoch && e.sequence > s.sequence, "event epoch/sequence")
-		if e.kind >= 32 {
+		// Image events carry resource or channel fields @8, not the epoch.
+		if e.kind >= 32 && !imageKind(e.kind) {
 			need(u64(e.body, 8) == s.epoch, "event grant epoch")
 		}
 		// Only a validated Negotiated selects the revision later events use.
@@ -181,11 +202,21 @@ func (s *session) ack(e record) {
 	p64(b, 8, e.sequence)
 	need(wrote(s.w.write(4, 0, b)) == 16, "ack count")
 }
+func (s *session) offer() []byte {
+	if s.sealed {
+		return sealedOffer()
+	}
+	return offer()
+}
 func (s *session) negotiate() record {
-	id := s.submit(256, offer())
+	id := s.submit(256, s.offer())
 	s.ack(s.custody(id, 256))
 	e := s.expect(16)
-	need(u16(e.body, 0) == 6 && u64(e.body, 4) == s.epoch && u64(e.body, 12)&385 == 385 && u16(e.body, 26) == 1, "selected profile")
+	revision, required := uint16(6), uint64(385)
+	if s.sealed {
+		revision, required = 9, 385|sealedCapability
+	}
+	need(u16(e.body, 0) == revision && u64(e.body, 4) == s.epoch && u64(e.body, 12)&required == required && u16(e.body, 26) == 1, "selected profile")
 	s.ack(e)
 	return e
 }

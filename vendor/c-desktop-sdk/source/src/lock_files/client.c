@@ -32,10 +32,9 @@ static int initialize(struct sophia_lc_client *c, struct sophia_9p_client *wire,
     return SOPHIA_9P_ARGUMENT;
   memset(c, 0, sizeof(*c));
   c->wire = wire;
-  c->upload_window = 1;
   c->offer = *offer;
   c->next_submission = 1;
-  c->object_fid = c->upload_fid = c->file_fid = UINT32_MAX;
+  c->object_fid = c->file_fid = UINT32_MAX;
   return 0;
 }
 int sophia_lc_init(struct sophia_lc_client *c, struct sophia_9p_client *wire,
@@ -251,7 +250,6 @@ static int submit_reply(struct sophia_lc_client *c,
       c->submit_sent = 0;
       c->submit_error = r->error ? r->error : UINT32_MAX;
       c->submit_stage = LC_TX_CLUNK;
-      sophia_lc_internal_upload_refused(c, (uint16_t)lc_get(c->tx + 6, 2));
       sophia_lc_internal_image_settled(c, 1);
       return 0;
     }
@@ -321,11 +319,7 @@ int sophia_lc_internal_drive(struct sophia_lc_client *c) {
       (r = sophia_lc_internal_object_drive(c)) ||
       (r = sophia_lc_internal_file_drive(c)))
     return r;
-  if ((r = sophia_lc_internal_upload_drive(c)))
-    return r;
-  /* Draining the last upload reply can queue Cancel here. Materialize its
-   * wire request before returning, so poll sees POLLOUT without a timer. */
-  return submit_drive(c);
+  return 0;
 }
 static int receive(struct sophia_lc_client *c, const struct sophia_9p_reply *r) {
   if (lc_same(&c->boot_op, r->handle)) {
@@ -362,15 +356,11 @@ static int receive(struct sophia_lc_client *c, const struct sophia_9p_reply *r) 
     c->object_op.active = 0;
     return sophia_lc_internal_object_reply(c, r);
   }
-  if (lc_same(&c->upload_op, r->handle)) {
-    c->upload_op.active = 0;
-    return sophia_lc_internal_upload_reply(c, r);
-  }
   if (lc_same(&c->file_op, r->handle)) {
     c->file_op.active = 0;
     return sophia_lc_internal_file_reply(c, r);
   }
-  return sophia_lc_internal_upload_write_reply(c, r);
+  return SOPHIA_9P_INVALID;
 }
 int sophia_lc_service(struct sophia_lc_client *c, size_t budget) {
   struct sophia_9p_reply reply;
@@ -472,7 +462,6 @@ int sophia_lc_submission(const struct sophia_lc_client *c, uint64_t *id,
 }
 int sophia_lc_obligations(const struct sophia_lc_client *c,
                           struct sophia_lc_obligations *out) {
-  unsigned i;
   if (!c || !out)
     return SOPHIA_9P_ARGUMENT;
   memset(out, 0, sizeof(*out));
@@ -482,12 +471,9 @@ int sophia_lc_obligations(const struct sophia_lc_client *c,
     return 0;
   out->event_pending = c->event_ready;
   out->object_pending = c->object_stage != LC_OBJECT_IDLE;
-  out->upload_pending = (uint8_t)sophia_lc_upload_pending(c);
   out->waiting_for_ack = c->submit_stage == LC_TX_OPEN &&
                          c->acked < c->submitted_sequence;
   out->waiting_for_retry = c->submit_wait;
-  for (i = 0; i < SOPHIA_LC_MAX_UPLOAD_WRITES; ++i)
-    out->upload_writes += c->upload_writes[i].op.active != 0;
   return 0;
 }
 

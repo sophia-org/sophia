@@ -4,8 +4,8 @@
 
 use super::*;
 use sophia_protocol::{
-    ContentGrant, ContentLimits, ContentResourceBegin, ContentResourceChunk, ContentResourceEnd,
-    ContentResourceId, ContentResourceRetire, Rect, ShellContentRecord, Size, Transform,
+    ContentGrant, ContentLimits, ContentResourceBegin, ContentResourceId, ContentResourceRetire,
+    Rect, ShellContentRecord, Size, Transform,
 };
 use sophia_renderer_live::{
     LiveCompositionPlacement, LiveOwnedMixedCompositionLayer, LiveSharedCpuBufferSource,
@@ -25,48 +25,23 @@ fn content_resource() -> (
     };
     let mut store =
         sophia_runtime::ContentResourceStore::new(ContentLimits::prototype(grant)).unwrap();
-    store
-        .begin(
-            TransactionId::from_raw(1),
-            ContentResourceBegin {
-                grant,
-                resource,
-                width_px: 4,
-                height_px: 2,
-                rendered_scale_numerator: 1,
-                rendered_scale_denominator: 1,
-                pixel_format: 1,
-                chunk_count: 1,
-                total_bytes: 32,
-            },
-            0,
-        )
-        .unwrap();
-    store
-        .chunk(
-            TransactionId::from_raw(2),
-            &ContentResourceChunk {
-                grant,
-                resource,
-                ordinal: 0,
-                offset: 0,
-                bytes: vec![0x7f; 32],
-            },
-            0,
-        )
-        .unwrap();
-    store
-        .end(
-            TransactionId::from_raw(3),
-            &ContentResourceEnd {
-                grant,
-                resource,
-                total_bytes: 32,
-                chunk_count: 1,
-            },
-            0,
-        )
-        .unwrap();
+    crate::test_content_isb::accept(
+        &mut store,
+        TransactionId::from_raw(1),
+        ContentResourceBegin {
+            grant,
+            resource,
+            width_px: 4,
+            height_px: 2,
+            rendered_scale_numerator: 1,
+            rendered_scale_denominator: 1,
+            pixel_format: 1,
+            chunk_count: 1,
+            total_bytes: 32,
+        },
+        &[0x7f; 32],
+        0,
+    );
     let lease = store.lease(grant, resource).unwrap();
     (store, lease)
 }
@@ -286,6 +261,13 @@ fn assert_released_once(store: &mut sophia_runtime::ContentResourceStore) {
         Some(ShellContentRecord::ResourceReleased(value)) if value.resource.id == 11));
     store.collect();
     assert!(store.take_event().is_none());
+    assert_eq!(store.usage().retiring, 32);
+    store
+        .confirm_isb_release(ContentResourceId {
+            id: 11,
+            generation: 1,
+        })
+        .unwrap();
     assert_eq!(store.usage().retiring, 0);
 }
 

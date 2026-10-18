@@ -11,6 +11,14 @@ use sophia_protocol::*;
 use sophia_runtime::*;
 use sophia_shell_client::{Custody, ShellClientError, ShellClientOptions, ShellConnection};
 
+#[allow(dead_code)]
+#[path = "support/shell_required_image.rs"]
+mod image;
+#[path = "support/shell_sdk_image.rs"]
+mod sdk_image;
+#[path = "support/shell_file_peer.rs"]
+mod shell_file_peer;
+
 const MIB: u64 = 1024 * 1024;
 static NEXT: AtomicU64 = AtomicU64::new(0);
 const EPOCH: u64 = 1;
@@ -287,142 +295,7 @@ fn allocation_round_trips_through_the_client() {
 /// 2048x8 BGRA: seven rows per canonical chunk, so canonical chunks of 57344
 /// and 8192 bytes -- matching `tests/shell_file_transport.rs`'s
 /// `upload_begin`. The client uploads it as two writes that deliberately do
-/// not land on that canonical boundary (40000 then 25536 bytes), exercising
-/// the file wire's own short-write/resume handling.
-fn upload_begin(grant: ContentGrant, id: u64) -> ContentResourceBegin {
-    ContentResourceBegin {
-        grant,
-        resource: ContentResourceId { id, generation: 1 },
-        width_px: 2048,
-        height_px: 8,
-        rendered_scale_numerator: 1,
-        rendered_scale_denominator: 1,
-        pixel_format: 1,
-        chunk_count: 2,
-        total_bytes: 65536,
-    }
-}
-
-fn serve_resources(
-    transport: &mut ShellComponentTransport,
-    registry: &mut ContentEpochRegistry,
-    peer: &std::thread::JoinHandle<()>,
-) {
-    let start = Instant::now();
-    while !peer.is_finished() {
-        match transport.service_content_resources(registry, start.elapsed().as_millis() as u64) {
-            Ok(_) | Err(ShellTransportError::NotConnected) => {}
-            Err(error) => panic!("resources: {error}"),
-        }
-        assert!(start.elapsed() < Duration::from_secs(5));
-        std::thread::yield_now();
-    }
-}
-
-#[test]
-fn a_split_upload_through_its_slot_reaches_accepted_status() {
-    let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
-    let (mut transport, directory) = transport();
-    let expected = limits(EPOCH);
-    transport
-        .reserve_content(&mut registry, expected.clone())
-        .unwrap();
-    let socket = transport.socket_path().to_owned();
-    let opts = options(5, 6, base_capabilities());
-    let grant = expected.grant;
-    let resource = ContentResourceId {
-        id: 1,
-        generation: 1,
-    };
-    let pixels: Vec<u8> = (0..65536u32)
-        .map(|i| if i % 4 == 3 { 255 } else { (i / 4 % 200) as u8 })
-        .collect();
-    let sent = pixels.clone();
-    let client = std::thread::spawn(move || {
-        let mut client = ShellConnection::connect_files(&socket, opts).unwrap();
-        let ShellContentRecord::Limits(_) = next_content(&mut client) else {
-            panic!("expected limits");
-        };
-        let transaction = TransactionId::from_raw(70 + resource.id);
-        client
-            .send_content(
-                transaction,
-                &ShellContentRecord::ResourceBegin(upload_begin(grant, resource.id)),
-            )
-            .unwrap();
-        client
-            .send_content(
-                transaction,
-                &ShellContentRecord::ResourceChunk(ContentResourceChunk {
-                    grant,
-                    resource,
-                    ordinal: 0,
-                    offset: 0,
-                    bytes: sent[..40000].to_vec(),
-                }),
-            )
-            .unwrap();
-        client
-            .send_content(
-                transaction,
-                &ShellContentRecord::ResourceChunk(ContentResourceChunk {
-                    grant,
-                    resource,
-                    ordinal: 1,
-                    offset: 40000,
-                    bytes: sent[40000..].to_vec(),
-                }),
-            )
-            .unwrap();
-        client
-            .send_content(
-                transaction,
-                &ShellContentRecord::ResourceEnd(ContentResourceEnd {
-                    grant,
-                    resource,
-                    total_bytes: 65536,
-                    chunk_count: 2,
-                }),
-            )
-            .unwrap();
-        let mut statuses = Vec::new();
-        while statuses.len() < 2 {
-            if let ShellContentRecord::ResourceStatus(status) = next_content(&mut client) {
-                statuses.push(status.status);
-            }
-        }
-        assert_eq!(statuses, [1, 2]);
-    });
-    negotiate(&mut transport, &mut registry, EPOCH, granted(), &client)
-        .unwrap()
-        .expect("negotiated");
-    serve_resources(&mut transport, &mut registry, &client);
-    client.join().unwrap();
-    let lease = transport
-        .lease_content_resource(&registry, grant, resource)
-        .unwrap();
-    assert_eq!(lease.bytes(), &pixels[..]);
-    drop(lease);
-    transport.disconnect(&mut registry).unwrap();
-    registry.collect();
-    std::fs::remove_dir_all(directory).unwrap();
-}
-
-fn small_upload(grant: ContentGrant, id: u64) -> ContentResourceBegin {
-    ContentResourceBegin {
-        grant,
-        resource: ContentResourceId { id, generation: 1 },
-        width_px: 2,
-        height_px: 1,
-        rendered_scale_numerator: 1,
-        rendered_scale_denominator: 1,
-        pixel_format: 1,
-        chunk_count: 1,
-        total_bytes: 8,
-    }
-}
-
-/// Negotiates, allocates, uploads one small resource, paces a `FrameDemand`
+/// not land on that canonical boundary (40000 then 25536 bytes), exercising/// Negotiates, allocates, uploads one small resource, paces a `FrameDemand`
 /// through its `FramePermit`, submits one whole candidate end to end and
 /// drives it to Presented through the production client -- the client-level
 /// counterpart of `tests/shell_file_transport.rs`'s `paced_candidate`, which
@@ -433,6 +306,7 @@ fn paced_candidate_via_client(with_action: bool) {
     let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
     let (mut transport, directory) = transport();
     let expected = limits(EPOCH);
+    let mut image_owner = image::configure(&mut transport, &expected);
     transport
         .reserve_content(&mut registry, expected.clone())
         .unwrap();
@@ -444,13 +318,15 @@ fn paced_candidate_via_client(with_action: bool) {
     };
     let sent: [u8; 8] = [0, 0, 255, 255, 0, 128, 0, 128];
     let (uploaded_tx, uploaded_rx) = std::sync::mpsc::channel::<()>();
-    let capabilities = base_capabilities() | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT;
-    let opts = options(5, 6, capabilities);
+    let capabilities =
+        base_capabilities() | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT | (1 << 13);
+    let opts = options(9, 9, capabilities);
     let client = std::thread::spawn(move || {
-        let mut client = ShellConnection::connect_files(&socket, opts).unwrap();
-        let ShellContentRecord::Limits(_) = next_content(&mut client) else {
+        let mut client = sdk_image::authenticated_client(&socket, opts).unwrap();
+        let ShellContentRecord::Limits(image_limits) = next_content(&mut client) else {
             panic!("expected limits");
         };
+        sdk_image::enable(&mut client, socket.parent().unwrap(), &image_limits);
         let ShellContentRecord::OutputFacts(facts) = next_content(&mut client) else {
             panic!("expected output facts");
         };
@@ -481,43 +357,27 @@ fn paced_candidate_via_client(with_action: bool) {
         };
         assert_eq!(allocation.status, 1);
 
-        let upload = TransactionId::from_raw(7);
-        client
-            .send_content(
-                upload,
-                &ShellContentRecord::ResourceBegin(small_upload(grant, resource.id)),
-            )
-            .unwrap();
-        client
-            .send_content(
-                upload,
-                &ShellContentRecord::ResourceChunk(ContentResourceChunk {
-                    grant,
-                    resource,
-                    ordinal: 0,
-                    offset: 0,
-                    bytes: sent.to_vec(),
-                }),
-            )
-            .unwrap();
-        client
-            .send_content(
-                upload,
-                &ShellContentRecord::ResourceEnd(ContentResourceEnd {
-                    grant,
-                    resource,
-                    total_bytes: 8,
-                    chunk_count: 1,
-                }),
-            )
-            .unwrap();
-        let mut statuses = Vec::new();
-        while statuses.len() < 2 {
-            if let ShellContentRecord::ResourceStatus(status) = next_content(&mut client) {
-                statuses.push(status.status);
-            }
-        }
-        assert_eq!(statuses, [1, 2]);
+        sdk_image::upload(
+            &mut client,
+            sophia_shell_client::ProducerMetadata {
+                resource: resource.id,
+                resource_generation: resource.generation,
+                admission_epoch: grant.content_grant_epoch,
+                output_id: output.id,
+                allocation_id: allocation.allocation.id,
+                topology_generation: 3,
+                source_kind: 1,
+                source_format: 1,
+                width: 2,
+                height: 1,
+                stride: 8,
+                plane_count: 1,
+                descriptor_count: 1,
+                declared_bytes: 8,
+                ..Default::default()
+            },
+            &sent,
+        );
 
         client
             .send_content(
@@ -713,6 +573,14 @@ fn paced_candidate_via_client(with_action: bool) {
         )
         .unwrap();
     while uploaded_rx.try_recv().is_err() {
+        image_owner
+            .service(
+                &mut transport,
+                &mut registry,
+                start.elapsed().as_millis() as u64,
+                Instant::now(),
+            )
+            .unwrap();
         transport
             .service_content_resources(&mut registry, start.elapsed().as_millis() as u64)
             .unwrap();

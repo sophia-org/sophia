@@ -30,3 +30,6 @@ required-features = ["gbm-probe"]
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+sophia-linux-peer = { path = "../sophia-linux-peer" }

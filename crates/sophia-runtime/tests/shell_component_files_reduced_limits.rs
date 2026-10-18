@@ -1,21 +1,15 @@
-//! Reduced limits over `sophia_shell_fs_v1`, preserving the t100 owner
-//! assertions from the socket SDK fixtures retired in t265. The floor profile
-//! (staging, resident and retiring at 4/8/4 MiB with
-//! the per-resource bound unchanged at 4 MiB) reaches the SDK's
-//! `connect_files` client and holds two full-size resources that crossed the
-//! file wire. The welcome-record refusal uses the file codec's Limits object.
+//! Reduced grants reach the SDK unchanged. Two full-size sealed images remain
+//! resident within a 4/8/4 MiB staging/resident/retiring profile. Source FDs cross
+//! the real image endpoint; authentication verdicts are supplied.
 #[allow(dead_code)] // Shared file-component fixture; this file drives only part of it.
 #[path = "support/file_component.rs"]
 mod file_component;
-
-use std::collections::VecDeque;
-use std::time::{Duration, Instant};
 
 use file_component::*;
 use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
 use sophia_runtime::*;
-use sophia_shell_client::{ContentLifecycle, ShellClientError};
+use sophia_shell_client::ContentLifecycle;
 
 fn grant(epoch: u64) -> ContentGrant {
     ContentGrant {
@@ -32,53 +26,6 @@ fn floor(epoch: u64) -> ContentLimits {
     limits.max_resident_bytes = 8 * MIB;
     limits.max_retiring_bytes = 4 * MIB;
     limits
-}
-
-/// One full-size resource: 1024 x 1024 ARGB is exactly the 4 MiB bound,
-/// chunked by the protocol's own whole-row layout for these limits.
-fn full_size(limits: &ContentLimits, id: u64, value: u8) -> Vec<ShellContentRecord> {
-    let grant = limits.grant;
-    let resource = ContentResourceId { id, generation: 1 };
-    // The canonical chunk. Valid limits keep `max_chunk_bytes + 48` within
-    // the legacy frame payload, so this equals the SDK's layout rule.
-    let payload = limits.max_chunk_bytes;
-    assert!(payload + 48 <= limits.max_frame_payload);
-    let begin = ContentResourceBegin {
-        grant,
-        resource,
-        width_px: 1024,
-        height_px: 1024,
-        rendered_scale_numerator: 1,
-        rendered_scale_denominator: 1,
-        pixel_format: 1,
-        chunk_count: 1024_u32.div_ceil(payload / 4096),
-        total_bytes: 4 * MIB,
-    };
-    let layout = begin.layout(limits).unwrap();
-    let mut records = vec![ShellContentRecord::ResourceBegin(begin)];
-    let row_bytes = u64::from(layout.row_bytes);
-    for ordinal in 0..layout.chunk_count {
-        let offset = u64::from(ordinal) * u64::from(layout.rows_per_chunk) * row_bytes;
-        let bytes = (4 * MIB - offset).min(u64::from(layout.rows_per_chunk) * row_bytes);
-        let mut pixels = vec![0_u8; bytes as usize];
-        for pixel in pixels.chunks_exact_mut(4) {
-            pixel.copy_from_slice(&[value, 0, 0, 255]);
-        }
-        records.push(ShellContentRecord::ResourceChunk(ContentResourceChunk {
-            grant,
-            resource,
-            ordinal,
-            offset,
-            bytes: pixels,
-        }));
-    }
-    records.push(ShellContentRecord::ResourceEnd(ContentResourceEnd {
-        grant,
-        resource,
-        total_bytes: 4 * MIB,
-        chunk_count: layout.chunk_count,
-    }));
-    records
 }
 
 #[test]
@@ -116,12 +63,12 @@ fn floor_limits_reach_the_file_client_as_its_first_welcome_record() {
 }
 
 #[test]
-fn floor_limits_hold_two_full_size_file_uploads_resident() {
-    full_size_uploads_with_limits(floor(1));
+fn floor_limits_hold_two_full_size_sealed_images_resident() {
+    full_size_images_with_limits(floor(1));
 }
 
 #[test]
-fn reduced_chunk_limits_hold_two_full_size_file_uploads_resident() {
+fn reduced_chunk_limits_hold_two_full_size_sealed_images_resident() {
     let mut limits = floor(1);
     limits.max_chunk_bytes = 32768;
     limits.validate().unwrap();
@@ -132,14 +79,10 @@ fn reduced_chunk_limits_hold_two_full_size_file_uploads_resident() {
         ContentLimits::prototype(limits.grant).max_chunk_bytes / 4096,
         15
     );
-    full_size_uploads_with_limits(limits);
+    full_size_images_with_limits(limits);
 }
 
-#[test]
-fn a_reduced_grant_refuses_a_prototype_count_then_admits_the_granted_count() {
-    let mut limits = floor(1);
-    limits.max_chunk_bytes = 32768;
-    limits.validate().unwrap();
+fn full_size_images_with_limits(limits: ContentLimits) {
     let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
     let mut component = Component::new();
     component
@@ -147,183 +90,24 @@ fn a_reduced_grant_refuses_a_prototype_count_then_admits_the_granted_count() {
         .reserve_content(&mut registry, limits.clone())
         .unwrap();
     component.connect(&mut registry, limits.clone());
-
-    // Both counts are structurally valid records. Only four fits the actual
-    // grant: two 16 KiB rows per chunk for this eight-row resource.
-    for (id, chunks, expected_status, expected_reason) in [
-        (1, 3, 3, ContentReason::Malformed),
-        (2, 4, 1, ContentReason::None),
-    ] {
-        let transaction = TransactionId::from_raw(id);
-        let resource = ContentResourceId { id, generation: 1 };
-        component
-            .client
-            .as_mut()
-            .unwrap()
-            .enqueue_content(
-                transaction,
-                &ShellContentRecord::ResourceBegin(ContentResourceBegin {
-                    grant: limits.grant,
-                    resource,
-                    width_px: 4096,
-                    height_px: 8,
-                    rendered_scale_numerator: 1,
-                    rendered_scale_denominator: 1,
-                    pixel_format: 1,
-                    chunk_count: chunks,
-                    total_bytes: 4096 * 8 * 4,
-                }),
-            )
-            .unwrap();
-        let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            component
-                .transport
-                .service_content_resources(&mut registry, 0)
-                .unwrap();
-            if let Some((received_transaction, record)) =
-                component.client.as_mut().unwrap().poll_content().unwrap()
-            {
-                let ShellContentRecord::ResourceStatus(status) = record else {
-                    panic!("expected resource status, got {record:?}");
-                };
-                assert_eq!(received_transaction, transaction);
-                assert_eq!(status.resource, resource);
-                assert_eq!(status.status, expected_status);
-                assert_eq!(status.reason, expected_reason as u16);
-                break;
-            }
-            assert!(Instant::now() < deadline, "resource status deadline");
-            std::thread::yield_now();
-        }
-        assert_eq!(registry.accounting().memory.resident, 0);
-        assert_eq!(
-            registry.accounting().memory.staging,
-            if expected_status == 1 {
-                4096 * 8 * 4
-            } else {
-                0
-            },
-            "a refused description must not reserve staging"
-        );
-    }
-    component.disconnect(&mut registry);
-    registry.collect();
-    assert!(registry.accounting().quiescent());
-}
-
-fn full_size_uploads_with_limits(limits: ContentLimits) {
-    let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
-    let mut component = Component::new();
-    component
-        .transport
-        .reserve_content(&mut registry, limits.clone())
-        .unwrap();
-    component.connect(&mut registry, limits.clone());
-    let mut client = component.client.take().unwrap();
-    let grant = limits.grant;
-    let upload_limits = limits.clone();
-    // The client writes on its own thread so its pipelined writes and the
-    // owner's service turns progress independently; it returns its statuses.
-    let peer = std::thread::spawn(move || {
-        let mut pending: VecDeque<_> = [(1, 30), (2, 90)]
-            .into_iter()
-            .flat_map(|(id, value)| {
-                full_size(&upload_limits, id, value)
-                    .into_iter()
-                    .map(move |record| (TransactionId::from_raw(id), record))
-            })
-            .collect();
-        let mut statuses = Vec::new();
-        let mut saturated = 0_usize;
-        let start = Instant::now();
-        while !pending.is_empty() || statuses.len() != 4 {
-            // A saturated outbox is the client's own backpressure: service
-            // the wire and offer the same record again on the next turn.
-            if let Some((transaction, record)) = pending.front() {
-                match client.enqueue_content(*transaction, record) {
-                    Ok(()) => {
-                        pending.pop_front();
-                    }
-                    Err(ShellClientError::QueueSaturated) => saturated += 1,
-                    Err(error) => panic!(
-                        "upload phase: enqueue failed with {error:?}; {} records left; statuses {statuses:?}",
-                        pending.len()
-                    ),
-                }
-            }
-            if let Some((_, record)) = client.poll_content().unwrap() {
-                let ShellContentRecord::ResourceStatus(status) = record else {
-                    panic!("upload phase: expected a resource status, got {record:?}");
-                };
-                // 1 is begun and 2 accepted; anything else is a refusal,
-                // reported at once rather than waited out.
-                assert!(
-                    matches!(status.status, 1 | 2),
-                    "upload phase: resource {} refused with status {} reason {}",
-                    status.resource.id,
-                    status.status,
-                    status.reason
-                );
-                statuses.push((status.resource.id, status.status));
-            }
-            let elapsed = start.elapsed();
-            assert!(
-                elapsed < Duration::from_secs(30),
-                "upload phase: deadline after {elapsed:?}; {} records left; statuses {statuses:?}",
-                pending.len()
-            );
-        }
-        (client, statuses, saturated)
-    });
-    let start = Instant::now();
-    let mut owner_error = None;
-    while !peer.is_finished() {
-        if let Err(error) = component
-            .transport
-            .service_content_resources(&mut registry, 0)
-        {
-            owner_error = Some(error);
-            break;
-        }
-        assert!(
-            start.elapsed() < Duration::from_secs(40),
-            "owner service phase: peer still running"
-        );
-        std::thread::yield_now();
-    }
-    let (client, statuses, saturated) = peer
-        .join()
-        .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
-    if let Some(error) = owner_error {
-        panic!("owner service phase: {error:?}; peer statuses {statuses:?}");
-    }
-    assert_eq!(statuses, [(1, 1), (1, 2), (2, 1), (2, 2)]);
-    // 8 MiB cannot sit in the SDK's bounded outbox at once, so the client
-    // really met its own backpressure and retried.
-    assert!(saturated > 0, "the upload never met client backpressure");
-    let first = component
-        .transport
-        .lease_content_resource(
-            &registry,
-            grant,
-            ContentResourceId {
-                id: 1,
-                generation: 1,
-            },
-        )
-        .unwrap();
-    let second = component
-        .transport
-        .lease_content_resource(
-            &registry,
-            grant,
-            ContentResourceId {
-                id: 2,
-                generation: 1,
-            },
-        )
-        .unwrap();
+    let first = component.upload_pixels(
+        &mut registry,
+        limits.grant,
+        1,
+        1024,
+        1024,
+        &[30, 0, 0, 255].repeat(1024 * 1024),
+        0,
+    );
+    let second = component.upload_pixels(
+        &mut registry,
+        limits.grant,
+        2,
+        1024,
+        1024,
+        &[90, 0, 0, 255].repeat(1024 * 1024),
+        0,
+    );
     assert_eq!(first.bytes().len() as u64, 4 * MIB);
     assert!(first.bytes().chunks_exact(4).all(|p| p == [30, 0, 0, 255]));
     assert!(second.bytes().chunks_exact(4).all(|p| p == [90, 0, 0, 255]));
@@ -333,7 +117,7 @@ fn full_size_uploads_with_limits(limits: ContentLimits) {
     // A third full-size resource cannot fit: the reduced resident bound is
     // exactly two, which is what the floor promises and no more.
     assert!(accounting.memory.resident + 4 * MIB > limits.max_resident_bytes);
-    drop((first, second, client));
+    drop((first, second));
     component.disconnect(&mut registry);
     registry.collect();
     assert!(registry.accounting().quiescent());

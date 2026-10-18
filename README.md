@@ -7,8 +7,8 @@ Window managers and shells talk to Sophia through small file trees served by one
 CPU images use [Immutable Shared Buffers (ISB)](docs/sophia-image-channel.md):
 the client prepares immutable pixels and passes a handle over a local image
 channel, while 9P carries control and lifetime events. The Linux implementation
-uses sealed memfds. The ISB path is implemented; retiring the older byte-upload
-path is pending. Sharing the backing avoids a separate resource copy in Sophia,
+uses sealed memfds. The older shell and lock byte-upload paths have been removed.
+Sharing the backing avoids a separate resource copy in Sophia,
 but pixel preparation and rendering can still involve copies.
 
 X11 is a full frontend, not a compatibility layer. Sophia's X server is new code, written from scratch in Rust. It owns X11 resources and delivery rules, while Engine only ever sees surfaces, buffers and layout transactions.

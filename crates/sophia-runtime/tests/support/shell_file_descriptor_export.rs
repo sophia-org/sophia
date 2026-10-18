@@ -9,9 +9,6 @@ mod authentication;
 #[path = "shell_file_transaction_reuse.rs"]
 mod transaction_reuse;
 
-#[path = "shell_file_upload_window.rs"]
-mod upload_window;
-
 const EPOCH: u64 = 41;
 const BASE: u64 = 3;
 

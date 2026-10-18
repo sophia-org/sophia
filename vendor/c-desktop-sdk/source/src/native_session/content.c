@@ -9,10 +9,8 @@ static struct sophia_ns_resource *ns_resource(struct sophia_ns *n, uint64_t id, 
             return &n->resources[i];
     return NULL;
 }
-static void ns_resource_free(struct sophia_ns *n, struct sophia_ns_resource *r)
+static void ns_resource_free(struct sophia_ns_resource *r)
 {
-    if (n->uploading && &n->resources[n->upload] == r)
-        n->uploading = 0;
     memset(r, 0, sizeof(*r));
 }
 static int ns_allocation_result(struct sophia_ns *n, const struct sophia_sf_allocation_result *v)
@@ -120,16 +118,7 @@ int ns_apply_content(struct sophia_ns *n, const struct sophia_sf_record *e, uint
             return 0;
         /* Adoption already consumed the producer-verified Accepted. A late
          * delivery must not resurrect a resource after Retire was queued. */
-        if (r->image_offer)
-            return v->transaction == r->image_offer && v->status == 2 && !v->reason ? 0 : -1;
-        n->head.current = 1;
-        if (v->status == 1)
-            r->state = SOPHIA_NS_RESOURCE_ADMITTED;
-        else if (v->status == 2)
-            r->state = SOPHIA_NS_RESOURCE_ACCEPTED;
-        else
-            ns_resource_free(n, r);
-        return 0;
+        return v->transaction == r->image_offer && v->status == 2 && !v->reason ? 0 : -1;
     }
     case SOPHIA_SF_RESOURCE_RELEASED: {
         const struct sophia_sf_resource_released *v = &e->value.resource_released;
@@ -138,7 +127,7 @@ int ns_apply_content(struct sophia_ns *n, const struct sophia_sf_record *e, uint
         n->head.kind = SOPHIA_NS_EV_RESOURCE_RELEASED;
         r = ns_resource(n, v->resource_id, v->resource_generation);
         if (r) {
-            ns_resource_free(n, r);
+            ns_resource_free(r);
             n->head.current = 1;
         }
         return 0;
@@ -199,9 +188,7 @@ void ns_service_content(struct sophia_ns *n, uint64_t now_ms)
         r->ticket = 0;
         if (!ns_refused(o))
             continue;
-        if (r->state == SOPHIA_NS_RESOURCE_BEGUN)
-            ns_resource_free(n, r);
-        else if (r->state == SOPHIA_NS_RESOURCE_RETIRING)
+        if (r->state == SOPHIA_NS_RESOURCE_RETIRING)
             r->state = SOPHIA_NS_RESOURCE_ACCEPTED;
     }
 }
@@ -285,109 +272,6 @@ int sophia_ns_release(struct sophia_ns *n, uint64_t now_ms, uint64_t *ticket)
     if (!n->open || a->pending || !a->has_grant || a->orphaned || a->opening != n->opening.opening)
         return SOPHIA_9P_INVALID;
     return ns_allocation_request(n, 3, a->edge, NULL, now_ms, ticket);
-}
-int sophia_ns_upload_begin(struct sophia_ns *n, struct sophia_sf_resource_begin begin,
-                           uint64_t *ticket)
-{
-    struct sophia_ns_resource *slot = NULL;
-    unsigned i;
-    int r = ns_gate(n);
-    if (r)
-        return r;
-    if (!ticket || !begin.resource_id || !begin.resource_generation)
-        return SOPHIA_9P_ARGUMENT;
-    if (n->uploading || ns_resource(n, begin.resource_id, begin.resource_generation))
-        return SOPHIA_9P_INVALID;
-    for (i = 0; i < SOPHIA_NS_RESOURCES && !slot; i++)
-        if (n->resources[i].state == SOPHIA_NS_RESOURCE_FREE)
-            slot = &n->resources[i];
-    if (!slot)
-        return SOPHIA_9P_BUSY;
-    if (!n->next_transaction || n->next_transaction == UINT64_MAX)
-        return SOPHIA_9P_ARGUMENT;
-    begin.transaction = n->next_transaction;
-    begin.grant_connection_epoch = n->limits.grant_connection_epoch;
-    begin.grant_content_epoch = n->limits.grant_content_epoch;
-    r = sophia_ss_upload_begin(n->ss, begin, ticket);
-    if (r) {
-        (void)ns_gate(n);
-        return r;
-    }
-    slot->id = begin.resource_id;
-    slot->generation = begin.resource_generation;
-    slot->transaction = n->next_transaction++;
-    slot->ticket = *ticket;
-    slot->state = SOPHIA_NS_RESOURCE_BEGUN;
-    n->upload = (unsigned)(slot - n->resources);
-    n->uploading = 1;
-    return 0;
-}
-static int ns_upload_finish(struct sophia_ns *n, int cancel, uint64_t *ticket)
-{
-    struct sophia_ns_resource *slot;
-    int r = ns_gate(n);
-    if (r)
-        return r;
-    if (!ticket)
-        return SOPHIA_9P_ARGUMENT;
-    if (!n->uploading)
-        return SOPHIA_9P_INVALID;
-    slot = &n->resources[n->upload];
-    if (!cancel && slot->state != SOPHIA_NS_RESOURCE_ADMITTED)
-        return SOPHIA_9P_INVALID;
-    if (!n->next_transaction || n->next_transaction == UINT64_MAX)
-        return SOPHIA_9P_ARGUMENT;
-    r = cancel ? sophia_ss_upload_cancel(n->ss, n->next_transaction, ticket)
-               : sophia_ss_upload_end(n->ss, n->next_transaction, ticket);
-    if (r) {
-        (void)ns_gate(n);
-        return r;
-    }
-    n->next_transaction++;
-    /* The resource's status event settles it; the window closes here. */
-    n->uploading = 0;
-    return 0;
-}
-int sophia_ns_upload_end(struct sophia_ns *n, uint64_t *ticket)
-{
-    return ns_upload_finish(n, 0, ticket);
-}
-int sophia_ns_upload_cancel(struct sophia_ns *n, uint64_t *ticket)
-{
-    return ns_upload_finish(n, 1, ticket);
-}
-int sophia_ns_resource_cancel(struct sophia_ns *n, uint64_t id, uint64_t generation,
-                              uint64_t *ticket)
-{
-    struct sophia_ns_resource *slot;
-    struct sophia_sf_record *rec;
-    uint64_t t;
-    int r = ns_gate(n);
-    if (r)
-        return r;
-    if (!ticket || !id || !generation)
-        return SOPHIA_9P_ARGUMENT;
-    slot = ns_resource(n, id, generation);
-    if (!slot || (slot->state != SOPHIA_NS_RESOURCE_BEGUN &&
-                  slot->state != SOPHIA_NS_RESOURCE_ADMITTED))
-        return SOPHIA_9P_INVALID;
-    if (n->uploading && slot == &n->resources[n->upload])
-        return sophia_ns_upload_cancel(n, ticket);
-    if (ns_peek_transaction(n, &t))
-        return SOPHIA_9P_ARGUMENT;
-    rec = &n->scratch;
-    ns_record(rec, SOPHIA_SF_RESOURCE_CANCEL);
-    rec->value.resource_cancel.transaction = t;
-    rec->value.resource_cancel.grant_connection_epoch = n->limits.grant_connection_epoch;
-    rec->value.resource_cancel.grant_content_epoch = n->limits.grant_content_epoch;
-    rec->value.resource_cancel.resource_id = id;
-    rec->value.resource_cancel.resource_generation = generation;
-    r = ns_submit(n, rec, ticket);
-    if (r)
-        return r;
-    n->next_transaction++;
-    /* Keep ownership until the server reports the resource's terminal state. */
-    return 0;
 }
 int sophia_ns_retire(struct sophia_ns *n, uint64_t id, uint64_t generation, uint64_t *ticket)
 {

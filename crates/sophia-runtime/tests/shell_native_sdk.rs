@@ -13,11 +13,22 @@ mod fixture;
 #[allow(dead_code)]
 #[path = "support/shell_files_oracle/process.rs"]
 mod process;
+#[path = "support/shell_file_peer.rs"]
+mod shell_file_peer;
+#[allow(dead_code)]
+#[path = "support/shell_required_image.rs"]
+mod shell_required_image;
 
 const VERDICT: &str = "sophia_c_native_sdk status=pass\n";
 
 fn compile(repo: &Path, root: &Path) -> PathBuf {
-    let sdk = repo.join("vendor/c-desktop-sdk/source/src");
+    let sdk = if let Some(source) = std::env::var_os("SOPHIA_C_SDK_SOURCE") {
+        let source = PathBuf::from(source);
+        assert!(source.is_absolute() && source.is_dir());
+        source.join("src")
+    } else {
+        repo.join("vendor/c-desktop-sdk/source/src")
+    };
     let output = root.join("c-native-peer");
     let mut command = Command::new(std::env::var_os("CC").unwrap_or_else(|| "cc".into()));
     command.args([

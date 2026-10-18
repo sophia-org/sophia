@@ -316,46 +316,6 @@ fn stopped_validation_keeps_credit_until_worker_returns() {
 }
 
 #[test]
-fn byte_operations_cannot_complete_or_abort_a_sealed_worker() {
-    let mut store = owner();
-    let begin = description(1);
-    store.begin_isb(tx(), begin.clone(), 0).unwrap();
-    assert_eq!(
-        store.chunk(
-            tx(),
-            &ContentResourceChunk {
-                grant: grant(),
-                resource: begin.resource,
-                ordinal: 0,
-                offset: 0,
-                bytes: vec![0; 8],
-            },
-            1
-        ),
-        Err(ContentStoreError::Malformed)
-    );
-    assert_eq!(
-        store.end(
-            tx(),
-            &ContentResourceEnd {
-                grant: grant(),
-                resource: begin.resource,
-                chunk_count: 1,
-                total_bytes: 8,
-            },
-            1
-        ),
-        Err(ContentStoreError::Malformed)
-    );
-    assert_eq!(store.usage().backing, 8);
-    assert!(store.take_event().is_none());
-    store
-        .complete_isb(grant(), begin.resource, &mut Some(Ok(validated())), 2)
-        .unwrap();
-    assert_eq!(store.usage().resident, 8);
-}
-
-#[test]
 fn validation_is_bounded_and_never_certifies_an_unchecked_or_bad_tail() {
     let bytes = vec![0; ISB_PIXEL_VALIDATION_BYTES + 4];
     let mut work = IsbPixelValidation::new(mapped(&bytes)).unwrap();

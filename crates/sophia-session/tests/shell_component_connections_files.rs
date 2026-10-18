@@ -162,7 +162,7 @@ fn three_roles_negotiate_independent_profiles_and_catalog_service_borrows_only_i
     let mut bar_peer = h.connect(bar);
     let mut menu_peer = h.connect(menu);
     let mut client = h.connect(dock);
-    assert_eq!(client.welcome().selected_revision, 8);
+    assert_eq!(client.welcome().selected_revision, 9);
     assert_eq!(
         client.welcome().capabilities,
         SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG
@@ -170,6 +170,7 @@ fn three_roles_negotiate_independent_profiles_and_catalog_service_borrows_only_i
             | SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
             | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
             | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
+            | (1 << 13)
     );
     let accounting = h.owner.accounting();
     let mut service = h
@@ -882,7 +883,7 @@ fn combined_wait_keeps_components_independent_across_replacement() {
         let mut fds = smallvec::SmallVec::new();
         let waits = h.owner.subscribe_wait(&mut fds);
         assert_eq!(waits.len(), 2);
-        assert_eq!(fds.len(), 4);
+        assert_eq!(fds.len(), 6); // Each r9 connection also owns an image listener.
         rustix::event::poll(&mut fds, Some(&rustix::event::Timespec::default())).unwrap();
         for wait in waits {
             wait.observe(&fds);

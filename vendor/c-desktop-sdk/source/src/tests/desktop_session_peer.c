@@ -49,14 +49,12 @@ int main(int argc, char **argv)
     struct sophia_ss session;
     struct sophia_ss_config config = {{5, 6, 0}, SOPHIA_SF_BAR, 4096, 8, 65536, NULL, 0};
     struct sophia_sf_record request = {0};
-    struct sophia_sf_resource_begin begin = {0};
     const struct sophia_sf_record *event;
     struct sophia_ss_obligations obligations;
-    uint8_t pixels[65536] = {0};
     uint64_t deadline, ticket = 0, first_ticket = 0;
     size_t bytes = sophia_ss_storage_bytes(config.msize, config.queue_bytes);
     void *storage = malloc(bytes);
-    int fd, result, stage = 0, rejected = 0, accepted = 0, cancelled = 0;
+    int fd, result, stage = 0, rejected = 0;
     assert(argc == 3 && storage);
     config.offer.required_capabilities = strtoull(argv[2], NULL, 10);
     assert(getchar() == 'G');
@@ -85,11 +83,6 @@ int main(int argc, char **argv)
                 assert(event->value.allocation_result.allocation_request_id == 1);
                 assert(event->value.allocation_result.status == 2);
                 rejected = 1;
-            } else if (event->header.kind == SOPHIA_SF_RESOURCE_STATUS) {
-                if (event->value.resource_status.status == 2)
-                    accepted = 1;
-                if (event->value.resource_status.status == 4)
-                    cancelled = 1;
             } else {
                 fprintf(stderr, "unexpected event kind %u\n", event->header.kind);
                 abort();
@@ -113,61 +106,30 @@ int main(int argc, char **argv)
             a->desired_height = 32;
             assert(!sophia_ss_submit(&session, &request, 1, &ticket));
             first_ticket = ticket;
-            begin.grant_connection_epoch = a->grant_connection_epoch;
-            begin.grant_content_epoch = a->grant_content_epoch;
-            begin.resource_id = begin.resource_generation = 1;
-            begin.width_px = 2048;
-            begin.height_px = 8;
-            begin.rendered_scale_numerator = begin.rendered_scale_denominator = begin.pixel_format = 1;
-            begin.chunk_count = 2;
-            begin.total_bytes = sizeof(pixels);
             stage = 1;
         }
         if (stage == 1 && rejected && custodied(&session, ticket)) {
-            begin.transaction = 70;
-            result = sophia_ss_upload_begin(&session, begin, &ticket);
-            assert(!result || result == SOPHIA_9P_BUSY);
-            if (!result)
-                stage = 2;
+            uint64_t untouched = 1234;
+            request.header.kind = SOPHIA_SF_RESOURCE_BEGIN;
+            assert(sophia_ss_submit(&session, &request, 1, &untouched) == SOPHIA_9P_ARGUMENT);
+            request.header.kind = SOPHIA_SF_RESOURCE_END;
+            assert(sophia_ss_submit(&session, &request, 1, &untouched) == SOPHIA_9P_ARGUMENT);
+            assert(untouched == 1234 && session.next_ticket == ticket + 1);
+            stage = 6;
         }
-        if (stage == 2 && custodied(&session, ticket) && sophia_ss_upload_ready(&session)) {
-            assert(!sophia_ss_upload_chunk(&session, pixels, sizeof(pixels)));
-            stage = 3;
-        }
-        if (stage == 3 && sophia_ss_upload_ready(&session)) {
-            result = sophia_ss_upload_end(&session, 71, &ticket);
-            assert(!result || result == SOPHIA_9P_BUSY);
-            if (!result)
-                stage = 4;
-        }
-        if (stage == 4 && accepted && custodied(&session, ticket) &&
-            !sophia_ss_upload_pending(&session)) {
-            begin.transaction = 72;
-            begin.resource_id = 2;
-            result = sophia_ss_upload_begin(&session, begin, &ticket);
-            assert(!result || result == SOPHIA_9P_BUSY);
-            if (!result)
-                stage = 5;
-        }
-        if (stage == 5 && custodied(&session, ticket) && sophia_ss_upload_ready(&session)) {
-            result = sophia_ss_upload_cancel(&session, 73, &ticket);
-            assert(!result || result == SOPHIA_9P_BUSY);
-            if (!result)
-                stage = 6;
-        }
-        if (stage == 6 && cancelled && custodied(&session, ticket) &&
-            !sophia_ss_upload_pending(&session)) {
+        if (stage == 6) {
             assert(!sophia_ss_obligations(&session, &obligations));
             if (obligations.acked == obligations.consumed && !obligations.objects)
                 stage = 7;
         }
     }
-    assert(ticket == first_ticket + 4);
+
+    assert(ticket == first_ticket);
     while (first_ticket <= ticket)
         assert(custodied(&session, first_ticket++));
     sophia_ss_close(&session);
     close(fd);
     free(storage);
-    puts("C desktop session: custody, allocation, upload, cancel, ack passed");
+    puts("C desktop session: custody, allocation, byte refusal, ack passed");
     return 0;
 }

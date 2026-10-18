@@ -97,49 +97,15 @@ static void entry_and_chord(void) {
   rig_free(r);
 }
 
-static void upload_and_present(void) {
+static void demand_and_present_records(void) {
   struct rig *r = ready();
-  struct sophia_lf_resource_begin begin;
   struct sophia_lf_record v;
   const struct sophia_lf_record *e;
-  uint8_t pixels[32];
-  unsigned i;
-  for (i = 0; i < sizeof(pixels); ++i)
-    pixels[i] = (uint8_t)(i * 7 + 1);
+  /* This scripted peer tests record routing, not image acceptance. Actual
+   * descriptor transfer and settlement are covered by lock_image_test. */
   publish(&r->peer, SOPHIA_LF_LOCKED, 5, 1);
   next(r);
   consume(r);
-  memset(&begin, 0, sizeof(begin));
-  begin.transaction = 30;
-  begin.resource.id = 21;
-  begin.resource.generation = 2;
-  begin.width_px = 4;
-  begin.height_px = 2;
-  begin.slot = 2; /* Limits grant two slots */
-  assert(sophia_lc_upload_begin(&r->client, &begin) == SOPHIA_9P_ARGUMENT);
-  begin.slot = 1;
-  assert(!sophia_lc_upload_begin(&r->client, &begin));
-  assert(sophia_lc_upload_begin(&r->client, &begin) == SOPHIA_9P_BUSY);
-  e = next(r);
-  assert(e->header.kind == SOPHIA_LF_RESOURCE_STATUS &&
-         e->value.resource_status.status == SOPHIA_LF_ADMITTED);
-  consume(r);
-  assert(sophia_lc_upload_ready(&r->client));
-  assert(sophia_lc_upload_end(&r->client) == SOPHIA_9P_ARGUMENT);
-  assert(!sophia_lc_upload_chunk(&r->client, pixels, 12));
-  assert(!sophia_lc_upload_ready(&r->client));
-  assert(!spin(r) && sophia_lc_upload_ready(&r->client));
-  assert(sophia_lc_upload_chunk(&r->client, pixels + 12, 21) == SOPHIA_9P_ARGUMENT);
-  assert(!sophia_lc_upload_chunk(&r->client, pixels + 12, 20));
-  assert(!spin(r));
-  assert(!sophia_lc_upload_end(&r->client));
-  e = next(r);
-  assert(e->header.kind == SOPHIA_LF_RESOURCE_STATUS &&
-         e->value.resource_status.status == SOPHIA_LF_ACCEPTED);
-  assert(!memcmp(r->peer.pixels, pixels, sizeof(pixels)));
-  consume(r);
-  assert(!sophia_lc_upload_pending(&r->client) && !r->peer.upload_fid);
-
   memset(&v, 0, sizeof(v));
   v.header.kind = SOPHIA_LF_FRAME_DEMAND;
   v.value.frame_demand.transaction = 32;
@@ -162,57 +128,29 @@ static void upload_and_present(void) {
   v.value.candidate.allocation_generation = 4;
   v.value.candidate.candidate_generation = 1;
   v.value.candidate.pacing_permit = 77;
-  v.value.candidate.resource = begin.resource;
+  v.value.candidate.resource = (struct sophia_lf_resource){21, 2};
   assert(!sophia_lc_submit(&r->client, &v));
   e = next(r);
   assert(e->header.kind == SOPHIA_LF_CANDIDATE_OUTCOME &&
          e->value.candidate_outcome.status == SOPHIA_LF_PRESENTED);
   consume(r);
-  /* Begin, End and Negotiate go through their own calls. */
+  /* Retired byte records cannot enter the session. */
   v.header.kind = SOPHIA_LF_RESOURCE_BEGIN;
   assert(sophia_lc_submit(&r->client, &v) == SOPHIA_9P_ARGUMENT);
   rig_free(r);
 }
 
-static void rejected_and_refused_uploads(void) {
+static void byte_records_are_refused(void) {
   struct rig *r = ready();
-  struct sophia_lf_resource_begin begin;
-  const struct sophia_lf_record *e;
-  enum sophia_lc_submission stage;
-  uint64_t id;
-  uint32_t err;
-  memset(&begin, 0, sizeof(begin));
-  begin.transaction = 30;
-  begin.resource.id = 21;
-  begin.resource.generation = 2;
-  begin.width_px = 4;
-  begin.height_px = 2;
-  r->peer.reject_begin = 1;
-  assert(!sophia_lc_upload_begin(&r->client, &begin));
-  e = next(r);
-  assert(e->value.resource_status.status == SOPHIA_LF_RESOURCE_REJECTED);
-  assert(!sophia_lc_upload_pending(&r->client));
-  consume(r);
-  /* A begin the server refuses outright journals nothing. */
-  r->peer.reject_begin = 0;
-  r->peer.submit_error = 22;
-  begin.resource.generation = 3;
-  assert(!sophia_lc_upload_begin(&r->client, &begin));
-  assert(!spin(r) && !sophia_lc_upload_pending(&r->client));
-  assert(!sophia_lc_submission(&r->client, &id, &stage, &err));
-  assert(stage == SOPHIA_LC_SUBMISSION_REFUSED && err == 22);
-  /* The connection lives on: the next upload is admitted. */
-  begin.resource.generation = 4;
-  assert(!sophia_lc_upload_begin(&r->client, &begin));
-  e = next(r);
-  assert(e->value.resource_status.status == SOPHIA_LF_ADMITTED);
-  consume(r);
-  assert(sophia_lc_upload_ready(&r->client));
-  assert(!sophia_lc_upload_cancel(&r->client));
-  e = next(r);
-  assert(e->value.resource_status.status == SOPHIA_LF_CANCELLED);
-  consume(r);
-  assert(!sophia_lc_upload_pending(&r->client));
+  struct sophia_lf_record v = {0};
+  uint64_t next = r->client.next_submission;
+  unsigned i;
+  const uint16_t kinds[] = {SOPHIA_LF_RESOURCE_BEGIN, SOPHIA_LF_RESOURCE_END};
+  for (i = 0; i < 2; i++) {
+    v.header.kind = kinds[i];
+    assert(sophia_lc_submit(&r->client, &v) == SOPHIA_9P_ARGUMENT);
+    assert(r->client.next_submission == next);
+  }
   rig_free(r);
 }
 
@@ -236,8 +174,6 @@ static void negotiation_retry_with_six_requests(void) {
   assert(sophia_lc_ready(&r->client));
   assert(!sophia_lc_obligations(&r->client, &obligations));
   assert(!obligations.waiting_for_retry && obligations.acked == obligations.consumed);
-  assert(!sophia_lc_upload_window(&r->client, 1));
-  assert(sophia_lc_upload_window(&r->client, 2) == SOPHIA_9P_ARGUMENT);
   rig_free(r);
 }
 
@@ -394,7 +330,6 @@ static void refuses_bad_offers(void) {
   free(storage);
 }
 
-#include "lock_upload_pipeline.h"
 
 static struct sophia_9p_reply wire_reply(struct rig *r) {
   unsigned i;
@@ -471,9 +406,8 @@ int main(void) {
   superseded_announcement();
   rejects_invalid_lock_fetch();
   entry_and_chord();
-  upload_and_present();
-  upload_pipeline_tests();
-  rejected_and_refused_uploads();
+  demand_and_present_records();
+  byte_records_are_refused();
   again_then_retry();
   negotiation_retry_with_six_requests();
   contradictory_retry_preserves_custody();

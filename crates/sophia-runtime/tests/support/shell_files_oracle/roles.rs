@@ -3,12 +3,15 @@
 use sophia_protocol::*;
 use sophia_runtime::*;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[path = "role_service.rs"]
 mod service;
 #[path = "role_values.rs"]
 mod values;
+// The including test declares `image` (support/shell_required_image.rs) and
+// its `shell_file_peer` dependency once, beside this module.
+use super::image;
 
 pub const NAMES: [&str; 5] = [
     "bar",
@@ -38,6 +41,7 @@ pub struct Fixture {
     admissions: usize,
     indicator_watermark: u64,
     revoked: bool,
+    image_owner: Option<ShellIsbImageOwner>,
 }
 fn tx(n: u64) -> TransactionId {
     TransactionId::from_raw(n)
@@ -84,17 +88,28 @@ impl Fixture {
             admissions: 0,
             indicator_watermark: 0,
             revoked: false,
+            image_owner: None,
         }
     }
     pub fn authorize(&mut self, pid: u32) {
-        self.transport
-            .authorize_protected_peer(&ProtectionDomainEvidence {
-                backend: ProtectionBackendKind::Bubblewrap,
-                supervisor_pid: std::process::id(),
-                peer_pid: pid,
-                roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
-            })
-            .unwrap();
+        // Every role but the indicator bar negotiates shell r9 sealed images,
+        // including peers outside this oracle that share the fixture.
+        if self.bar {
+            self.transport
+                .authorize_protected_peer(&ProtectionDomainEvidence {
+                    backend: ProtectionBackendKind::Bubblewrap,
+                    supervisor_pid: std::process::id(),
+                    peer_pid: pid,
+                    roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
+                })
+                .unwrap();
+        } else {
+            self.image_owner = Some(image::configure_for_peer(
+                &mut self.transport,
+                &ContentLimits::prototype(self.grant),
+                pid,
+            ));
+        }
         let profile = if self.native {
             ContentStoreProfile::NativeLauncher
         } else if self.bar {

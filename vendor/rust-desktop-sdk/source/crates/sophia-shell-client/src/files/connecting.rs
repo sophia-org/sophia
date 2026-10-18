@@ -275,7 +275,6 @@ struct Handshake {
     retry_at: Option<u64>,
     retry_delay: u64,
     inbox: VecDeque<Inbound>,
-    upload_slots: u8,
     transaction_fid: Option<Fid>,
 }
 impl Handshake {
@@ -323,7 +322,6 @@ impl Handshake {
             retry_at: None,
             retry_delay: 4,
             inbox: VecDeque::new(),
-            upload_slots: 0,
             transaction_fid: None,
         })
     }
@@ -551,10 +549,7 @@ impl Handshake {
                             "Limits grant from another connection epoch",
                         ));
                     }
-                    self.upload_slots = limits
-                        .max_open_transfers
-                        .min(u32::from(SHELL_FILE_MAX_UPLOAD_SLOTS))
-                        as u8;
+
                     self.inbox.push_back(Inbound::Content(
                         TransactionId::INVALID,
                         ShellContentRecord::Limits(limits),
@@ -646,7 +641,6 @@ impl Handshake {
             ack_fid: self.ack,
             reusable_transactions: self.transaction_fid.is_some(),
             transaction_fid: self.transaction_fid,
-            upload_slots: self.upload_slots,
             next_submission_id: 2,
             read_tag: None,
             read_offset: self.offset,
@@ -676,12 +670,10 @@ impl Handshake {
             submitted_sequence: 0,
             pending: VecDeque::new(),
             staged: Vec::new(),
-            staged_begins: Default::default(),
             current: None,
             backoff: super::RETRY_FIRST,
             custody: Vec::new(),
             retire: 0,
-            uploads: Default::default(),
             forgettable: Default::default(),
             image_enabled: false,
             image_fetch: None,

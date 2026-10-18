@@ -169,7 +169,7 @@ fn image_begin(peer: &mut raw::Peer) -> (u8, Vec<u8>) {
     peer.write(3, &submit)
 }
 
-fn fallback(peer: &mut raw::Peer) {
+fn byte_upload_is_refused(peer: &mut raw::Peer) {
     let grant = ContentGrant {
         connection_epoch: 1,
         content_grant_epoch: 1,
@@ -202,17 +202,27 @@ fn fallback(peer: &mut raw::Peer) {
         },
     )
     .unwrap();
-    peer.submit_acknowledged(&begin, 3);
-    let admitted = peer.next_event();
-    let ShellContentRecord::ResourceStatus(status) =
-        decode_shell_file_resource_status(&admitted).unwrap().record
-    else {
-        panic!("status");
-    };
-    assert_eq!(status.status, 1);
-    ack(peer, &admitted);
-    assert_eq!(peer.open_path(11, &[b"upload", b"0"], 1).0, 13);
-    assert_eq!(peer.write(11, &[1, 2, 3, 255, 4, 5, 6, 255]).0, 119);
+    let walk = [
+        1u32.to_le_bytes().as_slice(),
+        &11u32.to_le_bytes(),
+        &1u16.to_le_bytes(),
+        &6u16.to_le_bytes(),
+        b"upload",
+    ]
+    .concat();
+    assert_eq!(peer.rpc(110, &walk).unwrap().0, 7);
+    peer.open(5, b"transaction", 2);
+    assert_eq!(peer.write(5, &begin).0, 119);
+    let submit = encode_shell_file_submit(ShellFileSubmit {
+        connection_epoch: 1,
+        submission_id: 3,
+        candidate_bytes: begin.len() as u32,
+    })
+    .unwrap();
+    let reply = peer.write(3, &submit);
+    assert_eq!(reply.0, 7);
+    assert_eq!(u32::from_le_bytes(reply.1.try_into().unwrap()), 22);
+    peer.clear();
     let end = encode_shell_file_resource_end(
         ShellFileHeader {
             kind: ShellFileKind::ResourceEnd,
@@ -231,15 +241,18 @@ fn fallback(peer: &mut raw::Peer) {
         },
     )
     .unwrap();
-    peer.submit_acknowledged(&end, 4);
-    let accepted = peer.next_event();
-    let ShellContentRecord::ResourceStatus(status) =
-        decode_shell_file_resource_status(&accepted).unwrap().record
-    else {
-        panic!("status");
-    };
-    assert_eq!(status.status, 2);
-    ack(peer, &accepted);
+    peer.open(5, b"transaction", 2);
+    assert_eq!(peer.write(5, &end).0, 119);
+    let submit = encode_shell_file_submit(ShellFileSubmit {
+        connection_epoch: 1,
+        submission_id: 4,
+        candidate_bytes: end.len() as u32,
+    })
+    .unwrap();
+    let reply = peer.write(3, &submit);
+    assert_eq!(reply.0, 7);
+    assert_eq!(u32::from_le_bytes(reply.1.try_into().unwrap()), 22);
+    peer.clear();
 }
 
 #[test]
@@ -247,7 +260,7 @@ fn configured_authenticated_epoch_publishes_discovery_and_ready_after_hello() {
     run_image_epoch(false, false, false, 0);
     run_image_epoch(true, false, false, 0);
     // An owner may retain an earlier epoch's optional image configuration.
-    // It must not prevent a later byte-only export from authenticating.
+    // It must not prevent a later metadata-only export from authenticating.
     run_image_epoch(false, true, false, 0);
     run_image_epoch(false, false, true, 0);
     run_image_epoch(false, false, true, 1);
@@ -421,6 +434,26 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
             1
         );
         ack(&mut peer, &ready);
+        if coordinated == 0 {
+            let busy = image_begin(&mut peer);
+            assert_eq!(busy.0, 7);
+            assert_eq!(u32::from_le_bytes(busy.1.try_into().unwrap()), 11);
+            peer.clear();
+            // Retrying below uses the same submission and offer identities:
+            // ChannelReady alone must not transfer custody to an absent owner.
+        }
+        if !admit_source {
+            rustix::net::shutdown(&socket, rustix::net::Shutdown::Both).unwrap();
+            let closed = peer.next_event();
+            assert_eq!(
+                decode_shell_file_record_at_revision(&closed, ShellFileClass::Event, 9)
+                    .unwrap()
+                    .header
+                    .kind,
+                ShellFileKind::ChannelClosed
+            );
+            ack(&mut peer, &closed);
+        }
         if admit_source {
             request_admission.send(()).unwrap();
             wait_admission.recv_timeout(Duration::from_secs(3)).unwrap();
@@ -470,7 +503,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
         };
         assert_eq!((status.status, status.reason), (3, 13));
         ack(&mut peer, &refused);
-        fallback(&mut peer);
+        byte_upload_is_refused(&mut peer);
         // The owner supplies a validated mapping here. This isolates the
         // live-journal release handoff; it does not claim Source admission.
         request_sealed.send(()).unwrap();
@@ -712,9 +745,8 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
         };
         let usage = epochs.resources(grant).unwrap().usage();
         assert_eq!(
-            usage.backing,
-            if admit_source { 0 } else { 8 },
-            "retired ISB backing is released; only byte fallback remains"
+            usage.backing, 0,
+            "retired ISB backing is released; byte uploads never acquire backing"
         );
         assert_eq!(usage.retiring, 0, "journal custody released ISB backing");
     }

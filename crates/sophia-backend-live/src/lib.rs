@@ -100,3 +100,9 @@ pub use sophia_renderer_live::{LiveSharedBufferAllocation, LiveSharedBufferError
 pub use sophia_renderer_live::{
     LiveSharedPixmapError, LiveSharedPixmapPatch, LiveSharedPixmapService, LiveSharedPixmapUpdate,
 };
+
+#[cfg(test)]
+use sophia_runtime::{ContentResourceStore, IsbPixelValidation, ValidatedIsbPixels};
+#[cfg(test)]
+#[path = "../../sophia-runtime/tests/support/content_isb.rs"]
+mod test_content_isb;

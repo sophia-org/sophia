@@ -3,7 +3,7 @@ package shelloracle
 func (r *runner) nativeScenario() {
 	s := r.connect("launcher", 4096)
 	defer s.close()
-	roleNegotiate(s, 7, 0x9a0, 0x9a0)
+	roleNegotiate(s, 9, 0x29a0, 0x29a0)
 	r.check(65, true)
 	s.phase("publish")
 	catalog := roleObject(s, 3, 3)
@@ -15,7 +15,7 @@ func (r *runner) nativeScenario() {
 	r.check(67, true)
 	roleAllocation(s, true)
 	r.check(68, true)
-	smallResource(s)
+	smallResource(s, 3)
 	initialPermit := rolePermit(s, 1)
 	r.check(69, true)
 	generation := r.roleCandidateControls(s, true, 3, initialPermit)

@@ -2,7 +2,8 @@
  * C SDK's generic 9P client and encodes every lock record by hand from
  * protocol/sophia-lock-files-v1.kdl, so a disagreement with Sophia's codec
  * fails here. One provider session: negotiate with one chord, read the lock
- * object, upload an image, ask for a frame, offer it, see it presented. */
+ * object, refuse retired byte uploads without custody, and reject a candidate
+ * that names their absent resource. Sealed presentation has a separate SDK peer. */
 #define _POSIX_C_SOURCE 200809L
 #include "sophia_9p_client.h"
 #include <assert.h>
@@ -112,7 +113,7 @@ static void write_at(uint32_t fid, uint64_t offset, const void *data, size_t cou
 }
 
 /* Stages one candidate in a fresh transaction and submits it. */
-static void submit(uint16_t kind, const uint8_t *body, size_t length) {
+static void submit_expect(uint16_t kind, const uint8_t *body, size_t length, int refused) {
     uint8_t record[128], control[24] = {0};
     struct sophia_9p_handle handle;
     assert(HEADER + length <= sizeof record);
@@ -128,9 +129,18 @@ static void submit(uint16_t kind, const uint8_t *body, size_t length) {
     put64(control, epoch);
     put64(control + 8, submission);
     put32(control + 16, (uint32_t)(HEADER + length));
-    write_at(submit_fid, 0, control, sizeof control);
+    assert(!sophia_9p_write(&client, submit_fid, 0, control, sizeof control, &handle));
+    struct sophia_9p_reply receipt = wait_reply(handle);
+    if (refused) {
+        assert(receipt.error == 22); /* EINVAL before custody. */
+        --submission;
+    } else assert(!receipt.error && receipt.count == sizeof control);
     assert(sophia_9p_clunk(&client, transaction_fid, &handle) == SOPHIA_9P_OK);
     wait_reply(handle);
+}
+
+static void submit(uint16_t kind, const uint8_t *body, size_t length) {
+    submit_expect(kind, body, length, 0);
 }
 
 /* Reads events until one of `kind`; acknowledges everything read. Its body
@@ -236,7 +246,7 @@ int main(int argc, char **argv) {
         assert(get32(allocation + 32) == 2 && get32(allocation + 36) == 2);
     }
 
-    /* Upload a 2x2 premultiplied BGRA8 image through slot 0. */
+    /* Byte Begin/End refuse before custody; the next valid record reuses its ID. */
     memset(body, 0, sizeof body);
     put64(body, 1);
     put64(body + 8, 5);
@@ -245,24 +255,19 @@ int main(int argc, char **argv) {
     put32(body + 28, 2);
     put16(body + 32, 0);
     put16(body + 34, 1);
-    submit(KIND_RESOURCE_BEGIN, body, 40);
-    wait_event(KIND_RESOURCE_STATUS, body, 40);
-    assert(get16(body + 24) == 1 && get64(body + 32) == 16);
+    submit_expect(KIND_RESOURCE_BEGIN, body, 40, 1);
     {
-        const char *names[2] = {"upload", "0"};
-        uint8_t pixels[16];
-        uint32_t upload = open_path(names, 2, 1);
-        memset(pixels, 0x7f, sizeof pixels);
-        write_at(upload, 0, pixels, sizeof pixels);
+        const char *names[1] = {"upload"};
+        uint32_t missing;
+        assert(!sophia_9p_walk(&client, root, names, 1, &handle, &missing));
+        assert(wait_reply(handle).error == 2); /* ENOENT: no byte writer. */
     }
     memset(body, 0, sizeof body);
     put64(body, 1);
     put64(body + 8, 5);
     put64(body + 16, 1);
     put64(body + 24, 16);
-    submit(KIND_RESOURCE_END, body, 32);
-    wait_event(KIND_RESOURCE_STATUS, body, 40);
-    assert(get16(body + 24) == 2);
+    submit_expect(KIND_RESOURCE_END, body, 32, 1);
 
     /* Ask for a frame, then offer it under the permit. */
     memset(body, 0, sizeof body);
@@ -289,8 +294,8 @@ int main(int argc, char **argv) {
     put64(body + 72, 1);
     submit(KIND_CANDIDATE, body, 96);
     wait_event(KIND_CANDIDATE_OUTCOME, body, 56);
-    assert(get16(body + 40) == 2 && "presented");
-    puts("lock_files_peer status=presented");
+    assert(get16(body + 40) == 3 && "absent resource rejected");
+    puts("lock_files_peer status=byte-refused");
     (void)KIND_SUBMITTED;
     close(fd);
     return 0;

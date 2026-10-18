@@ -44,7 +44,7 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
         transaction: TransactionId,
         record: ShellContentRecord,
-        now_msec: u64,
+        _now_msec: u64,
     ) -> Result<(), ShellTransportError> {
         let grant = self.store_grant;
         let resource = content_admission::resource_identity(&record)
@@ -54,13 +54,6 @@ impl ShellComponentTransport {
                 .resources_mut(self.store_grant)
                 .ok_or(ShellTransportError::MissingCapability)?;
             let outcome = match &record {
-                ShellContentRecord::ResourceBegin(value) => {
-                    store.begin(transaction, value.clone(), now_msec)
-                }
-                ShellContentRecord::ResourceChunk(value) => {
-                    store.chunk(transaction, value, now_msec)
-                }
-                ShellContentRecord::ResourceEnd(value) => store.end(transaction, value, now_msec),
                 ShellContentRecord::ResourceCancel(value) => store.cancel(transaction, value),
                 ShellContentRecord::ResourceRetire(value) => store.retire(transaction, value),
                 _ => return Err(ShellTransportError::WrongContentRecord),

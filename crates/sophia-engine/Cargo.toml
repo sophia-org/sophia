@@ -20,4 +20,5 @@ xkbcommon = "0.8"
 workspace = true
 
 [dev-dependencies]
+sophia-linux-peer = { path = "../sophia-linux-peer" }
 stats_alloc = "=0.1.10"

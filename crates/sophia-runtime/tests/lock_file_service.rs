@@ -2,8 +2,13 @@
 //! t294: the lock provider's worker. Session's commands reach a negotiated
 //! provider as events, what the provider submits reaches Session as service
 //! events, and a departed provider is reported once by epoch.
+#[path = "support/lock_provider.rs"]
+mod provider;
 #[path = "support/shell_file_peer.rs"]
 mod raw_peer;
+#[allow(dead_code)]
+#[path = "support/shell_sdk_image.rs"]
+mod sdk_image;
 
 use std::time::Duration;
 
@@ -74,7 +79,7 @@ fn service_from(label: &str, first_epoch: u64) -> (LockFileService, std::path::P
 }
 
 fn submit(peer: &mut raw_peer::Peer, epoch: u64, id: u64, kind: LockFileKind, body: &[u8]) {
-    let candidate = encode_lock_file_record(
+    let candidate = encode_lock_file_record_at_revision(
         LockFileHeader {
             kind,
             connection_epoch: epoch,
@@ -82,6 +87,7 @@ fn submit(peer: &mut raw_peer::Peer, epoch: u64, id: u64, kind: LockFileKind, bo
             sequence: 0,
         },
         body,
+        2,
     )
     .unwrap();
     peer.open(5, b"transaction", 2);
@@ -104,7 +110,9 @@ fn wait_for(peer: &mut raw_peer::Peer, offset: &mut u64, kind: LockFileKind) -> 
         while !rest.is_empty() {
             let size = u32::from_le_bytes(rest[..4].try_into().unwrap()) as usize;
             *offset += size as u64;
-            let record = decode_lock_file_record(&rest[..size], LockFileClass::Event).unwrap();
+            let record =
+                decode_lock_file_record_at_revision(&rest[..size], LockFileClass::Event, 2)
+                    .unwrap();
             if record.header.kind == kind {
                 return record.body.to_vec();
             }
@@ -123,66 +131,168 @@ fn event(service: &LockFileService) -> LockFileServiceEvent {
 /// publication is stale work, not a reason to stop the provider service.
 #[test]
 fn a_revoked_candidates_late_outcome_does_not_stop_the_service() {
-    let (service, path) = service("late-topology-outcome");
-    let mut peer = raw_peer::Peer::connect(&path);
-    peer.setup();
+    let directory = std::env::temp_dir().join(format!("lock-late-image-{}", std::process::id()));
+    let mut transport = LockFileTransport::bind_for_supervised_uid(
+        &directory,
+        rustix::process::geteuid().as_raw(),
+        11,
+        limits(),
+    )
+    .unwrap();
+    transport
+        .enable_isb_images(LockImagePolicy {
+            hello_timeout_ms: 2000,
+            validation_timeout_ms: 5000,
+            validation_chunk_bytes: 65536,
+            capture_interest_timeout_ms: 500,
+            max_sealed_backing_bytes: 2048,
+        })
+        .unwrap();
+    let (mut provider, stream) = provider::Provider::start(&mut transport, &directory);
+    let service = LockFileService::spawn(transport, locked(4), Vec::new()).unwrap();
+    let mut peer = raw_peer::Peer::from_stream(stream);
+    assert_eq!(
+        peer.rpc(
+            100,
+            &[
+                65536u32.to_le_bytes().as_slice(),
+                &8u16.to_le_bytes(),
+                b"9P2000.L"
+            ]
+            .concat()
+        )
+        .unwrap()
+        .0,
+        101
+    );
+    assert_eq!(
+        peer.rpc(
+            102,
+            &[
+                30u32.to_le_bytes().as_slice(),
+                &[0; 4],
+                &u32::MAX.to_le_bytes()
+            ]
+            .concat()
+        )
+        .unwrap()
+        .0,
+        103
+    );
+    assert_eq!(
+        peer.rpc(
+            104,
+            &[
+                1u32.to_le_bytes().as_slice(),
+                &30u32.to_le_bytes(),
+                &[0; 4],
+                &u32::MAX.to_le_bytes()
+            ]
+            .concat()
+        )
+        .unwrap()
+        .0,
+        105
+    );
+    peer.open(2, b"events", 0);
+    peer.open(3, b"submit", 1);
+    peer.open(4, b"ack", 1);
     submit(
         &mut peer,
         11,
         1,
         LockFileKind::Negotiate,
         &LockNegotiate {
-            minimum_revision: 1,
-            maximum_revision: 1,
-            requested_capabilities: LOCK_FILE_CAPABILITY_PRESENT,
+            minimum_revision: 2,
+            maximum_revision: 2,
+            requested_capabilities: LOCK_FILE_CAPABILITY_PRESENT
+                | LOCK_FILE_CAPABILITY_SEALED_MEMORY,
             chords: Vec::new(),
         }
         .encode()
         .unwrap(),
     );
-    assert!(matches!(
-        event(&service),
-        LockFileServiceEvent::Connected {
-            connection_epoch: 11,
-            ..
-        }
-    ));
+    let connected = event(&service);
+    assert!(
+        matches!(
+            connected,
+            LockFileServiceEvent::Connected {
+                connection_epoch: 11,
+                ..
+            }
+        ),
+        "{connected:?}"
+    );
     let mut offset = 0;
     wait_for(&mut peer, &mut offset, LockFileKind::ObjectPublished);
     let resource = LockResourceId {
         id: 1,
         generation: 1,
     };
+    let image = provider.connect_image();
+    let hello = LockImagePacket::Hello {
+        connection_epoch: 11,
+        channel_generation: 11,
+    }
+    .encode()
+    .unwrap();
+    rustix::net::send(&image, &hello, rustix::net::SendFlags::NOSIGNAL).unwrap();
+    wait_for(&mut peer, &mut offset, LockFileKind::ChannelReady);
+    let metadata = LockImageMetadata {
+        offer_id: 1,
+        resource: 1,
+        resource_generation: 1,
+        admission_epoch: 4,
+        output_id: 1,
+        allocation_id: 2,
+        topology_generation: 1,
+        source_kind: 1,
+        source_format: 1,
+        width: 4,
+        height: 4,
+        stride: 16,
+        plane_count: 1,
+        descriptor_count: 1,
+        declared_bytes: 64,
+        modifier: 0,
+    };
     submit(
         &mut peer,
         11,
         2,
-        LockFileKind::ResourceBegin,
-        &LockResourceBegin {
-            transaction: 100,
-            resource,
-            width_px: 4,
-            height_px: 4,
-            slot: 0,
-        }
-        .encode()
-        .unwrap(),
+        LockFileKind::ImageBegin,
+        &metadata.encode().unwrap(),
     );
-    assert_eq!(peer.open_path(8, &[b"upload", b"0"], 1).0, 13);
-    assert_eq!(peer.write(8, &[7; 64]).0, 119);
-    peer.clunk(8);
-    submit(
-        &mut peer,
-        11,
-        3,
-        LockFileKind::ResourceEnd,
-        &LockResourceStep {
-            transaction: 100,
-            resource,
-            total_bytes: Some(64),
-        }
-        .encode()
+    wait_for(&mut peer, &mut offset, LockFileKind::ImageAdmitted);
+    let source = sdk_image::source(&[7; 64]);
+    let mut planes = [LockImagePlane {
+        offset: 0,
+        stride: 0,
+        fd_index: 0,
+    }; 4];
+    planes[0].stride = 16;
+    let packet = LockImagePacket::Source {
+        connection_epoch: 11,
+        channel_generation: 11,
+        metadata,
+        planes,
+    }
+    .encode()
+    .unwrap();
+    use std::os::fd::AsFd;
+    let mut space = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
+    let mut control = rustix::net::SendAncillaryBuffer::new(&mut space);
+    let rights = [source.as_fd()];
+    assert!(control.push(rustix::net::SendAncillaryMessage::ScmRights(&rights)));
+    assert_eq!(
+        rustix::net::sendmsg(
+            &image,
+            &[std::io::IoSlice::new(&packet)],
+            &mut control,
+            rustix::net::SendFlags::NOSIGNAL
+        )
         .unwrap(),
+        200
     );
     assert!(matches!(
         event(&service),
@@ -650,10 +760,11 @@ fn a_full_handoff_ignores_readable_peer_until_the_owner_drains() {
             let mut sequence = 0;
             while !rest.is_empty() {
                 let size = u32::from_le_bytes(rest[..4].try_into().unwrap()) as usize;
-                sequence = decode_lock_file_record(&rest[..size], LockFileClass::Event)
-                    .unwrap()
-                    .header
-                    .sequence;
+                sequence =
+                    decode_lock_file_record_at_revision(&rest[..size], LockFileClass::Event, 2)
+                        .unwrap()
+                        .header
+                        .sequence;
                 rest = &rest[size..];
             }
             assert_eq!(

@@ -20,6 +20,8 @@ const EDGES: [ShellComponentEdge; 4] = [
 
 fn proof(edge: ShellComponentEdge, width: u32, height: u32) -> ShellGpuContentProof {
     ShellGpuContentProof {
+        factotum_agent: "/absent/factotum".into(),
+        factotum_pam_helper: "/absent/pam-helper".into(),
         client: "/opt/shell/client".into(),
         client_args: vec!["--any".into(), "value with spaces".into()],
         config: Some("/etc/shell/config".into()),

@@ -80,7 +80,11 @@ impl LiveMetadataShell {
             return self.poll();
         };
         let now = Instant::now();
-        let result = self.advance_authentication(&mut auth, launches, wake, now);
+        let result = self
+            .transport
+            .service_images(crate::shell_component_connections::content_now_msec(), now)
+            .map_err(Into::into)
+            .and_then(|()| self.advance_authentication(&mut auth, launches, wake, now));
         let result = match result {
             Ok(result) => Ok(result),
             Err(error) => {
@@ -232,6 +236,19 @@ impl LiveMetadataShell {
             launch::record_gpu_launch(evidence.peer_pid, auth.gpu.take());
             self.transport
                 .authorize_authenticated_peer(evidence, started.factory)?;
+            if matches!(
+                self.content.admission_policy(),
+                sophia_runtime::ShellContentAdmissionPolicy::Granted { .. }
+            ) {
+                let epoch = auth.epoch.expect("prepared epoch");
+                crate::shell_component_connections::images::configure_legacy(
+                    &mut self.transport,
+                    &sophia_protocol::ContentLimits::prototype(sophia_protocol::ContentGrant {
+                        connection_epoch: epoch,
+                        content_grant_epoch: epoch,
+                    }),
+                )?;
+            }
             self.transport.begin_descriptor_file_negotiation(
                 auth.epoch.expect("prepared epoch"),
                 Duration::from_secs(5),

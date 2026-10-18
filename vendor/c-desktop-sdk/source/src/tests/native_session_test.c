@@ -23,7 +23,7 @@ struct fake {
     enum sophia_ss_outcome outcomes[256];
     struct sophia_sf_record log[LOG];
     uint64_t log_ticket[LOG];
-    unsigned logged, uploads;
+    unsigned logged;
 };
 static struct fake F;
 static struct sophia_ss SS;
@@ -151,38 +151,6 @@ int sophia_ss_consume(struct sophia_ss *s)
     F.head++;
     return 0;
 }
-static int fake_upload(uint64_t *ticket)
-{
-    struct sophia_sf_record r;
-    if (F.state > SOPHIA_SS_READY)
-        return F.final_status;
-    if (F.reserved)
-        return SOPHIA_9P_BUSY;
-    memset(&r, 0, sizeof(r));
-    r.header.kind = SOPHIA_SF_RESOURCE_BEGIN;
-    F.uploads++;
-    *ticket = fake_log(&r);
-    return 0;
-}
-int sophia_ss_upload_begin(struct sophia_ss *s, struct sophia_sf_resource_begin v, uint64_t *t)
-{
-    (void)s;
-    assert(v.transaction && v.grant_connection_epoch == F.limits.grant_connection_epoch);
-    return fake_upload(t);
-}
-int sophia_ss_upload_end(struct sophia_ss *s, uint64_t transaction, uint64_t *t)
-{
-    (void)s;
-    assert(transaction);
-    return fake_upload(t);
-}
-int sophia_ss_upload_cancel(struct sophia_ss *s, uint64_t transaction, uint64_t *t)
-{
-    (void)s;
-    assert(transaction);
-    return fake_upload(t);
-}
-
 /* Journal one event: encoded and decoded by the library, so every scripted
  * record satisfies the contract's value rules; text borrows its slot. */
 static void push(struct sophia_sf_record r)
@@ -288,15 +256,6 @@ static void invalidated(void)
     v->output_generation = OUTPUT_GEN;
     v->allocation_id = ALLOC;
     v->allocation_generation = ALLOC_GEN;
-    push(r);
-}
-static void resource_status(uint16_t status)
-{
-    struct sophia_sf_record r;
-    memset(&r, 0, sizeof(r));
-    r.header.kind = SOPHIA_SF_RESOURCE_STATUS;
-    r.value.resource_status =
-        (struct sophia_sf_resource_status){62, conn(), content(), RES, RES_GEN, status, 0, 0, 0};
     push(r);
 }
 static void permit(uint64_t demand, uint16_t state, uint64_t id, uint32_t ttl)
@@ -408,7 +367,6 @@ static struct sophia_ns_scene scene(void)
 static void ready(struct sophia_ns *n)
 {
     struct sophia_ns_allocation_params p = {1, 400, 300, 0, 0, 0, 0};
-    struct sophia_sf_resource_begin begin;
     uint64_t t;
     reset();
     assert(!sophia_ns_init(n, &SS, &CONFIG));
@@ -426,15 +384,12 @@ static void ready(struct sophia_ns *n)
         last(SOPHIA_SF_NATIVE_ALLOCATION_REQUEST)->value.native_allocation_request.request_id);
     finish(n, SOPHIA_NS_EV_ALLOCATION);
     assert(sophia_ns_allocation(n) && sophia_ns_allocation(n)->allocation_id == ALLOC);
-    memset(&begin, 0, sizeof(begin));
-    begin.resource_id = RES;
-    begin.resource_generation = RES_GEN;
-    assert(!sophia_ns_upload_begin(n, begin, &t));
-    resource_status(1);
-    finish(n, SOPHIA_NS_EV_RESOURCE);
-    assert(!sophia_ns_upload_end(n, &t));
-    resource_status(2);
-    finish(n, SOPHIA_NS_EV_RESOURCE);
+    /* This unit fixture supplies accepted ownership for pacing/input tests.
+     * shell_image_test and the production export peer exercise actual adoption. */
+    n->resources[0].id = RES;
+    n->resources[0].generation = RES_GEN;
+    n->resources[0].image_offer = 62;
+    n->resources[0].state = SOPHIA_NS_RESOURCE_ACCEPTED;
     assert(!sophia_ns_demand(n, 1, 1000, &t));
     permit(last(SOPHIA_SF_FRAME_DEMAND)->value.frame_demand.demand_id, 1, 77, 100);
     finish(n, SOPHIA_NS_EV_PERMIT);
@@ -493,7 +448,7 @@ static void test_catalog_invalidation(void)
     assert(sophia_ns_next(&n, 1000, &(struct sophia_ns_event){0}) == SOPHIA_9P_INVALID);
     assert(sophia_ns_state(&n) == SOPHIA_NS_FAILED);
 }
-/* Allocation, upload and permit strictly precede a candidate; the candidate
+/* Allocation, adopted resource and permit strictly precede a candidate; the candidate
  * names the permit and consumes it; nothing is shown before Presented. */
 static void test_pacing(void)
 {
@@ -949,54 +904,10 @@ static void test_expiry_before_submit_refusal(void)
     assert(!sophia_ns_present(&n, &s, 1250, &t));
 }
 
-static void test_cancel_resource_after_refused_end(void)
-{
-    struct sophia_ns n;
-    struct sophia_sf_resource_begin begin;
-    const struct sophia_sf_record *record;
-    uint64_t t, next;
-    reset();
-    assert(!sophia_ns_init(&n, &SS, &CONFIG));
-    memset(&begin, 0, sizeof(begin));
-    begin.resource_id = RES;
-    begin.resource_generation = RES_GEN;
-    assert(!sophia_ns_upload_begin(&n, begin, &t));
-    resource_status(1);
-    finish(&n, SOPHIA_NS_EV_RESOURCE);
-    assert(!sophia_ns_upload_end(&n, &t));
-    F.outcomes[t] = SOPHIA_SS_REFUSED;
-    assert(!sophia_ns_service(&n, 1000));
-    assert(sophia_ns_upload_cancel(&n, &t) == SOPHIA_9P_INVALID);
-    next = n.next_transaction;
-    F.submit_busy = 1;
-    assert(sophia_ns_resource_cancel(&n, RES, RES_GEN, &t) == SOPHIA_9P_BUSY);
-    assert(n.next_transaction == next);
-    F.submit_busy = 0;
-    assert(sophia_ns_resource_cancel(&n, RES, RES_GEN + 1, &t) == SOPHIA_9P_INVALID);
-    assert(!sophia_ns_resource_cancel(&n, RES, RES_GEN, &t));
-    record = last(SOPHIA_SF_RESOURCE_CANCEL);
-    assert(record && record->value.resource_cancel.resource_id == RES);
-    assert(record->value.resource_cancel.resource_generation == RES_GEN);
-    assert(record->value.resource_cancel.transaction == next);
-    /* Local admission does not free the identity. */
-    assert(sophia_ns_upload_begin(&n, begin, &t) == SOPHIA_9P_INVALID);
-    resource_status(4);
-    finish(&n, SOPHIA_NS_EV_RESOURCE);
-    assert(!sophia_ns_upload_begin(&n, begin, &t));
-    assert(!sophia_ns_resource_cancel(&n, RES, RES_GEN, &t));
-    assert(!n.uploading);
-    resource_status(4);
-    finish(&n, SOPHIA_NS_EV_RESOURCE);
-    assert(sophia_ns_resource_cancel(&n, RES, RES_GEN, &t) == SOPHIA_9P_INVALID);
-    ready(&n);
-    assert(sophia_ns_resource_cancel(&n, RES, RES_GEN, &t) == SOPHIA_9P_INVALID);
-}
-
 int main(void)
 {
     test_declined_edit_is_acknowledged_stale();
     test_action_nonselected_row();
-    test_cancel_resource_after_refused_end();
     test_expiry_before_submit_refusal();
     test_init();
     test_catalog_invalidation();

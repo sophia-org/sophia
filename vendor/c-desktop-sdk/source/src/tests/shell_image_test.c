@@ -1106,58 +1106,6 @@ static void cancel_lost_with_session(void)
 
 /* A refused image cancel is not a byte upload's refused End, whether its
  * resource differs in ID or only in generation. */
-static void cancel_beside_upload(void)
-{
-    struct image_rig t;
-    struct sophia_ic_metadata m[2] = {image(150), image(151)};
-    struct sophia_sf_resource_begin u = {0};
-    uint8_t pixels[16] = {0};
-    uint64_t offer, ticket, cancel, end;
-    unsigned i;
-    int src;
-    m[1].resource_generation = 2;
-    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
-    image_ready(&t);
-    ack_all(&t);
-    t.r.s.files.limits.max_height_px = 16;
-    t.r.s.files.limits.max_resource_bytes = 64;
-    t.r.s.files.limits.max_chunk_bytes = 4;
-    u.transaction = 77;
-    u.grant_connection_epoch = PEER_EPOCH;
-    u.grant_content_epoch = t.r.s.files.limits.grant_content_epoch;
-    u.resource_id = 150;
-    u.resource_generation = 2;
-    u.width_px = 1;
-    u.height_px = 4;
-    u.rendered_scale_numerator = u.rendered_scale_denominator = u.pixel_format = 1;
-    u.total_bytes = sizeof(pixels);
-    u.chunk_count = 4;
-    assert(!sophia_ss_upload_begin(&t.r.s, u, &ticket));
-    assert(settle_ticket(&t, ticket) == SOPHIA_SS_SUBMITTED);
-    peer_resource_status(&t.r.p, &u, 1);
-    run(&t, 8);
-    assert(sophia_ss_upload_ready(&t.r.s));
-    assert(!sophia_ss_upload_chunk(&t.r.s, pixels, sizeof(pixels)));
-    run(&t, 8);
-    assert(!sophia_ss_upload_end(&t.r.s, 77, &end));
-    assert(settle_ticket(&t, end) == SOPHIA_SS_SUBMITTED);
-    assert(t.r.s.files.upload_stage == 6 && !t.r.s.files.upload_closing);
-    for (i = 0; i < 2; i++) {
-        src = sealed(16, 16);
-        assert(sophia_ss_image_begin(&t.img, &m[i], src, t.r.now, &offer, &ticket) ==
-               SOPHIA_IPR_OK);
-        assert(settle_ticket(&t, ticket) == SOPHIA_SS_SUBMITTED);
-        t.r.p.policy = P_ERROR;
-        t.r.p.error = 22;
-        t.r.p.once = 1;
-        assert(sophia_ss_image_cancel(&t.img, offer, t.r.now, &cancel) == SOPHIA_IPR_OK);
-        assert(settle_ticket(&t, cancel) == SOPHIA_SS_REFUSED);
-        assert(t.r.s.files.upload_stage == 6 && !t.r.s.files.upload_closing);
-        assert(sophia_ss_upload_pending(&t.r.s));
-    }
-    image_close(&t);
-}
-
 #include "native_image_adoption.h"
 
 int main(void)
@@ -1180,7 +1128,6 @@ int main(void)
     cancel_before_admission();
     cancel_races();
     cancel_lost_with_session();
-    cancel_beside_upload();
     assert(fd_count() == base);
     puts("shell_image_test: ok");
     return 0;

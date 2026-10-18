@@ -1,6 +1,8 @@
 use sophia_engine::*;
 use sophia_protocol::*;
-use sophia_runtime::ContentResourceStore;
+use sophia_runtime::{ContentResourceStore, IsbPixelValidation, ValidatedIsbPixels};
+#[path = "../../sophia-runtime/tests/support/content_isb.rs"]
+mod isb;
 
 fn content_resource() -> sophia_runtime::ContentResourceLease {
     let grant = ContentGrant {
@@ -12,48 +14,23 @@ fn content_resource() -> sophia_runtime::ContentResourceLease {
         generation: 1,
     };
     let mut store = ContentResourceStore::new(ContentLimits::prototype(grant)).unwrap();
-    store
-        .begin(
-            TransactionId::from_raw(1),
-            ContentResourceBegin {
-                grant,
-                resource,
-                width_px: 4,
-                height_px: 2,
-                rendered_scale_numerator: 1,
-                rendered_scale_denominator: 1,
-                pixel_format: 1,
-                chunk_count: 1,
-                total_bytes: 32,
-            },
-            0,
-        )
-        .unwrap();
-    store
-        .chunk(
-            TransactionId::from_raw(2),
-            &ContentResourceChunk {
-                grant,
-                resource,
-                ordinal: 0,
-                offset: 0,
-                bytes: vec![0x7f; 32],
-            },
-            0,
-        )
-        .unwrap();
-    store
-        .end(
-            TransactionId::from_raw(3),
-            &ContentResourceEnd {
-                grant,
-                resource,
-                total_bytes: 32,
-                chunk_count: 1,
-            },
-            0,
-        )
-        .unwrap();
+    isb::accept(
+        &mut store,
+        TransactionId::from_raw(1),
+        ContentResourceBegin {
+            grant,
+            resource,
+            width_px: 4,
+            height_px: 2,
+            rendered_scale_numerator: 1,
+            rendered_scale_denominator: 1,
+            pixel_format: 1,
+            chunk_count: 1,
+            total_bytes: 32,
+        },
+        &[0x7f; 32],
+        0,
+    );
     store.lease(grant, resource).unwrap()
 }
 

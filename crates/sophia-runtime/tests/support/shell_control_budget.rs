@@ -2,6 +2,7 @@ use super::super::outbound::{Admitted, OutboundRecord};
 use super::super::outbox::tests::files::Peer;
 use super::*;
 use crate::ShellSessionTransport;
+use crate::test_content_isb as isb;
 use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -168,33 +169,34 @@ fn final_collection_refuses_a_live_file_wire_even_without_a_content_epoch() {
 
 #[test]
 fn all_store_credits_and_fifo_frames_share_one_capacity() {
-    let mut fixture = Fixture::new(7);
+    let mut fixture = Fixture::new(6);
     let transport = &mut fixture.transport;
     let mut peer = attach_files(transport);
     let grant = transport.state.content_grant.unwrap();
-    transport
+    let store = transport
         .content_epochs
         .resources_mut(transport.state.store_grant)
-        .unwrap()
-        .begin(
-            TransactionId::from_raw(1),
-            ContentResourceBegin {
-                grant,
-                resource: ContentResourceId {
-                    id: 1,
-                    generation: 1,
-                },
-                width_px: 1,
-                height_px: 1,
-                rendered_scale_numerator: 1,
-                rendered_scale_denominator: 1,
-                pixel_format: 1,
-                chunk_count: 1,
-                total_bytes: 4,
-            },
-            0,
-        )
         .unwrap();
+    isb::accept(
+        store,
+        TransactionId::from_raw(1),
+        ContentResourceBegin {
+            grant,
+            resource: ContentResourceId {
+                id: 1,
+                generation: 1,
+            },
+            width_px: 1,
+            height_px: 1,
+            rendered_scale_numerator: 1,
+            rendered_scale_denominator: 1,
+            pixel_format: 1,
+            chunk_count: 1,
+            total_bytes: 4,
+        },
+        &[0; 4],
+        0,
+    );
     transport
         .content_epochs
         .active_candidates_mut(transport.state.store_grant)
@@ -234,11 +236,11 @@ fn all_store_credits_and_fifo_frames_share_one_capacity() {
         transport
             .content_epochs
             .control_occupancy(transport.state.store_grant),
-        7
+        6
     );
     let owned = transport.content_accounting();
-    assert_eq!(owned.response_records, 7);
-    assert_eq!(owned.epochs.transfers, 1);
+    assert_eq!(owned.response_records, 6);
+    assert_eq!(owned.epochs.resources, 1);
     assert_eq!(owned.epochs.permits, 1);
     assert!(
         transport
@@ -258,7 +260,7 @@ fn all_store_credits_and_fifo_frames_share_one_capacity() {
         .content_limits
         .as_mut()
         .unwrap()
-        .max_control_records = 6;
+        .max_control_records = 5;
     assert!(
         transport
             .state
@@ -274,7 +276,7 @@ fn all_store_credits_and_fifo_frames_share_one_capacity() {
         transport
             .content_epochs
             .control_occupancy(transport.state.store_grant),
-        7
+        6
     );
     assert_eq!(transport.state.output.controls(), 0);
     assert_eq!(transport.content_accounting(), owned);
@@ -291,7 +293,7 @@ fn all_store_credits_and_fifo_frames_share_one_capacity() {
         .content_limits
         .as_mut()
         .unwrap()
-        .max_control_records = 7;
+        .max_control_records = 6;
     transport
         .state
         .queue_content_record(
@@ -310,7 +312,7 @@ fn all_store_credits_and_fifo_frames_share_one_capacity() {
         transport
             .content_epochs
             .control_occupancy(transport.state.store_grant),
-        6
+        5
     );
     assert_eq!(transport.state.output.controls(), 1);
     let transferred = transport.content_accounting();
@@ -336,7 +338,7 @@ fn all_store_credits_and_fifo_frames_share_one_capacity() {
         peer.expect(&mut transport.state, &record);
     }
     peer.quiet(&mut transport.state);
-    assert_eq!(transport.content_accounting().response_records, 6);
+    assert_eq!(transport.content_accounting().response_records, 5);
     assert_eq!(
         transport.content_accounting().response_bytes,
         transferred.response_bytes - CONTROL_RECORD_BYTES

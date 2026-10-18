@@ -174,7 +174,6 @@ static void finish(struct sophia_ss *s, enum sophia_ss_state state)
     s->queued = 0;
     s->queue_used = 0;
     s->waiting = 0;
-    s->upload_waiting = 0;
     s->state = state;
     ss_image_drive(s, s->now_ms);
 }
@@ -197,22 +196,6 @@ static int drain(struct sophia_ss *s)
 {
     const struct sophia_sf_record *e = NULL;
     int r = 0;
-    if (s->files.upload_offset != s->upload_seen || !s->files.upload_stage) {
-        s->upload_seen = s->files.upload_offset;
-        s->upload_retry_delay = 0;
-    }
-    if (!s->files.upload_wait || s->files.upload_closing)
-        s->upload_waiting = 0;
-    if (s->files.upload_wait && !s->files.upload_count &&
-        !s->files.upload_closing && !s->upload_waiting) {
-        s->upload_waiting = 1;
-        s->upload_progress = 0;
-        s->upload_retry_delay = !s->upload_retry_delay ? 4u
-                               : s->upload_retry_delay < 256u ? 2u * s->upload_retry_delay
-                                                              : 256u;
-        s->upload_retry_at = s->now_ms > UINT64_MAX - s->upload_retry_delay ? UINT64_MAX
-                                        : s->now_ms + s->upload_retry_delay;
-    }
     if (s->files.submit_wait && !s->waiting) {
         s->waiting = 1;
         s->progress = 0;
@@ -226,7 +209,6 @@ static int drain(struct sophia_ss *s)
         s->acked_seen = s->files.acked_sequence;
         s->ack_clock = s->now_ms;
         s->progress = 1;
-        s->upload_progress = 1;
     }
     /* A negotiated content grant requires its bootstrap Limits fetch.
      * Metadata-only descriptor sessions never issue that fetch. */
@@ -306,10 +288,6 @@ int sophia_ss_dispatch(struct sophia_ss *s, short revents, size_t budget, uint64
         s->waiting = 0;
         (void)sophia_sf_client_submit_retry(&s->files);
     }
-    if (s->upload_waiting && (s->upload_progress || now_ms >= s->upload_retry_at)) {
-        s->upload_waiting = 0;
-        (void)sophia_sf_client_upload_retry(&s->files);
-    }
     return ss_pump(s, budget);
 }
 int sophia_ss_poll_fd(const struct sophia_ss *s) { return s && s->files.wire ? s->files.wire->fd : -1; }
@@ -322,18 +300,12 @@ short sophia_ss_poll_events(const struct sophia_ss *s)
 int sophia_ss_timeout(const struct sophia_ss *s, uint64_t now_ms)
 {
     uint64_t at = UINT64_MAX;
-    if (!s || ss_final(s) || (!s->waiting && !s->upload_waiting))
+    if (!s || ss_final(s) || !s->waiting)
         return -1;
     if (s->waiting) {
         if (s->progress)
             return 0;
         at = s->retry_at;
-    }
-    if (s->upload_waiting) {
-        if (s->upload_progress)
-            return 0;
-        if (s->upload_retry_at < at)
-            at = s->upload_retry_at;
     }
     if (now_ms >= at)
         return 0;

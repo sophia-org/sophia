@@ -1,5 +1,16 @@
 # Experimental lock SDK parity
 
+## ISB-only update, 2026-10-18
+
+The upload/window rows below are historical and superseded by
+[the ISB-only API map](API-PARITY.md#isb-only-resource-apis-2026-10-18).
+Both clients now submit CPU pixels through the revision-2 sealed-image adapter;
+byte Begin/End are refused locally. The independent C and Rust peers each pass
+sealed-image presentation and unlock against the production export. Protected
+revocation now tests a locally staged ImageBegin, not a partially written byte
+upload. The draft-contract and physical-locking limits remain unchanged.
+
+
 ## Current operation map
 
 Revision 9, 2026-10-17. Audited against C `60d4dcc` and Rust `528b855`,

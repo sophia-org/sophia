@@ -10,12 +10,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use sophia_protocol::{
-    ContentAllocationId, ContentLogicalRect, ContentMargins, ContentOutputFactsEntry,
-    ContentOutputId, ContentPixelRect, TransactionId,
+    ContentAllocationId, ContentGrant, ContentLimits, ContentLogicalRect, ContentMargins,
+    ContentOutputFactsEntry, ContentOutputId, ContentPixelRect, TransactionId,
 };
 use sophia_runtime::{
-    ContentAllocationSnapshot, ContentEpochRegistry, ProtectionBackendKind,
-    ProtectionDomainEvidence, ProtectionDomainRole, ShellComponentTransport,
+    ContentAllocationSnapshot, ContentEpochRegistry, ShellComponentTransport,
     ShellContentAdmissionPolicy, ShellTransportError,
 };
 
@@ -23,6 +22,11 @@ use sophia_runtime::{
 mod bounded_peer;
 #[path = "support/c_file_peer.rs"]
 mod c_file_peer;
+#[allow(dead_code)]
+#[path = "../../sophia-runtime/tests/support/shell_required_image.rs"]
+mod image;
+#[path = "../../sophia-runtime/tests/support/shell_file_peer.rs"]
+mod shell_file_peer;
 
 const HOST: &str = env!("CARGO_BIN_EXE_shell_content_conformance_host");
 const HOST_RECORD: &str = "sophia_shell_content_transport schema=1 status=complete protected=true wire=9p2000.L allocation=granted bytes=8 accepted=true candidate=accepted renderer_outcome=9 lease_retained=true released=true native_presentation=false transaction=1";
@@ -147,8 +151,10 @@ fn the_host_refuses_the_retired_socket_selection_and_variable() {
 
 /// The C peer stages records it encoded by hand from the KDL offsets. Each
 /// malformed one must be refused at the export boundary with the contract's
-/// errno and reach no owner; the same attach then still negotiates, allocates,
-/// uploads, ends and retires with valid hand-encoded records.
+/// errno and reach no owner. Byte uploads are retired at r9: the upload
+/// directory is absent and ResourceBegin/ResourceEnd are refused before
+/// custody. The same authenticated attach then still allocates with a valid
+/// hand-encoded record.
 #[test]
 fn malformed_file_records_are_refused_before_any_owner() {
     let scratch = Scratch::new();
@@ -166,16 +172,14 @@ fn malformed_file_records_are_refused_before_any_owner() {
             .arg(owner.socket_path()),
         Duration::from_secs(30),
     );
-    // Admission is by peer identity; this test's subject is the record
-    // boundary, and the protected launch is covered by the host test above.
-    owner
-        .authorize_protected_peer(&ProtectionDomainEvidence {
-            backend: ProtectionBackendKind::Bubblewrap,
-            supervisor_pid: std::process::id(),
-            peer_pid: child.id(),
-            roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
-        })
-        .unwrap();
+    // Admission is by peer identity with supplied afid verdicts; this test's
+    // subject is the record boundary, and the protected launch is covered by
+    // the host test above.
+    let limits = ContentLimits::prototype(ContentGrant {
+        connection_epoch: 1,
+        content_grant_epoch: 1,
+    });
+    let mut image_owner = image::configure_for_peer(&mut owner, &limits, child.id());
     owner
         .begin_file_negotiation(
             &epochs,
@@ -226,6 +230,7 @@ fn malformed_file_records_are_refused_before_any_owner() {
             );
             let now = started.elapsed().as_millis() as u64;
             for result in [
+                transport.service_isb_images(&mut image_owner, now, Instant::now()),
                 transport.service_content_resources(now).map(|_| ()),
                 transport
                     .service_content_allocation_requests(&[], now)
@@ -303,8 +308,9 @@ fn malformed_file_records_are_refused_before_any_owner() {
         "allocation_reserved_nonzero refused errno=22",
         "allocation_operation_out_of_range refused errno=22",
         "replayed_submission_id refused errno=114",
-        "upload_gap refused errno=22",
-        "upload_past_declared_length refused errno=22",
+        "upload_directory_absent refused errno=2",
+        "resource_begin_retired refused errno=22",
+        "resource_end_retired refused errno=22",
     ] {
         assert!(
             stdout
@@ -314,7 +320,7 @@ fn malformed_file_records_are_refused_before_any_owner() {
         );
     }
     assert!(stdout.contains(
-        "c_content_files_controls schema=1 status=complete wire=9p2000.L refused=15 accepted_after_refusal=true"
+        "c_content_files_controls schema=1 status=complete wire=9p2000.L refused=16 accepted_after_refusal=true"
     ));
     // Only the one valid, independently encoded request reached the owner,
     // exactly as encoded; no refused record produced any owner input.
@@ -333,7 +339,7 @@ fn malformed_file_records_are_refused_before_any_owner() {
         (1, 1, 1, 64, 32)
     );
     assert_eq!(demands, 0);
-    // The accepted resource was retired and released: nothing remains.
+    // No refused control created a resource: nothing remains.
     let transport = owner.connection(&mut epochs);
     assert_eq!(
         transport.content_usage().unwrap_or_default(),

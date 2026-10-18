@@ -1005,67 +1005,7 @@ static void cancellation(void) {
   assert(fd_count() == base);
 }
 
-/* A refused image cancel leaves a byte upload's pending End alone, whether
- * its resource differs in ID or only in generation. */
-static void cancel_beside_upload(void) {
-  struct image_rig t;
-  struct sophia_lf_negotiate o = image_offer(1, 2, CAPS | SOPHIA_LF_CAP_IMAGE_SEALED);
-  struct sophia_lf_resource_begin begin;
-  struct sophia_lf_record status;
-  struct sophia_ip *p;
-  uint8_t pixels[32] = {0};
-  uint64_t offers[2];
-  unsigned i;
-  int r;
-  image_start(&t, 2, &o);
-  p = image_ready(&t);
-  begin_generation(&t, 21, 1, &offers[0]);
-  begin_generation(&t, 22, 2, &offers[1]);
-  memset(&begin, 0, sizeof(begin));
-  begin.transaction = 30;
-  begin.resource.id = 21;
-  begin.resource.generation = 2;
-  begin.width_px = 4;
-  begin.height_px = 2;
-  begin.slot = 1;
-  for (i = 0; i < 16 && (r = sophia_lc_upload_begin(&t.r->client, &begin)) ==
-                            SOPHIA_9P_BUSY;
-       i++)
-    steps(&t, 1);
-  assert(!r);
-  for (i = 0; i < 16 && !sophia_lc_upload_ready(&t.r->client); i++)
-    steps(&t, 1);
-  assert(sophia_lc_upload_ready(&t.r->client));
-  assert(!sophia_lc_upload_chunk(&t.r->client, pixels, sizeof(pixels)));
-  for (i = 0; i < 16 && !sophia_lc_upload_ready(&t.r->client); i++)
-    steps(&t, 1);
-  t.r->peer.hold_end = 1;
-  assert(!sophia_lc_upload_end(&t.r->client));
-  assert(submission_end(&t) == SOPHIA_LC_SUBMISSION_CUSTODIED);
-  assert(sophia_lc_upload_pending(&t.r->client) && !t.r->client.upload_closing);
-  for (i = 0; i < 2; i++) {
-    t.r->peer.submit_error = 22;
-    assert(cancel_when_idle(&t, offers[i]) == SOPHIA_IPR_OK);
-    assert(submission_end(&t) == SOPHIA_LC_SUBMISSION_REFUSED);
-    assert(sophia_lc_upload_pending(&t.r->client) &&
-           !t.r->client.upload_closing);
-  }
-  /* Both offers stay marked; Cancelled before admission refuses each. */
-  peer_status(&t.r->peer, offers[0], 21, SOPHIA_LF_CANCELLED, 0);
-  memset(&status, 0, sizeof(status));
-  status.value.resource_status.transaction = offers[1];
-  status.value.resource_status.resource.id = 22;
-  status.value.resource_status.resource.generation = 2;
-  status.value.resource_status.status = SOPHIA_LF_CANCELLED;
-  event(&t.r->peer, SOPHIA_LF_RESOURCE_STATUS, &status);
-  steps(&t, 4);
-  for (i = 0; i < 2; i++)
-    assert(offer_info(p, offers[i]).state == SOPHIA_IPO_REFUSED &&
-           offer_info(p, offers[i]).cancel_requested);
-  image_close(&t);
-}
 
-/* The connection ends with a cancel possibly sent: custody is unknown. */
 static void cancel_journal_loss(void) {
   struct image_rig t;
   struct sophia_lf_negotiate o = image_offer(1, 2, CAPS | SOPHIA_LF_CAP_IMAGE_SEALED);
@@ -1111,7 +1051,6 @@ int main(void) {
   channel_closed_and_contradictions();
   journal_loss();
   cancellation();
-  cancel_beside_upload();
   cancel_journal_loss();
   puts("lock_image_test ok");
   return 0;

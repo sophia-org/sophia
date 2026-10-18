@@ -136,7 +136,20 @@ pub(super) fn compile(root: &Path, modules: &[&str], source: &str) -> PathBuf {
             "-I",
         ])
         .arg(&sdk);
-    for dir in modules {
+    // The shell session and lock client carry the sealed-image adapters,
+    // which link the image channel codec and producer.
+    let mut modules = modules.to_vec();
+    if modules
+        .iter()
+        .any(|dir| matches!(*dir, "shell_session" | "lock_files"))
+    {
+        for dir in ["image_channel", "image_producer"] {
+            if !modules.contains(&dir) {
+                modules.push(dir);
+            }
+        }
+    }
+    for dir in &modules {
         let mut files = fs::read_dir(sdk.join(dir))
             .unwrap()
             .map(|entry| entry.unwrap().path())

@@ -393,3 +393,120 @@ fn rejected_and_cancelled_offers_never_become_placeable() {
         );
     }
 }
+
+#[test]
+fn owning_session_adopts_isb_without_exposing_its_connection() {
+    let (mut connection, mut peer, dir, listener) = connect_role_image(
+        "native-owning-session",
+        4096,
+        Profile {
+            role: "launcher",
+            revision: 9,
+            capabilities: 0x9a0 | SEALED,
+            limits_published: true,
+        },
+        false,
+    );
+    let owner = drive_to_ready(&mut connection, &mut peer, &listener);
+    let mut session = NativeLauncherSession::new(connection, 500).unwrap();
+    let mut m = metadata();
+    m.admission_epoch = session.content_limits().grant.content_grant_epoch;
+    let grant = session.content_limits().grant;
+    let admitted = session.image_begin(m, sealed_fd(), Instant::now()).unwrap();
+    let step = |session: &mut NativeLauncherSession, peer: &mut Peer| {
+        session.dispatch(Instant::now(), 1_000, 65_536).unwrap();
+        peer.pump();
+    };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while peer.submits.is_empty() {
+        step(&mut session, &mut peer);
+        assert!(Instant::now() < deadline);
+    }
+    let held = peer.submits.pop_front().unwrap();
+    let record = peer.transactions.last().unwrap();
+    let submission = u64::from_le_bytes(record[16..24].try_into().unwrap());
+    let metadata = ShellImageMetadata::decode(&record[32..]).unwrap();
+    peer.answer_write(held.tag, held.data.len() as u32);
+    let event = peer.submitted_image(submission, ShellFileKind::ImageBegin);
+    peer.push(event);
+    let event = peer.event_image(ShellFileKind::ImageAdmitted, &metadata.encode().unwrap());
+    peer.push(event);
+    while session
+        .image_adapter()
+        .unwrap()
+        .offer(admitted.offer)
+        .unwrap()
+        .state
+        != OfferState::Sent
+    {
+        step(&mut session, &mut peer);
+        assert!(Instant::now() < deadline);
+    }
+    assert_eq!(recv_packet(&owner).1.len(), 1);
+    let resource = ContentResourceId {
+        id: metadata.resource,
+        generation: metadata.resource_generation,
+    };
+    let body = encode_shell_file_resource_status_body(&ShellFileTransactionRecord {
+        transaction: TransactionId::from_raw(admitted.offer),
+        record: ShellContentRecord::ResourceStatus(ContentResourceStatus {
+            grant,
+            resource,
+            status: 2,
+            reason: 0,
+            next_ordinal: 0,
+            admitted_bytes: metadata.declared_bytes,
+        }),
+    })
+    .unwrap();
+    let event = peer.event(ShellFileKind::ResourceStatus, &body);
+    peer.push(event);
+    let body = ShellSourceReleased {
+        offer_id: admitted.offer,
+        resource: resource.id,
+        resource_generation: resource.generation,
+        disposition: ShellSourceDisposition::Retained,
+    }
+    .encode()
+    .unwrap();
+    let event = peer.event_image(ShellFileKind::SourceReleased, &body);
+    peer.push(event);
+    while session
+        .image_adapter()
+        .unwrap()
+        .offer(admitted.offer)
+        .unwrap()
+        .state
+        != OfferState::Settled
+    {
+        step(&mut session, &mut peer);
+        assert!(Instant::now() < deadline);
+    }
+    assert_eq!(session.adopt_image(admitted.offer).unwrap(), resource);
+    assert!(
+        session
+            .image_adapter()
+            .unwrap()
+            .offer(admitted.offer)
+            .is_none()
+    );
+    let retirement = session.retire_resource(resource).unwrap();
+    assert_eq!(session.custody(retirement.first), Ok(Custody::Queued));
+    while session.next_event(1_000).unwrap().is_some() {
+        session.done().unwrap();
+    }
+    assert_eq!(
+        session.lifecycle().resource_state(resource),
+        Some(NativeResourceState::Retiring)
+    );
+    assert!(
+        session
+            .image_readiness()
+            .unwrap()
+            .unwrap()
+            .image_fd
+            .is_some()
+    );
+    session.close();
+    std::fs::remove_dir_all(dir).unwrap();
+}

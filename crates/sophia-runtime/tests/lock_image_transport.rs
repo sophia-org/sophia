@@ -729,7 +729,7 @@ mod files {
     }
 
     fn assert_absent(export: &mut LockFileExport) {
-        assert_eq!(names(export).len(), 8);
+        assert_eq!(names(export).len(), 7);
         for name in NAMES {
             assert_eq!(
                 export.lookup(&Node::Root, WalkName::Child(name.as_bytes())),
@@ -767,7 +767,7 @@ mod files {
         let mut export = export(true);
         negotiate(&mut export, 2, PRESENT | SEALED);
         let names = names(&mut export);
-        assert_eq!(&names[8..], NAMES);
+        assert_eq!(&names[7..], NAMES);
         for (name, node) in NAMES.iter().zip(NODES) {
             assert_eq!(
                 export.lookup(&Node::Root, WalkName::Child(name.as_bytes())),

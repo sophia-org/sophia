@@ -217,29 +217,6 @@ fn a_source_for_an_unadmitted_offer_faults_the_channel() {
     drop(provider);
 }
 
-/// An upload of 4x4 pixels into slot 0; returns its status and reason.
-fn begin_upload(files: &mut Files, transaction: u64) -> (LockResourceState, u16) {
-    let begin = LockResourceBegin {
-        transaction,
-        resource: LockResourceId {
-            id: 60 + transaction,
-            generation: 1,
-        },
-        width_px: 4,
-        height_px: 4,
-        slot: 0,
-    };
-    assert_eq!(
-        files.submit(LockFileKind::ResourceBegin, &begin.encode().unwrap(), 2),
-        None
-    );
-    assert_eq!(files.next().0, LockFileKind::Submitted);
-    let (kind, body) = files.next();
-    assert_eq!(kind, LockFileKind::ResourceStatus);
-    let status = LockResourceStatus::decode(&body).unwrap();
-    (status.status, status.reason)
-}
-
 #[test]
 fn an_ended_epochs_held_image_charges_the_next_epoch_until_released() {
     // Two live places; the ended epoch's image keeps one of them. Its
@@ -282,12 +259,11 @@ fn an_ended_epochs_held_image_charges_the_next_epoch_until_released() {
         std::thread::spawn(move || {
             let mut files = Files::attach(stream).at_epoch(EPOCH + 1);
             let socket = ready(&mut files, &mut provider);
-            // The orphan and this offer fill both places.
+            // The orphan and this accepted image fill both live places.
             files.admitted(2);
-            assert_eq!(
-                begin_upload(&mut files, 40),
-                (LockResourceState::Rejected, 6)
-            );
+            send_source(&socket, EPOCH + 1, 2, &memfd(&PIXELS, true));
+            assert_eq!(files.settled(2), accepted());
+            files.over_capacity(3);
             refused.store(true, Ordering::Release);
             let deadline = Instant::now() + Duration::from_secs(5);
             while !released.load(Ordering::Acquire) {
@@ -295,10 +271,7 @@ fn an_ended_epochs_held_image_charges_the_next_epoch_until_released() {
                 std::thread::sleep(Duration::from_millis(1));
             }
             // Session let go: the place is free again.
-            assert_eq!(
-                begin_upload(&mut files, 41),
-                (LockResourceState::Admitted, 0)
-            );
+            files.admitted(4);
             drop(socket);
             provider
         }),

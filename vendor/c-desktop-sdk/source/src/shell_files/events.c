@@ -59,11 +59,6 @@ int sf_session_event_parse(struct sophia_sf_client *c)
         if (c->submit_replied)
             c->submit_stage = 4;
         break;
-    case SOPHIA_SF_RESOURCE_STATUS:
-        status = sf_session_upload_event(c, r);
-        if (status)
-            return status;
-        break;
     default:
         break;
     }

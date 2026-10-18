@@ -1,5 +1,20 @@
 # Provenance
 
+## Byte-upload API retirement, 2026-10-18
+
+This working series follows the accepted ISB-only amendment and removes the
+shell and lock byte writers, their public helpers, retry state and upload fids.
+Passive protocol values remain for conformance/refusal tests. Native launcher
+resources enter the lifecycle only through settled-image adoption. The Rust
+owning session now exposes its image adapter and adoption operations directly.
+
+Source bases: C `a1c41aa0217037b0578f6606f589ed9846ee9247`, Rust
+`9495fc426951bf168dcf827c67a231a5028e508c`; Sophia export qualification uses the
+ISB-only worktree based on `001265f6d8a4e49eccb959c451e77b28cf0d3205`.
+The API parity update records the changed operations and evidence limits.
+Older upload-window evidence below describes the retired implementation.
+
+
 ## Native ISB adoption, 2026-10-18
 
 The paired native-launcher adoption APIs consume a verified settled offer only

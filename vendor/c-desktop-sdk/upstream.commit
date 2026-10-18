@@ -1,14 +1,14 @@
-tree 5be18f541a81edf6f5630c8f2c72b813edb7ec9b
-parent 111a0f71b2b3f12dcc79ee1ffc78a1672b0370ef
-author Mason Green <mason@greenm01.net> 1792344642 -0400
-committer Mason Green <mason@greenm01.net> 1792344642 -0400
+tree c71b369a25624bddd81c7bd42d77adc8c6a70688
+parent a1c41aa0217037b0578f6606f589ed9846ee9247
+author Mason Green <mason@greenm01.net> 1792351168 -0400
+committer Mason Green <mason@greenm01.net> 1792351168 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatUCQhsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKEjAEAmRgGfVuFq/zSRPrfaHH9
- E5R22HSx80GFkld5QWRna6MA/1jwftdZEZHYLoSMBEfHHjJ+0kaOwT8XYZUCvGxB
- Va0G
- =ZubH
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatUbwBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLecgD/ZGp6YMfmFE1f3uzlk0iX
+ 2L6/OQXT5XP8lUw0Xz5hv1IA/1hgEFUgSjeiivbYgjGTuANJBDPQO1DRH57SnV+M
+ shkM
+ =HFF/
  -----END PGP SIGNATURE-----
 
-Require ISB image adapters and adopt settled native resources
+Retire shell and lock byte writers and use sealed-image peers

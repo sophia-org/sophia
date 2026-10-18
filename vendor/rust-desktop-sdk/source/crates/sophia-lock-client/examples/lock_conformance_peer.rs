@@ -1,9 +1,12 @@
 //! Independent client of Sophia's device-free, supplied-admission lock export.
-use sophia_9p_client::pipeline::{IoInterest, PipelineLimits};
+use sophia_9p_client::pipeline::{IoInterest, Pipeline, PipelineLimits, Reply};
+use sophia_image_producer::{
+    ChannelState, OfferState, ProducerMetadata, ResourceStatusKind, create_isb, finish_isb,
+};
 use sophia_lock_client::{journal::Event, protocol::lock_files::*, *};
 use std::{
     io::Read,
-    os::{fd::BorrowedFd, unix::net::UnixStream},
+    os::fd::BorrowedFd,
     time::{Duration, Instant},
 };
 
@@ -26,7 +29,7 @@ impl Clock {
             flags |= rustix::event::PollFlags::OUT;
         }
         let timeout = rustix::event::Timespec::try_from(Duration::from_millis(
-            wake.unwrap_or(10000).min(10000).saturating_sub(now),
+            wake.unwrap_or(10000).min(10000).saturating_sub(now).min(10),
         ))
         .unwrap();
         let mut fds = [rustix::event::PollFd::new(&fd, flags)];
@@ -51,10 +54,7 @@ impl Clock {
         loop {
             match f(s) {
                 Ok(()) => return,
-                Err(
-                    SessionError::Submission(submission::Error::Busy)
-                    | SessionError::Upload(upload::Error::Busy),
-                ) => self.turn(s),
+                Err(SessionError::Submission(submission::Error::Busy)) => self.turn(s),
                 Err(e) => panic!("admission: {e:?}"),
             }
         }
@@ -62,21 +62,46 @@ impl Clock {
 }
 fn main() {
     let path = std::env::args_os().nth(1).expect("socket path");
-    let mut gate = [0];
-    std::io::stdin().read_exact(&mut gate).unwrap();
-    assert_eq!(gate, [b'G']);
+    if let Some(path) = std::env::var_os("SOPHIA_TEST_READY_FILE") {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while std::fs::read(&path).ok().as_deref() != Some(b"G") {
+            assert!(Instant::now() < deadline, "admission gate deadline");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    } else {
+        let mut gate = [0];
+        std::io::stdin().read_exact(&mut gate).unwrap();
+        assert_eq!(gate, [b'G']);
+    }
     let clock = Clock(Instant::now());
-    let mut c = Connecting::direct(
-        UnixStream::connect(path).unwrap(),
+    let path = std::path::PathBuf::from(path);
+    let mut wire = Pipeline::connect(
+        &path,
         PipelineLimits {
             msize: 8192,
             max_outstanding: 8,
             ..PipelineLimits::default()
         },
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let (tag, afid) = wire.auth(&[], &[]).unwrap();
+    assert!(matches!(wire.wait(tag, deadline).unwrap(), Reply::Auth(_)));
+    let (tag, root) = wire.attach_with_afid(afid, &[], &[]).unwrap();
+    assert!(matches!(
+        wire.wait(tag, deadline).unwrap(),
+        Reply::Attach(_)
+    ));
+    let tag = wire.clunk(afid).unwrap();
+    assert!(matches!(wire.wait(tag, deadline).unwrap(), Reply::Clunk));
+    let mut c = Connecting::attached(
+        wire,
+        root,
         LockNegotiate {
-            minimum_revision: 1,
-            maximum_revision: 1,
-            requested_capabilities: 3,
+            minimum_revision: 2,
+            maximum_revision: 2,
+            requested_capabilities: 3 | LOCK_FILE_CAPABILITY_SEALED_MEMORY,
             chords: vec![LockChordRequest {
                 keysym: 0x62,
                 modifiers: 0b0100,
@@ -85,6 +110,13 @@ fn main() {
         clock.now(),
         10000,
     )
+    .unwrap();
+    c.enable_images(LockImageConfig {
+        endpoint_dir: path.parent().unwrap().to_owned(),
+        startup_deadline_ms: 10000,
+        transfer_timeout_ms: 5000,
+        formats_capacity: 65536,
+    })
     .unwrap();
     while !c.ready() {
         clock.wait(c.fd().unwrap(), c.io_interest().unwrap(), c.wake_deadline());
@@ -100,39 +132,63 @@ fn main() {
     assert_eq!(s.limits().upload_slots, 1);
     assert_eq!(s.welcome().unwrap().granted_chords, 1);
     s.consume().unwrap();
-    let begin = LockResourceBegin {
-        transaction: 1,
-        resource: LockResourceId {
-            id: 1,
-            generation: 1,
-        },
-        width_px: 2,
-        height_px: 2,
-        slot: 0,
+    let resource = LockResourceId {
+        id: 1,
+        generation: 1,
     };
-    clock.admit(&mut s, |s| s.upload_begin(begin));
-    assert!(
-        matches!(clock.event(&mut s),Event::ResourceStatus(v) if v.status==LockResourceState::Admitted)
-    );
-    s.consume().unwrap();
-    for size in [6, 10] {
-        while !s.upload_ready() {
-            clock.turn(&mut s);
-        }
-        s.upload_chunk(vec![0x7f; size]).unwrap();
-        while !s.upload_ready() {
-            clock.turn(&mut s);
-        }
-        assert_eq!(s.take_upload_chunk().unwrap(), vec![0x7f; size]);
-    }
-    clock.admit(&mut s, |s| s.upload_end());
-    assert!(
-        matches!(clock.event(&mut s),Event::ResourceStatus(v) if v.status==LockResourceState::Accepted)
-    );
-    s.consume().unwrap();
-    while s.upload_pending() {
+    while s.image().unwrap().producer().channel() != ChannelState::Ready {
         clock.turn(&mut s);
     }
+    let source = create_isb(2, 2).unwrap();
+    source.write_pixels(0, &[0x7f; 16]).unwrap();
+    finish_isb(&source).unwrap();
+    let metadata = ProducerMetadata {
+        offer_id: 0,
+        resource: resource.id,
+        resource_generation: resource.generation,
+        admission_epoch: 3,
+        output_id: 1,
+        allocation_id: 1,
+        topology_generation: generation,
+        source_kind: 1,
+        source_format: 1,
+        width: 2,
+        height: 2,
+        stride: 8,
+        plane_count: 1,
+        descriptor_count: 1,
+        declared_bytes: 16,
+        modifier: 0,
+    };
+    let mut fd = source.into_fd();
+    let offer = loop {
+        match s.image_begin(metadata, fd, clock.now()) {
+            Ok(v) => break v.offer,
+            Err(e) if e.error == ImageError::Busy => {
+                fd = e.source.unwrap();
+                clock.turn(&mut s);
+            }
+            Err(e) => panic!("image begin: {e:?}"),
+        }
+    };
+    let mut accepted = false;
+    loop {
+        if let Some((_, event)) = s.event() {
+            assert!(
+                matches!(event, Event::ResourceStatus(v) if v.status == LockResourceState::Accepted)
+            );
+            accepted = true;
+            s.consume().unwrap();
+        }
+        let info = s.image().unwrap().producer().offer(offer).unwrap();
+        if accepted && info.state == OfferState::Settled {
+            assert_eq!(info.status, Some(ResourceStatusKind::Accepted));
+            assert_eq!(info.disposition, 1);
+            break;
+        }
+        clock.turn(&mut s);
+    }
+    s.image_forget(offer).unwrap();
     let demand = Candidate::FrameDemand(LockFrameDemand {
         transaction: 3,
         lock_epoch: 3,
@@ -154,7 +210,7 @@ fn main() {
         allocation_generation: 1,
         candidate_generation: 1,
         pacing_permit: permit.pacing_permit,
-        resource: begin.resource,
+        resource,
     });
     clock.admit(&mut s, |s| s.submit(&candidate).map(|_| ()));
     assert!(

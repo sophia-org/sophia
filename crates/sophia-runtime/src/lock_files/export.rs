@@ -49,8 +49,6 @@ pub enum LockFileNode {
     Transaction,
     Submit,
     Ack,
-    Uploads,
-    Upload(u8),
     ImageChannel,
     ImageLimits,
     ImageFormats,
@@ -69,9 +67,7 @@ impl Node {
             Self::Transaction => 5,
             Self::Submit => 6,
             Self::Ack => 7,
-            Self::Uploads => 8,
-            Self::Upload(slot) => 9 + u64::from(slot),
-            // Upload slots stop at 4, so these follow upload/3.
+            // Retired byte-upload qids remain reserved.
             Self::ImageChannel => 13,
             Self::ImageLimits => 14,
             Self::ImageFormats => 15,
@@ -88,7 +84,7 @@ const IMAGE_ENTRIES: [(&[u8], Node); 3] = [
     (b"image-formats", Node::ImageFormats),
 ];
 
-const ENTRIES: [(&[u8], Node); 8] = [
+const ENTRIES: [(&[u8], Node); 7] = [
     (b"api", Node::Api),
     (b"limits", Node::Limits),
     (b"lock", Node::Lock),
@@ -96,7 +92,6 @@ const ENTRIES: [(&[u8], Node); 8] = [
     (b"transaction", Node::Transaction),
     (b"submit", Node::Submit),
     (b"ack", Node::Ack),
-    (b"upload", Node::Uploads),
 ];
 
 /// One published object. A publication never edits it; an open fid
@@ -112,7 +107,6 @@ enum Handle {
     Plain,
     Object(Arc<LockFile>),
     Transaction(u64),
-    Upload(u64),
 }
 
 pub struct LockFileExport {
@@ -472,19 +466,11 @@ impl LockFileExport {
         let ack = decode_lock_file_ack(data).map_err(|_| Errno::EINVAL)?;
         self.custody.acknowledge(ack)
     }
-
-    fn upload_slots(&self) -> u8 {
-        self.custody.limits().upload_slots as u8
-    }
 }
 
 impl Export for LockFileExport {
     type Node = Node;
     type Handle = LockFileHandle;
-
-    /// An upload's data goes straight from the provider's stream into the
-    /// image's own storage, which nothing else sees before its cursor moves.
-    const WRITES_IN_PLACE: bool = true;
 
     fn attach(&mut self, context: &AttachContext<'_>) -> Result<Attachment<Node>, Errno> {
         // One attach per admitted epoch; a replacement needs a fresh stream.
@@ -504,20 +490,13 @@ impl Export for LockFileExport {
 
     fn lookup(&mut self, directory: &Node, name: WalkName<'_>) -> Result<Node, Errno> {
         match (directory, name) {
-            (Node::Root, WalkName::Parent) | (Node::Uploads, WalkName::Parent) => Ok(Node::Root),
+            (Node::Root, WalkName::Parent) => Ok(Node::Root),
             (Node::Root, WalkName::Child(name)) => ENTRIES
                 .iter()
                 .chain(&IMAGE_ENTRIES)
                 .find(|(entry, _)| *entry == name)
                 .map(|(_, node)| *node)
                 .filter(|node| node.index() < 13 || self.image_file(*node).is_some())
-                .ok_or(Errno::ENOENT),
-            (Node::Uploads, WalkName::Child(name)) => std::str::from_utf8(name)
-                .ok()
-                .filter(|name| name.len() == 1)
-                .and_then(|name| name.parse::<u8>().ok())
-                .filter(|slot| *slot < self.upload_slots())
-                .map(Node::Upload)
                 .ok_or(Errno::ENOENT),
             _ => Err(Errno::ENOTDIR),
         }
@@ -555,7 +534,7 @@ impl Export for LockFileExport {
             }
             _ => 0,
         };
-        let directory = matches!(node, Node::Root | Node::Uploads);
+        let directory = matches!(node, Node::Root);
         Entry {
             kind: if directory {
                 NodeKind::Directory
@@ -566,9 +545,9 @@ impl Export for LockFileExport {
             qid_version: 0,
             size,
             permissions: match node {
-                Node::Root | Node::Uploads => 0o500,
+                Node::Root => 0o500,
                 Node::Transaction => 0o600,
-                Node::Submit | Node::Ack | Node::Upload(_) => 0o200,
+                Node::Submit | Node::Ack => 0o200,
                 _ => 0o400,
             },
         }
@@ -579,7 +558,7 @@ impl Export for LockFileExport {
         let access = flags.access().ok_or(Errno::EINVAL)?;
         let allowed = match node {
             Node::Transaction => access == OpenAccess::ReadWrite,
-            Node::Submit | Node::Ack | Node::Upload(_) => access == OpenAccess::Write,
+            Node::Submit | Node::Ack => access == OpenAccess::Write,
             _ => access == OpenAccess::Read,
         };
         if !allowed || flags.truncate() || flags.append() {
@@ -605,11 +584,6 @@ impl Export for LockFileExport {
                     },
                 ));
                 Handle::Transaction(id)
-            }
-            // A writer is bound to the slot's current upload, and fenced
-            // from any later one.
-            Node::Upload(slot) => {
-                Handle::Upload(self.custody.upload_binding(*slot).ok_or(Errno::ESTALE)?)
             }
             _ => Handle::Plain,
         };
@@ -660,9 +634,6 @@ impl Export for LockFileExport {
                 .filter(|s| s.handle == *id)
                 .ok_or(Errno::ESTALE)?
                 .write(offset, data, Instant::now()),
-            (Node::Upload(slot), Handle::Upload(binding)) => {
-                self.custody.write_upload(*slot, *binding, offset, data)
-            }
             (Node::Submit, _) if offset == 0 => {
                 self.submit(data)?;
                 Ok(data.len() as u32)
@@ -673,38 +644,6 @@ impl Export for LockFileExport {
             }
             _ => Err(Errno::EINVAL),
         }
-    }
-
-    fn write_destination(
-        &mut self,
-        node: &Node,
-        handle: &mut LockFileHandle,
-        offset: u64,
-        len: u32,
-        received: u32,
-    ) -> Result<Option<&mut [u8]>, Errno> {
-        // Only uploads are received in place; other writes are buffered.
-        let (Node::Upload(slot), Handle::Upload(binding)) = (node, &handle.0) else {
-            return Ok(None);
-        };
-        self.live()?;
-        self.custody
-            .upload_destination(*slot, *binding, offset, len, received)
-            .map(Some)
-    }
-
-    fn write_received(
-        &mut self,
-        node: &Node,
-        handle: &mut LockFileHandle,
-        offset: u64,
-        len: u32,
-    ) -> Result<u32, Errno> {
-        let (Node::Upload(slot), Handle::Upload(binding)) = (node, &handle.0) else {
-            return Err(Errno::EIO);
-        };
-        self.live()?;
-        self.custody.upload_received(*slot, *binding, offset, len)
     }
 
     fn readdir(
@@ -720,9 +659,6 @@ impl Export for LockFileExport {
                 .chain(&IMAGE_ENTRIES)
                 .filter(|(_, node)| node.index() < 13 || self.image_file(*node).is_some())
                 .map(|(name, node)| (name.to_vec(), *node))
-                .collect(),
-            Node::Uploads => (0..self.upload_slots())
-                .map(|slot| (slot.to_string().into_bytes(), Node::Upload(slot)))
                 .collect(),
             _ => return Err(Errno::ENOTDIR),
         };

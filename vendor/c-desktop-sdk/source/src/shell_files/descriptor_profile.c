@@ -19,6 +19,8 @@ int sf_descriptor_offer(const struct sophia_sf_negotiate *offer)
 }
 int sf_session_candidate_allowed(const struct sophia_sf_client *c, uint16_t kind)
 {
+    if (kind == SOPHIA_SF_RESOURCE_BEGIN || kind == SOPHIA_SF_RESOURCE_END)
+        return 0;
     if (kind <= SOPHIA_SF_NEGOTIATE || kind > SOPHIA_SF_DESCRIPTOR_LAUNCHER_ACTIVATION_ACK)
         return 0;
     if (c->profile == SOPHIA_SF_DESCRIPTOR)

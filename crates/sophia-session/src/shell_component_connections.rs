@@ -14,7 +14,7 @@ use sophia_runtime::{
 };
 
 const MIB: u64 = 1024 * 1024;
-mod images;
+pub(crate) mod images;
 pub(crate) use images::content_now_msec;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

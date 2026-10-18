@@ -1,14 +1,14 @@
-tree 2633fc66dd241052299410d5082c00bca4609ec7
-parent e33f10c3799072a4f2ee9bfeb34bf4dc702a8068
-author Mason Green <mason@greenm01.net> 1792344641 -0400
-committer Mason Green <mason@greenm01.net> 1792344641 -0400
+tree 320223078b803cd7ad2c0e11b7fd1e71c5774179
+parent 9495fc426951bf168dcf827c67a231a5028e508c
+author Mason Green <mason@greenm01.net> 1792351114 -0400
+committer Mason Green <mason@greenm01.net> 1792351114 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatUCQRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJoVgEAoBreGBVdAcGH0xM+lZko
- tNZkJFDzcDyA/mliQzZmffgA/iSkYTruWWGxk8Q8iQIJhseVI6MeAMPNSx7/Srgy
- SfIB
- =d2Ui
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatUbihsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK6SwEA+JZte6hpaM9R9mmRgnRY
+ wjymUvPHJmG4S/Ggl6/TEw0A/1n4feqIcZDf4KY1BjlZ54+4mYEFQ5xI8jYxRive
+ rIML
+ =zL6f
  -----END PGP SIGNATURE-----
 
-Require ISB image adapters and adopt settled native resources
+Remove shell and lock byte uploads in favor of ISB

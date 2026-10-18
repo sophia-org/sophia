@@ -98,7 +98,6 @@ pub struct NativeLauncherLifecycle {
     lost_acks: u8,
     allocation: resources::Allocation,
     resources: [Option<resources::Resource>; 16],
-    upload: Option<resources::Upload>,
     pacing: pacing::Pacing,
 }
 
@@ -129,7 +128,6 @@ impl NativeLauncherLifecycle {
             lost_acks: 0,
             allocation: resources::Allocation::default(),
             resources: [None; 16],
-            upload: None,
             pacing: pacing::Pacing::default(),
         })
     }
@@ -190,7 +188,6 @@ impl NativeLauncherLifecycle {
         self.action = None;
         self.allocation = resources::Allocation::default();
         self.resources.fill(None);
-        self.upload = None;
         self.pacing = pacing::Pacing::default();
     }
     fn grant(&self, grant: ContentGrant) -> Result<(), ShellClientError> {

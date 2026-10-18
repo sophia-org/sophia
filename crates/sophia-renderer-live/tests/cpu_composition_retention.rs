@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
+use sophia_runtime::{ContentResourceStore, IsbPixelValidation, ValidatedIsbPixels};
+#[path = "../../sophia-runtime/tests/support/content_isb.rs"]
+mod isb;
 use sophia_engine::{
     CompositorContentImage, CompositorDisplayCommand, CompositorDisplayList, CompositorNodeId,
     HeadlessOutput,
 };
 use sophia_protocol::{
     BufferSource, CommittedSurfaceState, ContentGrant, ContentLimits, ContentResourceBegin,
-    ContentResourceChunk, ContentResourceEnd, ContentResourceId, ContentResourceRetire, OutputId,
-    Rect, Region, ShellContentRecord, Size, SurfaceId, TransactionId,
+    ContentResourceId, ContentResourceRetire, OutputId, Rect, Region, ShellContentRecord, Size,
+    SurfaceId, TransactionId,
 };
 use sophia_renderer_live::{
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferSource, LiveCpuBufferUpdate,
@@ -151,48 +154,23 @@ fn upload_content_resource(
 ) -> sophia_runtime::ContentResourceLease {
     let resource = ContentResourceId { id, generation: 1 };
     let pixels = vec![byte, byte, byte, 0xff];
-    store
-        .begin(
-            TransactionId::from_raw(transaction),
-            ContentResourceBegin {
-                grant,
-                resource,
-                width_px: 1,
-                height_px: 1,
-                rendered_scale_numerator: 1,
-                rendered_scale_denominator: 1,
-                pixel_format: 1,
-                chunk_count: 1,
-                total_bytes: 4,
-            },
-            0,
-        )
-        .unwrap();
-    store
-        .chunk(
-            TransactionId::from_raw(transaction + 1),
-            &ContentResourceChunk {
-                grant,
-                resource,
-                ordinal: 0,
-                offset: 0,
-                bytes: pixels,
-            },
-            0,
-        )
-        .unwrap();
-    store
-        .end(
-            TransactionId::from_raw(transaction + 2),
-            &ContentResourceEnd {
-                grant,
-                resource,
-                total_bytes: 4,
-                chunk_count: 1,
-            },
-            0,
-        )
-        .unwrap();
+    isb::accept(
+        store,
+        TransactionId::from_raw(transaction),
+        ContentResourceBegin {
+            grant,
+            resource,
+            width_px: 1,
+            height_px: 1,
+            rendered_scale_numerator: 1,
+            rendered_scale_denominator: 1,
+            pixel_format: 1,
+            chunk_count: 1,
+            total_bytes: 4,
+        },
+        &pixels,
+        0,
+    );
     store.lease(grant, resource).unwrap()
 }
 
@@ -297,6 +275,7 @@ fn busy_composed_pixels_do_not_pin_a_replaced_shell_resource() {
         Some(ShellContentRecord::ResourceReleased(released))
             if released.resource == old_resource
     ));
+    store.confirm_isb_release(old_resource).unwrap();
     assert_eq!(
         scanout_pixels.len(),
         16,

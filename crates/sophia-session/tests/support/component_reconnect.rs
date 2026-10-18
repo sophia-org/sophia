@@ -1,7 +1,8 @@
 //! t100 reconnect join. Real private 9P endpoints, registry, Session service order,
-//! backend intake/queue and retained byte consumers. Protection evidence and
-//! the concrete native submission boundary are supplied; copy/flip completion
-//! is simulated by the backend's existing Target. No device or protected child.
+//! backend intake/queue and retained byte consumers. Protection evidence, afid
+//! verdicts and the concrete native submission boundary are supplied; copy/flip
+//! completion is simulated by the backend's existing Target. No device or
+//! protected child. Pixels are sealed images admitted by the owner's worker.
 use super::*;
 use crate::live_session::{
     PersistentXtermSessionConfig, SessionLaunchQueue, component_catalog, component_service,
@@ -14,6 +15,7 @@ use sophia_engine::{CompositorContentImage, CompositorNodeId, HeadlessOutput};
 use sophia_protocol::*;
 use sophia_runtime::{
     ContentAllocationSnapshot, ContentCandidateContext, ContentRenderBundle, ContentResourceLease,
+    NativeLauncherCandidateContext,
 };
 use sophia_shell_client::ShellConnection;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -21,6 +23,7 @@ use std::time::{Duration, Instant};
 
 #[path = "component_reconnect/budget.rs"]
 mod budget;
+use crate::test_sdk_image as sdk_image;
 #[path = "component_reconnect/wire.rs"]
 mod wire;
 use super::super::content::reconnect_fixture::prepare;
@@ -146,17 +149,17 @@ impl Harness {
         ContentResourceLease,
     ) {
         let (key, mut peer) = wire::connect(&mut self.owner, slot);
-        let lease = self
-            .owner
-            .with_service(key, |_, transport| wire::upload(transport, &mut peer))
-            .unwrap();
-        if slot == 0 {
+        // A sealed image names a live allocation, so each role allocates first.
+        if slot == 1 {
+            wire::allocate_native(&mut wire::Component(&mut self.owner, key), &mut peer);
+        } else {
             self.owner
                 .with_service(key, |_, transport| {
                     wire::allocate_extent(transport, &mut peer, extent)
                 })
                 .unwrap();
         }
+        let lease = wire::upload(&mut wire::Component(&mut self.owner, key), &mut peer);
         (key, peer, lease)
     }
 
@@ -581,19 +584,14 @@ fn replacement_with_retained_predecessor(has_dock: bool) {
         None
     );
     assert_eq!(h.owner.work_area_bands(), bands);
-    let neighbor_next = h
-        .owner
-        .with_service(neighbor, |_, transport| {
-            wire::upload_id(
-                transport,
-                &mut neighbor_peer,
-                ContentResourceId {
-                    id: 2,
-                    generation: 1,
-                },
-            )
-        })
-        .unwrap();
+    let neighbor_next = wire::upload_id(
+        &mut wire::Component(&mut h.owner, neighbor),
+        &mut neighbor_peer,
+        ContentResourceId {
+            id: 2,
+            generation: 1,
+        },
+    );
     assert_eq!(neighbor_next.bytes(), &[1, 2, 3, 255]);
     assert!(h.backend.retry().unwrap());
     assert!(h.backend.claims().is_empty());
@@ -682,15 +680,28 @@ fn legacy_disconnect_keeps_its_distinct_revocation_join_and_deferred_claim() {
     .unwrap();
     // Independent fixtures use disjoint grant identities in this shared backend.
     legacy.next_connection_epoch = 9;
+    // Supplied afid verdicts; the legacy owner's own sealed-image channel and
+    // worker, configured as its authenticated launch does.
     legacy
         .transport
-        .authorize_protected_peer(&ProtectionDomainEvidence {
-            backend: ProtectionBackendKind::Bubblewrap,
-            supervisor_pid: std::process::id(),
-            peer_pid: std::process::id(),
-            roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
-        })
+        .authorize_authenticated_peer(
+            &ProtectionDomainEvidence {
+                backend: ProtectionBackendKind::Bubblewrap,
+                supervisor_pid: std::process::id(),
+                peer_pid: std::process::id(),
+                roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
+            },
+            Box::new(crate::test_image_authority::Factory),
+        )
         .unwrap();
+    crate::shell_component_connections::images::configure_legacy(
+        &mut legacy.transport,
+        &ContentLimits::prototype(ContentGrant {
+            connection_epoch: 9,
+            content_grant_epoch: 9,
+        }),
+    )
+    .unwrap();
     let socket = legacy.transport.socket_path().to_owned();
     let worker = std::thread::spawn(move || wire::client(socket, 0));
     let welcome = legacy
@@ -715,8 +726,8 @@ fn legacy_disconnect_keeps_its_distinct_revocation_join_and_deferred_claim() {
     let (mut peer, limits) = worker.join().unwrap();
     assert_eq!(peer.welcome(), welcome);
     assert_eq!(Some(&limits), legacy.transport.content_limits());
-    let retained = wire::upload(&mut legacy.transport.connection(), &mut peer);
     wire::allocate(&mut legacy.transport.connection(), &mut peer);
+    let retained = wire::upload(&mut legacy, &mut peer);
     for generation in [1, 2] {
         let bundle = wire::candidate(&mut legacy.transport.connection(), &mut peer, generation);
         prepare(

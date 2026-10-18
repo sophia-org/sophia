@@ -1,6 +1,8 @@
 #define _POSIX_C_SOURCE 200809L
 #include "../sophia_desktop_connection.h"
 #include "../sophia_shell_native_session.h"
+#include "../sophia_shell_image.h"
+#include <fcntl.h>
 #include <assert.h>
 #include <poll.h>
 #include <stdio.h>
@@ -12,7 +14,7 @@
 #include <time.h>
 #include <unistd.h>
 
-/* Live r7 native launcher client: the real sophia_ns + sophia_ss + 9P stack
+/* Live r9 native launcher client: the real sophia_ns + sophia_ss + 9P stack
  * against Sophia's production file export and content owners. The control
  * channel only schedules scripted Session steps (publication, presentation,
  * input issue, close); it supplies no wire records. Only the public ns and
@@ -29,7 +31,10 @@ static struct sophia_ss ss;
 static struct sophia_ns ns;
 static uint64_t deadline;
 static unsigned edits;
-static int ns_ready, ss_open;
+static int ns_ready, ss_open, image_enabled, image_dir;
+static struct sophia_ss_image image;
+static unsigned char formats[65536];
+static const char *export_path;
 static void step(void);
 
 static uint64_t now_ms(void)
@@ -83,17 +88,22 @@ static void phase(const char *name)
 /* One bounded service pass of the session, then the ns and its acks. */
 static void step(void)
 {
-    struct pollfd p;
+    struct pollfd p[2];
     int timeout, r;
     assert(now_ms() < deadline);
-    p.fd = sophia_ss_poll_fd(&ss);
-    p.events = sophia_ss_poll_events(&ss);
-    p.revents = 0;
+    p[0].fd = sophia_ss_poll_fd(&ss);
+    p[0].events = sophia_ss_poll_events(&ss);
+    p[0].revents = 0;
+    p[1].fd = image_enabled ? sophia_ss_image_poll_fd(&image) : -1;
+    p[1].events = image_enabled ? sophia_ss_image_poll_events(&image) : 0;
+    p[1].revents = 0;
     timeout = sophia_ss_timeout(&ss, now_ms());
     if (timeout < 0 || timeout > 2)
         timeout = 2;
-    assert(poll(&p, 1, timeout) >= 0);
-    r = sophia_ss_dispatch(&ss, p.revents, 65536, now_ms());
+    assert(poll(p, 2, timeout) >= 0);
+    if (image_enabled)
+        assert(sophia_ss_image_dispatch(&image, p[1].revents, now_ms()) >= 0);
+    r = sophia_ss_dispatch(&ss, p[0].revents, 65536, now_ms());
     if (r)
         fprintf(stderr, "session ended: result=%d state=%d\n", r, sophia_ss_state(&ss));
     assert(!r);
@@ -226,7 +236,15 @@ static void launcher(void)
     const struct sophia_ns_config config = {1000, 5};
     const struct sophia_sf_record *object;
     struct sophia_ns_allocation_params p = {1, 64, 32, 0, 0, 0, 0};
-    struct sophia_sf_resource_begin begin;
+    struct sophia_ic_metadata metadata;
+    struct sophia_ip_offer_info info;
+    struct sophia_ss_image_config image_config;
+    const struct sophia_sf_limits *limits;
+    char directory[4096], *slash;
+    uint64_t offer;
+    int source;
+    void *mapped;
+    size_t mapped_bytes;
     struct sophia_ss_reservation hold;
     struct sophia_ns_obligations o;
     struct sophia_ns_event e;
@@ -234,6 +252,28 @@ static void launcher(void)
     uint64_t ticket, first;
     while (!sophia_ss_limits(&ss))
         step();
+    limits = sophia_ss_limits(&ss);
+    assert(strlen(export_path) < sizeof(directory));
+    strcpy(directory, export_path);
+    slash = strrchr(directory, '/');
+    assert(slash);
+    slash[slash == directory ? 1 : 0] = 0;
+    image_dir = open(directory, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    assert(image_dir >= 0);
+    memset(&image_config, 0, sizeof(image_config));
+    image_config.endpoint_dir = image_dir;
+    image_config.formats = formats;
+    image_config.formats_capacity = sizeof(formats);
+    image_config.producer.bounds.max_resource_bytes = limits->max_resource_bytes;
+    image_config.producer.bounds.max_width = limits->max_width_px;
+    image_config.producer.bounds.max_height = limits->max_height_px;
+    image_config.producer.bounds.max_outputs = limits->max_outputs;
+    image_config.producer.bounds.transfer_slots = limits->max_open_transfers;
+    image_config.producer.transfer_timeout_ms = limits->transfer_timeout_ms;
+    image_config.producer.startup_deadline_ms = deadline;
+    assert(!sophia_ss_image_init(&image, &image_config));
+    assert(!sophia_ss_image_attach(&ss, &image));
+    image_enabled = 1;
     RETRY(sophia_ns_init(&ns, &ss, &config));
     ns_ready = 1;
     phase("publish");
@@ -255,31 +295,39 @@ static void launcher(void)
            e.record->value.allocation_result.allocation_request_id == 1);
     done();
     custody(ticket);
-    /* Upload: Begin, the slot write, End; placeable only once Accepted. */
-    memset(&begin, 0, sizeof(begin));
-    begin.resource_id = 5;
-    begin.resource_generation = 1;
-    begin.width_px = 2;
-    begin.height_px = 1;
-    begin.rendered_scale_numerator = begin.rendered_scale_denominator = 1;
-    begin.pixel_format = 1;
-    begin.chunk_count = 1;
-    begin.total_bytes = 8;
-    RETRY(sophia_ns_upload_begin(&ns, begin, &ticket));
+    /* Accepted status alone does not settle source custody. */
+    while (sophia_ip_channel(&image.producer) != SOPHIA_IPC_READY)
+        step();
+    memset(&metadata, 0, sizeof(metadata));
+    metadata.resource_id = 5;
+    metadata.resource_generation = 1;
+    metadata.admission_epoch = limits->grant_content_epoch;
+    metadata.output = sophia_ns_allocation(&ns)->output_id;
+    metadata.allocation = sophia_ns_allocation(&ns)->allocation_id;
+    metadata.topology_generation = 3;
+    metadata.source_kind = metadata.source_format = 1;
+    metadata.width = 2;
+    metadata.height = 1;
+    metadata.stride = 8;
+    metadata.plane_count = metadata.descriptor_count = 1;
+    metadata.logical_bytes = sizeof(pixels);
+    assert(!sophia_ip_isb_create(2, 1, &source, &mapped, &mapped_bytes));
+    assert(mapped_bytes == sizeof(pixels));
+    memcpy(mapped, pixels, mapped_bytes);
+    assert(!sophia_ip_isb_finish(source, mapped, mapped_bytes));
+    RETRY(sophia_ss_image_begin(&image, &metadata, source, now_ms(), &offer, &ticket));
     e = next(SOPHIA_NS_EV_RESOURCE);
-    assert(e.current && e.record->value.resource_status.status == 1);
+    assert(e.record->value.resource_status.status == 2);
     done();
     custody(ticket);
-    while (!sophia_ss_upload_ready(&ss))
+    for (;;) {
+        assert(!sophia_ip_offer(&image.producer, offer, &info));
+        if (info.state == SOPHIA_IPO_SETTLED)
+            break;
         step();
-    assert(!sophia_ss_upload_chunk(&ss, pixels, sizeof(pixels)));
-    while (!sophia_ss_upload_ready(&ss))
-        step();
-    RETRY(sophia_ns_upload_end(&ns, &ticket));
-    e = next(SOPHIA_NS_EV_RESOURCE);
-    assert(e.current && e.record->value.resource_status.status == 2);
-    done();
-    custody(ticket);
+    }
+    assert(info.status == SOPHIA_IPS_ACCEPTED && info.disposition == 1);
+    assert(!sophia_ns_adopt_image(&ns, &image, offer));
     frame(1);
     /* Semantic input: no edit without reserved ack room; exactly one ack. */
     phase("text");
@@ -336,6 +384,29 @@ static void launcher(void)
     custody(ticket);
     assert(!sophia_ns_obligations(&ns, &o) && !o.lost_acks && !o.next_ms);
 }
+/* The host supplies an afid verdict. This exercises the admitted-root API,
+ * not the production launch authentication conversation. */
+static void auth_reply(struct sophia_9p_client *wire, struct sophia_9p_handle request,
+                       unsigned type)
+{
+    struct sophia_9p_reply reply;
+    for (;;) {
+        int result;
+        struct pollfd p = {wire->fd, POLLIN, 0};
+        assert(now_ms() < deadline);
+        if (sophia_9p_wants_write(wire))
+            p.events |= POLLOUT;
+        assert(poll(&p, 1, 2) >= 0);
+        assert(!sophia_9p_service(wire, 65536));
+        result = sophia_9p_peek(wire, &reply);
+        if (result == SOPHIA_9P_AGAIN)
+            continue;
+        assert(!result && reply.handle.serial == request.serial && reply.type == type && !reply.error);
+        assert(!sophia_9p_consume(wire, request));
+        return;
+    }
+}
+
 int main(int argc, char **argv)
 {
     struct sophia_desktop_connection connection = {-1, 0, 0, 0};
@@ -344,11 +415,17 @@ int main(int argc, char **argv)
     size_t bytes;
     void *storage, *objects;
     int fd, result;
+    struct sophia_9p_client wire;
+    struct sophia_9p_handle request;
+    uint32_t root, afid;
+    size_t wire_bytes;
+    void *wire_storage;
     assert(argc == 3);
     control = argv[1];
+    export_path = argv[2];
     memset(&config, 0, sizeof(config));
-    config.offer.minimum_revision = config.offer.maximum_revision = 7;
-    config.offer.required_capabilities = 0x9a0;
+    config.offer.minimum_revision = config.offer.maximum_revision = 9;
+    config.offer.required_capabilities = 0x29a0;
     config.profile = SOPHIA_SF_LAUNCHER;
     config.msize = 8192;
     config.queue_slots = 8;
@@ -377,7 +454,19 @@ int main(int argc, char **argv)
     assert(result == SOPHIA_DESKTOP_CONNECTED);
     fd = sophia_desktop_connection_take(&connection);
     assert(fd >= 0);
-    assert(!sophia_ss_open_fd(&ss, fd, &config, storage, bytes));
+    wire_bytes = sophia_9p_storage_bytes(config.msize, 8);
+    wire_storage = malloc(wire_bytes);
+    assert(wire_storage);
+    assert(!sophia_9p_init(&wire, fd, config.msize, 8, 32, wire_storage, wire_bytes));
+    assert(!sophia_9p_version(&wire, &request));
+    auth_reply(&wire, request, 101);
+    assert(!sophia_9p_auth(&wire, "", "", &request, &afid));
+    auth_reply(&wire, request, 103);
+    assert(!sophia_9p_attach_with_afid(&wire, afid, "", "", &request, &root));
+    auth_reply(&wire, request, 105);
+    assert(!sophia_9p_clunk(&wire, afid, &request));
+    auth_reply(&wire, request, 121);
+    assert(!sophia_ss_open_attached(&ss, &wire, root, &config, storage, bytes));
     ss_open = 1;
     while (sophia_ss_state(&ss) == SOPHIA_SS_NEGOTIATING)
         step();
@@ -392,7 +481,11 @@ int main(int argc, char **argv)
     }
     assert(sophia_ns_state(&ns) == SOPHIA_NS_LIVE);
     sophia_ss_close(&ss);
+    sophia_ip_close(&image.producer);
+    close(image_dir);
+    sophia_9p_close(&wire);
     close(fd);
+    free(wire_storage);
     free(storage);
     free(objects);
     printf("sophia_c_native_sdk status=pass\n");

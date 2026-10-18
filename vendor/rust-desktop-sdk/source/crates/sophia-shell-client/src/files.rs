@@ -7,14 +7,14 @@
 //! `transaction`/`submit` custody cycle, one candidate record at a time (the
 //! state machine mirrors `tests/support/shell_file_peer.rs`'s working sequence:
 //! walk+open `transaction`, write the record, write `submit`, observe
-//! `Submitted`, ack, clunk). Resource bytes travel as plain writes to a bound
-//! `upload/N` slot, never as records. Exactly one `Tread` stays outstanding on
+//! `Submitted`, ack, clunk). Image sources travel through the authenticated
+//! ISB channel. Exactly one `Tread` stays outstanding on
 //! `events`; every decoded event becomes the same typed [`Inbound`] the socket
 //! wire produces.
 //!
 //! This module owns the shared types and the connect-independent parts
 //! (`encode`/`commit_encoded`); `connect`, the `poll_io` driving loop, the
-//! submission state machine, upload-slot handling and event dispatch each
+//! submission state machine, image adapter and event dispatch each
 //! live in their own submodule, all as further `impl FileWire` blocks over
 //! the one type defined here.
 
@@ -26,8 +26,8 @@ use sophia_9p_records::{Fid, Tag};
 
 use sophia_shell_protocol::shell_files::*;
 use sophia_shell_protocol::{
-    CatalogContentCandidate, ContentActionAck, ContentCandidate, ContentResourceId,
-    ShellCatalogActionRecord, ShellContentRecord, ShellIndicatorActivation, TransactionId,
+    CatalogContentCandidate, ContentActionAck, ContentCandidate, ShellCatalogActionRecord,
+    ShellContentRecord, ShellIndicatorActivation, TransactionId,
 };
 
 use crate::custody::Custody;
@@ -46,16 +46,12 @@ mod events;
 mod native_launcher;
 mod opening;
 mod submission;
-mod uploads;
 
 use opening::Opening;
 
 const O_RDONLY: u32 = 0;
 const O_WRONLY: u32 = 1;
 const O_RDWR: u32 = 2;
-/// 9P2000.L Twrite overhead: the 7-byte message header plus fid(4) +
-/// offset(8) + count(4).
-const WRITE_OVERHEAD: u32 = 23;
 /// Bounds how many internal state-machine rounds one `poll_io` call may
 /// spend chaining local progress (reply arrived -> next request queued ->
 /// maybe already answered). Never blocks; only limits work per call.
@@ -76,12 +72,6 @@ fn is_disconnect(kind: std::io::ErrorKind) -> bool {
 enum QueuedKind {
     /// A whole encoded candidate record, ready for transaction+submit.
     Record,
-    /// Exactly the payload to append to `resource`'s bound writer at
-    /// `offset`, once that slot is open for writing.
-    SlotWrite {
-        resource: ContentResourceId,
-        offset: u64,
-    },
 }
 
 /// The first and largest pause before retrying a write the session refused
@@ -132,9 +122,6 @@ enum SubmitReply {
     Invalid,
 }
 
-// One lane per connection: keeping its four-unit window inline avoids a new
-// allocation on every upload burst. No collection stores copies of this enum.
-#[allow(clippy::large_enum_variant)]
 enum Current {
     Submission {
         bytes: Box<[u8]>,
@@ -152,25 +139,6 @@ enum Current {
         /// or the paired record reply is lost before disconnect.
         accepted: bool,
     },
-    SlotWrite(uploads::Window),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum UploadState {
-    /// `ResourceBegin` submitted and committed client-side; awaiting the
-    /// admitted (`status == 1`) `ResourceStatus` event.
-    Pending,
-    /// Admitted; walking and opening `upload/N` for writing.
-    Opening(Opening),
-    /// The writer fid is open and ready for writes.
-    Open(Fid),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Upload {
-    resource: ContentResourceId,
-    state: UploadState,
-    iounit: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -243,7 +211,6 @@ pub(crate) struct FileWire {
     ack_fid: Fid,
     reusable_transactions: bool,
     transaction_fid: Option<Fid>,
-    upload_slots: u8,
     next_submission_id: u64,
 
     // Inbound: one Tread outstanding on `events`, whole-record reassembly.
@@ -295,7 +262,6 @@ pub(crate) struct FileWire {
     // Outbound: a single lane, mirroring `ClientOutbox`'s FIFO order.
     pending: VecDeque<QueuedKind>,
     staged: Vec<QueuedKind>,
-    staged_begins: [Option<ContentResourceId>; SHELL_FILE_MAX_UPLOAD_SLOTS as usize],
     current: Option<Current>,
     /// The next `EAGAIN` backoff.
     backoff: Duration,
@@ -303,8 +269,6 @@ pub(crate) struct FileWire {
     custody: Vec<(u64, Custody)>,
     /// Settled front units for `poll_io` to release from the outbox.
     retire: usize,
-
-    uploads: [Option<Upload>; SHELL_FILE_MAX_UPLOAD_SLOTS as usize],
 
     /// Tags whose reply we do not otherwise act on (fire-and-forget clunks):
     /// still drained from the pipeline so its own bookkeeping never grows
@@ -322,21 +286,6 @@ pub(crate) struct FileWire {
     event_fault: bool,
     /// A connection-ending failure, returned again by every later call.
     fatal: Option<ShellClientError>,
-}
-
-/// The bound writer fid for `resource`, if its slot is open. A free function
-/// over the field directly, so callers holding a live mutable borrow into a
-/// *different* field of `FileWire` (such as `current`) can still call it
-/// without conflicting with a `&self` method's whole-struct borrow.
-fn open_fid_for(uploads: &[Option<Upload>], resource: ContentResourceId) -> Option<Fid> {
-    uploads.iter().flatten().find_map(|upload| {
-        (upload.resource == resource)
-            .then_some(upload.state)
-            .and_then(|state| match state {
-                UploadState::Open(fid) => Some(fid),
-                _ => None,
-            })
-    })
 }
 
 /// Merges a `ContentGroup`'s Begin/Chunk*/End records into one whole
@@ -437,18 +386,11 @@ impl FileWire {
         }
     }
 
-    fn free_slot(&self) -> Option<u16> {
-        (0..self.upload_slots).map(u16::from).find(|&slot| {
-            self.uploads[slot as usize].is_none() && self.staged_begins[slot as usize].is_none()
-        })
-    }
-
     pub(crate) fn encode(&mut self, outbound: Outbound) -> Result<Vec<Vec<u8>>, ShellClientError> {
         if let Some(error) = &self.fatal {
             return Err(error.clone());
         }
         self.staged.clear();
-        self.staged_begins.fill(None);
         self.encode_unit(outbound)
     }
 
@@ -674,51 +616,11 @@ impl FileWire {
             return Err(ShellClientError::WrongDirection);
         }
         match record {
-            ShellContentRecord::ResourceChunk(chunk) => {
-                self.staged.push(QueuedKind::SlotWrite {
-                    resource: chunk.resource,
-                    offset: chunk.offset,
-                });
-                Ok(vec![chunk.bytes])
-            }
-            ShellContentRecord::ResourceBegin(begin) => {
-                if self.staged_begins.contains(&Some(begin.resource)) {
-                    return Err(ShellClientError::InvalidArgument(
-                        "duplicate resource in batch",
-                    ));
-                }
-                let slot = self.free_slot().ok_or(ShellClientError::QueueSaturated)?;
-                let resource = begin.resource;
-                let header = self.next_header(ShellFileKind::ResourceBegin);
-                let bytes = encode_shell_file_resource_begin(
-                    header,
-                    &ShellFileResourceBegin {
-                        transaction,
-                        slot,
-                        record: ShellContentRecord::ResourceBegin(begin),
-                    },
-                )?;
-                self.staged.push(QueuedKind::Record);
-                self.staged_begins[slot as usize] = Some(resource);
-                Ok(vec![bytes])
-            }
             ShellContentRecord::AllocationRequest(_) => {
                 let header = self.next_header(ShellFileKind::AllocationRequest);
                 let bytes = encode_shell_file_allocation_request(
                     header,
                     ShellFileTransactionRecord {
-                        transaction,
-                        record,
-                    },
-                )?;
-                self.staged.push(QueuedKind::Record);
-                Ok(vec![bytes])
-            }
-            ShellContentRecord::ResourceEnd(_) => {
-                let header = self.next_header(ShellFileKind::ResourceEnd);
-                let bytes = encode_shell_file_resource_end(
-                    header,
-                    &ShellFileTransactionRecord {
                         transaction,
                         record,
                     },
@@ -787,20 +689,10 @@ impl FileWire {
 
     pub(crate) fn commit_encoded(&mut self) {
         self.service_pending |= !self.staged.is_empty();
-        for (slot, resource) in self.staged_begins.iter_mut().enumerate() {
-            if let Some(resource) = resource.take() {
-                self.uploads[slot] = Some(Upload {
-                    resource,
-                    state: UploadState::Pending,
-                    iounit: 0,
-                });
-            }
-        }
         self.pending.extend(self.staged.drain(..));
     }
 
     pub(crate) fn cancel_encoded(&mut self) {
         self.staged.clear();
-        self.staged_begins.fill(None);
     }
 }

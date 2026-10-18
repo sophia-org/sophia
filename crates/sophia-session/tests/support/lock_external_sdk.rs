@@ -15,13 +15,13 @@ fn external_sdk_lock_authenticates_and_observes_revocation() {
 
 #[test]
 #[ignore = "requires SOPHIA_LOCK_AUTH_PEER naming an absolute built SDK peer"]
-fn external_sdk_lock_revocation_discards_unfinished_upload() {
+fn external_sdk_lock_revocation_discards_unsubmitted_isb() {
     exchange(true, false);
 }
 
 #[test]
 #[ignore = "requires SOPHIA_LOCK_AUTH_PEER naming an absolute built SDK peer"]
-fn external_sdk_lock_replacement_gets_fresh_epoch_after_unfinished_upload() {
+fn external_sdk_lock_replacement_gets_fresh_epoch_after_unsubmitted_isb() {
     exchange(true, true);
 }
 
@@ -42,7 +42,7 @@ fn exchange(upload: bool, replacement: bool) {
         .mode(0o700)
         .create(&reports)
         .unwrap();
-    let transport = LockFileTransport::bind_for_supervised_uid(
+    let mut transport = LockFileTransport::bind_for_supervised_uid(
         root.0.join("endpoint"),
         rustix::process::geteuid().as_raw(),
         7,
@@ -61,6 +61,15 @@ fn exchange(upload: bool, replacement: bool) {
         },
     )
     .unwrap();
+    transport
+        .enable_isb_images(LockImagePolicy {
+            hello_timeout_ms: 2000,
+            validation_timeout_ms: 5000,
+            validation_chunk_bytes: 65536,
+            capture_interest_timeout_ms: 500,
+            max_sealed_backing_bytes: 512,
+        })
+        .unwrap();
     let socket = transport.socket_path().to_owned();
     let service = LockFileService::spawn(
         transport,
@@ -106,7 +115,7 @@ fn exchange(upload: bool, replacement: bool) {
         let mut supervisor = ProcessSupervisor::new(
             SupervisedProcessKind::LockProvider,
             ProcessLaunchSpec::new(&peer.0)
-                .env("SOPHIA_TEST_LOCK_UPLOAD", if upload { "1" } else { "0" })
+                .env("SOPHIA_TEST_LOCK_IMAGE", if upload { "1" } else { "0" })
                 .env("SOPHIA_TEST_LOCK_EPOCH", epoch.to_string())
                 .arg(&executable)
                 .arg(&socket)
@@ -155,7 +164,7 @@ fn exchange(upload: bool, replacement: bool) {
                     }
                     LockFileServiceEvent::Inbound { inbound, .. } => {
                         panic!(
-                            "unfinished upload must not deliver resource or candidate: {inbound:?}"
+                            "unsubmitted image must not deliver resource or candidate: {inbound:?}"
                         )
                     }
                     other => panic!("unexpected authenticated lock event: {other:?}"),
@@ -165,7 +174,7 @@ fn exchange(upload: bool, replacement: bool) {
                 && connected == 1
                 && std::fs::read_to_string(&report).ok().as_deref()
                     == Some(if upload {
-                        "upload-waiting\n"
+                        "image-waiting\n"
                     } else {
                         "waiting\n"
                     })
@@ -192,7 +201,7 @@ fn exchange(upload: bool, replacement: bool) {
         assert_eq!(
             std::fs::read_to_string(&report).unwrap(),
             if upload {
-                "upload-revoked\n"
+                "image-revoked\n"
             } else {
                 "revoked\n"
             }

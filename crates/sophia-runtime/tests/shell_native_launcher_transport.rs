@@ -74,8 +74,8 @@ fn role_reservation_cannot_be_selected_or_widened_by_peer_capabilities() {
             limits(),
         );
         let mut request = ShellV1ClientHello {
-            minimum_revision: 7,
-            maximum_revision: 7,
+            minimum_revision: 9,
+            maximum_revision: 9,
             required_capabilities: CAPS,
         };
         if mode == 1 {
@@ -94,7 +94,7 @@ fn role_reservation_cannot_be_selected_or_widened_by_peer_capabilities() {
             ShellContentAdmissionPolicy::Granted {
                 discrete_input: true,
             },
-            if mode == 0 || mode == 2 {
+            if mode == 2 {
                 ShellTransportError::UnsupportedRevision
             } else {
                 ShellTransportError::MissingCapability
@@ -123,14 +123,14 @@ fn operator_denial_is_an_encoded_refusal_and_retires_exact_reservation() {
         peer.refuse_offer(
             &mut r,
             ShellV1ClientHello {
-                minimum_revision: 7,
-                maximum_revision: 7,
+                minimum_revision: 9,
+                maximum_revision: 9,
                 required_capabilities: CAPS,
             },
             policy,
             ShellTransportError::ContentAdmissionRefused(ContentAdmissionRefused {
                 reason,
-                denied_capabilities: CAPS,
+                denied_capabilities: CAPS & !(1 << 13),
             }),
         );
         assert_eq!(r.reserved_bytes(), 0);
@@ -270,87 +270,6 @@ fn native_visit_shares_record_budget_across_resources_and_demands() {
     assert_eq!(
         peer.transport.next_content_demand(&r).unwrap().1.demand_id,
         17
-    );
-}
-
-#[test]
-fn buffered_native_upload_resumes_exact_bounded_chunk_on_each_owner_visit() {
-    let mut r = empty();
-    let mut bounded = limits();
-    bounded.max_frames_per_service_tick = 1;
-    bounded.max_chunk_bytes = 32768;
-    let mut peer = Peer::connected_with_limits(&mut r, bounded);
-    let c = catalog();
-    peer.begin_upload(
-        &mut r,
-        ContentResourceBegin {
-            grant: GRANT,
-            resource: RESOURCE,
-            width_px: 8192,
-            height_px: 2,
-            rendered_scale_numerator: 1,
-            rendered_scale_denominator: 1,
-            pixel_format: 1,
-            chunk_count: 2,
-            total_bytes: 65536,
-        },
-    );
-    assert_eq!(
-        peer.transport
-            .service_native_launcher_content(&mut r, context(&[]), native(&c), 0)
-            .unwrap(),
-        1
-    );
-    assert!(
-        matches!(peer.read_content(&mut r).1, ShellContentRecord::ResourceStatus(v) if v.status == 1)
-    );
-    // Valid upload writes replace the socket's arbitrary ResourceChunk frames.
-    // Both chunks are in custody before intake: I/O cannot hide a broken visit cap.
-    let chunks = [vec![0; 32768], vec![128; 32768]];
-    peer.upload_chunks(&mut r, &chunks);
-    assert_eq!(
-        peer.transport
-            .service_native_launcher_content(&mut r, context(&[]), native(&c), 0)
-            .unwrap(),
-        1
-    );
-    assert_eq!(
-        peer.transport
-            .service_native_launcher_content(&mut r, context(&[]), native(&c), 0)
-            .unwrap(),
-        1
-    );
-    peer.no_event(&mut r);
-    assert_eq!(
-        peer.transport
-            .service_native_launcher_content(&mut r, context(&[]), native(&c), 0)
-            .unwrap(),
-        0
-    );
-    peer.end_upload(
-        &mut r,
-        ContentResourceEnd {
-            grant: GRANT,
-            resource: RESOURCE,
-            total_bytes: 65536,
-            chunk_count: 2,
-        },
-    );
-    assert_eq!(
-        peer.transport
-            .service_native_launcher_content(&mut r, context(&[]), native(&c), 0)
-            .unwrap(),
-        1
-    );
-    assert!(
-        matches!(peer.read_content(&mut r).1, ShellContentRecord::ResourceStatus(v) if v.status == 2)
-    );
-    assert_eq!(
-        peer.transport
-            .lease_content_resource(&r, GRANT, RESOURCE)
-            .unwrap()
-            .bytes(),
-        chunks.concat()
     );
 }
 

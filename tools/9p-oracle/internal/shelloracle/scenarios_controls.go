@@ -108,7 +108,7 @@ func (r *runner) revocationScenario(name string, cancelled bool, check int) {
 	id := s.submit(257, allocation(40, 1, 2))
 	s.custody(id, 257)
 	s.ack(s.expect(32))
-	smallResource(s)
+	smallResource(s, 4)
 	permit := uint64(999)
 	if cancelled {
 		id = s.submit(263, demand(90, 1))

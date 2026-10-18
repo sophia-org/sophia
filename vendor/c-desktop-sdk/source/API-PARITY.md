@@ -1,5 +1,39 @@
 # C and Rust SDK API parity
 
+## ISB-only resource APIs, 2026-10-18
+
+This supersedes the byte-upload operation maps and B3 upload-window history
+below. Shell and lock clients no longer open upload files or expose byte-upload
+helpers. Shell ResourceBegin/Chunk/End and lock ResourceBegin/End are refused
+locally before spending a submission identity. Passive record codecs remain
+available for negative conformance tests; portal transfer APIs are unaffected.
+
+| Operation | C | Rust |
+| --- | --- | --- |
+| Shell image submission | `sophia_ss_image_begin` | `ShellConnection::image_begin` |
+| Owning native session image submission | attach `sophia_ss_image` to the session | `NativeLauncherSession::enable_image`, `image_begin` |
+| Adopt settled launcher pixels | `sophia_ns_adopt_image` | `adopt_native_image` / owning session `adopt_image` |
+| Lock image submission | `sophia_lc_image_begin` | `Session::image_begin` |
+| Cancel an image offer | role image adapter cancel | role image adapter cancel |
+| Resource retirement | native resource retire / lock ResourceRetire | native resource retire / lock ResourceRetire |
+
+Image submission transfers source custody only on success; Busy/refusal leaves
+the source with the caller. Adoption still requires Accepted and settled
+Retained disposition, consumes the offer only on success, and keeps retirement
+waiting for ResourceReleased. Both SDKs preserve late matching Accepted without
+resurrecting a retiring resource. Public struct layouts changed: rebuild C
+clients and bindings.
+
+The independent C and Rust lock conformance peers each passed sealed-image
+submission, presentation, chord/entry events and unlock against Sophia's current
+production export. Protected launch tests separately cover revocation with an
+ImageBegin staged locally before custody and replacement with a fresh epoch.
+These are device-free tests, not physical-locking or performance qualification.
+Evidence: `isb-client-migration-20261018/isb-only-{c,rust}-lock-conformance-01.log`
+and the corresponding `lock-auth-export` logs. SDK source publication and Sophia
+verified-pin adoption remain separate from the runtime's pending full gate.
+
+
 ## Native ISB resource adoption, 2026-10-18
 
 Rust `ShellConnection::adopt_native_image` and C `sophia_ns_adopt_image`
@@ -32,7 +66,7 @@ Accepted arriving at the lifecycle after adoption. These establish local SDK
 custody, not authenticated production admission or physical presentation.
 
 C consumers must rebuild: `sophia_ns_resource` now carries the adopted offer.
-Legacy byte-upload APIs still exist for callers awaiting migration; image
+The former byte-upload APIs are removed in the ISB-only series above; image
 adapters never select them as fallback.
 
 ## ISB-only image setup and content roles, 2026-10-18
