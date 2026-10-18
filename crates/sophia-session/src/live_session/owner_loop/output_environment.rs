@@ -62,6 +62,64 @@ fn environment_percent_encode(value: &str) -> String {
     encoded
 }
 
+/// The opt-in campaign receiver authenticates Linux sender credentials on each
+/// datagram. Child text in the shared diagnostic log cannot substitute for
+/// this delivery. Nonblocking sends fail the proof rather than stall the owner
+/// or silently lose part of the environment set.
+fn send_output_environment(
+    destination: &std::path::Path,
+    lines: &[[String; 2]],
+) -> std::io::Result<()> {
+    use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
+    use std::os::fd::AsFd;
+    use std::os::unix::net::UnixDatagram;
+    if !destination.is_absolute() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "environment socket path must be absolute",
+        ));
+    }
+    for line in lines.iter().flatten() {
+        if line.is_empty() || line.len() > 65_536 || line.contains(['\r', '\n', '\0']) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "environment record exceeds datagram bounds",
+            ));
+        }
+    }
+    let socket = UnixDatagram::unbound()?;
+    socket.set_nonblocking(true)?;
+    socket.connect(destination)?;
+    // A TGID pidfd ties queued datagrams to this process even after numeric
+    // PID reuse. If unavailable, fail this opt-in proof; never send bare text.
+    let sender = rustix::process::pidfd_open(
+        rustix::process::getpid(),
+        rustix::process::PidfdFlags::empty(),
+    )?;
+    for line in lines.iter().flatten() {
+        loop {
+            let rights = [sender.as_fd()];
+            let mut space = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
+            let mut control = SendAncillaryBuffer::new(&mut space);
+            if !control.push(SendAncillaryMessage::ScmRights(&rights)) {
+                return Err(std::io::Error::other("environment pidfd control buffer"));
+            }
+            match sendmsg(
+                &socket,
+                &[std::io::IoSlice::new(line.as_bytes())],
+                &mut control,
+                SendFlags::NOSIGNAL,
+            ) {
+                Ok(count) if count == line.len() => break,
+                Ok(_) => return Err(std::io::Error::other("short environment datagram")),
+                Err(rustix::io::Errno::INTR) => continue,
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+    Ok(())
+}
+
 enum OutputEnvironmentBatch {
     Pending,
     Unavailable(sophia_engine::RenderHeadId),
@@ -117,6 +175,9 @@ fn trace_output_environment(
         }
         OutputEnvironmentBatch::Ready(lines) => lines,
     };
+    if let Some(destination) = std::env::var_os("SOPHIA_OUTPUT_ENVIRONMENT_SOCKET") {
+        send_output_environment(std::path::Path::new(&destination), &lines)?;
+    }
     for pair in lines {
         for line in pair {
             tracing::info!("{line}");
