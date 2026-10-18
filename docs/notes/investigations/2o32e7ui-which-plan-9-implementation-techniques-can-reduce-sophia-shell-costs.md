@@ -123,11 +123,31 @@ A separate panel diagnostic pair is built from the same comparator revision
 with `comparator-request-attribution` (including phase profiling). Plans and
 artifact hashes are under `candidate-02/native-attribution/`; its launcher is
 `~/dev/niltempus/.artifacts/t331-native-attribution-20261018/run.sh`. Both
-profiles pass device-hidden configuration checks. It awaits an attended tty4
-run, uses the existing recovery wrapper, and produces diagnostic evidence only:
+profiles pass device-hidden configuration checks. Both attended captures
+(`prof-files-01` and `prof-ipc-01`) completed with clean terminal recovery.
+They use the existing recovery wrapper and produce diagnostic evidence only:
 no campaign environment readback or acceptance verdict. Frozen cost artifacts
 and campaigns remain unchanged. No authentication, polling or ACK policy was
 changed to prepare this diagnostic.
+
+The workload-aligned analysis is
+`candidate-02/native-attribution-workload-analysis.json`; the separately labeled
+`native-attribution-analysis.json` covers the whole diagnostic capture, including
+its idle tail. Lifecycle and authority account for most of the allocation
+difference, while component wire service accounts for most of the owner-thread
+CPU difference. Request-handler intervals alone do not explain that CPU gap.
+These are nested intervals with process-wide allocation counters, not exclusive
+stack attribution. Static review confirms repeated preview-store map creation
+and cloning, native service-request vectors and temporary idle-cursor collections;
+see `native-service-allocation-audit.md` in the same directory.
+
+Comparator `bc0270c79097363ef135cda8c9c70b5eba122be1` adds diagnostic-only nested
+scopes for native requests, native waits, authority waits, lifecycle native
+service, authentication polling, server turns and image-channel service. Counter
+tests, native CLI strict Clippy, feature-off checking and scoped formatting pass.
+The next separate diagnostic pair will distinguish these sources before any
+production optimization. Authentication, deadlines, service order and ACK
+behavior remain unchanged; t331 remains open.
 
 ## October 18 first attended block
 
