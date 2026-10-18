@@ -8,6 +8,40 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
+The first native bytes attempt did not produce usable measurement evidence.
+The long evidence path first exceeded the Unix socket pathname limit before
+launch; that failed attempt remains under the calibration directory below as
+`bytes-run-01`. The shorter retry, `~/.local/state/t338/bytes-run-02`, ran the
+workload and restored the console, but its observer failed on
+`/proc/5865/exe: Permission denied`. Both `attempt.json` and `run/result.json`
+record failure; environment binding is absent and no receipts were accepted.
+The raw peer log contains 1000 presented frames, which is diagnostic only.
+No paired CPU result or sealed native run is claimed.
+
+The failed runner's Binder inspected every descendant's executable and treated a
+permission denial as fatal. Factotum and its PAM helper deliberately deny such
+inspection; the exited PID's exact role was not retained and is not inferred
+as fact. The correction in external `niltempus 1ab32c3` selects the verified
+host, its direct bubblewrap supervisor and that supervisor's sole peer child.
+Opaque nodes remain explicit, outside the selected subtree; uniqueness is
+limited to examined candidates. No process is made dumpable. The clock proof
+uses Linux's initial time namespace inode instead of inspecting root's PID 1.
+Twenty-three Binder fixtures, nine provider controls, strict Clippy and the
+full device-hidden xtask suite pass. A live, device-free process control also
+passes with PID 1's namespace unreadable: the sandboxed peer binds, the plain
+non-dumpable sibling stays unexamined, and recheck succeeds. This is not a
+native measurement. Failed runs stay retained.
+
+The rebuilt runner and fresh plans are under
+`~/.local/state/t338/calibration-02/`, including the full gate logs.
+The new frozen descriptor SHA-256 is
+`a725c2a72c73108723da734c3becd6b50a719055a821f64c74b594e6e812ac40`.
+Its bytes plan is `faa30ccd3ae9164b09a4ac2b0bb76c83fd6b819c7e944e81c4618ae143f193bd`;
+its sealed plan is `97d6a369453e7ae3caac4d0ad02917c3f8fc1e417d0062c4915548329c087101`.
+The workload and compositor/peer artifacts are unchanged. The next bytes run
+uses `~/.local/state/t338/bytes-run-03` via `/tmp/t338-bytes-03` from tty4.
+It has not started. The new descriptor supersedes the earlier one below.
+
 The operator selected **DP-1**, superseding the brief DP-2 answer, for
 1920×1080@120 Hz with VRR off. Read-only sysfs preparation maps the declared
 PCI device `0000:03:00.0` to `card0` and shows DP-1 connected with 1920×1080
@@ -29,12 +63,13 @@ the sealed plan is `202d2a2c43c6220c89462e8bb8fd817d25cf779842950848ecca1b769792
 Both use 1000 frames, 60 seconds, a 24-pixel panel, no bulk probe, tty4 and
 private display :94. Plans and binaries remain at their referenced paths;
 the frozen directory is not self-contained. This supersedes the preliminary
-plans below, whose runner was rebuilt. No physical run has started.
+plans below, whose runner was rebuilt. The failed native attempt above used
+these final plans.
 
 The two-arm route reuses authenticated observation and checks matching
 profile policy and environment fact values, then reports sealed-versus-bytes
 costs without a campaign gate verdict. The full 108-arm validation is
-unchanged. Claude and Muse are holding builds for the attended console step;
+unchanged. Claude and Muse are assisting with the process-binding correction;
 the daily desktop :77 is not a test target.
 
 Fresh CPU-only release host and peer builds pass at clean signed comparator
@@ -93,8 +128,8 @@ environment datagram. The receiver checks the live handle as well as kernel
 credentials, refusing queued records from an exited sender after PID reuse.
 Sophia `ff6f445fe` and comparator `180808d48` add the separately armed,
 bounded `--output-environment-readback` path; the old output-role proof gate
-is unchanged. No physical run has occurred, and this campaign cannot close
-60 Hz B9.
+is unchanged. The failed native attempt above does not close an evidence gate,
+and this campaign cannot close 60 Hz B9.
 
 Environment readback is implemented in Sophia `21bcd211e` and emitted by
 Session `116d663b4`. Nominal refresh and timing-derived refresh stay distinct;
