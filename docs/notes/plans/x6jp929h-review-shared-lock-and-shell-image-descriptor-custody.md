@@ -8,6 +8,17 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
+External integration checkpoint `niltempus 2c4b625` publishes frozen campaign
+preparation and reopening checks, warmup-aware paired comparisons, supplied
+environment validation, a bounded single CPU worker and its load controller.
+The full xtask suite passes with devices and display access hidden
+(`/tmp/t338-campaign-environment-load-tests.log`); the final load controls also
+pass independently, 10/10. Tests start at most two helper workers, never the
+16-worker campaign. Host GL identity and committed KMS environment emission,
+capture/run-order wiring and attended calibration remain unfinished. No native
+run or performance acceptance is claimed. The 120 Hz output connector still
+needs operator confirmation; this campaign cannot close the separate 60 Hz gate.
+
 t338's sealed measurement peer found a production ordering defect: the shell
 owner could journal SourceReleased before the queued Accepted status. The SDK
 then settled the offer without retaining its status. Fix `06f8b5179` makes the
