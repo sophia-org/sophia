@@ -9,20 +9,33 @@ tags: [plan, shell, lock, rendering]
 ## Current resumption
 
 The operator selected **DP-1**, superseding the brief DP-2 answer, for
-1920×1080@120 Hz with VRR off. Two files-wire panel CPU plans are prepared
-under the artifact-preparation directory below: `panel-cpu-bytes/plan.json`
-(`be60b59d7b9fb5b74e95162fbf2b51da93daa6a1947595ec3a1d7b2eaefaf6de`)
-and `panel-cpu-sealed/plan.json`
-(`2951639cf04f027c145a0c6203baa94f0c05f4946877106307ca0906b76adc6a`).
-Independent review confirms matching artifacts, 1000 frames, 60 seconds,
-24-pixel panel, no bulk probe, and identical output settings. This selects
-a target; it does not establish that the hardware applied it.
+1920×1080@120 Hz with VRR off. Read-only sysfs preparation maps the declared
+PCI device `0000:03:00.0` to `card0` and shows DP-1 connected with 1920×1080
+listed; this does not prove refresh or committed state.
 
-The existing authenticated observer is reachable only through the full
-108-arm campaign. A narrow two-arm calibration entry point and reusable
-target-bound provenance check are being added in external niltempus, without
-changing campaign validation. The two plans will need refreshed runner/source
-identities after that change. No physical run has started.
+External `niltempus 0518ba3` now exposes two-arm calibration, using
+`7c168e1` with shared derivation `5963cf6` and target-bound provenance
+`b180c1a`. The full device-hidden xtask suite, strict all-target Clippy and
+formatting pass. Logs are `/tmp/t338-calibration-final-suite.log` and
+`/tmp/t338-calibration-final-clippy.log`. Nine calibration controls use supplied
+captures; they do not establish native authentication or performance.
+
+The rebuilt release runner and final plans are recorded under
+`~/.local/state/sophia/development-evidence/t338-panel-cpu-20261017-calibration-01/`.
+The frozen descriptor at `frozen/calibration.json` has SHA-256
+`12e86a4df69712b19aac33b06d978253cf9291cafc5d4ce6e9410f1c62de675f`.
+Its bytes plan is `bee2f6791bf7eaf292cb790bd51c64b05036086e30848c6e3727e0a81bfd3355`;
+the sealed plan is `202d2a2c43c6220c89462e8bb8fd817d25cf779842950848ecca1b769792d193`.
+Both use 1000 frames, 60 seconds, a 24-pixel panel, no bulk probe, tty4 and
+private display :94. Plans and binaries remain at their referenced paths;
+the frozen directory is not self-contained. This supersedes the preliminary
+plans below, whose runner was rebuilt. No physical run has started.
+
+The two-arm route reuses authenticated observation and checks matching
+profile policy and environment fact values, then reports sealed-versus-bytes
+costs without a campaign gate verdict. The full 108-arm validation is
+unchanged. Claude and Muse are holding builds for the attended console step;
+the daily desktop :77 is not a test target.
 
 Fresh CPU-only release host and peer builds pass at clean signed comparator
 `180808d48`; runner and preflight builds pass at clean signed external
