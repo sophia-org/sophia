@@ -225,6 +225,11 @@ pub(super) fn run_worker<D>(
                         correlation,
                         context_status,
                         persistent_render_stats,
+                        gl_identity: context
+                            .as_ref()
+                            .map_or_else(NativeGlIdentityState::default, |context| {
+                                context.gl_identity().clone()
+                            }),
                         composition_nonzero_rgb_pixels,
                         outcome,
                     })
