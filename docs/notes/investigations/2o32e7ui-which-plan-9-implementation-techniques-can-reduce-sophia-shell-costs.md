@@ -85,8 +85,10 @@ repair now passes a Session-start regression and its unfixed negative control.
 Replacement binaries and short-path campaigns `isb60b`/`isb120b` are frozen.
 The replacement's first 12 arms captured successfully, with terminal recovery
 verified for every arm. The first idle pair at 60 Hz exceeds the +10% limit for
-panel CPU, panel allocations and bulk CPU. Stop here for cost diagnosis before
-requesting more attended runs. Full cost and latency qualification remain open;
+panel CPU, panel allocations and bulk CPU. Two separate diagnostic pairs have
+since completed; the first preview-store storage reuse fix is validated below.
+Continue eliminating measured per-pass bookkeeping before requesting another
+qualification block. Full cost and latency qualification remain open;
 no installed desktop has been changed.
 
 ## October 18 repaired first-pair results
@@ -145,9 +147,33 @@ Comparator `bc0270c79097363ef135cda8c9c70b5eba122be1` adds diagnostic-only neste
 scopes for native requests, native waits, authority waits, lifecycle native
 service, authentication polling, server turns and image-channel service. Counter
 tests, native CLI strict Clippy, feature-off checking and scoped formatting pass.
-The next separate diagnostic pair will distinguish these sources before any
-production optimization. Authentication, deadlines, service order and ACK
-behavior remain unchanged; t331 remains open.
+Both nested diagnostic captures (`prof-files-02` and `prof-ipc-02`) completed
+with clean recovery. `nested-attribution-workload-analysis.json` brackets the
+1,000-frame workload with cumulative snapshots. Files lifecycle-native service
+observes 422,256–422,958 allocations over 14,004–14,058 calls, versus IPC's
+291,333–294,219 over 8,219–8,344 calls. Authority waiting accounts for only
+23,349–23,357 versus 20,500–20,560 operations, ruling it out as the dominant
+allocation interval. Files wire subscopes measure about 51 ms authentication
+polling, 220 ms server service and 113 ms image-channel service; these diagnostic
+thread-CPU intervals are not qualification measurements or exclusive call stacks.
+
+The first shared fix retains `PreviewImages::live_stores` when the complete
+store-to-renderer-group map is unchanged. Generation invalidation still runs
+before assignment, and every retain and stale-snapshot cleanup still runs
+afterward. The new storage-reuse regression fails under the old unconditional
+clone and passes with the guard; it also checks disabled-owner pruning,
+renderer-group changes and store removal. Both production and comparator pass
+35 preview tests; production backend library/tests strict Clippy and scoped
+formatting pass. Evidence is `preview-store-reuse-{tests,unfixed,clippy}.log`
+and `preview-store-reuse-comparator-tests.log`. The comparator change is
+`fbca2d4c3`; the production change accompanies this note.
+
+This removes one map clone per unchanged synchronization, normally called twice
+per native-service pass. It does not remove construction of the input map or
+other preview/cursor collections and has not yet been measured in a native cost
+pair. Those are the next bounded-storage candidates; preserve separate evidence
+for each change. Authentication, deadlines, service order and ACK behavior
+remain unchanged; t331 remains open.
 
 ## October 18 first attended block
 

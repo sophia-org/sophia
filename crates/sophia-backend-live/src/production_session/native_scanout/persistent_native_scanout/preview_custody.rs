@@ -96,7 +96,11 @@ impl PreviewImages {
             self.invalidate_foreign();
         }
         self.inventory_generation = Some(generation);
-        self.live_stores = stores.clone();
+        // Unchanged inventory is the common owner-turn case. Keep its storage,
+        // but still reconcile epochs and retired snapshots below on every visit.
+        if self.live_stores != *stores {
+            self.live_stores = stores.clone();
+        }
         self.retired_imports
             .retain(|store, _| stores.contains_key(store));
         self.epochs.retain(|(store, old_generation), epoch| {
@@ -301,3 +305,7 @@ impl LiveProductionNativeScanout {
 }
 
 include!("preview_preparation.rs");
+
+#[cfg(test)]
+#[path = "../../../../tests/support/preview_store_reuse.rs"]
+mod store_reuse_tests;
