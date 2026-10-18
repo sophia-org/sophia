@@ -186,6 +186,9 @@ mod lock_publication_tests;
 mod output_fallback_tests;
 #[path = "live_session/output_readback_tests.rs"]
 mod output_readback_tests;
+
+#[path = "live_session/output_environment_tests.rs"]
+mod output_environment_tests;
 #[path = "live_session/output_rollback_quiescence_tests.rs"]
 mod output_rollback_quiescence_tests;
 #[path = "live_session/output_topology_cancellation_tests.rs"]

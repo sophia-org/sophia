@@ -1,11 +1,14 @@
 type OutputKmsReadback = Vec<sophia_backend_live::LiveProductionOutputKmsReadback>;
 
+include!("output_environment.rs");
+
 /// Device reads are opt-in and use the existing native owner. The captured
 /// before-state is retained through commit or observed rollback, never inferred
 /// from the topology object (which deliberately stays unchanged during apply).
 struct OutputReadbackProof {
     enabled: bool,
     baseline_recorded: bool,
+    environment_recorded: bool,
     peer_exit_recorded: bool,
     before: Option<OutputReadbackCandidate>,
     failure: Option<String>,
@@ -63,6 +66,7 @@ impl OutputReadbackProof {
         Self {
             enabled,
             baseline_recorded: false,
+            environment_recorded: false,
             peer_exit_recorded: false,
             before: None,
             failure: None,
@@ -84,6 +88,9 @@ impl OutputReadbackProof {
                 &read_output_owner(native),
             );
             self.baseline_recorded = true;
+        }
+        if self.enabled && !self.environment_recorded {
+            self.environment_recorded = trace_output_environment(native)?;
         }
         Ok(())
     }
@@ -148,7 +155,7 @@ impl OutputReadbackProof {
     }
 
     fn observe(
-        &self,
+        &mut self,
         native: &LiveProductionNativeScanout,
         stage: &str,
         transaction: TransactionId,
@@ -167,6 +174,12 @@ impl OutputReadbackProof {
                 &owner,
             );
             before.check(stage, &actual, &owner)?;
+            if matches!(stage, "installed" | "restored") {
+                // A fixed-condition campaign must see a second environment
+                // record after topology changes, so its parser rejects drift.
+                // Retry later if the replacement GL context is not ready yet.
+                self.environment_recorded = false;
+            }
         }
         Ok(())
     }
