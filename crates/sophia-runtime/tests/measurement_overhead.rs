@@ -30,6 +30,7 @@ fn events() -> [Event<'static>; 9] {
             frames: 1,
             wire: "files",
             probe_bytes: 0,
+            source: Some("sealed"),
         },
         Event::UploadOffer {
             upload: Upload {
@@ -99,30 +100,30 @@ fn wait_samples(want: usize) {
 #[test]
 fn measurement_paths_do_not_allocate_after_initialization() {
     let mut bytes = [0u8; 1024];
-    let before = counters::snapshot();
+    let before = counters::snapshot().unwrap();
     for sequence in 0..1000 {
         counters::write_snapshot(
             &mut std::io::Cursor::new(&mut bytes[..]),
             "session",
             "sample",
             sequence,
-            counters::snapshot(),
+            counters::snapshot().unwrap(),
         )
         .unwrap();
         for event in events() {
             journal::write(&mut std::io::Cursor::new(&mut bytes[..]), event).unwrap();
         }
     }
-    let after = counters::snapshot();
+    let after = counters::snapshot().unwrap();
     assert_eq!(after.allocations, before.allocations);
     assert_eq!(after.reallocations, before.reallocations);
 
     // The real timeout loop is measured after its thread/channel initialization.
     let sampler = counters::Sampler::start_with_output(SampleSink).unwrap();
     wait_samples(10);
-    let before = counters::snapshot();
+    let before = counters::snapshot().unwrap();
     wait_samples(SAMPLES.load(Ordering::SeqCst) + 30);
-    let after = counters::snapshot();
+    let after = counters::snapshot().unwrap();
     sampler.finish().unwrap();
     assert_eq!(after.allocations, before.allocations, "sampler allocated");
     assert_eq!(

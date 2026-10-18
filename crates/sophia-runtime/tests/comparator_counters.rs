@@ -6,17 +6,17 @@ static ALLOCATOR: Allocator = counters::ALLOCATOR;
 
 fn schema() -> &'static str {
     if cfg!(feature = "comparator-profiling") {
-        "2 mode=profile"
+        "3 mode=profile"
     } else {
-        "1"
+        "3 mode=rust-global"
     }
 }
 
 #[test]
 fn instrumented_counts_include_real_allocations_with_ordered_clock_bounds() {
-    let before = counters::snapshot();
+    let before = counters::snapshot().unwrap();
     let bytes = std::hint::black_box(vec![7u8; 4096]);
-    let after = counters::snapshot();
+    let after = counters::snapshot().unwrap();
     assert!(before.before_usec <= before.after_usec);
     assert!(before.after_usec <= after.before_usec);
     assert!(after.before_usec <= after.after_usec);
@@ -24,7 +24,7 @@ fn instrumented_counts_include_real_allocations_with_ordered_clock_bounds() {
     assert!(after.allocations > before.allocations);
     assert!(after.bytes_allocated >= before.bytes_allocated + bytes.len());
     drop(bytes);
-    assert!(counters::snapshot().deallocations > after.deallocations);
+    assert!(counters::snapshot().unwrap().deallocations > after.deallocations);
 }
 
 #[test]
@@ -48,7 +48,14 @@ fn counter_record_is_one_bounded_write_and_overflow_writes_nothing() {
         }
     }
     let mut sink = Sink::default();
-    counters::write_snapshot(&mut sink, "session", "sample", 42, counters::snapshot()).unwrap();
+    counters::write_snapshot(
+        &mut sink,
+        "session",
+        "sample",
+        42,
+        counters::snapshot().unwrap(),
+    )
+    .unwrap();
     assert_eq!(sink.0.len(), 1);
     let line = std::str::from_utf8(&sink.0[0]).unwrap();
     assert!(line.starts_with(&format!(
@@ -64,7 +71,7 @@ fn counter_record_is_one_bounded_write_and_overflow_writes_nothing() {
             &"x".repeat(1024),
             "sample",
             43,
-            counters::snapshot()
+            counters::snapshot().unwrap()
         )
         .is_err()
     );
@@ -85,7 +92,7 @@ fn shared_pipe_keeps_concurrent_counter_and_json_records_separate() {
                 "session",
                 "sample",
                 sequence,
-                counters::snapshot(),
+                counters::snapshot().unwrap(),
             )
             .unwrap();
         }
@@ -114,10 +121,7 @@ fn shared_pipe_keeps_concurrent_counter_and_json_records_separate() {
             assert!(line.starts_with(&format!("sophia_comparator_counters schema={} ", schema())));
             assert!(!line.contains('{'));
             assert!(line.contains(&format!("sequence={count} ")));
-            assert_eq!(
-                line.split_whitespace().count(),
-                13 + usize::from(cfg!(feature = "comparator-profiling"))
-            );
+            assert_eq!(line.split_whitespace().count(), 16);
             count += 1;
         }
     }

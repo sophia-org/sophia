@@ -219,6 +219,7 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
         .unwrap();
         let start = Instant::now();
         let mut completed = 0;
+        let mut mismatched = 0;
         let mut held = None;
         while child.try_wait().unwrap().is_none() {
             if start.elapsed() > Duration::from_secs(30) {
@@ -277,7 +278,11 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
                     now,
                 )?;
                 while let Some((output, generation)) = host.next_content_submission() {
-                    held = Some(host.begin_content_submission(output, generation, now)?);
+                    let bundle = host.begin_content_submission(output, generation, now)?;
+                    if !panel_canvas_matches(&bundle, PANEL_WIDTH) {
+                        mismatched += 1;
+                    }
+                    held = Some(bundle);
                     let grant = host.content_grant().unwrap();
                     host.content_prepared(grant, output, generation, 1, 1, now)?;
                     host.content_presented(grant, output, generation, generation, 1, 1)?;
@@ -340,6 +345,10 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
             .map(|line| serde_json::from_str(line).unwrap())
             .collect();
         assert_eq!(completed, FRAMES);
+        assert_eq!(
+            mismatched, 0,
+            "presented panel bytes differ from the canvas"
+        );
         #[cfg(feature = "comparator-progress")]
         {
             let progress = sophia_runtime::comparator_counters::progress::snapshot();
@@ -417,12 +426,16 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
                 assert!(line.starts_with(if cfg!(feature = "comparator-progress") {
                     "sophia_comparator_counters schema=2 mode=progress process=peer "
                 } else if cfg!(feature = "comparator-profiling") {
-                    "sophia_comparator_counters schema=2 mode=profile process=peer "
+                    "sophia_comparator_counters schema=3 mode=profile process=peer "
                 } else if cfg!(feature = "comparator-allocation-counting") {
-                    "sophia_comparator_counters schema=1 process=peer "
+                    "sophia_comparator_counters schema=3 mode=rust-global process=peer "
                 } else {
-                    "sophia_comparator_counters schema=2 mode=cpu-only process=peer "
+                    "sophia_comparator_counters schema=3 mode=cpu-only process=peer "
                 }));
+                if !cfg!(feature = "comparator-progress") {
+                    assert!(line.contains(" minor_faults="));
+                    assert!(line.contains(" major_faults="));
+                }
                 assert!(line.contains(if index % 2 == 0 {
                     "stage=frame_start "
                 } else {
@@ -725,6 +738,7 @@ fn run_sealed_owner(
     .map_err(|e| format!("{e:?}"))?;
     let start = Instant::now();
     let mut completed = 0;
+    let mut mismatched = 0;
     let mut held = None;
     let mut stage = "start";
     while child.try_wait().map_err(|e| e.to_string())?.is_none() {
@@ -793,7 +807,11 @@ fn run_sealed_owner(
                 now,
             )?;
             while let Some((output, generation)) = host.next_content_submission(epochs) {
-                held = Some(host.begin_content_submission(epochs, output, generation, now)?);
+                let bundle = host.begin_content_submission(epochs, output, generation, now)?;
+                if !panel_canvas_matches(&bundle, PANEL_WIDTH) {
+                    mismatched += 1;
+                }
+                held = Some(bundle);
                 let grant = host.content_grant().unwrap();
                 host.content_prepared(epochs, grant, output, generation, 1, 1, now)?;
                 host.content_presented(epochs, grant, output, generation, generation, 1, 1)?;
@@ -808,5 +826,28 @@ fn run_sealed_owner(
         }
         std::thread::yield_now();
     }
+    if mismatched != 0 {
+        return Err(format!(
+            "{mismatched} presented panels differ from the canvas"
+        ));
+    }
     Ok((completed, image_owner, held))
+}
+
+/// The one placed panel carries exactly its candidate's canvas bytes, in
+/// order, whichever wire or source delivered it.
+fn panel_canvas_matches(bundle: &ContentRenderBundle, width: u32) -> bool {
+    let shade = (bundle.candidate_generation % 128) as u8;
+    let [placement] = bundle.placements.as_slice() else {
+        return false;
+    };
+    let Some(lease) = bundle.resource(placement.resource) else {
+        return false;
+    };
+    let bytes = lease.bytes();
+    bytes.len() == width as usize * 24 * 4
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| *byte == if index % 4 == 3 { 255 } else { shade })
 }

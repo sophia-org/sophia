@@ -38,6 +38,20 @@ pub struct Snapshot {
     pub reallocations: usize,
     pub deallocations: usize,
     pub bytes_allocated: usize,
+    #[cfg(not(feature = "comparator-progress"))]
+    pub minor_faults: u64,
+    #[cfg(not(feature = "comparator-progress"))]
+    pub major_faults: u64,
+}
+
+/// Cumulative page faults of the whole process, exited threads included.
+/// Page allocation and zeroing done by the kernel inside a write or socket
+/// copy is not a fault and does not appear here.
+#[cfg(not(feature = "comparator-progress"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Faults {
+    pub minor: u64,
+    pub major: u64,
 }
 
 fn nanos(clock: rustix::time::ClockId) -> u64 {
@@ -45,7 +59,47 @@ fn nanos(clock: rustix::time::ClockId) -> u64 {
     value.tv_sec as u64 * 1_000_000_000 + value.tv_nsec as u64
 }
 
-pub fn snapshot() -> Snapshot {
+#[cfg(not(feature = "comparator-progress"))]
+pub fn process_faults() -> std::io::Result<Faults> {
+    use nix::sys::resource::{UsageWho, getrusage};
+    let usage = getrusage(UsageWho::RUSAGE_SELF).map_err(std::io::Error::from)?;
+    let count = |value: std::ffi::c_long| {
+        u64::try_from(value)
+            .map_err(|_| std::io::Error::other("getrusage returned a negative fault count"))
+    };
+    Ok(Faults {
+        minor: count(usage.minor_page_faults())?,
+        major: count(usage.major_page_faults())?,
+    })
+}
+
+/// Progress records keep their original fields and make no fault read.
+#[cfg(feature = "comparator-progress")]
+pub fn snapshot() -> std::io::Result<Snapshot> {
+    let before_usec = nanos(rustix::time::ClockId::Monotonic) / 1000;
+    let cpu_ns = nanos(rustix::time::ClockId::ProcessCPUTime);
+    let after_usec = nanos(rustix::time::ClockId::Monotonic) / 1000;
+    Ok(Snapshot {
+        before_usec,
+        after_usec,
+        cpu_ns,
+        allocations: 0,
+        reallocations: 0,
+        deallocations: 0,
+        bytes_allocated: 0,
+    })
+}
+
+#[cfg(not(feature = "comparator-progress"))]
+pub fn snapshot() -> std::io::Result<Snapshot> {
+    snapshot_with_faults(process_faults)
+}
+
+/// A failed fault read fails the snapshot; no count is substituted.
+#[cfg(not(feature = "comparator-progress"))]
+pub fn snapshot_with_faults(
+    read_faults: impl FnOnce() -> std::io::Result<Faults>,
+) -> std::io::Result<Snapshot> {
     let before_usec = nanos(rustix::time::ClockId::Monotonic) / 1000;
     #[cfg(feature = "comparator-allocation-counting")]
     let counts = {
@@ -59,9 +113,10 @@ pub fn snapshot() -> Snapshot {
     };
     #[cfg(not(feature = "comparator-allocation-counting"))]
     let counts = (0, 0, 0, 0);
+    let faults = read_faults()?;
     let cpu_ns = nanos(rustix::time::ClockId::ProcessCPUTime);
     let after_usec = nanos(rustix::time::ClockId::Monotonic) / 1000;
-    Snapshot {
+    Ok(Snapshot {
         before_usec,
         after_usec,
         cpu_ns,
@@ -69,13 +124,25 @@ pub fn snapshot() -> Snapshot {
         reallocations: counts.1,
         deallocations: counts.2,
         bytes_allocated: counts.3,
-    }
+        minor_faults: faults.minor,
+        major_faults: faults.major,
+    })
 }
 
 pub fn record(process: &str, stage: &str, sequence: u64) -> std::io::Result<()> {
-    let s = snapshot();
+    let s = snapshot()?;
     write_snapshot(&mut std::io::stderr().lock(), process, stage, sequence, s)
 }
+
+/// The cost mode named in schema 3 records.
+#[cfg(not(feature = "comparator-progress"))]
+pub const MODE: &str = if cfg!(feature = "comparator-profiling") {
+    "profile"
+} else if cfg!(feature = "comparator-allocation-counting") {
+    "rust-global"
+} else {
+    "cpu-only"
+};
 
 /// Format before writing so a blocking pipe receives one bounded record,
 /// rather than fragments that another process can interrupt.
@@ -88,18 +155,10 @@ pub fn write_snapshot(
 ) -> std::io::Result<()> {
     let mut bytes = [0u8; 1024];
     let mut buffer = std::io::Cursor::new(bytes.as_mut_slice());
-    let schema = if cfg!(feature = "comparator-progress") {
-        "2 mode=progress"
-    } else if cfg!(feature = "comparator-profiling") {
-        "2 mode=profile"
-    } else if cfg!(feature = "comparator-allocation-counting") {
-        "1"
-    } else {
-        "2 mode=cpu-only"
-    };
+    #[cfg(feature = "comparator-progress")]
     writeln!(
         buffer,
-        "sophia_comparator_counters schema={schema} process={process} pid={} stage={stage} sequence={sequence} before_usec={} after_usec={} cpu_ns={} allocations={} reallocations={} deallocations={} bytes_allocated={}",
+        "sophia_comparator_counters schema=2 mode=progress process={process} pid={} stage={stage} sequence={sequence} before_usec={} after_usec={} cpu_ns={} allocations={} reallocations={} deallocations={} bytes_allocated={}",
         std::process::id(),
         s.before_usec,
         s.after_usec,
@@ -108,6 +167,21 @@ pub fn write_snapshot(
         s.reallocations,
         s.deallocations,
         s.bytes_allocated
+    )?;
+    #[cfg(not(feature = "comparator-progress"))]
+    writeln!(
+        buffer,
+        "sophia_comparator_counters schema=3 mode={MODE} process={process} pid={} stage={stage} sequence={sequence} before_usec={} after_usec={} cpu_ns={} allocations={} reallocations={} deallocations={} bytes_allocated={} minor_faults={} major_faults={}",
+        std::process::id(),
+        s.before_usec,
+        s.after_usec,
+        s.cpu_ns,
+        s.allocations,
+        s.reallocations,
+        s.deallocations,
+        s.bytes_allocated,
+        s.minor_faults,
+        s.major_faults
     )?;
     let len = buffer.position() as usize;
     output.write_all(&bytes[..len])?;
@@ -162,7 +236,7 @@ impl Sampler {
         let thread = std::thread::Builder::new()
             .name("comparison-counters".into())
             .spawn(move || {
-                write_snapshot(&mut output, "session", "start", 0, snapshot())?;
+                write_snapshot(&mut output, "session", "start", 0, snapshot()?)?;
                 #[cfg(feature = "comparator-profiling")]
                 phases::record(&mut output, 0)?;
                 for sequence in 1..=60_000 {
@@ -175,11 +249,17 @@ impl Sampler {
                                 "session",
                                 "end",
                                 sequence,
-                                snapshot(),
+                                snapshot()?,
                             );
                         }
                         Err(mpsc::RecvTimeoutError::Timeout) => {
-                            write_snapshot(&mut output, "session", "sample", sequence, snapshot())?;
+                            write_snapshot(
+                                &mut output,
+                                "session",
+                                "sample",
+                                sequence,
+                                snapshot()?,
+                            )?;
                             #[cfg(feature = "comparator-profiling")]
                             // Phase totals need less frequent publication than
                             // frame-cost counters. Keep detailed profiles within
@@ -190,7 +270,7 @@ impl Sampler {
                         }
                     }
                 }
-                write_snapshot(&mut output, "session", "exhausted", 60_001, snapshot())?;
+                write_snapshot(&mut output, "session", "exhausted", 60_001, snapshot()?)?;
                 Err(std::io::Error::other(
                     "comparison counter sample bound exhausted",
                 ))

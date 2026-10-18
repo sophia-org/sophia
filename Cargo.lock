@@ -1589,6 +1589,7 @@ dependencies = [
 name = "sophia-runtime"
 version = "0.1.0"
 dependencies = [
+ "nix",
  "rustix",
  "serde",
  "serde_json",

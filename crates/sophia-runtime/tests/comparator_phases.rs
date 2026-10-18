@@ -9,7 +9,7 @@ static ALLOCATOR: counters::Allocator = counters::ALLOCATOR;
 #[test]
 fn bounded_phase_records_allocate_nothing_and_count_completed_scopes() {
     let mut bytes = [0u8; 4096];
-    let before = counters::snapshot();
+    let before = counters::snapshot().unwrap();
     for sequence in 0..100 {
         let owner = phases::enter(Phase::Owner);
         {
@@ -23,7 +23,7 @@ fn bounded_phase_records_allocate_nothing_and_count_completed_scopes() {
         drop(owner);
         phases::record(&mut std::io::Cursor::new(&mut bytes[..]), sequence).unwrap();
     }
-    let after = counters::snapshot();
+    let after = counters::snapshot().unwrap();
     assert_eq!(after.allocations, before.allocations);
     assert_eq!(after.reallocations, before.reallocations);
     let mut output = std::io::Cursor::new(&mut bytes[..]);

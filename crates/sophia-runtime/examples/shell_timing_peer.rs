@@ -16,6 +16,8 @@ const WAIT: Duration = Duration::from_secs(5);
 #[path = "shell_timing_peer/journal.rs"]
 mod journal;
 use journal::{Event, Upload};
+#[path = "shell_timing_peer/canvas.rs"]
+mod canvas;
 #[path = "shell_timing_peer/sealed.rs"]
 mod sealed;
 use sealed::SealedConfig;
@@ -376,6 +378,14 @@ fn run() -> Result<()> {
         probe_bytes,
         source: sealed.map(|_| "sealed"),
     })?;
+    let bar_bytes = canvas::rgba_bytes(allocation.pixel.width, allocation.pixel.height)
+        .ok_or("upload size overflow")?;
+    let probe_canvas_bytes = if probe_bytes == 0 {
+        0
+    } else {
+        canvas::rgba_bytes(1024, 1024).ok_or("upload size overflow")?
+    };
+    let mut canvas = canvas::Canvas::new(usize::try_from(bar_bytes.max(probe_canvas_bytes))?);
     for generation in 1..=frames {
         #[cfg(feature = "comparator-counters")]
         sophia_runtime::comparator_counters::record("peer", "frame_start", generation)?;
@@ -393,7 +403,7 @@ fn run() -> Result<()> {
             };
             let width = if probe { 1024 } else { allocation.pixel.width };
             let height = if probe { 1024 } else { allocation.pixel.height };
-            let length = u64::from(width) * u64::from(height) * 4;
+            let length = canvas::rgba_bytes(width, height).ok_or("upload size overflow")?;
             if length == 0 || length > limits.max_staging_bytes {
                 return Err("invalid upload size".into());
             }
@@ -402,18 +412,10 @@ fn run() -> Result<()> {
             if chunk_bytes == 0 {
                 return Err("row exceeds chunk limit".into());
             }
-            let bytes: Vec<_> = (0..length as usize)
-                .map(|i| {
-                    if i % 4 == 3 {
-                        255
-                    } else {
-                        (generation % 128) as u8
-                    }
-                })
-                .collect();
+            let bytes = canvas.fill(usize::try_from(length)?, generation)?;
             let chunks = bytes.len().div_ceil(chunk_bytes) as u32;
             let source = match sealed {
-                Some(_) => Some(sealed::prepare(width, height, &bytes)?),
+                Some(_) => Some(sealed::prepare(width, height, bytes)?),
                 None => None,
             };
             // Preserve the attempt before sending. This conservative interval includes
