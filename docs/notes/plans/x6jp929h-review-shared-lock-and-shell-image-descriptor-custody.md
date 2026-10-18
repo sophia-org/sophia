@@ -8,14 +8,35 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
+Environment readback is implemented in Sophia `21bcd211e` and emitted by
+Session `116d663b4`. Nominal refresh and timing-derived refresh stay distinct;
+GL strings come from the current context, VRR from committed CRTC state, and
+scale from applied owner state. The three pure emitter controls, both existing
+rollback-readback controls and native-session strict Clippy pass independently.
+The layout gate and lock cancellation control pass at `e395fe7c6`. These checks
+use no physical output and do not authenticate records in a shared raw log.
+
+External checkpoint `niltempus d371f48` includes M5 supplied-capture validation
+and bounded process captures (`ededd4e`, `5c49701`), plus schema-2 frozen output
+targets and a single-attempt hash chain. All 13 campaign controls and strict
+xtask Clippy pass. Failed arms remain recorded; unfinished claims block later
+arms. Capture controls reject reused, dead and malformed process identities.
+The attended runner, supervised process binding, credential-checked environment
+delivery and evidence importer are still being connected. Import must prove a
+shared zero-offset monotonic clock domain before comparing process and kernel
+timestamps. A matching PID printed in a log is not writer authentication.
+No calibration or native campaign has run, and performance acceptance remains
+open. The operator's 120 Hz connector selection is still pending.
+
 External integration checkpoint `niltempus 2c4b625` publishes frozen campaign
 preparation and reopening checks, warmup-aware paired comparisons, supplied
 environment validation, a bounded single CPU worker and its load controller.
 The full xtask suite passes with devices and display access hidden
 (`/tmp/t338-campaign-environment-load-tests.log`); the final load controls also
 pass independently, 10/10. Tests start at most two helper workers, never the
-16-worker campaign. Host GL identity and committed KMS environment emission,
-capture/run-order wiring and attended calibration remain unfinished. No native
+16-worker campaign. At that checkpoint, host GL identity and committed KMS
+environment emission, capture/run-order wiring and attended calibration were
+unfinished. No native
 run or performance acceptance is claimed. The 120 Hz output connector still
 needs operator confirmation; this campaign cannot close the separate 60 Hz gate.
 
