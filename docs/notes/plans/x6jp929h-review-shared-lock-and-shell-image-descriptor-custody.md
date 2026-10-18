@@ -20,6 +20,16 @@ all-target strict Clippy and formatting. Logs are
 `/tmp/t338-runner-provider-final-controls.log` and
 `/tmp/t338-runner-provider-final-clippy.log`.
 
+Follow-up `niltempus 52df140` passes the real monitor-to-provider composition
+control: actual pidfd datagrams feed monitor.finish, the retained record passes
+provenance and M5, and a span past the proven-alive opening is refused. Process
+bindings and static facts remain fixture-supplied; this is not native evidence.
+
+The task ledger's remaining t338 exit is paired panel CPU evidence for sealed
+versus bytes. The four unchanged IPC cost gates, allocation attribution and
+journal-read pairing belong to t331 after t338; diagnostic investigation may
+proceed while waiting, but does not add a prerequisite to the t338 evidence run.
+
 The monitor accepts pidfd-backed host datagrams only inside full supervised
 binding brackets and retains start/end captures separately. The provider
 rechecks identities, source provenance, receipt coverage, static equality and
@@ -187,7 +197,7 @@ preparation tests and strict Clippy pass. The peer still must compare those
 bounds against the negotiated content limits.
 No native capture has begun and no
 installed desktop has changed. All four unchanged t331 +10% gates, per-request
-allocation attribution and journal-read pairing remain required; the earlier
+allocation attribution and journal-read pairing remain required for t331; the earlier
 red panel result is permission to proceed, not a performance pass. DMA remains
 outside this slice.
 
