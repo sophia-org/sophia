@@ -291,7 +291,7 @@ fn run() -> Result<()> {
     };
     if output_id == 0
         || !(1..=10000).contains(&frames)
-        || !(1..=128).contains(&height)
+        || !(1..=512).contains(&height)
         || hold > 600000
         || !matches!(probe_bytes, 0 | 4194304)
     {
@@ -368,6 +368,11 @@ fn run() -> Result<()> {
         || allocation.allocation_request_id != 1
     {
         return Err("allocation refused or misattributed".into());
+    }
+    // The granted geometry must be the requested geometry: a smaller
+    // grant would silently measure a smaller presented surface.
+    if allocation.pixel.width != output.local_width || allocation.pixel.height != height as u32 {
+        return Err("allocation geometry differs from the requested panel".into());
     }
     if sealed.is_some() {
         sealed::wait_ready(wire.client()?, WAIT)?;
