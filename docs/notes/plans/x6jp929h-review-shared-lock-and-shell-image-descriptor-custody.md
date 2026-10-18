@@ -8,6 +8,15 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
+Fresh CPU-only release host and peer builds pass at clean signed comparator
+`180808d48`; runner and preflight builds pass at clean signed external
+`niltempus 52df140`. Artifact paths, SHA-256 hashes, features and source heads
+are retained in
+`~/.local/state/sophia/development-evidence/t338-panel-cpu-20261017-preparation-01/build-artifacts.json`,
+beside the Cargo JSON output and build logs. Binaries remain in the cargo-slot
+pools. This is device-hidden build preparation, not calibration or paired CPU
+evidence. The attended run still needs the operator's connector selection.
+
 The campaign runner and provenance provider are signed in external
 `niltempus 297819c`, on monitor `b988ddb`, load qualification `9b25d2e`,
 frozen observation wiring `0084783` and provider `e20573e`. The runner executes
