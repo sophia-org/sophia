@@ -201,8 +201,9 @@ pub fn write_progress(
     // Timestamp the snapshot here, never at an instrumented service call.
     let before = nanos(rustix::time::ClockId::Monotonic) / 1000;
     let counts = progress::snapshot();
+    let ledger = progress::service_ledger::snapshot();
     let after = nanos(rustix::time::ClockId::Monotonic) / 1000;
-    let mut bytes = [0u8; 2048];
+    let mut bytes = [0u8; 4096];
     let mut buffer = std::io::Cursor::new(bytes.as_mut_slice());
     write!(
         buffer,
@@ -210,6 +211,9 @@ pub fn write_progress(
         std::process::id()
     )?;
     for (name, count) in progress::NAMES.iter().zip(counts) {
+        write!(buffer, " {name}={count}")?;
+    }
+    for (name, count) in progress::service_ledger::NAMES.iter().zip(ledger) {
         write!(buffer, " {name}={count}")?;
     }
     writeln!(buffer)?;

@@ -1,6 +1,7 @@
 //! Comparison-only process totals. Core counts include every 9P server in the
 //! process; they are not exclusive shell costs or wall-clock measurements.
 use std::sync::atomic::{AtomicU64, Ordering};
+pub mod service_ledger;
 
 #[derive(Clone, Copy)]
 #[repr(usize)]
@@ -74,6 +75,9 @@ static TOTALS: [AtomicU64; 30] = [const { AtomicU64::new(0) }; 30];
 /// No allocation, clock, formatting or I/O on the instrumented path. Wrapping
 /// totals must be rejected by analysis rather than interpreted as progress.
 pub fn add(counter: Counter, amount: u64) {
+    if matches!(counter, Counter::WrittenBytes) {
+        service_ledger::written(amount);
+    }
     TOTALS[counter as usize].fetch_add(amount, Ordering::Relaxed);
     if amount != 0 {
         match counter {

@@ -11,6 +11,53 @@ pub struct ShellTransportConnection<'a> {
 }
 
 impl ShellTransportConnection<'_> {
+    /// Share publication flushes within one already-started owner visit.
+    /// Records keep their existing admission, ordering and queue charges.
+    /// The final flush runs even if the callback returns an error value;
+    /// unwinding instead disconnects, so no deferred batch can escape.
+    pub fn with_publication_batch<R, E>(
+        &mut self,
+        service: impl FnOnce(&mut ShellTransportConnection<'_>) -> Result<R, E>,
+    ) -> Result<R, E>
+    where
+        E: From<super::ShellTransportError>,
+    {
+        // The protected comparison IPC path keeps its existing immediate I/O.
+        if matches!(self.state.wire, Some(super::wire::Wire::Socket(_))) {
+            return service(self);
+        }
+        if !self.state.owner_serviced || self.state.publication_batch {
+            return Err(super::ShellTransportError::InvalidServiceBatch.into());
+        }
+        if self.state.peer_closed || self.state.wire.is_none() {
+            return Err(super::ShellTransportError::NotConnected.into());
+        }
+        self.state.publication_batch = true;
+        let mut batch = PublicationBatch {
+            connection: self,
+            armed: true,
+        };
+        let value = service(batch.connection);
+        batch.connection.state.publication_batch = false;
+        batch.armed = false;
+        let flushed = batch
+            .connection
+            .state
+            .poll_io(batch.connection.content_epochs)
+            .and({
+                if batch.connection.state.peer_closed {
+                    Err(super::ShellTransportError::NotConnected)
+                } else {
+                    Ok(())
+                }
+            });
+        // A callback may have admitted an external effect before reporting
+        // failure. Never replace that classification with a retryable flush error.
+        let value = value?;
+        flushed.map_err(E::from)?;
+        Ok(value)
+    }
+
     /// Service the component's persistent image owner using the same clock as
     /// ordinary content resources. The owner itself must outlive this borrow.
     pub fn service_isb_images(
@@ -26,6 +73,23 @@ impl ShellTransportConnection<'_> {
     /// store profile. Persistent launch cannot inherit a transient menu grant.
     pub fn supports_persistent_catalog(&self) -> bool {
         self.state.supports_persistent_catalog(self.content_epochs)
+    }
+}
+
+struct PublicationBatch<'a, 'b> {
+    connection: &'a mut ShellTransportConnection<'b>,
+    armed: bool,
+}
+
+impl Drop for PublicationBatch<'_, '_> {
+    fn drop(&mut self) {
+        if self.armed {
+            self.connection.state.publication_batch = false;
+            let _ = self
+                .connection
+                .state
+                .disconnect(self.connection.content_epochs);
+        }
     }
 }
 

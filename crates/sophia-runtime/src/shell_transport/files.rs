@@ -170,6 +170,10 @@ impl ShellFileWire {
     }
 
     fn service(&mut self, flush_only: bool) -> Result<(), ShellTransportError> {
+        #[cfg(feature = "comparator-progress")]
+        if !flush_only {
+            sophia_9p::progress::service_ledger::input();
+        }
         let readiness = self.readiness.take();
         #[cfg(feature = "comparator-profiling")]
         let authentication_profile = crate::comparator_counters::phases::enter(
@@ -188,7 +192,12 @@ impl ShellFileWire {
             crate::comparator_counters::phases::Phase::WireServer,
         );
         let live = if flush_only {
-            self.server.flush()
+            #[cfg(feature = "comparator-progress")]
+            let before = sophia_9p::progress::service_ledger::written_bytes();
+            let result = self.server.flush();
+            #[cfg(feature = "comparator-progress")]
+            sophia_9p::progress::service_ledger::flush(before, !matches!(&result, Ok(true)));
+            result
         } else if let Some(readiness) = readiness {
             self.server.turn_observed(readiness)
         } else {

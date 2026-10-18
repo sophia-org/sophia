@@ -283,10 +283,19 @@ impl<E: Export> Connection<E> {
             crate::progress::add(crate::progress::Counter::PendingReadAttempt, 1);
             match self.read_now(export, waiting.fid, waiting.offset, waiting.count) {
                 Some(reply) => {
+                    #[cfg(feature = "comparator-progress")]
+                    crate::progress::service_ledger::retry_outcome(usize::from(matches!(
+                        &reply,
+                        Reply::Lerror(_)
+                    )));
                     self.waiting.remove(index);
                     self.send_owned(waiting.tag, reply)?;
                 }
-                None => index += 1,
+                None => {
+                    #[cfg(feature = "comparator-progress")]
+                    crate::progress::service_ledger::retry_outcome(2);
+                    index += 1;
+                }
             }
         }
         Ok(())

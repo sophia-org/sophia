@@ -703,7 +703,6 @@ impl Export for ShellFiles {
             observe(match node {
                 Node::Transaction | Node::TransactionReuse => Activity::Record,
                 Node::Submit => Activity::Submit,
-                Node::Upload(_) => Activity::Pixel,
                 _ => Activity::Other,
             });
         }

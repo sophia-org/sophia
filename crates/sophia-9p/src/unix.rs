@@ -299,6 +299,8 @@ impl<E: Export> Server<E> {
     }
 
     fn service_wake(&mut self) -> io::Result<bool> {
+        #[cfg(feature = "comparator-progress")]
+        let _retry = crate::progress::service_ledger::retry_source(0);
         self.drain_wake()?;
         if self.wake.inner.stop.load(Ordering::SeqCst) {
             for slot in &mut self.slots {
@@ -558,6 +560,8 @@ impl<E: Export> Server<E> {
     /// Writes what the socket takes, then lets held requests and waiting
     /// reads use the room that made.
     fn write(export: &mut E, slot: &mut Slot<E>) {
+        #[cfg(feature = "comparator-progress")]
+        let _retry = crate::progress::service_ledger::retry_source(1);
         while !slot.ended && !slot.connection.output().is_empty() {
             let result = slot
                 .connection

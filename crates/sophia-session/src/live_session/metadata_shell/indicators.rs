@@ -94,6 +94,12 @@ pub(in crate::live_session) enum IndicatorServiceError {
     Completion(Box<dyn std::error::Error>),
 }
 
+impl From<sophia_runtime::ShellTransportError> for IndicatorServiceError {
+    fn from(error: sophia_runtime::ShellTransportError) -> Self {
+        Self::Poll(Box::new(error))
+    }
+}
+
 impl LiveMetadataShell {
     pub(in crate::live_session) fn service_indicator_activation(
         &mut self,
