@@ -23,7 +23,7 @@ both full client checks passed before signing and publication. The earlier
 client pins below describe the preceding migration checkpoint.
 
 The isolated comparator is signed and published on `performance/t331-isb-cost`
-at `bebb9db9b69b5eda1eae63e1124374f808abd8f6`, including the shared admission
+at `7b636c5ad9bf38c11d430f9d590baa08d52946f2`, including the shared admission
 optimization and mapped SDK imports. Its frozen historical branch and captures
 remain unchanged. Six supplied-owner peer controls pass; the actual native
 Session/CLI check also passes. New diagnostic-only
@@ -78,11 +78,55 @@ journal identity traces and their negative controls also pass. The broader
 runtime gate passes 705 tests; the three older comparator fixtures now use
 authenticated ISB on the files side and pass separately, with their resource,
 lease and backpressure assertions preserved. Strict all-target Clippy and
-formatting pass. Optimized artifacts and both campaigns are now frozen, with
-zero native arms run. The next step is an attended tty4 window; all four cost
-gates and latency qualification remain open. No installed desktop has been changed.
+formatting pass. The first attended ISB latency arm captured successfully, but
+its IPC pair failed during negotiation. The comparator's unauthenticated
+process-start path inherited production's content denial; the narrow IPC-only
+repair now passes a Session-start regression and its unfixed negative control.
+Replacement binaries and short-path campaigns `isb60b`/`isb120b` are frozen.
+No paired performance verdict
+exists. All four cost gates and latency qualification remain open; no installed
+desktop has been changed.
 
-## October 18 frozen native campaigns
+## October 18 first attended block
+
+The initial deep evidence path exceeded the Unix-socket address limit while
+creating the environment monitor. The claimed failed arm remains under
+`t331-isb-cost-20261018/campaigns/t331-isb-60000-20261018/`; no Session launched.
+Replacement campaigns used short roots `~/.local/state/t331/isb60a` and
+`isb120a`, preserving the plans, artifacts and ordering. External tooling
+`c832a1f54418b749303fd28e116443006c551d3b` now checks that address at freeze and
+before an arm claim; boundary and no-write tests, strict Clippy and format pass.
+
+In `isb60a`, `idle-p1-panel-latency-C` captured all outcomes and recovered.
+`idle-p1-panel-latency-A` failed with `ContentAdmissionRefused`, reason 4,
+denied capabilities 384. Session downgraded Granted to Unavailable on its
+unauthenticated compatibility start, which the isolated IPC baseline retains
+deliberately. The peer then reported message kind 160 instead of a welcome.
+The block stopped; tty4 text mode, keyboard mode and termios were restored,
+with no emergency recovery. The attempt, wrapper, Session and recovery records
+are retained beneath that arm. This is an invalid pair, not a measured cost
+regression. `native-first-block-result.json` in the current evidence directory
+indexes both failures. No old attempt will be overwritten or resumed.
+
+Comparator repair `7b636c5ad9bf38c11d430f9d590baa08d52946f2` preserves Granted
+on ComparisonIpc only; unauthenticated NineP remains refused and the native
+protected-baseline opt-in guard is unchanged. A device-hidden protected-child
+test exercises `ShellComponentProcesses::start`, negotiated content grants and
+retained process custody. Restoring the old downgrade reproduces message kind
+160; restoring the fix passes. Session library/test strict Clippy passes with
+and without native-session. See `claude-ipc-start-*` logs under
+`isb-client-migration-20261018/`. Production source is unchanged.
+
+Replacement optimized artifacts are staged separately under
+`niltempus/.artifacts/t331-isb-cost-20261018-r2/`; their builds, hashes, 24
+profile checks and new plans are recorded in
+`t331-isb-cost-20261018/candidate-02/`. `ready.json` binds the repaired comparator
+and runner to the short-path campaigns `~/.local/state/t331/isb60b` and
+`isb120b`. The ordinary peer is byte-identical to the previously tested
+optimized peer. The old first-block command now delegates to the new launcher;
+each arm still requires the foreground attended console and stops on failure.
+
+## October 18 initial frozen native campaigns — superseded
 
 The signed comparator `bebb9db9b69b5eda1eae63e1124374f808abd8f6` and external
 runner `879b6729375b9330304abadd867b85718b5025fd` bind three optimized host/peer
