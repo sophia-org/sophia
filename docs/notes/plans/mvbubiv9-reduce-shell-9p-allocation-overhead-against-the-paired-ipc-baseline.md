@@ -21,11 +21,21 @@ engine optimization programme. Requested by niltempus on October 15.
 
 On October 17 niltempus accepted leaving the panel allocation result red while
 descriptor work proceeds. This is permission to proceed, not a passing result
-or a changed threshold. t331 remains open, waiting on t338; all four +10% gates
+or a changed threshold. t331 remains open; all four +10% gates
 (panel and bulk CPU/MiB and allocations/frame) must be rerun after t338 under
 the existing accounting method. Per-request allocation attribution and the
 journal-read-pairing investigation remain required t331 work and may proceed
-while it waits. The failed B2/B3 pilot remains the latest native evidence.
+independently of the completed t338 implementation. The failed B2/B3 pilot
+remains the latest native IPC gate evidence.
+
+On October 17 niltempus accepted closing t338 with its report-only native
+panel CPU pair and left repeatability/performance qualification here. The
+[retained t338 result](x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#current-resumption)
+compares files bytes with per-frame fresh sealed memfds: sealed used
+10.34–10.61% more Session-plus-peer CPU in that single pair. These are counter
+bounds, not confidence intervals. There is no IPC arm, allocation measurement
+or passing t331 verdict. Preserve this regression as evidence; balanced
+restarted trials and the existing workload/rate/condition gates remain required.
 
 The paired debug diagnostic records 821–851 allocation operations per frame
 on files versus 250–271 on IPC for its small bar workload. With the 4 MiB

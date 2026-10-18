@@ -8,6 +8,14 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
+On October 17, niltempus accepted closing t338 on the implemented sealed-memory
+path, its recorded SDK/export and custody controls, and this report-only paired
+panel CPU calibration. No CPU improvement threshold was imposed on t338.
+Repeatability and performance qualification remain with t331, including its
+unchanged IPC cost gates. This explicitly narrows the older panel/bulk and
+balanced-trial wording below for t338; it does not claim those measurements
+were performed or relax t331's criteria.
+
 The attended bytes/sealed panel calibration now has a valid paired report.
 `~/.local/state/t338/bytes-run-04` and `sealed-run-01` both captured successfully,
 retaining their selected host/supervisor/peer bindings and two environment
@@ -34,8 +42,34 @@ Sealed costs 10.34–10.61% more CPU in this pair, using conservative cross-boun
 ratios. These are counter bounds, not statistical confidence intervals. This
 is one sequential calibration pair, not balanced repeated trials or a t331/B9
 gate verdict, and it does not establish an improvement. Broader measurements
-listed below remain unproven by this CPU-only pair. No additional native run
-is requested while the completion scope is reviewed.
+listed below remain unproven by this CPU-only pair. The sealed peer at
+`180808d48` disables byte fallback and creates, writes and seals a fresh memfd
+per frame. The source construction and 1000 successful presented terminals
+establish use of that path; Session did not retain per-offer admission logs.
+The result does not generalize to a reused or registered-image design.
+
+The implementation evidence summarized below closes the earlier incomplete
+SDK/export and cancellation checkpoints:
+
+- Sophia `cbee1268d` pins Rust `e4f59e36` and C `d51b0336`; both snapshot checks,
+  Rust workspace tests, the C checks and role-adapter controls pass.
+- Lock `011f27c05`, `403606cdb`, `7f9c96917` and `bc667ecef` cover validation,
+  backing leases, successor budgets, wrong length, worker failure and teardown;
+  the final lock image transport suite passes 34 tests.
+- `49da1ded4` proves the C lock SDK through protected Factotum/afid admission,
+  exact accepted pixels and backing survival across revocation.
+- `d21d6b013` covers lock unsent cancellation, channel loss and submitted-job
+  cancellation. Shell `9ef582fee`, `5844f638b` and `c57dd321d` cover submitted
+  cancellation, first-cause timeout and teardown with uncollected completion.
+  Supplied owner schedules prove custody, not a particular worker scan position.
+- Exact Accepted-before-SourceReleased ordering and the sealed panel/4 MiB
+  fixture workloads pass at comparator `26d61cb58` and later pins. Supplied
+  fixture authority is distinct from the native calibration's retained bindings.
+
+## Earlier preparation and implementation checkpoints
+
+These paragraphs retain prior findings and then-outstanding work. The current
+resumption above supersedes their task status and measurement scope.
 
 `~/.local/state/t338/bytes-run-03` also completed the workload and restored
 the console, but observation failed: two descendants matched the host
@@ -997,6 +1031,13 @@ still depends on the shared design and t289; shell/lock release gates stay intac
 The user-selected planning work does not make t331 complete.
 
 ## Measurement and red controls
+
+For the October 17 t338 completion, the owner accepted the narrower panel
+CPU-pair exit recorded in Current resumption. The broader measurement programme
+in this section remains performance-qualification work under t331 (with
+idle/power under t336), not an unperformed claim attached to t338 completion.
+The implementation red controls retain the evidence and limitations recorded
+above; this scope decision does not waive custody or SDK parity requirements.
 
 Keep the frozen byte/IPC pilot and its gates. Descriptor qualification is a new
 comparison against the same byte path on identical content, dimensions, cadence,
