@@ -118,6 +118,10 @@ int ns_apply_content(struct sophia_ns *n, const struct sophia_sf_record *e, uint
         r = ns_resource(n, v->resource_id, v->resource_generation);
         if (!r)
             return 0;
+        /* Adoption already consumed the producer-verified Accepted. A late
+         * delivery must not resurrect a resource after Retire was queued. */
+        if (r->image_offer)
+            return v->transaction == r->image_offer && v->status == 2 && !v->reason ? 0 : -1;
         n->head.current = 1;
         if (v->status == 1)
             r->state = SOPHIA_NS_RESOURCE_ADMITTED;

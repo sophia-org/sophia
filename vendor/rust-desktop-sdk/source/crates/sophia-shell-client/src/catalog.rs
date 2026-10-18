@@ -1,4 +1,4 @@
-//! Revision-8 adapters share the connection's sole typed inbox and outbox.
+//! Catalog adapters at r8 and r9 share the connection's typed inbox and outbox.
 //! Catalog assembly happens inside the wire (see `socket`) and becomes
 //! observable here only as one complete `Inbound::Catalog` value.
 use crate::wire::{Inbound, Outbound};
@@ -33,8 +33,10 @@ impl CatalogInbox {
 
 impl ShellConnection {
     pub(crate) fn require_catalog(&self) -> Result<(), ShellClientError> {
-        if self.welcome.selected_revision != SOPHIA_SHELL_PERSISTENT_CATALOG_REVISION
-            || self.welcome.capabilities & SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG == 0
+        if !matches!(
+            self.welcome.selected_revision,
+            SOPHIA_SHELL_PERSISTENT_CATALOG_REVISION | 9
+        ) || self.welcome.capabilities & SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG == 0
         {
             return Err(ShellClientError::MissingCapability);
         }

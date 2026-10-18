@@ -45,9 +45,8 @@ enum sophia_ip_channel {
     SOPHIA_IPC_CLOSED
 };
 
-/* Why the channel closed. ABSENT, UNAVAILABLE and EXHAUSTED are clean: the
- * byte path may serve images if the caller allows it. The rest are errors
- * even with fallback enabled. */
+/* Why the channel closed. Every closure ends image admission for this epoch.
+ * Recovery needs a new authenticated connection, never a byte fallback. */
 enum sophia_ip_cause {
     SOPHIA_IPX_NONE,
     SOPHIA_IPX_ABSENT,       /* discovery object absent (ENOENT) */
@@ -78,8 +77,8 @@ enum sophia_ip_offer_state {
 enum sophia_ip_path {
     SOPHIA_IPP_DESCRIPTOR,
     SOPHIA_IPP_WAIT,  /* the barrier is still in progress */
-    SOPHIA_IPP_BYTES, /* clean closure and the caller allows fallback */
-    SOPHIA_IPP_ERROR
+    /* Value 2 was the retired byte fallback. */
+    SOPHIA_IPP_ERROR = 3
 };
 
 /* ResourceStatus outcomes as the role client reports them. */
@@ -97,7 +96,6 @@ struct sophia_ip_config {
     struct sophia_ic_role_bounds bounds; /* the role's negotiated limits */
     uint32_t transfer_timeout_ms;        /* the role's transfer deadline, nonzero */
     uint64_t startup_deadline_ms;        /* absolute: discovery through ChannelReady */
-    int fallback_bytes;                  /* caller policy for clean closure */
 };
 
 struct sophia_ip_offer_info {

@@ -48,7 +48,6 @@ fn run(absent: bool, cancel: bool) {
             endpoint_dir: peer.dir.clone(),
             startup_deadline_ms: 3000,
             transfer_timeout_ms: 1000,
-            fallback_bytes: true,
             formats_capacity: 163904,
         },
     )
@@ -72,7 +71,7 @@ fn run(absent: bool, cancel: bool) {
         }
         let image = session.image().unwrap();
         if absent {
-            if image.path() == ImagePath::Bytes {
+            if image.path() == ImagePath::Error {
                 break;
             }
         } else if let Some(id) = offer {
@@ -183,7 +182,6 @@ fn failure_keeps_session(case: peer::Case, cause: sophia_image_producer::CloseCa
             endpoint_dir: peer.dir.clone(),
             startup_deadline_ms: 3000,
             transfer_timeout_ms: 1000,
-            fallback_bytes: true,
             formats_capacity: 64,
         },
     )

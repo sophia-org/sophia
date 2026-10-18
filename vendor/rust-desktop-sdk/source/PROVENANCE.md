@@ -1,5 +1,43 @@
 # Provenance
 
+## Native ISB adoption, 2026-10-18
+
+The paired native-launcher adoption APIs consume a verified settled offer only
+after role, grant, bounds, duplicate and registry-capacity checks. They preserve
+retirement across matching late Accepted observations and fail closed on
+contradictory status. See API-PARITY.md for the exact custody contract and the
+different C/Rust event-consumption controls.
+
+Final device-hidden validation passes: Rust workspace all-target tests and
+strict Clippy, Rust formatting, and C's full `make check`. The Rust adoption
+target includes six controls; the C shell image target independently covers
+the same cases. The initial C fixture failure was a retained ResourceStatus
+blocking a later SourceReleased read; consuming that application head fixes
+the fixture without weakening producer settlement. The supplied deferred
+Limits grant is now 3, matching its existing metadata and status fixtures.
+
+Logs are under Sophia's development-evidence directory,
+`isb-client-migration-20261018/cli-rust-final-tests.log`,
+`cli-rust-final-clippy.log` and `cli-c-final-check.log`. Earlier failed runs
+remain retained. No production-export, authenticated-launch, native-cost or
+physical-presentation acceptance is claimed by these SDK checks.
+
+## ISB-only producer and role setup, 2026-10-18
+
+This implements the accepted ISB amendment in signed Sophia
+`9941d4c838e388e4944452ffaab06f69eae2c84f`; the already-pinned spec copies are
+unchanged. C and Rust remove producer byte fallback together and permit shell
+image setup after negotiated Limits. Dock and launcher keep their role grants
+at r9; existing cancellation and retained backing custody are unchanged.
+API-PARITY.md distinguishes the independent scripted controls from production
+client migration and native acceptance, which remain separate work.
+
+Device-hidden controls: the full workspace passed 919 tests; after adding the
+last exact-mask control, the native-role and image-adapter targets passed 60.
+Workspace all-target Clippy with warnings denied, formatting and diff checks
+passed. Evidence is retained as `isb-client-migration-20261018` in the owning
+Sophia development-evidence directory. The matching independent C suite passes.
+
 ## ISB naming, 2026-10-18
 
 niltempus approved Immutable Shared Buffers (ISB) as the name of the production

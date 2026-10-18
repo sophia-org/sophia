@@ -58,7 +58,7 @@ impl NativeLauncherLifecycle {
         match record {
             ShellContentRecord::Action(v) => self.observe_action(v),
             ShellContentRecord::AllocationResult(v) => self.allocation_result(v)?,
-            ShellContentRecord::ResourceStatus(v) => self.resource_status(v),
+            ShellContentRecord::ResourceStatus(v) => self.resource_status(tx, v)?,
             ShellContentRecord::ResourceReleased(v) => self.free_resource(v.resource),
             ShellContentRecord::FramePermit(v) => self.frame_permit(v)?,
             ShellContentRecord::OutputFacts(v) => {

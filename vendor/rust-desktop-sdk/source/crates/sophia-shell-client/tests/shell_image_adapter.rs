@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-//! The opt-in BAR image adapter against the scripted file peer:
+//! Content-role ISB adapters against the scripted file peer:
 //! discovery over the session's own 9P wire, endpoint connect, Hello,
 //! ChannelReady, an ImageBegin ticket, one sealed Source crossing
 //! with its descriptor, routed ResourceStatus, and settlement. Plus
@@ -8,6 +8,8 @@
 
 #[path = "support/file_wire_peer.rs"]
 mod file_wire_peer;
+#[path = "support/native_image_adoption.rs"]
+mod native_image_adoption;
 
 use std::io::IoSliceMut;
 use std::os::fd::{AsFd, OwnedFd};
@@ -59,7 +61,6 @@ fn image_config(dir: PathBuf) -> ShellImageConfig {
         },
         transfer_timeout_ms: 1_000,
         startup_deadline_ms: 60_000,
-        fallback_bytes: true,
         formats_capacity: 4096,
     }
 }
@@ -160,10 +161,20 @@ fn connect_image_cap(
     name: &str,
     formats_capacity: usize,
 ) -> (ShellConnection, Peer, PathBuf, OwnedFd) {
+    connect_role_image(name, formats_capacity, profile(), false)
+}
+
+fn connect_role_image(
+    name: &str,
+    formats_capacity: usize,
+    profile: Profile,
+    deferred: bool,
+) -> (ShellConnection, Peer, PathBuf, OwnedFd) {
     let dir = temp_dir(name);
     let socket_path = dir.join("shell.sock");
     let listener = UnixListener::bind(&socket_path).unwrap();
-    let profile = profile();
+    let mut offered = options();
+    offered.required_capabilities = profile.capabilities;
     let thread = std::thread::spawn(move || Peer::handshake(listener, profile));
     // The endpoint listener the producer will connect to.
     let endpoint_path = dir.join("image.sock");
@@ -184,11 +195,41 @@ fn connect_image_cap(
     let origin = Instant::now();
     let mut config = image_config(dir.clone());
     config.formats_capacity = formats_capacity;
-    let connection =
-        ShellConnection::connect_files_with_image(&socket_path, options(), config, origin, 1_000);
+    let connection = if deferred {
+        ShellConnection::connect_files(&socket_path, offered)
+    } else {
+        ShellConnection::connect_files_with_image(
+            &socket_path,
+            offered,
+            config.clone(),
+            origin,
+            1_000,
+        )
+    };
     let mut peer = thread.join().unwrap();
     let _ = std::fs::remove_file(&socket_path);
     let mut connection = connection.unwrap();
+    if deferred {
+        let limits = match take_role_content(&mut connection) {
+            ShellContentRecord::Limits(limits) => limits,
+            _ => panic!("Limits before ISB setup"),
+        };
+        config.bounds = ProducerRoleBounds {
+            max_resource_bytes: limits.max_resource_bytes,
+            max_width: limits.max_width_px,
+            max_height: limits.max_height_px,
+            max_admitted_outputs: limits.max_outputs,
+            transfer_slots: limits.max_open_transfers,
+        };
+        config.transfer_timeout_ms = limits.transfer_timeout_ms;
+        assert!(connection.image_adapter().is_none());
+        connection.enable_image(config, origin, 1_000).unwrap();
+        assert!(
+            connection
+                .enable_image(image_config(dir.clone()), origin, 1_000)
+                .is_err()
+        );
+    }
     peer.objects.insert(
         "image-channel".to_owned(),
         Object {
@@ -215,6 +256,27 @@ fn connect_image_cap(
     );
     connection.poll_io().unwrap();
     (connection, peer, dir, endpoint_listener)
+}
+
+fn take_role_content(connection: &mut ShellConnection) -> ShellContentRecord {
+    if connection.welcome().capabilities & SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG != 0 {
+        let mut inbox = CatalogInbox::new(connection.connection_epoch()).unwrap();
+        let Some(CatalogObservation::Content(_, record)) =
+            connection.take_catalog_observation(&mut inbox).unwrap()
+        else {
+            panic!("expected dock content")
+        };
+        record
+    } else if connection.welcome().capabilities & SOPHIA_SHELL_CAPABILITY_NATIVE_LAUNCHER != 0 {
+        let Some(NativeLauncherObservation::Content(_, record)) =
+            connection.take_native_launcher_observation().unwrap()
+        else {
+            panic!("expected launcher content")
+        };
+        record
+    } else {
+        connection.take_content().unwrap().unwrap().1
+    }
 }
 
 fn drive(
@@ -342,7 +404,29 @@ fn answer_submit(connection: &mut ShellConnection, peer: &mut Peer, kind: ShellF
 
 #[test]
 fn image_adapter_runs_a_sealed_offer_end_to_end() {
-    let (mut connection, mut peer, dir, listener) = connect_image("flow");
+    complete_offer(connect_image("flow"));
+}
+
+#[test]
+fn dock_and_launcher_enable_isb_from_negotiated_limits() {
+    for (role, caps) in [("dock", 0x11a2), ("launcher", 0x9a0)] {
+        complete_offer(connect_role_image(
+            role,
+            4096,
+            Profile {
+                role,
+                revision: 9,
+                capabilities: caps | SEALED,
+                limits_published: true,
+            },
+            true,
+        ));
+    }
+}
+
+fn complete_offer(
+    (mut connection, mut peer, dir, listener): (ShellConnection, Peer, PathBuf, OwnedFd),
+) {
     // Discovery over 9P, endpoint connect, Hello on the side socket.
     drive(&mut connection, &mut peer, |connection, _| {
         connection.image_poll_fd().is_some()
@@ -451,8 +535,10 @@ fn image_adapter_runs_a_sealed_offer_end_to_end() {
         connection.image_adapter().unwrap().offer(1).unwrap().status
             == Some(sophia_image_producer::ResourceStatusKind::Accepted)
     });
-    let (_, delivered) = connection.take_content().unwrap().unwrap();
-    assert!(matches!(delivered, ShellContentRecord::ResourceStatus(_)));
+    assert!(matches!(
+        take_role_content(&mut connection),
+        ShellContentRecord::ResourceStatus(_)
+    ));
     assert_eq!(
         connection.image_adapter().unwrap().offer(1).unwrap().state,
         OfferState::Sent,
@@ -479,7 +565,7 @@ fn image_adapter_runs_a_sealed_offer_end_to_end() {
 }
 
 #[test]
-fn absent_discovery_closes_clean_with_byte_fallback() {
+fn absent_discovery_ends_image_admission_without_fallback() {
     let (mut connection, mut peer, dir, _listener) = connect_image("absent");
     peer.error_nodes.insert("image-channel".to_owned(), 2);
     drive(&mut connection, &mut peer, |connection, _| {
@@ -487,7 +573,18 @@ fn absent_discovery_closes_clean_with_byte_fallback() {
     });
     let adapter = connection.image_adapter().unwrap();
     assert_eq!(adapter.cause(), Some(ImageCloseCause::Absent));
-    assert_eq!(adapter.path(), Some(ImagePath::Bytes));
+    assert_eq!(adapter.path(), Some(ImagePath::Error));
+    assert!(matches!(
+        connection.enable_image(image_config(dir.clone()), Instant::now(), 1_000),
+        Err(ShellClientError::InvalidArgument(
+            "image adapter already enabled"
+        ))
+    ));
+    let error = connection
+        .image_begin(metadata(), sealed_fd(), Instant::now())
+        .unwrap_err();
+    assert_eq!(error.error, ImageAdapterError::Closed);
+    assert!(error.source.is_some());
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -1004,4 +1101,37 @@ fn wrong_transaction_status_is_delivered_but_never_mutates_custody() {
             == Some(sophia_image_producer::ResourceStatusKind::Accepted)
     });
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn deferred_setup_cannot_add_an_unnegotiated_image_grant() {
+    for (index, revision, caps) in [(0, 8, BAR), (1, 9, BAR), (2, 9, SEALED)] {
+        let dir = temp_dir(&format!("grant-{index}"));
+        let path = dir.join("shell.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        let profile = Profile {
+            role: "bar",
+            revision,
+            capabilities: caps,
+            limits_published: false,
+        };
+        let thread = std::thread::spawn(move || Peer::handshake(listener, profile));
+        let mut connection = ShellConnection::connect_files(
+            &path,
+            ShellClientOptions {
+                minimum_revision: revision,
+                maximum_revision: revision,
+                required_capabilities: caps,
+                handshake_timeout: Duration::from_secs(5),
+            },
+        )
+        .unwrap();
+        let _peer = thread.join().unwrap();
+        assert!(matches!(
+            connection.enable_image(image_config(dir.clone()), Instant::now(), 1_000),
+            Err(ShellClientError::MissingCapability)
+        ));
+        assert!(connection.image_adapter().is_none());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

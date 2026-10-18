@@ -1,5 +1,10 @@
 # Desktop SDK coverage
 
+Native launcher ISB adoption is available through `sophia_ns_adopt_image`,
+paired with Rust's `adopt_native_image`. The [API map](API-PARITY.md) records
+settled-offer custody, failure behavior and independent scripted coverage.
+Production client migration and export qualification remain separate gates.
+
 The [launch operation map](LAUNCH-PARITY.md) compares C's caller-driven
 authentication with Rust, including partial I/O, deadlines and relay ownership.
 

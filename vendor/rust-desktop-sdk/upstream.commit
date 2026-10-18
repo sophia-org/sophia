@@ -1,14 +1,14 @@
-tree 6bbc3d701d4ed36c77a5a281d82dea9634d62153
-parent e4f59e36f6c7acbbe2ee47ee011c665dea1a6176
-author Mason Green <mason@greenm01.net> 1792330688 -0400
-committer Mason Green <mason@greenm01.net> 1792330688 -0400
+tree 2633fc66dd241052299410d5082c00bca4609ec7
+parent e33f10c3799072a4f2ee9bfeb34bf4dc702a8068
+author Mason Green <mason@greenm01.net> 1792344641 -0400
+committer Mason Green <mason@greenm01.net> 1792344641 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatTLwBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK0MwEA7GJP5yt5jOSjUfyWFIll
- xqkOg2XohFu+TflAO6Y76lMBAM4i+zwC020vH+QvjYda7a+LE+PHlNdt0OuV+yJc
- yesB
- =lcij
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatUCQRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJoVgEAoBreGBVdAcGH0xM+lZko
+ tNZkJFDzcDyA/mliQzZmffgA/iSkYTruWWGxk8Q8iQIJhseVI6MeAMPNSx7/Srgy
+ SfIB
+ =d2Ui
  -----END PGP SIGNATURE-----
 
-Name CPU image buffers Immutable Shared Buffers (ISB)
+Require ISB image adapters and adopt settled native resources

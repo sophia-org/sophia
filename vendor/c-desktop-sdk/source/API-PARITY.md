@@ -1,5 +1,68 @@
 # C and Rust SDK API parity
 
+## Native ISB resource adoption, 2026-10-18
+
+Rust `ShellConnection::adopt_native_image` and C `sophia_ns_adopt_image`
+transfer a producer-verified Settled, Accepted, Retained offer into the native
+launcher's bounded resource registry. They check the role connection, content
+grant, dimensions, byte bound, duplicate resource identity and registry capacity.
+Success forgets the offer inside the operation; failure leaves the offer and
+registry slot untouched. No caller-supplied acceptance claim is used.
+
+Image metadata's `admission_epoch` is the content grant epoch, not the
+connection epoch. Callers obtain it from negotiated ContentLimits. The two
+epochs can differ; the producer knows only the connection epoch, while the
+server and native adoption helper check the content grant.
+
+An already retained image can be adopted after image-channel closure while its
+role connection remains live. Role closure, stale grants and unaccepted or
+unsettled offers refuse adoption. Retirement still waits for ResourceReleased;
+forgetting an offer neither releases the resource nor permits replay after
+release. A matching late Accepted is an idempotent no-op even during retirement.
+A wrong offer transaction, downgrade to Admitted or contradictory rejection
+fails the lifecycle.
+
+Both SDKs independently exercise settlement, rejection, cancellation, closure,
+capacity, grant and dimension bounds, duplicate identity, retirement, release
+and contradictory statuses through scripted 9P and real SEQPACKET peers. C
+consumes its retained application-event head before awaiting a later journal
+read; Rust buffers observations separately. C's late-status control supplies a
+repeated Accepted through the peer; Rust also covers its original buffered
+Accepted arriving at the lifecycle after adoption. These establish local SDK
+custody, not authenticated production admission or physical presentation.
+
+C consumers must rebuild: `sophia_ns_resource` now carries the adopted offer.
+Legacy byte-upload APIs still exist for callers awaiting migration; image
+adapters never select them as fallback.
+
+## ISB-only image setup and content roles, 2026-10-18
+
+The image producer in both SDKs now returns Error after every channel closure;
+there is no byte-fallback configuration or Bytes path. A closed adapter cannot
+be replaced on the same connection. Existing cancellation, journal-loss and
+SourceReleased custody rules still apply. Legacy byte APIs remain temporarily
+for migrating callers and are not selected by an image adapter.
+
+Rust `ShellConnection::enable_image` and C `sophia_ss_image_attach` allow setup
+after negotiated Limits. Clients pass the real role bounds and transfer timeout,
+then wait for Hello/ChannelReady. Both require the r9 sealed and content grants;
+setup never adds authority. C also supports attaching during negotiation, and
+Rust's existing image constructors remain available. Times stay in the caller's
+monotonic domain. Endpoint directories belong to the admitted role connection.
+
+Bar, dock and launcher use the same shell image channel. Launcher exact masks
+and C dock exact masks now admit their existing role grants plus sealed at r9;
+no other grant is added. Rust catalog operations accept the known r8 and r9
+revisions with their existing capability. Protocol introduction constants and
+wire encodings are unchanged. Metadata-only connections retain their behavior.
+
+Independent scripted C/Rust controls drive dock and launcher from Limits through
+real SEQPACKET Hello, ImageBegin, descriptor transfer, Accepted and Retained
+settlement, using each role's ordinary content observation path. They also
+exercise missing grants, invalid role masks, closure and cancellation. These are
+supplied-authority fixtures, not protected launch or native presentation proof.
+Consumers must rebuild for the removed configuration field and path variant.
+
 ISB terminology (2026-10-18): both SDKs expose the same Immutable Shared Buffer
 construction and finalization operations, through Rust `create_isb` /
 `finish_isb` and C `sophia_ip_isb_create` / `sophia_ip_isb_finish`. Existing image

@@ -27,9 +27,10 @@ pub(super) struct Allocation {
 }
 #[derive(Clone, Copy)]
 pub(super) struct Resource {
-    id: ContentResourceId,
-    state: NativeResourceState,
-    ticket: Option<Ticket>,
+    pub(super) id: ContentResourceId,
+    pub(super) state: NativeResourceState,
+    pub(super) ticket: Option<Ticket>,
+    pub(super) image_offer: Option<u64>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct Upload {
@@ -68,7 +69,7 @@ impl NativeLauncherLifecycle {
             .find(|r| r.id == id)
             .map(|r| r.state)
     }
-    fn resource_index(&self, id: ContentResourceId) -> Option<usize> {
+    pub(super) fn resource_index(&self, id: ContentResourceId) -> Option<usize> {
         self.resources
             .iter()
             .position(|r| r.is_some_and(|r| r.id == id))
@@ -120,15 +121,33 @@ impl NativeLauncherLifecycle {
         }
         Ok(())
     }
-    pub(super) fn resource_status(&mut self, value: &ContentResourceStatus) {
+    pub(super) fn resource_status(
+        &mut self,
+        transaction: TransactionId,
+        value: &ContentResourceStatus,
+    ) -> Result<(), ShellClientError> {
         let Some(index) = self.resource_index(value.resource) else {
-            return;
+            return Ok(());
         };
+        if let Some(offer) = self.resources[index].unwrap().image_offer {
+            // The producer already verified this Accepted before adoption.
+            // Ordered delivery may follow adoption, even after Retire was queued.
+            // It must never turn Retiring back into Accepted.
+            return if transaction == TransactionId::from_raw(offer)
+                && value.status == 2
+                && value.reason == 0
+            {
+                Ok(())
+            } else {
+                Err(ShellClientError::Protocol("adopted image status"))
+            };
+        }
         match value.status {
             1 => self.resources[index].as_mut().unwrap().state = NativeResourceState::Admitted,
             2 => self.resources[index].as_mut().unwrap().state = NativeResourceState::Accepted,
             _ => self.free_resource(value.resource),
         }
+        Ok(())
     }
     pub(super) fn service_resources(&mut self, connection: &ShellConnection) {
         if let Some((_, ticket, _, _, _)) = self.allocation.pending
@@ -298,6 +317,7 @@ impl ShellConnection {
             id: upload.id,
             state: NativeResourceState::Begun,
             ticket: Some(admission.first),
+            image_offer: None,
         });
         lifecycle.upload = Some(upload);
         Ok(admission)
@@ -423,11 +443,9 @@ impl ShellConnection {
                 resource,
             }),
         )?;
-        lifecycle.resources[index] = Some(Resource {
-            id: resource,
-            state: NativeResourceState::Retiring,
-            ticket: Some(admission.first),
-        });
+        let tracked = lifecycle.resources[index].as_mut().unwrap();
+        tracked.state = NativeResourceState::Retiring;
+        tracked.ticket = Some(admission.first);
         Ok(admission)
     }
 }

@@ -1,6 +1,6 @@
 /* The shell image adapter over a scripted 9P shell peer and a real
  * SEQPACKET image endpoint: r9 negotiation, discovery through the session
- * wire, Hello, ImageBegin tickets, image journal routing and fallback. */
+ * wire, Hello, ImageBegin tickets, image journal routing and closed-channel refusal. */
 #define _GNU_SOURCE
 #include "shell_session_peer.h"
 #include "../sophia_shell_image.h"
@@ -13,6 +13,7 @@
 #include <sys/un.h>
 
 #define SEALED (UINT64_C(1) << 13)
+#define CONTENT (UINT64_C(1) << 7)
 #define GEN 22u
 #define SEALS (F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL)
 
@@ -89,14 +90,15 @@ struct image_rig {
     struct sophia_ss_image img;
     struct sophia_sf_negotiated welcome;
     uint8_t formats[256];
+    uint8_t content_limits[512];
     char dir[64];
     int dirfd, listener, owner;
 };
 
-static const struct sophia_ss_config image_config = {{5, 9, SEALED}, SOPHIA_SF_BAR, 4096, 4, 8192,
+static const struct sophia_ss_config image_config = {{5, 9, SEALED | CONTENT}, SOPHIA_SF_BAR, 4096, 4, 8192,
                                                      NULL, 0};
 
-static struct sophia_ss_image_config adapter_config(struct image_rig *t, int fallback)
+static struct sophia_ss_image_config adapter_config(struct image_rig *t)
 {
     struct sophia_ss_image_config c;
     memset(&c, 0, sizeof(c));
@@ -106,7 +108,6 @@ static struct sophia_ss_image_config adapter_config(struct image_rig *t, int fal
     c.producer.bounds.transfer_slots = 4;
     c.producer.transfer_timeout_ms = 2000;
     c.producer.startup_deadline_ms = 1000 + 5000;
-    c.producer.fallback_bytes = fallback;
     c.endpoint_dir = t->dirfd;
     c.formats = t->formats;
     c.formats_capacity = sizeof(t->formats);
@@ -139,16 +140,25 @@ static void unlisten(struct image_rig *t)
 }
 
 /* Opens the session with the adapter attached and serves the files. */
-static void image_start(struct image_rig *t, int fallback, uint32_t kinds)
+static void image_start_role(struct image_rig *t, uint32_t kinds,
+                             enum sophia_sf_profile profile, int deferred)
 {
     struct sophia_ss_image_config c;
+    struct sophia_ss_config config = image_config;
+    config.profile = profile;
+    if (profile == SOPHIA_SF_DOCK || profile == SOPHIA_SF_LAUNCHER)
+        config.offer.required_capabilities = SEALED | (profile == SOPHIA_SF_DOCK ? 0x11a2 : 0x9a0);
     memset(t, 0, sizeof(*t));
     listen_dir(t);
     make_set(&t->set, kinds);
-    rig_start(&t->r, &image_config);
+    rig_start(&t->r, &config);
+    if (profile == SOPHIA_SF_DOCK)
+        t->r.p.api_override = "sophia-shell-files version=1 role=dock epoch=17 fd_transfer=none\n";
+    else if (profile == SOPHIA_SF_LAUNCHER)
+        t->r.p.api_override = "sophia-shell-files version=1 role=launcher epoch=17 fd_transfer=none\n";
     t->welcome.selected_revision = 9;
     t->welcome.connection_epoch = PEER_EPOCH;
-    t->welcome.capabilities = SEALED;
+    t->welcome.capabilities = config.offer.required_capabilities;
     t->welcome.max_descriptors = 16;
     t->welcome.max_label_bytes = 128;
     t->welcome.max_pending_activations = 16;
@@ -161,10 +171,49 @@ static void image_start(struct image_rig *t, int fallback, uint32_t kinds)
     t->r.p.image_bytes[1] = t->set.limits_bytes;
     t->r.p.image_data[2] = t->set.formats;
     t->r.p.image_bytes[2] = t->set.formats_bytes;
-    c = adapter_config(t, fallback);
+    c = adapter_config(t);
+    if (deferred) {
+        const struct sophia_sf_limits *limits;
+        struct sophia_sf_record record;
+        size_t bytes;
+        assert(!sophia_sf_decode(vector_Limits, sizeof(vector_Limits), &record));
+        record.header.epoch = PEER_EPOCH;
+        record.value.limits.grant_connection_epoch = PEER_EPOCH;
+        record.value.limits.grant_content_epoch = 3;
+        record.value.limits.max_resource_bytes = 1u << 20;
+        record.value.limits.max_staging_bytes = 1u << 20;
+        record.value.limits.max_resident_bytes = 1u << 20;
+        record.value.limits.max_retiring_bytes = 1u << 20;
+        record.value.limits.max_session_retiring_bytes = 3u << 20;
+        record.value.limits.max_width_px = record.value.limits.max_height_px = 512;
+        record.value.limits.max_outputs = 2;
+        record.value.limits.max_open_transfers = 4;
+        record.value.limits.max_chunk_bytes = 2048;
+        record.value.limits.max_frame_payload = 4096;
+        record.value.limits.max_input_queue_bytes = 8192;
+        record.value.limits.transfer_timeout_ms = 2000;
+        assert(!sophia_sf_encode(t->content_limits, sizeof(t->content_limits), &record, &bytes));
+        t->r.p.object_data[SOPHIA_SF_LIMITS] = t->content_limits;
+        t->r.p.object_bytes[SOPHIA_SF_LIMITS] = bytes;
+        rig_settle(&t->r);
+        assert(sophia_ss_state(&t->r.s) == SOPHIA_SS_READY);
+        limits = sophia_ss_limits(&t->r.s);
+        assert(limits);
+        c.producer.bounds.max_resource_bytes = limits->max_resource_bytes;
+        c.producer.bounds.max_width = limits->max_width_px;
+        c.producer.bounds.max_height = limits->max_height_px;
+        c.producer.bounds.max_outputs = limits->max_outputs;
+        c.producer.bounds.transfer_slots = limits->max_open_transfers;
+        c.producer.transfer_timeout_ms = limits->transfer_timeout_ms;
+    }
     assert(sophia_ss_image_init(&t->img, &c) == SOPHIA_IPR_OK);
     assert(sophia_ss_image_attach(&t->r.s, &t->img) == SOPHIA_IPR_OK);
     assert(sophia_ss_image_attach(&t->r.s, &t->img) == SOPHIA_IPR_ARGUMENT);
+}
+
+static void image_start(struct image_rig *t, uint32_t kinds)
+{
+    image_start_role(t, kinds, SOPHIA_SF_BAR, 0);
 }
 
 static void image_step(struct image_rig *t)
@@ -316,6 +365,12 @@ static void image_ready(struct image_rig *t)
     assert(p && sophia_ip_channel(p) >= SOPHIA_IPC_HELLO_QUEUED);
     for (i = 0; i < 4 && sophia_ip_channel(p) != SOPHIA_IPC_HELLO_SENT; i++)
         image_step(t);
+    if (sophia_ip_channel(p) != SOPHIA_IPC_HELLO_SENT)
+        fprintf(stderr, "profile %u channel %u cause %u; role bounds %llu %u %u %u %u\n",
+                t->r.s.files.profile, sophia_ip_channel(p), sophia_ip_cause(p),
+                (unsigned long long)p->config.bounds.max_resource_bytes,
+                p->config.bounds.max_width, p->config.bounds.max_height,
+                p->config.bounds.max_outputs, p->config.bounds.transfer_slots);
     assert(sophia_ip_channel(p) == SOPHIA_IPC_HELLO_SENT);
     assert(t->r.p.image_walks[0] == 1 && t->r.p.image_walks[1] == 1 && t->r.p.image_walks[2] == 1);
     assert(owner_receive(t, b, sizeof(b), &fd) == SOPHIA_IC_HELLO_BYTES && fd < 0);
@@ -342,17 +397,21 @@ static void attach_arguments(void)
     struct sophia_ss_config bad = image_config;
     memset(&t, 0, sizeof(t));
     listen_dir(&t);
-    c = adapter_config(&t, 1);
+    c = adapter_config(&t);
     assert(sophia_ss_image_init(&t.img, &c) == SOPHIA_IPR_OK);
     c.formats_capacity = SOPHIA_SS_IMAGE_FORMATS_MIN - 1;
     assert(sophia_ss_image_init(&t.img, &c) == SOPHIA_IPR_ARGUMENT);
-    c = adapter_config(&t, 1);
+    c = adapter_config(&t);
     assert(sophia_ss_image_init(&t.img, &c) == SOPHIA_IPR_OK);
     /* Bit 13 must be required, bit 14 never, and revision 9 offered. */
     bad.offer.required_capabilities = 0;
     rig_start(&t.r, &bad);
     assert(sophia_ss_image_attach(&t.r.s, &t.img) == SOPHIA_IPR_ARGUMENT);
     assert(!t.r.s.image && !t.r.s.files.image_mode);
+    rig_close(&t.r);
+    bad.offer.required_capabilities = SEALED;
+    rig_start(&t.r, &bad);
+    assert(sophia_ss_image_attach(&t.r.s, &t.img) == SOPHIA_IPR_ARGUMENT);
     rig_close(&t.r);
     bad = image_config;
     bad.offer.required_capabilities |= UINT64_C(1) << 14;
@@ -364,16 +423,39 @@ static void attach_arguments(void)
     rig_start(&t.r, &bad);
     assert(sophia_ss_image_attach(&t.r.s, &t.img) == SOPHIA_IPR_ARGUMENT);
     rig_close(&t.r);
-    /* After negotiation it is too late. */
+    /* A completed legacy negotiation cannot acquire the image grant. */
     rig_ready(&t.r, &rig_config);
     t.r.s.files.offer.required_capabilities |= SEALED;
     t.r.s.files.offer.maximum_revision = 9;
-    assert(sophia_ss_image_attach(&t.r.s, &t.img) == SOPHIA_IPR_BUSY);
+    assert(sophia_ss_image_attach(&t.r.s, &t.img) == SOPHIA_IPR_ARGUMENT);
     rig_close(&t.r);
     unlisten(&t);
 }
 
-static void sealed_offer_end_to_end(void)
+static void role_grants_remain_exact(void)
+{
+    const enum sophia_sf_profile profiles[] = {SOPHIA_SF_DOCK, SOPHIA_SF_LAUNCHER};
+    unsigned role, mutation;
+    for (role = 0; role < 2; role++) {
+        for (mutation = 0; mutation < 3; mutation++) {
+            struct image_rig t;
+            image_start_role(&t, SOPHIA_IC_KIND_BIT_SEALED, profiles[role], 0);
+            if (mutation == 0)
+                t.welcome.selected_revision = profiles[role] == SOPHIA_SF_DOCK ? 8 : 7;
+            else if (mutation == 1)
+                t.welcome.capabilities |= UINT64_C(1) << 9;
+            else
+                t.welcome.capabilities &= ~SEALED;
+            rig_settle(&t.r);
+            rig_run(&t.r, 4);
+            assert(sophia_ss_state(&t.r.s) == SOPHIA_SS_FAILED);
+            assert(t.r.p.image_walks[0] == 0);
+            image_close(&t);
+        }
+    }
+}
+
+static void sealed_offer_end_to_end(enum sophia_sf_profile profile, int deferred)
 {
     struct image_rig t;
     struct sophia_ic_metadata m = image(40);
@@ -385,7 +467,7 @@ static void sealed_offer_end_to_end(void)
     uint64_t offer = 0, ticket = 0;
     unsigned i, base = fd_count();
     int fd, src;
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start_role(&t, SOPHIA_IC_KIND_BIT_SEALED, profile, deferred);
     image_ready(&t);
     p = sophia_ss_image_producer(&t.img);
     /* Negotiation records were consumed by the session. */
@@ -440,7 +522,7 @@ static void sealed_offer_end_to_end(void)
     assert(fd_count() == base);
 }
 
-static void refusals_and_fallback(void)
+static void refusals_without_fallback(void)
 {
     struct image_rig t;
     struct sophia_ic_metadata m = image(50);
@@ -451,7 +533,7 @@ static void refusals_and_fallback(void)
     unsigned i, base = fd_count();
     int src;
     /* A refused ImageBegin is a definitive pre-admission refusal. */
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     image_ready(&t);
     p = sophia_ss_image_producer(&t.img);
     ack_all(&t);
@@ -478,7 +560,7 @@ static void refusals_and_fallback(void)
         image_step(&t);
     assert(app_events(&t, kinds, 8) >= 1);
     assert(sophia_ip_offer(p, offer, &info) == SOPHIA_IPR_OK && info.state == SOPHIA_IPO_REFUSED);
-    assert(sophia_ip_cause(p) == SOPHIA_IPX_UNAVAILABLE && sophia_ip_path(p) == SOPHIA_IPP_BYTES);
+    assert(sophia_ip_cause(p) == SOPHIA_IPX_UNAVAILABLE && sophia_ip_path(p) == SOPHIA_IPP_ERROR);
     image_close(&t);
     assert(fd_count() == base);
 }
@@ -488,17 +570,17 @@ static void absent_and_denied_discovery(void)
     struct image_rig t;
     struct sophia_ip *p;
     unsigned i, base = fd_count();
-    /* ENOENT on image-channel: absent; bytes only when the caller allows. */
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    /* ENOENT on image-channel: image admission ends for the epoch. */
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     t.r.p.image_error[0] = ENOENT;
     rig_settle(&t.r);
     for (i = 0; i < 32; i++)
         image_step(&t);
     p = sophia_ss_image_producer(&t.img);
-    assert(p && sophia_ip_cause(p) == SOPHIA_IPX_ABSENT && sophia_ip_path(p) == SOPHIA_IPP_BYTES);
+    assert(p && sophia_ip_cause(p) == SOPHIA_IPX_ABSENT && sophia_ip_path(p) == SOPHIA_IPP_ERROR);
     assert(sophia_ss_state(&t.r.s) == SOPHIA_SS_READY);
     image_close(&t);
-    image_start(&t, 0, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     t.r.p.image_error[0] = ENOENT;
     rig_settle(&t.r);
     for (i = 0; i < 32; i++)
@@ -506,8 +588,8 @@ static void absent_and_denied_discovery(void)
     p = sophia_ss_image_producer(&t.img);
     assert(sophia_ip_path(p) == SOPHIA_IPP_ERROR);
     image_close(&t);
-    /* A missing companion is a discovery error even with fallback. */
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    /* A missing companion is a discovery error. */
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     t.r.p.image_error[2] = ENOENT;
     rig_settle(&t.r);
     for (i = 0; i < 32; i++)
@@ -516,7 +598,7 @@ static void absent_and_denied_discovery(void)
     assert(sophia_ip_cause(p) == SOPHIA_IPX_DISCOVERY && sophia_ip_path(p) == SOPHIA_IPP_ERROR);
     image_close(&t);
     /* Denied image-channel: an error, never absent. */
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     t.r.p.image_error[0] = EACCES;
     rig_settle(&t.r);
     for (i = 0; i < 32; i++)
@@ -537,7 +619,7 @@ static void channel_closed_and_session_end(void)
     unsigned i, base = fd_count();
     int src;
     /* ChannelClosed revoked: clean closure routed from the journal. */
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     image_ready(&t);
     p = sophia_ss_image_producer(&t.img);
     peer_channel(&t.r.p, SOPHIA_IC_CHANNEL_CLOSED, SOPHIA_IC_CLOSED_REVOKED);
@@ -547,7 +629,7 @@ static void channel_closed_and_session_end(void)
     assert(sophia_ss_state(&t.r.s) == SOPHIA_SS_READY);
     image_close(&t);
     /* The session ends with an offer in custody: the journal is lost. */
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     image_ready(&t);
     p = sophia_ss_image_producer(&t.img);
     ack_all(&t);
@@ -601,7 +683,7 @@ static void status_routing(void)
     uint64_t offer, ticket;
     unsigned i;
     int src;
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     image_ready(&t);
     p = sophia_ss_image_producer(&t.img);
     ack_all(&t);
@@ -662,7 +744,7 @@ static void queue_room_keeps_fd(void)
     unsigned cursor = 0;
     uint64_t offer = 0, ticket = 0;
     int src;
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     image_ready(&t);
     ack_all(&t);
     src = sealed(16, 16);
@@ -690,7 +772,7 @@ static void contradictions(void)
     unsigned i;
     /* Discovery naming a kind the welcome did not grant, with coherent
      * DMA-BUF limits: refused by the grant, not by incoherence. */
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED | SOPHIA_IC_KIND_BIT_DMABUF);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED | SOPHIA_IC_KIND_BIT_DMABUF);
     rig_settle(&t.r);
     for (i = 0; i < 32; i++)
         image_step(&t);
@@ -698,7 +780,7 @@ static void contradictions(void)
     assert(sophia_ip_cause(p) == SOPHIA_IPX_DISCOVERY);
     image_close(&t);
     /* An over-long companion is refused before it overruns its buffer. */
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     {
         static uint8_t longer[SOPHIA_IC_LIMITS_BYTES + 1];
         memcpy(longer, t.set.limits, t.set.limits_bytes);
@@ -713,7 +795,7 @@ static void contradictions(void)
     image_close(&t);
     /* Formats storage larger than the contract's object budget reads no
      * more than that budget, and an over-long formats file is refused. */
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     {
         static uint8_t wide[SOPHIA_IC_MAX_FORMATS_BYTES + 64], served[SOPHIA_IC_MAX_FORMATS_BYTES + 1];
         memset(wide, 0xa5, sizeof(wide));
@@ -733,14 +815,14 @@ static void contradictions(void)
     }
     image_close(&t);
     /* Image bits below r9 fail the welcome. */
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     t.welcome.selected_revision = 8;
     rig_settle(&t.r);
     rig_run(&t.r, 4);
     assert(sophia_ss_state(&t.r.s) == SOPHIA_SS_FAILED);
     image_close(&t);
     /* An image event for another epoch fails the session. */
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     image_ready(&t);
     memset(&r, 0, sizeof(r));
     r.header.kind = SOPHIA_IC_CHANNEL_CLOSED;
@@ -754,7 +836,7 @@ static void contradictions(void)
     assert(sophia_ss_state(&t.r.s) == SOPHIA_SS_FAILED);
     image_close(&t);
     /* The files client admits ImageBegin only in image mode, and whole. */
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     image_ready(&t);
     ack_all(&t);
     memset(&r, 0, sizeof(r));
@@ -779,7 +861,7 @@ static void events_after_end(void)
     struct image_rig t;
     const struct sophia_sf_record *e;
     unsigned i;
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     image_ready(&t);
     /* An application event, then an image event, then the peer is gone. */
     peer_app_event(&t.r.p);
@@ -862,7 +944,7 @@ static void cancel_before_admission(void)
     uint64_t offer, ticket, cancel = 0;
     unsigned base = fd_count(), held;
     int src, fd;
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     assert(sophia_ss_image_cancel(&t.img, 1, t.r.now, &cancel) == SOPHIA_IPR_CLOSED);
     image_ready(&t);
     ack_all(&t);
@@ -923,7 +1005,7 @@ static void cancel_races(void)
     uint64_t oa, ob, oc, ta, tb, tc, cancel;
     unsigned i, base = fd_count();
     int src, fd;
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     image_ready(&t);
     ack_all(&t);
     /* Acceptance wins: the source was sent before the cancel was seen. */
@@ -997,7 +1079,7 @@ static void cancel_lost_with_session(void)
     uint64_t offer, ticket, cancel;
     unsigned i, base = fd_count();
     int src;
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     image_ready(&t);
     p = sophia_ss_image_producer(&t.img);
     ack_all(&t);
@@ -1034,7 +1116,7 @@ static void cancel_beside_upload(void)
     unsigned i;
     int src;
     m[1].resource_generation = 2;
-    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_start(&t, SOPHIA_IC_KIND_BIT_SEALED);
     image_ready(&t);
     ack_all(&t);
     t.r.s.files.limits.max_height_px = 16;
@@ -1076,12 +1158,18 @@ static void cancel_beside_upload(void)
     image_close(&t);
 }
 
+#include "native_image_adoption.h"
+
 int main(void)
 {
     unsigned base = fd_count();
+    native_image_adoption();
     attach_arguments();
-    sealed_offer_end_to_end();
-    refusals_and_fallback();
+    role_grants_remain_exact();
+    sealed_offer_end_to_end(SOPHIA_SF_BAR, 0);
+    sealed_offer_end_to_end(SOPHIA_SF_DOCK, 1);
+    sealed_offer_end_to_end(SOPHIA_SF_LAUNCHER, 1);
+    refusals_without_fallback();
     absent_and_denied_discovery();
     channel_closed_and_session_end();
     unattached_session_unchanged();

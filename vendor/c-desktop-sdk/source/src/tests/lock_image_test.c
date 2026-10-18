@@ -1,7 +1,7 @@
 /* The lock image adapter over the scripted 9P lock peer and a real
  * SEQPACKET image endpoint: explicit r2 selection, discovery through the
  * client's wire, Hello, the ImageBegin submission, image journal routing,
- * fallback and journal loss. */
+ * channel failure and journal loss. */
 #define _GNU_SOURCE
 #include "lock_client_peer.h"
 #include "../sophia_lock_image.h"
@@ -95,8 +95,7 @@ static struct sophia_lf_negotiate image_offer(uint16_t min, uint16_t max,
   return o;
 }
 
-static struct sophia_lc_image_config adapter_config(struct image_rig *t,
-                                                    int fallback) {
+static struct sophia_lc_image_config adapter_config(struct image_rig *t) {
   struct sophia_lc_image_config c;
   memset(&c, 0, sizeof(c));
   c.producer.bounds.max_resource_bytes = 1u << 20;
@@ -105,7 +104,6 @@ static struct sophia_lc_image_config adapter_config(struct image_rig *t,
   c.producer.bounds.transfer_slots = 4;
   c.producer.transfer_timeout_ms = 2000;
   c.producer.startup_deadline_ms = 1000 + 5000;
-  c.producer.fallback_bytes = fallback;
   c.endpoint_dir = t->dirfd;
   c.formats = t->formats;
   c.formats_capacity = sizeof(t->formats);
@@ -129,7 +127,7 @@ static void listen_dir(struct image_rig *t) {
 
 /* A client offering o against a peer selecting up to revision, with the
  * adapter attached and the discovery files served. */
-static void image_start(struct image_rig *t, int fallback, uint16_t revision,
+static void image_start(struct image_rig *t, uint16_t revision,
                         const struct sophia_lf_negotiate *o) {
   struct sophia_lc_image_config c;
   memset(t, 0, sizeof(*t));
@@ -144,7 +142,7 @@ static void image_start(struct image_rig *t, int fallback, uint16_t revision,
   t->r->peer.image_bytes[1] = t->set.limits_bytes;
   t->r->peer.image_data[2] = t->set.formats;
   t->r->peer.image_bytes[2] = t->set.formats_bytes;
-  c = adapter_config(t, fallback);
+  c = adapter_config(t);
   assert(sophia_lc_image_init(&t->img, &c) == SOPHIA_IPR_OK);
   assert(sophia_lc_image_attach(&t->r->client, &t->img) == SOPHIA_IPR_OK);
   assert(sophia_lc_image_attach(&t->r->client, &t->img) == SOPHIA_IPR_ARGUMENT);
@@ -384,7 +382,7 @@ static void offers_and_attach(void) {
   /* Attach needs an offer spanning 2 with bit 2. */
   memset(&t, 0, sizeof(t));
   listen_dir(&t);
-  c = adapter_config(&t, 1);
+  c = adapter_config(&t);
   assert(sophia_lc_image_init(&other, &c) == SOPHIA_IPR_OK);
   o = image_offer(1, 1, CAPS);
   r = rig_new(&o, NULL);
@@ -401,7 +399,7 @@ static void offers_and_attach(void) {
   assert(sophia_lc_image_attach(NULL, &other) == SOPHIA_IPR_ARGUMENT);
   c.formats_capacity = SOPHIA_LC_IMAGE_FORMATS_MIN - 1;
   assert(sophia_lc_image_init(&other, &c) == SOPHIA_IPR_ARGUMENT);
-  c = adapter_config(&t, 1);
+  c = adapter_config(&t);
   c.endpoint_dir = -1;
   assert(sophia_lc_image_init(&other, &c) == SOPHIA_IPR_ARGUMENT);
   close(t.listener);
@@ -410,8 +408,8 @@ static void offers_and_attach(void) {
   rmdir(t.dir);
   /* A second adapter is BUSY; after negotiation the first is too late. */
   o = image_offer(1, 2, CAPS | SOPHIA_LF_CAP_IMAGE_SEALED);
-  image_start(&t, 1, 2, &o);
-  c = adapter_config(&t, 1);
+  image_start(&t, 2, &o);
+  c = adapter_config(&t);
   assert(sophia_lc_image_init(&other, &c) == SOPHIA_IPR_OK);
   assert(sophia_lc_image_attach(&t.r->client, &other) == SOPHIA_IPR_BUSY);
   for (i = 0; i < 128 && !sophia_lc_ready(&t.r->client); i++)
@@ -495,7 +493,7 @@ static void sealed_offer_end_to_end(void) {
   uint64_t offer = 0, acks;
   unsigned i, base = fd_count();
   int fd;
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   p = image_ready(&t);
   acks = t.r->peer.acked;
   begin_custodied(&t, 40, &offer);
@@ -540,7 +538,7 @@ static void status_routing(void) {
   struct sophia_ip_offer_info info;
   uint64_t offer;
   unsigned base = fd_count();
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   p = image_ready(&t);
   begin_custodied(&t, 60, &offer);
   /* A different resource, or a different transaction, is not routed. */
@@ -555,7 +553,7 @@ static void status_routing(void) {
   assert(sophia_ip_offer(p, offer, &info) == SOPHIA_IPR_OK &&
          info.state == SOPHIA_IPO_REFUSED && info.unavailable);
   assert(sophia_ip_cause(p) == SOPHIA_IPX_UNAVAILABLE &&
-         sophia_ip_path(p) == SOPHIA_IPP_BYTES);
+         sophia_ip_path(p) == SOPHIA_IPP_ERROR);
   image_close(&t);
   assert(fd_count() == base);
 }
@@ -571,7 +569,7 @@ static void refused_submit_and_busy(void) {
   enum sophia_lc_submission stage;
   unsigned i, base = fd_count();
   int src, r;
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   p = image_ready(&t);
   /* A refused submit journals nothing: the offer is refused. */
   t.r->peer.submit_error = 22;
@@ -619,7 +617,7 @@ static void selection_one_is_unavailable(void) {
   uint64_t offer;
   unsigned base = fd_count();
   int src;
-  image_start(&t, 1, 1, &o);
+  image_start(&t, 1, &o);
   src = sealed(16, 16);
   assert(sophia_lc_image_begin(&t.img, &m, src, t.now, &offer) == SOPHIA_IPR_CLOSED);
   settle(&t);
@@ -629,7 +627,7 @@ static void selection_one_is_unavailable(void) {
          sophia_lc_welcome(&t.r->client)->granted_capabilities == CAPS);
   p = sophia_lc_image_producer(&t.img);
   assert(p && sophia_ip_cause(p) == SOPHIA_IPX_UNAVAILABLE &&
-         sophia_ip_path(p) == SOPHIA_IPP_BYTES);
+         sophia_ip_path(p) == SOPHIA_IPP_ERROR);
   assert(!t.r->peer.image_walks[0]);
   assert(sophia_lc_image_begin(&t.img, &m, src, t.now, &offer) == SOPHIA_IPR_CLOSED);
   close(src);
@@ -639,7 +637,7 @@ static void selection_one_is_unavailable(void) {
   image_close(&t);
   /* Selection 2 without a sealed grant is unavailable too, and an image
    * event is still invalid. */
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   t.r->peer.force_grant = CAPS;
   settle(&t);
   steps(&t, 4);
@@ -650,8 +648,8 @@ static void selection_one_is_unavailable(void) {
   peer_channel(&t.r->peer, SOPHIA_IC_CHANNEL_READY, SOPHIA_IC_KIND_BIT_SEALED);
   assert(failure(&t) == SOPHIA_9P_INVALID);
   image_close(&t);
-  /* Without fallback the same closure is an error path. */
-  image_start(&t, 0, 1, &o);
+  /* The same closure remains an error path on another connection. */
+  image_start(&t, 1, &o);
   settle(&t);
   steps(&t, 4);
   assert(sophia_ip_path(sophia_lc_image_producer(&t.img)) == SOPHIA_IPP_ERROR);
@@ -665,29 +663,29 @@ static void discovery_outcomes(void) {
   struct sophia_ip *p;
   unsigned base = fd_count();
   /* ENOENT on image-channel alone is absent. */
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   t.r->peer.image_error[0] = ENOENT;
   settle(&t);
   steps(&t, 48);
   p = sophia_lc_image_producer(&t.img);
   assert(p && sophia_ip_cause(p) == SOPHIA_IPX_ABSENT &&
-         sophia_ip_path(p) == SOPHIA_IPP_BYTES && sophia_lc_ready(&t.r->client));
+         sophia_ip_path(p) == SOPHIA_IPP_ERROR && sophia_lc_ready(&t.r->client));
   image_close(&t);
   /* A missing companion or a denied channel file is a discovery error. */
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   t.r->peer.image_error[2] = ENOENT;
   settle(&t);
   steps(&t, 48);
   assert(sophia_ip_cause(sophia_lc_image_producer(&t.img)) == SOPHIA_IPX_DISCOVERY);
   image_close(&t);
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   t.r->peer.image_error[0] = EACCES;
   settle(&t);
   steps(&t, 48);
   assert(sophia_ip_cause(sophia_lc_image_producer(&t.img)) == SOPHIA_IPX_DISCOVERY);
   image_close(&t);
   /* EAGAIN backs off and a later pass completes. */
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   t.r->peer.image_error[1] = EAGAIN;
   settle(&t);
   {
@@ -719,7 +717,7 @@ static void discovery_outcomes(void) {
   assert(sophia_ip_channel(p) == SOPHIA_IPC_HELLO_SENT);
   image_close(&t);
   /* Formats storage larger than the budget reads no more than it. */
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   {
     static uint8_t wide[SOPHIA_IC_MAX_FORMATS_BYTES + 64],
         served[SOPHIA_IC_MAX_FORMATS_BYTES + 1];
@@ -751,14 +749,14 @@ static void channel_closed_and_contradictions(void) {
   struct sophia_ip *p;
   unsigned base = fd_count();
   /* ChannelClosed disables descriptors; the lock client stays READY. */
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   p = image_ready(&t);
   peer_channel(&t.r->peer, SOPHIA_IC_CHANNEL_CLOSED, 1);
   steps(&t, 4);
   assert(sophia_ip_channel(p) == SOPHIA_IPC_CLOSED && sophia_lc_ready(&t.r->client));
   image_close(&t);
   /* An image event of another epoch fails the client. */
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   image_ready(&t);
   memset(&r, 0, sizeof(r));
   r.header.kind = SOPHIA_IC_CHANNEL_CLOSED;
@@ -769,7 +767,7 @@ static void channel_closed_and_contradictions(void) {
   assert(failure(&t) == SOPHIA_9P_INVALID);
   image_close(&t);
   /* An image event repeating a sequence fails the client. */
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   image_ready(&t);
   steps(&t, 4);
   memset(&r, 0, sizeof(r));
@@ -782,7 +780,7 @@ static void channel_closed_and_contradictions(void) {
   assert(failure(&t) == SOPHIA_9P_INVALID);
   image_close(&t);
   /* ImageBegin and the image objects are never journal events. */
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   image_ready(&t);
   {
     struct peer *q = &t.r->peer;
@@ -819,7 +817,7 @@ static void journal_loss(void) {
   unsigned i, base = fd_count();
   int src;
   /* EAGAIN transferred nothing; the connection then dies unsent. */
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   p = image_ready(&t);
   t.r->peer.submit_again = 1;
   src = sealed(16, 16);
@@ -844,7 +842,7 @@ static void journal_loss(void) {
   assert(sophia_ip_cause(p) == SOPHIA_IPX_JOURNAL_LOST);
   image_close(&t);
   /* A submit the client queued but never saw answered: journal loss. */
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   p = image_ready(&t);
   src = sealed(16, 16);
   m = image(81);
@@ -922,7 +920,7 @@ static void cancellation(void) {
   uint64_t offer, second;
   unsigned i, held, base = fd_count();
   int src, fd;
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   assert(sophia_lc_image_cancel(&t.img, 1, t.now) == SOPHIA_IPR_CLOSED);
   p = image_ready(&t);
   assert(sophia_lc_image_cancel(NULL, 1, t.now) == SOPHIA_IPR_ARGUMENT);
@@ -1019,7 +1017,7 @@ static void cancel_beside_upload(void) {
   uint64_t offers[2];
   unsigned i;
   int r;
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   p = image_ready(&t);
   begin_generation(&t, 21, 1, &offers[0]);
   begin_generation(&t, 22, 2, &offers[1]);
@@ -1075,7 +1073,7 @@ static void cancel_journal_loss(void) {
   uint64_t offer, id;
   enum sophia_lc_submission stage;
   unsigned i, base = fd_count();
-  image_start(&t, 1, 2, &o);
+  image_start(&t, 2, &o);
   p = image_ready(&t);
   begin_custodied(&t, 140, &offer);
   peer_admitted(&t);

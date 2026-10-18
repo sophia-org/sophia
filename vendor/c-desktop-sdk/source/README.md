@@ -4,8 +4,13 @@ CPU images use **Immutable Shared Buffers (ISB)**, currently backed by sealed
 memfds. The buffer builders are `create_isb` / `finish_isb` in Rust and
 `sophia_ip_isb_create` / `sophia_ip_isb_finish` in C. Names changed together;
 source-kind numbers, discovery strings and seal enforcement are unchanged.
-Byte-upload removal is a separate pending migration under Sophia's accepted
-ISB architecture; the current library still contains that path.
+Image adapters require ISB and never select byte fallback. Shell clients may
+enable the adapter after negotiated Limits, including dock and launcher roles.
+Legacy byte APIs remain temporarily while production callers migrate.
+
+Native launchers can adopt a settled ISB into their resource lifecycle with
+Rust's `adopt_native_image` or C's `sophia_ns_adopt_image`; see
+[the adoption contract and coverage](API-PARITY.md#native-isb-resource-adoption-2026-10-18).
 
 The [2026-10-17 release audit](RELEASE-QUALIFICATION.md) records verified
 C/Rust capability parity, exact tested revisions and remaining limits.

@@ -61,8 +61,8 @@ pub enum ChannelState {
     Closed,
 }
 
-/// Why the channel closed. Absent, Unavailable and Exhausted are
-/// clean: the byte path may serve images if the caller allows it.
+/// Why the channel closed. Every closure ends image admission for this epoch;
+/// recovery needs a new authenticated connection, never a byte fallback.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CloseCause {
     None,
@@ -100,7 +100,6 @@ pub enum OfferState {
 pub enum ImagePath {
     Descriptor,
     Wait,
-    Bytes,
     Error,
 }
 
@@ -136,8 +135,6 @@ pub struct ImageProducerConfig {
     pub transfer_timeout_ms: u32,
     /// Absolute monotonic deadline: discovery through `ChannelReady`.
     pub startup_deadline_ms: u64,
-    /// Caller policy: may a clean closure fall back to byte upload?
-    pub fallback_bytes: bool,
 }
 
 /// The role's own bounds from its negotiated limits, caller-supplied.

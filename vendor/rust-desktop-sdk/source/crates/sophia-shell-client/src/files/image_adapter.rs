@@ -1,4 +1,4 @@
-//! The opt-in BAR sealed-image adapter for an r9 shell session.
+//! The ISB image adapter for a content-granted r9 shell session.
 //!
 //! The adapter owns one [`ImageProducer`]: it reads the
 //! `image-channel`, `image-limits` and `image-formats` objects through
@@ -44,7 +44,6 @@ pub struct ShellImageConfig {
     /// Absolute deadline, in the caller's origin millisecond domain,
     /// for discovery through `ChannelReady`.
     pub startup_deadline_ms: u64,
-    pub fallback_bytes: bool,
     /// Caller storage bound for the formats object; at least 64 and
     /// never widened past the contract maximum.
     pub formats_capacity: usize,
@@ -181,6 +180,54 @@ use sophia_9p_records::{Errno, Fid, QidKind, Tag};
 
 use super::{FileWire, O_RDONLY};
 use crate::ShellClientError;
+
+impl crate::ShellConnection {
+    /// Enable ISB discovery on this already negotiated content connection.
+    /// Callers may first consume `ContentLimits` and use those bounds and the
+    /// transfer timeout to construct `image`. The role's r9 and sealed grant
+    /// must already be negotiated; this method grants no capability.
+    ///
+    /// `origin` and `origin_ms` name the same CLOCK_MONOTONIC instant. Startup
+    /// still ends at the supplied absolute deadline. Readiness requires the
+    /// authenticated side-channel Hello/ChannelReady exchange. An adapter is
+    /// never replaced, including after channel closure.
+    pub fn enable_image(
+        &mut self,
+        image: ShellImageConfig,
+        origin: Instant,
+        origin_ms: u64,
+    ) -> Result<(), ShellClientError> {
+        if self.image.is_some() {
+            return Err(ShellClientError::InvalidArgument(
+                "image adapter already enabled",
+            ));
+        }
+        if self.wire.peer_closed() {
+            return Err(ShellClientError::PeerClosed);
+        }
+        let required = IMAGE_CAPABILITY_SEALED
+            | sophia_shell_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
+        if self.welcome.selected_revision != 9
+            || self.welcome.capabilities & required != required
+            || self.welcome.capabilities & IMAGE_CAPABILITY_DMA_BUF != 0
+        {
+            return Err(ShellClientError::MissingCapability);
+        }
+        if image.transfer_timeout_ms == 0 || image.formats_capacity < 64 {
+            return Err(ShellClientError::InvalidArgument("image adapter options"));
+        }
+        let adapter = ImageAdapter::new(
+            image,
+            self.welcome.connection_epoch,
+            self.welcome.capabilities,
+            origin,
+            origin_ms,
+        )?;
+        self.wire.image_enabled = true;
+        self.image = Some(adapter);
+        Ok(())
+    }
+}
 
 impl FileWire {
     pub(crate) fn start_image_fetch(&mut self, formats_capacity: usize) {
@@ -472,7 +519,6 @@ impl ImageAdapter {
             bounds: config.bounds,
             transfer_timeout_ms: config.transfer_timeout_ms,
             startup_deadline_ms: config.startup_deadline_ms,
-            fallback_bytes: config.fallback_bytes,
         };
         // An invalid producer configuration is refused here, at
         // construction: no adapter exists to swallow it into.

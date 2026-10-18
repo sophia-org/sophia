@@ -311,7 +311,7 @@ pub(crate) struct FileWire {
     /// without bound.
     forgettable: HashSet<Tag>,
 
-    /// BAR image adapter opt-in: image journal events are consumed and
+    /// Image adapter enabled: image journal events are consumed and
     /// routed instead of delivered, and the staged discovery reader runs.
     pub(crate) image_enabled: bool,
     pub(crate) image_fetch: Option<image_adapter::ImageFetch>,

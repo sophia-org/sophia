@@ -15,6 +15,55 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+t331 is implementing the October 18 Immutable Shared Buffer migration.
+t338 is closed; its [delivery resumption](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#current-resumption)
+owns that result. The [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#immutable-shared-buffers--october-18)
+requires production CPU image clients to use sealed sources without a byte fallback.
+
+The signed, published SDK pins are Rust
+`9495fc426951bf168dcf827c67a231a5028e508c` and C
+`a1c41aa0217037b0578f6606f589ed9846ee9247`. Both provide deferred image
+enablement and adoption of a settled, accepted, retained image into the native
+resource lifecycle. Failed adoption preserves the offer and registry; successful
+adoption consumes the offer. Matching late Accepted statuses are idempotent even
+during retirement; contradictory statuses fail. Image admission uses the content
+grant epoch, not the connection epoch. Rust workspace tests passed 925 cases;
+strict Clippy, formatting and the full C check passed. Muse's seam review found
+no blockers. Evidence is under
+`~/.local/state/sophia/development-evidence/isb-client-migration-20261018/`
+(`cli-rust-final-tests.log`, `cli-rust-final-clippy.log`, `cli-c-final-check.log`).
+
+Provlita `be198914684362fac2a39c454aa8f657664803b3` and Lom
+`dcac836e72e75467bbd7fd8e4543e71d03a0a84b` are signed and published with the
+Rust pin. Muse reports their client gates green. Bemenu
+`7abb08cbdf2752dc9a3ad6b8f6b8cd754b5b2656` and Kleis
+`919bc9f9a70838abd4b3bff04c402ec807679db0` are signed and published on their
+`migration/isb` branches, with worktrees in `~/dev/bemenu-isb` and
+`~/dev/kleis-isb`. Their master branches have not been advanced. Codex finished
+Kleis after Muse's quota stop. Bemenu's full strict gate passes, including
+independent executable sealed-FD transfer. Kleis's full tests, release build,
+formatting and strict C checks pass; its provider tests cover ImageBegin and
+Cancel retries and Accepted waiting for SourceReleased. The tests caught and
+fixed the producer-status/role-status distinction and cleanup and cancellation
+race handling. These are device-hidden checks, not native or physical acceptance.
+
+Both SDK snapshots are imported in Sophia. Snapshot checks pass, and the
+affected shell/lock SDK and image export tests pass 73 cases, with four
+existing external-peer tests skipped (`sophia-sdk-export-tests.log`). This
+still exercises legacy byte controls; it does not prove their removal.
+
+Next: integrate the two published client branches, complete removal of
+production byte APIs and server compatibility while preserving the isolated
+comparator, then
+rerun the native comparison. All four +10% cost gates remain unchanged and open;
+the earlier red panel allocation result is permission to proceed, not a pass.
+Per-request allocation attribution and journal read pairing remain required.
+The frozen B2/B3 comparator remains `6c87721fa`, integration `4b16974`, under
+`~/.local/state/sophia/development-evidence/t331-b3-20261017/native-candidate/`.
+The installed desktop is unchanged. No quiet hold is active.
+
+## Historical implementation checkpoint — before t338 closure
+
 t338 remains in implementation. Codex owns shell/Session integration; Claude
 owns the lock runtime lane. Muse remains quota-limited and has not started the
 Rust producer. The [delivery plan's current resumption](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#current-resumption)

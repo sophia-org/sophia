@@ -33,7 +33,7 @@ fn config_accepts_only_known_revisions() {
 }
 
 #[test]
-fn absent_discovery_closes_clean_and_bytes_path_opens() {
+fn absent_discovery_ends_image_admission_without_fallback() {
     let mut producer = ImageProducer::new(config(ImageRole::Shell), 0).unwrap();
     assert_eq!(
         producer.discover(DiscoveryRead::Absent, 1, 0),
@@ -41,7 +41,7 @@ fn absent_discovery_closes_clean_and_bytes_path_opens() {
     );
     assert_eq!(producer.channel(), ChannelState::Closed);
     assert_eq!(producer.cause(), CloseCause::Absent);
-    assert_eq!(producer.path(), ImagePath::Bytes);
+    assert_eq!(producer.path(), ImagePath::Error);
 }
 
 #[test]

@@ -60,6 +60,10 @@ static int initialize(struct sophia_sf_client *c, struct sophia_9p_client *wire,
     if (profile == SOPHIA_SF_LAUNCHER || profile == SOPHIA_SF_DOCK) {
         unsigned revision = profile == SOPHIA_SF_LAUNCHER ? 7 : 8;
         uint64_t mask = profile == SOPHIA_SF_LAUNCHER ? 0x9a0 : 0x11a2;
+        if (offer.required_capabilities & (UINT64_C(1) << 13)) {
+            revision = 9;
+            mask |= UINT64_C(1) << 13;
+        }
         if (offer.minimum_revision > revision || offer.maximum_revision < revision ||
             offer.required_capabilities != mask)
             return SOPHIA_9P_ARGUMENT;

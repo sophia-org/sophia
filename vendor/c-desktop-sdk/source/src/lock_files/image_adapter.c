@@ -84,7 +84,6 @@ static void closed(struct sophia_lc_image *img, enum sophia_ip_cause cause) {
   img->producer.fd = -1;
   img->producer.channel = SOPHIA_IPC_CLOSED;
   img->producer.cause = (uint8_t)cause;
-  img->producer.config.fallback_bytes = img->config.producer.fallback_bytes;
 }
 
 /* A selection of 1 or no sealed grant is a clean absence of the channel. */

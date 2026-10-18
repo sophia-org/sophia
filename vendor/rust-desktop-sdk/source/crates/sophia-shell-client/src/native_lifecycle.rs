@@ -7,6 +7,7 @@ use crate::{
 use sophia_shell_protocol::shell_files::*;
 use sophia_shell_protocol::*;
 
+mod image;
 mod observe;
 mod resources;
 pub use resources::{NativeAllocationParams, NativeResourceState};

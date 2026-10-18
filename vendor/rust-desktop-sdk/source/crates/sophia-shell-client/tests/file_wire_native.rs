@@ -237,7 +237,11 @@ fn connect(p: Profile, required: u64) -> (Result<ShellConnection, ShellClientErr
         &path,
         ShellClientOptions {
             minimum_revision: 1,
-            maximum_revision: 8,
+            maximum_revision: if required & IMAGE_CAPABILITY_SEALED != 0 {
+                9
+            } else {
+                8
+            },
             required_capabilities: required,
             handshake_timeout: WAIT,
         },
@@ -387,6 +391,59 @@ fn requires_exact_native_profile_and_limits() {
         assert!(connect(p, required).0.is_err(), "{p:?}");
     }
     assert_eq!(ready().0.welcome().selected_revision, 7);
+}
+
+#[test]
+fn isb_launcher_keeps_the_exact_role_mask_and_limits() {
+    let caps = CAPS | IMAGE_CAPABILITY_SEALED;
+    let image = Profile {
+        revision: 9,
+        capabilities: caps,
+        ..profile()
+    };
+    assert_eq!(
+        connect(image, caps).0.unwrap().welcome().selected_revision,
+        9
+    );
+    for (p, required) in [
+        (
+            Profile {
+                revision: 7,
+                ..image
+            },
+            caps,
+        ),
+        (
+            Profile {
+                capabilities: caps | 2,
+                ..image
+            },
+            caps,
+        ),
+        (
+            Profile {
+                capabilities: caps & !(1 << 8),
+                ..image
+            },
+            caps & !(1 << 8),
+        ),
+        (
+            Profile {
+                limits_published: false,
+                ..image
+            },
+            caps,
+        ),
+        (
+            Profile {
+                role: "bar",
+                ..image
+            },
+            caps,
+        ),
+    ] {
+        assert!(connect(p, required).0.is_err(), "{p:?}");
+    }
 }
 
 #[test]

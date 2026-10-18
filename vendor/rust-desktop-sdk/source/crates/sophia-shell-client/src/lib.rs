@@ -201,7 +201,7 @@ impl ShellConnection {
         Ok(Self::assemble(wire, welcome, inbox, None))
     }
 
-    /// [`Self::from_attached`] with the opt-in BAR image adapter.
+    /// [`Self::from_attached`] with the ISB image adapter.
     /// `origin` and `origin_ms` are one explicit clock pair: the
     /// monotonic instant and the absolute CLOCK_MONOTONIC
     /// milliseconds it names. The adapter's startup deadline is in
@@ -242,25 +242,16 @@ impl ShellConnection {
     }
 
     fn assemble_image(
-        mut wire: files::FileWire,
+        wire: files::FileWire,
         welcome: ShellV1ServerWelcome,
         inbox: VecDeque<Inbound>,
         image: ShellImageConfig,
         origin: std::time::Instant,
         origin_ms: u64,
     ) -> Result<Self, ShellClientError> {
-        if welcome.selected_revision != 9 || welcome.capabilities & IMAGE_CAPABILITY_SEALED == 0 {
-            return Err(ShellClientError::UnsupportedRevision);
-        }
-        wire.image_enabled = true;
-        let adapter = files::image_adapter::ImageAdapter::new(
-            image,
-            welcome.connection_epoch,
-            welcome.capabilities,
-            origin,
-            origin_ms,
-        )?;
-        Ok(Self::assemble(wire, welcome, inbox, Some(adapter)))
+        let mut connection = Self::assemble(wire, welcome, inbox, None);
+        connection.enable_image(image, origin, origin_ms)?;
+        Ok(connection)
     }
 
     /// Connect over the native 9P file wire: Pipeline connect, attach, open
@@ -281,7 +272,7 @@ impl ShellConnection {
         Ok(Self::assemble(wire, welcome, inbox, None))
     }
 
-    /// [`Self::connect_files`] with the opt-in BAR image adapter;
+    /// [`Self::connect_files`] with the ISB image adapter;
     /// see [`Self::from_attached_with_image`] for the clock pair.
     pub fn connect_files_with_image(
         path: impl AsRef<Path>,
@@ -313,7 +304,7 @@ impl ShellConnection {
         }
     }
 
-    /// [`Self::connect_from_env`] with the opt-in BAR image adapter.
+    /// [`Self::connect_from_env`] with the ISB image adapter.
     pub fn connect_from_env_with_image(
         options: ShellClientOptions,
         image: ShellImageConfig,

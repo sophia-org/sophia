@@ -38,7 +38,6 @@ pub fn config(role: ImageRole) -> ImageProducerConfig {
         bounds: bounds(),
         transfer_timeout_ms: 1_000,
         startup_deadline_ms: 10_000,
-        fallback_bytes: true,
     }
 }
 

@@ -1,14 +1,14 @@
-tree 95fe0eb50a0cd936f093a074a2db64b067e7df61
-parent d51b0336649757eaf7bf6970c50c14786f0a4772
-author Mason Green <mason@greenm01.net> 1792330694 -0400
-committer Mason Green <mason@greenm01.net> 1792330694 -0400
+tree 5be18f541a81edf6f5630c8f2c72b813edb7ec9b
+parent 111a0f71b2b3f12dcc79ee1ffc78a1672b0370ef
+author Mason Green <mason@greenm01.net> 1792344642 -0400
+committer Mason Green <mason@greenm01.net> 1792344642 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatTLxhsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKIVgEA5jIB3/UF+M+wGJWdkScU
- Na12wdOdqIJcUL6HS/9tD1QA/16NI9sX+8NDTVziA5lzCoof8Wgqju8JwpA/efmH
- XisN
- =hO0W
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatUCQhsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKEjAEAmRgGfVuFq/zSRPrfaHH9
+ E5R22HSx80GFkld5QWRna6MA/1jwftdZEZHYLoSMBEfHHjJ+0kaOwT8XYZUCvGxB
+ Va0G
+ =ZubH
  -----END PGP SIGNATURE-----
 
-Name CPU image buffers Immutable Shared Buffers (ISB)
+Require ISB image adapters and adopt settled native resources

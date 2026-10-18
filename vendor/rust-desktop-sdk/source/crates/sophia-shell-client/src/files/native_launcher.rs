@@ -1,4 +1,4 @@
-//! Revision-7 launcher admission. The role and exact mask are both required.
+//! Launcher admission at r7 or r9 ISB. The role and exact mask are required.
 use super::FileWire;
 use crate::{ShellClientError, ShellClientOptions};
 use sophia_shell_protocol::shell_files::*;
@@ -15,10 +15,17 @@ pub(super) fn validate_negotiated(
     value: &ShellFileNegotiated,
 ) -> Result<(), ShellClientError> {
     if native {
-        if value.welcome.selected_revision != 7 {
+        let image = options.required_capabilities & crate::IMAGE_CAPABILITY_SEALED != 0;
+        let (revision, capabilities) = if image {
+            (9, NATIVE_CAPS | crate::IMAGE_CAPABILITY_SEALED)
+        } else {
+            (7, NATIVE_CAPS)
+        };
+        if value.welcome.selected_revision != revision {
             return Err(ShellClientError::UnsupportedRevision);
         }
-        if options.required_capabilities != NATIVE_CAPS || value.welcome.capabilities != NATIVE_CAPS
+        if options.required_capabilities != capabilities
+            || value.welcome.capabilities != capabilities
         {
             return Err(ShellClientError::MissingCapability);
         }
