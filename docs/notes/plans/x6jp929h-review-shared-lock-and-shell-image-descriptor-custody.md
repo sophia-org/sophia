@@ -8,18 +8,34 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
-`~/.local/state/t338/bytes-run-04` is captured successfully. The monitor retained
-the selected host/supervisor/peer binding and two environment receipts, ending
-normally after evidence. Running the production calibration report with the
-absent sealed run passed all bytes-arm checks: digests, raw cost re-derivation,
-target-bound provenance, M5 and measurement containment. It stopped at the
-missing sealed attempt, so there is no paired report yet. The exact refusal is
-retained in `calibration-03/bytes-04-partial-qualification.log`.
+The attended bytes/sealed panel calibration now has a valid paired report.
+`~/.local/state/t338/bytes-run-04` and `sealed-run-01` both captured successfully,
+retaining their selected host/supervisor/peer bindings and two environment
+receipts each. Both monitors ended normally after evidence. Production
+`report-calibration` exits 0: evidence digests, raw cost re-derivation,
+target-bound provenance, M5, measurement containment and matching environment
+fact values all pass. The build/test quiet window is released.
 
-The next attended arm is `/tmp/t338-sealed-01` from tty4, using the same frozen
-descriptor and writing `~/.local/state/t338/sealed-run-01`. It has not started.
-Keep the build/test quiet window; inspect both arms through report-calibration
-before making a CPU comparison or closing t338.
+The report is `~/.local/state/t338/calibration-03/paired-report.json`, SHA-256
+`6610a851a597327351fd9acf506bc560b989c9f24b25659ec2260aca3a1c705f`;
+`paired-summary.json` retains the compact result and scope. Both arms have
+1000 frames, 1920×24 content and 184,320,000 logical payload bytes, on DP-1 at
+1920×1080, nominal 120 Hz, timing-derived 119.880 Hz, scale 1 and committed VRR
+off. The 60-second session includes an approximately 8.36-second measured
+workload. CPU covers all Session and peer threads, including foreign code;
+other processes and allocations are not measured.
+
+| Path | CPU ms/frame | CPU ms/logical payload MiB |
+| --- | ---: | ---: |
+| Bytes | 1.402030–1.403942 | 7.975997–7.986867 |
+| Sealed | 1.549171–1.550824 | 8.813064–8.822466 |
+
+Sealed costs 10.34–10.61% more CPU in this pair, using conservative cross-bound
+ratios. These are counter bounds, not statistical confidence intervals. This
+is one sequential calibration pair, not balanced repeated trials or a t331/B9
+gate verdict, and it does not establish an improvement. Broader measurements
+listed below remain unproven by this CPU-only pair. No additional native run
+is requested while the completion scope is reviewed.
 
 `~/.local/state/t338/bytes-run-03` also completed the workload and restored
 the console, but observation failed: two descendants matched the host
