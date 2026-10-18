@@ -18,6 +18,17 @@ in `niltempus 8f5b649`, with 13 fixture controls. The runner must still bracket
 receipt validation with that binding and retain authenticated provenance; these
 modules do not yet qualify an arm. No physical run has occurred.
 
+The importer and registrations are published at `niltempus 0f1d09f`; the full
+device-hidden xtask suite, all-target strict Clippy and formatting pass. Its
+generated 54-arm idle condition imports through the real freeze/attempt chain;
+tampered evidence and a failed arm refuse the condition. The environment
+provider in that test is a supplied verdict, not production authentication.
+Sophia `ff6f445fe` adds `--output-environment-readback`, armed separately with
+`SOPHIA_OUTPUT_ENVIRONMENT_ARM=1`, an absolute receiver socket and a bounded
+native normal Session. The old output-role proof gate is unchanged. The eight
+output-proof/config controls and strict Clippy pass. Runner use of this flag,
+environment monitoring and load qualification are the next integration work.
+
 Environment readback is implemented in Sophia `21bcd211e` and emitted by
 Session `116d663b4`. Nominal refresh and timing-derived refresh stay distinct;
 GL strings come from the current context, VRR from committed CRTC state, and
