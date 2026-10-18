@@ -8,6 +8,19 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
+`~/.local/state/t338/bytes-run-04` is captured successfully. The monitor retained
+the selected host/supervisor/peer binding and two environment receipts, ending
+normally after evidence. Running the production calibration report with the
+absent sealed run passed all bytes-arm checks: digests, raw cost re-derivation,
+target-bound provenance, M5 and measurement containment. It stopped at the
+missing sealed attempt, so there is no paired report yet. The exact refusal is
+retained in `calibration-03/bytes-04-partial-qualification.log`.
+
+The next attended arm is `/tmp/t338-sealed-01` from tty4, using the same frozen
+descriptor and writing `~/.local/state/t338/sealed-run-01`. It has not started.
+Keep the build/test quiet window; inspect both arms through report-calibration
+before making a CPU comparison or closing t338.
+
 `~/.local/state/t338/bytes-run-03` also completed the workload and restored
 the console, but observation failed: two descendants matched the host
 executable. Binding is absent and no receipts were accepted. The old error
@@ -35,9 +48,9 @@ frozen descriptor SHA-256 is
 `a1fc1796235ee9c90566f6d78388ca13aeb944fe485c78487333d4076a90377f`;
 the bytes plan is `0a18bfa07322558c0b11606dec55e93c9d0c359e182e73d198603b01629f31a9`
 and sealed is `aff21530ea37fe9b66f660a316586659f049aa4a8db38e791de687f485d5c3d5`.
-The next attended bytes arm is `/tmp/t338-bytes-04` from tty4, writing a new
-`~/.local/state/t338/bytes-run-04` directory. It has not started. Inspect its
-retained observation before offering the sealed arm. Do not reuse a failed
+The attended bytes arm `/tmp/t338-bytes-04` wrote the new
+`~/.local/state/t338/bytes-run-04` directory and passed the per-arm checks above.
+Do not reuse a failed
 run directory or launch another arm from calibration-02.
 
 The first native bytes attempt did not produce usable measurement evidence.
