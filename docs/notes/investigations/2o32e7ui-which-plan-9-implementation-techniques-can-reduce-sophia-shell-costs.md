@@ -15,6 +15,99 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+October 18 follow-up: the ISB-only integration is signed and published as
+`5632d5423c9344c709810e00697a3d464cad5600`. Provlita
+`78e14e3528137449aa83ad2ed6bc8768c6efefeb` and Lom
+`9245bd05b95cec795819fbb9cee14b472722dc9a` now pin Rust SDK `fbde253`;
+both full client checks passed before signing and publication. The earlier
+client pins below describe the preceding migration checkpoint.
+
+The isolated comparator worktree is on `performance/t331-isb-cost`, merging
+that production checkpoint into `30b822381`. Its frozen historical branch and
+captures remain unchanged. Six supplied-owner peer controls pass after the
+merge; the actual native Session/CLI check also passes. New diagnostic-only
+request scopes count thread CPU and process-wide allocations during each
+interval. A control verifies allocation/reallocation counts and zero overhead
+allocations for an empty scope; four paired supplied-owner runs pass. In those
+64-frame runs, journal reads, reply encoding and read retries allocate little;
+writes and outbound admission allocate more. Scopes overlap and must not be
+summed. These fixtures do not reproduce the full native Session loop and do not
+establish the cause of its cost gap. Evidence is under
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/`, especially
+`request-attribution-tests-01.log`, `request-attribution-baseline-01.log` and
+`comparator-native-check-01.log`.
+
+Mapped ISB builders are signed and published: Rust
+`c6ad4fa04395565297beeecaa18edc459ad9cb01`, C
+`25be47d4292db5da3f877f64d8cb782c43eb5d7c`. Both exact imports pass Sophia's
+snapshot checks. Rust passes 909 workspace tests and strict Clippy; C passes
+the full suite and Nim binding smoke test. The builders bound allocation,
+exclude the writable mapping from fork, and unmap before sealing and verifying.
+The comparator now fills that backing directly with the same pixel routine as
+IPC; six paired peer controls and four canvas controls pass. Sophia's shell
+image, C lock and independent oracle export controls also pass
+(`mapped-export-tests.log`). This removes the staging copy but proves no cost
+improvement. Journal-read pairing now has identity-based evidence, described
+below. No native capture has run for this candidate;
+all four unchanged +10% gates and the latency gates remain open. Muse is offline;
+Codex owns integration/publication and Claude assists with bounded SDK and
+diagnostic work.
+
+The next shared optimization validates and sizes outbound content with the SDK's
+borrowed value counter instead of allocating encoded buffers for admission.
+Production runtime all-target tests and strict Clippy pass; a differential
+control preserves encoded charges and refusals. The same change is on both
+comparator wires. Across 64-frame supplied-owner runs, ISB admission allocation
+plus reallocation counts fell from 1,737 to 1 (panel) and 2,377 to 0 (bulk);
+IPC admission counts roughly halved. The remaining single allocation is within
+a process-wide interval, not proof of allocation by that function. See
+`request-attribution-borrowed-01.log`, `borrowed-charge-tests-02.log` and
+`borrowed-runtime-all-tests.log` in the current evidence directory. This does
+not replace native cost or latency gates. Bemenu `2a1a73fbec1e0c5552d965b3b7aa3fd6b2e4977b`
+and Kleis `5b314213dbb2733ec14d40d3e7c6f3fd5d9b8cee` now publish the mapped
+C SDK pin; both isolated client gates pass, including Kleis build and format
+checks. Its obsolete byte-upload C build input was removed.
+
+External qualification tooling now publishes schema-3 ISB-versus-IPC campaigns
+at `niltempus@879b672`: 72 arms per refresh rate, preserving both workloads,
+three restarted pairs, idle/load, separate CPU/allocation/latency methods, and
+all existing gates. Its campaign, comparison, provenance, historical pilot and
+calibration controls pass, with strict Clippy and formatting clean. Passive
+journal identity traces and their negative controls also pass. Freeze the
+comparator's signed source and optimized artifacts, then coordinate an attended
+native window. No installed desktop has been changed.
+
+## October 18 journal read pairing
+
+The comparator's opt-in trace records journal commit ranges, completed reads,
+ACKs and shell request/outcome identities without payloads or path-time
+allocation. It is excluded from cost builds. Synthetic controls cover joined
+and split reads, partial records, rereads, skipped reads, missing outcomes,
+ambiguous keys and transaction mismatches. Two controls and both supplied-owner
+ISB fixtures pass; the feature-enabled 9P suite passes 162 tests and strict
+Clippy is clean. These are device-hidden diagnostics, not native measurements.
+
+Evidence is under
+`~/.local/state/sophia/development-evidence/isb-client-migration-20261018/`:
+`claude-journal-pairing-{control,isb,clippy}.log` and
+`claude-journal-pairing-isb/{isb,isb-4mib,isb-512}.journal-trace.json`.
+All three traces report zero dropped records, unmatched outcomes or violations.
+Every matched outcome is delivered in a separate read from its receipt, joined
+by key and transaction identity. Every receipt and outcome has a covering ACK.
+The 64-frame panel trace has 708 commits, 643 reads and 644 ACKs; 578 reads
+complete one record and 65 complete two. Its 64 candidates produce 128 outcomes,
+and 64 ImageBegin requests produce 64 resource statuses. The bulk fixture has
+128 ImageBegin requests and 962 one-record reads plus 65 two-record reads.
+Negotiate, FrameDemand and ResourceRetire have no matching outcome by contract;
+their absence is not counted as a failed join.
+
+Raw commit/read/ACK tables retain ordinals, owner turns and spans so the joins
+can be audited. This establishes the supplied-owner delivery pattern, not its
+cost in a native Session. Read completion timing, batching and ACK policy are
+unchanged; the trace does not authorize changing them.
+
+## October 18 ISB-only integration checkpoint
+
 t331 is implementing the October 18 Immutable Shared Buffer migration.
 t338 is closed; its [delivery resumption](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#current-resumption)
 owns that result. The [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#immutable-shared-buffers--october-18)
