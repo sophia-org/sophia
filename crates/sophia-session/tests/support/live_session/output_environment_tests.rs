@@ -1,7 +1,7 @@
 //! Supplied readback records only: no DRM device or real GL context is used.
 use super::super::{
     OutputEnvironmentBatch, environment_percent_encode, output_environment_batch,
-    output_environment_lines,
+    output_environment_lines, send_output_environment,
 };
 use sophia_backend_live::{
     LiveProductionOutputEnvironmentReadback, LiveProductionOutputKmsReadback,
@@ -37,6 +37,80 @@ fn record() -> LiveProductionOutputEnvironmentReadback {
             version: "4.6 Mesa 25.2".into(),
         })),
     }
+}
+
+#[test]
+fn environment_datagrams_preserve_records_and_refuse_missing_receivers() {
+    use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, recvmsg};
+    use std::os::unix::net::UnixDatagram;
+    let directory = std::env::temp_dir().join(format!("sophia-env-send-{}", std::process::id()));
+    std::fs::create_dir(&directory).unwrap();
+    let path = directory.join("environment.sock");
+    let receiver = UnixDatagram::bind(&path).unwrap();
+    rustix::net::sockopt::set_socket_passcred(&receiver, true).unwrap();
+    receiver
+        .set_read_timeout(Some(std::time::Duration::from_secs(1)))
+        .unwrap();
+    let lines = output_environment_lines(&record(), std::process::id(), 123).unwrap();
+    send_output_environment(&path, std::slice::from_ref(&lines)).unwrap();
+    for expected in &lines {
+        let mut bytes = [0; 4096];
+        let mut space =
+            [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmCredentials(1), ScmRights(1))];
+        let mut control = RecvAncillaryBuffer::new(&mut space);
+        let message = recvmsg(
+            &receiver,
+            &mut [std::io::IoSliceMut::new(&mut bytes)],
+            &mut control,
+            RecvFlags::CMSG_CLOEXEC,
+        )
+        .unwrap();
+        assert!(
+            !message
+                .flags
+                .intersects(rustix::net::ReturnFlags::TRUNC | rustix::net::ReturnFlags::CTRUNC)
+        );
+        assert_eq!(&bytes[..message.bytes], expected.as_bytes());
+        let mut credentials = None;
+        let mut senders = Vec::new();
+        for item in control.drain() {
+            match item {
+                RecvAncillaryMessage::ScmCredentials(value) => {
+                    assert!(credentials.replace(value).is_none());
+                }
+                RecvAncillaryMessage::ScmRights(rights) => senders.extend(rights),
+                _ => panic!("environment writer sent unexpected ancillary data"),
+            }
+        }
+        let credentials = credentials.expect("kernel sender credentials");
+        assert_eq!(credentials.pid.as_raw_pid() as u32, std::process::id());
+        assert_eq!(credentials.uid, rustix::process::getuid());
+        assert_eq!(credentials.gid, rustix::process::getgid());
+        assert_eq!(senders.len(), 1);
+        use std::os::fd::AsRawFd;
+        let number = senders[0].as_raw_fd();
+        assert_eq!(
+            std::fs::read_link(format!("/proc/self/fd/{number}")).unwrap(),
+            std::path::Path::new("anon_inode:[pidfd]")
+        );
+        let info = std::fs::read_to_string(format!("/proc/self/fdinfo/{number}")).unwrap();
+        assert!(info.lines().any(|line| {
+            line.strip_prefix("Pid:")
+                .is_some_and(|p| p.trim() == std::process::id().to_string())
+        }));
+    }
+    let invalid = [lines[0].clone(), "invalid\nrecord".into()];
+    assert!(send_output_environment(&path, &[invalid]).is_err());
+    receiver.set_nonblocking(true).unwrap();
+    assert_eq!(
+        receiver.recv(&mut [0; 4096]).unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock,
+        "a later invalid line must not publish an earlier valid line"
+    );
+    assert!(send_output_environment(std::path::Path::new("relative.sock"), &[]).is_err());
+    assert!(send_output_environment(&directory.join("missing"), &[lines]).is_err());
+    drop(receiver);
+    std::fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
