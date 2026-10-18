@@ -149,9 +149,8 @@ impl LiveProductionNativeScanout {
         let generation = self.render_devices.generation;
         let stores = self.heads.iter().zip(&self.exporters)
             .filter(|(head, _)| head.enabled)
-            .filter_map(|(head, exporter)| exporter.image_store_identity().map(|store| (store, head.group)))
-            .collect::<BTreeMap<_, _>>();
-        self.preview_images.synchronize(generation, &stores);
+            .filter_map(|(head, exporter)| exporter.image_store_identity().map(|store| (store, head.group)));
+        self.preview_images.synchronize(generation, stores);
     }
 
     fn retain_preview_snapshot(

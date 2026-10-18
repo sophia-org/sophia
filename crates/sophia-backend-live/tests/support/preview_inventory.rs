@@ -8,12 +8,12 @@ fn inventory_refresh_keeps_live_local_owners_and_pending_evictions() {
     let a = LiveRendererImageId::from_raw(1);
     let b = LiveRendererImageId::from_raw(2);
     let stores = BTreeMap::from([(11, 0), (22, 1)]);
-    images.synchronize(1, &stores);
+    images.synchronize(1, stores.iter().map(|(&store, &group)| (store, group)));
     images.owners.insert(a, BTreeSet::from([11]));
     images.owners.insert(b, BTreeSet::from([22]));
     let queued = images.reads.acquire(a);
     assert!(!images.reads.request_eviction(a));
-    images.synchronize(2, &stores);
+    images.synchronize(2, stores.iter().map(|(&store, &group)| (store, group)));
     assert!(
         images.owners[&a].contains(&11),
         "idle local frame still has its store"
@@ -26,7 +26,7 @@ fn inventory_refresh_keeps_live_local_owners_and_pending_evictions() {
     images
         .cold_misses
         .insert(a, BTreeSet::from([sophia_protocol::OutputId::from_raw(2)]));
-    images.synchronize(3, &BTreeMap::from([(22, 1)]));
+    images.synchronize(3, [(22, 1)].into_iter());
     assert!(
         !images.owners.contains_key(&a),
         "removed store cannot remain a donor"
