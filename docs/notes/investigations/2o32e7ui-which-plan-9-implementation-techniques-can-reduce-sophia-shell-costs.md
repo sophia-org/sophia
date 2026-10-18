@@ -87,8 +87,12 @@ The replacement's first 12 arms captured successfully, with terminal recovery
 verified for every arm. The first idle pair at 60 Hz exceeds the +10% limit for
 panel CPU, panel allocations and bulk CPU. Two separate diagnostic pairs have
 since completed. Preview-store reuse, borrowed inventory comparison and the
-idle cursor no-work path are validated below. A fresh four-arm panel cost
-screening is prepared and awaits attendance; see `candidate-03/ready.json`.
+idle cursor no-work path are validated below. The four-arm panel cost screening
+completed with clean recovery. Allocations fell substantially, but the paired
+gap remains +20.44–21.00%; CPU remains +37.57–37.84%. See
+`candidate-03/screening-analysis.json`. Prioritize remaining wire-service and
+peer CPU costs, preserving authentication and service semantics, before another
+full qualification block.
 Full cost and latency qualification remain open;
 no installed desktop has been changed.
 
@@ -208,9 +212,25 @@ device-hidden profile checks pass; both source trees match their signed declared
 revisions and are clean. The attended launcher is
 `~/dev/niltempus/.artifacts/t331-bookkeeping-20261018/run.sh`; evidence and hashes
 are under `t331-isb-cost-20261018/candidate-03/`. New run destinations are
-`~/.local/state/t331/book-{cpu,alloc}-{C,A}-01`. None has started. This is a
+`~/.local/state/t331/book-{cpu,alloc}-{C,A}-01`. All four captured successfully,
+with restored termios, keyboard mode and keyd state and no emergency recovery.
+This is a
 four-arm cost screening without campaign environment readback, not the full
 three-pair idle/load cost and latency qualification.
+
+| Panel measure | ISB | IPC | ISB relative to IPC |
+| --- | --- | --- | --- |
+| CPU ns per uploaded MiB | 9,845,151–9,857,028 | 7,151,086–7,156,433 | +37.57–37.84% |
+| Allocation operations per frame | 1,161–1,164 | 962–964 | +20.44–21.00% |
+
+The earlier candidate recorded 1,587–1,590 ISB allocations/frame and
+1,217–1,219 IPC allocations/frame. The observed reduction is substantial on
+both wires, while the paired gap narrows from about 30% to about 21%. CPU shows
+no corresponding closure: Session remains about 1.309 ms/frame versus IPC's
+0.978 ms/frame, and the peer about 0.423 ms versus 0.280 ms. These separate
+screenings do not establish a statistically controlled between-candidate CPU
+change. Retain the unchanged +10% cost ceiling and full latency requirements;
+t331 is not complete.
 
 ## October 18 first attended block
 
