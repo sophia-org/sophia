@@ -8,6 +8,38 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
+`~/.local/state/t338/bytes-run-03` also completed the workload and restored
+the console, but observation failed: two descendants matched the host
+executable. Binding is absent and no receipts were accepted. The old error
+did not retain candidate identities, so their exact roles are not established.
+Source review found persistent same-image input-guard and metadata-broker
+roles, plus a transient launch-check role. No qualifying CPU evidence comes
+from this attempt, and no sealed native arm has run.
+
+The next runner correction requires both executable identity and the exact
+frozen host argv, retains those arguments and rechecks them. Multiple exact
+matches in one rooted tree remain Pending until only one remains; separate
+roots are refused with candidate pid, parent and start-time diagnostics.
+This selects a role, not a new source of authority. Device-free live controls
+pass for a same-image guard beside the selected host and for the protected
+peer beside a non-dumpable child. Fixture controls cover fork transitions.
+The correction is signed as external `niltempus b63e1d1`. The full xtask suite
+passes (381 tests, 11 ignored), as do strict all-target Clippy, formatting and
+both ignored live controls. An obsolete observer test call failed the first
+compile and was corrected before the passing suite. Full logs and exit-status
+records are retained under `~/.local/state/t338/calibration-03/`.
+
+The release runner was rebuilt from that clean signed revision. Fresh bytes
+and sealed plans keep the workload, host and peer artifacts unchanged. Their
+frozen descriptor SHA-256 is
+`a1fc1796235ee9c90566f6d78388ca13aeb944fe485c78487333d4076a90377f`;
+the bytes plan is `0a18bfa07322558c0b11606dec55e93c9d0c359e182e73d198603b01629f31a9`
+and sealed is `aff21530ea37fe9b66f660a316586659f049aa4a8db38e791de687f485d5c3d5`.
+The next attended bytes arm is `/tmp/t338-bytes-04` from tty4, writing a new
+`~/.local/state/t338/bytes-run-04` directory. It has not started. Inspect its
+retained observation before offering the sealed arm. Do not reuse a failed
+run directory or launch another arm from calibration-02.
+
 The first native bytes attempt did not produce usable measurement evidence.
 The long evidence path first exceeded the Unix socket pathname limit before
 launch; that failed attempt remains under the calibration directory below as
@@ -38,9 +70,9 @@ The new frozen descriptor SHA-256 is
 `a725c2a72c73108723da734c3becd6b50a719055a821f64c74b594e6e812ac40`.
 Its bytes plan is `faa30ccd3ae9164b09a4ac2b0bb76c83fd6b819c7e944e81c4618ae143f193bd`;
 its sealed plan is `97d6a369453e7ae3caac4d0ad02917c3f8fc1e417d0062c4915548329c087101`.
-The workload and compositor/peer artifacts are unchanged. The next bytes run
-uses `~/.local/state/t338/bytes-run-03` via `/tmp/t338-bytes-03` from tty4.
-It has not started. The new descriptor supersedes the earlier one below.
+The workload and compositor/peer artifacts are unchanged. This descriptor was
+used by the failed `bytes-run-03` via `/tmp/t338-bytes-03` from tty4. It
+superseded the earlier descriptor below and is retained without modification.
 
 The operator selected **DP-1**, superseding the brief DP-2 answer, for
 1920×1080@120 Hz with VRR off. Read-only sysfs preparation maps the declared
