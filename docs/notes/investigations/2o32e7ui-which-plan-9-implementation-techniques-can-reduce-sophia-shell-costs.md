@@ -15,6 +15,37 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+The fixed-block ISB validator remains accepted in production `cfa256424` and
+comparator `914e86378`. The client-drive experiment is retired. Latest native
+screening leaves panel CPU 25.85–26.07% above IPC, while bulk is 5.37–5.41%
+below IPC. These single pairs do not qualify t331; details and limits follow.
+
+The next step measures the remaining panel cost rather than applying an
+unmeasured bookkeeping fix. Comparator `39524e005` adds feature-gated scopes
+for preview demand construction, preparation and retired-import service.
+Retirement nests in preparation, and both nest in lifecycle_native; do not add
+these totals. Demand also runs during policy installation. Allocation deltas
+are process-wide and can include workers. The optional backend-to-runtime
+diagnostic dependency exists only in this comparator profiling feature.
+
+A new ignored timing control uses the production `LaunchCustody::is_live`
+against a real protected wrapper and peer. Two optimized runs measure median
+0.436 and 0.432 microseconds/check. Multiplying by the stale profile's roughly
+110 checks/frame suggests about 48 microseconds/frame, not the full remaining
+208–210 microseconds/frame gap. This warm isolated estimate is neither a native
+attribution nor permission to cache authority or remove checks.
+
+Evidence is in `candidate-11-panel-cost/`. Custody timing, scoped Clippy,
+38 preview controls and counter controls pass; the profiling-disabled backend
+check passes with `test-support`. A bare no-feature backend check still fails
+on the renderer's missing native EGL import, outside this patch. Scoped
+rustfmt finds pre-existing formatting in preview_preparation and its included
+fixtures; the diagnostic additions do not reformat those files. The next
+attended files/IPC attribution pair will use existing wire/authentication/owner
+scopes plus the three new preview scopes. It is diagnostic, not acceptance.
+
+## October 18 ISB scan and control screening
+
 Publication batching is retired in production `78d7d062b` and comparator
 `8cfeac2a7`. The controlled native pair showed approximately seven actual
 flushes per frame with batching either enabled or disabled, unchanged protocol

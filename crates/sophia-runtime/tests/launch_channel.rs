@@ -16,6 +16,8 @@ use std::{
 
 #[path = "support/host_namespace_channel.rs"]
 mod host_namespace_channel;
+#[path = "support/launch_custody_timing.rs"]
+mod launch_custody_timing;
 
 fn launch(program: &std::path::Path) -> ProcessLaunchSpec {
     ProcessLaunchSpec::new(program).protection_domain(
