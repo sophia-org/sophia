@@ -444,7 +444,7 @@ fn supplied_owner_records_every_offer_and_terminal_on_ipc_baseline() {
                 let line = pair[0];
                 if stride == 2 {
                     assert!(pair[1].starts_with(
-                        "sophia_comparator_progress schema=3 mode=progress process=peer "
+                        "sophia_comparator_progress schema=4 mode=progress process=peer "
                     ));
                     assert!(pair[1].contains(&format!("sequence={} ", index / 2 + 1)));
                 }

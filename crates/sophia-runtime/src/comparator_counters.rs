@@ -192,6 +192,10 @@ pub fn write_snapshot(
     Ok(())
 }
 
+/// One progress record, within Linux PIPE_BUF so each write stays atomic.
+#[cfg(feature = "comparator-progress")]
+pub const PROGRESS_RECORD_BYTES: usize = 4096;
+
 #[cfg(feature = "comparator-progress")]
 pub fn write_progress(
     output: &mut impl Write,
@@ -203,11 +207,11 @@ pub fn write_progress(
     let counts = progress::snapshot();
     let ledger = progress::service_ledger::snapshot();
     let after = nanos(rustix::time::ClockId::Monotonic) / 1000;
-    let mut bytes = [0u8; 4096];
+    let mut bytes = [0u8; PROGRESS_RECORD_BYTES];
     let mut buffer = std::io::Cursor::new(bytes.as_mut_slice());
     write!(
         buffer,
-        "sophia_comparator_progress schema=3 mode=progress process={process} pid={} sequence={sequence} before_usec={before} after_usec={after}",
+        "sophia_comparator_progress schema=4 mode=progress process={process} pid={} sequence={sequence} before_usec={before} after_usec={after}",
         std::process::id()
     )?;
     for (name, count) in progress::NAMES.iter().zip(counts) {
