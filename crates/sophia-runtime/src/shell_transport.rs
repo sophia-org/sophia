@@ -75,7 +75,6 @@ pub enum ShellTransportError {
     WrongContentGrant,
     ContentQueueSaturated,
     ActivationQueueSaturated,
-    InvalidServiceBatch,
     NotConnected,
 }
 
@@ -131,8 +130,6 @@ pub struct ShellComponentTransport {
     /// Session explicitly services input once at the start of each owner pass.
     /// Later role visits share that input and only flush new publications.
     owner_serviced: bool,
-    /// Local role publications may share one flush inside an owner visit.
-    publication_batch: bool,
     /// Typed Session-to-client records not yet in a wire's custody.
     output: outbox::ShellOutbox,
     /// The last turn left records queued because the journal was full. Only
@@ -176,7 +173,6 @@ impl ShellComponentTransport {
             capabilities: 0,
             peer_closed: false,
             owner_serviced: false,
-            publication_batch: false,
             output: outbox::ShellOutbox::default(),
             output_blocked: false,
             action_cancellations: Vec::with_capacity(16),
@@ -266,7 +262,6 @@ impl ShellComponentTransport {
         }
         self.negotiation = None;
         self.owner_serviced = false;
-        self.publication_batch = false;
         self.output.clear();
         self.output_blocked = false;
         self.action_cancellations.clear();
@@ -375,9 +370,6 @@ impl ShellComponentTransport {
     ) -> Result<(), ShellTransportError> {
         #[cfg(feature = "comparator-progress")]
         let _input_source = sophia_9p::progress::service_ledger::owner_input();
-        if self.publication_batch {
-            return Err(ShellTransportError::InvalidServiceBatch);
-        }
         self.owner_serviced = false;
         self.poll_io(epochs)?;
         self.owner_serviced = true;
@@ -453,7 +445,6 @@ impl ShellComponentTransport {
                 files,
                 &mut self.output,
                 !self.owner_serviced,
-                self.publication_batch,
                 std::time::Instant::now(),
                 epochs.resources_mut(self.store_grant),
             )?,
@@ -578,7 +569,6 @@ impl ShellComponentTransport {
         files: &mut files::ShellFileWire,
         output: &mut outbox::ShellOutbox,
         serve_input: bool,
-        defer_flush: bool,
         now: std::time::Instant,
         resources: Option<&mut crate::ContentResourceStore>,
     ) -> Result<(bool, bool), ShellTransportError> {
@@ -596,16 +586,9 @@ impl ShellComponentTransport {
         if serve_input {
             files.check_ack_progress(blocked, now)?;
         }
-        // A full journal is a progress boundary: publish what already fit so
-        // the peer can consume it and release credit. Otherwise the scoped
-        // role visit flushes its ordered publications together at its exit.
-        if !files.publication_pending() || (defer_flush && !blocked) {
+        if !files.publication_pending() {
             #[cfg(feature = "comparator-progress")]
-            sophia_9p::progress::service_ledger::add(if files.publication_pending() {
-                6
-            } else {
-                7
-            });
+            sophia_9p::progress::service_ledger::add(7);
             return Ok((false, blocked));
         }
         #[cfg(feature = "comparator-progress")]

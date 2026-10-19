@@ -9,6 +9,7 @@ pub const NAMES: [&str; 17] = [
     "wire_flush_no_progress",
     "wire_flush_failed",
     "wire_flush_blocked",
+    // Retained for schema-4 replay; retired publication batching leaves it zero.
     "wire_flush_deferred",
     "wire_no_publication",
     "retry_wake_ready",
