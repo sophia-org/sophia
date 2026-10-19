@@ -14,6 +14,18 @@ against Sophia's remaining costs? niltempus requested this comparison after the
 mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
+
+On 2026-10-19, niltempus requested an architectural examination of work
+scheduling rather than another sequence of isolated syscall optimizations.
+Keep measured improvements, including candidate 27, but make the complete
+presentation's execution path the unit of analysis. The next research scope is
+[work scheduling within the existing ISB architecture](#work-scheduling-within-the-existing-isb-architecture).
+Claude has been asked to research upstream mechanisms read-only; findings are
+pending. This is a research direction, not approval to change scheduling,
+authority freshness, protocol boundaries or the t331 acceptance thresholds.
+
+### Candidate 27 CPU screen
+
 Candidate 27 has a positive CPU screen on both transports. Production
 `7fca9e0e2` and comparator `16faa7a91` retain successful primary-plane property
 IDs per head, keyed by opened-card identity, target generation and KMS object
@@ -53,6 +65,80 @@ check. Minimal libdrm-events checking remains blocked by an unchanged renderer
 import, reproduced independently. The earlier read-only audit is retained in
 `candidate-27-property-discovery/`. Its historical ioctl counts and sampled
 attribution motivate the candidate but are not durations or savings bounds.
+
+### Work scheduling within the existing ISB architecture
+
+The question is why one presentation revisits so much work, and which visits
+represent a new obligation. Repeated visits or checks show cost, not that the
+work is unnecessary. Some cost may buy guarantees absent from the IPC control.
+Historical recordings suggested roughly twenty wire services per frame; that
+count has not been established for candidate 27. Do not convert sampled
+attribution or syscall counts into removable CPU time.
+
+The published architecture stays intact: authenticated 9P control and lifecycle
+events; a SEQPACKET side channel transferring sealed descriptors; fresh immutable
+backing; and Session-owned admission, validation, resources and presentation.
+This investigation concerns the execution model underneath those boundaries.
+It does not propose replacing 9P, a mutable buffer pool, weaker seals or caching
+authority once per turn. Owner allocation alone cannot revoke a peer's retained
+writable mapping, and page-flip completion need not end every resource consumer.
+
+Candidate 27 is an example of correcting a lifetime mismatch: stable property
+IDs now belong to an opened device and target, rather than being rediscovered
+for every frame. It improves shared renderer work. Its new-arm means are about
+1123/902 us per frame for files/IPC Session and 370/240 us for the peer, leaving
+about 352 us combined difference. At that descriptive IPC baseline, the +10%
+target would require about 238 us less files CPU. These separate-block means
+are a sizing aid, not a qualification result or a promise that the difference
+is removable. Small independent syscall substitutions are not a credible plan
+for closing it without showing how they compose.
+
+The architectural analysis should follow one steady-state presentation from
+peer preparation through admission, descriptor transfer, validation, submission,
+presentation and acknowledgments. For each owner visit, wakeup and I/O exchange,
+identify its trigger, dependency, available information, required fresh checks,
+bounded work, and condition for sleeping or becoming runnable again. Distinguish
+more visits from more work per visit. Keep actual observations separate from
+the inferred causal path and include cancellation, backpressure and failure
+paths rather than treating the steady-state trace as a complete contract.
+
+Five questions organize that analysis:
+
+| Concern | Question |
+| --- | --- |
+| Work scheduling | Which input, completion, queued operation or deadline makes an owner runnable, and what ends that obligation? |
+| Readiness ownership | Which layer already knows readiness, and why is another layer probing again? How is stale identity rejected? |
+| Authority | Which guarantee requires each fresh check at its current boundary? Which cost is intentional? |
+| State lifetime | Which derived facts belong to a device, connection, resource or frame, and which change invalidates them? |
+| Progress dependencies | Which exchanges require a reply, which are already pipelined, and where does scheduling add another boundary? |
+
+Claude's requested prior-art scope is work scheduling, not another transport
+survey. Screen readiness-driven reactors, cooperative budgeted runtimes,
+ready queues and 9P servers, then examine the best-fitting mechanisms in depth.
+Useful leads include libuv/libevent/sd-event, Tokio/Mio and Seastar; naming a
+project is not an endorsement or evidence of speed. Require pinned source
+links, function-level invariants and an exact Sophia transfer point. Investigate
+enqueue-once runnable work, requeue after budget exhaustion, readiness handoff,
+draining to quiescence, fairness, backpressure and wake-before-sleep races.
+Describe descriptor reuse, partial I/O, EOF, cancellation, deadlines and any
+added observation or queueing delay. Upstream authority assumptions must be
+explicit; readiness never grants authority.
+
+For each promising mechanism, report whether Sophia already implements it,
+its strongest counterexample, the needed regression controls and the smallest
+measurement that would distinguish it from today's behavior. Existing batched
+Pipeline output, a max-size parked Tread and cumulative ACKs are not new
+opportunities. Publication batching and experimental read scheduling showed no
+measured benefit; do not revive either from counts alone. Preserve current
+checks, ACK/custody boundaries and deadlines in the initial implementation
+scope. Any required change in those contracts, including which call observes
+disconnect, must be presented separately for a decision.
+
+The intended result is one coherent execution-model candidate with a meaningful
+measured cost budget and explicit invariants. It may instead establish that
+some residual cost is inherent to the stronger contract. Either result is more
+useful than weakening guarantees to meet a percentage. New native profiling
+or implementation is not part of Claude's read-only research assignment.
 
 ### Candidate 26 local MAP_POPULATE screen
 
