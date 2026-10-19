@@ -15,17 +15,30 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
-The peer receive diagnostic on comparator `bc3acf69e` is valid: 1,000 unique
-joined presentations, exact supervised peer PID and unchanged input hashes.
-Within the 166 fully included 100 ms bins, the 9P socket returned data 17,582
-times and EAGAIN 67,130 times: 79.245% empty receives, or 3.82 per data return.
-The 638 boundary-bin calls and 96 outside calls are separate; all 85,446
-entries and exits reconcile. These are syscall outcomes, not protocol records
-or CPU costs. Draining a nonblocking socket normally ends in EAGAIN, so the
-counts alone do not establish redundant work. Next distinguish drain-ending
-EAGAIN from subsequent empty pipeline polls before changing the drive loop.
-Evidence: `candidate-15-peer-receive/analysis.json`, with retained logs,
-compiler warnings and a passing startup, FD-reuse and unrelated-process control.
+The bracketed peer diagnostic on comparator `bc3acf69e` is valid: 1,000
+unique joined presentations, matching supervised peer PID 20058, unchanged
+input hashes and successful control, native command and tracer exits. In the
+fully included 100 ms bins, 19,376 receives returned data, 17,879 returned
+EAGAIN after data in that pipeline poll, and 38,478 returned EAGAIN without
+data in that poll. Later polls within a drive account for 28,536 empty polls
+and 1,147 productive polls: 96.14% of those later polls are empty. All 76,368
+receives reconcile across interior, boundary and outside bins. Whole-run
+drive and poll entry/return counts also balance.
+
+SDK `c6ad4fa` repeats the full pipeline write/read poll whenever a local state
+machine progresses. This explains how repeated probes arise; it does not
+prove they are removable. The capture did not record sends, and some later
+polls demonstrably receive replies. Next distinguish polls that successfully
+sent requests from polls driven only by local bookkeeping. Preserve read
+budgets, ACK progress, disconnect handling and the published ISB/9P contract.
+Uprobes perturb scheduling; these counts establish no CPU benefit.
+
+Evidence: `candidate-16-peer-polls/{analysis.json,post-run-validation.json}`
+and `CAPTURE-SHA256SUMS`. The SSH launcher reported failure only after
+`openvt` could not deallocate console 4; the capture child exited zero and
+the tty4 login service was restored. Preserve that wrapper error with the
+successful capture evidence. Fix its classification in the next disposable
+launcher, without changing this run's pinned scripts.
 
 Keep listener-readiness candidate `c535a0310`. Accept calls fell from
 23,024 / 23,066 image-service visits to 8,034 / 23,176, a 65.3% reduction
