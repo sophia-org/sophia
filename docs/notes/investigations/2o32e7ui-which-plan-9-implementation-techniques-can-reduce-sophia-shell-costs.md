@@ -15,6 +15,25 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+The preview-idle allocation saving is confirmed, but its CPU screen shows no
+speedup: files remains 29.51–29.77% above IPC. t331 is open. Stop optimizing
+empty preview bookkeeping; preserve the published 9P/ISB and authority model.
+
+Comparator `63d6687c9` now splits image-channel service into `image_accept`,
+`image_authority` and `image_receive` scopes. The latest parent scope measured
+131.96 ms across 23,160 visits per 1,000 frames. The new scopes distinguish
+listener/receive probes from mandatory fresh custody checks before considering
+readiness handoff. They nest inside `wire_image`; receive excludes source
+admission, and Hello/publication work remains in the enclosing remainder.
+This is diagnostic-only instrumentation, with no production behavior change.
+Counter and image-transport controls, strict scoped Clippy, feature-off check
+and scoped formatting pass. Evidence and analysis limits are retained in
+`candidate-13-image-service/`. The next native attribution pair measures the
+available opportunity; it is not CPU acceptance. Claude is reviewing SDK probe
+costs read-only; no SDK change is authorized by these measurements alone.
+
+## October 19 preview bookkeeping screens
+
 The preview-idle CPU screen is complete. Files costs 1.668899–1.671071 ms
 per frame against IPC's 1.287682–1.288642 ms, or 29.51–29.77% more. The
 session contributes about 228–231 microseconds of excess and the peer about
