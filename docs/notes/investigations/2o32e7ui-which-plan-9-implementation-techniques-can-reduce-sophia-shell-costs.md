@@ -15,30 +15,33 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
-The bracketed peer diagnostic on comparator `bc3acf69e` is valid: 1,000
-unique joined presentations, matching supervised peer PID 20058, unchanged
-input hashes and successful control, native command and tracer exits. In the
-fully included 100 ms bins, 19,376 receives returned data, 17,879 returned
-EAGAIN after data in that pipeline poll, and 38,478 returned EAGAIN without
-data in that poll. Later polls within a drive account for 28,536 empty polls
-and 1,147 productive polls: 96.14% of those later polls are empty. All 76,368
-receives reconcile across interior, boundary and outside bins. Whole-run
-drive and poll entry/return counts also balance.
+The send-aware peer diagnostic on comparator `bc3acf69e` is valid: 1,000
+unique joined presentations, matching supervised peer PID 20466, unchanged
+input hashes, successful control and native tracer exits, and clean PAM/tty
+restoration. All 73,458 receives and 25,984 sends reconcile across interior,
+boundary and outside bins. No interior cross-FD receive contexts, unbracketed
+shell sends, unexpected receive/send outcomes or zero-receive polls occurred.
 
-SDK `c6ad4fa` repeats the full pipeline write/read poll whenever a local state
-machine progresses. This explains how repeated probes arise; it does not
-prove they are removable. The capture did not record sends, and some later
-polls demonstrably receive replies. Next distinguish polls that successfully
-sent requests from polls driven only by local bookkeeping. Preserve read
-budgets, ACK progress, disconnect handling and the published ISB/9P contract.
-Uprobes perturb scheduling; these counts establish no CPU benefit.
+Of 27,764 later empty polls in fully included 100 ms bins, 24,867 (89.6%)
+followed a successful send in that poll. The rest followed a productive
+previous poll. SDK `c6ad4fa` repeats its full write/read poll after local
+progress; the dominant empty retries therefore follow real request writes.
+The proposed rule to read only on entry or after a productive previous poll
+would cover 10,850 observed empty polls and 668 observed productive polls.
+This is exposure, not predicted savings: deferring those replies changes
+later rounds, current-call disconnect observations and custody settlement.
+No production change follows from the counts alone. A candidate needs
+bounded-progress, reply/EOF and custody controls before a CPU comparison;
+preserve ACK progress, deadlines and the published ISB/9P contract.
 
-Evidence: `candidate-16-peer-polls/{analysis.json,post-run-validation.json}`
-and `CAPTURE-SHA256SUMS`. The SSH launcher reported failure only after
-`openvt` could not deallocate console 4; the capture child exited zero and
-the tty4 login service was restored. Preserve that wrapper error with the
-successful capture evidence. Fix its classification in the next disposable
-launcher, without changing this run's pinned scripts.
+Evidence: `candidate-17-peer-send-polls-retry/analysis.json`, original traces
+and `CAPTURE-SHA256SUMS`. Poll bins use return time; syscall bins use syscall
+timestamps. Drive histograms cover the whole run. Uprobes perturb scheduling;
+there is no CPU or latency acceptance claim. The original candidate-17 run
+stopped in a faulty histogram assertion before native launch and is preserved.
+The retry checks histogram frequencies and passes a replay of that control.
+The launcher now accepts the exact console-deallocation warning only after
+successful child, tracer and PAM cleanup receipts; the retry exercised it.
 
 Keep listener-readiness candidate `c535a0310`. Accept calls fell from
 23,024 / 23,066 image-service visits to 8,034 / 23,176, a 65.3% reduction
