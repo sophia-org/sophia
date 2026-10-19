@@ -263,3 +263,50 @@ fn a_full_server_does_not_subscribe_its_listener() {
     assert!(started.elapsed() >= BUDGET);
     assert_eq!(server.connection_count(), 1);
 }
+
+#[cfg(feature = "comparator-progress")]
+#[test]
+fn diagnostic_tags_distinguish_export_wake_from_socket_readiness() {
+    use rustix::event::{PollFd, PollFlags};
+    use sophia_9p::progress::wait_sources as sources;
+    let (server, mut peer) = adopted(Limits::default());
+    let (ring, _writer) = UnixStream::pair().unwrap();
+    let before = sources::Record.to_string();
+    let prior = |key: &str| {
+        before
+            .split_whitespace()
+            .find_map(|s| {
+                s.strip_prefix(&format!("{key}="))
+                    .map(|v| v.parse::<u64>().unwrap())
+            })
+            .unwrap_or(0)
+    };
+    sources::begin();
+    let mut fds = server.poll_fds();
+    fds.push(PollFd::new(&ring, PollFlags::IN));
+    server.wake().wake();
+    peer.write_all(b"x").unwrap();
+    poll(
+        &mut fds,
+        Some(&Timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        }),
+    )
+    .unwrap();
+    sources::record(&fds, fds.len() - 1, fds.len() - 1);
+    let after = sources::Record.to_string();
+    let value = |key: &str| {
+        after
+            .split_whitespace()
+            .find_map(|s| {
+                s.strip_prefix(&format!("{key}="))
+                    .map(|v| v.parse::<u64>().unwrap())
+            })
+            .unwrap_or(0)
+    };
+    assert_eq!(value("mask_3") - prior("mask_3"), 1);
+    assert_eq!(value("waits") - prior("waits"), 1);
+    assert_eq!(value("in_server_wake") - prior("in_server_wake"), 1);
+    assert_eq!(value("in_wire_socket") - prior("in_wire_socket"), 1);
+}

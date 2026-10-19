@@ -45,8 +45,17 @@
                         let mut wait = native_wait.deadline.map_or(wait, |deadline| {
                             wait.min(deadline.saturating_duration_since(now))
                         });
+                        #[cfg(feature = "comparator-progress")]
+                        sophia_9p::progress::wait_sources::begin();
                         let mut relay_fds = smallvec::SmallVec::<[rustix::event::PollFd<'_>; 128]>::new();
-                        let relay_waits = authenticated_launches.subscribe_relays(0, |fd| relay_fds.push(fd));
+                        let relay_waits = authenticated_launches.subscribe_relays(0, |fd| {
+                            #[cfg(feature = "comparator-progress")]
+                            sophia_9p::progress::wait_sources::register(
+                                &fd,
+                                sophia_9p::progress::wait_sources::Role::Relay,
+                            );
+                            relay_fds.push(fd);
+                        });
                         if let Some(deadline) = authenticated_launches.relay_deadline() {
                             wait = wait.min(deadline.saturating_duration_since(now));
                         }

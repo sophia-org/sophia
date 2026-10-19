@@ -357,12 +357,30 @@ impl<E: Export> Server<E> {
     /// Visit the same borrowed interests without allocating an intermediate list.
     pub fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(PollFd<'a>)) {
         let listening = self.slots.len() < self.limits.max_connections();
-        visit(PollFd::new(&self.reader, PollFlags::IN));
+        let wake = PollFd::new(&self.reader, PollFlags::IN);
+        #[cfg(feature = "comparator-progress")]
+        crate::progress::wait_sources::register(
+            &wake,
+            crate::progress::wait_sources::Role::ServerWake,
+        );
+        visit(wake);
         if let Some(listener) = self.listener.as_ref().filter(|_| listening) {
-            visit(PollFd::new(listener, PollFlags::IN));
+            let fd = PollFd::new(listener, PollFlags::IN);
+            #[cfg(feature = "comparator-progress")]
+            crate::progress::wait_sources::register(
+                &fd,
+                crate::progress::wait_sources::Role::WireListener,
+            );
+            visit(fd);
         }
         for slot in &self.slots {
-            visit(Self::slot_poll_fd(slot));
+            let fd = Self::slot_poll_fd(slot);
+            #[cfg(feature = "comparator-progress")]
+            crate::progress::wait_sources::register(
+                &fd,
+                crate::progress::wait_sources::Role::WireSocket,
+            );
+            visit(fd);
         }
     }
 

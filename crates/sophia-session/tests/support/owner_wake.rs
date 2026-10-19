@@ -619,3 +619,72 @@ fn stalled_native_descriptor_sleeps_until_the_watchdog_budget() {
     assert_eq!(owner.statistics().native_ready, 0);
     assert_eq!(owner.statistics().wait_deadlines, 1);
 }
+
+#[cfg(feature = "comparator-progress")]
+#[test]
+fn diagnostic_wait_counts_match_owner_statistics_with_simultaneous_sources() {
+    use sophia_9p::progress::wait_sources as sources;
+    let owner = OwnerWake::new().unwrap();
+    let (a, mut writer) = UnixStream::pair().unwrap();
+    let (native, mut native_writer) = UnixStream::pair().unwrap();
+    let (_sender, queue) = sync_channel::<u32>(1);
+    writer.write_all(b"x").unwrap();
+    native_writer.write_all(b"x").unwrap();
+    let before = sources::Record.to_string();
+    let count = |text: &str, key: &str| {
+        text.split_whitespace()
+            .find_map(|s| {
+                s.strip_prefix(&format!("{key}="))
+                    .map(|v| v.parse::<u64>().unwrap())
+            })
+            .unwrap_or(0)
+    };
+    sources::begin();
+    let fd = PollFd::new(&a, PollFlags::IN);
+    sources::register(&fd, sources::Role::Worker);
+    let _ = owner
+        .receive_observed(
+            &queue,
+            Duration::ZERO,
+            [fd],
+            [PollFd::new(&native, PollFlags::IN)],
+            None,
+            |_| {},
+        )
+        .unwrap();
+    let after = sources::Record.to_string();
+    assert_eq!(count(&after, "waits") - count(&before, "waits"), 1);
+    assert_eq!(count(&after, "mask_288") - count(&before, "mask_288"), 1);
+    assert_eq!(owner.statistics().waits, 1);
+    assert_eq!(owner.statistics().fd_ready, 1);
+    assert_eq!(owner.statistics().native_ready, 1);
+}
+
+#[cfg(feature = "comparator-progress")]
+#[test]
+fn diagnostic_service_wait_records_idle_without_missing_registration_scope() {
+    use sophia_9p::progress::wait_sources as sources;
+    let owner = OwnerWake::new().unwrap();
+    let before = sources::Record.to_string();
+    let count = |text: &str, key: &str| {
+        text.split_whitespace()
+            .find_map(|field| {
+                field
+                    .strip_prefix(&format!("{key}="))
+                    .map(|v| v.parse::<u64>().unwrap())
+            })
+            .unwrap_or(0)
+    };
+    sources::begin();
+    owner
+        .wait_for_service_observed(Duration::ZERO, [], vec![], None, |_| {})
+        .unwrap();
+    let after = sources::Record.to_string();
+    assert_eq!(count(&after, "mask_0") - count(&before, "mask_0"), 1);
+    assert_eq!(
+        count(&after, "missing_scope"),
+        count(&before, "missing_scope")
+    );
+    assert_eq!(owner.statistics().waits, 1);
+    assert_eq!(owner.statistics().wait_deadlines, 1);
+}

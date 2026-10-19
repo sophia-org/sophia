@@ -60,6 +60,18 @@ impl ImageService {
 
     pub(super) fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(rustix::event::PollFd<'a>)) {
         use rustix::event::{PollFd, PollFlags};
+        #[cfg(feature = "comparator-progress")]
+        let mut visit = |fd: rustix::event::PollFd<'a>| {
+            use std::os::fd::{AsFd, AsRawFd};
+            use sophia_9p::progress::wait_sources::{register, Role};
+            let role = if fd.as_fd().as_raw_fd() == self.listener.readiness().as_raw_fd() {
+                Role::ImageListener
+            } else {
+                Role::ImageSocket
+            };
+            register(&fd, role);
+            visit(fd);
+        };
         if self.accept_not_before.is_none_or(|at| Instant::now() >= at) {
             visit(PollFd::from_borrowed_fd(
                 self.listener.readiness(),

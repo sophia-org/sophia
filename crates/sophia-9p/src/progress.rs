@@ -2,6 +2,7 @@
 //! process; they are not exclusive shell costs or wall-clock measurements.
 use std::sync::atomic::{AtomicU64, Ordering};
 pub mod service_ledger;
+pub mod wait_sources;
 
 #[derive(Clone, Copy)]
 #[repr(usize)]

@@ -480,6 +480,25 @@ impl ShellComponentTransport {
 
     pub fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(rustix::event::PollFd<'a>)) {
         use negotiation_service::Stage;
+        #[cfg(feature = "comparator-progress")]
+        let other = matches!(self.wire.as_ref(), Some(wire::Wire::Socket(_)))
+            || (self.wire.is_none()
+                && !matches!(
+                    self.negotiation.as_ref().map(|pending| &pending.stage),
+                    Some(Stage::Files(_))
+                ));
+        #[cfg(feature = "comparator-progress")]
+        let mut visit = |fd| {
+            // Only IPC/negotiation descriptors use this category. Missing file-wire
+            // tags must remain unknown rather than being hidden by a fallback.
+            if other {
+                sophia_9p::progress::wait_sources::fallback(
+                    &fd,
+                    sophia_9p::progress::wait_sources::Role::TransportOther,
+                );
+            }
+            visit(fd);
+        };
         use rustix::event::{PollFd, PollFlags};
         if let Some(wire) = self.wire.as_ref() {
             return match wire {

@@ -121,9 +121,15 @@ pub(super) fn visit_worker<'a>(
     if let Some(owner) = &connection.images
         && owner.pending() != 0
     {
-        visit(rustix::event::PollFd::from_borrowed_fd(
+        let fd = rustix::event::PollFd::from_borrowed_fd(
             owner.readiness(),
             rustix::event::PollFlags::IN,
-        ));
+        );
+        #[cfg(feature = "comparator-progress")]
+        sophia_9p::progress::wait_sources::register(
+            &fd,
+            sophia_9p::progress::wait_sources::Role::Worker,
+        );
+        visit(fd);
     }
 }

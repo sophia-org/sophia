@@ -216,6 +216,13 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 rustix::thread::gettid().as_raw_nonzero(), observed_monotonic_usec,
                 owner_wake.wait_attribution(),
             );
+            #[cfg(feature = "comparator-progress")]
+            crate::session_println!(
+                "sophia_wait_sources schema=1 observed_monotonic_usec={} owner_tid={} {}",
+                observed_monotonic_usec,
+                rustix::thread::gettid().as_raw_nonzero(),
+                sophia_9p::progress::wait_sources::Record,
+            );
             present_evidence.flush();
             sophia_x_authority::flush_present_evidence();
             // Scheduling counters on the same cadence as the resource gauges.

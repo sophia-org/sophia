@@ -245,6 +245,8 @@ impl OwnerWake {
         let ring_index = fds.len();
         fds.push(PollFd::new(&self.wake, PollFlags::IN));
         let ready = sophia_wake::wait(&mut fds, Some(now.checked_add(timeout).unwrap_or(now)))?;
+        #[cfg(feature = "comparator-progress")]
+        sophia_9p::progress::wait_sources::record(&fds, native_start, ring_index);
         observed(&fds[..native_start]);
         let mut stats = self.statistics.get();
         stats.waits = stats.waits.saturating_add(1);

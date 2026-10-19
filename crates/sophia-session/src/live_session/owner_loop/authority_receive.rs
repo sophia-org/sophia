@@ -42,6 +42,8 @@
     // next pass turns it: components are visited only while a
     // runtime exists. Records queued after a wire's last turn have
     // no descriptor and keep the short budget.
+    #[cfg(feature = "comparator-progress")]
+    sophia_9p::progress::wait_sources::begin();
     let mut shell_wires = smallvec::SmallVec::<[rustix::event::PollFd<'_>; 64]>::new();
     let mut shell_output_pending = false;
     let mut component_waits = smallvec::SmallVec::<[_; sophia_config::MAX_SHELL_COMPONENTS]>::new();
@@ -59,7 +61,14 @@
         plan.pending(R::ShellOutput);
         plan.cap(Duration::from_millis(1), R::ShellOutput);
     }
-    let relay_waits = authenticated_launches.subscribe_relays(shell_wires.len(), |fd| shell_wires.push(fd));
+    let relay_waits = authenticated_launches.subscribe_relays(shell_wires.len(), |fd| {
+        #[cfg(feature = "comparator-progress")]
+        sophia_9p::progress::wait_sources::register(
+            &fd,
+            sophia_9p::progress::wait_sources::Role::Relay,
+        );
+        shell_wires.push(fd);
+    });
     if let Some(deadline) = authenticated_launches.relay_deadline() {
         plan.cap(deadline.saturating_duration_since(now), R::ShellAuthentication);
     }

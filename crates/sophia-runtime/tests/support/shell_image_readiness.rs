@@ -357,6 +357,27 @@ fn idle_listener_observation_skips_only_the_ready_accept() {
     // visit without an observation accepts and refuses it.
     let observation = idle_observation(&mut transport, &mut epochs, Slice::Exact);
     let duplicate = connector(&image_path);
+    #[cfg(feature = "comparator-progress")]
+    {
+        use sophia_9p::progress::wait_sources as sources;
+        let count = |text: &str, key: &str| {
+            text.split_whitespace().find_map(|field| {
+                field.strip_prefix(&format!("{key}=")).map(|v| v.parse::<u64>().unwrap())
+            }).unwrap_or(0)
+        };
+        let before = sources::Record.to_string();
+        let (ring, _writer) = std::os::unix::net::UnixStream::pair().unwrap();
+        sources::begin();
+        let mut fds = transport.poll_fds();
+        let end = fds.len();
+        fds.push(rustix::event::PollFd::new(&ring, rustix::event::PollFlags::IN));
+        rustix::event::poll(&mut fds, Some(&rustix::event::Timespec { tv_sec: 0, tv_nsec: 0 })).unwrap();
+        sources::record(&fds, end, end);
+        let after = sources::Record.to_string();
+        assert_eq!(count(&after, "mask_8") - count(&before, "mask_8"), 1);
+        assert_eq!(count(&after, "in_image_listener") - count(&before, "in_image_listener"), 1);
+        assert_eq!(count(&after, "in_unknown"), count(&before, "in_unknown"));
+    }
     let before = transport.wire_turn_count();
     transport
         .service_owner_observed(&mut epochs, Some(observation))
