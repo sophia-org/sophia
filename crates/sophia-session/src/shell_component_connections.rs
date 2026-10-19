@@ -64,7 +64,12 @@ struct Connection {
     /// Fixed at registration; a replacement epoch keeps the same wire.
     wire: ShellTransportSelection,
     attempt: Option<(ContentGrant, ComponentConnectionPhase)>,
-    readiness: Cell<Option<(ComponentConnectionKey, sophia_9p::unix::Observation)>>,
+    readiness: Cell<
+        Option<(
+            ComponentConnectionKey,
+            sophia_runtime::ShellReadinessObservation,
+        )>,
+    >,
     limits: Option<ContentLimits>,
     images: Option<sophia_runtime::ShellIsbImageOwner>,
 }
@@ -73,14 +78,20 @@ struct Connection {
 pub struct ComponentWait<'a> {
     key: ComponentConnectionKey,
     start: usize,
-    subscription: sophia_9p::unix::Subscription,
-    target: &'a Cell<Option<(ComponentConnectionKey, sophia_9p::unix::Observation)>>,
+    end: usize,
+    subscription: sophia_runtime::ShellReadinessSubscription,
+    target: &'a Cell<
+        Option<(
+            ComponentConnectionKey,
+            sophia_runtime::ShellReadinessObservation,
+        )>,
+    >,
 }
 
 impl ComponentWait<'_> {
     pub fn observe(self, fds: &[rustix::event::PollFd<'_>]) {
         let observation = fds
-            .get(self.start..self.start + 2)
+            .get(self.start..self.end)
             .and_then(|fds| self.subscription.observe(fds));
         self.target
             .set(observation.map(|observation| (self.key, observation)));
@@ -431,6 +442,7 @@ impl ShellComponentConnections {
                 registrations.push(ComponentWait {
                     key: ComponentConnectionKey { slot, grant },
                     start,
+                    end: fds.len(),
                     subscription,
                     target: &connection.readiness,
                 });

@@ -15,6 +15,31 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+The listener-only readiness candidate is implemented on the performance
+branches; native CPU benefit is still unmeasured. A fresh owner-wait
+observation can skip one accept probe only in Ready state with no backoff.
+The exact server identity/generation/connection must still match, followed by
+the listener descriptor/epoch/channel generation at service time. Missing,
+stale or mismatched observations fall back to probing. Flushes, handshakes,
+fresh custody checks, receives, final-packet/HUP handling and ACKs are unchanged.
+A duplicate arriving after an idle poll stays queued until the next visit;
+readiness is never authorization. No SDK or wire protocol changes are involved.
+
+Real-socket tests cover Waiting, late duplicate arrival, one-shot consumption,
+stale observations, absent/wrong listener descriptors and same-visit revocation.
+Disabling the skip fails the late-duplicate assertion; restoring it passes.
+Image controls (5), owner turn (1), transport readiness (3), Session reconnect
+(10), strict Clippy and scoped formatting pass. Claude's read-only source review
+found no safety blocker. Evidence: `candidate-14-listener-ready/`.
+
+Next run files control/candidate/candidate/control with CPU-only instrumentation.
+The control reuses signed `8c7479085` binaries and a detached source-only worktree
+at `~/dev/sophia-t331-listener-control`; remove that worktree after analysis.
+This four-run screen does not qualify t331. Keep the candidate only on evidence;
+do not infer its CPU benefit from the preceding instrumented accept timings.
+
+## October 19 image-service diagnosis
+
 The image-phase pair is complete and valid: both arms join 1,000 unique
 presented frames with matching plan, revision and artifact hashes and no
 capture errors. Files records image_accept 80.044 ms / 23,024 calls,
