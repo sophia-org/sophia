@@ -15,24 +15,28 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
-Listener-readiness probe suppression is confirmed on candidate `c535a0310`
-(comparator `bc3acf69e`). The files diagnostic joins 1,000 unique presented
-frames without errors and verifies source, artifact and plan hashes. Accept
-calls fall from 23,024 / 23,066 image-service visits to 8,034 / 23,176: a
-65.3% reduction per visit. Authority and receive calls each change from
-22,997 to 23,108, remaining about 99.7% of service visits in both runs.
-The intended work reduction is present without suppressing those operations.
-Evidence: `candidate-14-listener-ready/profile-check/listener-count-analysis.json`.
-These are whole-run scope counts; no direct skipped-probe counter was added.
+The peer receive diagnostic on comparator `bc3acf69e` is valid: 1,000 unique
+joined presentations, exact supervised peer PID and unchanged input hashes.
+Within the 166 fully included 100 ms bins, the 9P socket returned data 17,582
+times and EAGAIN 67,130 times: 79.245% empty receives, or 3.82 per data return.
+The 638 boundary-bin calls and 96 outside calls are separate; all 85,446
+entries and exits reconcile. These are syscall outcomes, not protocol records
+or CPU costs. Draining a nonblocking socket normally ends in EAGAIN, so the
+counts alone do not establish redundant work. Next distinguish drain-ending
+EAGAIN from subsequent empty pipeline polls before changing the drive loop.
+Evidence: `candidate-15-peer-receive/analysis.json`, with retained logs,
+compiler warnings and a passing startup, FD-reuse and unrelated-process control.
 
-Keep this candidate. Its earlier fresh files-only ABBA screen showed a
+Keep listener-readiness candidate `c535a0310`. Accept calls fell from
+23,024 / 23,066 image-service visits to 8,034 / 23,176, a 65.3% reduction
+per visit. Authority and receive calls remain about 99.7% of visits.
+Evidence: `candidate-14-listener-ready/profile-check/listener-count-analysis.json`.
+Its earlier fresh files-only ABBA screen showed a
 1.92–2.15% mean combined CPU reduction and roughly 21–25 microseconds/frame
 less Session CPU, with run drift and a lower unchanged-peer cost that prevent
 a firm causal estimate. The new instrumented timing is not additional CPU
-acceptance evidence. t331 remains open. Next target is the peer's 9P pipeline:
-use targeted receive-result counts by socket FD (data, EAGAIN, EOF, errors),
-then sampled CPU stacks, before changing the drive loop. The synthetic BPF
-receive control has passed, with compiler warnings retained in its evidence.
+acceptance evidence. t331 remains open; the published ISB/9P architecture,
+authority checks, ACK progression and deadlines are unchanged.
 
 ## October 19 listener-readiness CPU screen
 
