@@ -15,33 +15,49 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
-Candidate 19 prepares a fresh hotspot profile of the current comparator
-baseline `d7eae929f`, with experimental SDK scheduling disabled. Both files/ISB
-and comparison IPC use the same release binaries built with debug information,
-1000 panel presentations, and the existing kernel/syscall profiling mode.
-The entire compiler feature graph was checked for absence of the experiment.
-Six device-hidden peer controls and 18 perf/parser controls pass, including
-real perf recording and decoding. This is diagnostic attribution, not an
-acceptance run or an optimization claim. Native capture is still pending.
+Candidate 19 completed its current-baseline kernel/syscall profile on
+2026-10-19. Files/ISB and comparison IPC use the same symbolized comparator
+`d7eae929f` binaries with experimental SDK scheduling disabled. Both captures
+pass the pinned report checks, including event attributes, interval/TGID
+binding and loss checks, and each joins 1000 unique presentations. The fixed
+launcher completed PAM cleanup, reported no residual processes and restored
+getty. It correctly classified the remaining openvt deallocation message as
+a warning. The new launcher also passed 18 offline checks and a PTY control
+that fails with the original self-counting query.
 
-The disposable remote package includes the exact-query-PID cleanup fix and
-explicit profile-command validation. Eighteen launcher controls pass; a PTY
-control retains a real child while excluding the query process, and fails with
-the original helper. Profile success requires both the perf receipt and the
-nested native result. Captured candidate-18 helpers and receipts are unchanged.
-The ready manifest pins the new helpers, plans, profiler and artifacts.
+The fresh profile identifies peer image preparation as a useful next target:
+210 of 591 peer CPU samples include `sealed::prepare`, with 77 passing through
+`fallocate`. The pipeline has 191 inclusive samples and image ticks 92.
+Session has 1581 samples, including 151 in custody liveness checks, 127 in
+`service_native`, 82 in image service and 38 in pixel validation. These counts
+overlap and must not be added. Authority checks remain intact.
 
-Run `sh ~/.local/state/t331/run-current-hotspots-remote.sh` from the user's
-SSH session; sudo still requires its password. The two captures are bounded
-by 300 seconds and restore the idle tty4 login service after cleanup. Evidence
-and `report.sh` are under
-`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/candidate-19-current-hotspots/`.
-Afterward, require loss-free decoded profiles and complete joins before ranking
-Session and peer call paths. Keep syscall entry counts separate from durations;
-do not subtract tracing overhead to claim uninstrumented costs. A separate
-current phase/allocation pair is warranted only if owner bookkeeping remains
-a material target. The next optimization still needs a deterministic control
-and an uninstrumented comparison with sufficient repetitions to expose drift.
+Tracing is material: 341 Session and 136 peer samples contain selected perf
+tracing frames (IPC: 189 and 29). Do not subtract those to invent uninstrumented
+durations or savings ceilings. This diagnostic pair is not an acceptance run.
+Raw reports, reconciled stack counts, capture hashes and four flamegraphs are
+under `candidate-19-current-hotspots/` in
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/`.
+The first stack parser failed before producing attribution; its corrected
+version reconciles all four totals with the independent profile reports.
+
+Candidate 20 now measures that local decomposition through unchanged SDK
+APIs. The ignored diagnostic is signed as `92948e1` in the Rust SDK; no library
+code, C contract or production pin changes. Three release repeats show panel
+create/fill/finish/close totals of 130–155 microseconds (median per repeat).
+Fresh fill alone is 62–75 microseconds versus 26–34 for the same compiled fill
+on an already populated ordinary canvas. A separate untimed per-thread fault
+control reports exactly 45 minor faults in panel fill and 1024 for 4 MiB,
+with zero in the other stages and reused-fill control. Full 4 MiB totals are
+2.663–2.728 ms. These are local wall times, not native CPU savings.
+
+Evidence is in sibling `candidate-20-mapped-stage-cost/`, with final data in
+`fault-fill-{1,2,3}.log` and `results.json`. Existing ISB controls, strict Clippy
+and formatting pass. The reused canvas is a diagnostic control, never an ISB
+replacement. First-touch handling is now a measured target, but a candidate
+must reduce total cost rather than merely move faults into creation. Preserve
+fresh backing, preallocation, size seals, DONTFORK and verified final seals.
+Any native performance claim still needs repeated uninstrumented comparisons.
 
 ### Candidate 18 screening result
 
