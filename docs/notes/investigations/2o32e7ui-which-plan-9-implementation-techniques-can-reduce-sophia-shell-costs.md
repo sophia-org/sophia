@@ -38,6 +38,19 @@ not proof of the cause of every microsecond in this screen. Preserve all fresh
 authority checks, custody, ACKs and deadlines; no transport redesign is implied.
 A candidate needs deterministic proof and a measured screen before promotion.
 
+Candidate 24 tested one concrete peer lead locally: replace std socket wrappers
+with the existing rustix dependency, without changing syscall cadence. Four
+alternating release repeats show only 43–64 ns less per empty receive and
+37–43 ns less per send-plus-peer-read cycle. Historical call counts suggest
+only a few microseconds/frame, not a native saving or an explanation for the
+remaining peer gap. Do not promote a wrapper-only change or launch another
+native campaign for it now. The SDK diagnostic is signed `0c5c6c8`; empty-read,
+data, half-close and failed-write controls pass, as do strict Clippy and format
+checks. Library behavior, C contracts and all production pins are unchanged.
+Logs and limits are in sibling `candidate-24-socket-wrappers/`. This narrows
+the search toward repeated service work and kernel costs; a sampled wrapper
+frame alone does not establish removable overhead.
+
 Evidence is in `candidate-23-panel-cpu-pairs-retry/` under
 `~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/`, especially
 `FINDINGS.txt`, `results.json`, `analyze.py` and `POSTRUN-SHA256SUMS`. The launch
