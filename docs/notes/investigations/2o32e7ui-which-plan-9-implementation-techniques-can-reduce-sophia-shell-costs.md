@@ -15,6 +15,36 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+Candidate 18 is a disabled-by-default Rust SDK experiment at `1e739bc` on
+`performance/t331-reply-storage`. The feature
+`experimental-write-read-scheduling` lets a shell drive defer a socket read
+only after the preceding round reached WouldBlock without receiving bytes
+and the current round successfully wrote bytes. Every drive starts with a
+normal read; deferred rounds clear the history, so deferral cannot chain.
+Generic pipeline polling and other role clients retain their default behavior.
+Sophia's imported SDK pin is unchanged.
+
+Device-hidden checks pass: 265 feature-enabled pipeline and shell tests,
+909 default workspace tests, the added dispatch-bound control in default mode,
+strict Clippy in both modes, and formatting. Eight deterministic pipeline
+controls cover deferral, productive and partial reads, final replies before EOF,
+failed writes and shared budgets. Disabling deferral makes its distinguishing
+control fail. Logs remain in `candidate-18-sdk-read-scheduling/`.
+
+This is not qualified for default enablement. Pipeline tests establish the
+mechanism; the shell dispatch control establishes bounded progress and
+immediate interest, not the exact deferred-write/close interleaving. The next
+gate is scripted FileWire coverage of caller-visible closure, Submitted custody,
+ACK-pending and EAGAIN retry-time observations, including the intended budget
+and service-pending differences. The SDK documents those observable scheduling
+changes rather than claiming identical call timing. Then run applicable Sophia
+export gates and a fresh feature-on/off CPU comparison. No native candidate-18
+capture or performance claim exists. The C dispatch has no equivalent repeated
+socket-poll cost; no C implementation change is proposed. ISB, 9P records,
+authority checks and ACK content remain intact; t331 stays open.
+
+## October 19 send-aware peer diagnostic
+
 The send-aware peer diagnostic on comparator `bc3acf69e` is valid: 1,000
 unique joined presentations, matching supervised peer PID 20466, unchanged
 input hashes, successful control and native tracer exits, and clean PAM/tty
