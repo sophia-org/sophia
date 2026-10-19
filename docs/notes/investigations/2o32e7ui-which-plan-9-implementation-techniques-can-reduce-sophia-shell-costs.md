@@ -14,71 +14,41 @@ against Sophia's remaining costs? niltempus requested this comparison after the
 mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
+Candidate 27 is implemented on the performance branches, with native benefit
+still unmeasured. Production commit `7fca9e0e2` and comparator `16faa7a91`
+retain one successful primary-plane property-ID discovery per native head,
+keyed by opened-card identity, target generation and connector/CRTC/plane IDs.
+Topology preparation invalidates before fallible work; seat resume constructs
+a new owner. Delegated I/O errors invalidate the entry. Live property values,
+resource operations, atomic commits, authority and ISB custody remain fresh.
+A warm frame omits metadata reads, so a disappearing target may first fail in
+resource or commit I/O; this is not exact current-call error equivalence.
 
-Candidate 27 now has an implementation candidate, not a measured win. Each
-native head retains one successful primary-plane property-ID discovery,
-keyed by opened-card identity, target generation and connector/CRTC/plane
-IDs. Card identities are non-reused process-local tokens; even a cloned card
-gets a fresh token. This covers device replacement in an otherwise unchanged
-public group slot without relying on raw fd numbers. Topology preparation
-invalidates all entries before its fallible work, including failed attempts
-and rollback; seat resume constructs a new native owner.
+Eight focused controls cover reuse, identity and generation changes, failed
+or missing discovery, fresh values, delegation and failure cleanup. A no-reuse
+mutation fails with 3000 discoveries versus 3. The final backend suite passes
+975 tests with 9 ignored; strict clippy, scoped formatting and the native-session
+CLI check pass. Minimal libdrm-events checking remains blocked by an unchanged
+renderer import, reproduced independently. Evidence is in
+`candidate-27-property-cache/` under the evidence root below.
 
-Only successful name-to-ID discovery is retained. A private device wrapper
-delegates live value reads, resource creation, cleanup and commits unchanged;
-I/O errors through that wrapper invalidate the entry. Singleton and mirrored
-ordinary-frame paths use it, including mirror submission. Uncached callers
-and topology preparation keep fresh discovery. Caching changes where a
-disappearing target's error may first be observed: resource/commit I/O still
-fails normally, but a warm frame no longer performs the metadata-read ioctl.
-No cached metadata grants authority or proves the device is usable.
+The frozen `candidate-27-property-cache-screen/` is ready, not run: eight
+CPU-only panel runs, files old/new/new/old then IPC new/old/old/new, with a
+common whole-pixel peer. All artifact pins, sixteen configuration checks,
+eighteen launcher tests and the PTY query control pass. Binary provenance is
+in `matched-builds.json`; the old Session is `d7eae929f`, not the checkout
+revision declared for the wrapper. Launch from crunch SSH with
+`sh ~/.local/state/t331/run-property-cache-remote.sh` (about nine minutes).
+Keep comparator `16faa7a91` and integration `3a34520f8` clean during capture.
 
-Eight focused controls cover bounded reuse, each identity/generation change,
-replacement, missing/failed discovery retry, current values, out-fence
-delegation, atomic errors and framebuffer/commit cleanup. Disabling reuse
-fails the control with 3000 discovery calls versus 3. Backend `test-support`
-tests pass (975 passed, 9 ignored across 45 targets), strict clippy and scoped
-format checks pass, and the native-session CLI compiles. Minimal
-`libdrm-events` clippy is blocked by the unchanged renderer's unresolved
-`sophia_renderer_native_egl` import; its independent no-default-feature
-check reproduces that failure. No hardware acceptance or allocation/CPU
-saving is claimed. Evidence: `candidate-27-property-cache/` beside the audit
-below. Keep this a candidate pending matched native measurement on both
-transports; t331 remains open with the same red panel gate.
-
-### Candidate 27 source and retained-profile audit
-
-Candidate 27 identified repeated DRM property discovery from the retained
-c19 recording without another capture. Across each 1000-frame interval,
-files made 81,000 `GETPROPERTY` and 6,000 `OBJ_GETPROPERTIES` calls; IPC made
-81,209 and 6,018. Decoded command counts reconcile with the frozen reports'
-96,157/96,308 total ioctl entries. Primary-plane property discovery appears
-in 122/1581 files Session samples and 112/1200 IPC samples. These are
-instrumented counts and sampled attribution, not durations or savings bounds.
-
-The source repeatedly converts each object's properties to full metadata
-and allocated names, then keeps only names and IDs for a prepared scanout.
-This is shared rendering work, not an explanation of the files-minus-IPC
-gap. Reducing it on both sides could lower absolute CPU while increasing
-the percentage gap; never optimize just one arm of that comparison.
-
-The bounded candidate is to retain successful property-name-to-ID discovery
-with the owning device and scanout target. It needs explicit invalidation
-for replacement, topology/selection changes, seat revoke/resume and reused
-IDs, and must not retain failed discovery or cache live property values.
-No cache was implemented: the existing cursor-handle precedent alone does
-not prove primary-plane invalidation or error-observation equivalence.
-Tests must cover same-target reuse, replacement, multiple heads/devices,
-missing-property retry and unchanged atomic commit/cleanup failure paths
-before native measurement. Authority checks and ISB custody stay untouched.
-
-The c12 post-fix allocation evidence also rules out reviving the old preview
-list: preview preparation was already nearly allocation-free in that
-workload. Per-scope allocation totals cannot be interpreted as allocations
-on every idle pass because they include frame work and other threads.
-Evidence and the source/test proposal are in `candidate-27-property-discovery/`
-under the evidence root below, especially `FINDINGS.txt`, `results.json`,
-decoded ioctl rows and `analyze.py`. No SDK or production behavior changed.
+This is shared rendering work, not an explanation of the files-minus-IPC gap.
+Historical c19 counts were 81,000 GETPROPERTY and 6,000 OBJ_GETPROPERTIES calls
+for files, versus 81,209 and 6,018 for IPC over 1000 frames. Counts and sampled
+attribution are not durations or savings bounds. Compare each wire with its
+own control; equal absolute savings can increase the percentage gap. Native
+joins, CPU benefit and full t331 acceptance remain open. Discovery evidence
+is retained in `candidate-27-property-discovery/`; the earlier read-only audit
+is superseded by the implementation and controls above.
 
 ### Candidate 26 local MAP_POPULATE screen
 
