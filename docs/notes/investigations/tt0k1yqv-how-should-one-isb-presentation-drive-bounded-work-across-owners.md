@@ -464,20 +464,33 @@ passes after restoration. Feature-disabled native Session compilation and
 feature-enabled Clippy gates pass. A worst-case record fits the existing capture
 line bound. The default SDK, source protocol and authority paths are untouched.
 
-**Ready for capture:** candidate 28 now has two pinned comparator-progress
-plans (files and IPC), 1000 panel frames each, with a 300-second tty4 bound.
-Profiles, artifact pins, the unchanged C27 launcher, six rebuilt-peer controls
-and analyzer refusal tests pass. Launch with
-`sh ~/.local/state/t331/run-wait-sources-remote.sh`; noninteractive sudo currently
-requires a password. Session/peer binaries are pinned directly in the cargo slot,
-so do not rebuild or clean that slot before the run. The schema-4 progress runner
-comes from C06. Package details and exact commands are in its evidence README.
-After capture, the package's `analyze.py` reconciles interior-window counters.
-No native capture has run for candidate 28. These controls do
-not yet establish the live relay/legacy population, full native reconciliation,
-empty-visit share or a CPU saving. The exact record schema and refusal rules are
-in the evidence README. Investigate the dominant source class before adding
-request-level instrumentation or proposing a scheduling change.
+**Initial native diagnostic refused.** Both `wait28-*` runs completed and
+joined 1000 presentations; PAM/tty cleanup succeeded with no residual processes.
+The interior files window recorded 34,908 tag conflicts over 8,727 waits; IPC
+recorded 10,392 over 5,196. These are diagnostic errors, not workload errors or
+hotspot measurements. Relays wrap the same 9P server: the inner visitor tagged
+its fds as wire sources before the outer visitor tagged them as relay sources.
+The analyzer also rejected an interleaved owner-wait/counter record after the
+files workload. Original captures, scripts and pins are preserved; refusal and
+capture hashes are in `candidate-28-wait-sources/REFUSED.json` and
+`capture-SHA256SUMS`. No role attribution is accepted from this run.
+
+Comparator `dc2e6e73e` fixes the nested registration with a scoped owner context
+set before entering the relay visitor. A real nested-server test passes and
+fails when that context is deliberately ignored. The three periodic wait rows
+now use complete newline-terminated writes on the sampler's stderr stream,
+bounded by 4096 bytes; oversized/write-error records force diagnostic refusal.
+The existing diagnostic capture hook is preserved, and feature-off output is
+unchanged. This remains diagnostic-only; it changes no scheduling or authority.
+
+The retry is prepared in `candidate-28-wait-sources-retry` with fresh
+`wait28r-*` stages, two 1000-frame progress plans and a 300-second bound. Pins,
+profiles, launcher/analyzer controls and six rebuilt-peer controls pass. Launch
+with `sh ~/.local/state/t331/run-wait-sources-retry-remote.sh`; sudo authentication
+is still required. Keep the pinned cargo-slot binaries and source checkouts
+unchanged until capture. Do not rerun the original wrapper or relax the analyzer's
+conflict/record-integrity checks. Native reconciliation, dominant-source
+attribution and any optimization conclusion remain open until a clean retry.
 
 The remaining discriminator is an obligation census at the existing
 component/transport boundaries on the C27 baseline: distinguish owner input,
