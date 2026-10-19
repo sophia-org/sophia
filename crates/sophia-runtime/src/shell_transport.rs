@@ -39,6 +39,7 @@ mod descriptor;
 mod descriptor_files;
 mod descriptor_state;
 mod files;
+pub use files::{ShellReadinessObservation, ShellReadinessSubscription};
 mod image_configuration;
 mod image_offers;
 mod image_owner;
@@ -376,7 +377,7 @@ impl ShellComponentTransport {
         Ok(())
     }
 
-    pub fn readiness_subscription(&self) -> Option<sophia_9p::unix::Subscription> {
+    pub fn readiness_subscription(&self) -> Option<ShellReadinessSubscription> {
         match self.wire.as_ref()? {
             wire::Wire::Files(files) => files.subscription(),
             wire::Wire::Socket(_) => None,
@@ -387,7 +388,7 @@ impl ShellComponentTransport {
     pub fn service_owner_observed(
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,
-        readiness: Option<sophia_9p::unix::Observation>,
+        readiness: Option<ShellReadinessObservation>,
     ) -> Result<(), ShellTransportError> {
         if let Some(wire::Wire::Files(files)) = self.wire.as_mut() {
             files.set_readiness(readiness);

@@ -17,6 +17,8 @@ use crate::authenticated_files::{AuthenticatedFiles, FileAuthenticationFactory};
 
 mod export;
 mod image;
+mod readiness;
+pub use readiness::{ShellReadinessObservation, ShellReadinessSubscription};
 mod journal;
 
 pub(super) use export::{CandidateFamily, Inbound, NativeCandidatePart, ShellFiles};
@@ -76,7 +78,7 @@ pub(super) struct ShellFileWire {
     authentication: Option<Box<dyn FileAuthenticationFactory>>,
     publication_pending: bool,
     turns: u64,
-    readiness: Option<sophia_9p::unix::Observation>,
+    readiness: Option<ShellReadinessObservation>,
 }
 
 impl ShellFileWire {
@@ -152,11 +154,17 @@ impl ShellFileWire {
         }
     }
 
-    pub(super) fn subscription(&self) -> Option<sophia_9p::unix::Subscription> {
-        self.server.subscription()
+    pub(super) fn subscription(&self) -> Option<ShellReadinessSubscription> {
+        Some(ShellReadinessSubscription {
+            wire: self.server.subscription()?,
+            listener: self
+                .image
+                .as_ref()
+                .and_then(image::ImageService::listener_subscription),
+        })
     }
 
-    pub(super) fn set_readiness(&mut self, readiness: Option<sophia_9p::unix::Observation>) {
+    pub(super) fn set_readiness(&mut self, readiness: Option<ShellReadinessObservation>) {
         self.readiness = readiness;
     }
 
@@ -175,6 +183,12 @@ impl ShellFileWire {
             sophia_9p::progress::service_ledger::input();
         }
         let readiness = self.readiness.take();
+        let listener_idle = readiness
+            .as_ref()
+            .filter(|observation| {
+                !flush_only && self.server.observation_is_current(&observation.wire)
+            })
+            .and_then(|observation| observation.listener_idle);
         #[cfg(feature = "comparator-profiling")]
         let authentication_profile = crate::comparator_counters::phases::enter(
             crate::comparator_counters::phases::Phase::WireAuthentication,
@@ -199,7 +213,7 @@ impl ShellFileWire {
             sophia_9p::progress::service_ledger::flush(before, !matches!(&result, Ok(true)));
             result
         } else if let Some(readiness) = readiness {
-            self.server.turn_observed(readiness)
+            self.server.turn_observed(readiness.wire)
         } else {
             self.server.turn(Some(Duration::ZERO))
         }
@@ -225,7 +239,7 @@ impl ShellFileWire {
         let _image_profile = crate::comparator_counters::phases::enter(
             crate::comparator_counters::phases::Phase::WireImage,
         );
-        self.service_image_channel(Instant::now());
+        self.service_image_channel(Instant::now(), listener_idle);
         Ok(())
     }
 

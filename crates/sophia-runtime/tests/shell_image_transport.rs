@@ -9,6 +9,8 @@ mod authority;
 mod cancellation;
 #[path = "support/shell_file_peer.rs"]
 mod raw;
+#[path = "support/shell_image_readiness.rs"]
+mod readiness;
 #[path = "support/shell_image_sources.rs"]
 mod sources;
 

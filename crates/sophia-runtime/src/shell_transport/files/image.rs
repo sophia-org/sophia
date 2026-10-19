@@ -5,7 +5,15 @@ use crate::PolicyPeerIdentity;
 use crate::image_channel::{ImageChannelListener, ImageChannelPeer, ImageHelloPending};
 use crate::image_channel::{ImageChannelRole, receive_image_datagram};
 use sophia_protocol::shell_files::ShellChannelClosedReason as Reason;
+use std::os::fd::{AsRawFd, RawFd};
 use std::time::{Duration, Instant};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) struct ListenerSubscription {
+    pub(super) descriptor: RawFd,
+    epoch: u64,
+    generation: u64,
+}
 
 pub(super) struct ImageService {
     listener: ImageChannelListener,
@@ -27,6 +35,16 @@ enum State {
 }
 
 impl ImageService {
+    pub(super) fn listener_subscription(&self) -> Option<ListenerSubscription> {
+        // Handshake and backoff transitions always retain their ordinary probe.
+        (matches!(self.state, State::Ready(_)) && self.accept_not_before.is_none()).then(|| {
+            ListenerSubscription {
+                descriptor: self.listener.readiness().as_raw_fd(),
+                epoch: self.epoch,
+                generation: self.generation,
+            }
+        })
+    }
     pub(super) fn wait(&self, now: Instant) -> Duration {
         let channel_wait = match &self.state {
             State::Hello(hello) => hello.deadline().saturating_duration_since(now),
@@ -55,10 +73,18 @@ impl ImageService {
         }
     }
 
-    fn service(&mut self, wire: &mut ShellFileWire, now: Instant) {
+    fn service(
+        &mut self,
+        wire: &mut ShellFileWire,
+        now: Instant,
+        listener_idle: Option<ListenerSubscription>,
+    ) {
         // One accept per owner turn also drains unauthorized/duplicate joins;
         // their refusal never changes the channel already serving this epoch.
-        let accepted = if self.accept_not_before.is_none_or(|at| now >= at) {
+        // A late join stays level-ready for the next visit. Missing or stale
+        // observations retain the ordinary duplicate/unauthorized-join drain.
+        let skip_accept = listener_idle.is_some() && listener_idle == self.listener_subscription();
+        let accepted = if !skip_accept && self.accept_not_before.is_none_or(|at| now >= at) {
             self.accept_not_before = None;
             match wire.accept_image_peer(&self.listener, self.expected, now) {
                 Ok(peer) => peer,
@@ -193,9 +219,13 @@ impl ShellFileWire {
         });
         Ok(())
     }
-    pub(super) fn service_image_channel(&mut self, now: Instant) {
+    pub(super) fn service_image_channel(
+        &mut self,
+        now: Instant,
+        listener_idle: Option<ListenerSubscription>,
+    ) {
         if let Some(mut image) = self.image.take() {
-            image.service(self, now);
+            image.service(self, now, listener_idle);
             self.image = Some(image);
         }
     }
