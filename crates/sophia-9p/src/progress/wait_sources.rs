@@ -1,7 +1,7 @@
 //! Comparator-only classification of an owner's existing successful wait.
 //! Registrations expire at each wait; raw descriptors are never cached across waits.
 use rustix::event::{PollFd, PollFlags};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::os::fd::{AsFd, AsRawFd};
 
@@ -161,15 +161,53 @@ impl fmt::Display for Ledger {
         Ok(())
     }
 }
-thread_local! { static LEDGER: RefCell<Ledger> = RefCell::new(Ledger::default()); }
+thread_local! {
+    static LEDGER: RefCell<Ledger> = RefCell::new(Ledger::default());
+    static CONTEXT: Cell<Option<Role>> = const { Cell::new(None) };
+}
+/// A registration owner may classify nested implementation descriptors as its
+/// own source (for example, a relay implemented by a 9P server). Set this before
+/// entering the nested visitor, rather than relabeling already registered fds.
+#[must_use]
+pub struct RegistrationContext(Option<Role>);
+impl Drop for RegistrationContext {
+    fn drop(&mut self) {
+        CONTEXT.set(self.0);
+    }
+}
+pub fn context(role: Role) -> RegistrationContext {
+    RegistrationContext(CONTEXT.replace(Some(role)))
+}
+fn contextual(role: Role) -> Role {
+    CONTEXT.get().unwrap_or(role)
+}
+
+/// Periodic diagnostics only, never called on the per-wait accounting path.
+/// One newline-terminated write no larger than Linux PIPE_BUF prevents mixing
+/// with the sampler/peer records on the inherited blocking capture pipe.
+pub fn write_line(
+    output: &mut impl std::io::Write,
+    arguments: fmt::Arguments<'_>,
+) -> std::io::Result<()> {
+    let mut line = fmt::format(arguments);
+    line.push('\n');
+    if line.len() > 4096 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "diagnostic record exceeds PIPE_BUF",
+        ));
+    }
+    output.write_all(line.as_bytes())
+}
+
 pub fn begin() {
     LEDGER.with_borrow_mut(Ledger::begin);
 }
 pub fn register(fd: &PollFd<'_>, role: Role) {
-    LEDGER.with_borrow_mut(|l| l.register(fd.as_fd().as_raw_fd(), role, false));
+    LEDGER.with_borrow_mut(|l| l.register(fd.as_fd().as_raw_fd(), contextual(role), false));
 }
 pub fn fallback(fd: &PollFd<'_>, role: Role) {
-    LEDGER.with_borrow_mut(|l| l.register(fd.as_fd().as_raw_fd(), role, true));
+    LEDGER.with_borrow_mut(|l| l.register(fd.as_fd().as_raw_fd(), contextual(role), true));
 }
 pub fn record(fds: &[PollFd<'_>], native_start: usize, ring: usize) {
     LEDGER.with_borrow_mut(|l| l.record(fds, native_start, ring));

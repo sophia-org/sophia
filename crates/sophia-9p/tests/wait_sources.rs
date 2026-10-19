@@ -149,3 +149,33 @@ fn worst_case_record_fits_capture_line_bound() {
     l.missing_scope = u64::MAX;
     assert!(l.to_string().len() + 200 < 65_536);
 }
+
+#[test]
+fn diagnostic_records_are_one_bounded_newline_terminated_write() {
+    #[derive(Default)]
+    struct Sink {
+        writes: usize,
+        bytes: Vec<u8>,
+    }
+    impl std::io::Write for Sink {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.writes += 1;
+            self.bytes.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut sink = Sink::default();
+    sophia_9p::progress::wait_sources::write_line(&mut sink, format_args!("record value={}", 42))
+        .unwrap();
+    assert_eq!(sink.writes, 1);
+    assert_eq!(sink.bytes, b"record value=42\n");
+    let too_long = "x".repeat(4096);
+    let error =
+        sophia_9p::progress::wait_sources::write_line(&mut sink, format_args!("{too_long}"))
+            .unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    assert_eq!(sink.writes, 1);
+}

@@ -310,3 +310,48 @@ fn diagnostic_tags_distinguish_export_wake_from_socket_readiness() {
     assert_eq!(value("in_server_wake") - prior("in_server_wake"), 1);
     assert_eq!(value("in_wire_socket") - prior("in_wire_socket"), 1);
 }
+
+#[cfg(feature = "comparator-progress")]
+#[test]
+fn diagnostic_relay_context_classifies_nested_server_without_relabel_conflicts() {
+    use rustix::event::{PollFd, PollFlags};
+    use sophia_9p::progress::wait_sources as sources;
+    let (server, mut peer) = adopted(Limits::default());
+    let (other, mut other_writer) = UnixStream::pair().unwrap();
+    let (ring, _writer) = UnixStream::pair().unwrap();
+    let count = |text: &str, key: &str| {
+        text.split_whitespace()
+            .find_map(|field| {
+                field
+                    .strip_prefix(&format!("{key}="))
+                    .map(|v| v.parse::<u64>().unwrap())
+            })
+            .unwrap_or(0)
+    };
+    let before = sources::Record.to_string();
+    sources::begin();
+    let context = sources::context(sources::Role::Relay);
+    let mut fds = server.poll_fds();
+    drop(context);
+    let fd = PollFd::new(&other, PollFlags::IN);
+    sources::register(&fd, sources::Role::Worker);
+    fds.push(fd);
+    fds.push(PollFd::new(&ring, PollFlags::IN));
+    server.wake().wake();
+    peer.write_all(b"x").unwrap();
+    other_writer.write_all(b"x").unwrap();
+    poll(
+        &mut fds,
+        Some(&Timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        }),
+    )
+    .unwrap();
+    sources::record(&fds, fds.len() - 1, fds.len() - 1);
+    let after = sources::Record.to_string();
+    assert_eq!(count(&after, "mask_96") - count(&before, "mask_96"), 1);
+    assert_eq!(count(&after, "conflicts"), count(&before, "conflicts"));
+    assert_eq!(count(&after, "in_relay") - count(&before, "in_relay"), 1);
+    assert_eq!(count(&after, "in_worker") - count(&before, "in_worker"), 1);
+}

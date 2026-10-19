@@ -21,6 +21,28 @@ macro_rules! session_println {
 }
 #[cfg_attr(not(feature = "native-session"), allow(unused_imports))]
 pub(crate) use session_println;
+// The three owner wait records share the sampler's sink and are written whole.
+#[cfg_attr(not(feature = "native-session"), allow(unused_macros))]
+macro_rules! session_wait_diagnostic {
+    ($($argument:tt)*) => {{
+        #[cfg(feature = "comparator-progress")]
+        {
+            let line = format!($($argument)*);
+            if !crate::diagnostics::capture_line(&line)
+                && sophia_9p::progress::wait_sources::write_line(
+                    &mut std::io::stderr().lock(), format_args!("{line}"),
+                ).is_err()
+            {
+                eprintln!("sophia_wait_sources schema=1 error=record_write");
+            }
+        }
+        #[cfg(not(feature = "comparator-progress"))]
+        crate::output::stdout(format_args!($($argument)*));
+    }};
+}
+#[cfg_attr(not(feature = "native-session"), allow(unused_imports))]
+pub(crate) use session_wait_diagnostic;
+
 
 macro_rules! session_eprintln {
     ($($argument:tt)*) => {{
