@@ -14,41 +14,45 @@ against Sophia's remaining costs? niltempus requested this comparison after the
 mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
-Candidate 27 is implemented on the performance branches, with native benefit
-still unmeasured. Production commit `7fca9e0e2` and comparator `16faa7a91`
-retain one successful primary-plane property-ID discovery per native head,
-keyed by opened-card identity, target generation and connector/CRTC/plane IDs.
-Topology preparation invalidates before fallible work; seat resume constructs
-a new owner. Delegated I/O errors invalidate the entry. Live property values,
-resource operations, atomic commits, authority and ISB custody remain fresh.
-A warm frame omits metadata reads, so a disappearing target may first fail in
-resource or commit I/O; this is not exact current-call error equivalence.
+Candidate 27 has a positive CPU screen on both transports. Production
+`7fca9e0e2` and comparator `16faa7a91` retain successful primary-plane property
+IDs per head, keyed by opened-card identity, target generation and KMS object
+IDs. Topology preparation and delegated I/O errors invalidate entries; live
+values, resource operations, commits, authority and ISB custody stay fresh.
+Warm frames omit metadata reads, so a disappearing target may first fail in
+resource or commit I/O rather than discovery.
 
-Eight focused controls cover reuse, identity and generation changes, failed
-or missing discovery, fresh values, delegation and failure cleanup. A no-reuse
-mutation fails with 3000 discoveries versus 3. The final backend suite passes
-975 tests with 9 ignored; strict clippy, scoped formatting and the native-session
-CLI check pass. Minimal libdrm-events checking remains blocked by an unchanged
-renderer import, reproduced independently. Evidence is in
-`candidate-27-property-cache/` under the evidence root below.
+The eight-run screen completed with clean PAM/tty receipts and 1000 joined
+presentations per run. Files Session CPU fell 7.57% (91.98 us/frame), with
+combined CPU down 6.90%; IPC Session fell 8.01% (78.61 us/frame), with combined
+CPU down 6.09%. Candidate Session and combined ranges are below their controls
+in both balanced blocks. Observed within-arm Session spreads are smaller than
+the differences, but there are only two runs per arm. The unchanged peer also
+moved (-18.70 us files, +4.58 us IPC), so the entire combined saving cannot be
+assigned directly to metadata work. Median and p95 latency show no material
+shift; allocations and native ioctl reductions were not measured.
 
-The frozen `candidate-27-property-cache-screen/` is ready, not run: eight
-CPU-only panel runs, files old/new/new/old then IPC new/old/old/new, with a
-common whole-pixel peer. All artifact pins, sixteen configuration checks,
-eighteen launcher tests and the PTY query control pass. Binary provenance is
-in `matched-builds.json`; the old Session is `d7eae929f`, not the checkout
-revision declared for the wrapper. Launch from crunch SSH with
-`sh ~/.local/state/t331/run-property-cache-remote.sh` (about nine minutes).
-Keep comparator `16faa7a91` and integration `3a34520f8` clean during capture.
+Retain the candidate for qualification. This is shared-renderer work, not a
+solution to the files control-cost gap. Descriptive combined files/IPC excess
+is 31.97% old and 30.83% new; the two wires ran in separate blocks, so that is
+not a fresh paired gate. The +10% t331 target and dedicated latency/full
+acceptance remain open. Next compare the updated files and IPC arms under the
+qualification protocol, carrying the same candidate on both sides.
 
-This is shared rendering work, not an explanation of the files-minus-IPC gap.
-Historical c19 counts were 81,000 GETPROPERTY and 6,000 OBJ_GETPROPERTIES calls
-for files, versus 81,209 and 6,018 for IPC over 1000 frames. Counts and sampled
-attribution are not durations or savings bounds. Compare each wire with its
-own control; equal absolute savings can increase the percentage gap. Native
-joins, CPU benefit and full t331 acceptance remain open. Discovery evidence
-is retained in `candidate-27-property-discovery/`; the earlier read-only audit
-is superseded by the implementation and controls above.
+Evidence: `candidate-27-property-cache-screen/RESULTS.txt`, `results.json`,
+`analyze.py`, capture and result checksum manifests, and launcher receipts under
+the evidence root below. Binary provenance remains in `matched-builds.json`:
+old Session `d7eae929f`, new `16faa7a91`, common peer `b3f13dad6`.
+The preparation manifest is preserved. No rerun or further source change was
+needed to analyze the eight captures.
+
+Implementation evidence is in `candidate-27-property-cache/`: eight focused
+controls, a no-reuse mutation failing with 3000 discoveries versus 3, 975
+backend tests passed with 9 ignored, strict clippy, formatting and native CLI
+check. Minimal libdrm-events checking remains blocked by an unchanged renderer
+import, reproduced independently. The earlier read-only audit is retained in
+`candidate-27-property-discovery/`. Its historical ioctl counts and sampled
+attribution motivate the candidate but are not durations or savings bounds.
 
 ### Candidate 26 local MAP_POPULATE screen
 
