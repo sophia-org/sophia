@@ -15,6 +15,27 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+Listener-readiness probe suppression is confirmed on candidate `c535a0310`
+(comparator `bc3acf69e`). The files diagnostic joins 1,000 unique presented
+frames without errors and verifies source, artifact and plan hashes. Accept
+calls fall from 23,024 / 23,066 image-service visits to 8,034 / 23,176: a
+65.3% reduction per visit. Authority and receive calls each change from
+22,997 to 23,108, remaining about 99.7% of service visits in both runs.
+The intended work reduction is present without suppressing those operations.
+Evidence: `candidate-14-listener-ready/profile-check/listener-count-analysis.json`.
+These are whole-run scope counts; no direct skipped-probe counter was added.
+
+Keep this candidate. Its earlier fresh files-only ABBA screen showed a
+1.92–2.15% mean combined CPU reduction and roughly 21–25 microseconds/frame
+less Session CPU, with run drift and a lower unchanged-peer cost that prevent
+a firm causal estimate. The new instrumented timing is not additional CPU
+acceptance evidence. t331 remains open. Next target is the peer's 9P pipeline:
+use targeted receive-result counts by socket FD (data, EAGAIN, EOF, errors),
+then sampled CPU stacks, before changing the drive loop. The synthetic BPF
+receive control has passed, with compiler warnings retained in its evidence.
+
+## October 19 listener-readiness CPU screen
+
 The listener-readiness candidate (`c535a0310`, comparator `bc3acf69e`) passed
 its four-run files-only CPU screen. All four runs join 1,000 unique presented
 frames without capture errors; plan, artifact and source pins were verified.
