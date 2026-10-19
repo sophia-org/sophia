@@ -74,9 +74,24 @@ environment readback, allocation measurement or full latency qualification.
 The source-layout audit also reports two pre-existing inline-test violations
 in backend-live; both offending files match the pre-scan source byte-for-byte.
 
-Next is the separately measured client-drive slice, starting with the existing
-SDK external-loop API and preserving event/ACK ordering. Readiness handoff and
-server image-probe gating remain deferred experiments. Do not cache liveness,
+The client-drive screening candidate is comparator `c4b0056d7`. Its only code
+change drains buffered content with `take_content()` in the reference peer's
+receive loop, leaving `wait_for_io()` to drive before blocking. The SDK,
+production clients, image-settlement loop and IPC arm are unchanged. The
+Session executable hash is identical to the scan candidate's; only the peer
+executable changes. Both old and new peers pass all six explicit device-hidden
+timing-peer controls, and the candidate passes scoped strict Clippy. Evidence
+and prepared CPU-only plans are in `candidate-09-client-drive`; the attended
+launcher is `~/.local/state/t331/run-client-drive.sh`. There is no performance
+result for this candidate yet. Exact native request/ACK counts have not been
+compared, so passing record/custody controls is not a byte-transcript proof.
+
+Next, screen the client-drive candidate before extending this pattern to real
+clients. SIMD validation is a separate possible experiment: first try fixed
+blocks that allow compiler vectorization, then consider explicit intrinsics
+only if measured gains justify their portability and safety burden. No SIMD
+or assembly change is included here. Readiness handoff and server image-probe
+gating remain deferred experiments. Do not cache liveness,
 suppress Ready retries, or change ACK/deadline policy. t331 remains open;
 full cost and latency qualification has not been rerun.
 
