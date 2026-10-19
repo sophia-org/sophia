@@ -15,6 +15,24 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+Candidate 23 is prepared for the next panel CPU check: three independently
+restarted files/IPC pairs at idle 60 Hz, ordered files/IPC, IPC/files,
+files/IPC. All six runs use the same whole-pixel peer and Session binaries.
+Each offers 1000 frames with no warmup exclusion or bulk probe. Artifact pins,
+launcher validation, 18 offline controls and the PTY query control pass.
+No native run has started. From the crunch SSH session, run
+`sh ~/.local/state/t331/run-panel-cpu-pairs-remote.sh`; sudo authentication is
+required. Expected duration is about seven minutes, bounded at 600 seconds.
+
+Evidence and the frozen plan are in `candidate-23-panel-cpu-pairs/` beside the
+candidate-22 evidence below. Evaluate combined CPU/MiB separately in each pair
+against IPC +10%, using conservative bounds; do not pool a failed pair away.
+This checks the remaining panel CPU bottleneck before committing to the full
+allocation, bulk, latency and 60/120 Hz idle/load matrix. It is not a B9 verdict.
+Keep production pins unchanged and SDK experimental scheduling disabled.
+
+### Whole-pixel native bulk result
+
 Candidate 22 completed all eight bulk CPU captures on October 19. Whole-pixel
 fill reduced mean peer CPU by 19.1% on files/ISB and 19.9% on IPC: about
 0.66 ms/frame on each wire. Combined CPU fell from 6.379 to 5.712 ms/frame on
