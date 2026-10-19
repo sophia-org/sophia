@@ -15,6 +15,22 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+The preview-idle candidate is signed and published as production `ebde050a9`
+and comparator `8c7479085`. The follow-up attribution pair confirms the
+intended allocation reduction: files preview preparation falls from 67,059
+operations over 33,522 calls to 12 over 33,536; IPC falls from 41,806 over
+20,894 calls to 15 over 21,002. Retirement, nested inside preparation, falls
+from roughly one allocation per call to five total on files and six on IPC.
+Whole-owner allocations fall by 67,166 on files and 40,833 on IPC, with
+slightly different pass counts; these totals are diagnostic, not a controlled
+CPU result. Both captures match their plan hashes and join 1,000 unique
+presented frames without capture errors. The retained analysis is
+`candidate-12-preview-idle/preview-attribution-analysis.json`.
+
+Next is a CPU-only panel screening pair. The allocation result does not
+establish a CPU improvement or qualify t331. The following paragraphs retain
+the baseline and implementation rationale.
+
 The attribution pair has now completed. Its preview preparation scopes report
 67,059 allocation operations over 33,522 calls on files, and 41,806 over
 20,894 calls on IPC. Retirement accounts for approximately one allocation
