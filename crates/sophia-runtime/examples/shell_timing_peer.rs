@@ -219,7 +219,9 @@ impl Wire {
                         sophia_runtime::comparator_counters::progress::Counter::PeerContentPoll,
                         1,
                     );
-                    if let Some((_, record)) = client.poll_content()? {
+                    // wait_for_io drives the connection before sleeping. Drain its
+                    // buffered result here instead of making a second I/O pass.
+                    if let Some((_, record)) = client.take_content()? {
                         return Ok(record);
                     }
                     if Instant::now() >= deadline {
