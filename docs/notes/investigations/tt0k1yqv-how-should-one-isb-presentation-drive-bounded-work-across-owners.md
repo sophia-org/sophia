@@ -400,10 +400,12 @@ wake. These distinctions change which repeated operations are even candidates.
 ### Smallest next diagnostic: classify observed wait sources
 
 First split the existing fd-ready population, before attempting full protocol
-causality. This is a diagnostic design, not implemented instrumentation or a
-scheduling change. Keep it in a comparator feature build, separate from CPU
-acceptance, and consume only the successful wait's existing returned flags.
-It must add no poll, clock read, payload logging or per-wait allocation.
+causality. Candidate 28 implements this diagnostic in comparator commit
+`c053eb5aa1391ddbde09ddba8bf791c51537c231`, gated by the existing
+`comparator-progress` feature. Production scheduling is unchanged. It consumes
+only the successful wait's existing returned flags, adds no poll or clock read,
+and uses bounded inline storage rather than per-wait allocation. Its CPU overhead
+is not zero; keep it separate from CPU acceptance builds.
 
 1. Assign descriptor roles at their registration sites, alongside the actual
    descriptor and its component/epoch identity. Do not infer roles from raw fd
@@ -441,6 +443,33 @@ substitute: `wire_owner_input` counts entry into an input service,
 `wire_flush_useful` means bytes were written during the flush scope, and retry
 outcomes classify attempted retries. Neither an input-service count nor a
 no-byte flush establishes whether a whole visit did useful semantic work.
+
+### Candidate 28 implementation status
+
+The comparator emits `sophia_wait_sources schema=1` beside existing owner
+statistics with the same monotonic timestamp. A sparse histogram records the
+combination of ready roles per successful wait; IN/OUT/fault marginals count
+waits rather than individual descriptors. Both ordinary and bounded-service
+waits rebuild and consume their registrations. Native and ring regions come
+from the actual polled slice. IPC/negotiation have a separate category; they
+cannot hide missing file-wire tags. Unknown-ready roles, conflicts, registration
+overflow and missing scopes are explicit refusal conditions for attribution.
+
+Retained evidence: `candidate-28-wait-sources/README.md`, command/exit JSON,
+unfiltered logs, source patch and `SHA256SUMS` under the evidence root. Six ledger
+tests and nine server readiness tests pass; 26 owner-wake tests pass; the image,
+owner-turn and transport-readiness controls pass. The actual server registration
+test fails when its wake-pipe tag is deliberately changed to a socket tag, and
+passes after restoration. Feature-disabled native Session compilation and
+feature-enabled Clippy gates pass. A worst-case record fits the existing capture
+line bound. The default SDK, source protocol and authority paths are untouched.
+
+**Next: one comparator-progress diagnostic capture and interior-window
+reconciliation.** No native capture has run for candidate 28. These controls do
+not yet establish the live relay/legacy population, full native reconciliation,
+empty-visit share or a CPU saving. The exact record schema and refusal rules are
+in the evidence README. Investigate the dominant source class before adding
+request-level instrumentation or proposing a scheduling change.
 
 The remaining discriminator is an obligation census at the existing
 component/transport boundaries on the C27 baseline: distinguish owner input,
