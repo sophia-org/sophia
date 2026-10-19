@@ -60,6 +60,15 @@ the integration limit above; it cannot qualify default promotion. Native runs
 have not started. The SSH launcher requires sudo for a real PAM tty4 session;
 Session and the capture remain unprivileged.
 
+The final plans use separate peer builds: all 75 compilation units match after
+removing only the experimental feature. The first combined Session/peer build
+unified extra dependency features; its unused preparation is retained as
+superseded. The replacement control again passes six peer controls. The remote
+launcher passes 16 offline tests and pin validation, with VT-child timeout and
+verified process/session cleanup before getty restoration. Entry on crunch is
+`sh ~/.local/state/t331/run-sdk-scheduling-remote.sh`; sudo authentication is
+required from the SSH session. No privilege or native test has been attempted.
+
 ## October 19 send-aware peer diagnostic
 
 The send-aware peer diagnostic on comparator `bc3acf69e` is valid: 1,000
