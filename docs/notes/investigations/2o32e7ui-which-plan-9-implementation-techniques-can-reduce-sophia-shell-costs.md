@@ -56,11 +56,26 @@ hashes, timing limits and codegen are under
 particularly `scan-analysis.json`, `controls.log`, `comparator-controls.log`,
 `benchmark-repeat.log` and `scan-disassembly.txt`.
 
-Next is an attended native CPU-only files/IPC screening pair with the scan
-candidate, followed by a separately measured client-drive change if warranted.
-The earlier native cost figures above precede this change and still include
-publication batching. A new candidate/IPC pair measures the remaining gap;
-it cannot alone isolate the scan's native contribution. Readiness handoff and
+The attended CPU-only screening pair completed on comparator `613fcb288`.
+Both arms have 1,000 unique joined presentations, matching 184,320,000 logical
+image bytes and no capture error; retained plan and artifact hashes match.
+Files costs 1.615–1.617 ms/frame against IPC's 1.244–1.245 ms/frame, an excess
+of 29.67–29.93%. The remaining difference is 242–244 microseconds in Session
+and 128 microseconds in the peer. Reaching the +10% ceiling still requires
+approximately 245–248 microseconds/frame of combined savings. Captures are
+`~/.local/state/t331/scan-cpu-{C,A}-01`; the checked results are in
+`candidate-08-isb-scan/native-screening-analysis.json`.
+
+This screening gap is smaller than the earlier 37.31–37.72%, but that older
+pair included publication batching and there is no matched native pre-scan
+control. Do not attribute the entire improvement to T1. The isolated scan
+experiment supports the scan change itself. This is one panel pair without
+environment readback, allocation measurement or full latency qualification.
+The source-layout audit also reports two pre-existing inline-test violations
+in backend-live; both offending files match the pre-scan source byte-for-byte.
+
+Next is the separately measured client-drive slice, starting with the existing
+SDK external-loop API and preserving event/ACK ordering. Readiness handoff and
 server image-probe gating remain deferred experiments. Do not cache liveness,
 suppress Ready retries, or change ACK/deadline policy. t331 remains open;
 full cost and latency qualification has not been rerun.
