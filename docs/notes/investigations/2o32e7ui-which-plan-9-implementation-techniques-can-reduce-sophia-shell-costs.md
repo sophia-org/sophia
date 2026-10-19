@@ -15,6 +15,37 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+Candidate 26 stopped at local screening: `MAP_POPULATE` showed no total
+buffer-lifecycle benefit. Three optimized standalone Rust comparisons used
+64 warmups and 512 alternating-order pairs at each size, preserving fresh
+memfds, fallocate, size seals, DONTFORK, whole-pixel fill, unmap and final
+seals. Panel lifecycle medians rose 4.95–6.01%; 4 MiB medians rose
+6.37–6.60%. These are local wall times, not native CPU or a native regression
+claim. No SDK, comparator or production implementation changed, and no
+native screen is warranted by this result.
+
+The fault controls correct an important prediction: ordinary mappings
+recorded 45 panel or 1024 bulk minor faults during fill; POPULATE recorded
+the same counts during creation and zero during fill. It moved the recorded
+faults rather than eliminating them. Full content readback and refusal of
+writes after sealing passed in both arms. Linux documents population as
+best effort, not a guarantee that mmap fails when population fails or that
+later faults cannot occur. Historical sampled attribution is not a savings
+ceiling.
+
+Evidence: `candidate-26-map-populate/` under
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/` contains
+the standalone source, constant checks, successful `local-02..04.log`,
+`results.json`, `analyze.py`, `FINDINGS.txt`, build commands and checksums.
+The diagnostic uses libc calls with the SDK's syscall order; it is not the
+SDK implementation. Failed toolchain and readback-control attempts remain
+recorded separately and are excluded from results. No memory-pressure or
+fork test was performed. Mutable buffer reuse and per-turn liveness caching
+remain outside this slice. Keep t331 open, t340 deferred and experimental
+SDK read scheduling disabled; the candidate-23 panel gate remains red.
+
+### Candidate 25 withdrawal
+
 Candidate 25's native screen completed, but the fresh Ready-listener poll
 fallback showed no CPU benefit. Combined new-minus-old CPU was +3.42–3.68% in
 old/new/new/old and +1.23–1.45% in new/old/old/new. Session alone rose about
