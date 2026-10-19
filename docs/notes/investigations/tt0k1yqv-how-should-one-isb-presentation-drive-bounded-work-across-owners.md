@@ -363,6 +363,85 @@ turn when `publication_pending()` is false. It does not say that no request,
 ACK, authority observation or image work occurred. These counters can size
 publication paths, but cannot alone classify an entire visit as empty.
 
+### Follow-up source audit: fd-ready is not socket-ready
+
+`OwnerWake::wait` counts any ready descriptor before `native_start` as
+`owner_fd_ready`. `authority_receive` builds that prefix from the legacy shell,
+component registrations and authenticated-launch relays. Component registration
+also includes pending image-worker completion fds. Consequently the observed
+files excess cannot yet be called extra client messages or socket wakeups.
+Zero `owner_ring_ready` only describes the owner ring, not all internal wakes.
+
+| Descriptor producer | Meaning of readiness | Boundary that consumes it |
+| --- | --- | --- |
+| 9P server `reader` pipe, first in `Server::visit_poll_fds` | Local export notification or stop | Input service drains it only when its observed flags contain IN; publication flush drains it unconditionally |
+| 9P accepted socket | Input, output room, closure or error according to registered interests and returned flags | `Server::serve` / `write_ready` |
+| 9P listener, where present and capacity allows | New connection | `Server::accept` |
+| Image listener, omitted during active accept backoff | New or duplicate side-channel connection | Image service accept path |
+| Image Hello/Ready socket | Hello, Source, closure or error | Image service state machine |
+| Image-worker completion fd, registered when jobs are pending | Completed validation or worker exit | Image owner drains completions, including jobs from retired epochs |
+| Authenticated-launch relay and legacy-shell descriptors | Independent launch or shell obligations | Their own registered consumers |
+| Native descriptors and owner ring | Separate categories already counted | Native feedback and owner command/notification handling |
+
+Source anchors: `sophia-session/src/live_session/owner_loop/authority_receive.rs`,
+`owner_wake.rs`, `sophia-session/src/shell_component_connections.rs::subscribe_wait`,
+its `images.rs::visit_worker`, `sophia-runtime/src/shell_transport/files.rs::visit_poll_fds`,
+`files/image.rs::visit_poll_fds`, and `sophia-9p/src/unix.rs::visit_poll_fds`.
+Paths are relative to `crates/` except the owner-loop sibling `owner_wake.rs`.
+
+One correction to the research handback matters: ordinary `Server::serve`
+invokes `service_wake` only when the wake descriptor has IN. It does **not**
+drain the pipe and retry every parked read on every input turn. `flush` does
+invoke it unconditionally, and successful output writes separately resume
+requests and retry parked reads. Likewise `Wake` is a nonblocking pipe here,
+not an eventfd. A notification calls `write`; a full pipe already retains the
+wake. These distinctions change which repeated operations are even candidates.
+
+### Smallest next diagnostic: classify observed wait sources
+
+First split the existing fd-ready population, before attempting full protocol
+causality. This is a diagnostic design, not implemented instrumentation or a
+scheduling change. Keep it in a comparator feature build, separate from CPU
+acceptance, and consume only the successful wait's existing returned flags.
+It must add no poll, clock read, payload logging or per-wait allocation.
+
+1. Assign descriptor roles at their registration sites, alongside the actual
+   descriptor and its component/epoch identity. Do not infer roles from raw fd
+   numbers or assume image index 2: listener backoff changes the list, and
+   general 9P servers may also register a listener. Worker registrations can
+   outlive a connected wire and must remain represented.
+2. Accumulate a bounded histogram of ready-role combinations per completed
+   wait, with separate IN, OUT and HUP/ERR/NVAL marginal counts. Preserve
+   simultaneous causes rather than assigning one arbitrary winner. Keep a
+   counted unclassified category and refuse an attribution claim if it is
+   nonzero. The histogram total must equal waits; its non-native-ready union
+   must equal `owner_fd_ready`. Native/ring unions must match existing counts.
+3. Emit cumulative snapshots with the existing monotonic timestamp and compare
+   only snapshots wholly inside the joined workload interval, as above. Record
+   the component set and exact descriptor-role schema with the artifact pins.
+   Frame normalization is descriptive; it does not establish a causal link
+   from an individual wake to a particular generation.
+4. Exercise simultaneous socket/worker readiness, idle timeout, server-pipe
+   notification, HUP, listener backoff, replaced fd/epoch, retained worker and
+   legacy/relay registration in offline tests. A deliberately misclassified
+   source must fail reconciliation. Feature-off code and all wait, authority,
+   expiry and service decisions remain unchanged.
+
+Interpretation determines the next slice. If socket IN dominates, correlate
+accepted 9P request kinds with the existing read/write and ACK/submit paths;
+request counts alone still do not establish causality. If the server pipe
+is material, trace local publication/stop notifications through their drain
+boundary before considering coalescing. If workers dominate, join completion
+and submission identities before claiming repeated completion service. OUT,
+closure and negotiation require their own interpretation. None of these
+outcomes grants permission to skip a visit or weaken its fresh checks.
+
+The existing service ledger is a useful secondary reconciliation, not a
+substitute: `wire_owner_input` counts entry into an input service,
+`wire_flush_useful` means bytes were written during the flush scope, and retry
+outcomes classify attempted retries. Neither an input-service count nor a
+no-byte flush establishes whether a whole visit did useful semantic work.
+
 The remaining discriminator is an obligation census at the existing
 component/transport boundaries on the C27 baseline: distinguish owner input,
 publication, worker completion and maintenance causes; count actual state
