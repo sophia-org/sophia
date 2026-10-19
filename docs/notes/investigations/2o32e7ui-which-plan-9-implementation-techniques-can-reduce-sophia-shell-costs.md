@@ -62,6 +62,20 @@ matrix while the panel remains red. Next, use the existing service ledger to
 check whether this workload actually coalesces publications; do not infer a
 CPU improvement from the allocation reduction. t331 remains open.
 
+The next diagnostic pair is prepared in `candidate-06-service-ledger` and
+`candidate-07-service-ledger-control`. Both use the same files workload, peer
+binary and inline observations: batched comparator `ef07b18a8` versus control
+`a0dfcdf57`, whose only change is three calls back to immediate service. Runner
+`3a34520` validates progress schema 4 (30 original counters plus 17 ledger
+counters), while preserving schemas 1–3. Six reader tests, two emitter tests,
+six rebuilt peer controls, ten control Session tests and scoped Clippy pass.
+Run `~/.local/state/t331/run-service-ledger.sh` attended on tty4. The batched
+source-only worktree `~/dev/sophia-t331-ledger-batched` stays until capture
+validation, then should be removed. Bracket counters to the 1,000-frame workload,
+excluding the idle hold. Compare actual useful/empty/failed flushes per frame
+and owner inputs; deferred polls are not a saved-flush count. These diagnostic
+arms cannot establish CPU cost or qualification. Batching remains unproven.
+
 ## October 18 preceding diagnostic checkpoint
 
 The first user-space perf pair has completed and its process/time-filtered
