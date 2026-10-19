@@ -15,35 +15,40 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
-Candidate 23's first attempt failed before Session startup: the generated
-desktop profile was group-writable (0664), and Sophia refused `Io(UnsafeMode)`.
-The preparation omitted a private umask; hashes alone did not catch permissions.
-No performance samples were captured. PAM cleanup succeeded and tty4's login
-prompt returned. Preserve the original package and failed `panel23-1` stage.
+Candidate 23 completed all six retry captures and cleanup on October 19. Every
+idle-60-Hz panel CPU pair fails the IPC +10% threshold. Files/ISB excess is
+27.30–27.67%, 30.44–30.78%, and 28.83–29.11% in pairs 1–3. These are conservative
+counter-attribution bounds, not statistical confidence intervals. Equal uploaded
+bytes make CPU/MiB and CPU/frame ratios identical. Do not pool away any failure.
 
-The fresh `candidate-23-panel-cpu-pairs-retry/` package uses umask 077, private
-directories, 0600 configurations and unused `panel23r-1..6` stages. All six
-profiles pass the pinned Sophia executable's device-free
-`--validate-session-args` check with normal Session and Factotum arguments;
-the original profile still fails `UnsafeMode` under the same check. All pins,
-18 launcher controls and the PTY cleanup control pass. The existing wrapper
-now selects this retry package. It has not been launched.
+The sequence was files/IPC, IPC/files, files/IPC, using identical whole-pixel
+peer and Session executables. Each run joins 1000 unique presentations and
+accepted uploads, exactly 184,320,000 logical bytes, with all outcomes presented
+and zero major faults. Files combined CPU is 1.567–1.619 ms/frame versus IPC
+1.228–1.240 ms/frame. Session contributes about 210–230 microseconds/frame of
+the excess and the peer about 129–151. Median presentation spacing is unchanged;
+this CPU screen supplies neither allocation results nor latency acceptance.
 
-The retry retains the next panel CPU check: three independently
-restarted files/IPC pairs at idle 60 Hz, ordered files/IPC, IPC/files,
-files/IPC. All six runs use the same whole-pixel peer and Session binaries.
-Each offers 1000 frames with no warmup exclusion or bulk probe. Artifact pins,
-launcher validation, 18 offline controls and the PTY query control pass.
-No native run has started. From the crunch SSH session, run
-`sh ~/.local/state/t331/run-panel-cpu-pairs-remote.sh`; sudo authentication is
-required. Expected duration is about seven minutes, bounded at 600 seconds.
+Keep the shared fill, leave experimental SDK read scheduling disabled, and
+keep t331 open. Defer the full qualification matrix while this condition is
+red. Next optimization work should use the retained candidate-19 profiles and
+candidate-16/17 syscall correlations to select a bounded change in Session
+service work or client pipeline work. Those are historical attribution leads,
+not proof of the cause of every microsecond in this screen. Preserve all fresh
+authority checks, custody, ACKs and deadlines; no transport redesign is implied.
+A candidate needs deterministic proof and a measured screen before promotion.
 
-Evidence and the frozen plan are in `candidate-23-panel-cpu-pairs-retry/` beside the
-candidate-22 evidence below. Evaluate combined CPU/MiB separately in each pair
-against IPC +10%, using conservative bounds; do not pool a failed pair away.
-This checks the remaining panel CPU bottleneck before committing to the full
-allocation, bulk, latency and 60/120 Hz idle/load matrix. It is not a B9 verdict.
-Keep production pins unchanged and SDK experimental scheduling disabled.
+Evidence is in `candidate-23-panel-cpu-pairs-retry/` under
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/`, especially
+`FINDINGS.txt`, `results.json`, `analyze.py` and `POSTRUN-SHA256SUMS`. The launch
+finished in 389 seconds, PAM cleanup succeeded, no residual processes/sessions
+remained, and tty4's login prompt was restored. Do not rerun these stages.
+
+The original attempt remains a preparation failure, not a performance result:
+its 0664 desktop profile was refused with `Io(UnsafeMode)` before Session
+startup. The retry uses private permissions and passed both profile-only and
+Session-argument validation as uid 1000, including a refusal control against
+the original file. Preserve that package and failed `panel23-1` stage too.
 
 ### Whole-pixel native bulk result
 
