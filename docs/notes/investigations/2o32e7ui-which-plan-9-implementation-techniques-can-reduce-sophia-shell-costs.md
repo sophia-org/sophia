@@ -63,6 +63,25 @@ startup. The retry uses private permissions and passed both profile-only and
 Session-argument validation as uid 1000, including a refusal control against
 the original file. Preserve that package and failed `panel23-1` stage too.
 
+### t340 — Direct rustix socket wrappers
+
+Deferred at niltempus's request while higher-impact t331 work proceeds. The
+candidate replaces only the Rust pipeline's std socket wrappers with rustix
+recv/send, preserving every I/O attempt, byte/call budget, error class, partial
+I/O result, EOF observation and secret-buffer handling. Send must retain
+SIGPIPE suppression. Review supported-platform behavior and C parity before
+any implementation; an internal Rust-only wrapper cost does not require a
+literal C port.
+
+Candidate-24's local diagnostic (`0c5c6c8`) found 43–64 ns per empty receive and
+37–43 ns per send-plus-peer-read cycle. That suggests only a few microseconds
+per frame at historical call counts, not native savings. Revisit only after
+larger costs or stronger evidence justify it. Exit requires deterministic
+pipeline/role regression coverage, documented parity, and a matched native
+CPU comparison showing benefit without custody or latency regression before
+default adoption. No production library change or pin is currently authorized
+by this deferred row alone.
+
 ### Whole-pixel native bulk result
 
 Candidate 22 completed all eight bulk CPU captures on October 19. Whole-pixel
