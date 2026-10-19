@@ -1,0 +1,410 @@
+---
+id: tt0k1yqv
+date: 2026-10-19
+kind: investigation
+status: investigating
+tags: [investigation, scheduling, isb, architecture]
+---
+# How should one ISB presentation drive bounded work across owners
+
+## Question
+
+Which work obligations cause one ISB presentation to revisit the peer, file
+export, image worker and native owner, and which repetitions can be removed
+without moving authority, custody, deadlines or failure-observation boundaries?
+
+niltempus requested this review after the positive candidate-27 CPU screen.
+The scope is the complete execution model, not a replacement transport or a
+new global reactor. Task state and acceptance remain in
+[t331](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#t331--reduce-shell-allocation-overhead).
+
+## Current resumption
+
+The source audit identifies three distinct kinds of work: mandatory current
+observations, locally runnable state transitions, and obligations blocked on
+a named dependency. A connected role is not necessarily runnable, but an empty
+socket does not prove the role has nothing to do. In particular, current wire
+service observes authority, expiry and side-channel state as well as data.
+Suppressing the whole visit on socket readiness alone changes that contract.
+
+Sophia already has an owner-input/publication-flush split, bounded peer progress,
+one-shot readiness identities, wake-before-inspection ordering, bounded image
+jobs, and credit-dependent terminal publication. These are foundations to
+preserve, not missing mechanisms to replace. Engine's `runtime_driver` remains
+the visual sequencing owner; Session schedules and supervises its adapters.
+
+This review specifies a cross-owner obligation model, failure controls and an
+evidence gate below. No production scheduler, public API, SDK pin or protocol
+change is implemented by this investigation. Claude's completed upstream scheduling research is integrated below, with
+source facts kept separate from measurements and proposed transfers.
+No current evidence justifies skipping whole owner or wire visits while
+claiming unchanged authority and current-call observations.
+
+## Source and evidence identity
+
+The source audit reads production `49960dd7b` (code unchanged from `7fca9e0e2`),
+comparator `16faa7a91`, and the vendored Rust SDK revision
+`c6ad4fa04395565297beeecaa18edc459ad9cb01`. Production and comparison transport
+differences are intentional; do not use the retired IPC adapter as a production
+contract. The benchmark's closed-loop frame production is not a claim about
+all real clients.
+
+Evidence root: `~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/`.
+
+| Evidence | What it establishes | What it does not establish |
+| --- | --- | --- |
+| `candidate-27-property-cache-screen/results.json`, receipts and capture hashes | Same-workload CPU reduction on both wires; eight successful 1000-presentation joins | Allocation savings, new ioctl/visit counts, or full t331 acceptance |
+| `candidate-19-current-hotspots/` | Historical instrumented stacks locate pipeline, image-probe, custody and renderer work | Current uninstrumented durations or removable-cost ceilings |
+| `candidate-16-peer-polls/interval.json` and `candidate-17-peer-send-polls-retry/interval.json` | Repeated pipeline rounds, sends and empty/productive reads can be correlated | Counterfactual savings or unchanged reply-observation timing if reads are skipped |
+| `candidate-18-sdk-read-scheduling/results.json` and `candidate-25-listener-probe-screen/results.json` | Neither established a CPU benefit under its own tested identity | Permission to revive either from source reasoning alone |
+
+C27 new-arm means are approximately 1123/902 us per frame for files/IPC Session
+and 370/240 us for the peer. The descriptive gap is about 352 us; closing to
++10% at that IPC baseline would require about 238 us less files CPU. Wire blocks
+ran at different times, so this is sizing, not a qualification pair. Shared
+renderer savings must be applied to both arms and may increase the percentage
+gap. Counts, inclusive stacks and phase totals overlap; never add them as
+independent costs or subtract tracing overhead to invent native durations.
+
+## Existing causal path
+
+The table is a source-derived dependency map, not a timestamped trace proving
+that all transitions occur in distinct passes or in the order that independent
+events happen to arrive. Setup precedes the steady-state frame; retirement can
+outlive it.
+
+```mermaid
+flowchart LR
+    Peer[Peer SDK] -->|ImageBegin and content transactions| Export[Authenticated 9P export]
+    Export -->|admission and journal records| Peer
+    Peer -->|Source FD after ImageAdmitted| Image[Image channel]
+    Image --> Jobs[Resource owner and bounded validation jobs]
+    Jobs -->|completion wake and validated backing| Resources[Resource registry]
+    Export -->|admitted content| Driver[Existing Engine runtime_driver]
+    Resources -->|immutable resource reference| Driver
+    Driver --> Backend[Renderer and native backend]
+    Backend -->|matching retirement| Driver
+    Driver -->|prepared or presented outcomes at their defined boundaries| Journal[Journal publication]
+    Resources -->|status and final release obligations| Journal
+    Journal -->|parked read delivery| Peer
+    Peer -->|covering ACK| Export
+    Export -->|credit and release progress| Resources
+    Export -->|credit for held outcomes| Journal
+```
+
+Session's existing owner loop schedules these adapters and handles process,
+seat and recovery policy. The arrows do not give it ownership of their states
+or replace Engine sequencing. Every operation still crosses its current
+authority boundary.
+
+| Transition | Owner and trigger | Result and next dependency |
+| --- | --- | --- |
+| Authenticate and discover | Role root plus SDK; authenticated connection and image discovery | Hello is checked against custody/epoch; ChannelReady enables image admission |
+| Prepare immutable source | Peer `MappedIsb`; new resource contents | Fresh backing is populated and sealed; holding an FD does not admit the resource |
+| Submit ImageBegin | SDK/FileWire and authenticated export; queued transaction | Ordinary submit/receipt/ACK machinery reserves admission budget and journal space; ImageAdmitted permits descriptor transmission |
+| Transfer Source | Producer dispatch and image service; admitted offer plus socket progress | Match exact offer/epoch/metadata, seals and backing size; source goes to a reserved validation job |
+| Validate and settle | Bounded worker plus `ShellIsbImageOwner`; job, completion, cancellation or deadline | Validated immutable backing enters resource custody; status and SourceReleased publication can remain credit-blocked |
+| Submit content referencing the resource | Peer plus role service; resource readiness and content demand | Admitted content becomes an Engine preparation obligation; a receipt is not presentation evidence |
+| Compose, submit, retire | Existing runtime driver and backend; admitted state, pacing and KMS progress | Matching retirement permits presented feedback; unrelated traffic cannot prove presentation |
+| Deliver feedback and ACK | Export journal and SDK; pending records, parked read, receive progress | Records remain retained until covering ACK; ACK may unblock admission, refusal and release publication |
+| Retire resource | Resource store and all consumers; explicit retirement/revocation plus last lease | On a live journal, ResourceReleased must fit before final charge release; a dead journal drops the event obligation, not outstanding consumer safety |
+
+The published [ISB lifecycle](../../sophia-image-channel.md#custody-and-lifecycle)
+owns these ordering and custody rules. SourceReleased does not make sealed
+memory writable. KMS retirement does not necessarily end snapshot or renderer
+leases. The owner-allocated mutable-pool idea does not solve retained writable
+mappings and is outside this review.
+
+## Actual scheduling boundaries
+
+1. **Session pass.** `OwnerWake::begin_pass` clears the owner wake before
+   inspecting producers, never between inspection and sleep. `physical_input_loop`
+   services component work, lifecycle/native work and authority phases within
+   existing order. Lifecycle drains retirement-authorized feedback before a
+   subsequent no-work exit. The wait combines descriptors and deadline caps;
+   pending local work is not inferred solely from fd readiness.
+2. **Connected component visit.** `ShellComponentSession::finish_poll` calls
+   `turn_connected`; each connected transport receives an owner input turn,
+   followed by image-owner service. The image owner drains completions and
+   handles epoch loss, expiry, source submission and held publications. Its
+   lifetime can exceed the connected role so retired work can still settle.
+3. **Wire turn.** `ShellFileWire::service` consumes readiness once, performs
+   export polling before and after server service, then expires state and
+   services the image channel. The Ready image channel checks its peer before
+   receive. `LaunchCustody::is_live` polls exact pidfds and brackets that poll
+   with the active flag. These are fresh observations, not reusable metadata.
+4. **Role publication.** After an owner turn, `ShellComponentTransport::poll_io`
+   drains outgoing records and flushes only when publication is pending. It
+   does not necessarily create another input turn. `check_ack_progress` runs
+   only after input service, since an ACK may already be waiting in the socket.
+   Treating every role call as a redundant full wire visit is incorrect.
+5. **9P retry/flush.** `Server::flush` drains export wake work, retries waiting
+   reads and writes queued replies without reading new requests. `read_now`
+   performs `export.check` before a buffered read; moving it after consumption
+   changes the authority boundary. Write-path retries also exist; a transport
+   cannot assume every export state change arrives through one wake source.
+   Guarded replies retain their original node/epoch; `Connection::write_output`
+   uses `with_delivery` for partial delivery, and `AuthenticatedExport` checks
+   again there. A queued authorized read is not permanent permission to send
+   its remaining bytes after revocation. Not every reply is delivery-guarded;
+   the export's guard policy determines that boundary.
+6. **Peer drive.** FileWire loops within `MAX_ROUNDS`, and shared dispatch
+   budgets bound syscall attempts and bytes. Each ordinary Pipeline poll writes
+   then reads. Reply handlers and local ACK/fetch/submit work can cause another
+   round. `service_pending` preserves unfinished bounded work. Completed replies
+   preceding EOF are recovered before custody is classified. `wait_for_io`
+   performs a drive, waits on both sockets, and discards readiness; image tick
+   currently probes its fd again. Reusing that observation requires identity
+   and state validation, not just storing a bit.
+
+Source anchors, relative to the repository root:
+
+| Responsibility | Implementation |
+| --- | --- |
+| Session sequencing and wait obligations | `crates/sophia-session/src/live_session/owner_loop/physical_input_loop.rs`, `lifecycle.rs`, `owner_held_work.rs`, `wait_plan.rs`; `live_session/owner_wake.rs` |
+| Component service and readiness | `crates/sophia-session/src/live_session/metadata_shell/component_session.rs`; `crates/sophia-session/src/shell_component_connections.rs` |
+| Input/publication separation | `crates/sophia-runtime/src/shell_transport.rs`: `service_owner_observed`, `poll_io`, `turn_files`; `shell_transport/files.rs`: `service` |
+| Worker completion and settlement | `crates/sophia-runtime/src/shell_content/isb_worker.rs`: `take_completed`; `shell_transport/image_owner.rs`: `service` |
+| Fresh authority | `crates/sophia-session/src/launch_authentication/files.rs`: `check`, `poll`, `wait`; `crates/sophia-runtime/src/supervisor/launch_custody.rs`: `is_live` |
+| 9P progress | `crates/sophia-9p/src/unix.rs`: `turn_observed`, `flush`, `service_wake`, `write`; `connection.rs`: `read_now`; `connection/delivery.rs`: `write_output`; runtime `authenticated_files.rs`: `with_delivery` |
+| Peer progress | Vendored `sophia-shell-client/src/files/drive.rs`, `lib.rs`, `files/image_adapter.rs`; `sophia-9p-client/src/pipeline.rs` |
+
+## One obligation model, without a second coordinator
+
+Use the following classification to reason about existing owners. These are
+analysis categories, not a proposed public enum or a second queue beside the
+real state. Do not copy state into a new scheduler unless its synchronization
+and invalidation contract is proven.
+
+| Work class | Becomes actionable when | Must remain represented while blocked |
+| --- | --- | --- |
+| Fresh observation | Current service/operation boundary or existing deadline requires it | Existing freshness/custody contract; empty readiness cannot discharge it |
+| Local transition | Buffered input, queued output, completion or other owned state can advance | Exact queue/item and identity; budget exhaustion means runnable again, not quiescent |
+| Socket dependency | Required bytes, write room or a join may be available | Descriptor plus connection/generation and current interests; partial I/O survives |
+| Credit dependency | ACK, capacity release or terminal journal reservation becomes available | Original record, ordering, charge and custody; no synthetic completion |
+| Worker/native dependency | Matching completion, KMS retirement or consumer lease ends | Exact job/frame/resource identity; cancellation does not fabricate completion |
+| Time dependency | Existing retry, validation, handshake or maintenance deadline is due | Original absolute deadline; packet activity and retries cannot renew it |
+
+Notification is an invitation to inspect owned state, not the state itself.
+Duplicate notifications may be coalesced only while the real obligation remains
+represented. A notification arriving during service must survive the transition
+to idle. A full journal must not spin on an already-decided expired refusal;
+the image owner already remembers the refusal and waits for ACK progress.
+Budget exhaustion must re-expose immediate work without requiring another fd
+edge. A missing, stale or incomplete readiness observation must use today's
+fallback. Do not hide unfinished work by returning a generic idle flag.
+
+Keep visual sequencing in Engine's `runtime_driver`; protocol custody in its
+export/SDK owners; image jobs and backing in their resource owners; and process,
+seat and recovery policy in Session. Readiness tokens, queued work identities,
+authority observations, admission credits and retirement evidence are different
+facts. None substitutes for another.
+
+The current authentication wait remains a 20 ms bounded cadence for launch
+exit, revocation and deadlines without peer traffic. Combining that deadline
+with other waits is not permission to lengthen it or replace fresh operation
+checks with a timer result. Immediate credit or completion progress must not
+be made to wait for that maintenance cadence.
+
+### Stability and invalidation
+
+| Fact | Valid lifetime | Forbidden reuse |
+| --- | --- | --- |
+| C27 property IDs | Opened-card identity, target generation and object IDs, with explicit invalidation | Device replacement, topology preparation or failed I/O |
+| Socket readiness observation | Exact registered connection/fds/interests and generation, consumed once | Reconnect, fd-number reuse, intervening service or changed state |
+| Authority result | Existing operation/service observation boundary | Later operations merely because they share an owner pass |
+| Admitted offer | Exact epoch, offer, resource metadata, reserved budget and original deadline | Reused resource ID, late packet, cancelled or expired admission |
+| Validated backing | Immutable resource and outstanding consumer ownership | Writable pool reuse or inferring last-consumer release from page flip |
+| Journal credit | Exact retained records, reservations and covering ACK | Read delivery alone, event enqueue alone or coalesced terminal outcomes |
+
+## Prior art: transferable invariants, not a framework replacement
+
+Claude's read-only source survey screened the following implementations. Pins
+identify inspected source, not necessarily the host's running versions. Root
+also inspected the NAPI completion edge, Tokio readiness clearing, libuv pending
+queue and Seastar sleep-entry code. No upstream benchmark here establishes a
+speed ranking or a Sophia saving.
+
+| Source | Relevant mechanism | Boundary of the analogy |
+| --- | --- | --- |
+| [Linux v6.18 NAPI](https://github.com/torvalds/linux/blob/7d0a66e4bb9081d75c82ec4957c50034cb0ea449/net/core/dev.c#L6607) | `napi_schedule_prep` keeps SCHED and records MISSED when already scheduled; completion reschedules if MISSED; poll budgeting supports repoll | Kernel interrupt/softirq ownership is not a user-space authority or journal contract |
+| [Tokio 1.53.1 task state](https://github.com/tokio-rs/tokio/blob/75fef53d0a8590c2d1dbb63672aa7b7d1ef51155/tokio/src/runtime/task/state.rs), [readiness](https://github.com/tokio-rs/tokio/blob/75fef53d0a8590c2d1dbb63672aa7b7d1ef51155/tokio/src/runtime/io/scheduled_io.rs) and [Mio 1.2.4 epoll](https://github.com/tokio-rs/mio/blob/79d1417c94e3a45c8bdd796e5422e22e8c488086/src/sys/unix/selector/epoll.rs) | A notification received while running survives to rescheduling; readiness clearing checks the driver tick so an older observation does not erase a newer event | Mio's edge-triggered backend and Tokio's retained readiness are not Sophia's current level-triggered observation contract |
+| [Seastar reactor](https://github.com/scylladb/seastar/blob/19ecc0d39feb36c8a10692ba262e9924e9f7df33/src/core/reactor.cc#L3039) | SMP interrupt-mode entry announces sleeping, orders that announcement and rechecks; `pollers_enter_interrupt_mode` rolls back earlier pollers if a later one cannot sleep | Its shard/poller and busy-poll assumptions do not justify adding spin time or another global coordinator |
+| [sd-event v257](https://github.com/systemd/systemd/blob/70bae7648f2c18010187c9cf20093155eaa26029/src/libsystemd/sd-event/sd-event.c#L1137) | Pending source queue, accumulated I/O revents, priority and deadline handling | Priority dispatch is not automatically fair; its polling frequency is not a performance prescription |
+| [libevent 2.1.12](https://github.com/libevent/libevent/blob/5df3037d10556bfcb675bc73e516978b75fc7bc7/event.c#L1767) | Active-list membership suppresses duplicate insertion; configured callback/time bounds limit dispatch | Configuration and callback behavior determine fairness; not evidence that Sophia lacks bounded service |
+| [libuv 1.51.0](https://github.com/libuv/libuv/blob/5152db2cbfeb5582e9c27c5ea1dba2cd9e10759b/src/unix/core.c#L842) | Pending callbacks are removed from a snapshot queue before invocation; `uv__io_feed` inserts only when not already queued | Duplicate suppression and callback rescheduling do not discharge unrelated authority or deadline work |
+| [diod](https://github.com/chaos/diod/blob/de51d1ee1bd5ccf1d8c16b96227c8bb03ec50106/src/libnpfs/srv.c#L176) | Connection readers feed request queues serviced by worker pools | A request queue is not an owner-runnable token. Tauth/Tattach authenticate; operations resolve fids and use the fid user for backend filesystem permission checks. That is not Sophia's repeated fresh grant/admission check |
+
+These are different designs. Do not claim that every source uses the same
+one-token-per-object scheduler, tail requeue policy or authentication model.
+The useful common question is how real pending work survives notification,
+budget exhaustion and the transition to sleep.
+
+### Three mechanisms examined in depth
+
+**Retain a notification received while running.** NAPI's SCHED/MISSED state and
+Tokio's running/notified transitions provide two implementations of this
+invariant. Sophia already preserves concurrent rings by clearing before
+producer inspection; it has no demonstrated lost-wakeup defect here. If a new
+per-owner runnable predicate is ever introduced, it must preserve arrivals
+during service and unfinished budgeted work. Clearing an entire cause set at
+return can erase such an arrival. The transfer point would be existing
+component/transport state, not a new visual coordinator. A controlled wake
+during dispatch and a budget-exhaustion negative control are required; count
+duplicate visits and real progress before assigning any cost benefit.
+
+**Do not erase newer readiness with an older observation.** Tokio's tick-checked
+clear is a concrete precedent. Sophia's server already validates identity,
+generation, interests and descriptors before consuming an observation. The
+unimplemented SDK wait-to-image-tick handoff has a similar requirement but
+cannot simply copy Tokio's edge-triggered policy: journal routing and discovery
+can replace or remove the producer fd before dispatch. The counterexample is an
+old empty observation suppressing a probe on a replacement channel. Test that
+identity/state changes force the ordinary probe, HUP remains observable and
+direct dispatch without an observation retains its existing behavior. Measure
+only the eligible repeated probes, not every image tick. Historical counts
+alone did not establish a worthwhile candidate.
+
+**Prove all obligations are safe before sleeping.** Seastar's multi-poller
+interrupt-mode transition is a useful proof pattern, not a design to import.
+Sophia already publishes work before waking, clears before inspection, collects
+wait fds and caps deadlines. Its worker completion path also clears before
+queue inspection. The review application is to enumerate every producer and
+blocked dependency: an omitted credit, completion or teardown obligation can
+strand work even when socket readiness is handled correctly. Tests must inject
+work at the inspection-to-wait boundary and after cancellation/reconnect. A
+maintenance timer eventually hiding a lost wake is not proof of correct
+immediate progress. No busy-poll interval or timer adjustment is proposed.
+
+## Candidate decision and measurement gate
+
+**Do not implement a broad ready-only component scheduler yet.** The initial
+source hypothesis is to represent local actionable work and blocked dependencies
+more precisely at existing boundaries, while leaving mandatory observations
+where they are. That hypothesis is not a selected production optimization: the
+current unconditional component visit also performs live checks and expiry,
+and the existing publication split has already removed some apparent repeats.
+
+A candidate must identify one concrete repeated operation, the unchanged input
+or redundant observation that makes it removable, the owner of that fact, and
+every invalidating event. It must also show that the remaining work can run at
+its existing boundary. If it needs fewer authority observations or changes which
+call surfaces disconnect, retry or custody, present that as a separate contract
+decision. Do not disguise it as an internal queue optimization.
+
+Separate two questions about authority rather than treating every current call
+as either inherently necessary or automatically redundant. Fresh authorization
+before consuming or exposing protected state protects the operation itself.
+Proactive checks on an otherwise idle connection also determine when callers
+observe loss and cleanup. A different scheduler might preserve the former but
+change the latter. That could be a design proposal, but it is not established
+equivalence and is outside the initial preserve-boundaries candidate. The
+operation, deadline, idle-observation and cleanup guarantees must each be stated
+before such a proposal can be evaluated.
+
+Specific omitted-trigger counterexamples rule out a socket-only predicate:
+
+- a newly installed connection needs its first owner turn even without a saved
+  readiness observation;
+- a worker completion or retained job can belong to a retired grant after its
+  current wire disappears;
+- channel-only loss can require withdrawal while the 9P journal remains live;
+- ACK progress can make a held refusal or ResourceReleased publishable;
+- an absolute deadline can select an outcome with no new socket bytes;
+- a same-connection write or local export change can make a parked read ready;
+- queued output needs write progress even if no new input is expected;
+- a final reply and EOF can settle custody in the current call, not merely on
+  the next time an owner happens to be scheduled.
+
+### Existing C27 wait attribution: the first discriminator
+
+The retained CPU-only logs already contain cumulative `OwnerWake` and
+`WaitAttribution` snapshots. Re-analysis uses the earliest and latest paired
+snapshots strictly inside each workload interval, rather than including the
+long idle tail after presentation ends. Each window covers about ten seconds
+and 600 completed presentations. These are partial, non-frame-aligned windows,
+not reconstructed full-run totals.
+
+| C27 run | Wire / arm | Owner passes = waits | Non-native fd-ready waits | Native-ready waits | Deadline expirations |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1 | files old | 8672 | 7472 | 600 | 600 |
+| 2 | files new | 8687 | 7487 | 600 | 600 |
+| 3 | files new | 8640 | 7440 | 600 | 600 |
+| 4 | files old | 8697 | 7497 | 600 | 600 |
+| 5 | IPC new | 5221 | 4021 | 600 | 600 |
+| 6 | IPC old | 5233 | 4033 | 600 | 600 |
+| 7 | IPC old | 5181 | 3981 | 600 | 600 |
+| 8 | IPC new | 5203 | 4003 | 600 | 600 |
+
+Every expiration in these windows is attributed to `service`. Ring-ready
+counts are zero. The files authentication cap is selected 8040–8097 times,
+but expires **zero** times. A selected cap is not the cause of the wake.
+Ready flags can overlap in general; this table does not redefine them as
+mutually exclusive categories. Selected-reason totals reconcile to waits,
+and expired-reason totals reconcile to deadline expirations in all eight runs.
+
+Files therefore performs about 14.4 passes per observed completion versus
+8.7 for IPC; the excess is associated with non-native fd readiness, while
+both have one service-deadline expiration per completion. This rejects the
+hypothesis that extra 20 ms authentication timer expirations explain these
+interior passes. It does **not** identify which descriptor, protocol exchange
+or local transition caused a wake, establish empty visits, or authorize fewer
+fresh checks. Whole-run authentication expirations include the idle tail and
+must not be attributed to presentation work.
+
+Reproduction and input hashes are retained under evidence root
+`execution-model-review-20261019/`: `analyze_waits.py`, `wait-windows.json` and
+`SHA256SUMS`. The analysis reads the original `pc27-1..8` logs and samples;
+no capture or original evidence was changed.
+
+Before adding fields, audit the existing comparator service ledger's meanings.
+In particular, `wire_no_publication` is incremented after the optional input
+turn when `publication_pending()` is false. It does not say that no request,
+ACK, authority observation or image work occurred. These counters can size
+publication paths, but cannot alone classify an entire visit as empty.
+
+The remaining discriminator is an obligation census at the existing
+component/transport boundaries on the C27 baseline: distinguish owner input,
+publication, worker completion and maintenance causes; count actual state
+progress, blocked dependencies and mandatory observations independently. Cause
+sets may overlap. A fresh check with no data progress is not classified as
+removable no-work. Reconcile those counts to the existing wire-turn and frame
+totals before inferring a target. Existing retained traces cannot provide this
+complete cross-owner attribution. This review does not add instrumentation or
+launch another capture; any diagnostic slice must be specified separately and
+kept out of CPU acceptance builds.
+
+## Failure controls and acceptance
+
+| Scenario | Required result / existing test surface to extend |
+| --- | --- |
+| Work arrives before, during or just after idle transition | No lost wake or indefinite sleep; `sophia-session/tests/support/owner_wake.rs`, `sophia-runtime/tests/shell_isb_worker.rs` |
+| Stale observation, replaced descriptor or reconnect epoch | Safe ordinary probe, no cross-owner state; `sophia-9p/tests/unix_readiness.rs`, runtime transport/image readiness tests |
+| Budget exhausted with buffered work, peer remains busy | Bounded service, eventual progress, neighboring owners and deadlines still serviced; SDK pipeline/scripted FileWire and Session owner-scheduling tests |
+| Full journal, ACK already buffered, held refusal/release | Input first; no false stalled-peer verdict, lost terminal or busy retry; runtime output-custody and ISB-resource tests |
+| Worker completes during wake clearing or after revocation | Exact completion consumed once, no stale publication, backing remains charged as required; worker/shutdown/image-owner tests |
+| EOF after valid replies, write error, failed admission | Preserve current-call errors and custody ordering unless separately approved; SDK scripted FileWire tests |
+| Guarded reply queued before revocation, then a partial send | Recheck the original node/epoch at delivery; scheduling and fid reuse cannot grant remaining bytes; 9P delivery and authenticated export tests |
+| Seat/topology loss or retained last consumer | Cancel/retire exactly once; preserve presentation proof and last-consumer release; Session retirement tests and runtime resource tests |
+
+Test the real production path and include a negative control that breaks the
+proposed invariant. Passing a helper test cannot prove that the owner loop uses
+the helper. Cover input, lock and other roles under a busy image producer;
+single-peer throughput does not establish fairness.
+
+After deterministic controls, compare matched old/new binaries with common
+peers and balanced repeats on both transports. Report Session and peer CPU,
+latency, exact joined presentations/bytes, progress counts and relevant resource
+metrics separately. Profile scope nesting and process-wide allocation sampling
+must remain explicit. The four t331 +10% CPU/MiB and allocation/frame gates,
+panel/bulk workloads and dedicated latency qualification remain unchanged.
+No benchmark success can authorize a missed revocation, early release or
+unbounded queue. No production change is selected solely because it reduces
+syscalls or resembles a fast upstream system.
+
+## Connections
+
+- [Prior implementation techniques and C27 evidence](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md): retained history and CPU screens; this note owns the new cross-owner execution-model question.
+- [Readiness must name an obligation](../concepts/readiness-readiness-must-name-an-obligation.md): established distinction between readiness for a particular operation and general readiness.
+- [Architecture](../../architecture.md): Engine/runtime-driver sequencing and existing authority boundaries remain normative.
+- [ISB channel contract](../../sophia-image-channel.md): two-stream admission, immutable backing, deadlines and release semantics remain normative.

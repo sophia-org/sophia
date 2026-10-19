@@ -18,11 +18,16 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 On 2026-10-19, niltempus requested an architectural examination of work
 scheduling rather than another sequence of isolated syscall optimizations.
 Keep measured improvements, including candidate 27, but make the complete
-presentation's execution path the unit of analysis. The next research scope is
-[work scheduling within the existing ISB architecture](#work-scheduling-within-the-existing-isb-architecture).
-Claude has been asked to research upstream mechanisms read-only; findings are
-pending. This is a research direction, not approval to change scheduling,
-authority freshness, protocol boundaries or the t331 acceptance thresholds.
+presentation's execution path the unit of analysis. The resulting
+[cross-owner execution-model investigation](tt0k1yqv-how-should-one-isb-presentation-drive-bounded-work-across-owners.md)
+maps scheduling, readiness, fresh authority, state lifetimes, credit progress
+and retirement together. It owns the new analysis and upstream synthesis;
+this note retains the candidate history and the original research brief below.
+The retained C27 interior wait windows show about 14.4 files owner passes per
+completion versus 8.7 for IPC, with no authentication-cap expirations in either
+window set. The next missing evidence is the work caused by those fd-ready
+visits, not proof of a timer-driven polling problem. No production scheduling
+change or acceptance-threshold change is implied.
 
 ### Candidate 27 CPU screen
 
@@ -48,8 +53,9 @@ Retain the candidate for qualification. This is shared-renderer work, not a
 solution to the files control-cost gap. Descriptive combined files/IPC excess
 is 31.97% old and 30.83% new; the two wires ran in separate blocks, so that is
 not a fresh paired gate. The +10% t331 target and dedicated latency/full
-acceptance remain open. Next compare the updated files and IPC arms under the
-qualification protocol, carrying the same candidate on both sides.
+acceptance remain open. Any qualification must carry the same candidate on
+both sides. The next analysis is the linked execution-model review; no further
+native capture was requested as part of that review.
 
 Evidence: `candidate-27-property-cache-screen/RESULTS.txt`, `results.json`,
 `analyze.py`, capture and result checksum manifests, and launcher receipts under
@@ -67,6 +73,11 @@ import, reproduced independently. The earlier read-only audit is retained in
 attribution motivate the candidate but are not durations or savings bounds.
 
 ### Work scheduling within the existing ISB architecture
+
+This section retains the October 19 research brief. The
+[execution-model investigation](tt0k1yqv-how-should-one-isb-presentation-drive-bounded-work-across-owners.md)
+owns the resulting source findings, causal map, invariant review and candidate
+decision, rather than maintaining a second evolving analysis here.
 
 The question is why one presentation revisits so much work, and which visits
 represent a new obligation. Repeated visits or checks show cost, not that the
