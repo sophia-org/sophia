@@ -15,6 +15,26 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+The image-phase pair is complete and valid: both arms join 1,000 unique
+presented frames with matching plan, revision and artifact hashes and no
+capture errors. Files records image_accept 80.044 ms / 23,024 calls,
+image_authority 40.043 ms / 22,997 calls, and image_receive 33.853 ms /
+22,997 calls. IPC has no image-channel calls. The enclosing wire_image is
+209.633 ms / 23,066 calls, versus 131.96 ms in the preceding less-instrumented
+pair. Nested guard overhead and run variation prevent treating that difference
+as application work, or the child sums as predicted savings. Detailed evidence:
+`candidate-13-image-service/image-service-attribution.json`.
+
+The next candidate should target listener accept probes using a fresh,
+one-shot owner-wait observation, before considering broader SDK changes.
+Retain the duplicate/unauthorized-join drain on readiness, fall back to the
+existing probe without a valid observation, and bind observations to the
+registered descriptor and channel state. Do not remove or cache custody
+checks. Any later receive gating must preserve final-packet-before-HUP
+handling. The available fraction of observed owner visits still limits the
+saving; measure a CPU-only candidate/control pair before claiming improvement.
+The earlier pending-capture statements below are historical.
+
 Read-only analysis of the retained candidate-03 kernel pair confirms 86,307
 peer recvfrom entries on files versus 12,006 on IPC, but all entry addresses
 resolve to libc's syscall wrapper: exact Rust caller counts cannot be recovered
