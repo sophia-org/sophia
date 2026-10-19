@@ -464,8 +464,16 @@ passes after restoration. Feature-disabled native Session compilation and
 feature-enabled Clippy gates pass. A worst-case record fits the existing capture
 line bound. The default SDK, source protocol and authority paths are untouched.
 
-**Next: one comparator-progress diagnostic capture and interior-window
-reconciliation.** No native capture has run for candidate 28. These controls do
+**Ready for capture:** candidate 28 now has two pinned comparator-progress
+plans (files and IPC), 1000 panel frames each, with a 300-second tty4 bound.
+Profiles, artifact pins, the unchanged C27 launcher, six rebuilt-peer controls
+and analyzer refusal tests pass. Launch with
+`sh ~/.local/state/t331/run-wait-sources-remote.sh`; noninteractive sudo currently
+requires a password. Session/peer binaries are pinned directly in the cargo slot,
+so do not rebuild or clean that slot before the run. The schema-4 progress runner
+comes from C06. Package details and exact commands are in its evidence README.
+After capture, the package's `analyze.py` reconciles interior-window counters.
+No native capture has run for candidate 28. These controls do
 not yet establish the live relay/legacy population, full native reconciliation,
 empty-visit share or a CPU saving. The exact record schema and refusal rules are
 in the evidence README. Investigate the dominant source class before adding
