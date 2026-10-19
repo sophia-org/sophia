@@ -47,7 +47,8 @@ impl Canvas {
 /// Identical pixel work for the IPC canvas and directly mapped ISB backing.
 pub fn fill_pixels(bytes: &mut [u8], generation: u64) {
     let shade = (generation % 128) as u8;
-    for (index, byte) in bytes.iter_mut().enumerate() {
-        *byte = if index % 4 == 3 { 255 } else { shade };
-    }
+    let (pixels, remainder) = bytes.as_chunks_mut::<4>();
+    pixels.fill([shade, shade, shade, 255]);
+    // A partial prefix has only colour bytes; retain the byte-loop behavior.
+    remainder.fill(shade);
 }

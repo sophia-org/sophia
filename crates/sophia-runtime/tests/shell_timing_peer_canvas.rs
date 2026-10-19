@@ -37,6 +37,21 @@ fn every_fill_overwrites_its_prefix_with_the_generation_bytes() {
 }
 
 #[test]
+fn packed_fill_preserves_partial_prefixes_and_unaligned_ranges() {
+    for length in 0..=260 {
+        for offset in 0..8 {
+            for generation in [0, 1, 127, 128, 255, u64::MAX] {
+                let mut bytes = vec![0xa5; length + 16];
+                canvas::fill_pixels(&mut bytes[offset..offset + length], generation);
+                assert_eq!(&bytes[offset..offset + length], pattern(length, generation));
+                assert!(bytes[..offset].iter().all(|&b| b == 0xa5));
+                assert!(bytes[offset + length..].iter().all(|&b| b == 0xa5));
+            }
+        }
+    }
+}
+
+#[test]
 fn canvas_refuses_empty_and_oversized_uploads_without_allocating() {
     let mut canvas = Canvas::new(64);
     assert!(canvas.fill(0, 1).is_err());
