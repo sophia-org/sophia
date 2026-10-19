@@ -15,6 +15,27 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+The listener-readiness candidate (`c535a0310`, comparator `bc3acf69e`) passed
+its four-run files-only CPU screen. All four runs join 1,000 unique presented
+frames without capture errors; plan, artifact and source pins were verified.
+Control/candidate/candidate/control combined CPU is respectively
+1.725–1.728, 1.675–1.677, 1.639–1.640 and 1.657–1.659 ms/frame.
+The candidate mean is 1.92–2.15% lower, with Session CPU about 21–25
+microseconds/frame lower. This is a positive screening signal, not a proven
+causal reduction: costs drift across the sequence and unchanged peer CPU
+also falls about 11 microseconds/frame on average. Counter brackets are not
+confidence intervals. t331 remains open; full repeated qualification is absent.
+
+Evidence: `candidate-14-listener-ready/native-screening-analysis.json` plus
+hashed raw captures. Preserve the candidate on the performance branch, without
+calling the remaining panel gap solved. The next discriminator is the accept
+call reduction under profiling, or a repeat of the fresh files-only control;
+SDK read-loop changes still require EAGAIN/data/EOF measurements first.
+The temporary source-only control worktree can now be removed; its signed
+revision and external artifact hashes remain recorded in the evidence.
+
+## October 19 listener-readiness implementation and screening
+
 The listener-only readiness candidate is implemented on the performance
 branches; native CPU benefit is still unmeasured. A fresh owner-wait
 observation can skip one accept probe only in Ready state with no backoff.
