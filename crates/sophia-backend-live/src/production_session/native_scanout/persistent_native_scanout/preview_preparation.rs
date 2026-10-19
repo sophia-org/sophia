@@ -81,6 +81,9 @@ impl LiveProductionNativeScanout {
             pending.retain(|(_, weak)| weak.is_alive());
             !pending.is_empty()
         });
+        if self.preview_images.retired_imports.is_empty() {
+            return Ok(());
+        }
         let mut visited = BTreeSet::new();
         for index in 0..self.exporters.len() {
             let Some(store) = self.exporters[index].image_store_identity() else {
@@ -258,7 +261,13 @@ impl LiveProductionNativeScanout {
     ) -> Result<(), LivePreviewImageRefusal> {
         self.synchronize_preview_epochs();
         self.preview_images.demand_sources = demand.clone();
-        let stores = self.cold_image_stores();
+        // Empty demand still retires obsolete snapshots below, but needs no
+        // donor inventory. Inventory queries only observe exporter state.
+        let stores = if demand.is_empty() {
+            Vec::new()
+        } else {
+            self.cold_image_stores()
+        };
         let mut needed = BTreeMap::new();
         for (&image, (_, outputs)) in demand {
             for (group, donor) in preview_group_donors(image, outputs,

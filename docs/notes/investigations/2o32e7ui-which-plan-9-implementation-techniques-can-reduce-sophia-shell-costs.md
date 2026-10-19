@@ -15,6 +15,23 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+The attribution pair has now completed. Its preview preparation scopes report
+67,059 allocation operations over 33,522 calls on files, and 41,806 over
+20,894 calls on IPC. Retirement accounts for approximately one allocation
+per call inside preparation. Demand construction records only eight and two
+allocation operations respectively, so an unchanged-demand clone guard is
+not a useful target in this workload. These process-wide counts include
+workers; the nested scopes must not be added together.
+
+The next candidate skips donor inventory construction when demand is empty
+and skips the retired-import traversal after weak-entry pruning leaves no
+requests. Epoch synchronization and obsolete snapshot retirement remain
+unconditional. Production backend tests pass (354, one ignored), comparator
+preview tests pass (38), and strict library Clippy passes in both checkouts.
+Evidence is in `candidate-12-preview-idle/`. The allocation saving still
+needs a native attribution pair; no CPU improvement is claimed. The earlier
+measurement plan below is retained as context and has now been executed.
+
 The fixed-block ISB validator remains accepted in production `cfa256424` and
 comparator `914e86378`. The client-drive experiment is retired. Latest native
 screening leaves panel CPU 25.85–26.07% above IPC, while bulk is 5.37–5.41%
