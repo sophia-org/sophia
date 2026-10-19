@@ -15,7 +15,21 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
-Candidate 23 is prepared for the next panel CPU check: three independently
+Candidate 23's first attempt failed before Session startup: the generated
+desktop profile was group-writable (0664), and Sophia refused `Io(UnsafeMode)`.
+The preparation omitted a private umask; hashes alone did not catch permissions.
+No performance samples were captured. PAM cleanup succeeded and tty4's login
+prompt returned. Preserve the original package and failed `panel23-1` stage.
+
+The fresh `candidate-23-panel-cpu-pairs-retry/` package uses umask 077, private
+directories, 0600 configurations and unused `panel23r-1..6` stages. All six
+profiles pass the pinned Sophia executable's device-free
+`--validate-session-args` check with normal Session and Factotum arguments;
+the original profile still fails `UnsafeMode` under the same check. All pins,
+18 launcher controls and the PTY cleanup control pass. The existing wrapper
+now selects this retry package. It has not been launched.
+
+The retry retains the next panel CPU check: three independently
 restarted files/IPC pairs at idle 60 Hz, ordered files/IPC, IPC/files,
 files/IPC. All six runs use the same whole-pixel peer and Session binaries.
 Each offers 1000 frames with no warmup exclusion or bulk probe. Artifact pins,
@@ -24,7 +38,7 @@ No native run has started. From the crunch SSH session, run
 `sh ~/.local/state/t331/run-panel-cpu-pairs-remote.sh`; sudo authentication is
 required. Expected duration is about seven minutes, bounded at 600 seconds.
 
-Evidence and the frozen plan are in `candidate-23-panel-cpu-pairs/` beside the
+Evidence and the frozen plan are in `candidate-23-panel-cpu-pairs-retry/` beside the
 candidate-22 evidence below. Evaluate combined CPU/MiB separately in each pair
 against IPC +10%, using conservative bounds; do not pool a failed pair away.
 This checks the remaining panel CPU bottleneck before committing to the full
