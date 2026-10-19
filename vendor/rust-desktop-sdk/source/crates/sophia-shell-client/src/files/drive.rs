@@ -180,8 +180,15 @@ impl FileWire {
         mut budget: Option<IoBudget>,
     ) -> Result<(), ShellClientError> {
         self.service_pending = true;
+        // Scheduling history belongs to this drive only. Every external entry
+        // must still attempt a read, including the entry after a deferred EOF.
+        #[cfg(feature = "experimental-write-read-scheduling")]
+        let mut cycle = sophia_9p_client::pipeline::PollCycle::default();
         for round in 0..MAX_ROUNDS {
             let mut eof = false;
+            #[cfg(feature = "experimental-write-read-scheduling")]
+            let result = self.pipeline.poll_in_cycle(&mut cycle, budget.as_mut());
+            #[cfg(not(feature = "experimental-write-read-scheduling"))]
             let result = match &mut budget {
                 Some(budget) => self.pipeline.poll_with_budget(budget),
                 None => self.pipeline.poll(),

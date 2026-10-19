@@ -216,6 +216,14 @@ pub struct IoBudget {
 }
 
 impl IoBudget {
+    fn standard() -> Self {
+        Self {
+            read_bytes: IO_BYTE_BUDGET,
+            write_bytes: IO_BYTE_BUDGET,
+            read_calls: IO_SYSCALL_BUDGET,
+            write_calls: IO_SYSCALL_BUDGET,
+        }
+    }
     /// At most `bytes` and 32 syscall attempts per direction. Zero bytes
     /// allows buffered reply decoding but no socket reads or writes.
     pub fn new(bytes: usize) -> Self {
@@ -234,6 +242,18 @@ impl IoBudget {
             || self.read_calls == 0
             || self.write_calls == 0
     }
+}
+
+/// Read scheduling history for one bounded drive, never across external waits.
+///
+/// Experimental: create a fresh value at every drive entry. A round may defer
+/// receiving only after the preceding round reached WouldBlock without reading
+/// bytes and this round successfully wrote bytes. A deferred round clears that
+/// history, so it cannot suppress another read in the following round.
+#[cfg(feature = "experimental-write-read-scheduling")]
+#[derive(Debug, Default)]
+pub struct PollCycle {
+    previous_empty: bool,
 }
 
 /// One completed reply. `Error` is the server's `Rlerror`: a normal outcome,
@@ -699,12 +719,7 @@ impl Pipeline {
     /// replies, at most [`IO_BYTE_BUDGET`] bytes in at most
     /// [`IO_SYSCALL_BUDGET`] syscalls per direction.
     pub fn poll(&mut self) -> Result<(), PipelineError> {
-        let mut budget = IoBudget {
-            read_bytes: IO_BYTE_BUDGET,
-            write_bytes: IO_BYTE_BUDGET,
-            read_calls: IO_SYSCALL_BUDGET,
-            write_calls: IO_SYSCALL_BUDGET,
-        };
+        let mut budget = IoBudget::standard();
         self.poll_with_budget(&mut budget)
     }
 
@@ -716,7 +731,34 @@ impl Pipeline {
             return Err(PipelineError::Poisoned);
         }
         self.write_output(&mut budget.write_bytes, &mut budget.write_calls)?;
-        self.read_input(&mut budget.read_bytes, &mut budget.read_calls)?;
+        self.read_input(&mut budget.read_bytes, &mut budget.read_calls)
+            .map(|_| ())
+    }
+
+    /// Experimental bounded round with one-round post-write read deferral.
+    ///
+    /// `None` supplies the same per-round allowance as [`Self::poll`]. A shared
+    /// budget retains the caller's limits exactly. Writes, buffered decoding,
+    /// and readiness interests remain active; an arriving reply or EOF can be
+    /// observed on the next round or drive instead of this writing round.
+    #[cfg(feature = "experimental-write-read-scheduling")]
+    pub fn poll_in_cycle(
+        &mut self,
+        cycle: &mut PollCycle,
+        budget: Option<&mut IoBudget>,
+    ) -> Result<(), PipelineError> {
+        let previous_empty = std::mem::take(&mut cycle.previous_empty);
+        if self.poisoned {
+            return Err(PipelineError::Poisoned);
+        }
+        let mut local = IoBudget::standard();
+        let budget = budget.unwrap_or(&mut local);
+        let before_write = budget.write_bytes;
+        self.write_output(&mut budget.write_bytes, &mut budget.write_calls)?;
+        if previous_empty && budget.write_bytes < before_write {
+            return self.drain_frames();
+        }
+        cycle.previous_empty = self.read_input(&mut budget.read_bytes, &mut budget.read_calls)?;
         Ok(())
     }
 
@@ -970,7 +1012,9 @@ impl Pipeline {
         }
     }
 
-    fn read_input(&mut self, budget: &mut usize, calls: &mut usize) -> Result<(), PipelineError> {
+    fn read_input(&mut self, budget: &mut usize, calls: &mut usize) -> Result<bool, PipelineError> {
+        let mut received = false;
+        let mut empty = false;
         while *calls > 0 {
             self.drain_frames()?;
             if *budget == 0 || self.reserved_reply_bytes >= self.limits.max_buffered_input {
@@ -982,15 +1026,19 @@ impl Pipeline {
             match self.stream.read(&mut chunk[..want]) {
                 Ok(0) => return Err(self.poison(PipelineError::Io(io::ErrorKind::UnexpectedEof))),
                 Ok(count) => {
+                    received = true;
                     self.in_buf.extend_from_slice(&chunk[..count]);
                     *budget -= count;
                 }
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    empty = !received;
+                    break;
+                }
                 Err(error) => return Err(self.poison(PipelineError::Io(error.kind()))),
             }
         }
-        self.drain_frames()
+        self.drain_frames().map(|()| empty)
     }
 
     /// Parses as many complete frames as `in_buf` holds; an incomplete tail

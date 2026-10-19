@@ -28,6 +28,8 @@ mod admission;
 mod batch;
 #[path = "support/file_wire_journal.rs"]
 mod journal;
+#[path = "support/file_wire_observation_timing.rs"]
+mod observation_timing;
 #[path = "support/transaction_reuse.rs"]
 mod transaction_reuse;
 const EINVAL: u32 = 22;
@@ -1707,6 +1709,56 @@ fn external_loop_drains_local_events_and_does_not_watch_idle_writability() {
     connection.poll_io().unwrap();
     peer.pump();
     assert_eq!(peer.walk_count("transaction"), 1);
+}
+
+#[test]
+fn a_dispatch_round_limit_keeps_buffered_events_immediately_serviceable() {
+    let (mut connection, mut peer) = connect(bar(0));
+    for _ in 0..8 {
+        connection.poll_io().unwrap();
+        peer.pump();
+    }
+    for _ in 0..64 {
+        let event = permit(&mut peer);
+        peer.push(event);
+    }
+    peer.flush_events();
+    let now = Instant::now();
+    connection.dispatch(now, 65536).unwrap();
+    let mut count = 0;
+    while let Some((_transaction, record)) = connection.take_content().unwrap() {
+        assert_eq!(record, permit_record());
+        count += 1;
+    }
+    // Reading the initial multi-chunk Rread also spends syscall credit, so
+    // the shared budget may yield before the fixed round ceiling.
+    assert!(
+        (1..=32).contains(&count),
+        "one dispatch exceeded its round ceiling"
+    );
+    assert!(
+        connection.io_interest().unwrap().immediate,
+        "remaining buffered events cannot require a fresh socket edge"
+    );
+    for _ in 0..4 {
+        if count == 64 {
+            break;
+        }
+        assert!(connection.io_interest().unwrap().immediate);
+        connection.dispatch(now, 65536).unwrap();
+        let before = count;
+        while let Some((_transaction, record)) = connection.take_content().unwrap() {
+            assert_eq!(record, permit_record());
+            count += 1;
+        }
+        assert!((1..=32).contains(&(count - before)));
+    }
+    assert_eq!(count, 64);
+    for _ in 0..8 {
+        peer.pump();
+        connection.dispatch(now, 65536).unwrap();
+    }
+    assert!(!connection.io_interest().unwrap().immediate);
 }
 
 #[test]

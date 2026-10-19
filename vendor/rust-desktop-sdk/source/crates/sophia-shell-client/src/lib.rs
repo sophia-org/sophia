@@ -897,6 +897,9 @@ impl ShellConnection {
     /// Bounded nonblocking progress. A queue limit is a protocol failure, not
     /// permission to discard an accepted outcome. Each call runs at most 32
     /// transport rounds, each limited to 256 KiB and 64 syscalls per direction.
+    /// With `experimental-write-read-scheduling`, a post-write socket read may
+    /// move to the next round or drive. This call can then return before it
+    /// observes a reply or closure; custody remains provisional until observed.
     pub fn poll_io(&mut self) -> Result<(), ShellClientError> {
         let now = std::time::Instant::now();
         // Preflight the adapter clock before the wire can transmit
@@ -923,6 +926,12 @@ impl ShellConnection {
     /// that cannot represent a 256 ms retry is rejected without state changes.
     /// Zero budget permits local work but no socket I/O. Query `io_interest` and
     /// drain typed events before sleeping, and service again by `wake_deadline`.
+    ///
+    /// With `experimental-write-read-scheduling`, deferred reads spend no credit:
+    /// exhaustion and immediate-work indication may occur on a different round,
+    /// within the same byte, syscall and 32-round limits. Replies and EOF may be
+    /// observed by a later drive, including ACK completion and submit EAGAIN;
+    /// the latter's retry deadline uses that later dispatch's supplied time.
     ///
     /// Use `take_*` receive methods with this API: `poll_*` and `wait_for_io`
     /// invoke the default clock/budget driver. If mixing drivers, supplied time

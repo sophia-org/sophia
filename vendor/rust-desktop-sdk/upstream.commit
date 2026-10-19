@@ -1,14 +1,14 @@
-tree 17d989ce7707147a42360970110ce9896537a2e4
-parent fbde253ef297e282357080600a560f1824cd6b50
-author Mason Green <mason@greenm01.net> 1792355821 -0400
-committer Mason Green <mason@greenm01.net> 1792355821 -0400
+tree 16399267f9eff6d3653cd798af6b9eb9ac1c9427
+parent 1e739bca1e065977af71ac868558c6f6d531cc0b
+author Mason Green <mason@greenm01.net> 1792432216 -0400
+committer Mason Green <mason@greenm01.net> 1792432216 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatUt7RsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIelQD/RNhAGs5Z/p9DIF+pu7Yx
- OkNS9zYLpe6JmjRoTKYdBUYA/3sMWh61zZlOAkKqvH2Q6LWsC/PVn0kIhDmNI2Nf
- mw8C
- =sFof
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatZYWBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLn1QEA7uKNxeDYu++GX0TcOa3O
+ 30zQl1wvXQFLTMmySFuLNAYA/RmZ2SYR4JFCByk1eiLXqMgwhz4EXf6nInLMsYXL
+ +XAD
+ =XktA
  -----END PGP SIGNATURE-----
 
-Add bounded mapped ISB construction with sealed finalization
+Pin FileWire delayed-input custody and retry observations

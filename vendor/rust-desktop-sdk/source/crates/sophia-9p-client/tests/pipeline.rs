@@ -17,6 +17,10 @@ use sophia_9p_client::records::{Errno, Fid, Qid, QidKind, Tag};
 #[path = "support/authentication_pipeline.rs"]
 mod authentication;
 
+#[cfg(feature = "experimental-write-read-scheduling")]
+#[path = "support/pipeline_scheduling.rs"]
+mod scheduling;
+
 // ---- a scripted peer, written from the specification ----
 
 /// One request as the scripted peer reads it, or `None` once the client has

@@ -1,5 +1,15 @@
 # C and Rust SDK API parity
 
+## Experimental shell read scheduling, 2026-10-19
+
+The Rust-only `experimental-write-read-scheduling` feature is disabled by
+default. It changes when selected later shell-drive reads occur; no role
+operation, wire record or custody classification rule changes. The C session
+already spends its socket-I/O budget only on pass zero, so it has no analogous
+repeated-read optimization to port. This is not a qualified default behavior or
+a new C/Rust capability claim. See [the experiment, observation timing and
+controls](EXPERIMENTAL-READ-SCHEDULING.md). Existing t333 gaps remain open.
+
 ## Mapped ISB builder, 2026-10-18
 
 Both SDKs build an ISB in place, so producers fill pixels without a staging

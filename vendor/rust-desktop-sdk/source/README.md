@@ -1,5 +1,8 @@
 # Sophia desktop SDK for Rust
 
+The opt-in [experimental shell read scheduler](EXPERIMENTAL-READ-SCHEDULING.md)
+is a t331 performance candidate, disabled by default and not yet qualified.
+
 CPU images use **Immutable Shared Buffers (ISB)**, currently backed by sealed
 memfds. The buffer builders are `create_isb` / `finish_isb` in Rust and
 `sophia_ip_isb_create` / `sophia_ip_isb_finish` in C. Names changed together;
