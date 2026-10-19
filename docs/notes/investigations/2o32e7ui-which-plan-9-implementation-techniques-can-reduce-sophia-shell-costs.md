@@ -15,6 +15,28 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+Candidate 18 completed its four-run CPU screen on 2026-10-19 (`sc18-1`
+through `sc18-4`, control/candidate/candidate/control). Each run joined 1000
+unique presentations. Combined CPU averaged 1.599–1.601 ms/frame for control
+and 1.645–1.647 ms/frame for the candidate: nominally 2.73–2.96% higher.
+The controls drifted by about 3.8%, so these two runs per arm establish neither
+a saving nor a causal regression. There is no demonstrated benefit to promote;
+the feature stays disabled and the production SDK pin stays unchanged. This is
+screening evidence, not a B9 verdict or a statistical bound on effect size.
+
+All captures and PAM cleanup completed, and outer cleanup proved tty4 and its
+sessions empty before restoring getty. The launcher nevertheless refused the
+inner residual-PID receipt. A disposable-PTY reproduction confirms that the
+inner `ps -t tty4` query counts its own subprocess. A separately retained fix
+filters the exact query PID and passes both idle and live-child controls.
+The historical PID's command was not recorded; the original failed receipt
+has not been rewritten. No rerun is needed solely for this cleanup-check bug.
+Evidence, raw capture hashes, CPU bounds, corrected helper and PTY controls:
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/candidate-18-sdk-read-scheduling/post-run-review/`.
+The corrected helper has not been exercised as a root native launcher.
+
+### Candidate 18 preparation and qualification limits
+
 Candidate 18 is a disabled-by-default Rust SDK experiment at `2574d72` on
 `performance/t331-reply-storage`. The feature
 `experimental-write-read-scheduling` lets a shell drive defer a socket read
