@@ -74,24 +74,37 @@ environment readback, allocation measurement or full latency qualification.
 The source-layout audit also reports two pre-existing inline-test violations
 in backend-live; both offending files match the pre-scan source byte-for-byte.
 
-The client-drive screening candidate is comparator `c4b0056d7`. Its only code
-change drains buffered content with `take_content()` in the reference peer's
-receive loop, leaving `wait_for_io()` to drive before blocking. The SDK,
-production clients, image-settlement loop and IPC arm are unchanged. The
-Session executable hash is identical to the scan candidate's; only the peer
-executable changes. Both old and new peers pass all six explicit device-hidden
-timing-peer controls, and the candidate passes scoped strict Clippy. Evidence
-and prepared CPU-only plans are in `candidate-09-client-drive`; the attended
-launcher is `~/.local/state/t331/run-client-drive.sh`. There is no performance
-result for this candidate yet. Exact native request/ACK counts have not been
-compared, so passing record/custody controls is not a byte-transcript proof.
+The client-drive experiment `c4b0056d7` is retired by comparator `7449a114a`.
+Both native arms completed 1,000 joined presentations without capture errors,
+but files CPU was 1.658–1.661 ms/frame against IPC's 1.239–1.241 ms/frame
+(+33.68–34.08%); peer CPU was 404 microseconds, versus 402 in the preceding
+scan pair. This single pair shows no useful saving, not proof of a regression.
+No SDK or production client adopted the experiment. Checked capture hashes,
+counts and results are in `candidate-09-client-drive/native-screening-analysis.json`.
 
-Next, screen the client-drive candidate before extending this pattern to real
-clients. SIMD validation is a separate possible experiment: first try fixed
-blocks that allow compiler vectorization, then consider explicit intrinsics
-only if measured gains justify their portability and safety burden. No SIMD
-or assembly change is included here. Readiness handoff and server image-probe
-gating remain deferred experiments. Do not cache liveness,
+The next candidate exposes fixed arrays of sixteen whole pixels to the compiler,
+with a scalar remainder. Comparator `914e86378` includes this change and the
+client-drive revert. The compiler emits SSE2 loads, shuffles and comparisons
+on crunch from safe Rust; there is no unsafe code, explicit SIMD intrinsic,
+assembly or architecture-specific dispatch. Scalar partial-pixel edges, the
+64 KiB unit cap, failure state, worker deadlines and authority remain unchanged.
+Added differential controls target full-block/remainder boundaries under
+unaligned budgets. Resource, image transport, cancellation and worker controls
+and strict runtime Clippy pass in the affected checkouts.
+
+Two warm-mapping benchmark invocations compare this candidate to a frozen
+copy of the **improved scalar-block scan**, not the original byte scan. Panel
+buffers (184,320 bytes) take approximately 20.5 versus 28.6 microseconds;
+4 MiB buffers take approximately 0.47 versus 0.65 ms. The median reduction is
+27.6–28.3%. This saves only about 8 microseconds per panel scan in isolation;
+it cannot by itself explain or close the remaining whole-frame CPU gap.
+Evidence and codegen are in `candidate-10-isb-vector/scan-analysis.json`,
+`benchmark{,-repeat}.log` and `fixed-block-disassembly.txt`.
+
+Next is an attended CPU-only panel and 4 MiB bulk screening run. Other targets
+and compiler versions may vectorize differently; neither these microbenchmarks
+nor a single native screening run qualify t331. Readiness handoff and server
+image-probe gating remain deferred experiments. Do not cache liveness,
 suppress Ready retries, or change ACK/deadline policy. t331 remains open;
 full cost and latency qualification has not been rerun.
 

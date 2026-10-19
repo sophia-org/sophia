@@ -37,6 +37,27 @@ fn units_split_pixels_and_blocks_without_checking_future_colours() {
 }
 
 #[test]
+fn fixed_blocks_and_remainders_match_the_byte_predicate() {
+    for pixels in [15, 16, 17, 31, 32, 33, 47, 48, 49] {
+        for head in 0..4 {
+            let schedule = [head, usize::MAX];
+            let valid = vec![0; pixels * 4];
+            compare(&valid, &schedule);
+            for pixel in [0, 15, 16, 17, 31, 32, pixels - 2, pixels - 1] {
+                if pixel >= pixels {
+                    continue;
+                }
+                for colour in 0..3 {
+                    let mut bytes = valid.clone();
+                    bytes[pixel * 4 + colour] = 1;
+                    compare(&bytes, &schedule);
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn unit_cap_and_bad_boundary_pixels_match_scalar_scan() {
     let len = ISB_PIXEL_VALIDATION_BYTES * 2 + 4;
     let base = vec![0; len];
