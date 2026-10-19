@@ -49,6 +49,17 @@ capture or performance claim exists. The C dispatch has no equivalent repeated
 socket-poll cost; no C implementation change is proposed. ISB, 9P records,
 authority checks and ACK content remain intact; t331 stays open.
 
+The comparator-only import is signed at `d7eae929f`; production retains its
+existing SDK pin. Both feature modes pass the comparator controls and strict
+Clippy, and both release peers pass six device-hidden peer controls. Four fresh
+files CPU plans are prepared in control/candidate/candidate/control order in
+`candidate-18-sdk-read-scheduling/ready.json`. They share one Session binary and
+the same SDK revision; only the peer's experimental feature differs. Build
+receipts verify the feature on both SDK crates. This screen may proceed with
+the integration limit above; it cannot qualify default promotion. Native runs
+have not started. The SSH launcher requires sudo for a real PAM tty4 session;
+Session and the capture remain unprivileged.
+
 ## October 19 send-aware peer diagnostic
 
 The send-aware peer diagnostic on comparator `bc3acf69e` is valid: 1,000
