@@ -35,32 +35,6 @@ enum State {
 }
 
 impl ImageService {
-    fn probe_idle_ready_listener(&self) -> bool {
-        if !matches!(self.state, State::Ready(_)) || self.accept_not_before.is_some() {
-            return false;
-        }
-        // Even an empty accept allocates kernel socket/file objects on Linux.
-        // Without a borrowed observation, probe only this established listener.
-        // Errors and nonempty readiness retain the ordinary accept path; a late
-        // connector remains level-ready for the next service. No authority is
-        // inferred here, and the live peer is still checked on every visit.
-        use rustix::event::{PollFd, PollFlags, Timespec, poll};
-        let mut fds = [PollFd::from_borrowed_fd(
-            self.listener.readiness(),
-            PollFlags::IN,
-        )];
-        matches!(
-            poll(
-                &mut fds,
-                Some(&Timespec {
-                    tv_sec: 0,
-                    tv_nsec: 0
-                })
-            ),
-            Ok(0)
-        )
-    }
-
     pub(super) fn listener_subscription(&self) -> Option<ListenerSubscription> {
         // Handshake and backoff transitions always retain their ordinary probe.
         (matches!(self.state, State::Ready(_)) && self.accept_not_before.is_none()).then(|| {
@@ -108,11 +82,8 @@ impl ImageService {
         // One accept per owner turn also drains unauthorized/duplicate joins;
         // their refusal never changes the channel already serving this epoch.
         // A late join stays level-ready for the next visit. Missing or stale
-        // observations use a fresh probe when Ready; handshake/backoff states
-        // retain the ordinary duplicate/unauthorized-join drain.
-        let skip_accept = (listener_idle.is_some()
-            && listener_idle == self.listener_subscription())
-            || self.probe_idle_ready_listener();
+        // observations retain the ordinary duplicate/unauthorized-join drain.
+        let skip_accept = listener_idle.is_some() && listener_idle == self.listener_subscription();
         let accepted = if !skip_accept && self.accept_not_before.is_none_or(|at| now >= at) {
             self.accept_not_before = None;
             match wire.accept_image_peer(&self.listener, self.expected, now) {
