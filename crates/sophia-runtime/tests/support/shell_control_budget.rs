@@ -57,15 +57,14 @@ fn a_role_visit_cannot_timeout_an_acknowledgement_it_did_not_service() {
     let state = &mut transport.state;
     let files = state.wire.as_mut().unwrap();
     assert_eq!(
-        ShellComponentTransport::turn_files(files, &mut state.output, false, false, now, None)
-            .unwrap(),
+        ShellComponentTransport::turn_files(files, &mut state.output, false, now, None).unwrap(),
         (false, true)
     );
     assert_eq!(state.output.records(), 1);
     // Once input was served, a peer that really never acknowledges is still
     // refused. Sharing role input must not disable the existing deadline.
     assert!(matches!(
-        ShellComponentTransport::turn_files(files, &mut state.output, true, false, now, None),
+        ShellComponentTransport::turn_files(files, &mut state.output, true, now, None),
         Err(ShellTransportError::ContentQueueSaturated)
     ));
 }

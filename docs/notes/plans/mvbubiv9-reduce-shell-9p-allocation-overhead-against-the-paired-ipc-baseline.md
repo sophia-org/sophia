@@ -35,6 +35,14 @@ comparator paths without restoring IPC in production. Use separate unprofiled
 CPU and allocation pilots for each signed slice before the unchanged full
 qualification matrix. This approval does not alter any t331 exit threshold.
 
+The controlled native service-ledger pair subsequently showed approximately
+seven flushes per frame with batching both enabled and disabled, with unchanged
+read/write request counts. The cost pilot showed no CPU benefit. Publication
+batching is therefore retired under the rule to remove unproven changes;
+inline output observations and the comparator-only diagnostic ledger remain.
+See the owning investigation's October 18 service-ledger results. The four
+cost gates and latency qualification remain open.
+
 ### t331 — Reduce shell allocation overhead
 
 On October 17 niltempus accepted leaving the panel allocation result red while
