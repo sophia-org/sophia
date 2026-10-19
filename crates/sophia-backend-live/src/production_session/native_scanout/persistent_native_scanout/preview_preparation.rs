@@ -75,6 +75,10 @@ impl LiveProductionNativeScanout {
     fn service_retired_preview_imports(
         &mut self,
     ) -> Result<(), (Image, crate::LiveRendererScanoutBufferExportDetail)> {
+        #[cfg(feature = "comparator-profiling")]
+        let _scope = sophia_runtime::comparator_counters::phases::enter(
+            sophia_runtime::comparator_counters::phases::Phase::PreviewRetirement,
+        );
         // At most the live budgeted snapshots per store, plus no strong
         // ownership of our own. Dead requests disappear even for busy stores.
         self.preview_images.retired_imports.retain(|_, pending| {
@@ -256,6 +260,10 @@ impl LiveProductionNativeScanout {
         &mut self,
         demand: &BTreeMap<Image, (sophia_protocol::SurfaceId, BTreeSet<OutputId>)>,
     ) -> Result<(), LivePreviewImageRefusal> {
+        #[cfg(feature = "comparator-profiling")]
+        let _scope = sophia_runtime::comparator_counters::phases::enter(
+            sophia_runtime::comparator_counters::phases::Phase::PreviewPreparation,
+        );
         self.synchronize_preview_epochs();
         self.preview_images.demand_sources = demand.clone();
         let stores = self.cold_image_stores();

@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+sophia-runtime = { path = "../sophia-runtime", optional = true }
 sophia-wake = { path = "../sophia-wake" }
 sophia-engine = { path = "../sophia-engine" }
 sophia-protocol = { path = "../sophia-protocol" }
@@ -31,6 +32,7 @@ sophia-runtime = { path = "../sophia-runtime" }
 sophia-xshmfence = { path = "../sophia-xshmfence" }
 
 [features]
+comparator-profiling = ["dep:sophia-runtime", "sophia-runtime/comparator-profiling"]
 default = []
 # Deterministic cross-crate owner fixtures; never enabled by native-session.
 test-support = ["gbm-probe", "libdrm-events"]

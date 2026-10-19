@@ -25,8 +25,11 @@ pub enum Phase {
     WireAuthentication,
     WireServer,
     WireImage,
+    PreviewDemand,
+    PreviewPreparation,
+    PreviewRetirement,
 }
-const NAMES: [&str; 17] = [
+const NAMES: [&str; 20] = [
     "owner",
     "readiness",
     "components",
@@ -44,19 +47,22 @@ const NAMES: [&str; 17] = [
     "wire_authentication",
     "wire_server",
     "wire_image",
+    "preview_demand",
+    "preview_preparation",
+    "preview_retirement",
 ];
 struct Totals {
     calls: AtomicU64,
     cpu: AtomicU64,
     allocations: AtomicU64,
 }
-static TOTALS: [Totals; 17] = [const {
+static TOTALS: [Totals; 20] = [const {
     Totals {
         calls: AtomicU64::new(0),
         cpu: AtomicU64::new(0),
         allocations: AtomicU64::new(0),
     }
-}; 17];
+}; 20];
 
 pub struct Guard {
     phase: Phase,

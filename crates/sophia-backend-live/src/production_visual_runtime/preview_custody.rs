@@ -12,6 +12,10 @@ impl LiveProductionVisualRuntime {
         &mut self,
         native: &mut T,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        #[cfg(feature = "comparator-profiling")]
+        let demand_scope = sophia_runtime::comparator_counters::phases::enter(
+            sophia_runtime::comparator_counters::phases::Phase::PreviewDemand,
+        );
         let mut demand = BTreeMap::<_, (SurfaceId, BTreeSet<OutputId>)>::new();
         if let Some(publication) = &self.policy_presentation {
             for instance in &publication.presentation.instances {
@@ -29,6 +33,8 @@ impl LiveProductionVisualRuntime {
                 }
             }
         }
+        #[cfg(feature = "comparator-profiling")]
+        drop(demand_scope);
         if let Err(refusal) = native.prepare_preview_images(&demand)
             && !self.handle_preview_refusal(&refusal)
         {
