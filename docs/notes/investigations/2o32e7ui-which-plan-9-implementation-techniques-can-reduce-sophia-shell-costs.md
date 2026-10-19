@@ -15,30 +15,43 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
-Candidate 22 prepares the native CPU screen for whole-pixel fill. The final
-package uses the existing panel-plus-4 MiB workload, with old/new/new/old peers
-on files/ISB followed by the same sequence on IPC. All eight runs share one
-Session executable; all 75 peer compiler units match in features and profiles.
-Only the shared canvas routine and its tests differ. Frozen old and new peers
-both pass six device-hidden controls. The corrected candidate-19 launcher is
-unchanged, and its offline and PTY controls pass again.
+Candidate 22 completed all eight bulk CPU captures on October 19. Whole-pixel
+fill reduced mean peer CPU by 19.1% on files/ISB and 19.9% on IPC: about
+0.66 ms/frame on each wire. Combined CPU fell from 6.379 to 5.712 ms/frame on
+files (10.44–10.48%) and from 6.548 to 6.043 ms/frame on IPC (7.70–7.74%).
+The percentage ranges reflect counter attribution, not statistical confidence.
+Peer old/new ranges are disjoint and the changes exceed within-arm spreads.
+Files Session CPU overlaps; IPC Session CPU rose about 150 microseconds/frame,
+close to its 141-microsecond new/new spread, so its cause remains unresolved.
 
-The larger workload is the first discriminator because the local panel saving
-of about 25 microseconds is below the previous native control drift; the local
-4 MiB saving of about 0.53 ms is a stronger lead, not a native prediction.
-Initial unused panel-only preparations are preserved as superseded. Final
-plans, provenance and analysis limits are in `candidate-22-whole-pixel-native/`
-under `~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/`.
-The plan checkout is current `b3f13dad6`; artifact provenance separately records
-the old `d7eae929f` Session and peer rather than relabeling them.
+Each run joins 1000 unique presentations and 2000 accepted uploads, exactly
+4,378,624,000 logical bytes. All outcomes are presented, major faults are zero,
+and peer minor faults are unchanged. The 520-second launch finished within its
+600-second bound; PAM cleanup and tty4 restoration passed. Original receipts
+and the harmless openvt deallocation warning are retained.
 
-Native capture remains pending. Run
-`sh ~/.local/state/t331/run-whole-pixel-remote.sh` from the user's SSH session.
-It requires sudo authentication, should take about nine minutes and is bounded
-at 600 seconds. Afterward verify all joins and identical bytes, compare each
-wire's old/new CPU brackets and control drift, and keep any common fill saving
-separate from the files-versus-IPC gap. This is CPU screening only: allocations
-and full t331 acceptance remain separate. No production SDK pin changes.
+Submit-to-present median latency increased about 0.5–0.7 ms. The interval from
+the previous completion to submission shortened by approximately the same amount;
+median presentation spacing stayed 16.683 ms in every run. Source inspection
+confirms that fill and timestamp placement did not move. Faster preparation
+followed by a longer wait for the refresh is consistent with these observations,
+but latency acceptance remains open. Do not erase the increased residence metric
+or declare a net qualification win from this CPU screen.
+
+Retain the shared fill in subsequent matched comparator work. It benefits both
+wires and is not a transport-specific improvement. Next are matched panel and
+bulk qualification, separate allocation and latency evidence, and repeatability
+controls. The experimental SDK scheduling feature stays disabled; production
+SDK pins and the published ISB architecture are unchanged. t331 remains open.
+
+Evidence, analysis and hashes are in `candidate-22-whole-pixel-native/` under
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/`, particularly
+`FINDINGS.txt`, `results.json`, `analyze.py` and `POSTRUN-SHA256SUMS`. The sequence
+was old/new/new/old within files, then within IPC, with one Session executable.
+All 75 peer compiler units match in features and profiles. The plan checkout is
+`b3f13dad6`; old Session/peer source is `d7eae929f`, new peer source `b3f13dad6`.
+Exact artifact identities are in `matched-builds.json`. Initial unused panel
+preparations remain superseded. Do not rerun or overwrite completed stages.
 
 ### Whole-pixel local result
 
