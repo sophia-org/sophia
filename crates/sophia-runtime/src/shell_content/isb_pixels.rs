@@ -58,7 +58,7 @@ impl IsbPixelValidation {
             .saturating_add(bytes.min(ISB_PIXEL_VALIDATION_BYTES))
             .min(self.mapping.bytes().len());
         let pixels = self.mapping.bytes();
-        if (self.checked..end).any(|i| pixels[i] > pixels[(i / 4) * 4 + 3]) {
+        if !valid_unit(pixels, self.checked, end) {
             self.failed = true;
             return Err(ContentStoreError::Malformed);
         }
@@ -72,4 +72,27 @@ impl IsbPixelValidation {
         }
         Ok(ValidatedIsbPixels(self.mapping))
     }
+}
+
+fn valid_unit(pixels: &[u8], start: usize, end: usize) -> bool {
+    // A budget may split a pixel. Only its alpha can be read beyond the unit;
+    // colour components outside the unit must wait for a later step.
+    let head_end = (start + (4 - start % 4) % 4).min(end);
+    if (start..head_end).any(|i| pixels[i] > pixels[i | 3]) {
+        return false;
+    }
+    let (whole, tail) = pixels[head_end..end].as_chunks::<4>();
+    // Accumulate a block before branching so the compiler can compare several
+    // pixels together. Failure still leaves the whole unit uncommitted.
+    for block in whole.chunks(16) {
+        let mut valid = true;
+        for &[b, g, r, a] in block {
+            valid &= (b <= a) & (g <= a) & (r <= a);
+        }
+        if !valid {
+            return false;
+        }
+    }
+    let tail_start = end - tail.len();
+    (tail_start..end).all(|i| pixels[i] <= pixels[i | 3])
 }
