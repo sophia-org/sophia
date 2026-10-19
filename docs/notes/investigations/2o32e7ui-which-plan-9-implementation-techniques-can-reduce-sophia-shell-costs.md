@@ -15,6 +15,23 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+The preview-idle CPU screen is complete. Files costs 1.668899–1.671071 ms
+per frame against IPC's 1.287682–1.288642 ms, or 29.51–29.77% more. The
+session contributes about 228–231 microseconds of excess and the peer about
+152 microseconds. Reaching the ten-percent threshold would require another
+251–255 microseconds/frame in this pair. Both arms have 1,000 unique presented
+frames, no capture errors, and verified plan, artifact and revision pins.
+Evidence: `candidate-12-preview-idle/cpu-screen/native-screening-analysis.json`.
+
+The allocation reduction below is confirmed, but there is no demonstrated
+CPU benefit. The preceding SIMD screen was 25.85–26.07% above IPC; comparing
+these separate pairs does not establish a regression or a causal effect.
+Do not count preview-idle as a CPU win or spend further effort on empty
+preview bookkeeping. The next investigation should target the larger
+wire-service and peer costs, preserving fresh authority checks and the
+published ISB architecture. t331 remains open; these are screening results,
+not repeated qualification runs. Earlier next-step text below is historical.
+
 The preview-idle candidate is signed and published as production `ebde050a9`
 and comparator `8c7479085`. The follow-up attribution pair confirms the
 intended allocation reduction: files preview preparation falls from 67,059
