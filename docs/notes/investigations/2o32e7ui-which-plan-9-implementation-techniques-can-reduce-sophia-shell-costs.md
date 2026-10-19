@@ -15,6 +15,40 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+Candidate 27 identified repeated DRM property discovery from the retained
+c19 recording without another capture. Across each 1000-frame interval,
+files made 81,000 `GETPROPERTY` and 6,000 `OBJ_GETPROPERTIES` calls; IPC made
+81,209 and 6,018. Decoded command counts reconcile with the frozen reports'
+96,157/96,308 total ioctl entries. Primary-plane property discovery appears
+in 122/1581 files Session samples and 112/1200 IPC samples. These are
+instrumented counts and sampled attribution, not durations or savings bounds.
+
+The source repeatedly converts each object's properties to full metadata
+and allocated names, then keeps only names and IDs for a prepared scanout.
+This is shared rendering work, not an explanation of the files-minus-IPC
+gap. Reducing it on both sides could lower absolute CPU while increasing
+the percentage gap; never optimize just one arm of that comparison.
+
+The bounded candidate is to retain successful property-name-to-ID discovery
+with the owning device and scanout target. It needs explicit invalidation
+for replacement, topology/selection changes, seat revoke/resume and reused
+IDs, and must not retain failed discovery or cache live property values.
+No cache was implemented: the existing cursor-handle precedent alone does
+not prove primary-plane invalidation or error-observation equivalence.
+Tests must cover same-target reuse, replacement, multiple heads/devices,
+missing-property retry and unchanged atomic commit/cleanup failure paths
+before native measurement. Authority checks and ISB custody stay untouched.
+
+The c12 post-fix allocation evidence also rules out reviving the old preview
+list: preview preparation was already nearly allocation-free in that
+workload. Per-scope allocation totals cannot be interpreted as allocations
+on every idle pass because they include frame work and other threads.
+Evidence and the source/test proposal are in `candidate-27-property-discovery/`
+under the evidence root below, especially `FINDINGS.txt`, `results.json`,
+decoded ioctl rows and `analyze.py`. No SDK or production behavior changed.
+
+### Candidate 26 local MAP_POPULATE screen
+
 Candidate 26 stopped at local screening: `MAP_POPULATE` showed no total
 buffer-lifecycle benefit. Three optimized standalone Rust comparisons used
 64 warmups and 512 alternating-order pairs at each size, preserving fresh
