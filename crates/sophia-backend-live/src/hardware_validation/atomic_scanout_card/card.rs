@@ -14,11 +14,20 @@ enum RealAtomicScanoutCardFd {
 #[derive(Debug)]
 pub struct RealAtomicScanoutCard {
     fd: RealAtomicScanoutCardFd,
+    #[cfg(feature = "gbm-probe")]
+    property_identity: u64,
     #[cfg(feature = "seat-control")]
     admitted: Option<crate::drm::seat_inventory::SeatDrmCard>,
 }
 
 impl RealAtomicScanoutCard {
+    /// A process-local identity for this opened owner, not its reusable fd
+    /// number or kernel object IDs. Clones conservatively get a fresh identity.
+    #[cfg(feature = "gbm-probe")]
+    pub(crate) fn property_identity(&self) -> u64 {
+        self.property_identity
+    }
+
     pub fn gpu_identity(&self) -> Option<&str> {
         #[cfg(feature = "seat-control")]
         if let Some(admitted) = &self.admitted {
@@ -44,6 +53,8 @@ impl RealAtomicScanoutCard {
 
     pub(super) fn open_nonblocking(path: &Path) -> io::Result<Self> {
         Ok(Self {
+            #[cfg(feature = "gbm-probe")]
+            property_identity: next_property_identity()?,
             fd: RealAtomicScanoutCardFd::Direct(
                 std::fs::OpenOptions::new()
                     .read(true)
@@ -66,6 +77,8 @@ impl RealAtomicScanoutCard {
             return Err(io::Error::other("DRM card is excluded"));
         }
         let card = Self {
+            #[cfg(feature = "gbm-probe")]
+            property_identity: next_property_identity()?,
             fd: RealAtomicScanoutCardFd::Seat(
                 opener.open(&admitted.node).map_err(io::Error::other)?,
             ),
@@ -99,6 +112,8 @@ impl RealAtomicScanoutCard {
         };
         Ok(Self {
             fd,
+            #[cfg(feature = "gbm-probe")]
+            property_identity: next_property_identity()?,
             #[cfg(feature = "seat-control")]
             admitted: self.admitted.clone(),
         })
@@ -125,3 +140,15 @@ impl AsFd for RealAtomicScanoutCard {
 
 impl drm::Device for RealAtomicScanoutCard {}
 impl drm::control::Device for RealAtomicScanoutCard {}
+
+#[cfg(feature = "gbm-probe")]
+fn next_property_identity() -> io::Result<u64> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+        .map_err(|_| io::Error::other("DRM property owner identities exhausted"))
+}
+
+#[cfg(all(test, feature = "gbm-probe"))]
+#[path = "../../../tests/support/native_property_device_identity.rs"]
+mod property_identity_tests;

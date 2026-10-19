@@ -8,6 +8,11 @@ impl LiveProductionNativeScanout {
         candidate_frames: Vec<crate::LiveProductionHeadCompositionFrame>,
         rollback_frames: Vec<crate::LiveProductionHeadCompositionFrame>,
     ) -> Result<LiveProductionNativeTopologyPreparationReport, Box<dyn std::error::Error>> {
+        // Clear before any fallible preparation, including a failed attempt
+        // that leaves the old target installed. Rollback must rediscover too.
+        for head in &self.heads {
+            head.primary_properties.invalidate();
+        }
         self.capture_validity.clear();
         self.invalidate_layout_probes();
         self.service_layout_probe_cleanup();

@@ -27,6 +27,18 @@ pub fn discover_native_primary_plane_property_handles<D>(
 where
     D: LibdrmNativePropertyLookupDevice,
 {
+    device.primary_plane_property_handles(connector, crtc, plane)
+}
+
+pub(super) fn discover_primary_plane_properties_uncached<D>(
+    device: &D,
+    connector: drm::control::connector::Handle,
+    crtc: drm::control::crtc::Handle,
+    plane: drm::control::plane::Handle,
+) -> LibdrmNativePrimaryPlanePropertyDiscoveryResult
+where
+    D: LibdrmNativePropertyLookupDevice + ?Sized,
+{
     let Ok(connector_properties) = device.connector_property_handles(connector) else {
         return LibdrmNativePrimaryPlanePropertyDiscoveryResult {
             status: LibdrmNativePrimaryPlanePropertyDiscoveryStatus::ReadFailed,

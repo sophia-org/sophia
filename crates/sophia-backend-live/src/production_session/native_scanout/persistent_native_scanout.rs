@@ -375,6 +375,7 @@ pub struct LiveProductionNativeHead {
     /// cursor plane for this CRTC or its plane cannot be positioned --
     /// both of which mean the head keeps the legacy ioctl.
     pub cursor_properties: Option<crate::LibdrmNativeCursorPlanePropertyHandles>,
+    pub(crate) primary_properties: crate::NativePrimaryPropertyCache,
     /// The placement a prepared-but-unsubmitted commit is carrying.
     ///
     /// Mirror heads prepare in one pass and submit in a later one, so the
