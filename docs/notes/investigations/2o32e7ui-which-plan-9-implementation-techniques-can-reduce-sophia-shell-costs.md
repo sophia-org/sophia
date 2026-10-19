@@ -15,6 +15,20 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+Read-only analysis of the retained candidate-03 kernel pair confirms 86,307
+peer recvfrom entries on files versus 12,006 on IPC, but all entry addresses
+resolve to libc's syscall wrapper: exact Rust caller counts cannot be recovered
+from these tracepoints. Of 580 files CPU samples, 20 have receive functions
+on their stacks and all 20 pass through the 9P Pipeline; none pass through the
+image adapter. These overlapping, instrumented samples support investigation
+of pipeline reads, not a count of empty reads or a duration estimate. The
+SDK drain loop can poll the pipeline repeatedly per drive, and each pipeline
+poll reads until blocked or budget-limited. A later diagnostic must distinguish
+data, EAGAIN, EOF and retry rounds before altering this behavior. The small
+SDK image-readiness cache remains deferred. Evidence is retained as
+`candidate-13-image-service/peer-recvfrom-attribution.json` and
+`peer-receive-cpu-attribution.json`. The image-phase native pair is still pending.
+
 The preview-idle allocation saving is confirmed, but its CPU screen shows no
 speedup: files remains 29.51–29.77% above IPC. t331 is open. Stop optimizing
 empty preview bookkeeping; preserve the published 9P/ISB and authority model.
