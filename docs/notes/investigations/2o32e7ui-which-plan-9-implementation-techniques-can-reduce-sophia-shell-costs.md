@@ -101,10 +101,30 @@ it cannot by itself explain or close the remaining whole-frame CPU gap.
 Evidence and codegen are in `candidate-10-isb-vector/scan-analysis.json`,
 `benchmark{,-repeat}.log` and `fixed-block-disassembly.txt`.
 
-Next is an attended CPU-only panel and 4 MiB bulk screening run. Other targets
-and compiler versions may vectorize differently; neither these microbenchmarks
-nor a single native screening run qualify t331. Readiness handoff and server
-image-probe gating remain deferred experiments. Do not cache liveness,
+The attended vector-candidate screening completed all four arms, each with
+1,000 unique joined presentations and no capture error. Plan and artifact hashes
+match. Panel files+ISB costs 1.648–1.649 ms/frame against IPC's 1.308–1.309 ms,
+an excess of 25.85–26.07%. Reaching the +10% ceiling still requires roughly
+208–210 microseconds/frame of combined savings. Bulk, including a fresh 4 MiB
+probe each frame, costs 6.287–6.288 ms for files versus 6.645–6.647 ms for IPC:
+files is 5.37–5.41% lower in this pair. Session saves approximately 520
+microseconds in bulk while the peer costs approximately 161 microseconds more.
+Captures are `~/.local/state/t331/vector-cpu-{C,A}-{panel,bulk}-01`; checked
+counts, hashes and intervals are in
+`candidate-10-isb-vector/native-screening-analysis.json`.
+
+These are single CPU-only screening pairs without environment readback,
+allocation measurement or full latency qualification. There is no matched
+pre-SIMD native control. Panel absolute files CPU is slightly higher than in
+the earlier scalar scan pair even though the relative files/IPC gap is smaller;
+do not claim a demonstrated native panel CPU reduction from SIMD. The isolated
+scan controls support keeping the safe fixed-block optimization. Bulk is within
+the CPU ceiling in this pair, but t331 is not qualified or closed.
+
+The remaining measured blocker is panel control/owner overhead, not a reason
+to replace 9P or the ISB architecture. Further work should isolate that cost;
+readiness handoff and server image-probe gating remain deferred experiments.
+Other targets and compiler versions may vectorize differently. Do not cache liveness,
 suppress Ready retries, or change ACK/deadline policy. t331 remains open;
 full cost and latency qualification has not been rerun.
 
