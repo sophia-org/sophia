@@ -132,10 +132,14 @@ impl LiveProductionNativeScanout {
                 // Keep its worker provenance in this turn's local value only.
                 self.heads[head_index].prepared_group_frame = None;
                 self.heads[head_index].prepared_worker_was_in_flight = false;
-                let mut result = crate::submit_prepared_rendered_primary_plane_scanout(
+                let device = crate::TargetPropertyDevice::new(
                     self.groups[head_group].session.card(),
-                    prepared,
+                    &self.heads[head_index].primary_properties,
+                    self.groups[head_group].session.card().property_identity(),
+                    self.heads[head_index].target_generation,
                 );
+                let mut result =
+                    crate::submit_prepared_rendered_primary_plane_scanout(&device, prepared);
                 if let Some(submission) = result.submission.take() {
                     let callback_baseline = self.heads[head_index].last_callback_serial;
                     self.heads[head_index]
@@ -174,7 +178,8 @@ impl LiveProductionNativeScanout {
                         indices.iter().map(|index| self.heads[*index].head),
                     )
                     .ok_or("mirror generation could not create a preparation cohort")?;
-                    self.output_cohorts.insert((output, logical_frame), cohort.into());
+                    self.output_cohorts
+                        .insert((output, logical_frame), cohort.into());
                 }
                 // Each mirror head carries its own cursor contribution:
                 // the pointer projects differently per head, and a head
@@ -184,7 +189,12 @@ impl LiveProductionNativeScanout {
                     self.heads[head_index].prepared_cursor_ride = Some(placement);
                 }
                 let mut prepare = {
-                    let device = self.groups[head_group].session.card();
+                    let device = crate::TargetPropertyDevice::new(
+                        self.groups[head_group].session.card(),
+                        &self.heads[head_index].primary_properties,
+                        self.groups[head_group].session.card().property_identity(),
+                        self.heads[head_index].target_generation,
+                    );
                     let exporter = &mut self.exporters[head_index];
                     crate::prepare_rendered_primary_plane_scanout_from_target_and_selection_with_cursor(
                             crate::LiveKmsScanoutTargetStatus::Ready,
@@ -195,7 +205,7 @@ impl LiveProductionNativeScanout {
                             },
                             None,
                             cursor_ride.map(|(cursor, _)| cursor),
-                            device,
+                    &device,
                             exporter,
                         )
                 };
@@ -387,7 +397,8 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                             .and_then(LiveProductionScanoutContent::cpu_checksum)
                             .unwrap_or(self.heads[head_index].last_checksum),
                     );
-                    self.heads[head_index].submitted_clock_source = self.clock_source_for_submission(head_index);
+                    self.heads[head_index].submitted_clock_source =
+                        self.clock_source_for_submission(head_index);
                     self.heads[head_index].submitted_at = Some(Instant::now());
                     self.heads[head_index].completion_fence_status =
                         crate::LibdrmNativeCompletionFenceStatus::Unsupported;

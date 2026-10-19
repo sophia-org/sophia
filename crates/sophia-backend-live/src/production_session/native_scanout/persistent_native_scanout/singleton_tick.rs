@@ -56,11 +56,15 @@ impl LiveProductionNativeScanout {
             let worker_was_in_flight = exporter.worker_in_flight();
             let export_attempts_before = exporter.cpu_frame_export_attempts();
             let direct_flips_before = exporter.direct_scanout_flips();
+            let device = crate::TargetPropertyDevice::new(
+                groups[group].session.card(),
+                &head.primary_properties,
+                groups[group].session.card().property_identity(),
+                head.target_generation,
+            );
             let report = runtime
                 .run_tick_with_native_gbm_rendered_primary_plane_scanout_exporter_with(
-                    input,
-                    groups[group].session.card(),
-                    exporter,
+                    input, &device, exporter,
                 )?;
             let exported_nonzero = exporter.cpu_frame_export_attempts() > export_attempts_before
                 && head.pending_nonzero_pixel_bytes > 0;
@@ -175,7 +179,8 @@ impl LiveProductionNativeScanout {
                     trace_live_native_lifecycle("kms_submit_accepted");
                     self.submissions = self.submissions.saturating_add(1);
                     self.heads[index].submissions = self.heads[index].submissions.saturating_add(1);
-                    self.heads[index].submitted_clock_source = self.clock_source_for_submission(index);
+                    self.heads[index].submitted_clock_source =
+                        self.clock_source_for_submission(index);
                     self.heads[index].submitted_at = Some(Instant::now());
                     self.heads[index].completion_fence_status =
                         crate::LibdrmNativeCompletionFenceStatus::Unsupported;

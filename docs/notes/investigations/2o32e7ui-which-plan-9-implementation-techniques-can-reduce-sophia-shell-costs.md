@@ -15,6 +15,39 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+Candidate 27 now has an implementation candidate, not a measured win. Each
+native head retains one successful primary-plane property-ID discovery,
+keyed by opened-card identity, target generation and connector/CRTC/plane
+IDs. Card identities are non-reused process-local tokens; even a cloned card
+gets a fresh token. This covers device replacement in an otherwise unchanged
+public group slot without relying on raw fd numbers. Topology preparation
+invalidates all entries before its fallible work, including failed attempts
+and rollback; seat resume constructs a new native owner.
+
+Only successful name-to-ID discovery is retained. A private device wrapper
+delegates live value reads, resource creation, cleanup and commits unchanged;
+I/O errors through that wrapper invalidate the entry. Singleton and mirrored
+ordinary-frame paths use it, including mirror submission. Uncached callers
+and topology preparation keep fresh discovery. Caching changes where a
+disappearing target's error may first be observed: resource/commit I/O still
+fails normally, but a warm frame no longer performs the metadata-read ioctl.
+No cached metadata grants authority or proves the device is usable.
+
+Eight focused controls cover bounded reuse, each identity/generation change,
+replacement, missing/failed discovery retry, current values, out-fence
+delegation, atomic errors and framebuffer/commit cleanup. Disabling reuse
+fails the control with 3000 discovery calls versus 3. Backend `test-support`
+tests pass (975 passed, 9 ignored across 45 targets), strict clippy and scoped
+format checks pass, and the native-session CLI compiles. Minimal
+`libdrm-events` clippy is blocked by the unchanged renderer's unresolved
+`sophia_renderer_native_egl` import; its independent no-default-feature
+check reproduces that failure. No hardware acceptance or allocation/CPU
+saving is claimed. Evidence: `candidate-27-property-cache/` beside the audit
+below. Keep this a candidate pending matched native measurement on both
+transports; t331 remains open with the same red panel gate.
+
+### Candidate 27 source and retained-profile audit
+
 Candidate 27 identified repeated DRM property discovery from the retained
 c19 recording without another capture. Across each 1000-frame interval,
 files made 81,000 `GETPROPERTY` and 6,000 `OBJ_GETPROPERTIES` calls; IPC made

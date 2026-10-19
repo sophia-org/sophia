@@ -3,6 +3,18 @@ use crate::prelude::*;
 use super::LibdrmNativePropertyHandleSet;
 
 pub trait LibdrmNativePropertyLookupDevice {
+    /// Resolve IDs for a primary-plane request. Ordinary devices discover
+    /// afresh; a target-scoped device may retain successful ID discovery.
+    /// This does not read or cache current property values.
+    fn primary_plane_property_handles(
+        &self,
+        connector: drm::control::connector::Handle,
+        crtc: drm::control::crtc::Handle,
+        plane: drm::control::plane::Handle,
+    ) -> super::LibdrmNativePrimaryPlanePropertyDiscoveryResult {
+        super::discovery::discover_primary_plane_properties_uncached(self, connector, crtc, plane)
+    }
+
     fn connector_property_handles(
         &self,
         connector: drm::control::connector::Handle,

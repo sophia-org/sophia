@@ -351,6 +351,7 @@ impl LiveProductionNativeScanout {
                     pending_cursor_since: None,
                     committed_cursor: None,
                     cursor_properties: None,
+                    primary_properties: Default::default(),
                     prepared_cursor_ride: None,
                     scanout_custody: crate::PersistentScanoutCustody::default(),
                     displayed_group_frame: None,
