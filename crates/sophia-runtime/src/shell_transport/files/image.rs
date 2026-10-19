@@ -119,7 +119,14 @@ impl ImageService {
                 if wire.check_image_peer(&peer, now).is_err() {
                     State::Closing(Reason::GrantRevoked)
                 } else {
-                    match receive_image_datagram(peer.socket()) {
+                    let packet = {
+                        #[cfg(feature = "comparator-profiling")]
+                        let _scope = crate::comparator_counters::phases::enter(
+                            crate::comparator_counters::phases::Phase::ImageReceive,
+                        );
+                        receive_image_datagram(peer.socket())
+                    };
+                    match packet {
                         Ok(None) => State::Ready(peer),
                         Err(rustix::io::Errno::PIPE) => State::Closing(Reason::PeerDisconnect),
                         Ok(Some(packet)) => match wire.export_mut().receive_image_source(packet) {
@@ -198,6 +205,10 @@ impl ShellFileWire {
         expected: PolicyPeerIdentity,
         now: Instant,
     ) -> std::io::Result<Option<ImageChannelPeer>> {
+        #[cfg(feature = "comparator-profiling")]
+        let _scope = crate::comparator_counters::phases::enter(
+            crate::comparator_counters::phases::Phase::ImageAccept,
+        );
         listener.accept_authenticated(expected, self.connection, self.server.export_mut(), now)
     }
 
@@ -214,6 +225,10 @@ impl ShellFileWire {
         peer: &ImageChannelPeer,
         now: Instant,
     ) -> std::io::Result<()> {
+        #[cfg(feature = "comparator-profiling")]
+        let _scope = crate::comparator_counters::phases::enter(
+            crate::comparator_counters::phases::Phase::ImageAuthority,
+        );
         peer.check(self.server.export_mut(), now)
     }
 }

@@ -28,8 +28,11 @@ pub enum Phase {
     PreviewDemand,
     PreviewPreparation,
     PreviewRetirement,
+    ImageAccept,
+    ImageAuthority,
+    ImageReceive,
 }
-const NAMES: [&str; 20] = [
+const NAMES: [&str; 23] = [
     "owner",
     "readiness",
     "components",
@@ -50,19 +53,22 @@ const NAMES: [&str; 20] = [
     "preview_demand",
     "preview_preparation",
     "preview_retirement",
+    "image_accept",
+    "image_authority",
+    "image_receive",
 ];
 struct Totals {
     calls: AtomicU64,
     cpu: AtomicU64,
     allocations: AtomicU64,
 }
-static TOTALS: [Totals; 20] = [const {
+static TOTALS: [Totals; 23] = [const {
     Totals {
         calls: AtomicU64::new(0),
         cpu: AtomicU64::new(0),
         allocations: AtomicU64::new(0),
     }
-}; 20];
+}; 23];
 
 pub struct Guard {
     phase: Phase,
