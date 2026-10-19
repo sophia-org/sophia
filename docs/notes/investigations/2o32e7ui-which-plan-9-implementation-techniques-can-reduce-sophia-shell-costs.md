@@ -32,11 +32,22 @@ owner-turn and transport-readiness tests pass (9 total), with strict runtime
 test Clippy and scoped formatting clean. No public API or SDK parity change.
 
 Evidence is in sibling `candidate-25-listener-probe/`. This is a tested server
-candidate, not native acceptance. Next is a matched comparator CPU screen with
-the same whole-pixel peer and experimental scheduling disabled. Do not infer
-frame savings from local timings or the 24 historical inclusive accept samples;
-those samples are instrumented attribution, not a savings ceiling. No native
-run has been prepared or performed for this candidate yet.
+candidate, not native acceptance. Comparator `4f2a86722` carries the change and
+passes the same nine controls and strict Clippy. A matched CPU screen is frozen
+in `candidate-25-listener-probe-screen/`: eight files/ISB panel runs ordered
+old/new/new/old, then new/old/old/new. Only Session changes; the exact whole-pixel
+peer is common and experimental scheduling stays disabled. All 240 compiler
+units match the control build's feature/profile graph. Old Session source is
+`d7eae929f`, new Session source `4f2a86722`, common peer source `b3f13dad6`.
+
+All profiles pass both configuration and Session-argument checks as uid 1000;
+private permissions, artifact pins, 18 launcher tests and the PTY control pass.
+No native capture has started. From the crunch SSH session, run
+`sh ~/.local/state/t331/run-listener-probe-remote.sh` (sudo authentication,
+about nine minutes, bounded at 600 seconds). Preserve failed runs, compare
+both four-run blocks and report drift; a small effect may remain inconclusive.
+Do not infer frame savings from local timings or the 24 historical inclusive
+accept samples: those are instrumented attribution, not a savings ceiling.
 
 ### Current panel gate remains red
 
