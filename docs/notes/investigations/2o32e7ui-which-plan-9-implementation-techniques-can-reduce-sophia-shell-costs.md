@@ -15,6 +15,36 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+Candidate 19 prepares a fresh hotspot profile of the current comparator
+baseline `d7eae929f`, with experimental SDK scheduling disabled. Both files/ISB
+and comparison IPC use the same release binaries built with debug information,
+1000 panel presentations, and the existing kernel/syscall profiling mode.
+The entire compiler feature graph was checked for absence of the experiment.
+Six device-hidden peer controls and 18 perf/parser controls pass, including
+real perf recording and decoding. This is diagnostic attribution, not an
+acceptance run or an optimization claim. Native capture is still pending.
+
+The disposable remote package includes the exact-query-PID cleanup fix and
+explicit profile-command validation. Eighteen launcher controls pass; a PTY
+control retains a real child while excluding the query process, and fails with
+the original helper. Profile success requires both the perf receipt and the
+nested native result. Captured candidate-18 helpers and receipts are unchanged.
+The ready manifest pins the new helpers, plans, profiler and artifacts.
+
+Run `sh ~/.local/state/t331/run-current-hotspots-remote.sh` from the user's
+SSH session; sudo still requires its password. The two captures are bounded
+by 300 seconds and restore the idle tty4 login service after cleanup. Evidence
+and `report.sh` are under
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/candidate-19-current-hotspots/`.
+Afterward, require loss-free decoded profiles and complete joins before ranking
+Session and peer call paths. Keep syscall entry counts separate from durations;
+do not subtract tracing overhead to claim uninstrumented costs. A separate
+current phase/allocation pair is warranted only if owner bookkeeping remains
+a material target. The next optimization still needs a deterministic control
+and an uninstrumented comparison with sufficient repetitions to expose drift.
+
+### Candidate 18 screening result
+
 Candidate 18 completed its four-run CPU screen on 2026-10-19 (`sc18-1`
 through `sc18-4`, control/candidate/candidate/control). Each run joined 1000
 unique presentations. Combined CPU averaged 1.599–1.601 ms/frame for control
