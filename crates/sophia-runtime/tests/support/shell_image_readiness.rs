@@ -352,17 +352,6 @@ fn idle_listener_observation_skips_only_the_ready_accept() {
         std::thread::yield_now();
     }
 
-    // A parked Ready channel stays live across ordinary unobserved visits.
-    // Stable markers let the opt-in syscall diagnostic isolate this interval.
-    eprintln!("t331_idle_ready_begin");
-    let before = transport.wire_turn_count();
-    for _ in 0..32 {
-        transport.service_owner_turn(&mut epochs).unwrap();
-    }
-    assert_eq!(transport.wire_turn_count(), before + 32);
-    assert!(matches!(join(&image), Join::Pending));
-    eprintln!("t331_idle_ready_end");
-
     // Ready: a duplicate join that arrives after the wait is left in the
     // backlog by the observed visit, which is exactly one service. The next
     // visit without an observation accepts and refuses it.

@@ -15,39 +15,35 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
-Candidate 25 adds a fresh zero-time listener probe before an otherwise empty
-Ready-state image accept when no usable owner observation exists. Only a
-confirmed idle result skips accept; errors and nonempty readiness retain the
-existing accept/error path. Handshake and backoff states are unchanged, as are
-every peer authority check and image receive. A late connector remains
-level-ready for the next service. t340 now separately defers the rustix socket
-wrapper change requested for the todo list.
+Candidate 25's native screen completed, but the fresh Ready-listener poll
+fallback showed no CPU benefit. Combined new-minus-old CPU was +3.42–3.68% in
+old/new/new/old and +1.23–1.45% in new/old/old/new. Session alone rose about
+50–54 microseconds/frame in the first block and 6–9 in the second. The second
+block's variation exceeds its mean shift; do not claim a causal regression or
+pool the blocks to conceal drift. Neither block demonstrates a saving.
 
-The local SEQPACKET diagnostic measures empty accept at 1.66–1.67 microseconds
-versus 0.36–0.38 for the readiness probe, across three repeats. A marked runtime
-fixture replaces exactly 32 idle accepts with 32 listener polls; disabling the
-helper restores the 32 accepts. Wire polls and peer pidfd checks remain 32 in
-both runs. The existing seven-phase readiness controls, image transport,
-owner-turn and transport-readiness tests pass (9 total), with strict runtime
-test Clippy and scoped formatting clean. No public API or SDK parity change.
+Withdraw the candidate fallback and its added idle-visit fixture block from
+both active source trees. Preserve the older borrowed-readiness optimization,
+all authority checks, and the shared whole-pixel fill. The local syscall test
+still proves that the candidate replaced empty accepts with polls, but its
+per-call savings did not establish native benefit. The frozen candidate
+`4f2a86722`, its production source `b00aa2300`, binaries and all evidence remain
+retained; the failed screen is not erased or reinterpreted.
 
-Evidence is in sibling `candidate-25-listener-probe/`. This is a tested server
-candidate, not native acceptance. Comparator `4f2a86722` carries the change and
-passes the same nine controls and strict Clippy. A matched CPU screen is frozen
-in `candidate-25-listener-probe-screen/`: eight files/ISB panel runs ordered
-old/new/new/old, then new/old/old/new. Only Session changes; the exact whole-pixel
-peer is common and experimental scheduling stays disabled. All 240 compiler
-units match the control build's feature/profile graph. Old Session source is
-`d7eae929f`, new Session source `4f2a86722`, common peer source `b3f13dad6`.
+All eight runs joined 1000 unique presentations and accepted uploads each,
+with 184,320,000 logical bytes per run, no bulk probe, all outcomes presented,
+and zero major faults. The 520-second launch and PAM/tty4 cleanup succeeded.
+Only Session differed; the whole-pixel peer was identical across runs. Median
+presentation spacing stayed 16.683–16.684 ms. This is CPU screening, not an
+allocation measurement, dedicated latency gate or B9 acceptance.
 
-All profiles pass both configuration and Session-argument checks as uid 1000;
-private permissions, artifact pins, 18 launcher tests and the PTY control pass.
-No native capture has started. From the crunch SSH session, run
-`sh ~/.local/state/t331/run-listener-probe-remote.sh` (sudo authentication,
-about nine minutes, bounded at 600 seconds). Preserve failed runs, compare
-both four-run blocks and report drift; a small effect may remain inconclusive.
-Do not infer frame savings from local timings or the 24 historical inclusive
-accept samples: those are instrumented attribution, not a savings ceiling.
+Evidence is in `candidate-25-listener-probe-screen/` under
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/`, especially
+`FINDINGS.txt`, `results.json`, `analyze.py` and `POSTRUN-SHA256SUMS`. Preserve the
+original receipts and completed `lp25-1..8` stages. The candidate23 panel gate
+below remains red. Keep t340 deferred and SDK read scheduling disabled. Next
+work needs a larger source-grounded candidate; do not repeat this screen or
+weaken checks, ACKs or custody to manufacture a passing result.
 
 ### Current panel gate remains red
 
