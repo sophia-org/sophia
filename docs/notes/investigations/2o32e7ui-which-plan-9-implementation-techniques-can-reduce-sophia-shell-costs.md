@@ -15,6 +15,64 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+Publication batching is retired in production `78d7d062b` and comparator
+`8cfeac2a7`. The controlled native pair showed approximately seven actual
+flushes per frame with batching either enabled or disabled, unchanged protocol
+read/write counts, and no clear CPU benefit in the earlier cost pilot. Inline
+output observations remain: their screening result reduced files allocations
+by 6.5–6.8% and IPC allocations by 4.8–5.1%. The latest cost screening still
+misses the ceiling: CPU +37.31–37.72%, allocations +19.10–19.45% against IPC.
+That cost screening included batching; it is not qualification of the retired
+candidate or a new measurement of the remaining code.
+
+The removal passes 965 Session tests, runtime owner/custody controls, comparator
+controls and scoped strict Clippy. The schema-4 service ledger remains solely
+in the comparator, with `wire_flush_deferred` retained as a zero field for
+historical replay. Evidence and exact sampling brackets are in
+`candidate-06-service-ledger/service-ledger-analysis.json`; removal checks are
+under `candidate-07-service-ledger-control/remove-batch-*.log`. Both captured
+arms have 1,000 unique joined presentations and no capture error. The temporary
+batched source worktree has been removed; published commits and captures remain.
+
+Next, identify the cause and necessary side effects of the approximately three
+unbatched flushes per frame that write no bytes. An empty byte count does not
+prove an unnecessary service: authentication, ready-read retries, image-channel
+work and revocation still matter. Do not infer a safe skip from this ledger,
+cache liveness, suppress Ready retries, or change ACK/deadline policy. t331
+remains open; the full cost and latency qualification has not been rerun.
+
+## October 18 service-ledger results
+
+The files-only diagnostic compared batched `ef07b18a8` with immediate-service
+control `a0dfcdf57`. Their only source difference is the three role callback
+sites; peer hashes, workload, inline observations and instrumentation match.
+Both use runner `3a34520` and progress schema 4. Session counters are bracketed
+to the peer's first and last progress records over 1,000 frames, excluding the
+remaining idle hold. Bounds below reflect the sampling brackets, not statistical
+confidence intervals or CPU durations.
+
+| Per-frame count | Batched | Immediate |
+| --- | ---: | ---: |
+| Actual flushes | 6.992–7.001 | 6.993–7.001 |
+| Shell owner input | 14.242–14.292 | 14.279–14.317 |
+| Flushes writing bytes | 2.997–3.000 | 3.997–4.000 |
+| Flushes writing no bytes | 3.995–4.001 | 2.996–3.001 |
+| Protocol reads | 10.987–11.015 | 10.989–11.015 |
+| Protocol writes | 18.977–19.006 | 18.979–19.006 |
+| Waiting-read retry attempts | 11.239–11.266 | 13.267–13.293 |
+
+Batching saved about two waiting-read attempts per frame, approximately one
+Ready and one Pending, but removed no flush services. The 22.973–23.001 deferred
+polls per frame were not saved flushes: repeated polls with the same pending
+publication counted again. There were no failed or journal-blocked flushes in
+either bracket. The earlier estimate of only 1.4 flushes per frame from ppoll
+sites was incorrect; actual service counts replace that inference. The source
+review and this single diagnostic pair support retiring the added batching API
+and its boundary-close classification change. They do not identify which empty
+flushes are safe to omit or establish a CPU duration for retry checks.
+
+## October 18 optimization and pilot preparation — superseded
+
 October 18 implementation checkpoint: bounded publication batching is signed
 and published as production `2b60076d0` and comparator `6fb397748`.
 Inline output observations are separately signed and published as production
