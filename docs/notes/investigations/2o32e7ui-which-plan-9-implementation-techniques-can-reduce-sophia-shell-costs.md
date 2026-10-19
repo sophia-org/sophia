@@ -15,6 +15,25 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+Candidate 21 implements safe whole-pixel filling in the comparator's shared
+canvas routine, signed as `b3f13dad6`. Both IPC and mapped ISB use it. Fixed-size
+four-byte chunks let the compiler broadcast one packed BGRA pixel instead of
+repeatedly calculating byte positions; partial prefixes preserve the previous
+behavior. No unsafe code, intrinsics or SDK library changes are involved.
+The paired SDK diagnostic is signed as `220e2fd`.
+
+Three alternating local runs show full fresh-buffer preparation medians about
+19% lower for panel images and 20% lower for 4 MiB. These are local wall times,
+not native CPU savings or an ISB-versus-IPC win. Both versions already vectorize;
+the generated whole-pixel loop is simpler (169 versus 746 bytes on this build).
+Two SDK differential controls, five actual canvas tests and six rebuilt peer
+controls pass, with scoped Clippy and formatting clean. Final evidence is in
+`candidate-21-whole-pixel-fill/` beside the earlier directories below. No native
+capture has run for this change. Future comparisons must rebuild both arms
+with the shared fill; the production Sophia SDK pin is unchanged.
+
+### Current-baseline attribution and first-touch controls
+
 Candidate 19 completed its current-baseline kernel/syscall profile on
 2026-10-19. Files/ISB and comparison IPC use the same symbolized comparator
 `d7eae929f` binaries with experimental SDK scheduling disabled. Both captures
