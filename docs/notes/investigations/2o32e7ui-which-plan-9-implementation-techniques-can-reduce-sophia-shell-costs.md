@@ -15,6 +15,31 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+Candidate 25 adds a fresh zero-time listener probe before an otherwise empty
+Ready-state image accept when no usable owner observation exists. Only a
+confirmed idle result skips accept; errors and nonempty readiness retain the
+existing accept/error path. Handshake and backoff states are unchanged, as are
+every peer authority check and image receive. A late connector remains
+level-ready for the next service. t340 now separately defers the rustix socket
+wrapper change requested for the todo list.
+
+The local SEQPACKET diagnostic measures empty accept at 1.66–1.67 microseconds
+versus 0.36–0.38 for the readiness probe, across three repeats. A marked runtime
+fixture replaces exactly 32 idle accepts with 32 listener polls; disabling the
+helper restores the 32 accepts. Wire polls and peer pidfd checks remain 32 in
+both runs. The existing seven-phase readiness controls, image transport,
+owner-turn and transport-readiness tests pass (9 total), with strict runtime
+test Clippy and scoped formatting clean. No public API or SDK parity change.
+
+Evidence is in sibling `candidate-25-listener-probe/`. This is a tested server
+candidate, not native acceptance. Next is a matched comparator CPU screen with
+the same whole-pixel peer and experimental scheduling disabled. Do not infer
+frame savings from local timings or the 24 historical inclusive accept samples;
+those samples are instrumented attribution, not a savings ceiling. No native
+run has been prepared or performed for this candidate yet.
+
+### Current panel gate remains red
+
 Candidate 23 completed all six retry captures and cleanup on October 19. Every
 idle-60-Hz panel CPU pair fails the IPC +10% threshold. Files/ISB excess is
 27.30–27.67%, 30.44–30.78%, and 28.83–29.11% in pairs 1–3. These are conservative
