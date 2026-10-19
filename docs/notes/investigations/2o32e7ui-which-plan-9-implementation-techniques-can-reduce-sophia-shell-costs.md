@@ -34,12 +34,36 @@ under `candidate-07-service-ledger-control/remove-batch-*.log`. Both captured
 arms have 1,000 unique joined presentations and no capture error. The temporary
 batched source worktree has been removed; published commits and captures remain.
 
-Next, identify the cause and necessary side effects of the approximately three
-unbatched flushes per frame that write no bytes. An empty byte count does not
-prove an unnecessary service: authentication, ready-read retries, image-channel
-work and revocation still matter. Do not infer a safe skip from this ledger,
-cache liveness, suppress Ready retries, or change ACK/deadline policy. t331
-remains open; the full cost and latency qualification has not been rerun.
+The next isolated candidate replaces the worker's byte-at-a-time premultiplied
+BGRA scan with aligned pixel comparisons accumulated in blocks of sixteen.
+The comparator candidate is `613fcb288`; the matching production change is in
+this checkpoint. Partial-pixel edges retain the original predicate, and each
+unit still checks at most 64 KiB. Failure remains sticky, and progress advances
+only after the whole unit succeeds. Worker deadlines and cancellation checks,
+9P control/events, the descriptor side channel, and authority checks are unchanged.
+
+Differential controls compare every step against the frozen scalar predicate,
+including arbitrary budgets, invalid RGB components, cap boundaries and 512
+seeded random buffers. Existing resource, worker, shell/lock image transport
+and cancellation controls pass, as does strict runtime Clippy. An optimized
+warm-mapping experiment over 4 MiB reports a 51.2–52.0% median scan-time
+reduction across two invocations and opaque/mixed-alpha patterns. The quieter
+repeat measures approximately 1.338 ms scalar versus 0.652 ms block scan.
+Generated x86-64 code remains scalar: one alpha load per pixel and accumulated
+RGB comparisons. This is not a native CPU or latency claim. Evidence, source
+hashes, timing limits and codegen are under
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/candidate-08-isb-scan/`,
+particularly `scan-analysis.json`, `controls.log`, `comparator-controls.log`,
+`benchmark-repeat.log` and `scan-disassembly.txt`.
+
+Next is an attended native CPU-only files/IPC screening pair with the scan
+candidate, followed by a separately measured client-drive change if warranted.
+The earlier native cost figures above precede this change and still include
+publication batching. A new candidate/IPC pair measures the remaining gap;
+it cannot alone isolate the scan's native contribution. Readiness handoff and
+server image-probe gating remain deferred experiments. Do not cache liveness,
+suppress Ready retries, or change ACK/deadline policy. t331 remains open;
+full cost and latency qualification has not been rerun.
 
 ## October 18 service-ledger results
 
