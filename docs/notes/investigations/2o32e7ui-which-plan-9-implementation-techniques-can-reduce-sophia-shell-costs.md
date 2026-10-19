@@ -71,6 +71,19 @@ review and this single diagnostic pair support retiring the added batching API
 and its boundary-close classification change. They do not identify which empty
 flushes are safe to omit or establish a CPU duration for retry checks.
 
+A subsequent source review explains why byte-empty flushes are plausible but
+does not identify their exact native causes. `publication_pending` means a
+journal append or image publication occurred since the previous service; it
+does not mean a read is parked or socket output exists. A peer's next read may
+still be unparsed in its socket, and flush deliberately does not read requests.
+However, flush also drains the shared wake pipe, invalidates the readiness
+observation, checks authority before and after service, retries waiting reads,
+closes ended connections, expires held requests and services the image channel.
+Skipping it solely because no bytes were written could leave a wake pending or
+delay revocation and deadlines. Any further experiment must first distinguish
+queued replies, parked reads and unparsed input, while preserving these effects.
+This is a source-based hypothesis, not a causal attribution from the counters.
+
 ## October 18 optimization and pilot preparation — superseded
 
 October 18 implementation checkpoint: bounded publication batching is signed
