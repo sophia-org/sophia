@@ -43,17 +43,24 @@ strict Clippy passes for engine, backend, runtime and Session. The backend's
 native request-construction allocation claim remains static; the engine
 construction/reduction control is measured.
 
-The next step is separate four-arm panel screening for batching alone and then
-batching plus inline observations. Both CPU-only and Rust-allocation builds are
-staged, and all eight preparation/configuration checks pass. Exact hashes,
-plans and launchers are under `candidate-04-batch` and `candidate-05-output`.
-The attended tty4 launcher is `~/.local/state/t331/run-optimization-pilots.sh`;
-it uses new short `batch-*` and `out-*` destinations. These plans retain the
-earlier screening limitation: no environment readback and no qualification
-verdict. The batching source is frozen at
-`~/dev/sophia-t331-batch-pilot` without a separate build directory. Keep that
-worktree until its attended capture finishes, then remove it. The unchanged
-full cost and latency matrix remains required; t331 remains open.
+Both separate four-arm panel screenings completed. All eight captures have
+1,000 unique joined presentations, no capture error, and the expected plan,
+source and instrumentation identities. Batching alone shows no clear panel
+benefit: files CPU/MiB remains IPC +37.70–37.96%, allocations/frame +21.27–21.73%.
+Adding inline observations lowers files allocations from 1,169–1,171 to
+1,091–1,093 per frame and IPC from 962–964 to 915–916. The remaining allocation
+gap is +19.10–19.45%; CPU remains +37.31–37.72%. These are accounting bounds,
+not statistical confidence intervals. One pair cannot establish causality.
+
+Exact hashes, plans and analysis are under `candidate-04-batch` and
+`candidate-05-output`; the combined report is
+`candidate-05-output/paired-screening-analysis.json`. Captures use short
+`~/.local/state/t331/{batch,out}-*` destinations. Their source-only batching
+worktree was removed after capture validation. These are screening results
+without environment readback, not qualification. Do not advance to the full
+matrix while the panel remains red. Next, use the existing service ledger to
+check whether this workload actually coalesces publications; do not infer a
+CPU improvement from the allocation reduction. t331 remains open.
 
 ## October 18 preceding diagnostic checkpoint
 
