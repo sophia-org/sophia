@@ -932,3 +932,44 @@ Next analysis should identify operation/response dependencies behind the
 11 event/ACK exchanges and four submissions per frame. Counts alone do not
 identify event types or establish redundancy. Preserve authority, custody,
 ACK and deadline semantics while deciding whether any dependency can change.
+
+
+## Candidate 34: distinguish record obligations from read boundaries
+
+Source audit at comparator `3a0226b66`, SDK `e319d10`, retained in
+`candidate-34-exchange-dependencies/AUDIT.md` with source hashes. No build,
+capture or implementation change. Successful steady-state panel accounting:
+
+| Submission | Custody | Domain records |
+| --- | --- | --- |
+| ImageBegin | Submitted | ImageAdmitted, ResourceStatus(Accepted), SourceReleased |
+| FrameDemand | Submitted | FramePermit |
+| Candidate group | Submitted | Prepared, Presented |
+| Previous ResourceRetire | Submitted | ResourceReleased |
+
+Four custody plus seven domain records explain eleven journal records in the
+source path. Candidate 33 measures eleven ready reads and eleven ACK writes;
+it does not label event kinds, so equal totals are not an event-by-event join.
+Eleven records do **not** imply eleven mandatory round trips. The SDK already
+keeps one maximum-size Tread outstanding, and the journal gathers all currently
+available records. Cumulative ACK and ordered ACK/record/submit pipelining
+already exist.
+
+Keep the real dependencies: admission before FD send, accepted status journaled
+before SourceReleased, permit before candidate, native retirement before
+Presented, last-consumer retirement before ResourceReleased, and a covering ACK
+before reusable transaction storage is recycled. Status/release ordering does
+not require a client ACK between them; transaction reuse does not require
+waiting for the ACK reply. The peer additionally waits for source settlement
+before demand and for previous-resource release before its next iteration;
+reordering those changes workload overlap/residence and needs separate review.
+
+The remaining question is availability at read completion: did the next record
+require external/domain work, or was it eligible for publication in the same
+owner pass? The input/publication-flush split already exists. Do not reintroduce
+retired batching or delay reads merely to coalesce them. Next discriminator:
+existing comparator-journal-trace in a bounded supplied-owner test, joining
+record kinds/sequences to delivered read spans and covering ACKs. That trace
+can show append/read ordering, but cannot by itself establish earliest domain
+eligibility or native scheduling. Keep those limits explicit. No production
+candidate follows from aggregate counts alone.
