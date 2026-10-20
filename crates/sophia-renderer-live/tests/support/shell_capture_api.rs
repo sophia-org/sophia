@@ -22,8 +22,11 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        Self::with_graveyard(CaptureGraveyard::new())
+    }
+    fn with_graveyard(graveyard: Arc<CaptureGraveyard<native::Payload>>) -> Self {
         let epoch = LiveRendererSnapshotEpoch::new(1, 2, 3);
-        let (inbox, executor) = channel(epoch.clone(), CaptureGraveyard::new()).unwrap();
+        let (inbox, executor) = channel(epoch.clone(), graveyard).unwrap();
         Self {
             inbox: LiveShellCaptureInbox(inbox),
             executor,
@@ -210,4 +213,50 @@ fn uncertainty_never_returns_source_or_reservation() {
 fn inbox_crosses_owners() {
     fn send<T: Send>() {}
     send::<LiveShellCaptureInbox>();
+}
+
+#[test]
+fn replacement_mailbox_cannot_reset_uncertain_owner_capacity() {
+    let custody = LiveShellCaptureCustody::default();
+    let mut first = Fixture::with_graveyard(custody.0.clone());
+    let (job, _) = first.submit();
+    // Supplied native backend retains this request, as native escrow does in
+    // production; no GPU or fake-success receipt enters the public API.
+    let held_source = first.begin(job);
+    first.executor.uncertain(job.0).unwrap();
+    first.executor.close();
+    let batch = first.inbox.take_completed(first.now).unwrap();
+    assert!(matches!(
+        batch.receipts[0].outcome(),
+        LiveShellCaptureOutcome::Uncertain
+    ));
+    drop(batch);
+    let budget = first.budget.clone();
+    drop(first);
+    let epoch = LiveRendererSnapshotEpoch::new(1, 3, 3);
+    let (mut next, _executor) = custody.channel(epoch.clone(), budget.clone()).unwrap();
+    let (fd, _) = UnixStream::pair().unwrap();
+    let request = LiveShellCaptureRequest {
+        source: LiveShellCaptureSource {
+            fd: fd.into(),
+            width: 4,
+            height: 4,
+            stride: 16,
+            modifier: 0,
+            offset: 0,
+        },
+        image_id: crate::LiveRendererImageId::from_raw(2),
+        reservation: budget.reserve_capture(64).unwrap(),
+        budget: budget.clone(),
+        epoch,
+    };
+    let source_fd = request.source.fd.as_raw_fd();
+    let (_, returned) = next
+        .submit(request, Instant::now() + Duration::from_secs(2))
+        .unwrap_err();
+    assert_eq!(returned.source.fd.as_raw_fd(), source_fd);
+    assert_eq!(budget.usage(), (2, 128));
+    drop(returned);
+    assert_eq!(budget.usage(), (1, 64));
+    drop(held_source); // Test-only supplied backend ends its source use.
 }

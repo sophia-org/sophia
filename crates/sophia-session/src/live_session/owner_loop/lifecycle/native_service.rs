@@ -1,5 +1,10 @@
 {
 #[cfg(feature = "experimental-shell-capture")]
+if let Some(native) = native_scanout.as_mut() {
+    // Capture withdrawal/close progresses even when no component frame runs.
+    let _ = native.service_shell_capture_lifecycle();
+}
+#[cfg(feature = "experimental-shell-capture")]
 if let (Some(components), Some(native)) = (shell_components.as_mut(), native_scanout.as_mut()) {
     // Maintenance runs even without a new frame or during topology changes.
     // Busy/error keeps the eviction obligation and both budgets. The component

@@ -185,10 +185,13 @@ this GPU-producing shell experiment.
 
 The native exact-copy adapter, private mailbox, resource-lease binding, native
 snapshot lowering, completion-retention hooks and retirement service hooks are
-implemented behind `experimental-shell-capture`. Next is installation on the
-actual native context owner, including the existing renderer worker's command,
-completion, fence-progress and teardown protocol. The capture inbox installer is
-dormant: no Session path constructs or services a live capture executor yet.
+implemented behind `experimental-shell-capture`. The existing renderer worker
+now has bounded capture installation, command/request wakes, fence follow-ups
+and close-before-context-drop. The backend supplies its shared snapshot budget
+and a capture epoch tied to an explicit output, device generation and store.
+Next is connecting that endpoint to Session's retained per-connection owner and
+driving the complete settlement/journal path. The Session capture inbox installer
+is still dormant; no admitted source reaches the executor yet.
 Real-device controls must follow before GPU admission. Tests use supplied
 storage/backends and real mailbox pre-use rollback, not an EGL device. Production
 GPU capability remains disabled; no native experiment or performance result
@@ -642,10 +645,51 @@ accounting to release a sealed offer. These are composition controls, not a
 real GPU Completed-receipt integration verdict. Evidence is retained under
 `t339-owned-capture-20261020/owner-retirement-01`.
 
-Muse reviewed the diff read-only. The missing-native-owner acknowledgment was
-removed following that review. No executor is installed and policy still
-advertises zero capture jobs; native worker installation, close-before-context
-drop, graveyard retention and actual source-completion controls remain open.
+Muse reviewed that slice read-only. The missing-native-owner acknowledgment was
+removed following that review. At that point no executor was installed and
+policy advertised zero capture jobs; native worker installation,
+close-before-context-drop, graveyard retention and actual source-completion
+controls remained open. The following slice addresses worker installation.
+
+#### Existing renderer-worker installation
+
+The subsequent October 20 slice supplies an experimental backend endpoint for
+one explicit output on an existing renderer worker. It does not create a thread,
+context or device. Inline exporters return Unsupported. The worker constructs
+the non-Send executor on its own thread and closes it before context replacement
+or drop. Capture service failures close capture work while keeping the renderer
+available for its other commands.
+
+The endpoint uses the backend's existing snapshot-budget Arc, with a separate
+capture epoch so closing capture does not invalidate preview snapshots. The
+driver rejects a foreign budget or epoch before native use. Persistent custody
+survives mailbox replacement; uncertain jobs cannot regain capacity by opening
+a fresh mailbox. Neither context teardown nor a close-command acknowledgment
+proves that GPU reads ended.
+
+With the feature enabled, the existing command channel uses SignalSender and a
+WakeSlot. An active executor waits on command and request readiness together.
+The wake is cleared before queue inspection. Fence-only work requests a 1 ms
+follow-up; spending the turn budget requests an immediate next turn. Idle
+mailboxes block without periodic polling. Service remains bounded to four
+capture operations per turn. Feature-off command and wait behavior stays as it
+was.
+
+Generation, output and store changes invalidate capture epochs and retain close
+intent until the command can be sent. Queue pressure retries on existing native
+service turns, independently of component and frame gates; pending installation
+or close caps the owner wait at 10 ms. Close commands are deduplicated while an
+installation reply is outstanding. Endpoint publication rechecks the enabled
+output, store, generation and epoch. Source receipts still belong to Session's
+settlement owner; backend close does not publish SourceReleased.
+
+Device-free tests cover pre-use source return, budget/owner identity, quarantine
+retention across replacement, request and command wakes, fence-only progress,
+capture-local error isolation and generation/output/store withdrawal. Evidence
+and mutation controls are retained under
+`t339-owned-capture-20261020/worker-installation-01`. These controls do not prove
+real GPU completion, end-to-end Session installation or performance. Production
+admission remains sealed-only with zero capture jobs.
 
 #### Remaining Session owner wiring
 

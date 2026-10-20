@@ -135,6 +135,38 @@ pub struct LiveShellCaptureInbox(native::Inbox);
 /// ```
 pub struct LiveShellCaptureExecutor(native::NativeDriver);
 
+/// Persistent renderer-owner custody across mailbox generations. Closing an
+/// executor does not reset this bound or discard uncertain source ownership.
+/// Keep this owner through context migration/teardown; teardown alone is not
+/// proof that GPU reads ended. There is deliberately no reset/clear operation.
+#[derive(Clone)]
+pub struct LiveShellCaptureCustody(Arc<CaptureGraveyard<native::Payload>>);
+
+impl Default for LiveShellCaptureCustody {
+    fn default() -> Self {
+        Self(CaptureGraveyard::new())
+    }
+}
+
+impl LiveShellCaptureCustody {
+    pub fn same_owner(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+    /// Construct on the context owner, with its shared persistent budget.
+    /// Requests from another budget are refused before any native use.
+    pub fn channel(
+        &self,
+        epoch: Arc<LiveRendererSnapshotEpoch>,
+        budget: Arc<crate::LiveRendererSnapshotBudget>,
+    ) -> io::Result<(LiveShellCaptureInbox, LiveShellCaptureExecutor)> {
+        let (inbox, driver) = native::native_owned_channel(epoch, self.0.clone(), Some(budget))?;
+        Ok((
+            LiveShellCaptureInbox(inbox),
+            LiveShellCaptureExecutor(driver),
+        ))
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LiveShellCaptureProgress {
     pub operations: usize,
@@ -200,6 +232,13 @@ impl LiveShellCaptureInbox {
 }
 
 impl LiveShellCaptureExecutor {
+    /// Close before dropping/replacing the context. Queued work rolls back;
+    /// submitted work becomes uncertain and retains its native escrow. The
+    /// persistent custody owner must outlive this executor and its replacement.
+    pub fn close(&mut self) {
+        self.0.close();
+    }
+
     pub fn service<T: AsFd>(
         &mut self,
         context: &mut NativeGbmRenderedScanoutContext<T>,

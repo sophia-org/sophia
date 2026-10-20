@@ -28,6 +28,25 @@ pub(crate) type CaptureReservation =
 mod head_imports;
 mod lifecycle;
 mod maintenance;
+#[cfg(feature = "experimental-shell-capture")]
+mod shell_capture;
+
+#[cfg(feature = "experimental-shell-capture")]
+type CommandSender = sophia_wake::SignalSender<WorkerCommand>;
+#[cfg(not(feature = "experimental-shell-capture"))]
+type CommandSender = SyncSender<WorkerCommand>;
+
+fn wrap_commands(sender: SyncSender<WorkerCommand>, control: &WorkerControl) -> CommandSender {
+    #[cfg(feature = "experimental-shell-capture")]
+    {
+        sophia_wake::SignalSender::new(sender, control.command_wake.clone())
+    }
+    #[cfg(not(feature = "experimental-shell-capture"))]
+    {
+        let _ = control;
+        sender
+    }
+}
 mod shutdown;
 use lifecycle::{DeviceIdentity, OutputClaim, WorkerControl, WorkerRegistry, WorkerThread};
 
@@ -119,7 +138,7 @@ pub struct NativeGbmRendererWorkerScanoutLease {
     output: LiveRendererWorkerOutputKey,
     lease_id: LiveRendererWorkerLeaseId,
     slot_token: LiveRendererFrameSlotToken,
-    command_sender: SyncSender<WorkerCommand>,
+    command_sender: CommandSender,
     release_enqueue_failures: Arc<AtomicUsize>,
 }
 
@@ -182,10 +201,13 @@ static NEXT_IMAGE_STORE: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
 /// reference goes.
 pub struct NativeGbmRendererWorkerCore {
     image_store: u64,
-    command_sender: SyncSender<WorkerCommand>,
+    command_sender: CommandSender,
     _thread: std::sync::Mutex<WorkerThread>,
     control: Arc<WorkerControl>,
     inventory_replacement: std::sync::Mutex<Option<Receiver<io::Result<u64>>>>,
+    #[cfg(feature = "experimental-shell-capture")]
+    capture_install:
+        std::sync::Mutex<Option<Receiver<io::Result<sophia_renderer_live::LiveShellCaptureInbox>>>>,
     release_enqueue_failures: Arc<AtomicUsize>,
 }
 
@@ -221,6 +243,7 @@ impl NativeGbmRendererWorkerCore {
         let control = Arc::new(WorkerControl::default());
         let service_control = Arc::clone(&control);
         let (command_sender, command_receiver) = sync_channel(WORKER_COMMAND_CAPACITY);
+        let command_sender = wrap_commands(command_sender, &control);
         let thread = reservation.start(|| {
             thread::Builder::new()
                 .name("sophia-render-gpu".to_owned())
@@ -239,6 +262,8 @@ impl NativeGbmRendererWorkerCore {
             _thread: std::sync::Mutex::new(thread),
             control,
             inventory_replacement: std::sync::Mutex::new(None),
+            #[cfg(feature = "experimental-shell-capture")]
+            capture_install: std::sync::Mutex::new(None),
             release_enqueue_failures: Arc::new(AtomicUsize::new(0)),
         }))
     }
@@ -806,6 +831,17 @@ struct InFlightRequest {
 // render, including the capture-off path.
 #[allow(clippy::large_enum_variant)]
 enum WorkerCommand {
+    #[cfg(all(test, feature = "experimental-shell-capture"))]
+    FailCaptureService,
+    #[cfg(feature = "experimental-shell-capture")]
+    EnableShellCapture {
+        epoch: Arc<sophia_renderer_live::LiveRendererSnapshotEpoch>,
+        budget: Arc<sophia_renderer_live::LiveRendererSnapshotBudget>,
+        custody: sophia_renderer_live::LiveShellCaptureCustody,
+        completion_sender: SyncSender<io::Result<sophia_renderer_live::LiveShellCaptureInbox>>,
+    },
+    #[cfg(feature = "experimental-shell-capture")]
+    CloseShellCapture,
     /// Attach an output, giving the worker the channel its results go home on
     /// and the metrics handle its own slot pool publishes to.
     Register {

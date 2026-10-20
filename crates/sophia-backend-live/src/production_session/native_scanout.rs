@@ -12,6 +12,8 @@ pub use refresh::head_refresh_interval;
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod persistent_native_scanout;
+#[cfg(all(feature = "libdrm-events", feature = "experimental-shell-capture"))]
+pub use persistent_native_scanout::LiveNativeShellCaptureEndpoint;
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use persistent_native_scanout::{

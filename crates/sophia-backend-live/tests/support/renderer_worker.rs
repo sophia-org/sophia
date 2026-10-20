@@ -49,6 +49,30 @@ use std::time::Duration;
 
 const SETTLE: Duration = Duration::from_secs(2);
 
+trait SendCommand {
+    fn send(
+        &self,
+        command: WorkerCommand,
+    ) -> Result<(), Box<std::sync::mpsc::SendError<WorkerCommand>>>;
+}
+impl SendCommand for SyncSender<WorkerCommand> {
+    fn send(
+        &self,
+        command: WorkerCommand,
+    ) -> Result<(), Box<std::sync::mpsc::SendError<WorkerCommand>>> {
+        SyncSender::send(self, command).map_err(Box::new)
+    }
+}
+#[cfg(feature = "experimental-shell-capture")]
+impl SendCommand for sophia_wake::SignalSender<WorkerCommand> {
+    fn send(
+        &self,
+        command: WorkerCommand,
+    ) -> Result<(), Box<std::sync::mpsc::SendError<WorkerCommand>>> {
+        sophia_wake::SignalSender::send(self, command).map_err(Box::new)
+    }
+}
+
 fn worker_channel() -> (SyncSender<WorkerCommand>, std::thread::JoinHandle<()>) {
     let (commands, command_receiver) = sync_channel(32);
     let thread = std::thread::spawn(move || {
@@ -63,7 +87,7 @@ fn worker_channel() -> (SyncSender<WorkerCommand>, std::thread::JoinHandle<()>) 
 }
 
 fn register(
-    commands: &SyncSender<WorkerCommand>,
+    commands: &impl SendCommand,
     output: LiveRendererWorkerOutputKey,
 ) -> Receiver<WorkerResult> {
     register_claim(
@@ -74,7 +98,7 @@ fn register(
 }
 
 fn register_claim(
-    commands: &SyncSender<WorkerCommand>,
+    commands: &impl SendCommand,
     output: LiveRendererWorkerOutputKey,
     claim: std::sync::Arc<super::OutputClaim>,
 ) -> Receiver<WorkerResult> {
@@ -90,7 +114,7 @@ fn register_claim(
     results
 }
 
-fn render(commands: &SyncSender<WorkerCommand>, output: LiveRendererWorkerOutputKey, request: u64) {
+fn render(commands: &impl SendCommand, output: LiveRendererWorkerOutputKey, request: u64) {
     commands
         .send(WorkerCommand::Render {
             capture: None,

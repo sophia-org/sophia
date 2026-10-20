@@ -1,4 +1,6 @@
 mod preview_custody;
+#[cfg(all(feature = "libdrm-events", feature = "experimental-shell-capture"))]
+mod shell_capture;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod shutdown;
 mod worker_export;

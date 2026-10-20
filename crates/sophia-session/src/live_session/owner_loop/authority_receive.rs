@@ -16,6 +16,10 @@
         session_controls.pending_len() != 0
             || explicit_pointer_grabs.pending() != 0,
     );
+    #[cfg(feature = "experimental-shell-capture")]
+    if let Some(wait) = native_scanout.as_ref().and_then(|native| native.shell_capture_maintenance_wait()) {
+        plan.cap(wait, R::NativeDeadline);
+    }
     plan.cap(
         runtime.as_ref().map_or(plan.timeout, |r| {
             r.frame_deadline_cap_wait(now, plan.timeout)

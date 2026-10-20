@@ -92,6 +92,8 @@ mod preview_recovery;
 #[cfg(feature = "experimental-shell-capture")]
 mod shell_capture;
 pub use preview_recovery::LivePreviewFrameFailure;
+#[cfg(feature = "experimental-shell-capture")]
+pub use shell_capture::LiveNativeShellCaptureEndpoint;
 mod renderer_handoff;
 pub use preview_custody::LivePreviewImageRefusal;
 mod environment_readback;

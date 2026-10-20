@@ -84,6 +84,28 @@ struct Fixture {
     now: Instant,
 }
 
+#[test]
+fn owner_budget_mismatch_rolls_back_before_native_use() {
+    let mut f = Fixture::new();
+    f.driver.required_budget = Some(LiveRendererSnapshotBudget::new(8, 4096));
+    let (id, fd) = f.submit(1);
+    f.service(4);
+    assert!(f.backend.starts.is_empty());
+    let batch = f.inbox.take_completed(f.now).unwrap();
+    assert_eq!(batch.completions[0].id, id);
+    let Outcome::RolledBack { payload, .. } = &batch.completions[0].outcome else {
+        panic!("pre-use refusal")
+    };
+    assert_eq!(payload.request.as_ref().unwrap().source.fd.as_raw_fd(), fd);
+    assert_eq!(f.budget.usage(), (1, 64));
+    drop(batch);
+    assert_eq!(f.budget.usage(), (0, 0));
+    f.driver.required_budget = Some(f.budget.clone());
+    f.submit(2);
+    assert_eq!(f.service(4).pending_fences, 1);
+    assert_eq!(f.backend.starts, [2]);
+}
+
 impl Fixture {
     fn new() -> Self {
         let epoch = LiveRendererSnapshotEpoch::new(1, 2, 3);
@@ -93,6 +115,7 @@ impl Fixture {
             driver: Driver {
                 executor,
                 pending: Default::default(),
+                required_budget: None,
             },
             backend: Fake::default(),
             epoch,

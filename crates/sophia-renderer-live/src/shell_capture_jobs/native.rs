@@ -84,6 +84,7 @@ pub(super) type NativeDriver = Driver<NativePendingShellCapture>;
 pub(super) struct Driver<P> {
     executor: CaptureExecutor<Payload, Output>,
     pending: std::collections::VecDeque<(JobId, P)>,
+    required_budget: Option<Arc<crate::LiveRendererSnapshotBudget>>,
 }
 
 struct ServiceTurn<'a, P> {
@@ -109,12 +110,21 @@ pub(super) struct Progress {
 pub(super) fn native_channel(
     epoch: Arc<LiveRendererSnapshotEpoch>,
 ) -> io::Result<(Inbox, NativeDriver)> {
-    let (inbox, executor) = channel(epoch, CaptureGraveyard::new())?;
+    native_owned_channel(epoch, CaptureGraveyard::new(), None)
+}
+
+pub(super) fn native_owned_channel(
+    epoch: Arc<LiveRendererSnapshotEpoch>,
+    graveyard: Arc<CaptureGraveyard<Payload>>,
+    required_budget: Option<Arc<crate::LiveRendererSnapshotBudget>>,
+) -> io::Result<(Inbox, NativeDriver)> {
+    let (inbox, executor) = channel(epoch, graveyard)?;
     Ok((
         inbox,
         Driver {
             executor,
             pending: std::collections::VecDeque::with_capacity(MAX_JOBS),
+            required_budget,
         },
     ))
 }
@@ -202,7 +212,12 @@ impl<P> Driver<P> {
                 Err(_) => return Err(io::Error::other("native begin binding failed")),
             };
             let request = payload.request.take().expect("unsubmitted request");
-            if !Arc::ptr_eq(&request.epoch, &epoch) {
+            if !Arc::ptr_eq(&request.epoch, &epoch)
+                || self
+                    .required_budget
+                    .as_ref()
+                    .is_some_and(|budget| !Arc::ptr_eq(budget, &request.budget))
+            {
                 payload.request = Some(request);
                 self.executor
                     .refused_before_use(id)

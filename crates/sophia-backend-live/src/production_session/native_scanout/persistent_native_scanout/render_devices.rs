@@ -242,6 +242,10 @@ impl LiveProductionNativeScanout {
         self.image_import_devices = devices;
         self.preview_images.invalidate_foreign();
         self.render_devices.generation = generation;
+        #[cfg(feature = "experimental-shell-capture")]
+        {
+            let _ = self.service_shell_capture_lifecycle();
+        }
         self.refresh_allocation_devices();
         Ok(())
     }

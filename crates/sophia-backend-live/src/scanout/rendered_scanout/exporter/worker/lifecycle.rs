@@ -151,11 +151,15 @@ impl Drop for WorkerReservation {
 #[derive(Default)]
 pub(super) struct WorkerControl {
     shutdown: AtomicBool,
+    #[cfg(feature = "experimental-shell-capture")]
+    pub(super) command_wake: sophia_wake::WakeSlot,
 }
 
 impl WorkerControl {
     pub fn shutdown(&self) {
         self.shutdown.store(true, Ordering::Release);
+        #[cfg(feature = "experimental-shell-capture")]
+        self.command_wake.notify();
     }
 
     pub fn is_shutdown(&self) -> bool {
