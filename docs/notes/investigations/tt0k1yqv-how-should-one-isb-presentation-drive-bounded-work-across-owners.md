@@ -1003,3 +1003,34 @@ delivery and teardown accounting pass, but idle retention/deadline acceptance
 is not demonstrated. Keep the feature disabled; no further CPU screening.
 No new batching mechanism is indicated. Further analysis must establish a
 specific owner/domain publication dependency before proposing source changes.
+
+
+## Candidate 36: source release waits on local publication eligibility
+
+Source-only audit at comparator `3a0226b66`, retained in
+`candidate-36-publication-eligibility/AUDIT.md` and source hashes. No runtime
+change, build or capture. Submitted is journaled at transport custody transfer,
+before domain processing; a permit/accepted status/prepared outcome is not yet
+necessarily eligible. Broad receipt deferral would change observation timing
+and backpressure coupling, so it is not an equivalent optimization.
+
+A narrower concrete dependency exists for SourceReleased. The image owner
+consumes worker completion and reconciles the store, then tries to release its
+retained settlement. The export refuses while the status reservation remains;
+only journaling ResourceStatus consumes it. Role resource service later moves
+that status through the bounded FIFO to the journal; a subsequent image-owner
+visit retries the release. That retry needs no new worker result or peer ACK.
+
+However, ordinary turn_files journals output then flushes/retries parked reads.
+Retrying release after that flush cannot coalesce an already-completed status
+Rread. Any exchange-reducing candidate needs status journal custody confirmed,
+then eligible release journaled, then read retry/flush. This is a narrow
+publication/settlement ownership question, not a second full image-owner run
+or a batching timer. No safe production candidate or savings is established.
+
+Next bounded control: pin refusal and retained ownership before status
+publication, then exactly-once release from the same completed settlement
+after journaling, without another worker result/packet/ACK. Preserve status
+ordering, FIFO, credits, generations, authority, cancellation and journal-full
+recovery. Only then consider a release-only hook, with a mutation-sensitive
+one-read test; a hook after the flush must not claim exchange reduction.
