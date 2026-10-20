@@ -42,6 +42,12 @@ with libdraw therefore needs a translator and a stated supported subset.
 
 ## Proposed GPU-native content path
 
+The [GPU-native delivery plan and source audit](../plans/h38nf8bk-qualify-gpu-native-shell-images-through-owned-capture.md)
+identify existing capture machinery, sealed-only shell integration gaps and
+a three-arm GPU-producer comparison. CPU and GPU in this diagram describe pixel
+production, not distinct required application classes. ISB remains available
+during qualification; its long-term compatibility role is a separate decision.
+
 Following the discussion of GPU-equipped clients, the surface class has two
 producer paths. GPU-native submission should be evaluated as a first-class
 path rather than requiring GPU clients to read pixels back into CPU ISBs.
