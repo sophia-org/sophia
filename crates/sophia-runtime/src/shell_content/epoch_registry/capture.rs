@@ -66,6 +66,13 @@ impl ContentEpochRegistry {
             .any(|epoch| epoch.resources.capture_retirement_pending())
     }
 
+    pub fn capture_retirement_active(&self) -> bool {
+        self.active
+            .iter()
+            .chain(&self.retired)
+            .any(|epoch| epoch.resources.capture_retirement_active())
+    }
+
     /// Reserve logical resource/journal-terminal credit for an opaque captured
     /// image. Does not enable DMA-BUF, publish ImageAdmitted or accept a source.
     /// The channel owner still owes negotiated-format/limits and offer checks.

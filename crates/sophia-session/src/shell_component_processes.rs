@@ -273,6 +273,14 @@ impl ShellComponentProcesses {
     ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
         self.connections.turn_connected()
     }
+    #[cfg(feature = "experimental-shell-capture")]
+    pub(crate) fn retire_capture_imports<E>(
+        &mut self,
+        remaining: &mut usize,
+        evict: &mut impl FnMut(&std::sync::Arc<ContentCapturedImage>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.connections.retire_capture_imports(remaining, evict)
+    }
     pub fn finish_after_backend_drop<B>(
         &mut self,
         backend: B,

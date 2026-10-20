@@ -157,6 +157,14 @@ impl ContentResourceStore {
             .any(|value| (value.retiring || self.revoked) && !value.capture_evicted)
     }
 
+    /// Retired captured storage may still have native consumers after cache
+    /// eviction. Keep owner maintenance scheduled until collection/journaling.
+    pub fn capture_retirement_active(&self) -> bool {
+        self.accepted.values().any(|value| {
+            (value.retiring || self.revoked) && value.pixels.captured_image().is_some()
+        })
+    }
+
     /// Trusted resource-owner reservation, not DMA-BUF admission. The image
     /// owner must first validate its live allocation, metadata and journal
     /// capacity (ContentEpochRegistry::reserve_capture_image does the first two).

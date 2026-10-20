@@ -710,6 +710,37 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                     .unwrap();
                 assert_eq!(lease.cpu_bytes().unwrap(), &[0; 8]);
                 stored = true;
+                #[cfg(feature = "experimental-shell-capture")]
+                {
+                    // Capture accounting cannot release a sealed-source
+                    // offer, nor invent a DMA offer by changing its kind.
+                    let mut metadata = settlement.admission.metadata;
+                    assert!(matches!(
+                        transport.release_capture_image_source(
+                            settlement.admission.grant,
+                            metadata,
+                            ShellSourceDisposition::CaptureComplete,
+                        ),
+                        Err(ShellTransportError::WrongContentRecord)
+                    ));
+                    metadata.source_kind = SHELL_IMAGE_SOURCE_DMA_BUF;
+                    assert!(matches!(
+                        transport.release_capture_image_source(
+                            settlement.admission.grant,
+                            metadata,
+                            ShellSourceDisposition::Retained,
+                        ),
+                        Err(ShellTransportError::WrongContentRecord)
+                    ));
+                    assert!(matches!(
+                        transport.release_capture_image_source(
+                            settlement.admission.grant,
+                            metadata,
+                            ShellSourceDisposition::CaptureComplete,
+                        ),
+                        Err(ShellTransportError::WrongContentGrant)
+                    ));
+                }
                 assert!(
                     matches!(
                         transport.release_isb_image_source(&settlement),

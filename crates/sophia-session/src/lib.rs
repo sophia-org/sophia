@@ -1,5 +1,5 @@
 mod output;
-// Admission and owner-loop scheduling remain disabled pending qualification.
+// Native executor installation and GPU admission remain disabled pending qualification.
 #[cfg(feature = "experimental-shell-capture")]
 #[allow(dead_code)]
 mod shell_capture_owner;
@@ -248,3 +248,7 @@ pub mod shell_component_session {
         ShellComponentService, ShellComponentSession,
     };
 }
+
+#[cfg(all(test, feature = "experimental-shell-capture"))]
+#[path = "../../sophia-runtime/tests/support/captured_resource_fixture.rs"]
+mod captured_resource_fixture;

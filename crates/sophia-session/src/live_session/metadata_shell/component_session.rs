@@ -77,6 +77,20 @@ pub struct ShellComponentSession {
     entered_backoff: Option<usize>,
 }
 impl ShellComponentSession {
+    #[cfg(feature = "experimental-shell-capture")]
+    pub(crate) fn retire_captured_imports(
+        &mut self,
+        native: &mut sophia_backend_live::LiveProductionNativeScanout,
+    ) -> std::result::Result<(), sophia_backend_live::LiveRendererScanoutBufferExportDetail> {
+        // At most four resource evictions per turn. No acknowledgment can be
+        // manufactured without the native owner that visits the actual stores.
+        self.processes.retire_capture_imports(&mut 4, &mut |image| {
+            native.evict_shell_capture_imports(sophia_renderer_live::LiveRendererImageId::from_raw(
+                image.image_id().raw(),
+            ))
+        })
+    }
+
     pub fn authenticate(
         &mut self,
         launches: &crate::launch_authentication::LaunchCoordinator,

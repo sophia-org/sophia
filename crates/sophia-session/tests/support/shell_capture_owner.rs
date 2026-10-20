@@ -1,5 +1,7 @@
 //! Real mailbox + Session correlation, with shutdown before GPU submission.
 use super::*;
+#[path = "shell_capture_settlement.rs"]
+mod settlement;
 use sophia_protocol::*;
 use sophia_renderer_live::{
     LiveRendererSnapshotBudget, LiveRendererSnapshotEpoch, LiveShellCaptureExecutor,
@@ -307,8 +309,7 @@ fn unmatched_receipt_is_retained_and_closes_submission() {
 
 // Each test can deliberately supply independent exact owners with reused IDs;
 // receipt settlement still has to route to the reservation's actual owner.
-#[path = "../../../sophia-runtime/tests/support/captured_resource_fixture.rs"]
-mod captured_fixture;
+use crate::captured_resource_fixture as captured_fixture;
 use captured_fixture::allocation_registry;
 
 #[path = "shell_capture_acceptance.rs"]

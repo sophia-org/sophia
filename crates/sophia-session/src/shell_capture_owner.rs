@@ -25,6 +25,9 @@ use std::{
     time::Instant,
 };
 
+mod settlement;
+pub(crate) use settlement::Publication;
+
 const MAX_JOBS: usize = 4;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -87,6 +90,7 @@ pub(crate) struct Settlement {
     pub receipt: LiveShellCaptureCompletion,
     pub withdrawn: bool,
     pub reservation: Option<ContentCaptureReservation>,
+    release: Option<sophia_protocol::shell_files::ShellSourceDisposition>,
 }
 
 impl Settlement {
@@ -177,22 +181,6 @@ fn accept_proven_snapshot(
     registry.accept_capture_image(reservation, &mut Some(snapshot.clone()), now)
 }
 
-/// Existing renderer-owner operation; no new context/thread or GPU wait. The
-/// owner-loop installation must service this intent even without a future frame.
-pub(crate) fn retire_captured_imports<T: AsFd>(
-    registry: &mut ContentEpochRegistry,
-    context: &mut sophia_renderer_live::NativeGbmRenderedScanoutContext<T>,
-    budget: usize,
-) -> Result<(), sophia_renderer_live::LiveRendererScanoutBufferExportDetail> {
-    registry.retire_capture_imports(&mut { budget }, &mut |image| {
-        context
-            .evict_renderer_image_imports(sophia_renderer_live::LiveRendererImageId::from_raw(
-                image.image_id().raw(),
-            ))
-            .map(|_| ())
-    })
-}
-
 // Private supplied-disposition seam; production obtains `outcome` only from
 // the opaque native receipt above. This never fabricates a completion receipt.
 fn reconcile_proven_reads(
@@ -232,6 +220,7 @@ pub(crate) struct Settlements {
 pub(crate) struct Owner {
     inbox: LiveShellCaptureInbox,
     pending: [Option<Pending>; MAX_JOBS],
+    settling: [Option<Settlement>; MAX_JOBS],
     closed: bool,
     // Internal identity failure must not silently discard a custody receipt.
     orphaned: Vec<LiveShellCaptureCompletion>,
@@ -242,6 +231,7 @@ impl Owner {
         Self {
             inbox,
             pending: std::array::from_fn(|_| None),
+            settling: std::array::from_fn(|_| None),
             closed: false,
             orphaned: Vec::new(),
         }
@@ -273,19 +263,31 @@ impl Owner {
         }
         // Both offer and resource identity are connection-scoped. A replacement
         // connection may use the same numbers while the old copy still settles.
-        if self.pending.iter().flatten().any(|p| {
-            p.binding.slot == binding.slot
-                && p.binding.grant == binding.grant
-                && (p.binding.metadata.offer_id == binding.metadata.offer_id
-                    || p.binding.resource() == binding.resource())
-        }) {
+        if self
+            .pending
+            .iter()
+            .flatten()
+            .map(|p| p.binding)
+            .chain(self.settling.iter().flatten().map(|p| p.binding))
+            .any(|held| {
+                held.slot == binding.slot
+                    && held.grant == binding.grant
+                    && (held.metadata.offer_id == binding.metadata.offer_id
+                        || held.resource() == binding.resource())
+            })
+        {
             return Err(Rejected {
                 reason: SubmitFailure::Duplicate,
                 request,
                 reservation,
             });
         }
-        let Some(slot) = self.pending.iter().position(Option::is_none) else {
+        let Some(slot) = self
+            .pending
+            .iter()
+            .position(Option::is_none)
+            .filter(|_| self.pending() < MAX_JOBS)
+        else {
             return Err(Rejected {
                 reason: SubmitFailure::Capacity,
                 request,
@@ -314,6 +316,11 @@ impl Owner {
     }
 
     pub(crate) fn withdraw(&mut self, slot: usize, grant: ContentGrant) {
+        for settlement in self.settling.iter_mut().flatten() {
+            if settlement.binding.slot == slot && settlement.binding.grant == grant {
+                settlement.withdrawn = true;
+            }
+        }
         for p in self.pending.iter_mut().flatten() {
             if p.binding.slot == slot && p.binding.grant == grant {
                 p.withdrawn = true;
@@ -330,6 +337,18 @@ impl Owner {
         now: u64,
     ) -> Result<(), ContentStoreError> {
         let mut error = None;
+        self.observe_resource_failures(registry, now, |_, e| {
+            error.get_or_insert(e);
+        });
+        error.map_or(Ok(()), Err)
+    }
+
+    fn observe_resource_failures(
+        &mut self,
+        registry: &mut ContentEpochRegistry,
+        now: u64,
+        mut report: impl FnMut(Binding, ContentStoreError),
+    ) {
         for p in self.pending.iter_mut().flatten() {
             match registry.capture_stop_reason(&p.reservation, now) {
                 Ok(None) => (),
@@ -342,11 +361,10 @@ impl Owner {
                         p.withdrawn = true;
                         self.inbox.cancel(p.job);
                     }
-                    error.get_or_insert(e);
+                    report(p.binding, e);
                 }
             }
         }
-        error.map_or(Ok(()), Err)
     }
 
     pub(crate) fn cancel_resource(
@@ -383,6 +401,7 @@ impl Owner {
                     receipt,
                     withdrawn: p.withdrawn,
                     reservation: Some(p.reservation),
+                    release: None,
                 });
             } else {
                 self.orphaned.push(receipt);

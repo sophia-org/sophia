@@ -183,14 +183,16 @@ this GPU-producing shell experiment.
 
 ## Current next deliverable
 
-The native exact-copy adapter, private mailbox, resource-lease binding and native
-snapshot lowering are implemented behind `experimental-shell-capture`. Next is
-Session's live owner-turn integration: retain completion receipts through the
-source-release journal transition, reconcile rejected completed copies, and
-service retirement eviction even without a new frame. Real-device controls must
-follow before GPU admission. The driver is not called from Session yet; tests use
-supplied statuses/backends, not an EGL device. Production GPU capability remains
-disabled; no native experiment or performance result exists for this path.
+The native exact-copy adapter, private mailbox, resource-lease binding, native
+snapshot lowering, completion-retention hooks and retirement service hooks are
+implemented behind `experimental-shell-capture`. Next is installation on the
+actual native context owner, including the existing renderer worker's command,
+completion, fence-progress and teardown protocol. The capture inbox installer is
+dormant: no Session path constructs or services a live capture executor yet.
+Real-device controls must follow before GPU admission. Tests use supplied
+storage/backends and real mailbox pre-use rollback, not an EGL device. Production
+GPU capability remains disabled; no native experiment or performance result
+exists for this path.
 C42 remains independent: at this audit its stages and launcher receipts were
 absent, with no capture process running.
 
@@ -592,6 +594,58 @@ their setup is refused because namespace recipes require normal Session with
 Factotum launch authentication. The same eight setup failures were reproduced
 at committed baseline `01dc5e19f` with the same features; current sources were
 restored byte-for-byte. This slice does not relax that authentication requirement.
+
+#### Bounded owner retention and retirement hooks
+
+The October 20 owner-retirement slice retains each opaque completion receipt and
+source in the same four-slot owner until resource accounting succeeds and the
+exact connection's `SourceReleased` is journaled. Journal saturation retries;
+other publication errors also retain custody. Only proof of the exact journal's
+disconnection permits disposal without that append, after resource settlement.
+The runtime export retains its independent status hold, so ResourceStatus must
+enter the journal before SourceReleased. A completed copy that cannot be
+accepted settles the original reservation without publishing the copied image;
+uncertain completion never releases its source.
+
+Pending jobs register their completion fd through the existing component wait
+subscription. Completion retention and retirement cap the component maintenance
+wait at 10 ms. This is a retry deadline, not a liveness or authorization cache.
+Completion servicing still follows the existing component/runtime service gate;
+there is no new owner loop. Installing the executor must explicitly preserve
+progress and teardown when that gate stops servicing components.
+
+Retirement runs on existing native service turns without requiring a future
+frame or an open topology frame-service gate. A resource eviction visits every
+current render store, including disabled heads, deduplicating shared workers.
+Any busy/error store leaves the obligation pending. The Session operation
+requires the native owner by reference: absence cannot acknowledge eviction.
+The four-resource per-turn budget bounds traversal. An eviction acknowledgment
+does not authorize ResourceReleased: exact snapshot/charge exclusivity remains
+required, with maintenance continuing while native consumers hold storage.
+
+Source review corrected the proposed integration seam: the context does not
+expose `snapshot_budget()` / `snapshot_epoch()` accessors. Backend preview state
+owns its persistent budget and store-generation epochs. A native context can
+also reside on the existing renderer worker, whose loop waits for commands.
+Session may not borrow that context or move its non-Send executor across owners.
+The next slice must use the backend's budget/generation ownership and extend the
+existing worker protocol; a Session-created budget or second EGL context is not
+an acceptable shortcut.
+
+Controls cover real Returned receipts under repeated journal pressure, bounded
+slots across both lifecycle phases, publication-error retention, clock-refusal
+retry, completion-fd subscription, shutdown refusal with pending custody, and
+maintenance through the last sampled-storage owner. Pure backend controls pin
+all-store traversal, shared-worker deduplication and error retry. The real image
+journal fixture pins status-before-source ordering and rejects using capture
+accounting to release a sealed offer. These are composition controls, not a
+real GPU Completed-receipt integration verdict. Evidence is retained under
+`t339-owned-capture-20261020/owner-retirement-01`.
+
+Muse reviewed the diff read-only. The missing-native-owner acknowledgment was
+removed following that review. No executor is installed and policy still
+advertises zero capture jobs; native worker installation, close-before-context
+drop, graveyard retention and actual source-completion controls remain open.
 
 #### Remaining Session owner wiring
 

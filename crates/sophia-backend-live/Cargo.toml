@@ -32,6 +32,7 @@ sophia-xshmfence = { path = "../sophia-xshmfence" }
 
 [features]
 default = []
+experimental-shell-capture = ["gbm-probe", "sophia-renderer-live/experimental-shell-capture"]
 # Deterministic cross-crate owner fixtures; never enabled by native-session.
 test-support = ["gbm-probe", "libdrm-events"]
 gbm-probe = ["sophia-renderer-live/gbm-probe"]

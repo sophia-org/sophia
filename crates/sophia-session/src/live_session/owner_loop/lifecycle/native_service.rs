@@ -1,3 +1,12 @@
+{
+#[cfg(feature = "experimental-shell-capture")]
+if let (Some(components), Some(native)) = (shell_components.as_mut(), native_scanout.as_mut()) {
+    // Maintenance runs even without a new frame or during topology changes.
+    // Busy/error keeps the eviction obligation and both budgets. The component
+    // owner's maintenance deadline schedules a bounded retry, not permission.
+    let _ = components.retire_captured_imports(native);
+}
+
 if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout.as_mut())
             && native_scanout.output_topology_allows_frame_service()
         {
@@ -130,3 +139,5 @@ if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout
         // Retirement may leave the native request idle before its service
         // deadline is armed. Deliver its feedback before an authority-only
         // batch can skip the remainder of this owner turn.
+
+}

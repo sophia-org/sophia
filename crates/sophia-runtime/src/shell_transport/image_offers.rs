@@ -21,6 +21,34 @@ fn wire_error(error: sophia_9p::Errno) -> ShellTransportError {
 }
 
 impl ShellComponentTransport {
+    /// Trusted capture-owner publication AFTER exact-job completion and resource
+    /// settlement. This is journal accounting, not a GPU completion verifier.
+    /// Session retains the opaque native receipt/source on every refusal.
+    /// The export independently requires matching metadata and journaled status.
+    #[cfg(feature = "experimental-shell-capture")]
+    pub fn release_capture_image_source(
+        &mut self,
+        grant: sophia_protocol::ContentGrant,
+        metadata: ShellImageMetadata,
+        disposition: ShellSourceDisposition,
+    ) -> Result<u64, ShellTransportError> {
+        if grant != self.store_grant || metadata.admission_epoch != grant.content_grant_epoch {
+            return Err(ShellTransportError::WrongContentGrant);
+        }
+        if metadata.source_kind != sophia_protocol::shell_files::SHELL_IMAGE_SOURCE_DMA_BUF
+            || disposition == ShellSourceDisposition::Retained
+        {
+            return Err(ShellTransportError::WrongContentRecord);
+        }
+        let files = self.files_mut().ok_or(ShellTransportError::NotConnected)?;
+        let sequence = files
+            .export_mut()
+            .release_image_source(metadata, disposition)
+            .map_err(wire_error)?;
+        files.image_publication_pending();
+        Ok(sequence)
+    }
+
     /// False after channel closure or epoch loss. The owner must then withdraw
     /// this grant's pending jobs even if the 9P byte path remains connected.
     pub fn isb_image_channel_ready(&self) -> bool {

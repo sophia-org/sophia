@@ -119,6 +119,10 @@ fn accepted_capture_has_no_cpu_view_and_release_waits_for_eviction_and_every_sto
     store.retire_capture_imports(&mut 1, &mut evict).unwrap();
     assert_eq!(calls, 1);
     assert!(!store.capture_retirement_pending());
+    assert!(
+        store.capture_retirement_active(),
+        "keep maintenance while sampled storage is held"
+    );
     assert!(store.take_event().is_none());
     drop(imported);
     store.collect();
