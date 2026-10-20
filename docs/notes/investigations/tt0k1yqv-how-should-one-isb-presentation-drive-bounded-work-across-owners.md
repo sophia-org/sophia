@@ -561,7 +561,8 @@ candidate-28 wake counts. Those masks identify descriptors, not 9P message
 kinds; no exact count of ACK, Tread or submission wakes follows from them.
 
 The sealed panel peer prepares its source, begins an image offer, waits for
-Accepted and retained SourceReleased, submits the candidate, waits for Prepared
+Accepted and retained SourceReleased, requests FrameDemand and waits for
+FramePermit, submits the candidate, waits for Prepared
 and Presented, then retires the previous resource and waits for ResourceReleased
 (`examples/shell_timing_peer.rs:476, 621, 666`; `sealed.rs:137`). These waits
 express distinct resource/custody conditions. Removing one would require its
@@ -607,3 +608,35 @@ from a rearmed Tread or a candidate write. A future narrowly scoped diagnostic
 would need message-kind/cause attribution if existing progress counters cannot
 resolve that ambiguity. No production scheduling change, new capture, or
 savings claim follows from this source audit.
+
+
+## Retained progress counters narrow the exchange question
+
+`candidate-28-wait-sources-retry/exchange-analysis/` analyzes schema-4 progress
+rows inside the accepted wait windows, with 599 completions in each arm.
+Files records 6,591 reads and 11,383 writes (approximately 11 and 19 per
+completion), zero walks/opens/clunks, and 17,973 encoded replies. The four
+steady-state submissions are ImageBegin, FrameDemand, the candidate batch and
+previous-resource retirement. Record and submit activity each appear in 2,396
+owner passes, consistent with that sequence; these are activity masks, not
+transaction counters. The source sequence above now includes the previously
+omitted demand/permit dependency.
+
+Reusable transaction fids already remove steady-state setup. Four pipelined
+record/submit pairs would explain eight writes per completion; the remaining
+approximately eleven cannot be labeled ACKs solely from process-wide write
+counts. Node-level operation attribution is the smallest missing discriminator.
+
+Files has 2,397 publication flushes that write bytes and 1,797 that do not.
+Parked-read retries become ready 2,397 times in the wake-service scope and
+2,396 times after writing; another 3,205 post-write retries remain pending.
+Zero wake-pipe readiness does not contradict the first count: `Server::flush`
+calls `service_wake` without requiring pipe readiness. This is a retry code-path
+label, not a wake cause. Likewise, the 50,371 no-publication predicates are not
+50,371 empty owner visits. No skip is justified by those aggregate counts.
+
+Next bounded diagnostic, if needed: decoded shell-export operation counts for
+record, submit and ACK writes and event-read outcomes, scoped to owner passes.
+Retain all scheduling and authority behavior. Aggregate counts cannot prove a
+one-to-one wake/message relation or support delayed ACKs. Existing evidence
+remains diagnostic only; no fresh capture or production change was made.
