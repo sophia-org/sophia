@@ -1336,3 +1336,33 @@ The prepared user entry is
 VT bound. Both comparator and integration checkouts must stay clean at their
 pinned commits during the run. No native benefit, t331 acceptance or default
 promotion is claimed; the feature remains opt-in.
+
+### C41 outcome — no resolved benefit, no promotion (2026-10-20)
+
+The eight native runs completed in 519.35 seconds, with clean PAM/VT cleanup
+and 1000 unique presented panel generations in each run. All bytes and joins
+match. The frozen analyzer nevertheless **refused** because control run 7
+recorded one Session major page fault. The frozen analyzer and manifest remain
+untouched; a separately labeled diagnostic derivative retains every run and
+reports that failed gate explicitly.
+
+Diagnostic candidate-minus-control Session CPU is **+3.34%** in the ABBA
+block and **-1.84%** in the BAAB block; overall **+0.72%** (+8.10 µs/frame).
+Same-arm Session spreads are 63.96–71.69 µs/frame. The common peer shows the
+same direction changes across blocks, indicating substantial temporal
+variation. Neither a benefit nor a regression is resolved. This is not a
+performance-equivalence claim. Latency medians remain 16.550–16.634 ms and
+completion intervals 16,683–16,684 µs, with no consistent arm-related change.
+Muse independently recomputed the same result.
+
+No default promotion follows. The c40 local syscall substitution proof still
+holds, but this native screen does not establish CPU savings. Scope coverage,
+checks per scope and age/credit fallback frequency were not measured here;
+do not infer them from the CPU figures. Before another screen, determine
+that native mechanism coverage and quantify the observed no-change drift.
+Changing the experimental limits or repeating this panel unchanged is not
+justified by these results.
+
+The detailed record is `candidate-41-custody-dispatch-screen/RESULTS.md`;
+diagnostic data and hashes are in `diagnostic-results.json` and
+`diagnostic-capture-SHA256SUMS`. The feature remains opt-in.
