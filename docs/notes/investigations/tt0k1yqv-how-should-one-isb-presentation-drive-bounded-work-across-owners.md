@@ -1238,3 +1238,68 @@ and latency pair, remain required before enabling this authority model. Do not
 replace all WorkerAuthority::live calls with a flag load: it serves both inline
 Session work and separate role workers. No cadence, connector-identity, immutable
 content, journal or default authority change is included here.
+
+### C40 — opt-in shell-file control-turn integration (2026-10-20)
+
+C39's local amortization result warrants a real consumer experiment. The
+`experimental-custody-dispatch` feature now connects the Session authentication
+owner to `ShellFileWire::service_turn`. It remains absent from default and
+`native-session` feature sets. This touches the **SESSION / ROLE RESOURCE
+OWNER** box in the published ISB glance; the protocol, packets, image seals,
+ordering and permission checks are unchanged.
+
+The named observer is the shell file service owner, once per input turn or
+publication flush, including nonblocking continuations. An already admitted
+`RoleFileAuthentication` observes its exact wrapper/peer pidfds together. A
+private observation permits at most 64 checks and at most 1 ms from the start
+of that observation. These are experimental admission limits, not a bound on
+execution time or a measured native tuning result. Expiry or exhaustion returns
+to caller-fresh checks for the rest of the turn; it does not reject a live
+peer, renew credit, or alter protocol retries. An unregistered custody refuses.
+Owning the observation preserves its original deadline and remaining credit.
+
+An RAII guard ends the scope exactly once on success, begin/turn failure, and
+unwind. The final `export.poll`, expiry processing and image service run after
+the guard has ended and retain caller-fresh custody checks. Factory creation,
+authentication reads and attach commit remain fresh, including an attach
+completed during a turn. Connection, admission lease, role, session, audience,
+grant/epoch and ingress checks remain in place. Explicit withdrawal is still
+immediately visible in shared state. A failed aggregate poll revokes its
+registered custody; INTR installs no dispatch and falls back to fresh checks.
+
+This is deliberately narrower than one observation for the entire rendering
+pass. Other role workers have not opted in and continue their original fresh
+checks. Neither authentication cadence nor image-connector identity is changed.
+9P replies can be emitted inside the bounded request/flush scope; the final
+fresh poll is **not** a claim that every earlier reply was checked after exit.
+The accepted experimental difference remains death observation at a bounded
+dispatch boundary, not per caller.
+
+Controls exercise two sides of the composition:
+
+- The runtime uses the real shell reactor and 9P Pipeline with a supplied
+  authentication owner. Ordinary requests and parked journal reads enter the
+  scope; a local permission change refuses a parked read without new peer
+  input. Success, begin failure, first/final poll failure and unwind end the
+  scope once; the final poll is outside it.
+- Session uses a real protected process, Factotum verification and
+  `RoleFileAuthentication`. Live checks continue beyond the check budget;
+  expiry and an ended scope restore fresh exit detection; the next boundary
+  applies peer exit without wrapper reaping; launch and namespace withdrawal
+  refuse access. Existing worker authentication/revocation controls also run
+  with the feature enabled.
+- A local strace discriminator drives the actual role owner through 128
+  equivalent sequences of 16 checks plus one final fresh check. Fresh mode
+  makes **2,176** two-pidfd polls; scoped mode makes **256**, including its
+  aggregate observations and final fresh checks. This is syscall substitution
+  evidence, not CPU or latency acceptance. Disabling scope installation makes
+  this discriminator fail. Removing scope cleanup, returning true on expiry,
+  or renewing owned credit also makes the corresponding controls fail.
+
+The complete protected `ShellSessionTransport` join with this feature has not
+yet been captured: the real-owner and real-reactor tests are separate, and the
+syscall discriminator closes the otherwise inspection-only role-owner wiring
+gap. Native CPU/latency screening and a full joined workload remain required
+before promotion. No native saving, default authority change, or t331 cost-gate
+pass is claimed. Evidence and reproduction commands are retained in
+`candidate-40-custody-dispatch-integration` under the t331 evidence root.

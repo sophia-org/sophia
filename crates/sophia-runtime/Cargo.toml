@@ -7,7 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
-# Bounded authority observation experiment; no production caller opts in.
+# Opt-in shell-file control-turn observation; absent from default builds.
 experimental-custody-dispatch = []
 
 [dependencies]

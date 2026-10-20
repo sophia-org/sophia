@@ -15,6 +15,8 @@ use super::ShellTransportError;
 use crate::ContentStoreProfile;
 use crate::authenticated_files::{AuthenticatedFiles, FileAuthenticationFactory};
 
+#[cfg(feature = "experimental-custody-dispatch")]
+mod custody_dispatch;
 mod export;
 mod image;
 mod readiness;
@@ -187,24 +189,16 @@ impl ShellFileWire {
                 !flush_only && self.server.observation_is_current(&observation.wire)
             })
             .and_then(|observation| observation.listener_idle);
-        self.server
-            .export_mut()
-            .poll(Instant::now())
-            .map_err(|_| ShellTransportError::NotConnected)?;
-        self.turns = self.turns.saturating_add(1);
-        self.publication_pending = false;
-        let live = if flush_only {
-            self.server.flush()
-        } else if let Some(readiness) = readiness {
-            self.server.turn_observed(readiness.wire)
-        } else {
-            self.server.turn(Some(Duration::ZERO))
-        }
-        .map_err(io_error)?;
+        #[cfg(feature = "experimental-custody-dispatch")]
+        let live = custody_dispatch::turn(self, flush_only, readiness)?;
+        #[cfg(not(feature = "experimental-custody-dispatch"))]
+        let live = self.service_turn(flush_only, readiness)?;
         if !live || self.server.connection_count() == 0 {
             self.export_mut().revoke();
             return Err(ShellTransportError::NotConnected);
         }
+        // The experimental request/retry scope has ended. This final custody
+        // check and image service retain caller-fresh liveness.
         self.server
             .export_mut()
             .poll(Instant::now())
@@ -212,6 +206,27 @@ impl ShellFileWire {
         self.export_mut().expire();
         self.service_image_channel(Instant::now(), listener_idle);
         Ok(())
+    }
+
+    fn service_turn(
+        &mut self,
+        flush_only: bool,
+        readiness: Option<ShellReadinessObservation>,
+    ) -> Result<bool, ShellTransportError> {
+        self.server
+            .export_mut()
+            .poll(Instant::now())
+            .map_err(|_| ShellTransportError::NotConnected)?;
+        self.turns = self.turns.saturating_add(1);
+        self.publication_pending = false;
+        if flush_only {
+            self.server.flush()
+        } else if let Some(readiness) = readiness {
+            self.server.turn_observed(readiness.wire)
+        } else {
+            self.server.turn(Some(Duration::ZERO))
+        }
+        .map_err(io_error)
     }
 
     pub(super) const fn publication_pending(&self) -> bool {
@@ -352,3 +367,7 @@ fn io_error(error: std::io::Error) -> ShellTransportError {
 
 #[path = "../../tests/support/shell_file_authentication_reactor.rs"]
 mod authentication_tests;
+
+#[cfg(all(test, feature = "experimental-custody-dispatch"))]
+#[path = "../../tests/support/shell_file_custody_dispatch.rs"]
+mod custody_dispatch_tests;

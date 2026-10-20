@@ -488,3 +488,7 @@ fn all_relay_slots_share_a_wait_and_idle_observations_do_not_hide_retirement() {
 
 #[path = "support/authentication_custody_wait.rs"]
 mod authentication_custody_wait;
+
+#[cfg(feature = "experimental-custody-dispatch")]
+#[path = "support/authentication_custody_dispatch.rs"]
+mod authentication_custody_dispatch;

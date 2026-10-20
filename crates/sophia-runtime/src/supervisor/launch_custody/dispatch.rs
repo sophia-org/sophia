@@ -2,13 +2,15 @@
 use super::LaunchCustody;
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use std::{
+    borrow::Cow,
     io,
     sync::{Arc, atomic::Ordering},
     time::{Duration, Instant},
 };
 
-/// A caller must yield and observe again on Expired or Exhausted. Neither
-/// means the peer died. Unregistered means the caller used the wrong launch.
+/// Expired or Exhausted requires caller-fresh verification or a new bounded
+/// dispatch before more work. Neither means the peer died. Unregistered
+/// means the caller used the wrong launch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CustodyDispatchLimit {
     Expired,
@@ -23,13 +25,13 @@ pub enum CustodyDispatchLimit {
 /// Explicit withdrawal, or an exit applied by another observation, is visible
 /// to every check immediately through the shared monotonic custody state.
 ///
-/// No production consumer uses this experiment. Integration must choose a
-/// justified age/check budget, process every nonblocking continuation, and
-/// cover all workers. A check bounds admission of work, not its execution time.
+/// Consumers must choose an explicit age/check budget and process every
+/// nonblocking continuation. Each worker needs its own boundary. A check
+/// bounds admission of work, not its execution time.
 /// The object cannot be cloned; limits cannot be renewed without a new poll.
 #[derive(Debug)]
 pub struct CustodyDispatch<'a> {
-    custodies: &'a [LaunchCustody],
+    custodies: Cow<'a, [LaunchCustody]>,
     deadline: Instant,
     remaining: usize,
 }
@@ -99,10 +101,20 @@ impl<'a> CustodyDispatch<'a> {
             }
         }
         Ok(Self {
-            custodies,
+            custodies: Cow::Borrowed(custodies),
             deadline,
             remaining: maximum_checks,
         })
+    }
+
+    /// Retain the same observation and limits independently of its input slice.
+    /// This does not poll, renew credit, or extend the observation's lifetime.
+    pub fn into_owned(self) -> CustodyDispatch<'static> {
+        CustodyDispatch {
+            custodies: Cow::Owned(self.custodies.into_owned()),
+            deadline: self.deadline,
+            remaining: self.remaining,
+        }
     }
 
     /// Does this dispatch still permit a check for this exact launch?

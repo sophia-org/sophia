@@ -144,11 +144,15 @@ fn dispatch_limits_require_a_new_observation_and_invalid_registration_refuses() 
     let mut dispatch = CustodyDispatch::observe(&registered, TEST_AGE, 1).unwrap();
     assert_eq!(dispatch.check(&one), Ok(true));
     assert_eq!(dispatch.check(&one), Err(CustodyDispatchLimit::Exhausted));
+    let mut dispatch = dispatch.into_owned();
+    assert_eq!(dispatch.check(&one), Err(CustodyDispatchLimit::Exhausted));
     let mut next = CustodyDispatch::observe(&registered, TEST_AGE, 1).unwrap();
     assert_eq!(next.check(&one), Ok(true));
     assert_eq!(dispatch.check(&one), Err(CustodyDispatchLimit::Exhausted));
     let mut expired = CustodyDispatch::observe(&registered, Duration::from_millis(1), 2).unwrap();
     std::thread::sleep(Duration::from_millis(2));
+    assert_eq!(expired.check(&one), Err(CustodyDispatchLimit::Expired));
+    let mut expired = expired.into_owned();
     assert_eq!(expired.check(&one), Err(CustodyDispatchLimit::Expired));
     for result in [
         CustodyDispatch::observe(&[], TEST_AGE, 1),

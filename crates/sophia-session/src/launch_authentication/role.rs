@@ -257,6 +257,20 @@ impl RoleAuthentication {
         authority.authorize(verdict, now).map_err(|_| Errno::ESTALE)
     }
 
+    #[cfg(feature = "experimental-custody-dispatch")]
+    pub(super) fn check_admitted_in_dispatch(
+        &mut self,
+        now: Instant,
+        worker: &super::WorkerAuthority,
+        dispatch: &mut sophia_runtime::CustodyDispatch<'_>,
+    ) -> Result<Identity, Errno> {
+        self.poll(now)?;
+        let verdict = self.admitted.ok_or(Errno::EACCES)?;
+        worker
+            .authorize_in_dispatch(verdict, dispatch)
+            .map_err(|_| Errno::ESTALE)
+    }
+
     pub fn release(&mut self, attempt: Attempt, now: Instant) {
         if self
             .conversation

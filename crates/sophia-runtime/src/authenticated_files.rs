@@ -8,6 +8,15 @@ use std::time::{Duration, Instant};
 /// Trusted, transport-scoped authentication owner. Implementations must retain
 /// identity across reset and must not wait on a peer or another owner thread.
 pub trait FileAuthentication: Send {
+    /// Experimental control-service boundary. Admission operations remain fresh.
+    /// Callers must end this scope on success, error, and unwind; implementations
+    /// must fall back to fresh checks after their age or check budget expires.
+    #[cfg(feature = "experimental-custody-dispatch")]
+    fn begin_custody_dispatch(&mut self) -> Result<(), Errno> {
+        Ok(())
+    }
+    #[cfg(feature = "experimental-custody-dispatch")]
+    fn end_custody_dispatch(&mut self) {}
     /// Additional wake reasons, never an authorization result. Closed owners
     /// must omit descriptors whose persistent readiness can no longer be serviced.
     fn visit_wait_fds<'a>(&'a self, _visit: &mut dyn FnMut(rustix::event::PollFd<'a>)) {}
@@ -161,6 +170,21 @@ impl<E> AuthenticatedFiles<E> {
             Admission::Legacy => Ok(()),
             Admission::Pending => Err(Errno::EACCES),
             Admission::Authenticated(owner) => owner.poll(now),
+        }
+    }
+
+    #[cfg(feature = "experimental-custody-dispatch")]
+    pub fn begin_custody_dispatch(&mut self) -> Result<(), Errno> {
+        match &mut self.admission {
+            Admission::Authenticated(owner) => owner.begin_custody_dispatch(),
+            Admission::Legacy | Admission::Pending => Ok(()),
+        }
+    }
+
+    #[cfg(feature = "experimental-custody-dispatch")]
+    pub fn end_custody_dispatch(&mut self) {
+        if let Admission::Authenticated(owner) = &mut self.admission {
+            owner.end_custody_dispatch();
         }
     }
     pub fn wait(&self, now: Instant) -> Duration {
