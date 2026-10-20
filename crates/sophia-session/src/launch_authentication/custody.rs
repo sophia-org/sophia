@@ -1,6 +1,8 @@
 //! Session retains revocation ownership when handing a launch to a role worker.
 use super::*;
 use sophia_runtime::LaunchCustody;
+#[cfg(feature = "experimental-custody-dispatch")]
+use sophia_runtime::{CustodyDispatch, CustodyDispatchLimit};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -31,6 +33,11 @@ impl WorkerAuthority {
     pub(super) fn ingress(&self) -> Ingress {
         self.ingress.clone()
     }
+    pub(super) fn visit_wait_fds<'a>(&'a self, visit: &mut dyn FnMut(rustix::event::PollFd<'a>)) {
+        if self.active.load(Ordering::Acquire) && self.ingress.is_open() {
+            self.custody.visit_poll_fds(visit);
+        }
+    }
     pub(super) fn live(&self) -> Result<bool, Error> {
         Ok(self.active.load(Ordering::Acquire)
             && self.ingress.is_open()
@@ -38,11 +45,55 @@ impl WorkerAuthority {
             && self.active.load(Ordering::Acquire)
             && self.ingress.is_open())
     }
+    #[cfg(feature = "experimental-custody-dispatch")]
+    pub(super) fn observe_dispatch(&self) -> std::io::Result<CustodyDispatch<'static>> {
+        // Experimental admission bounds, not an execution-time guarantee.
+        // One control turn; rendering and independently scheduled workers
+        // cannot inherit this observation. Limits fall back to caller-fresh.
+        CustodyDispatch::observe(
+            std::slice::from_ref(&self.custody),
+            std::time::Duration::from_millis(1),
+            64,
+        )
+        .map(CustodyDispatch::into_owned)
+    }
+    #[cfg(feature = "experimental-custody-dispatch")]
+    pub(super) fn live_in_dispatch(
+        &self,
+        dispatch: &mut CustodyDispatch<'_>,
+    ) -> Result<bool, Error> {
+        if !self.active.load(Ordering::Acquire) || !self.ingress.is_open() {
+            return Ok(false);
+        }
+        let live = match dispatch.check(&self.custody) {
+            Ok(live) => live,
+            Err(CustodyDispatchLimit::Expired | CustodyDispatchLimit::Exhausted) => {
+                return self.live();
+            }
+            Err(CustodyDispatchLimit::Unregistered) => return Err(Error::Stale),
+        };
+        Ok(live && self.active.load(Ordering::Acquire) && self.ingress.is_open())
+    }
     fn authorize(&self, verdict: Verdict) -> Result<Identity, Error> {
+        self.authorize_with(verdict, || self.live())
+    }
+    #[cfg(feature = "experimental-custody-dispatch")]
+    pub(super) fn authorize_in_dispatch(
+        &self,
+        verdict: Verdict,
+        dispatch: &mut CustodyDispatch<'_>,
+    ) -> Result<Identity, Error> {
+        self.authorize_with(verdict, || self.live_in_dispatch(dispatch))
+    }
+    fn authorize_with(
+        &self,
+        verdict: Verdict,
+        live: impl FnOnce() -> Result<bool, Error>,
+    ) -> Result<Identity, Error> {
         if verdict.attempt.session != self.session
             || verdict.identity != self.delegation.identity
             || verdict.attempt.audience != self.audience
-            || !self.live()?
+            || !live()?
         {
             return Err(Error::Stale);
         }

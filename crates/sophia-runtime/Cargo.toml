@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
+experimental-custody-dispatch = []
 # Isolated qualification branch only; do not merge the retired IPC comparator.
 comparator-counters = ["rustix/time", "dep:nix"]
 comparator-allocation-counting = ["comparator-counters", "dep:stats_alloc"]

@@ -46,6 +46,7 @@ sophia-shell-client = { workspace = true }
 sophia-renderer-native-egl = { path = "../sophia-renderer-native-egl", features = ["gbm-platform"] }
 
 [features]
+experimental-custody-dispatch = ["sophia-runtime/experimental-custody-dispatch"]
 default = []
 comparator-profiling = ["sophia-runtime/comparator-profiling"]
 comparator-progress = ["sophia-runtime/comparator-progress", "sophia-factotum?/comparator-progress"]

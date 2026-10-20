@@ -241,6 +241,8 @@ impl FileAuthenticationFactory for RoleFileFactory {
             connection,
             ingress,
             closed: false,
+            #[cfg(feature = "experimental-custody-dispatch")]
+            dispatch: None,
             admission: None,
             grant: self.grant.clone(),
             _permit: permit,
@@ -254,6 +256,8 @@ struct RoleFileAuthentication {
     connection: ConnectionId,
     ingress: Ingress,
     closed: bool,
+    #[cfg(feature = "experimental-custody-dispatch")]
+    dispatch: Option<sophia_runtime::CustodyDispatch<'static>>,
     admission: Option<AdmissionLease>,
     grant: Option<EndpointGrantLease>,
     _permit: Permit,
@@ -269,6 +273,30 @@ impl Drop for RoleFileAuthentication {
     }
 }
 impl FileAuthentication for RoleFileAuthentication {
+    #[cfg(feature = "experimental-custody-dispatch")]
+    fn begin_custody_dispatch(&mut self) -> Result<(), Errno> {
+        self.dispatch = None;
+        // Authentication/attach, including an attach completed during this
+        // turn, stays caller-fresh. Only an already admitted owner opts in.
+        if !self.closed && self.admission.as_ref().is_some_and(AdmissionLease::is_live) {
+            match self.worker.observe_dispatch() {
+                Ok(dispatch) => self.dispatch = Some(dispatch),
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(_) => return Err(Errno::ESTALE),
+            }
+        }
+        Ok(())
+    }
+    #[cfg(feature = "experimental-custody-dispatch")]
+    fn end_custody_dispatch(&mut self) {
+        self.dispatch = None;
+    }
+    fn visit_wait_fds<'a>(&'a self, visit: &mut dyn FnMut(rustix::event::PollFd<'a>)) {
+        if !self.closed {
+            self.worker.visit_wait_fds(visit);
+        }
+    }
+
     fn claims(&self, c: &AttachContext<'_>) -> Result<(), Errno> {
         self.auth.claims(c.connection, c.uname, c.aname, c.n_uname)
     }
@@ -352,6 +380,13 @@ impl FileAuthentication for RoleFileAuthentication {
         if !self.admission.as_ref().ok_or(Errno::EACCES)?.is_live() {
             return Err(Errno::ESTALE);
         }
+        #[cfg(feature = "experimental-custody-dispatch")]
+        if let Some(dispatch) = &mut self.dispatch {
+            return self
+                .auth
+                .check_admitted_in_dispatch(now, &self.worker, dispatch)
+                .map(drop);
+        }
         self.auth
             .check_admitted(now, &mut Authority::Worker(&self.worker))
             .map(drop)
@@ -360,9 +395,13 @@ impl FileAuthentication for RoleFileAuthentication {
         self.auth.release(attempt, now);
     }
     fn reset(&mut self, now: Instant) -> Result<(), Errno> {
+        #[cfg(feature = "experimental-custody-dispatch")]
+        self.end_custody_dispatch();
         self.auth.reset(now)
     }
     fn close(&mut self, now: Instant) {
+        #[cfg(feature = "experimental-custody-dispatch")]
+        self.end_custody_dispatch();
         self.closed = true;
         self.admission = None;
         self.auth.close(now);
@@ -371,7 +410,18 @@ impl FileAuthentication for RoleFileAuthentication {
         let result = self.auth.poll(now);
         if !self.closed
             && (result.is_err()
-                || !self.worker.live().unwrap_or(false)
+                || !{
+                    #[cfg(feature = "experimental-custody-dispatch")]
+                    {
+                        match &mut self.dispatch {
+                            Some(dispatch) => self.worker.live_in_dispatch(dispatch),
+                            None => self.worker.live(),
+                        }
+                    }
+                    #[cfg(not(feature = "experimental-custody-dispatch"))]
+                    self.worker.live()
+                }
+                .unwrap_or(false)
                 || self.grant.as_ref().is_some_and(|grant| !grant.is_live())
                 || self
                     .admission

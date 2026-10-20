@@ -37,6 +37,21 @@ impl LaunchCustody {
         }
     }
 
+    /// Wake an owner waiting for either exact process identity to exit.
+    /// Readiness is only a wake reason; callers must still use `is_live`.
+    pub fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(rustix::event::PollFd<'a>)) {
+        if self.inner.active.load(Ordering::Acquire) {
+            visit(rustix::event::PollFd::new(
+                &self.inner.wrapper,
+                rustix::event::PollFlags::IN,
+            ));
+            visit(rustix::event::PollFd::new(
+                &self.inner.peer,
+                rustix::event::PollFlags::IN,
+            ));
+        }
+    }
+
     /// Zero-time poll of both kernel identities. An exit is observed without
     /// waiting for Session to reap it. Any poll error refuses custody.
     pub fn is_live(&self) -> io::Result<bool> {
@@ -57,3 +72,8 @@ impl LaunchCustody {
         Ok(quiet && self.inner.active.load(Ordering::Acquire))
     }
 }
+
+#[cfg(feature = "experimental-custody-dispatch")]
+mod dispatch;
+#[cfg(feature = "experimental-custody-dispatch")]
+pub use dispatch::{CustodyDispatch, CustodyDispatchLimit};
