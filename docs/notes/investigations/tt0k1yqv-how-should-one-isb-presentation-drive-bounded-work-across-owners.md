@@ -724,3 +724,27 @@ shutdown and deadline obligations before an isolated experiment. No new reactor,
 weakened authority check or automatic ACK-delay optimization follows from the
 counts. Two apparent round-trip optimizations were already present; more broad
 profiling is not the next action.
+
+
+## Concrete ACK handoff proposal requires a dispatch decision
+
+Candidate 29's `ACK-HANDOFF-PROPOSAL.md` specifies a possible disabled-by-default
+experiment: when an ordinary drive yield exposes new typed application work,
+carry an eligible ACK into the next drive so an immediate application response
+may share the existing ACK/record/submit output path. There is no timer or
+protocol change, and the next drive may not defer the obligation again. This
+is a hypothesis; the 2,125 ACK-plus-pending passes are not a savings estimate.
+
+Explicit debt must keep immediate interest set, survive budget limits, and be
+honored by every pre-block path, including the SDK's separate image-socket
+wait. Authority, object holds, cumulative sequence bounds, partial output and
+custody remain independent. Mutation-sensitive drive tests and failure,
+backpressure, shutdown and wait-path controls precede any native comparison.
+
+The contract changes: poll_io may return an application event before queuing
+an otherwise eligible ACK. If the application stops driving, immediate interest
+cannot enforce a wall-clock bound. Error observation can also move to the next
+entry. This is not behavior-identical or approved for implementation merely
+because default production would remain unchanged. The open decision is
+whether ACK-before-yield may change in an isolated experiment. No implementation,
+build or new capture was performed for this proposal.
