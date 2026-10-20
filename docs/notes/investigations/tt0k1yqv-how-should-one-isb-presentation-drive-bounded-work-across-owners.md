@@ -804,3 +804,30 @@ Stages `ack31-1` through `ack31-4` are unused; the bound is 600 seconds. Keep th
 comparator and integration checkouts clean and avoid rebuilding the pinned
 Cargo slot until capture completes. CPU benefit, latency acceptance, and default
 promotion remain unclaimed.
+
+
+## Candidate 31: small favorable ACK-handoff CPU screen
+
+`ack31-1..4` completed in control/candidate/candidate/control order. All four
+join 1000 unique presentations, matched byte counts and consecutive native
+frames; capture/cleanup receipts pass. The only launcher diagnostic is the
+accepted console-deallocation warning. Evidence and reproducible analysis:
+`candidate-31-ack-handoff-screen/RESULTS.md`, `analyze.py`, `results.json` and
+`capture-SHA256SUMS`; prelaunch artifacts and capture inputs remain untouched.
+
+Combined CPU midpoint means are 1537.33 us/frame control and 1519.43 candidate:
+-17.90 us (-1.16%). Both candidate runs fall below both controls. Session mean
+is -15.74 us (-1.38%); peer -2.16 us (-0.55%) with overlapping peer ranges.
+Combined control spread is 0.19 us and candidate spread 7.21 us, but candidate
+Session spread is 18.38 us: aggregate stability must not be mistaken for a
+repeatability estimate. Two runs per arm give a small favorable screening
+signal, not promotion or proof of fewer owner services. Attribution bounds
+are not statistical confidence intervals.
+
+Median latency is 16.563/16.572 ms control versus 16.572/16.580 candidate;
+p95 is similar, but maxima vary and this CPU-only screen does not qualify
+latency tails. The next discriminator is an unchanged-binary reversed-order
+CPU block, candidate/control/control/candidate. C parity, deterministic
+saturated-journal handoff/deadline integration, and latency-instrumented
+acceptance remain open. No additional run or production change was made;
+ACK handoff remains disabled by default.
