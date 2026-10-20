@@ -16,6 +16,7 @@ tracing.workspace = true
 [features]
 default = []
 gbm-platform = ["dep:gbm"]
+experimental-shell-capture = ["gbm-platform"]
 
 [dev-dependencies]
 sophia-x-authority = { path = "../sophia-x-authority" }

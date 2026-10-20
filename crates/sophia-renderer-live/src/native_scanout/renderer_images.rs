@@ -95,6 +95,52 @@ impl LiveRendererImageSnapshot {
     }
 }
 
+#[cfg(feature = "experimental-shell-capture")]
+#[derive(Debug)]
+#[must_use]
+pub struct LiveRendererSnapshotRetentionFailure {
+    pub detail: crate::LiveRendererScanoutBufferExportDetail,
+    pub snapshot: LiveRendererImageSnapshot,
+    pub reservation: super::LiveRendererSnapshotReservation,
+}
+
+#[cfg(feature = "experimental-shell-capture")]
+impl LiveRendererImageSnapshot {
+    /// Transfers reserved capacity, not proof of source-read completion.
+    pub fn retain_reserved(
+        self,
+        budget: &std::sync::Arc<super::LiveRendererSnapshotBudget>,
+        epoch: std::sync::Arc<super::LiveRendererSnapshotEpoch>,
+        reservation: super::LiveRendererSnapshotReservation,
+    ) -> Result<LiveRetainedRendererImageSnapshot, LiveRendererSnapshotRetentionFailure> {
+        let frame = self.inner.as_frame();
+        let size = i32::try_from(frame.width)
+            .ok()
+            .zip(i32::try_from(frame.height).ok())
+            .filter(|(width, height)| *width > 0 && *height > 0)
+            .map(|(width, height)| sophia_protocol::Size { width, height });
+        let Some(size) = size else {
+            return Err(LiveRendererSnapshotRetentionFailure {
+                detail: crate::LiveRendererScanoutBufferExportDetail::InvalidBufferDescriptor,
+                snapshot: self,
+                reservation,
+            });
+        };
+        let image_id = self.image_id;
+        budget
+            .retain_reserved(self.inner, epoch, reservation)
+            .map(|inner| LiveRetainedRendererImageSnapshot { size, inner })
+            .map_err(|failure| LiveRendererSnapshotRetentionFailure {
+                detail: super::reduced_native_owned_scanout_buffer_export_detail(failure.detail),
+                snapshot: Self {
+                    image_id,
+                    inner: failure.snapshot,
+                },
+                reservation: failure.reservation,
+            })
+    }
+}
+
 /// Promotion has already succeeded when snapshot export is refused. Callers
 /// must settle the source Present independently of the optional preview copy.
 #[derive(Debug)]

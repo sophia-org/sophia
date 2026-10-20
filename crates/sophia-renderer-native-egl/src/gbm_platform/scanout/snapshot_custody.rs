@@ -47,6 +47,33 @@ pub(super) struct SnapshotCharge {
     cacheable: AtomicBool,
 }
 
+/// Capacity held before capture starts. This is accounting, not proof that GPU
+/// reads have finished. An executor must retain it through uncertain work.
+#[cfg(feature = "experimental-shell-capture")]
+#[derive(Debug)]
+#[must_use]
+pub struct NativeRendererSnapshotReservation {
+    charge: Arc<SnapshotCharge>,
+}
+
+#[cfg(feature = "experimental-shell-capture")]
+impl NativeRendererSnapshotReservation {
+    pub fn byte_bound(&self) -> u64 {
+        self.charge.bytes
+    }
+}
+
+/// Refusal returns both the image and its reservation: the caller still owns
+/// cleanup, including any submitted GPU work. No budget is returned implicitly.
+#[cfg(feature = "experimental-shell-capture")]
+#[derive(Debug)]
+#[must_use]
+pub struct NativeRendererSnapshotRetentionFailure {
+    pub detail: Detail,
+    pub snapshot: NativeRendererImageSnapshot,
+    pub reservation: NativeRendererSnapshotReservation,
+}
+
 impl Drop for SnapshotCharge {
     fn drop(&mut self) {
         let mut usage = self.budget.usage.lock().unwrap_or_else(|e| e.into_inner());
@@ -66,6 +93,67 @@ impl NativeRendererSnapshotBudget {
 
     pub fn usage(&self) -> (usize, u64) {
         *self.usage.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Reserve a proven upper bound on the destination allocation, not just
+    /// width * height * 4. No source may be submitted before this succeeds.
+    #[cfg(feature = "experimental-shell-capture")]
+    pub fn reserve_capture(
+        self: &Arc<Self>,
+        byte_bound: u64,
+    ) -> Result<NativeRendererSnapshotReservation, Detail> {
+        self.reserve(byte_bound)
+            .map(|charge| NativeRendererSnapshotReservation { charge })
+    }
+
+    /// Transfer pre-capture capacity into an immutable snapshot without a
+    /// second charge. This operation does not prove capture completion.
+    #[cfg(feature = "experimental-shell-capture")]
+    pub fn retain_reserved(
+        self: &Arc<Self>,
+        mut snapshot: NativeRendererImageSnapshot,
+        epoch: Arc<NativeRendererSnapshotEpoch>,
+        mut reservation: NativeRendererSnapshotReservation,
+    ) -> Result<Arc<NativeRendererImageSnapshot>, NativeRendererSnapshotRetentionFailure> {
+        let checked = (|| {
+            if !epoch.is_valid()
+                || snapshot.charge.is_some()
+                || !Arc::ptr_eq(self, &reservation.charge.budget)
+            {
+                return Err(Detail::InvalidRendererImageId);
+            }
+            let bytes = snapshot.allocation_bytes()?;
+            if bytes == 0 || bytes > reservation.byte_bound() {
+                return Err(Detail::RendererImageStoreFull);
+            }
+            Ok(bytes)
+        })();
+        let bytes = match checked {
+            Ok(bytes) => bytes,
+            Err(detail) => {
+                return Err(NativeRendererSnapshotRetentionFailure {
+                    detail,
+                    snapshot,
+                    reservation,
+                });
+            }
+        };
+        // The reservation is intentionally non-cloneable, so no second owner
+        // can retain the old bound or transfer the same credit twice.
+        let Some(charge) = Arc::get_mut(&mut reservation.charge) else {
+            return Err(NativeRendererSnapshotRetentionFailure {
+                detail: Detail::InvalidRendererImageId,
+                snapshot,
+                reservation,
+            });
+        };
+        let mut usage = self.usage.lock().unwrap_or_else(|e| e.into_inner());
+        usage.1 -= charge.bytes - bytes;
+        charge.bytes = bytes;
+        drop(usage);
+        snapshot.charge = Some(reservation.charge);
+        snapshot.epoch = Some(epoch);
+        Ok(Arc::new(snapshot))
     }
 
     fn reserve(self: &Arc<Self>, bytes: u64) -> Result<Arc<SnapshotCharge>, Detail> {
@@ -93,11 +181,20 @@ impl NativeRendererSnapshotBudget {
         if !epoch.is_valid() || snapshot.charge.is_some() {
             return Err(Detail::InvalidRendererImageId);
         }
+        let bytes = snapshot.allocation_bytes()?;
+        snapshot.charge = Some(self.reserve(bytes)?);
+        snapshot.epoch = Some(epoch);
+        Ok(Arc::new(snapshot))
+    }
+}
+
+impl NativeRendererImageSnapshot {
+    fn allocation_bytes(&self) -> Result<u64, Detail> {
         // dma-buf seek reports allocation size, including modifier padding.
         // Several planes may share one allocation; charge each inode once.
         let mut allocations = std::collections::BTreeSet::new();
         let mut bytes = 0_u64;
-        for plane in snapshot.planes.iter().flatten() {
+        for plane in self.planes.iter().flatten() {
             let stat = rustix::fs::fstat(&plane.fd).map_err(|_| Detail::InvalidBufferDescriptor)?;
             if allocations.insert((stat.st_dev, stat.st_ino)) {
                 let size = rustix::fs::seek(&plane.fd, rustix::fs::SeekFrom::End(0))
@@ -107,13 +204,8 @@ impl NativeRendererSnapshotBudget {
                     .ok_or(Detail::InvalidBufferDescriptor)?;
             }
         }
-        snapshot.charge = Some(self.reserve(bytes)?);
-        snapshot.epoch = Some(epoch);
-        Ok(Arc::new(snapshot))
+        Ok(bytes)
     }
-}
-
-impl NativeRendererImageSnapshot {
     /// Queued frames remain valid after demand ends; only their imports become
     /// transient. This prevents a delayed frame from repopulating a long-lived
     /// cache after the owner's broadcast eviction has already run.
@@ -136,5 +228,13 @@ mod tests {
     include!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/support/snapshot_custody.rs"
+    ));
+}
+
+#[cfg(all(test, feature = "experimental-shell-capture"))]
+mod reservation_tests {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/snapshot_reservation.rs"
     ));
 }

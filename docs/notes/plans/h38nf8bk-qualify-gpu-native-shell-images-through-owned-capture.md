@@ -191,6 +191,56 @@ absent, with no capture process running.
 
 ### Completion handoff and accounting requirements
 
+#### First implementation prerequisite: reserve before capture
+
+The October 20 reservation slice adds `experimental-shell-capture` in
+renderer-native-egl and renderer-live, disabled by default. A non-cloneable
+snapshot reservation holds one entry and a caller-proven allocation byte bound
+before submission. Retention transfers that same charge into the existing
+snapshot and reduces it to actual distinct backing-allocation bytes. Refusal
+returns the original snapshot descriptors and the entire reservation, including
+wrong-budget, invalid-generation, oversized-allocation and descriptor failures.
+Generation invalidation does not release storage still held by a snapshot.
+
+This is accounting infrastructure, not a completed first ownership/completion
+slice. It does not implement the capture executor, Session mailbox, shell
+resource binding, or source-completion receipts. Session still advertises zero
+GPU capture jobs. Reserving capacity does not constrain the allocator by itself:
+the executor must establish the destination allocation bound before GPU work,
+and retain source descriptors and reservations through uncertain work.
+`retain_reserved` neither proves source-read completion nor permits
+`SourceReleased`.
+
+Controls use ordinary memfds solely to exercise descriptor custody and allocation
+accounting; they perform no DMA-BUF import or GPU work. Both library suites pass:
+39 tests with the experimental feature and 35 with the existing GBM path and the
+experiment disabled. Four new controls cover reservation limits, transfer and
+shared-plane accounting, refusal ownership, and retry after a privately injected
+charge-uniqueness failure. Muse reviewed the implementation read-only; the
+suggested panic-to-refusal correction is included. Live wrapper refusal mapping
+still needs an executor-level control once real snapshots can be supplied through
+that path.
+
+Evidence is retained at
+`~/.local/state/sophia/development-evidence/t339-owned-capture-20261020/reservation-01/`.
+No native capture, admission change, or performance result accompanies this slice.
+
+#### Required next handoff
+
+Use the existing owner, not a second capture thread or context. The bounded
+mailbox carries runtime-neutral job IDs, source descriptors and metadata; Session
+retains the grant/connection/content-generation binding. The renderer alone may
+produce a completion receipt for the exact job and renderer generation. A full
+or failed enqueue returns source ownership and capacity unchanged.
+
+Cancellation before submission permits rollback. After submission, cancellation
+only forbids publication: the job must still reach proven completion or retain
+its source and capacity in quarantine. Executor failure and generation change
+must settle every pending job as uncertain, never fabricate success or silently
+drop its reservation. The runtime owner reconciles even withdrawn jobs and
+rechecks authority before publication. Tests must pin these transitions before
+the GPU admission path is enabled.
+
 The renderer owner retains its Rc/EGL context and performs context-bound fence
 operations. Before enabling admission, define a bounded job-ID-to-terminal-state
 handoff to the runtime image owner, with a completion wake and renderer device

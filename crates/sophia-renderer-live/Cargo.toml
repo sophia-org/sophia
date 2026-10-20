@@ -22,6 +22,7 @@ xcursor.workspace = true
 [features]
 default = []
 gbm-probe = ["dep:gbm", "dep:sophia-renderer-native-egl", "sophia-renderer-native-egl/gbm-platform"]
+experimental-shell-capture = ["gbm-probe", "sophia-renderer-native-egl/experimental-shell-capture"]
 egl-probe = ["dep:sophia-renderer-native-egl"]
 
 [[example]]
