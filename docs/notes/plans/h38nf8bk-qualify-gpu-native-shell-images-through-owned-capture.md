@@ -183,12 +183,12 @@ this GPU-producing shell experiment.
 
 ## Current next deliverable
 
-The source audit, reservation prerequisite, private handoff lifecycle and
-private native copy-fence observer are implemented. Next is the real renderer
-job adapter and its source/quarantine ownership binding. The observer has no
-production caller yet; supplied-status controls and snapshot retention do not
-prove an actual GPU copy finished. Production GPU capability remains disabled;
-no native experiment has run.
+The native exact-copy adapter and private mailbox driver are now implemented
+behind `experimental-shell-capture`. Next is Session's grant/resource-lease
+binding and owner-turn scheduling, followed by real-device controls before any
+GPU admission. The new driver is not called from Session yet; current tests use
+supplied statuses/backends, not an EGL device. Production GPU capability remains
+disabled; no native experiment or performance result exists for this path.
 C42 remains independent: at this audit its stages and launcher receipts were
 absent, with no capture process running.
 
@@ -253,18 +253,17 @@ GPU use. Unknown/duplicate begin is distinguished from a completed rollback.
 Cancellation/deadline before submission allows rollback. After submission,
 including after renderer completion but before receipt consumption, it forbids
 publication and still requires exact completion before source release.
-Private proof construction currently exists only in the test child.
+The private native driver now constructs a job completion only after consuming
+an opaque completion from the exact native pending handle. Supplied completions
+remain confined to private test children.
 
 Explicit close and unwind settle selected/queued work as rollback and submitted
-work as uncertain. Uncertain receipts contain no releasable source: descriptors
-and reservations live in a separate renderer-owned graveyard. **This core does
-not prove graveyard teardown ordering.** The future native owner must retain it
-across mailbox/context replacement until source reads are independently proven
-ended. EGL context/display destruction alone is not that proof: termination can
-defer destruction and is not an exact-copy completion observation. Dropping the
-final graveyard Arc early would violate custody. Session/native integration
-must pin the real owner and a proven completion or terminal-lifetime policy
-before enabling admission; this prerequisite does not change existing teardown.
+work as uncertain. The generic handoff alone requires a retained graveyard and
+does not prove teardown ordering. In the real adapter, the entire source request
+and reservation move into the native escrow before import/copy is attempted;
+the generic submitted payload then contains neither. Native uncertainty retains
+that escrow for process lifetime, as described below. EGL context/display
+destruction alone is never a source-read completion event.
 
 Ten supplied-completion controls cover these transitions with sockets standing
 in for source planes; they exercise no DMA-BUF import, rendering or EGL fence.
@@ -288,8 +287,8 @@ handle. Each capture issues at most one proof. Timeout leaves it pending;
 missing or mismatched ownership, errors and unexpected statuses refuse proof
 and abandon reuse. Observation never takes the fence or its GPU-use guard.
 
-This is a prerequisite, not the shell-job adapter. It neither releases source
-FDs nor settles jobs, grants publication or enables admission. Its private fault
+This observer alone neither releases source FDs nor settles jobs, grants
+publication or enables admission. The adapter below is now its real consumer. Its private fault
 seam exercises supplied statuses with real native allocation accounting and
 use guards, without EGL execution or device access. Seven controls cover
 pending/once-only completion, errors, missing fences, generation ownership,
@@ -307,11 +306,64 @@ binds the signal to preceding commands. The
 [EGL 1.5 specification](https://registry.khronos.org/EGL/specs/eglspec.1.5.pdf),
 sections 3.2 and 3.7, distinguishes resource termination/destruction and flushing
 from completion. Consequently, destroying a sync or terminating an EGL display
-must not manufacture this proof. The next adapter must bind the proof to the
-exact shell job and retained source descriptors and separately resolve uncertain
-teardown custody before exposing a releasable completion.
+must not manufacture this proof. The adapter binds that proof to the retained native request and shell job;
+uncertain custody uses explicit process-lifetime retention rather than teardown
+as a substitute proof.
 
-#### Required native adapter and owner wiring
+#### Native source custody and mailbox driver
+
+The default-off native API takes an owned, single-plane XRGB source plus a
+pre-reserved snapshot budget, image ID and epoch. It uses the existing renderer
+owner and capture pool, with no transfer/readback fallback or frame-assembly
+coupling. Metadata/epoch/budget mismatch or lack of a process slot returns the
+original request before any source use. The real allocation size, including
+padding, is checked against the reserved bound before the draw; a successful
+completion transfers that reservation into the retained snapshot.
+
+A native pending handle owns the request, destination capture and exact context
+identity. It is non-cloneable and stays on the renderer thread. Each poll performs
+one zero-timeout native fence observation. A signalled exact-copy proof permits
+source custody to return even if subsequent snapshot export or retention fails;
+that failure returns the unused reservation. A retired or different context is
+refused before any EGL call. A withdrawn epoch still requires copy completion;
+it can settle custody but cannot publish a retained image.
+
+**Uncertain-copy policy for this experiment:** four process-wide slots bound
+submitted copies. Abandoning a pending handle, unwinding after possible source
+use, receiving an uncertain fence result, or failing after entering native
+capture keeps the source FDs, reservation and any owned pending capture for the
+process lifetime. The slot stays charged and all further experimental native
+captures are refused, including through replacement channels/contexts. There is
+no reset, timer, destructor completion or automatic release credit. This is
+intentional bounded retention, not a claim that EGL teardown finishes reads.
+Errors after entering capture are conservatively uncertain even when they may
+have preceded a draw. This can stop the entire experimental GPU-capture lane;
+qualification must assess that availability tradeoff before production admission.
+
+The private renderer-live driver connects these real pending handles to the
+existing bounded mailbox. It checks exact snapshot-epoch identity before begin,
+restores the original request on native pre-use refusal, and constructs a job
+completion only from its own handle's opaque native receipt. Cancellation,
+deadlines and generation withdrawal still forbid publication, including at
+receipt consumption. Pending fences rotate to the tail with at most four native
+begin/poll operations per service call and no repeated poll of one fence within
+that call. A service unwind guard settles every remaining job even if its caller
+catches the panic and retains the driver. Close parks native handles before
+publishing uncertain receipts.
+
+Controls use owned socket FDs, real reservation accounting, supplied native
+statuses and a private scripted backend. They cover process capacity, retained
+custody on abandon/unwind, refusal return, linear-source validation, padded
+allocation bounds, context/epoch identity, pending completion, cancellation,
+withdrawal, tail rotation, exact job/source matching and caught unwind. They do
+not execute EGL import/copy, prove rendered pixels or measure performance. The
+feature library suites pass 75 tests; the default GBM suites pass 35. Nine mutations fail at runtime: premature custody drop, reopened admission,
+returned quarantine credit, bypassed allocation bound, wrong context or epoch
+identity, head requeue, omitted unwind settlement, and timeout-as-completion.
+Restored suites pass; Clippy is clean. Logs are retained under
+`~/.local/state/sophia/development-evidence/t339-owned-capture-20261020/native-adapter-01/`.
+
+#### Remaining Session owner wiring
 
 Use the existing owner, not a second capture thread or context. The bounded
 mailbox carries runtime-neutral job IDs, source descriptors and metadata; Session
@@ -337,7 +389,8 @@ publish a resource, release a newer job or return its reservation.
 
 Existing snapshot fences guard destination-allocation reuse and are polled
 inside renderer operations. Their quarantine and internal EGLSync destruction
-do not yet expose the required standalone source-completion event. Neither an
+are not the standalone source-completion event; the new shell adapter observes
+its own capture fence before it is transferred to those existing paths. Neither an
 Arc-backed snapshot nor a current snapshot epoch supplies that event.
 
 Specify how a retained image is charged against shell resource limits and the

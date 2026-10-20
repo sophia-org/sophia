@@ -48,7 +48,7 @@ mod native_scanout;
 mod shared_buffer;
 #[cfg(feature = "gbm-probe")]
 mod shared_pixmap;
-// Private until the real renderer adapter can supply exact-job completion.
+// Private until Session binds the native adapter to grant/resource custody.
 #[cfg(feature = "experimental-shell-capture")]
 #[allow(dead_code)]
 mod shell_capture_jobs;

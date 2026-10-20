@@ -45,6 +45,13 @@ pub(crate) struct CaptureExecutor<P, O> {
 }
 
 impl<P, O> CaptureExecutor<P, O> {
+    pub(super) fn active_payload_mut(&mut self, id: JobId) -> Option<&mut P> {
+        self.active
+            .iter_mut()
+            .find(|a| a.job.id == id)
+            .map(|a| &mut a.job.payload)
+    }
+
     /// At most one request per call. The driver supplies its per-turn budget.
     pub(super) fn next(&mut self, now: Instant) -> io::Result<NextJob> {
         self.request_wake.clear()?;
@@ -94,6 +101,19 @@ impl<P, O> CaptureExecutor<P, O> {
         for active in &mut self.active {
             active.forbidden = active.forbidden.or_else(|| active.job.forbidden(now));
         }
+    }
+
+    /// Only the private adapter uses this, after native begin returned the
+    /// original request without attempting any source-using operation.
+    pub(super) fn refused_before_use(&mut self, id: JobId) -> Result<(), ProofFailure> {
+        let index = self
+            .active
+            .iter()
+            .position(|a| a.job.id == id)
+            .ok_or(ProofFailure::UnknownJob)?;
+        let active = self.active.remove(index);
+        self.rollback(active.job, StopReason::RendererRefused);
+        Ok(())
     }
 
     pub(super) fn complete(

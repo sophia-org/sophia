@@ -61,6 +61,10 @@ impl NativeRendererSnapshotReservation {
     pub fn byte_bound(&self) -> u64 {
         self.charge.bytes
     }
+
+    pub(super) fn belongs_to(&self, budget: &Arc<NativeRendererSnapshotBudget>) -> bool {
+        Arc::ptr_eq(&self.charge.budget, budget)
+    }
 }
 
 /// Refusal returns both the image and its reservation: the caller still owns

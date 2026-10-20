@@ -7,8 +7,10 @@ struct State<P> {
 }
 
 /// Renderer-owned storage, deliberately separate from completion receipts.
-/// The real adapter must keep this owner until context/display teardown proves
-/// GPU use has ended. There is no timeout, reset, or public clear operation.
+/// The real adapter must keep this owner until GPU use is proven ended.
+/// EGL teardown alone is not that proof. There is no timeout, reset, or public
+/// clear operation. The native adapter transfers submitted source custody into
+/// its own process-bounded escrow before real GPU use.
 pub(crate) struct CaptureGraveyard<P> {
     state: Mutex<State<P>>,
 }

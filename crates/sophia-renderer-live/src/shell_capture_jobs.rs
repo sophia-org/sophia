@@ -1,9 +1,10 @@
-//! Private custody handoff, not a GPU executor or an admission API.
+//! Private custody handoff and native adapter, not an admission API.
 //!
 //! P owns source descriptors and their reservation; O is the eventual renderer
 //! output. The native adapter must mark submission BEFORE import or any GPU use.
 //! Only that adapter may construct an ObservedCompletion after the exact job's
-//! fence signals. Today the only supplier is a private test child.
+//! fence signals. The native adapter owns the real capture handle; supplied
+//! completions remain confined to private test children.
 use crate::LiveRendererSnapshotEpoch;
 use sophia_wake::{Notifier, Wake};
 use std::io;
@@ -18,6 +19,7 @@ use std::time::Instant;
 mod executor;
 mod graveyard;
 mod inbox;
+mod native;
 use executor::Active;
 pub(super) use executor::CaptureExecutor;
 pub(super) use graveyard::CaptureGraveyard;
@@ -49,6 +51,7 @@ pub(super) enum StopReason {
     Deadline,
     Generation,
     ExecutorClosed,
+    RendererRefused,
 }
 
 #[derive(Debug)]
@@ -143,7 +146,8 @@ pub(super) struct CaptureInbox<P, O> {
 
 /// Construct on the renderer owner. Only the inbox may cross owners. The
 /// graveyard must be shared across replacement mailboxes and retained by the
-/// renderer until proven context/display teardown, including on unwind.
+/// renderer until source reads are proven ended, including on unwind.
+/// EGL context/display teardown alone does not establish that proof.
 pub(super) fn channel<P, O>(
     epoch: Arc<LiveRendererSnapshotEpoch>,
     graveyard: Arc<CaptureGraveyard<P>>,
