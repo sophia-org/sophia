@@ -831,3 +831,21 @@ CPU block, candidate/control/control/candidate. C parity, deterministic
 saturated-journal handoff/deadline integration, and latency-instrumented
 acceptance remain open. No additional run or production change was made;
 ACK handoff remains disabled by default.
+
+
+## Candidate 32: reversed CPU block prepared
+
+`candidate-32-ack-handoff-reverse` prepares candidate/control/control/candidate
+using the exact candidate-31 binaries and workload. No rebuild or source change;
+all requests match their previous arm except fresh config paths/hashes. Four
+profile checks, four session-argument checks, 18 launcher tests, the disposable
+PTY cleanup control, and 92 recursive pin references pass. New stages are
+`ack32-1..4`; wrapper `~/.local/state/t331/run-ack-handoff-reverse-remote.sh`.
+Bound 600 seconds, expected about 260 seconds. Launch needs the user's sudo
+password; no native run was started. Keep pinned Cargo output and comparator/
+integration checkouts unchanged until capture completes.
+
+Evaluate this block separately before combining with candidate 31, retaining
+all runs and drift. It tests repeatability of the first block's -1.16% combined
+CPU signal, not latency acceptance or promotion. Existing C parity and
+saturated-journal integration limits remain open.
