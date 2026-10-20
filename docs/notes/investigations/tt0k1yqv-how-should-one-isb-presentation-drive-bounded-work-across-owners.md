@@ -849,3 +849,29 @@ Evaluate this block separately before combining with candidate 31, retaining
 all runs and drift. It tests repeatability of the first block's -1.16% combined
 CPU signal, not latency acceptance or promotion. Existing C parity and
 saturated-journal integration limits remain open.
+
+
+## Candidate 32: repeat does not establish ACK-handoff benefit
+
+The reversed block `ack32-1..4` completed and joins all 1000 presentations per
+run, with identical bytes, consecutive frames and clean capture/VT receipts.
+Evidence: `candidate-32-ack-handoff-reverse/RESULTS.md`, `results.json`,
+`analyze.py` and `capture-SHA256SUMS`. Original captures and candidate-31
+artifacts remain untouched.
+
+Combined midpoint CPU is 1520.26/1511.71 us/frame candidate versus
+1456.03/1580.72 control. Mean difference -2.39 us (-0.16%), compared with
+-17.90 us (-1.16%) in candidate 31. The controls differ by 124.69 us (8.21%);
+both candidates lie between them. Session mean is -1.12%, peer +2.73%.
+No evidence identifies why control run 2 is low in both processes; retain it.
+Pooling eight runs gives combined -0.66%, Session -1.25%, peer +1.06%, which
+does not resolve the variability or establish a causal effect. Neither a
+repeatable benefit nor a regression is established.
+
+Completion interval medians remain 16,683 us. Latency medians overlap and
+maxima vary; CPU-only data do not qualify latency tails. Do not promote the
+feature: it remains default-off, production unchanged, with C parity and
+saturated-journal integration limits open. Before another CPU screen, check
+mechanism evidence for changed ACK/exchange/owner-visit counts and investigate
+measurement variability. These CPU totals prove neither. No further capture
+or implementation change was made.
