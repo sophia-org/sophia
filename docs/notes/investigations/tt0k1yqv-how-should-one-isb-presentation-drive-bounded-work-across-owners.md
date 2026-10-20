@@ -973,3 +973,33 @@ record kinds/sequences to delivered read spans and covering ACKs. That trace
 can show append/read ordering, but cannot by itself establish earliest domain
 eligibility or native scheduling. Keep those limits explicit. No production
 candidate follows from aggregate counts alone.
+
+
+## Candidate 35: bounded trace confirms existing coalescing and tail ACK debt
+
+Ran existing journal-trace controls without desktop/tty4 capture or source
+changes. Both synthetic classifiers and both exact supplied-owner workload
+runs pass (64 panel frames plus 64 probe frames per arm). All trace drops,
+invariant violations and unmatched classified outcomes are zero. Evidence:
+`candidate-35-bounded-journal-trace/RESULTS.md`, `analysis.json`, trace tables,
+commands, logs, source/peer pins and checksums.
+
+Panel arms both deliver 708 records in 643 reads: 578 single-record and 65
+two-record reads. All 64 Prepared/Presented pairs share a read; startup
+sequences 1/2 account for the remaining pair. This owner calls Prepared and
+Presented back-to-back, unlike native presentation. Existing multi-record
+read support works; these tests do not establish native coalescing potential.
+Mapped custody receipts and domain outcomes remain in separate reads in both
+arms. Earliest domain eligibility is not recorded, so split reads are not
+proof of avoidable work. Some image records remain unclassified (kind 0),
+and the current semantic join does not map every response kind.
+
+Control panel has 644 advanced ACKs, candidate 643. Delivered-through is 708
+in both; final ACK is 708 versus 707. The probe case similarly ends at 1092
+delivered, control ACK 1092 versus candidate 1091. The one fewer ACK is an
+unacknowledged tail record when the peer stops driving, not steady-state
+coalescing. This matches the experiment's documented ACK-debt contract;
+delivery and teardown accounting pass, but idle retention/deadline acceptance
+is not demonstrated. Keep the feature disabled; no further CPU screening.
+No new batching mechanism is indicated. Further analysis must establish a
+specific owner/domain publication dependency before proposing source changes.
