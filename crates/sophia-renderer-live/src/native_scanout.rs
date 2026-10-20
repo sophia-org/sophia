@@ -20,6 +20,8 @@ pub use image_reads::{LiveRendererImageRead, LiveRendererImageReads};
 
 mod renderer_images;
 #[cfg(feature = "experimental-shell-capture")]
+mod shell_capture;
+#[cfg(feature = "experimental-shell-capture")]
 pub use renderer_images::LiveRendererSnapshotRetentionFailure;
 pub use renderer_images::{
     LIVE_RENDERER_IMAGE_STORE_BYTE_BUDGET, LIVE_RENDERER_IMAGE_STORE_CAPACITY,

@@ -1,7 +1,7 @@
 //! Private real-copy driver for the existing bounded mailbox.
 //!
-//! The Session grant/resource-lease binding is deliberately not exposed yet.
-//! Only the real backend is reachable outside this module. Test backends and
+//! Session retains grant/resource correlation outside this driver. Only the
+//! real backend is reachable outside this module. Test backends and
 //! supplied completions cannot manufacture a public receipt.
 use super::executor::{BeginFailure, NextJob};
 use super::*;

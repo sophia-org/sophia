@@ -54,6 +54,18 @@ impl LiveRendererSnapshotWeak {
 }
 
 impl LiveRetainedRendererImageSnapshot {
+    /// The native adapter has already retained and charged this exact copy.
+    #[cfg(feature = "experimental-shell-capture")]
+    pub(crate) fn from_shell_capture(
+        inner: std::sync::Arc<sophia_renderer_native_egl::NativeRendererImageSnapshot>,
+    ) -> Self {
+        let frame = inner.as_frame();
+        let size = sophia_protocol::Size {
+            width: i32::try_from(frame.width).expect("capture preflight bounded width"),
+            height: i32::try_from(frame.height).expect("capture preflight bounded height"),
+        };
+        Self { size, inner }
+    }
     pub fn downgrade(&self) -> LiveRendererSnapshotWeak {
         LiveRendererSnapshotWeak(std::sync::Arc::downgrade(&self.inner))
     }

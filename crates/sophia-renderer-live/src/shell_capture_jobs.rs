@@ -16,6 +16,7 @@ use std::sync::{
 };
 use std::time::Instant;
 
+pub(crate) mod api;
 mod executor;
 mod graveyard;
 mod inbox;

@@ -363,6 +363,57 @@ identity, head requeue, omitted unwind settlement, and timeout-as-completion.
 Restored suites pass; Clippy is clean. Logs are retained under
 `~/.local/state/sophia/development-evidence/t339-owned-capture-20261020/native-adapter-01/`.
 
+#### Session completion handoff and connection binding
+
+The next October 20 slice exposes an experimental renderer-live mailbox façade
+and adds a private Session correlation owner. The façade accepts a reserved
+capture request, returns an opaque job ID, and produces a non-constructible
+completion receipt. Its executor services the existing renderer-live context
+through a private bridge; it creates no context, thread or device. The inbox is
+Send; the executor remains !Send. Requests wake the renderer and completions wake
+Session. Pending fences still require explicit follow-up owner turns: the request
+fd does not become readable when a GPU fence signals.
+
+Completed receipts return the exact source descriptor and either the already
+charged immutable snapshot or an output failure with its unused reservation.
+Withdrawal/deadline flags survive receipt conversion. Pre-use rollback returns
+the original request. Uncertain receipts return neither source nor reservation;
+the native escrow's existing quarantine policy continues to own them. The live
+snapshot wrapper adds no second allocation or budget charge. Public enum values
+are not proofs: only the opaque receipt is issued by the mailbox/native adapter.
+
+Session's bounded table retains the slot, connection/content grant epochs, full
+image metadata and the single plane descriptor until the exact job settles.
+DMA-BUF metadata stride is zero; offset/stride/fd index come from its plane row.
+Mismatched metadata, duplicate offers/resources, full tables and closed queues
+return source and destination reservation without creating a binding. Withdrawal
+and resource cancellation keep old bindings alive; a reconnect with reused offer
+or resource numbers cannot take their receipts. An unmatched receipt is retained
+and closes further submission. A settlement is not permission to publish: the
+resource owner must still revalidate live authority and reconcile its logical
+shell reservation, even for stopped or uncertain jobs.
+
+This is an opt-in integration prerequisite, not a running GPU shell path.
+The Session owner is not installed in production connection state or its service
+loop yet. Runtime's ContentResourceLease still exposes CPU bytes; logical shell
+resource reservation/acceptance, compositor lowering and actual owner-turn fence
+scheduling remain outstanding. Admission still advertises sealed-only, and
+`experimental-shell-capture` is in neither Session's default nor native-session
+features. No native GPU execution, snapshot-pixel validation or performance claim
+is attached to this slice.
+
+Controls use supplied private completions and real mailbox shutdown before GPU
+use. They pin FD/reservation return, reconnect and generation isolation, metadata
+matching, cancellation, capacity, exact-once receipt handling and fail-closed
+identity faults. Six mutations remove these guards individually and fail at
+runtime. The restored feature suites pass 91 tests; the default GBM suites pass
+58 (one pre-existing ignored Session test in each configuration). All six new
+Session controls also pass with native-session enabled. Clippy is clean. Two
+compile-fail controls prohibit external receipt construction and moving
+the executor between threads. Logs and the retained initial metadata-stride test
+failure are under
+`~/.local/state/sophia/development-evidence/t339-owned-capture-20261020/session-handoff-01/`.
+
 #### Remaining Session owner wiring
 
 Use the existing owner, not a second capture thread or context. The bounded

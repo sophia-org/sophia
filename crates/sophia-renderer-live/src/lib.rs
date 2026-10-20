@@ -48,10 +48,10 @@ mod native_scanout;
 mod shared_buffer;
 #[cfg(feature = "gbm-probe")]
 mod shared_pixmap;
-// Private until Session binds the native adapter to grant/resource custody.
 #[cfg(feature = "experimental-shell-capture")]
-#[allow(dead_code)]
 mod shell_capture_jobs;
+#[cfg(feature = "experimental-shell-capture")]
+pub use shell_capture_jobs::api::*;
 
 pub use buffer_registry::*;
 pub use cpu_buffer_registry::*;

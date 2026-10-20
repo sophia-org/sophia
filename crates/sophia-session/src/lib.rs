@@ -1,4 +1,8 @@
 mod output;
+// Admission and owner-loop scheduling remain disabled pending qualification.
+#[cfg(feature = "experimental-shell-capture")]
+#[allow(dead_code)]
+mod shell_capture_owner;
 // Shared supplied verdicts for authenticated image transport fixtures.
 #[cfg(all(test, feature = "native-session"))]
 #[allow(clippy::duplicate_mod)]
