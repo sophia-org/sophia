@@ -551,3 +551,59 @@ syscalls or resembles a fast upstream system.
 - [Readiness must name an obligation](../concepts/readiness-readiness-must-name-an-obligation.md): established distinction between readiness for a particular operation and general readiness.
 - [Architecture](../../architecture.md): Engine/runtime-driver sequencing and existing authority boundaries remain normative.
 - [ISB channel contract](../../sophia-image-channel.md): two-stream admission, immutable backing, deadlines and release semantics remain normative.
+
+
+## Request dependencies and plan9port lessons
+
+Read-only follow-up against production SDK `c6ad4fa0`, the retained comparator
+peer, and local plan9port `b6564bd9` separates source dependencies from the
+candidate-28 wake counts. Those masks identify descriptors, not 9P message
+kinds; no exact count of ACK, Tread or submission wakes follows from them.
+
+The sealed panel peer prepares its source, begins an image offer, waits for
+Accepted and retained SourceReleased, submits the candidate, waits for Prepared
+and Presented, then retires the previous resource and waits for ResourceReleased
+(`examples/shell_timing_peer.rs:476, 621, 666`; `sealed.rs:137`). These waits
+express distinct resource/custody conditions. Removing one would require its
+own contract argument, not just a runnable flag.
+
+Within FileWire, record and submit writes are already pipelined; cumulative
+ACK is queued before the next record where it releases the transaction lane
+(`files/submission.rs:34,238`; `files/drive.rs:350`). The client negotiates a
+reusable transaction fid (`files/connect.rs:359`) and retains it when offered;
+per-record walk/open is not a general explanation of steady-state cost.
+`maybe_read_events` keeps one maximum-size Tread outstanding, subject to inbox
+and event-buffer capacity (`files/drive.rs:331`). Socket readiness can therefore
+carry several replies, or an ACK/rearmed-read request rather than new frame
+work. None of these stages maps one-to-one onto a wake.
+
+Plan9port offers three useful invariants, not a replacement execution model:
+
+- **Resume a named dependency.** Acme `xfideventread`
+  (`src/cmd/acme/xfid.c:1053`) parks the request in `w->eventx` when the event
+  buffer is empty. `winevent` appends bytes, clears that pointer and wakes the
+  request (`wind.c:721`). After waking, the reader checks the state under the
+  window lock. For Sophia, audit which local state change makes a parked read
+  answerable before considering selective retry. The retry capture does not
+  establish a wake-pipe hotspot: its server-wake count was zero.
+- **Drain existing work without delaying for more.** Acme returns up to the
+  requested count from all buffered events; Sophia already has this behavior.
+  `9pserve` queues messages under a lock and sleeps only while the queue is
+  empty (`src/cmd/9pserve.c:1178,1197`). This is queue-driven work, not evidence
+  that a thread-per-queue architecture or a new coordinator would improve
+  Sophia. Its queue allocates a node per message and its output thread writes
+  one message at a time; Sophia already batches pending output.
+- **Cancellation and completion are scheduling obligations.** Acme Tflush
+  clears the matching parked event request and wakes it with `flushed` set
+  (`xfid.c:76`); window deletion also wakes a blocked reader (`wind.c:337`).
+  lib9p `respond` coordinates request removal, tag reuse and pending flush
+  replies (`src/lib9p/srv.c:751`). Any selective retry design must retain
+  cancellation, teardown and completion ordering, alongside Sophia's fresh
+  authority checks and delivery guards.
+
+Next discriminator: classify the existing request/reply dependency sequence
+before proposing changes. The retained wait masks cannot distinguish an ACK
+from a rearmed Tread or a candidate write. A future narrowly scoped diagnostic
+would need message-kind/cause attribution if existing progress counters cannot
+resolve that ambiguity. No production scheduling change, new capture, or
+savings claim follows from this source audit.
