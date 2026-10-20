@@ -1366,3 +1366,48 @@ justified by these results.
 The detailed record is `candidate-41-custody-dispatch-screen/RESULTS.md`;
 diagnostic data and hashes are in `diagnostic-results.json` and
 `diagnostic-capture-SHA256SUMS`. The feature remains opt-in.
+
+### C42 — custody coverage diagnostic prepared (2026-10-20)
+
+C28 remains the broader custody-liveness investigation. C40/C41 tested a
+bounded per-file-turn observation, not the original permanent kernel-applied
+live flag. The next question is whether the native workload actually uses
+that bounded observation, and how often it takes the existing fresh fallback.
+
+Comparator-only commit `0a3d29d2c` adds progress counters for actual fresh and
+aggregate pidfd poll entries, role begin/skip/arm/end calls, dispatched checks,
+and expiry/credit/unregistered outcomes. The separate
+`sophia_custody_dispatch schema=1` record leaves existing progress and exchange
+schemas unchanged. There are no additional hot-path clocks or allocations.
+The counters compile out of CPU and ordinary builds. No authority check,
+dispatch bound, admission path or default changes.
+
+An isolated real role-owner control reconciles 2,176 fresh polls against 128
+scopes containing 2,048 classified uses and 128 final fresh polls plus any
+fallbacks. The retained scoped run uses 2,048 dispatched-live checks without
+fallback; a forced expiry separately records one fallback and one fresh poll.
+Discarding the stored observation makes the control fail; restoring it passes.
+The Session suite, progress framing tests and clippy pass.
+
+The frozen diagnostic pair uses the same source and progress peer for two
+1000-frame files-panel runs, control then candidate. The candidate alone
+enables the Session dispatch feature. All 234 common compiler units have
+matching profiles and only the Session/runtime experimental feature additions.
+Muse independently reviewed source, pins, plans and analyzer: READY.
+
+Interpretation is deliberately limited: counters perturb the 1 ms age limit,
+so rates describe this progress execution, not c41's CPU execution. Fresh
+kernel polls count all callers in the process; role outcomes have narrower
+scope. End includes reset/close calls and is not a paired-scope invariant.
+Outcome names are site classifications, not revocation root causes.
+The analyzer reports interior/enclosing cumulative bounds for the first-upload
+through last-terminal window, requiring positive candidate dispatched use.
+
+Evidence: `candidate-42-custody-coverage` under the t331 evidence root.
+Native capture has not run; sudo requires a password. The prepared entry is
+`sh ~/.local/state/t331/run-custody-coverage-remote.sh`, approximately two
+minutes under a 300-second VT bound. This pair establishes coverage only,
+not CPU savings, uninstrumented fallback rates or promotion.
+
+The separate [hosted Plan 9 and draw-peer brainstorm](akr07m5j-hosting-plan-9-on-sophia-and-a-draw-peer-class-brainstorm-of-2026-10-20.md)
+is parked for later; it does not change this experiment or the accepted ADR.
