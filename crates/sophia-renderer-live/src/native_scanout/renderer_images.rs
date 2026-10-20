@@ -103,7 +103,7 @@ impl LiveRendererImageSnapshot {
         budget
             .retain(self.inner, epoch)
             .map(|inner| LiveRetainedRendererImageSnapshot { inner, size })
-            .map_err(super::reduced_native_owned_scanout_buffer_export_detail)
+            .map_err(|error| super::reduced_native_owned_scanout_buffer_export_detail(error.into()))
     }
 }
 
@@ -143,7 +143,9 @@ impl LiveRendererImageSnapshot {
             .retain_reserved(self.inner, epoch, reservation)
             .map(|inner| LiveRetainedRendererImageSnapshot { size, inner })
             .map_err(|failure| LiveRendererSnapshotRetentionFailure {
-                detail: super::reduced_native_owned_scanout_buffer_export_detail(failure.detail),
+                detail: super::reduced_native_owned_scanout_buffer_export_detail(
+                    failure.detail.into(),
+                ),
                 snapshot: Self {
                     image_id,
                     inner: failure.snapshot,

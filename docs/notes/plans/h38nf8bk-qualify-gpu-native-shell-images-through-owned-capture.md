@@ -471,6 +471,63 @@ outstanding. The experimental feature remains off by default; production image
 configuration remains sealed-only. No hardware run or performance claim is
 attached to these accounting controls.
 
+#### Shared snapshot ownership prerequisite
+
+The accepted GPU lease needs a storage owner below both runtime and the native
+renderer. `sophia-renderer-image` now owns the existing image identity, descriptor
+planes and borrowed views, snapshot, budget/charge, epoch and experimental
+reservation types. It depends only on rustix/std, with no renderer context, GBM,
+EGL or runtime dependency. Native EGL re-exports those types and maps the three
+storage errors into its existing refusal vocabulary; renderer-live keeps its
+existing retained wrapper. The single-plane GBM admission adapter stays native.
+Descriptor duplication and budget retention still use the same implementations
+and charge, rather than another image registry or an erased backing trait.
+
+An openly constructible `OwnedSnapshotData` creates only an **uncharged**
+snapshot. Neither owning descriptors, charging them nor observing a current
+epoch proves immutable capture or ended source reads. The native exact-copy
+completion and opaque receipt remain the proof. `is_retained()` is an ownership
+fact only; a future registry accept operation must not treat a caller-supplied
+retained snapshot as a completion receipt.
+
+Review identified an additional release requirement before successful GPU
+acceptance. Shell resource leases have an outer Arc, but native imports and
+queued scanout buffers retain the inner snapshot Arc. `try_clone()` also creates
+a different snapshot with duplicated descriptors and the same physical charge.
+The leaf's `custody_is_exclusive()` therefore checks both the snapshot and charge
+strong counts. Future resource collection must require outer-lease uniqueness
+**and** this inner-storage condition. Epoch invalidation never releases storage;
+import-cache retirement is per charge and does not invalidate sibling resources.
+
+Uniqueness alone does not make retirement progress: an idle native import cache
+can retain a snapshot indefinitely. Session must mark imports non-cacheable and
+request explicit native import eviction from **retirement/revocation intent**,
+before waiting for exclusivity. `isb_release_pending` is too late as the trigger
+if it already depends on collection. Frames and submitted GPU uses must still
+drain through their existing completion owners. Do not claim a fixed release
+latency from reference counts or from an eviction request.
+
+The existing descriptor and budget tests moved with their implementation. New
+controls distinguish uncharged data, same-snapshot consumers, duplicated
+snapshot consumers, cache retirement and epoch invalidation. Their ordinary
+memfd/socket descriptors test ownership, not GPU rendering. Evidence lives in
+`~/.local/state/sophia/development-evidence/t339-owned-capture-20261020/snapshot-storage-01/`.
+Muse independently reviewed the design and extraction read-only; test results
+are the parent's, not the reviewer's.
+
+Selected validation passed: 88 default-mode tests, 156 feature-mode tests
+(including the native-session handoff controls), three compile-fail docs, and
+Clippy. Five deliberate mutations failed their runtime controls: ignoring either
+ownership count, losing the shared charge on descriptor duplication, omitting
+cache retirement, and treating uncharged data as retained. Restored controls
+passed. The ordinary native Session configuration also type-checked with the
+experimental feature; this was compilation, not a native launch.
+
+This prerequisite does not yet add a runtime GPU backing, accept a successful
+capture, lower it into a native frame or install the owner-loop driver. Those
+steps must carry the release obligation above. Production GPU admission remains
+off, and no device run or performance claim accompanies this extraction.
+
 #### Remaining Session owner wiring
 
 Use the existing owner, not a second capture thread or context. The bounded

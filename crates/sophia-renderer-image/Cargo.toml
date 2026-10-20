@@ -1,0 +1,17 @@
+[package]
+name = "sophia-renderer-image"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rustix = { workspace = true, features = ["fs", "std"] }
+
+[features]
+default = []
+experimental-shell-capture = []
+
+[lints]
+workspace = true

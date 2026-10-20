@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn shared_charges_live_until_the_last_owner_and_limits_do_not_reset() {
-    let budget = NativeRendererSnapshotBudget::new(2, 100);
+    let budget = SnapshotBudget::new(2, 100);
     let first = budget.reserve(60).unwrap();
     let in_flight = first.clone();
     assert!(budget.reserve(41).is_err());
@@ -23,9 +23,9 @@ fn shared_charges_live_until_the_last_owner_and_limits_do_not_reset() {
 
 #[test]
 fn reset_invalidates_every_queued_reference_without_releasing_storage() {
-    let budget = NativeRendererSnapshotBudget::new(1, 100);
+    let budget = SnapshotBudget::new(1, 100);
     let charge = budget.reserve(100).unwrap();
-    let epoch = NativeRendererSnapshotEpoch::new(1, 2, 3);
+    let epoch = SnapshotEpoch::new(1, 2, 3);
     let queued = epoch.clone();
     epoch.invalidate();
     assert!(!queued.is_valid());

@@ -1569,6 +1569,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sophia-renderer-image"
+version = "0.1.0"
+dependencies = [
+ "rustix",
+]
+
+[[package]]
 name = "sophia-renderer-live"
 version = "0.1.0"
 dependencies = [
@@ -1594,6 +1601,7 @@ dependencies = [
  "glow",
  "khronos-egl",
  "rustix",
+ "sophia-renderer-image",
  "sophia-x-authority",
  "tracing",
 ]

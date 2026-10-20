@@ -4,24 +4,7 @@ use super::{
     NativeDmaBufCompositionLayer, NativeGbmScanoutBufferExportDetail, PersistentXrgb8888GlPipeline,
 };
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct NativeRendererImageId(u64);
-
-impl NativeRendererImageId {
-    pub const INVALID: Self = Self(0);
-
-    pub const fn from_raw(raw: u64) -> Self {
-        Self(raw)
-    }
-
-    pub const fn raw(self) -> u64 {
-        self.0
-    }
-
-    pub const fn is_valid(self) -> bool {
-        self.0 != 0
-    }
-}
+pub use sophia_renderer_image::RendererImageId as NativeRendererImageId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeRendererImageCacheAdmission {

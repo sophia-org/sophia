@@ -258,7 +258,7 @@ impl<T: AsFd> NativeGbmRenderedScanoutContext<T> {
                 .budget
                 .retain_reserved(snapshot, request.epoch, request.reservation)
                 .map_err(|failure| NativeShellCaptureOutputFailure {
-                    detail: failure.detail,
+                    detail: failure.detail.into(),
                     reservation: failure.reservation,
                 }),
             Err(detail) => Err(NativeShellCaptureOutputFailure {
@@ -296,19 +296,19 @@ fn export_copy(
     {
         return Err(NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor);
     }
-    Ok(NativeRendererImageSnapshot {
-        image_id: request.image_id,
-        width: buffer.width(),
-        height: buffer.height(),
-        format: buffer.format(),
-        modifier: buffer
-            .modifier()
-            .unwrap_or(u64::from(gbm::Modifier::Invalid)),
-        plane_count: buffer.plane_count(),
-        planes,
-        charge: None,
-        epoch: None,
-    })
+    Ok(NativeRendererImageSnapshot::uncharged(
+        request.image_id,
+        NativeOwnedSnapshotData {
+            width: buffer.width(),
+            height: buffer.height(),
+            format: buffer.format(),
+            modifier: buffer
+                .modifier()
+                .unwrap_or(u64::from(gbm::Modifier::Invalid)),
+            plane_count: buffer.plane_count(),
+            planes,
+        },
+    ))
 }
 
 #[cfg(test)]
