@@ -75,3 +75,19 @@ fn largest_counter_values_fit_one_atomic_pipe_record() {
     assert_eq!(comparator_counters::PROGRESS_RECORD_BYTES, 4096);
     assert!(header.len() + fields <= comparator_counters::PROGRESS_RECORD_BYTES);
 }
+
+#[test]
+fn session_exchange_record_is_separate_from_frozen_schema_four() {
+    let mut output = Vec::new();
+    comparator_counters::write_progress(&mut output, "session", 3).unwrap();
+    let text = String::from_utf8(output).unwrap();
+    let rows: Vec<_> = text.lines().collect();
+    assert_eq!(rows.len(), 2);
+    assert!(rows[0].starts_with("sophia_comparator_progress schema=4 "));
+    assert!(rows[1].starts_with("sophia_shell_exchanges schema=1 mode=progress process=session "));
+    for name in progress::exchanges::NAMES {
+        assert!(rows[1].contains(&format!(" scoped_{name}=")));
+        assert!(rows[1].contains(&format!(" unscoped_{name}=")));
+    }
+    assert!(rows.iter().all(|row| row.len() < 4096));
+}

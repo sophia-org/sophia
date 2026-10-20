@@ -639,7 +639,10 @@ impl Export for ShellFiles {
         scratch: &mut Vec<u8>,
     ) -> Result<ReadOutcome, Errno> {
         if matches!(node, Node::Events) {
-            self.journal.read_buffered(offset, count, scratch)
+            let result = self.journal.read_buffered(offset, count, scratch);
+            #[cfg(feature = "comparator-progress")]
+            observe_event_read(&result);
+            result
         } else {
             self.read(node, handle, offset, count)
         }
@@ -665,7 +668,12 @@ impl Export for ShellFiles {
             (node, Handle::Object(object)) if node.object_kind().is_some() => {
                 Ok(slice(&object.bytes, offset, count))
             }
-            (Node::Events, _) => self.journal.read(offset, count),
+            (Node::Events, _) => {
+                let result = self.journal.read(offset, count);
+                #[cfg(feature = "comparator-progress")]
+                observe_event_read(&result);
+                result
+            }
             (Node::TransactionReuse, Handle::ReusableTransaction(id)) => {
                 self.read_reusable_transaction(*id, offset, count)
             }
@@ -699,7 +707,15 @@ impl Export for ShellFiles {
         self.expire();
         #[cfg(feature = "comparator-progress")]
         {
+            use crate::comparator_counters::progress::exchanges::{self, Operation};
             use crate::comparator_counters::progress::{Activity, observe};
+            match node {
+                Node::Transaction | Node::TransactionReuse => exchanges::observe(Operation::Record),
+                Node::Submit => exchanges::observe(Operation::Submit),
+                Node::Ack => exchanges::observe(Operation::Ack),
+                _ => {}
+            }
+
             observe(match node {
                 Node::Transaction | Node::TransactionReuse => Activity::Record,
                 Node::Submit => Activity::Submit,
@@ -790,3 +806,13 @@ impl Export for ShellFiles {
 #[cfg(feature = "comparator-journal-trace")]
 #[path = "export/trace.rs"]
 mod trace;
+
+#[cfg(feature = "comparator-progress")]
+fn observe_event_read(result: &Result<ReadOutcome, Errno>) {
+    use crate::comparator_counters::progress::exchanges::{self, Operation};
+    exchanges::observe(match result {
+        Ok(ReadOutcome::Ready(_)) => Operation::EventReady,
+        Ok(ReadOutcome::Pending) => Operation::EventPending,
+        Err(_) => Operation::EventError,
+    });
+}

@@ -97,6 +97,11 @@ fn negotiate(
 
 #[test]
 fn file_negotiation_publishes_limits_and_correlates_a_rejected_allocation() {
+    #[cfg(feature = "comparator-progress")]
+    let exchange_before = sophia_9p::progress::exchanges::snapshot();
+    #[cfg(feature = "comparator-progress")]
+    let exchange_pass = sophia_9p::progress::owner_pass();
+
     let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
     let (mut transport, directory) = transport();
     let expected = limits(1);
@@ -190,6 +195,18 @@ fn file_negotiation_publishes_limits_and_correlates_a_rejected_allocation() {
     transport.disconnect(&mut registry).unwrap();
     registry.collect();
     std::fs::remove_dir_all(directory).unwrap();
+    #[cfg(feature = "comparator-progress")]
+    {
+        drop(exchange_pass);
+        let after = sophia_9p::progress::exchanges::snapshot();
+        for index in [0, 1, 2, 3] {
+            assert!(
+                after.scoped[index] > exchange_before.scoped[index],
+                "missing shell operation {}",
+                sophia_9p::progress::exchanges::NAMES[index]
+            );
+        }
+    }
 }
 
 #[test]

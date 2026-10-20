@@ -1,6 +1,7 @@
 //! Comparison-only process totals. Core counts include every 9P server in the
 //! process; they are not exclusive shell costs or wall-clock measurements.
 use std::sync::atomic::{AtomicU64, Ordering};
+pub mod exchanges;
 pub mod service_ledger;
 pub mod wait_sources;
 
@@ -125,12 +126,14 @@ pub fn observe(activity: Activity) {
 /// the sampler can observe a started pass before it has completed.
 pub struct OwnerPass(std::marker::PhantomData<*mut ()>);
 pub fn owner_pass() -> OwnerPass {
+    exchanges::begin();
     PASS.with(|pass| assert!(pass.replace(Some(0)).is_none(), "nested owner pass"));
     add(Counter::OwnerPass, 1);
     OwnerPass(std::marker::PhantomData)
 }
 impl Drop for OwnerPass {
     fn drop(&mut self) {
+        exchanges::end();
         let bits = PASS.with(|pass| pass.replace(None).expect("active owner pass"));
         add(Counter::OwnerCompleted, 1);
         let work = bits & 0x3f;

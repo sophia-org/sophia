@@ -222,7 +222,20 @@ pub fn write_progress(
     }
     writeln!(buffer)?;
     let len = buffer.position() as usize;
-    output.write_all(&bytes[..len])
+    output.write_all(&bytes[..len])?;
+    if process == "session" {
+        let before = nanos(rustix::time::ClockId::Monotonic) / 1000;
+        let exchanges = progress::exchanges::snapshot();
+        let after = nanos(rustix::time::ClockId::Monotonic) / 1000;
+        progress::wait_sources::write_line(
+            output,
+            format_args!(
+                "sophia_shell_exchanges schema=1 mode=progress process=session pid={} sequence={sequence} before_usec={before} after_usec={after}{exchanges}",
+                std::process::id()
+            ),
+        )?;
+    }
+    Ok(())
 }
 
 /// Samples the whole Session process. The verifier must bracket each client
