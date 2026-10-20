@@ -31,6 +31,11 @@ impl WorkerAuthority {
     pub(super) fn ingress(&self) -> Ingress {
         self.ingress.clone()
     }
+    pub(super) fn visit_wait_fds<'a>(&'a self, visit: &mut dyn FnMut(rustix::event::PollFd<'a>)) {
+        if self.active.load(Ordering::Acquire) && self.ingress.is_open() {
+            self.custody.visit_poll_fds(visit);
+        }
+    }
     pub(super) fn live(&self) -> Result<bool, Error> {
         Ok(self.active.load(Ordering::Acquire)
             && self.ingress.is_open()

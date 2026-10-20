@@ -485,3 +485,6 @@ fn all_relay_slots_share_a_wait_and_idle_observations_do_not_hide_retirement() {
         .subscribe_relays(0, |_| panic!("retired relay retained a descriptor"));
     assert!(waits.is_empty());
 }
+
+#[path = "support/authentication_custody_wait.rs"]
+mod authentication_custody_wait;

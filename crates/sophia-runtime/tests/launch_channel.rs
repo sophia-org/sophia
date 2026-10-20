@@ -336,3 +336,55 @@ fn worker_custody_observes_exit_without_a_session_poll() {
         "worker observation must not consume the child's exit status"
     );
 }
+
+#[test]
+fn custody_wait_observes_peer_exit_while_wrapper_is_stopped() {
+    let probe = Probe::build();
+    let (mut supervisor, _owner, reservation) = ready_probe(&probe, 1);
+    let custody = supervisor
+        .launch_custody(&reservation, ProtectionDomainRole::MetadataShell)
+        .unwrap()
+        .unwrap();
+    let wrapper = rustix::process::Pid::from_raw(supervisor.child_id().unwrap() as i32).unwrap();
+    let peer = rustix::process::Pid::from_raw(supervisor.peer_id().unwrap() as i32).unwrap();
+    assert_ne!(wrapper, peer);
+    assert!(custody.is_live().unwrap());
+    rustix::process::kill_process(wrapper, rustix::process::Signal::STOP).unwrap();
+    {
+        let mut fds = Vec::new();
+        custody.visit_poll_fds(|fd| fds.push(fd));
+        assert_eq!(fds.len(), 2);
+        assert_eq!(
+            rustix::event::poll(&mut fds, Some(&rustix::event::Timespec::default())).unwrap(),
+            0
+        );
+        rustix::process::kill_process(peer, rustix::process::Signal::KILL).unwrap();
+        assert!(
+            rustix::event::poll(
+                &mut fds,
+                Some(&rustix::event::Timespec {
+                    tv_sec: 2,
+                    tv_nsec: 0
+                })
+            )
+            .unwrap()
+                > 0
+        );
+        assert!(fds[0].revents().is_empty(), "wrapper remains alive");
+        assert!(fds[1].revents().contains(rustix::event::PollFlags::IN));
+    }
+    assert!(
+        !custody.is_live().unwrap(),
+        "fresh check refuses without a supervisor poll"
+    );
+    assert!(supervisor.child_id().is_some());
+    supervisor.request_termination().unwrap();
+    let mut count = 0;
+    custody.visit_poll_fds(|_| count += 1);
+    assert_eq!(
+        count, 0,
+        "withdrawn custody must not leave persistent wait readiness"
+    );
+    let _ = rustix::process::kill_process(wrapper, rustix::process::Signal::CONT);
+    supervisor.terminate().unwrap();
+}

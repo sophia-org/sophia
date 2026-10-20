@@ -269,6 +269,12 @@ impl Drop for RoleFileAuthentication {
     }
 }
 impl FileAuthentication for RoleFileAuthentication {
+    fn visit_wait_fds<'a>(&'a self, visit: &mut dyn FnMut(rustix::event::PollFd<'a>)) {
+        if !self.closed {
+            self.worker.visit_wait_fds(visit);
+        }
+    }
+
     fn claims(&self, c: &AttachContext<'_>) -> Result<(), Errno> {
         self.auth.claims(c.connection, c.uname, c.aname, c.n_uname)
     }

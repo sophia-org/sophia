@@ -150,8 +150,10 @@ impl ShellFileWire {
     pub(super) fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(rustix::event::PollFd<'a>)) {
         self.server.visit_poll_fds(&mut visit);
         if let Some(image) = &self.image {
-            image.visit_poll_fds(visit);
+            image.visit_poll_fds(&mut visit);
         }
+        // Append after wire/image descriptors; their subscription positions stay fixed.
+        self.server.export().visit_authentication_fds(visit);
     }
 
     pub(super) fn subscription(&self) -> Option<ShellReadinessSubscription> {

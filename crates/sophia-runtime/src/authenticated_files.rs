@@ -8,6 +8,10 @@ use std::time::{Duration, Instant};
 /// Trusted, transport-scoped authentication owner. Implementations must retain
 /// identity across reset and must not wait on a peer or another owner thread.
 pub trait FileAuthentication: Send {
+    /// Additional wake reasons, never an authorization result. Closed owners
+    /// must omit descriptors whose persistent readiness can no longer be serviced.
+    fn visit_wait_fds<'a>(&'a self, _visit: &mut dyn FnMut(rustix::event::PollFd<'a>)) {}
+
     fn claims(&self, context: &AttachContext<'_>) -> Result<(), Errno>;
     fn begin(&mut self, afid: Fid, now: Instant) -> Result<Attempt, Errno>;
     fn read(
@@ -116,6 +120,15 @@ impl<E> AuthenticatedFiles<E> {
         self.admission = Admission::Authenticated(owner);
         Ok(())
     }
+    pub fn visit_authentication_fds<'a>(
+        &'a self,
+        mut visit: impl FnMut(rustix::event::PollFd<'a>),
+    ) {
+        if let Admission::Authenticated(owner) = &self.admission {
+            owner.visit_wait_fds(&mut visit);
+        }
+    }
+
     pub fn files(&self) -> &E {
         &self.files
     }

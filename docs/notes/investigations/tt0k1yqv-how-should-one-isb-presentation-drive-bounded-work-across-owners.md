@@ -1034,3 +1034,43 @@ after journaling, without another worker result/packet/ACK. Preserve status
 ordering, FIFO, credits, generations, authority, cancellation and journal-full
 recovery. Only then consider a release-only hook, with a mutation-sensitive
 one-read test; a hook after the flush must not claim exchange reduction.
+
+
+## Candidate 37: custody exit wakes the existing owner
+
+The proposed kernel-applied live flag is not equivalent to a fresh check.
+If a peer exits between checks A and B within one owner pass, today's B can
+observe that exit; a flag last updated before the pass can still authorize B.
+A kernel-originated notification does not make a retained positive result
+fresh. Supervisor reaping also cannot stand in for independently observing
+peer exit while the wrapper remains alive. No flag-only check is adopted.
+
+The narrower change exposes the existing wrapper and peer pidfds as borrowed
+wait descriptors through LaunchCustody, WorkerAuthority, FileAuthentication,
+and AuthenticatedFiles. ShellFileWire appends them after its wire and image
+descriptors, preserving readiness subscription positions. An authenticated
+shell waiting in the existing owner loop can therefore wake on either exit.
+Every is_live, export poll/check, and image peer check still executes its
+existing fresh check. The 20 ms authentication cap remains unchanged.
+Closed authentication owners and withdrawn custody omit these descriptors,
+so persistent exit readiness does not keep their waits runnable forever.
+There is no new observer thread, event loop, or authority cache.
+
+Evidence is retained in `candidate-37-custody-wait` beneath the t331 evidence
+root. A real protected-process test stops the wrapper, kills the peer, and
+observes the peer pidfd becoming readable independently of wrapper reaping;
+the fresh check refuses immediately. A real authentication-owner test passes
+the descriptors through AuthenticatedFiles, observes peer exit, then checks
+ESTALE and removal of the closed owner's descriptors. Existing shell/image
+readiness tests cover unchanged descriptor positions. The complete owner
+wait-to-component-service path is covered by source inspection, not a new
+end-to-end native capture. Runtime targeted suites: 17 passed, 1 ignored;
+launch_authentication: 28 passed, 9 ignored. Clippy with native-session and
+warnings denied passes. The feature-off session check still encounters the
+pre-existing renderer-native-egl dependency error; native-session is the
+validated configuration.
+
+This is wake behavior and an architectural prerequisite only, not a CPU
+optimization or evidence of fewer liveness syscalls. No native timing claim,
+no comparator promotion, and no change to the published ISB/9P contract.
+The source-release publication eligibility investigation remains open.
