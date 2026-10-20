@@ -40,6 +40,69 @@ JIT configuration or cross-platform support need pinned verification before
 selection. Plan 9 raster exactness is reported as unnecessary; compatibility
 with libdraw therefore needs a translator and a stated supported subset.
 
+## Proposed GPU-native content path
+
+Following the discussion of GPU-equipped clients, the surface class has two
+producer paths. GPU-native submission should be evaluated as a first-class
+path rather than requiring GPU clients to read pixels back into CPU ISBs.
+This diagram is a proposed integration target, not a claim of implemented
+support or measured benefit. The existing image-channel contract already
+describes device-buffer capture; delivery and qualification remain separate.
+
+```text
+ CPU SURFACE CLIENT              GPU SURFACE CLIENT
+ produces CPU pixels             renders into a GPU buffer
+         |                                  |
+     sealed ISB                          DMA-BUF
+         |                                  |
+         +---------- descriptor channel ----+
+                            |
+ Both clients: 9P control --+-- identity, epoch, image record
+                            v
+              +-----------------------------+
+              | IMAGE SERVICE / SESSION     |
+              | admit, validate, budget     |
+              | own resources and releases  |
+              +--------------+--------------+
+                             | host operations
+               +-------------+--------------+
+               v                            v
+    +----------------------+    +-------------------------+
+    | CPU SOURCE ADAPTER   |    | GPU SOURCE ADAPTER      |
+    | verify seals and size|    | validate format/device  |
+    | retain/map/upload    |    | synchronize and capture |
+    +----------+-----------+    | into owned GPU storage  |
+               |                +------------+------------+
+               +-------------+---------------+
+                             | accepted immutable content
+                             v
+                    +------------------+
+ optional draw ---->| ENGINE / RENDERER|<---- existing X authority
+ job: validate,     | compose, present |      admitted transactions
+ rasterize, admit   | and retire      |
+      ^             +--------+---------+
+ draw commands               |
+ over 9P                     |
+                             v
+                    HOST DISPLAY BACKEND
+```
+
+The X arrow denotes its existing admitted transaction path, not adoption of
+the new surface protocol. Likewise, optional draw output needs its own
+resource accounting and transaction admission before Engine consumes it.
+
+The GPU path aims to avoid CPU readback and a subsequent upload. It initially
+retains capture into Sophia-owned GPU storage to preserve immutable acceptance.
+An acquire/completion fence alone does not freeze a producer-writable source.
+Direct composition or scanout from reusable producer buffers is a separate
+ownership decision; neither is implied by this diagram. A CPU image can still
+be composed by the GPU.
+
+Neither path bypasses custody, grants, connection epochs, journal outcomes or
+completion-based release. C28's authority-proof work is therefore separate.
+The renderer/source adapters and display backend are host-specific; the
+image service's admission and lifecycle contract belongs to the core.
+
 ## Preserve the existing owners
 
 The [one-core ADR](../decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
