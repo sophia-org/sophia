@@ -1303,3 +1303,36 @@ gap. Native CPU/latency screening and a full joined workload remain required
 before promotion. No native saving, default authority change, or t331 cost-gate
 pass is claimed. Evidence and reproduction commands are retained in
 `candidate-40-custody-dispatch-integration` under the t331 evidence root.
+
+### C41 — matched native screen prepared (2026-10-20)
+
+C40 is mirrored into comparator commit `0c9960406`. Both native arms use
+that same signed source and include the c37 custody wake prerequisites.
+Only the candidate CLI enables Session's `experimental-custody-dispatch`,
+which forwards the runtime feature; enabling runtime alone would leave the
+real authentication owner unscoped. Separate builds have 234 identical
+compiler-unit keys and profiles, with exactly those two feature additions.
+One default-off peer is shared by all runs. Original hashed Cargo outputs
+are pinned in place rather than copied.
+
+The prepared screen is eight files/sealed panel runs, 1000 presentations
+each, ordered control/candidate/candidate/control then
+candidate/control/control/candidate. It measures CPU with the existing
+join and latency diagnostics; no allocation or syscall-count measurement
+is implied. The analyzer reports both blocks separately and same-arm spread,
+so a count reduction or an overall mean alone cannot justify retention.
+
+The imported runtime controls pass (153 tests, 3 ignored), as do the Session
+feature controls (32 tests, 10 ignored), clippy and the separate diagnostic
+build configurations. The exact common peer passes six controls in each
+runtime feature mode. The established launcher passes 18 offline tests and
+its PTY query control. Muse independently rechecked the source, all native
+pins, feature differences and eight plans and found no launch blocker.
+
+Evidence is `candidate-41-custody-dispatch-screen` under the t331 evidence
+root. Native capture has **not** run: unattended sudo requires a password.
+The prepared user entry is
+`sh ~/.local/state/t331/run-custody-dispatch-remote.sh`, with a 600-second
+VT bound. Both comparator and integration checkouts must stay clean at their
+pinned commits during the run. No native benefit, t331 acceptance or default
+promotion is claimed; the feature remains opt-in.
