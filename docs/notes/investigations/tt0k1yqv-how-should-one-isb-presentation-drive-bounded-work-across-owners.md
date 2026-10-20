@@ -693,3 +693,34 @@ transaction lane, journal capacity, image-refusal publication and retained
 charges, and the SDK yield point that queues an ACK. Cumulative ACK already
 exists. Counts alone do not justify delaying ACKs, adding a batching window,
 suppressing reads, or weakening current-call authority/error observations.
+
+
+## ACK dependency audit closes two apparent shortcuts
+
+The source audit at production `97438f52d` is retained in candidate 29's
+`ACK-AUDIT.md` with source hashes. No new capture or behavior change was made.
+The SDK already coalesces a consumed burst before yielding and pipelines the
+next record/submit behind the covering ACK without waiting for its reply.
+Existing scripted controls explicitly pin both properties. They were inspected,
+not newly run for this audit.
+
+An ACK releases journal retention and advances the progress timestamp only
+when its sequence advances. It recycles accepted transaction storage when it
+covers Submitted, and retries any pending image refusal after capacity becomes
+available. These are distinct from immutable image backing: SourceReleased
+requires ResourceStatus to be journaled, and backing-charge reconciliation
+requires final ResourceReleased publication after retirement. Neither waits
+for the client's ACK of that publication. Authority checks remain independent.
+
+The current send policy queues an ACK before the next writer needs it, or as
+the bounded drive yields; unfetched-object holds and one outstanding ACK bound
+its sequence. Moving it earlier can split a burst into more ACKs. Deferring it
+across a drive changes retention and refusal/deadline progress. Four submissions
+do not justify classifying the other seven observed ACKs as removable.
+
+Keep current behavior. Any next architectural proposal must specify a bounded
+ACK-release policy and prove next-submission, journal-capacity, object-hold,
+shutdown and deadline obligations before an isolated experiment. No new reactor,
+weakened authority check or automatic ACK-delay optimization follows from the
+counts. Two apparent round-trip optimizations were already present; more broad
+profiling is not the next action.
