@@ -28,7 +28,7 @@ role; it does not import Plan 9's process, security or drawing contracts.
 | --- | --- | --- |
 | D1 | Make command drawing the native default, with surface clients alongside it. | Investigate an optional draw class first. Making it the default requires separate approval and evidence across representative clients. |
 | D2 | Define an explicit host capability contract for process identity/lifetime, immutable storage, device buffers and display. | A useful design decomposition. POSIX portability does not establish equivalent enforcement on every host. |
-| D3 | Import sealed CPU buffers through Linux udmabuf. | Separate import experiment: prove supported formats, synchronization, ownership, accounting and actual copies avoided. Import alone is not a zero-copy claim. |
+| D3 | Import sealed CPU buffers through Linux udmabuf. | Direct import of current write-sealed ISBs is blocked by upstream Linux 6.18's seal checks; see the correction below. Any alternative needs its own immutability proof. |
 | D4 | Permit reusable producer-writable buffers with fences. | Reopens immutable acceptance and consumer ownership, not just journal wording. Keep existing ISB requirements until that decision is explicit. |
 | D5 | Prioritize plain 9P2000, with 9P2000.L adapters. | Changes the accepted delivery order. Determine the first real client and its dialect needs before changing that order. |
 | D6 | Host Plan 9 or Inferno. | Remains shelved as a product/ecosystem decision. |
@@ -137,6 +137,23 @@ Fresh sealed objects are the current implementation, not a proof that no other
 kernel-enforced immutable design could exist. Conversely, a mutable pool is not
 an equivalent implementation of the existing guarantee. D3 can be investigated
 while preserving immutability; it need not wait for acceptance of D4.
+
+### Verified correction to the udmabuf proposal
+
+On October 20, checking
+[upstream Linux v6.18 udmabuf.c](https://github.com/torvalds/linux/blob/v6.18/drivers/dma-buf/udmabuf.c#L273-L289)
+established that `check_memfd_seals` requires `F_SEAL_SHRINK` but rejects
+`F_SEAL_WRITE` and `F_SEAL_FUTURE_WRITE`. Therefore the proposed direct
+conversion of Sophia's already write-sealed ISB to a DMA-BUF is not supported
+by that implementation. The handback's claim that SHRINK alone establishes
+compatibility omitted the denied seal set. This is an upstream source check,
+not a test of the installed kernel or driver.
+
+Creating an export before sealing must not be assumed to preserve the existing
+guarantee: writable access through the exported object and the legality of
+later sealing require independent proof. DMA-BUF synchronization and immutable
+acceptance remain different contracts. D3 is a research question, not a ready
+zero-copy path for current ISBs.
 
 ## Evidence and next discriminator
 
