@@ -853,6 +853,12 @@ include!("context/snapshot_fences.rs");
 include!("context/source_imports.rs");
 include!("context/capture_pool.rs");
 
+// Private until the shell executor owns the source/teardown binding.
+#[cfg(feature = "experimental-shell-capture")]
+#[allow(dead_code)]
+#[path = "context/shell_copy_completion.rs"]
+mod shell_copy_completion;
+
 #[cfg(test)]
 mod snapshot_lifetime_tests {
     include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/snapshot_lifetime.rs"));

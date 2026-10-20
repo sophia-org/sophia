@@ -183,10 +183,12 @@ this GPU-producing shell experiment.
 
 ## Current next deliverable
 
-The source audit, reservation prerequisite and private handoff lifecycle are
-implemented. Next is the real renderer adapter and its ownership binding:
-neither supplied completion tests nor snapshot retention prove a GPU copy
-finished. Production GPU capability remains disabled; no native experiment has run.
+The source audit, reservation prerequisite, private handoff lifecycle and
+private native copy-fence observer are implemented. Next is the real renderer
+job adapter and its source/quarantine ownership binding. The observer has no
+production caller yet; supplied-status controls and snapshot retention do not
+prove an actual GPU copy finished. Production GPU capability remains disabled;
+no native experiment has run.
 C42 remains independent: at this audit its stages and launcher receipts were
 absent, with no capture process running.
 
@@ -257,10 +259,12 @@ Explicit close and unwind settle selected/queued work as rollback and submitted
 work as uncertain. Uncertain receipts contain no releasable source: descriptors
 and reservations live in a separate renderer-owned graveyard. **This core does
 not prove graveyard teardown ordering.** The future native owner must retain it
-across mailbox/context replacement until context/display destruction actually
-proves reads ended. Dropping the final graveyard Arc early would violate that
-contract; Session/native integration must pin the real owner and destruction
-order before enabling admission.
+across mailbox/context replacement until source reads are independently proven
+ended. EGL context/display destruction alone is not that proof: termination can
+defer destruction and is not an exact-copy completion observation. Dropping the
+final graveyard Arc early would violate custody. Session/native integration
+must pin the real owner and a proven completion or terminal-lifetime policy
+before enabling admission; this prerequisite does not change existing teardown.
 
 Ten supplied-completion controls cover these transitions with sockets standing
 in for source planes; they exercise no DMA-BUF import, rendering or EGL fence.
@@ -271,6 +275,41 @@ finished settlement. Restored library suites pass 49 tests with the feature and
 the lifecycle and its races read-only; the native adapter/teardown obligation
 remains explicit. Evidence is in sibling directory `handoff-01/` under the
 reservation evidence root above.
+
+#### Private native copy-fence observation
+
+The `experimental-shell-capture` native module now owns a private, zero-wait
+observer for the fence inserted and flushed by `NativeCaptureAllocation::draw`.
+Its real entry takes the execution/display, allocation, generation and fence
+from the same `NativePooledCapture`; callers cannot inject a successful status.
+Only `CONDITION_SATISFIED` issues a non-cloneable, renderer-thread-bound proof.
+The proof retains allocation and generation identity and matches the exact sync
+handle. Each capture issues at most one proof. Timeout leaves it pending;
+missing or mismatched ownership, errors and unexpected statuses refuse proof
+and abandon reuse. Observation never takes the fence or its GPU-use guard.
+
+This is a prerequisite, not the shell-job adapter. It neither releases source
+FDs nor settles jobs, grants publication or enables admission. Its private fault
+seam exercises supplied statuses with real native allocation accounting and
+use guards, without EGL execution or device access. Seven controls cover
+pending/once-only completion, errors, missing fences, generation ownership,
+proof identity, retained allocation lifetime and already-abandoned reuse. Five
+mutations are caught by test failures: treating timeout as completion, ignoring
+use-generation identity, allowing repeat observation, and ignoring proof
+generation or sync identity. The restored controls pass. Library checks pass
+56 tests with the experiment and 35 on the existing GBM path without it; Clippy
+is clean. Evidence is retained under
+`~/.local/state/sophia/development-evidence/t339-owned-capture-20261020/native-proof-01/`.
+No real GPU fence or native capture was tested in this slice.
+
+The [EGL fence-sync contract](https://registry.khronos.org/EGL/extensions/KHR/EGL_KHR_fence_sync.txt)
+binds the signal to preceding commands. The
+[EGL 1.5 specification](https://registry.khronos.org/EGL/specs/eglspec.1.5.pdf),
+sections 3.2 and 3.7, distinguishes resource termination/destruction and flushing
+from completion. Consequently, destroying a sync or terminating an EGL display
+must not manufacture this proof. The next adapter must bind the proof to the
+exact shell job and retained source descriptors and separately resolve uncertain
+teardown custody before exposing a releasable completion.
 
 #### Required native adapter and owner wiring
 

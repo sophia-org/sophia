@@ -113,6 +113,8 @@ struct NativePooledCapture {
     generation: std::rc::Rc<NativeSnapshotGeneration>,
     copy_completion: Option<khronos_egl::Sync>,
     copy_use: Option<NativeSnapshotUse>,
+    #[cfg(feature = "experimental-shell-capture")]
+    shell_copy_observation: shell_copy_completion::Observation,
 }
 
 impl NativePooledCapture {
