@@ -62,6 +62,10 @@ impl LaunchCustody {
             rustix::event::PollFd::new(&self.inner.wrapper, rustix::event::PollFlags::IN),
             rustix::event::PollFd::new(&self.inner.peer, rustix::event::PollFlags::IN),
         ];
+        #[cfg(feature = "comparator-progress")]
+        crate::comparator_counters::custody::add(
+            crate::comparator_counters::custody::Counter::FreshKernel,
+        );
         let quiet = rustix::event::poll(
             &mut fds,
             Some(&rustix::event::Timespec {

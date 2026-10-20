@@ -9,6 +9,13 @@ use sophia_9p::{
 use sophia_factotum::launch::queue::Ingress;
 use sophia_protocol::{ClientAdmissionContext, ClientAuthenticationMethod, NamespaceId};
 use sophia_runtime::authenticated_files::{FileAuthentication, FileAuthenticationFactory};
+#[cfg(all(
+    feature = "comparator-progress",
+    feature = "experimental-custody-dispatch"
+))]
+use sophia_runtime::comparator_counters::custody::{
+    self as custody_counts, Counter as CustodyCounter,
+};
 use sophia_runtime::{AdmissionLease, EndpointGrantLease, NamespaceRegistry};
 use std::{
     sync::{
@@ -275,20 +282,43 @@ impl Drop for RoleFileAuthentication {
 impl FileAuthentication for RoleFileAuthentication {
     #[cfg(feature = "experimental-custody-dispatch")]
     fn begin_custody_dispatch(&mut self) -> Result<(), Errno> {
+        #[cfg(feature = "comparator-progress")]
+        custody_counts::add(CustodyCounter::Begin);
         self.dispatch = None;
         // Authentication/attach, including an attach completed during this
         // turn, stays caller-fresh. Only an already admitted owner opts in.
         if !self.closed && self.admission.as_ref().is_some_and(AdmissionLease::is_live) {
             match self.worker.observe_dispatch() {
-                Ok(dispatch) => self.dispatch = Some(dispatch),
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(_) => return Err(Errno::ESTALE),
+                Ok(dispatch) => {
+                    #[cfg(feature = "comparator-progress")]
+                    custody_counts::add(CustodyCounter::Armed);
+                    self.dispatch = Some(dispatch);
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
+                    #[cfg(feature = "comparator-progress")]
+                    custody_counts::add(CustodyCounter::Interrupted);
+                }
+                Err(_) => {
+                    #[cfg(feature = "comparator-progress")]
+                    custody_counts::add(CustodyCounter::ObserveFailed);
+                    return Err(Errno::ESTALE);
+                }
             }
+        } else {
+            #[cfg(feature = "comparator-progress")]
+            custody_counts::add(CustodyCounter::BeginSkipped);
         }
         Ok(())
     }
     #[cfg(feature = "experimental-custody-dispatch")]
     fn end_custody_dispatch(&mut self) {
+        #[cfg(feature = "comparator-progress")]
+        {
+            custody_counts::add(CustodyCounter::End);
+            if self.dispatch.is_some() {
+                custody_counts::add(CustodyCounter::EndArmed);
+            }
+        }
         self.dispatch = None;
     }
     fn visit_wait_fds<'a>(&'a self, visit: &mut dyn FnMut(rustix::event::PollFd<'a>)) {

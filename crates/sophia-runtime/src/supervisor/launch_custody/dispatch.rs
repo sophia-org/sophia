@@ -47,6 +47,10 @@ impl<'a> CustodyDispatch<'a> {
         maximum_checks: usize,
     ) -> io::Result<Self> {
         Self::observe_with(custodies, maximum_age, maximum_checks, |fds| {
+            #[cfg(feature = "comparator-progress")]
+            crate::comparator_counters::custody::add(
+                crate::comparator_counters::custody::Counter::ObserveKernel,
+            );
             poll(fds, Some(&Timespec::default())).map(drop)
         })
     }

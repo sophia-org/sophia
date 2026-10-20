@@ -82,9 +82,16 @@ fn session_exchange_record_is_separate_from_frozen_schema_four() {
     comparator_counters::write_progress(&mut output, "session", 3).unwrap();
     let text = String::from_utf8(output).unwrap();
     let rows: Vec<_> = text.lines().collect();
-    assert_eq!(rows.len(), 2);
+    assert_eq!(rows.len(), 3);
     assert!(rows[0].starts_with("sophia_comparator_progress schema=4 "));
     assert!(rows[1].starts_with("sophia_shell_exchanges schema=1 mode=progress process=session "));
+    assert!(rows[2].starts_with("sophia_custody_dispatch schema=1 mode=progress process=session "));
+    let names: Vec<_> = rows[2]
+        .split_whitespace()
+        .skip(8)
+        .map(|field| field.split_once('=').unwrap().0)
+        .collect();
+    assert_eq!(names, comparator_counters::custody::NAMES);
     for name in progress::exchanges::NAMES {
         assert!(rows[1].contains(&format!(" scoped_{name}=")));
         assert!(rows[1].contains(&format!(" unscoped_{name}=")));

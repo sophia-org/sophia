@@ -1,6 +1,13 @@
 //! Session retains revocation ownership when handing a launch to a role worker.
 use super::*;
 use sophia_runtime::LaunchCustody;
+#[cfg(all(
+    feature = "comparator-progress",
+    feature = "experimental-custody-dispatch"
+))]
+use sophia_runtime::comparator_counters::custody::{
+    self as custody_counts, Counter as CustodyCounter,
+};
 #[cfg(feature = "experimental-custody-dispatch")]
 use sophia_runtime::{CustodyDispatch, CustodyDispatchLimit};
 use std::sync::{
@@ -63,14 +70,35 @@ impl WorkerAuthority {
         dispatch: &mut CustodyDispatch<'_>,
     ) -> Result<bool, Error> {
         if !self.active.load(Ordering::Acquire) || !self.ingress.is_open() {
+            #[cfg(feature = "comparator-progress")]
+            custody_counts::add(CustodyCounter::DispatchWithdrawn);
             return Ok(false);
         }
         let live = match dispatch.check(&self.custody) {
-            Ok(live) => live,
-            Err(CustodyDispatchLimit::Expired | CustodyDispatchLimit::Exhausted) => {
+            Ok(live) => {
+                #[cfg(feature = "comparator-progress")]
+                custody_counts::add(if live {
+                    CustodyCounter::DispatchLive
+                } else {
+                    CustodyCounter::DispatchDead
+                });
+                live
+            }
+            Err(CustodyDispatchLimit::Expired) => {
+                #[cfg(feature = "comparator-progress")]
+                custody_counts::add(CustodyCounter::ExpiredFallback);
                 return self.live();
             }
-            Err(CustodyDispatchLimit::Unregistered) => return Err(Error::Stale),
+            Err(CustodyDispatchLimit::Exhausted) => {
+                #[cfg(feature = "comparator-progress")]
+                custody_counts::add(CustodyCounter::ExhaustedFallback);
+                return self.live();
+            }
+            Err(CustodyDispatchLimit::Unregistered) => {
+                #[cfg(feature = "comparator-progress")]
+                custody_counts::add(CustodyCounter::Unregistered);
+                return Err(Error::Stale);
+            }
         };
         Ok(live && self.active.load(Ordering::Acquire) && self.ingress.is_open())
     }

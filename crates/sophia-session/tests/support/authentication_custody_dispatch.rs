@@ -261,3 +261,82 @@ fn count_real_role_owner_custody_probes() {
     }
     std::io::stderr().write_all(b"C40_END_PROBES\n").unwrap();
 }
+
+#[cfg(feature = "comparator-progress")]
+#[test]
+#[ignore = "isolated process-wide comparator counter reconciliation; run this test alone"]
+fn custody_coverage_reconciles_real_role_checks_and_fallbacks() {
+    use sophia_runtime::comparator_counters::custody::{self, Counter};
+    let mut joined = Joined::new();
+    for scoped in [false, true] {
+        let before = custody::snapshot();
+        for _ in 0..128 {
+            if scoped {
+                joined.owner.begin_custody_dispatch().unwrap();
+            }
+            for _ in 0..8 {
+                joined.owner.poll(Instant::now()).unwrap();
+                joined.owner.check(ConnectionId(1), Instant::now()).unwrap();
+            }
+            if scoped {
+                joined.owner.end_custody_dispatch();
+            }
+            joined.owner.poll(Instant::now()).unwrap();
+        }
+        let after = custody::snapshot();
+        let delta = |counter: Counter| after[counter as usize] - before[counter as usize];
+        if scoped {
+            for counter in [
+                Counter::Begin,
+                Counter::Armed,
+                Counter::ObserveKernel,
+                Counter::End,
+                Counter::EndArmed,
+            ] {
+                assert_eq!(delta(counter), 128);
+            }
+            let fallback = delta(Counter::ExpiredFallback) + delta(Counter::ExhaustedFallback);
+            assert_eq!(delta(Counter::DispatchLive) + fallback, 2048);
+            assert!(delta(Counter::DispatchLive) > 0, "scope wiring never used");
+            assert_eq!(delta(Counter::FreshKernel), 128 + fallback);
+        } else {
+            assert_eq!(delta(Counter::FreshKernel), 2176);
+            for counter in [
+                Counter::Begin,
+                Counter::Armed,
+                Counter::ObserveKernel,
+                Counter::DispatchLive,
+            ] {
+                assert_eq!(delta(counter), 0);
+            }
+        }
+        for counter in [
+            Counter::BeginSkipped,
+            Counter::Interrupted,
+            Counter::ObserveFailed,
+            Counter::DispatchWithdrawn,
+            Counter::DispatchDead,
+            Counter::Unregistered,
+        ] {
+            assert_eq!(delta(counter), 0);
+        }
+        eprintln!("custody_coverage scoped={scoped}");
+        for (name, (old, new)) in custody::NAMES.iter().zip(before.into_iter().zip(after)) {
+            eprintln!("custody_coverage {name}={}", new - old);
+        }
+    }
+    joined.owner.begin_custody_dispatch().unwrap();
+    std::thread::sleep(Duration::from_millis(3));
+    let before = custody::snapshot();
+    joined.owner.check(ConnectionId(1), Instant::now()).unwrap();
+    let after = custody::snapshot();
+    assert_eq!(
+        after[Counter::ExpiredFallback as usize] - before[Counter::ExpiredFallback as usize],
+        1
+    );
+    assert_eq!(
+        after[Counter::FreshKernel as usize] - before[Counter::FreshKernel as usize],
+        1
+    );
+    joined.owner.end_custody_dispatch();
+}

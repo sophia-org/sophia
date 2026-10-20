@@ -8,6 +8,8 @@ pub mod phases;
 
 #[cfg(feature = "comparator-progress")]
 pub use sophia_9p::progress;
+#[cfg(feature = "comparator-progress")]
+pub mod custody;
 
 #[cfg(all(
     feature = "comparator-progress",
@@ -234,6 +236,7 @@ pub fn write_progress(
                 std::process::id()
             ),
         )?;
+        custody::record(output, sequence)?;
     }
     Ok(())
 }
