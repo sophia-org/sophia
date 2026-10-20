@@ -1580,6 +1580,7 @@ dependencies = [
  "sophia-protocol",
  "sophia-renderer-native-egl",
  "sophia-runtime",
+ "sophia-wake",
  "sophia-xshmfence",
  "vello_cpu",
  "xcursor",

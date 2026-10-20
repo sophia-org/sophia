@@ -48,6 +48,10 @@ mod native_scanout;
 mod shared_buffer;
 #[cfg(feature = "gbm-probe")]
 mod shared_pixmap;
+// Private until the real renderer adapter can supply exact-job completion.
+#[cfg(feature = "experimental-shell-capture")]
+#[allow(dead_code)]
+mod shell_capture_jobs;
 
 pub use buffer_registry::*;
 pub use cpu_buffer_registry::*;

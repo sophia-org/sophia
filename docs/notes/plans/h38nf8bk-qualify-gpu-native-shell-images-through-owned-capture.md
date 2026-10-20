@@ -183,9 +183,10 @@ this GPU-producing shell experiment.
 
 ## Current next deliverable
 
-The source audit is complete. Implementation starts with the owned lease and
-completion boundary plus deterministic lifecycle controls. Production GPU
-capability is not enabled by this plan, and no native experiment has run.
+The source audit, reservation prerequisite and private handoff lifecycle are
+implemented. Next is the real renderer adapter and its ownership binding:
+neither supplied completion tests nor snapshot retention prove a GPU copy
+finished. Production GPU capability remains disabled; no native experiment has run.
 C42 remains independent: at this audit its stages and launcher receipts were
 absent, with no capture process running.
 
@@ -225,7 +226,53 @@ Evidence is retained at
 `~/.local/state/sophia/development-evidence/t339-owned-capture-20261020/reservation-01/`.
 No native capture, admission change, or performance result accompanies this slice.
 
-#### Required next handoff
+#### Private completion handoff
+
+The next October 20 slice implements `shell_capture_jobs` privately in
+renderer-live under the same disabled experimental feature. It has no public
+API and no real completion supplier yet. Generic payloads let the lifecycle
+controls own real descriptors and snapshot reservations without constructing
+fake public GPU snapshots. Context-bound work stays on the renderer owner:
+the executor is not Send, spawns no thread, and exposes a request wake; the
+inbox can cross owners and exposes the completion wake.
+
+Four shared permits bound queued/active jobs and untaken terminal receipts.
+Quarantined jobs retain their permits and block new admission, including through
+replacement mailboxes sharing the same graveyard. A failed enqueue returns the
+whole request unchanged. A submission gate serializes enqueue with shutdown,
+so an accepted job cannot fall between queue draining and receiver destruction.
+Shutdown closing admission and finishing settlement are distinct published
+states; the consumer observes settlement before draining to avoid reporting a
+receipt that is concurrently arriving as missing.
+
+Globally unique job IDs and exact epoch Arc identity bind private completion
+proofs. `begin` marks submission before exposing the payload for import or any
+GPU use. Unknown/duplicate begin is distinguished from a completed rollback.
+Cancellation/deadline before submission allows rollback. After submission,
+including after renderer completion but before receipt consumption, it forbids
+publication and still requires exact completion before source release.
+Private proof construction currently exists only in the test child.
+
+Explicit close and unwind settle selected/queued work as rollback and submitted
+work as uncertain. Uncertain receipts contain no releasable source: descriptors
+and reservations live in a separate renderer-owned graveyard. **This core does
+not prove graveyard teardown ordering.** The future native owner must retain it
+across mailbox/context replacement until context/display destruction actually
+proves reads ended. Dropping the final graveyard Arc early would violate that
+contract; Session/native integration must pin the real owner and destruction
+order before enabling admission.
+
+Ten supplied-completion controls cover these transitions with sockets standing
+in for source planes; they exercise no DMA-BUF import, rendering or EGL fence.
+Four mutations are detected: bypassing epoch identity, dropping quarantined
+payloads, omitting receipt-time cancellation, and treating closed admission as
+finished settlement. Restored library suites pass 49 tests with the feature and
+35 with existing GBM behavior, with Clippy and formatting clean. Muse reviewed
+the lifecycle and its races read-only; the native adapter/teardown obligation
+remains explicit. Evidence is in sibling directory `handoff-01/` under the
+reservation evidence root above.
+
+#### Required native adapter and owner wiring
 
 Use the existing owner, not a second capture thread or context. The bounded
 mailbox carries runtime-neutral job IDs, source descriptors and metadata; Session
@@ -242,9 +289,9 @@ rechecks authority before publication. Tests must pin these transitions before
 the GPU admission path is enabled.
 
 The renderer owner retains its Rc/EGL context and performs context-bound fence
-operations. Before enabling admission, define a bounded job-ID-to-terminal-state
-handoff to the runtime image owner, with a completion wake and renderer device
-generation. A successful completion identifies the exact copy job and retained
+operations. Before enabling admission, wire the private handoff to the runtime
+image owner and real context-bound completion operations, with the exact
+renderer device generation. A successful completion identifies the copy job and retained
 source descriptors; a destination fence for another operation grants nothing.
 Keep fault injection private to tests. Stale or duplicate completions cannot
 publish a resource, release a newer job or return its reservation.
@@ -262,8 +309,8 @@ remain distinct; every reservation has one owner and one terminal disposition.
 
 Muse independently reviewed the source audit at 7a57dca1f on October 20,
 read-only, and confirmed the source gaps and sequence. These handoff and budget
-requirements incorporate that review. Neither the review nor this plan claims
-new tests, GPU execution or performance results.
+requirements incorporate that review. That audit review claimed no new tests.
+The later implementation controls above do not claim GPU execution or performance.
 
 ## Connections
 
