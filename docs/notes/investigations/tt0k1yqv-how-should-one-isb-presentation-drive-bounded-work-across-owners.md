@@ -899,3 +899,36 @@ and wait reasons per joined completion, reconciling both ledgers. These count
 export attempts/co-occurrence, not packets, call ordering or CPU savings, and
 do not directly measure the handoff branch. Keep that limit if counts match.
 Existing C parity and saturated-journal qualification remain open; no promotion.
+
+
+## Candidate 33: grouping changes, main exchange counts do not
+
+Both captures pass full 1000-generation joins and clean cleanup receipts.
+The exchange ledger covers 599 completions per arm and reconciles exactly
+with schema-4 counters, with no unscoped operations or event errors. Counts:
+record 2396, submit 2396, ACK 6589, ready event reads 6589, request writes
+11381 and encoded replies 17970 in **both** arms. That is still 4 records,
+4 submits, 11 ACKs and 11 ready reads per frame. Completed owner passes are
+8689 versus 8679 (14.506 versus 14.489 per frame), essentially unchanged.
+
+Pending-read retry attempts drop 8088 to 7285 (-803, -9.93%). This is retry
+work, not 803 syscalls/wakeups/passes eliminated. Pass masks show changed
+grouping: record+submit+ACK+ready without pending rises from 0 to 795 while
+pending-only passes rise 2 to 795. Masks cannot establish sequence, pair
+passes or prove handoff branch executions. Wait counters in their separate
+600-completion interval show 8704 versus 8695 waits, with 600 worker/native/
+deadline observations each. There is no material pass-per-frame reduction.
+
+Evidence: `candidate-33-ack-handoff-exchanges/RESULTS.md`,
+`exchange-results.json`, `reconciliation.json`, `capture-validation.json`
+and `capture-SHA256SUMS`. Raw captures and original manifests are untouched.
+This slice changes scheduling/grouping but does not deliver the hypothesized
+exchange reduction in this workload. CPU evidence from candidates 31/32
+remains inconclusive. Stop further CPU screens of this slice; keep it
+experimental/default-off and do not promote or broaden its contract change.
+Production remains unchanged; parity and qualification limits remain open.
+
+Next analysis should identify operation/response dependencies behind the
+11 event/ACK exchanges and four submissions per frame. Counts alone do not
+identify event types or establish redundancy. Preserve authority, custody,
+ACK and deadline semantics while deciding whether any dependency can change.
