@@ -1074,3 +1074,31 @@ This is wake behavior and an architectural prerequisite only, not a CPU
 optimization or evidence of fewer liveness syscalls. No native timing claim,
 no comparator promotion, and no change to the published ISB/9P contract.
 The source-release publication eligibility investigation remains open.
+
+
+## Candidate 38: bounded source-release publication control
+
+The real 9P/SEQPACKET fixture now pauses the peer after sending its sealed
+Source. After worker reconciliation, releasing the retained settlement
+refuses until ResourceStatus reaches the journal. One local resource-service
+call establishes that custody; the same settlement then releases once, and
+a duplicate release refuses. The peer resumes only afterwards and checks
+status-before-release and eventual resource retirement. No further peer
+request, ACK, worker completion, or full image-owner service is required.
+Previously queued peer input can still be processed by resource service;
+this test does not claim that the socket had no buffered input.
+
+Removing the status-reservation guard makes this control fail at the expected
+pre-publication refusal assertion. Restored production passes all six image
+transport tests (including cancellation, expiry and disconnect) and clippy
+with warnings denied. Evidence and commands: `candidate-38-publication-boundary`.
+Only tests and this note changed; launch-domain authentication is outside this
+supplied-afid fixture.
+
+The dependency is now tested, but exchange reduction is still unproven.
+Resource service can flush a status-only read before the explicit release.
+Do not add a second full image-owner visit or claim coalescing from this
+result. The next gate is a release-only publication handoff before parked-read
+retry/flush, with a mutation-sensitive read-boundary control and unchanged
+FIFO, authority, credits and cancellation behavior. No native run or CPU
+claim follows from this bounded control.
