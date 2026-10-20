@@ -2,6 +2,8 @@
 
 The opt-in [experimental shell read scheduler](EXPERIMENTAL-READ-SCHEDULING.md)
 is a t331 performance candidate, disabled by default and not yet qualified.
+The independent [experimental ACK handoff](EXPERIMENTAL-ACK-HANDOFF.md) also
+remains disabled by default; it changes when a drive queues eligible ACK work.
 
 CPU images use **Immutable Shared Buffers (ISB)**, currently backed by sealed
 memfds. The buffer builders are `create_isb` / `finish_isb` in Rust and

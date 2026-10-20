@@ -244,6 +244,9 @@ pub(crate) struct FileWire {
     pass: u64,
     /// New admission or an exhausted drive needs another local service pass.
     service_pending: bool,
+    // Experiment only: eligible ACK carried across one caller-visible yield.
+    #[cfg(feature = "experimental-ack-handoff")]
+    ack_debt: bool,
     /// Explicit dispatch time for this pass; absent for the convenience driver.
     dispatch_time: Option<Instant>,
     /// Monotonicity check for successive caller-supplied times.

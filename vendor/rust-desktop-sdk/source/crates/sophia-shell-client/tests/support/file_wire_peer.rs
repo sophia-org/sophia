@@ -173,6 +173,7 @@ pub struct Peer {
     pub object_reads: Vec<ObjectRead>,
     /// Every ack, walk, open and object read, in arrival order.
     pub log: Vec<Logged>,
+    pub write_nodes: Vec<String>,
     /// When set, `ack` writes are logged but their replies wait in
     /// `held_replies` until [`Peer::release_replies`].
     pub hold_ack_replies: bool,
@@ -352,6 +353,7 @@ impl Peer {
             held_object_reads: VecDeque::new(),
             object_reads: Vec::new(),
             log: Vec::new(),
+            write_nodes: Vec::new(),
             hold_ack_replies: false,
             hold_transaction_walks: false,
             hold_writer_opens: false,
@@ -413,6 +415,7 @@ impl Peer {
         self.opens.clear();
         self.object_reads.clear();
         self.log.clear();
+        self.write_nodes.clear();
     }
 
     /// Sends every withheld reply, in arrival order, and stops withholding.
@@ -708,6 +711,7 @@ impl Peer {
                 let data = body[16..].to_vec();
                 assert_eq!(data.len(), count as usize, "Twrite count");
                 let node = self.fids.get(&fid).cloned().unwrap_or_default();
+                self.write_nodes.push(node.clone());
                 match node.as_str() {
                     "transaction" if self.handshaking => {
                         let accepted = if self.fragmented_startup {

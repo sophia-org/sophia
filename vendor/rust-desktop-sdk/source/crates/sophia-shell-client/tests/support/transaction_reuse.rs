@@ -1,6 +1,6 @@
 use super::*;
 
-fn reusable(error: Option<u32>) -> (Result<ShellConnection, ShellClientError>, Peer) {
+pub(super) fn reusable(error: Option<u32>) -> (Result<ShellConnection, ShellClientError>, Peer) {
     let path = socket_path();
     let listener = UnixListener::bind(&path).unwrap();
     let profile = bar(0);

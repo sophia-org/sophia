@@ -35,6 +35,10 @@ impl FileWire {
     ) -> Result<(), ShellClientError> {
         self.io_interest()?;
         self.automatic_ack = enabled;
+        #[cfg(feature = "experimental-ack-handoff")]
+        if !enabled {
+            self.ack_debt = false;
+        }
         self.service_pending = true;
         Ok(())
     }
@@ -69,6 +73,10 @@ impl FileWire {
         }
         let mut interest = self.pipeline.io_interest()?;
         interest.immediate |= self.service_pending;
+        #[cfg(feature = "experimental-ack-handoff")]
+        {
+            interest.immediate |= self.ack_debt;
+        }
         Ok(interest)
     }
 
@@ -180,6 +188,8 @@ impl FileWire {
         mut budget: Option<IoBudget>,
     ) -> Result<(), ShellClientError> {
         self.service_pending = true;
+        #[cfg(feature = "experimental-ack-handoff")]
+        let (entered_with_ack_debt, inbox_at_entry) = (self.ack_debt, inbox.len());
         // Scheduling history belongs to this drive only. Every external entry
         // must still attempt a read, including the entry after a deferred EOF.
         #[cfg(feature = "experimental-write-read-scheduling")]
@@ -237,6 +247,25 @@ impl FileWire {
             progressed |= self.drive_image_fetch()?;
             progressed |= self.process_buffered_event(inbox)?;
             progressed |= self.maybe_read_events(inbox)?;
+            #[cfg(feature = "experimental-ack-handoff")]
+            if !progressed
+                && !entered_with_ack_debt
+                && inbox.len() > inbox_at_entry
+                && self.current.is_none()
+                && self.pending.is_empty()
+                && self.automatic_ack
+                && self.ack_tag.is_none()
+                && self.holds.iter().all(Option::is_none)
+                && self.ack_limit() > self.acked
+                && !budget.as_ref().is_some_and(IoBudget::exhausted)
+                && round + 1 < MAX_ROUNDS
+            {
+                self.ack_debt = true;
+                // Keep the existing reads, but return the application event before
+                // queuing this ACK. A subsequent drive cannot repeat this handoff.
+                self.service_pending = true;
+                break;
+            }
             if !progressed
                 || budget.as_ref().is_some_and(IoBudget::exhausted)
                 || round + 1 == MAX_ROUNDS
@@ -372,6 +401,10 @@ impl FileWire {
         let tag = self.pipeline.write(self.ack_fid, 0, &bytes)?;
         self.ack_tag = Some(tag);
         self.acked = sequence;
+        #[cfg(feature = "experimental-ack-handoff")]
+        {
+            self.ack_debt = false;
+        }
         Ok(true)
     }
 }

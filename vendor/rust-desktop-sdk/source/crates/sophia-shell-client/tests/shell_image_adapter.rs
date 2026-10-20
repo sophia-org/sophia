@@ -760,3 +760,55 @@ fn deferred_setup_cannot_add_an_unnegotiated_image_grant() {
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
+
+#[cfg(feature = "experimental-ack-handoff")]
+#[test]
+fn image_enabled_wait_services_ack_debt_after_a_zero_budget_dispatch() {
+    let (mut connection, mut peer, dir, listener) = connect_image("ack-handoff");
+    let accepted = drive_to_ready(&mut connection, &mut peer, &listener);
+    drive(&mut connection, &mut peer, |c, p| {
+        p.events_read.is_some() && !c.journal_progress().ack_pending
+    });
+    while connection.take_content().unwrap().is_some() {}
+    peer.reset_logs();
+    let (kind, body) = encode_shell_file_transaction_body(&ShellFileTransactionRecord {
+        transaction: TransactionId::from_raw(70),
+        record: ShellContentRecord::FramePermit(ContentFramePermit {
+            grant: ContentGrant {
+                connection_epoch: EPOCH,
+                content_grant_epoch: file_wire_peer::CONTENT_GRANT_EPOCH,
+            },
+            output: ContentOutputId {
+                id: 1,
+                generation: 1,
+            },
+            demand_id: 1,
+            permit_id: 0,
+            state: 3,
+            reason: 11,
+            ttl_ms: 0,
+            max_candidate_bytes: 0,
+        }),
+    })
+    .unwrap();
+    let event = peer.event(kind, &body);
+    peer.push(event);
+    peer.flush_events();
+    connection.poll_io().unwrap();
+    peer.pump();
+    assert!(peer.acks.is_empty());
+    let sequence = connection.journal_progress().handled;
+    assert!(connection.take_content().unwrap().is_some());
+    assert!(connection.io_interest().unwrap().immediate);
+    connection.dispatch(Instant::now(), 0).unwrap();
+    assert!(connection.io_interest().unwrap().immediate);
+    connection.wait_for_io(Duration::ZERO).unwrap();
+    peer.pump();
+    assert_eq!(peer.acks.len(), 1);
+    assert_eq!(peer.acks[0].sequence, sequence);
+    drop(accepted);
+    drop(connection);
+    drop(peer);
+    drop(listener);
+    std::fs::remove_dir_all(dir).unwrap();
+}

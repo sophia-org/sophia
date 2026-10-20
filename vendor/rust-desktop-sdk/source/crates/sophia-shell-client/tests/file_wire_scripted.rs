@@ -22,6 +22,9 @@ use sophia_shell_protocol::shell_files::*;
 use sophia_shell_protocol::*;
 
 const EAGAIN: u32 = 11;
+#[cfg(feature = "experimental-ack-handoff")]
+#[path = "support/ack_handoff.rs"]
+mod ack_handoff;
 #[path = "support/file_wire_admission.rs"]
 mod admission;
 #[path = "support/file_wire_batch.rs"]

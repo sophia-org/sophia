@@ -1530,3 +1530,14 @@ layouts and default request storage grow, requiring consumer rebuilds.
 Independent window/recovery tests pass locally; exact signed B3 revisions, export
 adoption and native performance remain pending. Counts come from scripted peers
 and instrumented captures, not a new production metrics API.
+
+
+## Experimental ACK handoff 2026-10-19
+
+Rust `experimental-ack-handoff` is disabled by default and changes the
+ACK-before-yield contract only when explicitly enabled. See
+[the contract and test limits](EXPERIMENTAL-ACK-HANDOFF.md). C source inspected
+at `30cc519a4f17607880fcf1cdb5da0cf4efeea320`; no counterpart experiment or paired
+conformance claim. Default parity is not changed by this opt-in experiment.
+Promotion and Sophia pin updates remain blocked on counterpart review,
+retention/deadline qualification and native CPU/latency evidence.

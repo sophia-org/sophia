@@ -413,6 +413,8 @@ impl FileWire {
             progress: 0,
             pass: 0,
             service_pending: true,
+            #[cfg(feature = "experimental-ack-handoff")]
+            ack_debt: false,
             dispatch_time: None,
             last_dispatch_time: None,
             early_submitted: None,

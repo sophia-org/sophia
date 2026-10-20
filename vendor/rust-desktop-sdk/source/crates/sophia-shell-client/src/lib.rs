@@ -485,6 +485,12 @@ impl ShellConnection {
         if !self.inbox.is_empty() {
             return Ok(());
         }
+        // The experiment may leave local work despite no queued socket bytes.
+        // Apply this before either the ordinary or the image-enabled wait path.
+        #[cfg(feature = "experimental-ack-handoff")]
+        if self.wire.io_interest()?.immediate {
+            return Ok(());
+        }
         let maximum = self.wake_deadline().map_or(maximum, |deadline| {
             maximum.min(deadline.saturating_duration_since(std::time::Instant::now()))
         });
@@ -900,6 +906,11 @@ impl ShellConnection {
     /// With `experimental-write-read-scheduling`, a post-write socket read may
     /// move to the next round or drive. This call can then return before it
     /// observes a reply or closure; custody remains provisional until observed.
+    /// With `experimental-ack-handoff`, a quiescent drive exposing new application
+    /// work may return before queuing an eligible journal ACK. Immediate interest
+    /// remains set; the next drive services it without handing it off again.
+    /// ACK write/closure observation can move to that entry. An application that
+    /// stops driving has no wall-clock guarantee of ACK delivery.
     pub fn poll_io(&mut self) -> Result<(), ShellClientError> {
         let now = std::time::Instant::now();
         // Preflight the adapter clock before the wire can transmit
@@ -937,6 +948,9 @@ impl ShellConnection {
     /// invoke the default clock/budget driver. If mixing drivers, supplied time
     /// must follow the real `Instant` timeline; simulated time requires using
     /// only `dispatch` and non-driving receive methods after connection setup.
+    /// `experimental-ack-handoff` has the same yield contract as `poll_io`.
+    /// Zero/exhausted budgets retain immediate work; they do not authorize
+    /// blocking or bypass I/O limits to pay an ACK obligation.
     pub fn dispatch(
         &mut self,
         now: std::time::Instant,

@@ -9,6 +9,7 @@ rust-version.workspace = true
 repository.workspace = true
 
 [features]
+experimental-ack-handoff = []
 experimental-write-read-scheduling = ["sophia-9p-client/experimental-write-read-scheduling"]
 
 [dependencies]
