@@ -775,3 +775,32 @@ has no corresponding experiment or new parity evidence. The SDK's
 `EXPERIMENTAL-ACK-HANDOFF.md` records that dispatch/error timing changes and
 that applications stopping progress have no wall-clock ACK guarantee. No
 promotion, native acceptance or performance saving is claimed.
+
+
+## ACK handoff server qualification and CPU screen prepared
+
+Comparator `3a0226b66` imports signed SDK `e319d10` through the verified
+vendoring command. This supersedes the comparator-pin status above; the
+production SDK pin remains unchanged. The feature stays off by default.
+Default and ACK-only configurations each pass 128 runtime unit tests (one
+ignored) and 37 real client/server integration tests. Server controls retain
+ACK journal progress, covering-ACK transaction reuse, bounded journal pressure,
+and timeout refusal. These are composition evidence, not a new deterministic
+end-to-end test paused at a saturated journal's handoff/deadline boundary.
+That limitation and C experimental parity remain promotion gates.
+
+`candidate-30-sdk-ack-handoff/SERVER-QUALIFICATION.md` records the controls and
+limits. `candidate-31-ack-handoff-screen` freezes four CPU-only panel files
+runs, control/candidate/candidate/control, 1000 presentations each. One Session
+binary is shared; both peers use the same SDK revision and differ only in
+`experimental-ack-handoff`. Earlier read scheduling and progress instrumentation
+are off. Both release peers pass six supplied-owner controls; launcher tests
+(18), PTY cleanup, four profile/session-argument checks, and recursive artifact
+pins pass. Binaries are pinned directly in Cargo output, without copies.
+
+No native run has launched. The wrapper is
+`~/.local/state/t331/run-ack-handoff-remote.sh`; sudo needs the user's password.
+Stages `ack31-1` through `ack31-4` are unused; the bound is 600 seconds. Keep the
+comparator and integration checkouts clean and avoid rebuilding the pinned
+Cargo slot until capture completes. CPU benefit, latency acceptance, and default
+promotion remain unclaimed.
