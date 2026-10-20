@@ -7,6 +7,11 @@ tags: [investigation, architecture, plan9, 9p, draw, namespaces, performance, t3
 ---
 # Hosting Plan 9 on Sophia and a draw peer class: brainstorm of 2026-10-20
 
+The later [portable-core direction proposal and evaluation](oofo1zrq-a-portable-9p-core-with-optional-drawing-and-surface-clients.md)
+separates the proposed draw default, host contract, immutable import, mutable
+pools and dialect priorities. Those decisions remain open; this brainstorm
+and the hosted-kernel idea remain parked.
+
 Record the discussion with niltempus and Claude as something to return to,
 not a replacement for the accepted architecture. Three separate questions
 emerged: how custody death is observed, whether a software-drawing peer class
