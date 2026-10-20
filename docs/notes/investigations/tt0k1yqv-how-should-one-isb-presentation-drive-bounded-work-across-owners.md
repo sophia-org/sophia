@@ -640,3 +640,27 @@ record, submit and ACK writes and event-read outcomes, scoped to owner passes.
 Retain all scheduling and authority behavior. Aggregate counts cannot prove a
 one-to-one wake/message relation or support delayed ACKs. Existing evidence
 remains diagnostic only; no fresh capture or production change was made.
+
+
+## Shell operation diagnostic prepared
+
+Candidate 29 is prepared, not captured, in `candidate-29-shell-exchanges`.
+Comparator `902ab3f00` adds feature-gated shell-export write-attempt counters
+(record, submit, ACK), event-read outcome counters (ready, pending, error), and
+completed-owner-pass co-occurrence masks. Operations outside an owner pass are
+counted separately. Buffered and ordinary event reads are covered; retries
+count as invocations, not incoming messages. Operations rejected before the
+export seam are excluded. A mask identifies neither ordering nor wake cause.
+
+The separate bounded `sophia_shell_exchanges schema=1` row preserves schema 4.
+Independent atomic snapshots can straddle an owner pass, so mask and operation
+deltas are not forced into artificial equality. The default transport suite,
+feature-enabled transport/ledger suites and Clippy pass. A real negotiation
+control fails when ACK attribution is deliberately changed to record, and
+passes after restoration. Ten analyzer tests, eighteen launcher tests and six
+rebuilt-peer controls pass. All artifact pins and configuration checks pass.
+
+Two fresh 1000-frame files/IPC panel progress plans use the existing frozen
+runner; this is not a CPU or acceptance pair. Launch wrapper:
+`~/.local/state/t331/run-shell-exchanges-remote.sh`. Native launch remains
+pending sudo authentication; no production scheduling or authority changed.
