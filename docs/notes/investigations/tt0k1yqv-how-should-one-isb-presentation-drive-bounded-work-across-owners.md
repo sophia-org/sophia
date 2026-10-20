@@ -18,7 +18,90 @@ The scope is the complete execution model, not a replacement transport or a
 new global reactor. Task state and acceptance remain in
 [t331](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#t331--reduce-shell-allocation-overhead).
 
-## Current resumption
+## Proposed authority model (latest direction)
+
+niltempus now explicitly asks for the simplest secure, performant trust model
+with 9P as the core. The earlier preservation-only experiments remain evidence;
+they do not rule out an explicitly specified change to authority-observation
+boundaries. The proposal below is not implemented or accepted by a native gate.
+Candidate 37 remains wake-only, with every fresh check intact.
+
+Use the existing launch custody and admission owners as one revocable authority
+per launch generation. Prove identity at each new binding, observe lifecycle
+centrally, and compare current permissions at every use. The peer remains
+untrusted. 9P authenticated roots and fids name the permitted operations;
+opening or retaining a fid never exempts later requests or parked retries
+from grant, epoch, revocation, expiry and connection checks.
+
+| Responsibility | Proposed owner and mechanism |
+| --- | --- |
+| Identity | Supervisor pins wrapper and peer kernel identities. Authentication establishes the launch generation and role; every newly connected side channel proves the same identity and admission before sharing custody. Keep Hello and channel-generation validation. |
+| Lifecycle | Existing owner wait observes both custody pidfds. Readable exit or hangup revokes shared custody directly; reaping is separate cleanup. Explicit supervisor withdrawal revokes synchronously before signals. |
+| Authorization | Existing admission/grant checks remain on every request, retry and protected publication. Reads of revocation state are cheap in-memory checks, not proof that the process is physically alive at that instant. |
+| Content | Preserve sealed immutable backing, exact size and metadata validation, worker deadlines and lifetime accounting. Existing immutable resources may be referenced repeatedly; changed content needs newly immutable backing under this model. |
+| Outcomes | Preserve receipt/domain ordering, journal custody, cumulative ACK, bounded retention and terminal settlement. |
+| Scheduling | Process revocation before each bounded dispatch, service runnable obligations, and retain all real deadlines and backpressure wakes. No second coordinator. |
+
+The deliberate contract choice is the revocation linearization point:
+
+> Kernel-observed exits and explicit withdrawals revoke the launch authority.
+> Before each bounded authorization dispatch, the owner applies pending exit
+> readiness. Every operation checks the current authority generation and
+> revocation state. An exit after that boundary is handled by the next bounded
+> observation; it need not be detected by another operation in the same dispatch.
+
+This is not literal equivalence to caller-local pidfd polling. A death between
+two checks can be seen by the second old check but not by a state last refreshed
+before both. Good security requires establishing that bounded in-flight work
+is permitted by the actual resource and confidentiality contracts. Do not name
+a state-load-only method is_live as though it proved instantaneous liveness.
+Do not claim unchanged same-call ESTALE behavior in the gate.
+
+Implementation constraints for evaluating this proposal:
+
+- Process exit readiness directly, including peer exit while its wrapper is
+  alive or stopped. Current ProcessSupervisor::poll waits for its child wrapper;
+  calling it alone cannot implement peer notification. Errors in the observer
+  must refuse further authorization; the existing WaitFailed return alone does
+  not publish that refusal to all custody holders.
+- A runnable loop must still observe exits. Reuse current wait readiness when
+  available; otherwise check all registered custody descriptors together at a
+  bounded dispatch boundary. A blocking-wait-only handler could miss exits
+  indefinitely under continuous work. Set an explicit work/time bound before
+  replacing checks; a bound on round count alone is not a wall-time guarantee.
+- Audit every authorization consumer, including workers outside this owner.
+  Shared monotonic revocation state, generation checks and publication checks
+  must cover them. Until covered, retain their fresh verification. No observer
+  thread or extra authority cache is assumed.
+- Fold the image connector's ongoing observation into launch custody only after
+  proving the same kernel identity, without PID-reuse races. Retain one-time
+  connector verification and exact admission equality. A socket disconnect
+  closes that channel; custody exit revokes the launch across all channels.
+- Keep the 20 ms fallback until every exit, explicit revocation, authentication
+  expiry, parked-read retry and retirement obligation has a wake or deadline.
+  Replacing that fallback is a separate scheduling step, not a consequence of
+  merely adding pidfds to the wait set.
+
+Two corrections to the research framing matter. Linux reports pidfd readiness
+without requiring userspace to reap the child ([pidfd_open](https://man7.org/linux/man-pages/man2/pidfd_open.2.html)).
+Seals are irreversible and F_SEAL_WRITE excludes writable shared mappings;
+that rules out rewriting a previously WRITE-sealed pool, not reusing an unchanged
+immutable resource across presentations ([file seals](https://man7.org/linux/man-pages/man2/F_GET_SEALS.2const.html)).
+It does not prove fresh allocation per presentation is the only possible secure
+architecture. Keep the current ISB mechanism while evaluating authority.
+
+Recommended sequence: specify and test the dispatch/revocation contract; screen
+one shared lifecycle observer with checks migrated only where proved; fold the
+connector identity; then audit deadline-only idle scheduling. Preserve the
+counterexample as a test of the chosen boundary, and cover busy/no-wait loops,
+independent wrapper/peer exits, revoke during parked reads, generation replacement,
+observer failure and worker completion after revocation. Record syscall counts,
+CPU, latency, joins and cleanup. Historical c19 poll counts identify exposure,
+not predicted savings; c25 demonstrates why a count reduction is insufficient.
+IPC can also implement these protections: the comparison is with our specific
+comparator arm, not an inherent limit of IPC.
+
+## Earlier scheduling resumption
 
 The source audit identifies three distinct kinds of work: mandatory current
 observations, locally runnable state transitions, and obligations blocked on
