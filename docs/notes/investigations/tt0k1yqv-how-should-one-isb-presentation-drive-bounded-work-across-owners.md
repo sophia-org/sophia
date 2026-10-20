@@ -875,3 +875,27 @@ saturated-journal integration limits open. Before another CPU screen, check
 mechanism evidence for changed ACK/exchange/owner-visit counts and investigate
 measurement variability. These CPU totals prove neither. No further capture
 or implementation change was made.
+
+
+## Candidate 33: ACK handoff mechanism diagnostic prepared
+
+The CPU-only captures contain no exchange ledger. `candidate-33-ack-handoff-exchanges`
+therefore prepares two matched files progress runs, control then candidate,
+using the existing comparator-progress and schema-1 exchange counters. Same
+source `3a0226b66`, one shared progress Session, same SDK `e319d10`; only the
+candidate peer enables ACK handoff. Earlier read scheduling remains off. No
+new source instrumentation or scheduling change. Both peers pass six workload
+controls; 27 launcher/analyzer tests, PTY cleanup, profile/session validation
+and 50 recursive artifact pins pass. Stages `ack33-1..2` are unused.
+
+Wrapper: `~/.local/state/t331/run-ack-handoff-exchanges-remote.sh`; expected
+about 130 seconds, bound 300. Sudo needs the user's password; nothing launched.
+All new binaries are pinned at original hashed Cargo paths. The prior CPU
+Session remains at its original hashed hardlink, recorded in the evidence;
+building progress replaced its generic alias but not historical manifests.
+
+Compare interior ACKs, records/submits, event reads, owner visits, pass masks
+and wait reasons per joined completion, reconciling both ledgers. These count
+export attempts/co-occurrence, not packets, call ordering or CPU savings, and
+do not directly measure the handoff branch. Keep that limit if counts match.
+Existing C parity and saturated-journal qualification remain open; no promotion.
