@@ -388,3 +388,7 @@ fn custody_wait_observes_peer_exit_while_wrapper_is_stopped() {
     let _ = rustix::process::kill_process(wrapper, rustix::process::Signal::CONT);
     supervisor.terminate().unwrap();
 }
+
+#[cfg(feature = "experimental-custody-dispatch")]
+#[path = "support/custody_dispatch.rs"]
+mod custody_dispatch;

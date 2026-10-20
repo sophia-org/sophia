@@ -72,3 +72,8 @@ impl LaunchCustody {
         Ok(quiet && self.inner.active.load(Ordering::Acquire))
     }
 }
+
+#[cfg(feature = "experimental-custody-dispatch")]
+mod dispatch;
+#[cfg(feature = "experimental-custody-dispatch")]
+pub use dispatch::{CustodyDispatch, CustodyDispatchLimit};

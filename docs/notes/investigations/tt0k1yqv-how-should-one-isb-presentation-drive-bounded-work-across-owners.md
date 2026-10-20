@@ -23,7 +23,8 @@ new global reactor. Task state and acceptance remain in
 niltempus now explicitly asks for the simplest secure, performant trust model
 with 9P as the core. The earlier preservation-only experiments remain evidence;
 they do not rule out an explicitly specified change to authority-observation
-boundaries. The proposal below is not implemented or accepted by a native gate.
+boundaries. The proposal below has no production integration or native acceptance.
+Candidate 39 implements only a disabled dispatch primitive and its controls.
 Candidate 37 remains wake-only, with every fresh check intact.
 
 Use the existing launch custody and admission owners as one revocable authority
@@ -1185,3 +1186,55 @@ result. The next gate is a release-only publication handoff before parked-read
 retry/flush, with a mutation-sensitive read-boundary control and unchanged
 FIFO, authority, credits and cancellation behavior. No native run or CPU
 claim follows from this bounded control.
+
+
+## Candidate 39: bounded dispatch mechanism and local timing
+
+Implemented behind runtime feature `experimental-custody-dispatch` (off by
+default; no production consumer). CustodyDispatch samples both pidfds for each
+registered launch together and applies observed exit directly to shared custody.
+Within the caller's explicit age/check limits, checks read that custody state.
+Unregistered launch identities refuse; clones cannot extend the dispatch, and
+renewing limits requires another observation. Explicit withdrawal remains visible
+on every check. No kernel-observation code was removed from default is_live.
+
+The tests intentionally distinguish the contracts: after peer exit with its
+wrapper stopped, old is_live refuses, while an already-started dispatch can
+still permit its bounded work. The next observation revokes it without reaping,
+including independently issued custody handles. Other controls cover busy loops
+without blocking waits, isolated wrapper exit, explicit and cross-thread
+withdrawal, same-supervisor replacement, age/check exhaustion and bad registration.
+Private observer fault controls distinguish INTR (no new dispatch/credit; existing
+limits remain) from fatal error (affected custody is revoked). The fault seam
+is not publicly callable. Removing any of exit invalidation, fatal invalidation,
+age enforcement or credit decrement fails the corresponding control.
+
+Final validation: 151 feature tests pass, 3 ignored; 17 default controls pass,
+1 ignored; clippy and formatting clean. Muse reviewed independently through
+Herdr, read-only; its public fault-seam blocker was closed before final checks.
+Evidence, raw timings, mutation logs and review: `candidate-39-custody-dispatch`.
+
+Release microbenchmark, one protected launch/two pidfds, 4096 dispatches per
+sample, two warmup pairs and eight alternating pairs, thread-CPU upper medians:
+
+| Checks per dispatch | Fresh ns/check | Aggregate ns/check |
+| --- | ---: | ---: |
+| 1 | 444.92 | 487.73 |
+| 8 | 434.65 | 75.83 |
+| 32 | 408.08 | 29.77 |
+
+Timing includes allocation, poll, lookup, age/check enforcement and drop.
+It demonstrates amortization, not native savings; the single-check case loses.
+Multi-launch registration/lookup scaling remains unmeasured. The mechanism is
+promising enough for integration work, not default promotion.
+
+Integration must still establish a named observing owner, handle busy and parked
+workers, choose bounded scopes and limits, and check protected publication after
+revocation. The token limits admission of checks, not execution time of work
+already admitted. Existing fresh is_live errors remain local to that caller;
+mixed consumers cannot claim a universal shared observer-failure contract.
+Real 9P request/retry and worker-completion controls, followed by a native CPU
+and latency pair, remain required before enabling this authority model. Do not
+replace all WorkerAuthority::live calls with a flag load: it serves both inline
+Session work and separate role workers. No cadence, connector-identity, immutable
+content, journal or default authority change is included here.
