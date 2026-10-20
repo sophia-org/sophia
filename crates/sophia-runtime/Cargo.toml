@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
+experimental-shell-capture = []
 # Opt-in shell-file control-turn observation; absent from default builds.
 experimental-custody-dispatch = []
 

@@ -3,6 +3,11 @@ use std::sync::Arc;
 
 use sophia_protocol::*;
 
+#[cfg(feature = "experimental-shell-capture")]
+mod capture;
+#[cfg(feature = "experimental-shell-capture")]
+pub use capture::*;
+
 /// Recoverable protocol outcomes; callers must not turn these into session loss.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ContentStoreError {
@@ -38,6 +43,8 @@ struct Transfer {
     deadline: u64,
     // A stopped worker retains its mapping and charge until completion.
     stopped: Option<(ContentReason, TransactionId)>,
+    #[cfg(feature = "experimental-shell-capture")]
+    capture: Option<Arc<()>>,
 }
 
 struct Pixels {
@@ -250,6 +257,8 @@ impl ContentResourceStore {
                 transaction,
                 deadline,
                 stopped: None,
+                #[cfg(feature = "experimental-shell-capture")]
+                capture: None,
             },
         );
         Ok(())
@@ -277,6 +286,12 @@ impl ContentResourceStore {
             .get(&resource)
             .ok_or(ContentStoreError::Stale)?;
         let stopped = transfer.stopped;
+        // A CPU validator cannot settle a renderer-owned source, even with an
+        // identically sized mapping or a failure result.
+        #[cfg(feature = "experimental-shell-capture")]
+        if transfer.capture.is_some() {
+            return Err(ContentStoreError::Stale);
+        }
         let result = result.take().expect("completion checked");
         if let Some((reason, transaction)) = stopped {
             // The result and its mapping drop only after the worker returned.

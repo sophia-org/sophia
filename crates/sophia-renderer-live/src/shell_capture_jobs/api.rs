@@ -105,6 +105,11 @@ impl LiveShellCaptureCompletion {
         self.job
     }
 
+    /// Inspect while retaining the receipt through fallible owner settlement.
+    pub fn outcome(&self) -> &LiveShellCaptureOutcome {
+        &self.outcome
+    }
+
     pub fn into_outcome(self) -> LiveShellCaptureOutcome {
         self.outcome
     }

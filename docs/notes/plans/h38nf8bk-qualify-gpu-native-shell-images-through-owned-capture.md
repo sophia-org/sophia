@@ -414,6 +414,63 @@ the executor between threads. Logs and the retained initial metadata-stride test
 failure are under
 `~/.local/state/sophia/development-evidence/t339-owned-capture-20261020/session-handoff-01/`.
 
+#### Logical capture reservation and failed-copy settlement
+
+The following October 20 slice connects the Session binding to the actual
+runtime allocation/resource owner. `reserve_capture_image` checks the live grant,
+output/allocation and topology, the opaque single-plane XRGB metadata, and the
+existing content limits before issuing an opaque, non-cloneable reservation.
+The ticket binds the full admitted metadata and the exact transfer identity;
+identical grant/resource numbers in a different store cannot settle it.
+
+Capture and CPU transfers share resource generation history, quotas and two
+terminal-record credits. A capture transfer has a separate identity marker, so
+`complete_isb` refuses both successful and failed CPU results without consuming
+them or releasing capture credit. Cancellation, timeout, revocation and even
+loss of the ticket retain the transfer and its charges. Logical staging,
+reserved-resident and backing bytes are quota accounting; they do not describe
+a CPU staging allocation or duplicate the renderer's physical allocation.
+
+Session submission now requires the runtime ticket and checks its grant and
+full metadata against the binding. A refused enqueue returns that ticket along
+with the original source and native destination reservation. Pending jobs keep
+their ticket through resource cancellation and disconnect. Resource observation
+cancels publication interest while continuing to reconcile the native job.
+
+For failed/unpublished work, Session consults the opaque native receipt before
+settling runtime credit. Proven pre-use return or completed reads can produce a
+resource failure status; uncertain work cannot enter reconciliation, including
+after timeout. A usable successful snapshot keeps its ticket for the future
+accepted backing path. Wrong-owner and clock errors preserve both ticket and
+receipt for retry. Disconnected jobs settle against their retained old epoch,
+without reopening authority or touching a successor. The first cancellation,
+expiry or revocation reason remains authoritative.
+
+Runtime's failure-accounting API is a trusted-owner operation, not a GPU
+completion proof. It emits only ResourceStatus. Neither it nor the Session
+wrapper emits SourceReleased, ResourceReleased, ImageAdmitted or acceptance;
+those require their respective journal/owner transitions. The snapshot receipt
+remains owned even after logical failure credit is returned. No renderer type
+or dependency has been added to runtime.
+
+Controls cover cross-class completion, exact owner identity, shared budgets and
+generations, first terminal reason, clock recovery, retained uncertain credit,
+authoritative allocation checks, retired-epoch settlement and Session receipt
+binding. Eight mutations fail at runtime. The uncertainty-to-accounting control
+uses a private supplied-disposition seam with the real resource registry; it is
+not a GPU execution or public receipt-construction path. Selected restored
+feature suites pass 270 tests and their default counterparts pass 222, with two
+pre-existing ignored library tests in each selection. All ten Session handoff
+controls pass with native-session enabled; three compile-fail controls pass.
+Clippy and formatting are clean. Evidence is retained in
+`~/.local/state/sophia/development-evidence/t339-owned-capture-20261020/resource-reservations-01/`.
+
+GPU-backed accepted leases, successful-copy resource publication, compositor
+lowering, owner-loop installation/fence follow-up and native qualification remain
+outstanding. The experimental feature remains off by default; production image
+configuration remains sealed-only. No hardware run or performance claim is
+attached to these accounting controls.
+
 #### Remaining Session owner wiring
 
 Use the existing owner, not a second capture thread or context. The bounded

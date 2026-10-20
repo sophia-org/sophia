@@ -7,6 +7,31 @@ impl ContentAllocationStore {
         &self,
         metadata: &ShellImageMetadata,
     ) -> Result<ContentResourceBegin, ContentAllocationError> {
+        self.image_description(metadata, SHELL_IMAGE_SOURCE_SEALED_MEMORY)
+    }
+
+    #[cfg(feature = "experimental-shell-capture")]
+    pub(crate) fn capture_image_description(
+        &self,
+        metadata: &ShellImageMetadata,
+    ) -> Result<ContentResourceBegin, ContentAllocationError> {
+        if metadata.source_format != sophia_protocol::DRM_FORMAT_XRGB8888
+            || metadata.plane_count != 1
+            || metadata.descriptor_count != 1
+        {
+            return Err(ContentAllocationError::Malformed);
+        }
+        self.image_description(
+            metadata,
+            sophia_protocol::shell_files::SHELL_IMAGE_SOURCE_DMA_BUF,
+        )
+    }
+
+    fn image_description(
+        &self,
+        metadata: &ShellImageMetadata,
+        source_kind: u32,
+    ) -> Result<ContentResourceBegin, ContentAllocationError> {
         self.check_grant(self.limits.grant)?;
         metadata
             .encode()
@@ -16,7 +41,7 @@ impl ContentAllocationStore {
         {
             return Err(ContentAllocationError::Stale);
         }
-        if metadata.source_kind != SHELL_IMAGE_SOURCE_SEALED_MEMORY {
+        if metadata.source_kind != source_kind {
             return Err(ContentAllocationError::Malformed);
         }
         let allocation = self
@@ -54,7 +79,8 @@ impl ContentAllocationStore {
             height_px: metadata.height,
             rendered_scale_numerator: allocation.scale_numerator,
             rendered_scale_denominator: allocation.scale_denominator,
-            pixel_format: 1, // Isb metadata validation above requires tight BGRA8.
+            // Logical four-byte pixel layout, not a source-read or import proof.
+            pixel_format: 1,
             chunk_count: metadata.height.div_ceil(rows),
             total_bytes: metadata.declared_bytes,
         };

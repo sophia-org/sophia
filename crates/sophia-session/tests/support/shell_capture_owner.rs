@@ -1,9 +1,11 @@
 //! Real mailbox + Session correlation, with shutdown before GPU submission.
 use super::*;
+use sophia_protocol::*;
 use sophia_renderer_live::{
     LiveRendererSnapshotBudget, LiveRendererSnapshotEpoch, LiveShellCaptureExecutor,
     LiveShellCaptureOutcome, LiveShellCaptureSource, live_shell_capture_channel,
 };
+use sophia_runtime::ContentAllocationSnapshot;
 use std::{
     os::{fd::AsRawFd, unix::net::UnixStream},
     sync::Arc,
@@ -16,6 +18,7 @@ struct Fixture {
     epoch: Arc<LiveRendererSnapshotEpoch>,
     budget: Arc<LiveRendererSnapshotBudget>,
     now: Instant,
+    registries: Vec<ContentEpochRegistry>,
 }
 impl Fixture {
     fn new() -> Self {
@@ -27,7 +30,34 @@ impl Fixture {
             epoch,
             budget: LiveRendererSnapshotBudget::new(8, 512),
             now: Instant::now(),
+            registries: Vec::new(),
         }
+    }
+    fn reserve(&mut self, binding: Binding) -> ContentCaptureReservation {
+        let mut registry = allocation_registry(binding.grant);
+        for generation in 1..binding.metadata.resource_generation {
+            let mut prior = binding.metadata;
+            prior.resource_generation = generation;
+            let mut r = Some(
+                registry
+                    .reserve_capture_image(binding.grant, &prior, 0)
+                    .unwrap(),
+            );
+            registry
+                .fail_capture(&mut r, ContentCaptureFailure::Renderer, 0)
+                .unwrap();
+        }
+        while registry
+            .resources_mut(binding.grant)
+            .unwrap()
+            .take_event()
+            .is_some()
+        {}
+        let reservation = registry
+            .reserve_capture_image(binding.grant, &binding.metadata, 0)
+            .unwrap();
+        self.registries.push(registry);
+        reservation
     }
     fn request(&self) -> LiveShellCaptureRequest {
         let (fd, _) = UnixStream::pair().unwrap();
@@ -49,9 +79,10 @@ impl Fixture {
     fn submit(&mut self, binding: Binding) -> (LiveShellCaptureJob, i32) {
         let r = self.request();
         let fd = r.source.fd.as_raw_fd();
+        let reservation = self.reserve(binding);
         (
             self.owner
-                .submit(binding, r, self.now + Duration::from_secs(10))
+                .submit(binding, r, reservation, self.now + Duration::from_secs(10))
                 .unwrap(),
             fd,
         )
@@ -157,7 +188,16 @@ fn duplicate_offer_or_resource_and_capacity_return_original_custody() {
         }
         let r = f.request();
         let fd = r.source.fd.as_raw_fd();
-        let (error, r) = f.owner.submit(duplicate, r, f.now).unwrap_err();
+        let reservation = f.reserve(duplicate);
+        let Rejected {
+            reason: error,
+            request: r,
+            reservation,
+        } = f
+            .owner
+            .submit(duplicate, r, reservation, f.now)
+            .unwrap_err();
+        assert_eq!(*reservation.metadata(), duplicate.metadata);
         assert_eq!(error, SubmitFailure::Duplicate);
         assert_eq!(r.source.fd.as_raw_fd(), fd);
         assert_eq!(f.budget.usage(), (2, 128));
@@ -168,7 +208,15 @@ fn duplicate_offer_or_resource_and_capacity_return_original_custody() {
     }
     let r = f.request();
     let fd = r.source.fd.as_raw_fd();
-    let (error, r) = f.owner.submit(binding(1, 5), r, f.now).unwrap_err();
+    let reservation = f.reserve(binding(1, 5));
+    let Rejected {
+        reason: error,
+        request: r,
+        reservation: _,
+    } = f
+        .owner
+        .submit(binding(1, 5), r, reservation, f.now)
+        .unwrap_err();
     assert_eq!(error, SubmitFailure::Capacity);
     assert_eq!(r.source.fd.as_raw_fd(), fd);
     drop(r);
@@ -178,11 +226,12 @@ fn duplicate_offer_or_resource_and_capacity_return_original_custody() {
 
 #[test]
 fn mismatched_source_metadata_or_admission_never_enters_mailbox() {
-    for field in 0..10 {
+    for field in 0..16 {
         let mut f = Fixture::new();
         let mut b = binding(1, 1);
         let r = f.request();
         let fd = r.source.fd.as_raw_fd();
+        let reservation = f.reserve(b);
         match field {
             0 => b.metadata.width = 5,
             1 => b.metadata.stride = 32,
@@ -193,9 +242,19 @@ fn mismatched_source_metadata_or_admission_never_enters_mailbox() {
             6 => b.metadata.plane_count = 2,
             7 => b.plane.offset = 4,
             8 => b.plane.stride = 32,
-            _ => b.plane.fd_index = 1,
+            9 => b.plane.fd_index = 1,
+            10 => b.metadata.output_id += 1,
+            11 => b.metadata.allocation_id += 1,
+            12 => b.metadata.topology_generation += 1,
+            13 => b.metadata.resource_generation += 1,
+            14 => b.metadata.offer_id += 1,
+            _ => b.grant.connection_epoch += 1,
         }
-        let (error, r) = f.owner.submit(b, r, f.now).unwrap_err();
+        let Rejected {
+            reason: error,
+            request: r,
+            reservation: _,
+        } = f.owner.submit(b, r, reservation, f.now).unwrap_err();
         assert_eq!(error, SubmitFailure::Binding);
         assert_eq!(r.source.fd.as_raw_fd(), fd);
         assert!(f.owner.pending.iter().all(Option::is_none));
@@ -208,7 +267,15 @@ fn closed_executor_returns_reservation_without_creating_binding() {
     drop(f.executor.take());
     let r = f.request();
     let fd = r.source.fd.as_raw_fd();
-    let (error, r) = f.owner.submit(binding(1, 1), r, f.now).unwrap_err();
+    let reservation = f.reserve(binding(1, 1));
+    let Rejected {
+        reason: error,
+        request: r,
+        reservation: _,
+    } = f
+        .owner
+        .submit(binding(1, 1), r, reservation, f.now)
+        .unwrap_err();
     assert_eq!(
         error,
         SubmitFailure::Renderer(LiveShellCaptureSubmitFailure::Closed)
@@ -229,8 +296,245 @@ fn unmatched_receipt_is_retained_and_closes_submission() {
     assert_eq!(f.owner.orphaned.len(), 1);
     assert_eq!(f.budget.usage(), (1, 64));
     let r = f.request();
+    let reservation = f.reserve(binding(2, 1));
     assert_eq!(
-        f.owner.submit(binding(2, 1), r, f.now).unwrap_err().0,
+        f.owner
+            .submit(binding(2, 1), r, reservation, f.now)
+            .unwrap_err()
+            .reason,
         SubmitFailure::Closed
+    );
+}
+
+// Each test can deliberately supply independent exact owners with reused IDs;
+// receipt settlement still has to route to the reservation's actual owner.
+fn allocation_registry(grant: ContentGrant) -> ContentEpochRegistry {
+    let mut registry = ContentEpochRegistry::new(64 << 20).unwrap();
+    let mut limits = ContentLimits::prototype(grant);
+    limits.max_staging_bytes = 8 << 20;
+    limits.max_resident_bytes = 8 << 20;
+    limits.max_retiring_bytes = 8 << 20;
+    registry.admit(limits).unwrap();
+    let store = registry.allocations_mut(grant).unwrap();
+    let output = ContentOutputId {
+        id: 1,
+        generation: 1,
+    };
+    store
+        .publish_outputs(
+            TransactionId::from_raw(1),
+            1,
+            vec![ContentOutputFactsEntry {
+                output,
+                local_width: 200,
+                local_height: 100,
+                scale_numerator: 1,
+                scale_denominator: 1,
+                scale_generation: 1,
+            }],
+        )
+        .unwrap();
+    store
+        .request(
+            TransactionId::from_raw(2),
+            ContentAllocationRequest {
+                grant,
+                output,
+                allocation_request_id: 1,
+                operation: 1,
+                role: 1,
+                edge: 1,
+                prior: ContentAllocationId::default(),
+                parent: ContentAllocationId::default(),
+                parent_presentation_epoch: 0,
+                anchor_parent_rect: ContentPixelRect::default(),
+                desired_width: 200,
+                desired_height: 20,
+                margins: ContentMargins::default(),
+            },
+            &[],
+            0,
+        )
+        .unwrap();
+    store
+        .grant(
+            1,
+            ContentAllocationSnapshot {
+                native_opening: None,
+                output,
+                allocation: ContentAllocationId {
+                    id: 1,
+                    generation: 1,
+                },
+                scale_generation: 1,
+                scale_numerator: 1,
+                scale_denominator: 1,
+                role: 1,
+                edge: 1,
+                margins: ContentMargins::default(),
+                logical: ContentLogicalRect {
+                    x: 0,
+                    y: 0,
+                    width: 200,
+                    height: 20,
+                },
+                pixel: ContentPixelRect {
+                    x: 0,
+                    y: 0,
+                    width: 200,
+                    height: 20,
+                },
+                parent: ContentAllocationId::default(),
+                anchor_parent_rect: ContentPixelRect::default(),
+                allowed_reservation_extent: 20,
+            },
+            &[],
+        )
+        .unwrap();
+    while store.take_event().is_some() {}
+    registry
+}
+
+#[test]
+fn failed_settlement_preserves_both_reservations_until_the_right_owner_clock() {
+    let mut f = Fixture::new();
+    let b = binding(1, 1);
+    let (job, fd) = f.submit(b);
+    f.registries[0]
+        .resources_mut(b.grant)
+        .unwrap()
+        .expire(10)
+        .unwrap();
+    let mut s = f.close().completed.pop().unwrap();
+    assert_eq!(s.receipt.job(), job);
+    assert_eq!(
+        s.fail_unpublished(&mut f.registries[0], 9),
+        Err(ContentStoreError::ClockRegression)
+    );
+    assert!(s.reservation.is_some());
+    assert_eq!(
+        f.registries[0].resources(b.grant).unwrap().usage().backing,
+        64
+    );
+    assert_eq!(f.budget.usage(), (1, 64));
+    s.fail_unpublished(&mut f.registries[0], 10).unwrap();
+    assert!(s.reservation.is_none());
+    assert_eq!(
+        f.registries[0].resources(b.grant).unwrap().usage(),
+        sophia_runtime::ContentMemoryUsage::default()
+    );
+    assert_eq!(f.budget.usage(), (1, 64)); // Physical reservation still in returned request.
+    let ShellContentRecord::ResourceStatus(status) = f.registries[0]
+        .resources_mut(b.grant)
+        .unwrap()
+        .take_event()
+        .unwrap()
+        .record
+    else {
+        panic!("failure only")
+    };
+    assert_eq!(status.reason, ContentReason::RendererFailed as u16);
+    assert_eq!(
+        s.fail_unpublished(&mut f.registries[0], 10),
+        Err(ContentStoreError::Stale)
+    );
+    let LiveShellCaptureOutcome::Returned { request, .. } = s.receipt.into_outcome() else {
+        panic!("pre-use return")
+    };
+    assert_eq!(request.source.fd.as_raw_fd(), fd);
+    drop(request);
+    assert_eq!(f.budget.usage(), (0, 0));
+}
+
+#[test]
+fn resource_cancel_is_observed_but_credit_waits_for_the_real_receipt() {
+    let mut f = Fixture::new();
+    let b = binding(1, 1);
+    f.submit(b);
+    f.registries[0]
+        .resources_mut(b.grant)
+        .unwrap()
+        .cancel(
+            TransactionId::from_raw(7),
+            &ContentResourceCancel {
+                grant: b.grant,
+                resource: b.resource(),
+            },
+        )
+        .unwrap();
+    f.owner.observe_resources(&mut f.registries[0], 0).unwrap();
+    assert!(f.owner.pending[0].as_ref().unwrap().withdrawn);
+    assert_eq!(
+        f.registries[0].resources(b.grant).unwrap().usage().backing,
+        64
+    );
+    assert!(f.owner.take_completed(f.now).unwrap().completed.is_empty());
+    let mut s = f.close().completed.pop().unwrap();
+    s.fail_unpublished(&mut f.registries[0], 0).unwrap();
+    let event = f.registries[0]
+        .resources_mut(b.grant)
+        .unwrap()
+        .take_event()
+        .unwrap();
+    assert_eq!(event.transaction, TransactionId::from_raw(7));
+    let ShellContentRecord::ResourceStatus(status) = event.record else {
+        panic!("failure only")
+    };
+    assert_eq!(status.reason, ContentReason::Cancelled as u16);
+}
+
+#[test]
+fn disconnected_capture_settles_retired_registry_without_authorizing_successor() {
+    let mut f = Fixture::new();
+    let b = binding(1, 1);
+    f.submit(b);
+    assert!(f.registries[0].disconnect(b.grant));
+    f.owner.observe_resources(&mut f.registries[0], 0).unwrap();
+    assert!(f.registries[0].retired_bytes() > 0);
+    let mut s = f.close().completed.pop().unwrap();
+    let mut wrong = allocation_registry(b.grant);
+    let _other = wrong
+        .reserve_capture_image(b.grant, &b.metadata, 0)
+        .unwrap();
+    assert_eq!(
+        s.fail_unpublished(&mut wrong, 0),
+        Err(ContentStoreError::Stale)
+    );
+    assert!(s.reservation.is_some());
+    s.fail_unpublished(&mut f.registries[0], 0).unwrap();
+    assert_eq!(f.registries[0].retired_bytes(), 0);
+    assert_eq!(wrong.resources(b.grant).unwrap().usage().backing, 64);
+}
+
+#[test]
+fn uncertain_disposition_never_enters_credit_reconciliation_even_after_timeout() {
+    let mut f = Fixture::new();
+    let b = binding(1, 1);
+    let mut reservation = Some(f.reserve(b));
+    f.registries[0]
+        .resources_mut(b.grant)
+        .unwrap()
+        .expire(100_000)
+        .unwrap();
+    let mut called = false;
+    assert_eq!(
+        reconcile_proven_reads(&LiveShellCaptureOutcome::Uncertain, || {
+            called = true;
+            f.registries[0].fail_capture(&mut reservation, ContentCaptureFailure::Timeout, 100_000)
+        }),
+        Err(ContentStoreError::Incomplete)
+    );
+    assert!(!called);
+    assert!(reservation.is_some());
+    assert_eq!(
+        f.registries[0].resources(b.grant).unwrap().usage().backing,
+        64
+    );
+    assert!(
+        f.registries[0]
+            .resources_mut(b.grant)
+            .unwrap()
+            .take_event()
+            .is_none()
     );
 }
