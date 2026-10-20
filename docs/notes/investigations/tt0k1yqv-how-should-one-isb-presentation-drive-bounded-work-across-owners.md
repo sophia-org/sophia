@@ -644,7 +644,8 @@ remains diagnostic only; no fresh capture or production change was made.
 
 ## Shell operation diagnostic prepared
 
-Candidate 29 is prepared, not captured, in `candidate-29-shell-exchanges`.
+Candidate 29 is captured and validated in `candidate-29-shell-exchanges`
+(results below).
 Comparator `902ab3f00` adds feature-gated shell-export write-attempt counters
 (record, submit, ACK), event-read outcome counters (ready, pending, error), and
 completed-owner-pass co-occurrence masks. Operations outside an owner pass are
@@ -662,5 +663,33 @@ rebuilt-peer controls pass. All artifact pins and configuration checks pass.
 
 Two fresh 1000-frame files/IPC panel progress plans use the existing frozen
 runner; this is not a CPU or acceptance pair. Launch wrapper:
-`~/.local/state/t331/run-shell-exchanges-remote.sh`. Native launch remains
-pending sudo authentication; no production scheduling or authority changed.
+`~/.local/state/t331/run-shell-exchanges-remote.sh`. Native capture completed with clean teardown; no production scheduling or
+authority changed.
+
+
+## Candidate 29 accounts for the nineteen writes
+
+Both arms joined 1000 matching presentations and cleaned up without errors.
+The interior exchange windows contain 599 completions each. Files records
+2,396 record attempts, 2,396 submit attempts, 6,589 ACK attempts, 6,589 ready
+event reads and 8,115 pending event-read outcomes; no errors or unscoped
+operations. Thus nineteen writes per completion comprise four record writes,
+four submit writes and eleven ACK writes. Schema-4 counts independently match:
+11,381 writes, 6,589 reads, 8,115 pending-read attempts and 17,970 replies.
+These are observed equalities, not general synchronization guarantees.
+
+There are 8,716 completed files owner passes. Record and submit always share a
+pass. ACK occurs once in each of 6,589 passes: 4,464 also contain a ready-event
+result, while 2,125 contain only pending-event work alongside the ACK. Pending
+results may repeat within a pass. IPC has 5,178 completed passes, all with zero
+shell-export operations. No causal pairing between ACKs and particular events
+is implied, and the eleven completed reads need not be eleven event kinds or
+one event per read. Full masks and input hashes are retained in the package's
+`RESULTS.md`, `exchange-results.json`, `reconciliation.json` and
+`capture-SHA256SUMS`.
+
+Next audit is ACK dependency, not ACK suppression: identify releases of the
+transaction lane, journal capacity, image-refusal publication and retained
+charges, and the SDK yield point that queues an ACK. Cumulative ACK already
+exists. Counts alone do not justify delaying ACKs, adding a batching window,
+suppressing reads, or weakening current-call authority/error observations.
