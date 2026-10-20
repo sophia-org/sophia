@@ -78,7 +78,11 @@ fn incomplete_pixels_never_acquire_a_lease_and_completion_moves_credit_once() {
         }
     );
     assert_eq!(
-        store.lease(grant(), begin(1).resource).unwrap().bytes(),
+        store
+            .lease(grant(), begin(1).resource)
+            .unwrap()
+            .cpu_bytes()
+            .unwrap(),
         chunk(1).bytes
     );
     assert_eq!(
@@ -113,7 +117,7 @@ fn retirement_waits_for_every_consumer_and_emits_one_release() {
     drop(lease);
     store.collect();
     assert!(!store.quiescent());
-    assert_eq!(renderer.bytes(), chunk(1).bytes);
+    assert_eq!(renderer.cpu_bytes().unwrap(), chunk(1).bytes);
     drop(renderer);
     store.collect();
     assert!(!store.quiescent());
@@ -149,7 +153,7 @@ fn revoke_never_manufactures_gpu_completion_or_resurrects_old_epoch() {
         store.begin_isb(tx(), begin(2), 0),
         Err(ContentStoreError::Revoked)
     );
-    assert_eq!(lease.bytes(), chunk(1).bytes);
+    assert_eq!(lease.cpu_bytes().unwrap(), chunk(1).bytes);
     drop(lease);
     store.collect();
     assert!(store.quiescent());
@@ -295,7 +299,7 @@ fn reconnect_reserves_global_credit_and_keeps_old_pixels_alive() {
     assert_eq!(pool.accounting().retired_epochs, 1);
     assert_eq!(pool.reserved_bytes(), 40 * 1024 * 1024 + 8);
     assert_eq!(pool.reserved_backing_bytes(), 32 * 1024 * 1024 + 8);
-    assert_eq!(old.bytes(), chunk(1).bytes);
+    assert_eq!(old.cpu_bytes().unwrap(), chunk(1).bytes);
     drop(old);
     pool.collect();
     assert_eq!(pool.retired_bytes(), 0);
@@ -492,5 +496,5 @@ fn partial_retirement_reopens_exactly_the_reserved_global_headroom() {
     assert_eq!(pool.retired_bytes(), 24 * 1024 * 1024);
     pool.admit(ContentLimits::prototype(next)).unwrap();
     assert_eq!(pool.reserved_bytes(), 64 * 1024 * 1024);
-    assert_eq!(leases[0].bytes().len(), 4194304);
+    assert_eq!(leases[0].cpu_bytes().unwrap().len(), 4194304);
 }

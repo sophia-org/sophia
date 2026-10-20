@@ -787,7 +787,15 @@ fn paced_candidate(with_action: bool) {
     let render = transport
         .begin_content_submission(&mut registry, output, 1, 20)
         .unwrap();
-    assert_eq!(render.resource(resource).unwrap().bytes().len(), 8);
+    assert_eq!(
+        render
+            .resource(resource)
+            .unwrap()
+            .cpu_bytes()
+            .unwrap()
+            .len(),
+        8
+    );
     transport
         .content_prepared(&mut registry, grant, output, 1, 7, 8, 21)
         .unwrap();

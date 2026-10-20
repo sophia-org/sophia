@@ -47,30 +47,27 @@ struct Transfer {
     capture: Option<Arc<()>>,
 }
 
-struct Pixels {
-    description: ContentResourceBegin,
-    bytes: sophia_linux_peer::SealedMapping,
-}
+mod backing;
+#[cfg(feature = "experimental-shell-capture")]
+pub use backing::ContentCapturedImage;
+pub use backing::{ContentCpuResourceLease, ContentResourceLease};
 
 struct Accepted {
-    pixels: Arc<Pixels>,
+    pixels: ContentResourceLease,
     retiring: bool,
     transaction: TransactionId,
     release_pending: bool,
+    #[cfg(feature = "experimental-shell-capture")]
+    capture_evicted: bool,
 }
 
-/// An immutable reference to accepted pixels. Clones are real storage consumers.
-/// Drop the last renderer/upload reference before asking the owner to collect.
-#[derive(Clone)]
-pub struct ContentResourceLease(Arc<Pixels>);
-
-impl ContentResourceLease {
-    pub fn bytes(&self) -> &[u8] {
-        self.0.bytes.bytes()
-    }
-
-    pub fn description(&self) -> &ContentResourceBegin {
-        &self.0.description
+impl Accepted {
+    fn releasable(&self) -> bool {
+        #[cfg(feature = "experimental-shell-capture")]
+        if !self.capture_evicted {
+            return false;
+        }
+        self.pixels.custody_is_exclusive()
     }
 }
 
@@ -321,13 +318,12 @@ impl ContentResourceStore {
         self.accepted.insert(
             resource,
             Accepted {
-                pixels: Arc::new(Pixels {
-                    description: transfer.description,
-                    bytes: pixels.0,
-                }),
+                pixels: ContentResourceLease::sealed(transfer.description, pixels.0),
                 retiring: false,
                 transaction: transfer.transaction,
                 release_pending: false,
+                #[cfg(feature = "experimental-shell-capture")]
+                capture_evicted: true,
             },
         );
         self.status(
@@ -451,7 +447,7 @@ impl ContentResourceStore {
         if value.retiring {
             return Err(ContentStoreError::Stale);
         }
-        Ok(ContentResourceLease(value.pixels.clone()))
+        Ok(value.pixels.clone())
     }
 
     pub fn retire(
@@ -467,7 +463,7 @@ impl ContentResourceStore {
         if value.retiring {
             return Err(ContentStoreError::Stale);
         }
-        let bytes = value.pixels.description.total_bytes;
+        let bytes = value.pixels.description().total_bytes;
         if self.usage.retiring + bytes > self.limits.max_retiring_bytes {
             return Err(ContentStoreError::Budget);
         }
@@ -483,11 +479,7 @@ impl ContentResourceStore {
         let ready: Vec<_> = self
             .accepted
             .iter()
-            .filter(|(_, v)| {
-                !v.release_pending
-                    && (v.retiring || self.revoked)
-                    && Arc::strong_count(&v.pixels) == 1
-            })
+            .filter(|(_, v)| !v.release_pending && (v.retiring || self.revoked) && v.releasable())
             .map(|(key, _)| *key)
             .collect();
         for resource in ready {
@@ -519,7 +511,7 @@ impl ContentResourceStore {
             let pending: Vec<_> = self
                 .accepted
                 .iter()
-                .filter(|(_, v)| v.release_pending && Arc::strong_count(&v.pixels) == 1)
+                .filter(|(_, v)| v.release_pending && v.releasable())
                 .map(|(key, _)| *key)
                 .collect();
             for key in pending {
@@ -530,7 +522,7 @@ impl ContentResourceStore {
 
     fn remove_accepted(&mut self, resource: ContentResourceId) {
         let value = self.accepted.remove(&resource).expect("selected resource");
-        let bytes = value.pixels.description.total_bytes;
+        let bytes = value.pixels.description().total_bytes;
         if value.retiring {
             self.usage.retiring -= bytes;
         } else {
@@ -551,7 +543,7 @@ impl ContentResourceStore {
             .get(&resource)
             .ok_or(ContentStoreError::Stale)?;
         if !value.release_pending
-            || Arc::strong_count(&value.pixels) != 1
+            || !value.releasable()
             || self.events.iter().any(|event| {
                 matches!(&event.record,
                 ShellContentRecord::ResourceReleased(released) if released.resource == resource)

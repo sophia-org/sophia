@@ -3,6 +3,18 @@ use super::*;
 use sophia_protocol::shell_files::{SHELL_IMAGE_SOURCE_SEALED_MEMORY, ShellImageMetadata};
 
 impl ContentAllocationStore {
+    #[cfg(feature = "experimental-shell-capture")]
+    pub(crate) fn capture_image_allocation(
+        &self,
+        metadata: &ShellImageMetadata,
+    ) -> Result<ContentAllocationSnapshot, ContentAllocationError> {
+        self.capture_image_description(metadata)?;
+        self.active
+            .values()
+            .find(|entry| entry.allocation.id == metadata.allocation_id)
+            .cloned()
+            .ok_or(ContentAllocationError::AllocationLost)
+    }
     pub(crate) fn isb_image_description(
         &self,
         metadata: &ShellImageMetadata,

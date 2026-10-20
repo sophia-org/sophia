@@ -110,7 +110,8 @@ impl Fixture {
                         generation: 1
                     })
                     .unwrap()
-                    .bytes()
+                    .cpu_bytes()
+                    .unwrap()
                     .len(),
                 8
             );

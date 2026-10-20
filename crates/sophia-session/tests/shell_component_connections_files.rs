@@ -49,7 +49,7 @@ fn retained_launcher_bytes_tighten_replacement_while_bar_uploads() {
     assert_eq!(retained.retired_epochs, 1);
     assert_eq!(retained.memory.resident, 4);
     assert_eq!(retained.reserved_bytes, 40 * 1024 * 1024 + 4);
-    assert_eq!(held.bytes(), &[1, 2, 3, 255]);
+    assert_eq!(held.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
     let replacement = h.owner.reserve_attempt(1).unwrap();
     let _replacement = h.connect(replacement);
     let limits = h
@@ -130,7 +130,7 @@ fn final_owner_transfer_refuses_live_admission_and_drops_the_actual_consumer() {
         .owner
         .finish_after_backend_drop(held)
         .expect_err("live admission retains actual consumer");
-    assert_eq!(held.bytes(), &[1, 2, 3, 255]);
+    assert_eq!(held.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
     h.owner.close(key).unwrap();
     assert_eq!(h.owner.collect().retired_epochs, 1);
     let (settled, accounting) = h
@@ -212,7 +212,7 @@ fn three_roles_negotiate_independent_profiles_and_catalog_service_borrows_only_i
     assert_eq!(h.owner.collect().retired_epochs, 1);
     let bar_pixels = upload(&mut h, bar, &mut bar_peer, 1);
     let menu_pixels = upload(&mut h, menu, &mut menu_peer, 1);
-    assert_eq!(dock_pixels.bytes(), &[1, 2, 3, 255]);
+    assert_eq!(dock_pixels.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
     assert_eq!(bar_pixels.description().grant, bar.grant);
     assert_eq!(menu_pixels.description().grant, menu.grant);
     assert_eq!(h.owner.phase(bar), Ok(ComponentConnectionPhase::Connected));

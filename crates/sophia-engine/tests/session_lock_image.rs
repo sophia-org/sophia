@@ -51,7 +51,7 @@ fn content(resource: CompositorImageSource) -> CompositorContentImage {
 #[test]
 fn a_lock_image_is_its_own_source_and_identity() {
     let first = CompositorImageSource::Lock(lock_image(4, 1));
-    assert_eq!(first.bytes(), &[1u8; 8]);
+    assert_eq!(first.cpu_bytes().unwrap(), &[1u8; 8]);
     assert!(first.shell().is_none(), "never shell content");
     let identity = first.identity();
     assert!(identity.shell().is_none());

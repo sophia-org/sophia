@@ -54,6 +54,30 @@ impl LiveRendererSnapshotWeak {
 }
 
 impl LiveRetainedRendererImageSnapshot {
+    /// Storage carried by the opaque completion, not a completion proof itself.
+    #[cfg(feature = "experimental-shell-capture")]
+    pub fn storage(&self) -> &std::sync::Arc<sophia_runtime::ContentCapturedImage> {
+        &self.inner
+    }
+
+    /// Lower an already accepted lease without another registry, copy or charge.
+    #[cfg(feature = "experimental-shell-capture")]
+    pub(crate) fn from_content_lease(lease: &sophia_runtime::ContentResourceLease) -> Option<Self> {
+        let inner = lease.captured_image()?;
+        let frame = inner.as_frame();
+        if !inner.is_retained() || !inner.is_current() || !frame.is_valid() {
+            return None;
+        }
+        let size = sophia_protocol::Size {
+            width: i32::try_from(frame.width).ok()?,
+            height: i32::try_from(frame.height).ok()?,
+        };
+        Some(Self {
+            size,
+            inner: inner.clone(),
+        })
+    }
+
     /// The native adapter has already retained and charged this exact copy.
     #[cfg(feature = "experimental-shell-capture")]
     pub(crate) fn from_shell_capture(

@@ -107,7 +107,7 @@ fn generation_with_owner(
                                 stride: 16,
                                 format: u32::from_le_bytes(*b"AR24"),
                                 generation: description.resource.generation,
-                                bytes: lease.clone().into(),
+                                bytes: lease.clone().try_into().ok().unwrap(),
                             },
                             placement: LiveCompositionPlacement {
                                 target: Rect {

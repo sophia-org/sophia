@@ -228,7 +228,15 @@ fn complete_candidate_holds_pixels_through_native_retirement() {
     assert_eq!(candidates.pending_candidate_count(), 1);
 
     let render = candidates.begin_submission(output(), 1, 4).unwrap();
-    assert_eq!(render.resource(resource_id(1)).unwrap().bytes().len(), 8);
+    assert_eq!(
+        render
+            .resource(resource_id(1))
+            .unwrap()
+            .cpu_bytes()
+            .unwrap()
+            .len(),
+        8
+    );
     assert_eq!(candidates.submitted_candidate_count(), 1);
     candidates.prepared(output(), 1, 20, 30, 5).unwrap();
 
@@ -413,7 +421,15 @@ fn submitted_candidate_is_never_superseded_or_timed_out() {
     assert_eq!(candidates.grant_permit(tx(20), output(), 2, 2, 4), Ok(()));
     candidates.expire(10_000).unwrap();
     assert_eq!(candidates.submitted_candidate_count(), 1);
-    assert_eq!(render.resource(resource_id(1)).unwrap().bytes().len(), 8);
+    assert_eq!(
+        render
+            .resource(resource_id(1))
+            .unwrap()
+            .cpu_bytes()
+            .unwrap()
+            .len(),
+        8
+    );
 }
 
 #[test]
@@ -479,7 +495,15 @@ fn only_accepted_pending_work_can_be_superseded() {
         candidates.begin_submission(output(), 2, 9),
         Err(ContentCandidateError::Budget)
     ));
-    assert_eq!(render.resource(resource_id(1)).unwrap().bytes().len(), 8);
+    assert_eq!(
+        render
+            .resource(resource_id(1))
+            .unwrap()
+            .cpu_bytes()
+            .unwrap()
+            .len(),
+        8
+    );
 }
 
 #[test]

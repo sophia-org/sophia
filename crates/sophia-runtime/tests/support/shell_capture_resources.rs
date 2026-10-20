@@ -1,5 +1,7 @@
 //! Resource accounting controls; no renderer/GPU and no source-release proof.
 use super::*;
+#[path = "shell_capture_acceptance.rs"]
+mod acceptance;
 use crate::test_content_isb as isb;
 
 fn grant() -> ContentGrant {
@@ -258,5 +260,5 @@ fn capture_failure_does_not_release_an_existing_cpu_lease() {
         .unwrap();
     assert_eq!(store.usage().backing, 64);
     assert_eq!(store.usage().resident, 64);
-    assert_eq!(lease.bytes(), &[255; 64]);
+    assert_eq!(lease.cpu_bytes().unwrap(), &[255; 64]);
 }

@@ -108,9 +108,21 @@ fn full_size_images_with_limits(limits: ContentLimits) {
         &[90, 0, 0, 255].repeat(1024 * 1024),
         0,
     );
-    assert_eq!(first.bytes().len() as u64, 4 * MIB);
-    assert!(first.bytes().chunks_exact(4).all(|p| p == [30, 0, 0, 255]));
-    assert!(second.bytes().chunks_exact(4).all(|p| p == [90, 0, 0, 255]));
+    assert_eq!(first.cpu_bytes().unwrap().len() as u64, 4 * MIB);
+    assert!(
+        first
+            .cpu_bytes()
+            .unwrap()
+            .chunks_exact(4)
+            .all(|p| p == [30, 0, 0, 255])
+    );
+    assert!(
+        second
+            .cpu_bytes()
+            .unwrap()
+            .chunks_exact(4)
+            .all(|p| p == [90, 0, 0, 255])
+    );
     let accounting = registry.accounting();
     assert_eq!(accounting.memory.resident, 8 * MIB);
     assert_eq!(accounting.memory.staging, 0);

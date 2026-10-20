@@ -678,7 +678,9 @@ fn verify_bundle(
             surface,
             description.width_px,
             description.height_px,
-            lease.bytes(),
+            lease
+                .cpu_bytes()
+                .ok_or("CPU pixel proof cannot read GPU-backed content")?,
         )?;
     }
     let mut seen = Vec::new();
@@ -692,8 +694,11 @@ fn verify_bundle(
         let lease = bundle
             .resource(placement.resource)
             .ok_or("candidate placement named no admitted resource")?;
-        total = total.saturating_add(lease.bytes().len());
-        hash = fnv(hash, lease.bytes());
+        let bytes = lease
+            .cpu_bytes()
+            .ok_or("CPU pixel proof cannot read GPU-backed content")?;
+        total = total.saturating_add(bytes.len());
+        hash = fnv(hash, bytes);
     }
     Ok((total, hash))
 }

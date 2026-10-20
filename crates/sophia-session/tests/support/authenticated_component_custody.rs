@@ -341,7 +341,7 @@ fn two_protected_processes_retain_independent_stop_and_replacement_custody() {
     assert!(f.owner.process_retained(bar) && f.owner.process_retained(menu));
     let bar_pixels = f.receive_resource(bar, &reports);
     let menu_pixels = f.receive_resource(menu, &reports);
-    assert_eq!(bar_pixels.bytes(), &[1, 2, 3, 255]);
+    assert_eq!(bar_pixels.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
     f.owner.request_stop(menu).unwrap();
     assert!(f.owner.start(1, prepare, policy).is_err());
     f.until_released(&[menu]);
@@ -355,12 +355,12 @@ fn two_protected_processes_retain_independent_stop_and_replacement_custody() {
     let retained = f.owner.collect();
     assert_eq!(retained.retired_epochs, 1);
     assert_eq!(retained.reserved_bytes, 40 * 1024 * 1024 + 4);
-    assert_eq!(menu_pixels.bytes(), &[1, 2, 3, 255]);
+    assert_eq!(menu_pixels.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
     assert!(f.owner.process_retained(bar));
     let replacement = f.owner.start(1, prepare, policy).unwrap();
     assert_ne!(replacement.grant, menu.grant);
     let replacement_pixels = f.receive_resource(replacement, &reports);
-    assert_eq!(replacement_pixels.bytes(), &[1, 2, 3, 255]);
+    assert_eq!(replacement_pixels.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
     let limits = f
         .owner
         .with_connection(replacement, |t| t.content_limits().unwrap().clone())
@@ -368,7 +368,7 @@ fn two_protected_processes_retain_independent_stop_and_replacement_custody() {
     assert_eq!(limits.max_retiring_bytes, 8 * 1024 * 1024 - 4);
     assert_eq!(limits.max_resident_bytes, 12 * 1024 * 1024);
     assert_eq!(f.owner.accounting().reserved_bytes, 64 * 1024 * 1024);
-    assert_eq!(menu_pixels.bytes(), &[1, 2, 3, 255]);
+    assert_eq!(menu_pixels.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
     drop(menu_pixels);
     let released = f.owner.collect();
     assert_eq!(released.retired_epochs, 0);

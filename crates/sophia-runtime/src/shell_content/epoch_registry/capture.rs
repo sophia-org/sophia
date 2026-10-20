@@ -10,6 +10,62 @@ pub enum ContentCaptureAdmissionError {
 }
 
 impl ContentEpochRegistry {
+    /// Trusted image-owner accounting after an exact native completion receipt.
+    /// A retained snapshot is NOT that proof. Session's private settlement path
+    /// supplies it only from the opaque receipt, never from a peer or caller's
+    /// claimed completion. Refusals preserve both ownership tickets.
+    pub fn accept_capture_image(
+        &mut self,
+        reservation: &mut Option<ContentCaptureReservation>,
+        image: &mut Option<std::sync::Arc<crate::ContentCapturedImage>>,
+        now: u64,
+    ) -> Result<(), ContentStoreError> {
+        let held = reservation.as_ref().ok_or(ContentStoreError::Stale)?;
+        let epoch = self
+            .active
+            .iter_mut()
+            .find(|e| e.resources.grant() == held.description().grant)
+            .ok_or(ContentStoreError::Stale)?;
+        // The allocation, topology and grant may have changed while GPU work ran.
+        let current = epoch
+            .allocations
+            .capture_image_description(held.metadata())
+            .map_err(|_| ContentStoreError::Stale)?;
+        if &current != held.description() {
+            return Err(ContentStoreError::Stale);
+        }
+        let allocation = epoch
+            .allocations
+            .capture_image_allocation(held.metadata())
+            .map_err(|_| ContentStoreError::Stale)?;
+        if held.allocation() != Some(&allocation) {
+            return Err(ContentStoreError::Stale);
+        }
+        epoch.resources.accept_capture(reservation, image, now)
+    }
+
+    /// Visit active and disconnected resource owners with one bounded native
+    /// eviction budget. Disconnect must not strand cached imports in a retired
+    /// epoch. Actual frame/storage consumers remain charged after eviction.
+    pub fn retire_capture_imports<E>(
+        &mut self,
+        remaining: &mut usize,
+        evict: &mut impl FnMut(&std::sync::Arc<crate::ContentCapturedImage>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for epoch in self.active.iter_mut().chain(&mut self.retired) {
+            epoch.resources.retire_capture_imports(remaining, evict)?;
+        }
+        self.collect();
+        Ok(())
+    }
+
+    pub fn capture_retirement_pending(&self) -> bool {
+        self.active
+            .iter()
+            .chain(&self.retired)
+            .any(|epoch| epoch.resources.capture_retirement_pending())
+    }
+
     /// Reserve logical resource/journal-terminal credit for an opaque captured
     /// image. Does not enable DMA-BUF, publish ImageAdmitted or accept a source.
     /// The channel owner still owes negotiated-format/limits and offer checks.
@@ -30,10 +86,16 @@ impl ContentEpochRegistry {
             .allocations
             .capture_image_description(metadata)
             .map_err(ContentCaptureAdmissionError::Allocation)?;
-        epoch
+        let allocation = epoch
+            .allocations
+            .capture_image_allocation(metadata)
+            .map_err(ContentCaptureAdmissionError::Allocation)?;
+        let mut reservation = epoch
             .resources
             .begin_capture(description, *metadata, now)
-            .map_err(ContentCaptureAdmissionError::Resource)
+            .map_err(ContentCaptureAdmissionError::Resource)?;
+        reservation.bind_allocation(allocation);
+        Ok(reservation)
     }
 
     pub fn capture_stop_reason(

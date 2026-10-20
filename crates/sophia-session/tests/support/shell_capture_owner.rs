@@ -5,7 +5,6 @@ use sophia_renderer_live::{
     LiveRendererSnapshotBudget, LiveRendererSnapshotEpoch, LiveShellCaptureExecutor,
     LiveShellCaptureOutcome, LiveShellCaptureSource, live_shell_capture_channel,
 };
-use sophia_runtime::ContentAllocationSnapshot;
 use std::{
     os::{fd::AsRawFd, unix::net::UnixStream},
     sync::Arc,
@@ -308,92 +307,12 @@ fn unmatched_receipt_is_retained_and_closes_submission() {
 
 // Each test can deliberately supply independent exact owners with reused IDs;
 // receipt settlement still has to route to the reservation's actual owner.
-fn allocation_registry(grant: ContentGrant) -> ContentEpochRegistry {
-    let mut registry = ContentEpochRegistry::new(64 << 20).unwrap();
-    let mut limits = ContentLimits::prototype(grant);
-    limits.max_staging_bytes = 8 << 20;
-    limits.max_resident_bytes = 8 << 20;
-    limits.max_retiring_bytes = 8 << 20;
-    registry.admit(limits).unwrap();
-    let store = registry.allocations_mut(grant).unwrap();
-    let output = ContentOutputId {
-        id: 1,
-        generation: 1,
-    };
-    store
-        .publish_outputs(
-            TransactionId::from_raw(1),
-            1,
-            vec![ContentOutputFactsEntry {
-                output,
-                local_width: 200,
-                local_height: 100,
-                scale_numerator: 1,
-                scale_denominator: 1,
-                scale_generation: 1,
-            }],
-        )
-        .unwrap();
-    store
-        .request(
-            TransactionId::from_raw(2),
-            ContentAllocationRequest {
-                grant,
-                output,
-                allocation_request_id: 1,
-                operation: 1,
-                role: 1,
-                edge: 1,
-                prior: ContentAllocationId::default(),
-                parent: ContentAllocationId::default(),
-                parent_presentation_epoch: 0,
-                anchor_parent_rect: ContentPixelRect::default(),
-                desired_width: 200,
-                desired_height: 20,
-                margins: ContentMargins::default(),
-            },
-            &[],
-            0,
-        )
-        .unwrap();
-    store
-        .grant(
-            1,
-            ContentAllocationSnapshot {
-                native_opening: None,
-                output,
-                allocation: ContentAllocationId {
-                    id: 1,
-                    generation: 1,
-                },
-                scale_generation: 1,
-                scale_numerator: 1,
-                scale_denominator: 1,
-                role: 1,
-                edge: 1,
-                margins: ContentMargins::default(),
-                logical: ContentLogicalRect {
-                    x: 0,
-                    y: 0,
-                    width: 200,
-                    height: 20,
-                },
-                pixel: ContentPixelRect {
-                    x: 0,
-                    y: 0,
-                    width: 200,
-                    height: 20,
-                },
-                parent: ContentAllocationId::default(),
-                anchor_parent_rect: ContentPixelRect::default(),
-                allowed_reservation_extent: 20,
-            },
-            &[],
-        )
-        .unwrap();
-    while store.take_event().is_some() {}
-    registry
-}
+#[path = "../../../sophia-runtime/tests/support/captured_resource_fixture.rs"]
+mod captured_fixture;
+use captured_fixture::allocation_registry;
+
+#[path = "shell_capture_acceptance.rs"]
+mod acceptance;
 
 #[test]
 fn failed_settlement_preserves_both_reservations_until_the_right_owner_clock() {

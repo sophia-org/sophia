@@ -19,7 +19,15 @@ fn a_live_epoch_returns_the_actual_backend_owner_without_settling() {
     let before = epochs.accounting();
     let render = epochs.finish_after_backend_drop(render).err().unwrap();
     assert_eq!(epochs.accounting(), before);
-    assert_eq!(render.resource(resource_id(1)).unwrap().bytes().len(), 8);
+    assert_eq!(
+        render
+            .resource(resource_id(1))
+            .unwrap()
+            .cpu_bytes()
+            .unwrap()
+            .len(),
+        8
+    );
     assert_eq!(
         epochs
             .active_candidates()
@@ -46,7 +54,7 @@ fn ending_one_backend_does_not_hide_an_independent_real_pixel_consumer() {
     assert_eq!(remaining.retired_epochs, 1);
     assert_eq!(remaining.reserved_bytes, 8);
     assert!(!remaining.quiescent());
-    assert_eq!(held.bytes().len(), 8);
+    assert_eq!(held.cpu_bytes().unwrap().len(), 8);
     assert_eq!(epochs.finish_after_backend_drop(()).ok(), Some(0));
     assert_eq!(epochs.accounting(), remaining);
     drop(held);

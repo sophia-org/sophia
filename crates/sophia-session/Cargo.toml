@@ -30,6 +30,7 @@ x11rb = { version = "0.13.1", features = ["xtest"] }
 zbus = { version = "5.19", optional = true, default-features = false, features = ["async-io", "blocking-api"] }
 
 [dev-dependencies]
+sophia-renderer-image = { path = "../sophia-renderer-image" }
 sophia-linux-peer = { path = "../sophia-linux-peer" }
 stats_alloc = "=0.1.10"
 # Present in x11rb imports dri3 even for this core-pixmap test client.

@@ -1,4 +1,7 @@
 #![cfg(feature = "gbm-probe")]
+#[cfg(feature = "experimental-shell-capture")]
+#[path = "support/captured_content.rs"]
+mod captured_content;
 
 use sophia_runtime::{ContentResourceStore, IsbPixelValidation, ValidatedIsbPixels};
 #[path = "../../sophia-runtime/tests/support/content_isb.rs"]

@@ -616,7 +616,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                             .ok()
                     })
                 {
-                    assert_eq!(lease.bytes(), &[0; 8]);
+                    assert_eq!(lease.cpu_bytes().unwrap(), &[0; 8]);
                     stored = true;
                 }
                 std::thread::yield_now();
@@ -708,7 +708,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                         },
                     )
                     .unwrap();
-                assert_eq!(lease.bytes(), &[0; 8]);
+                assert_eq!(lease.cpu_bytes().unwrap(), &[0; 8]);
                 stored = true;
                 assert!(
                     matches!(
@@ -730,7 +730,11 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                         transport.release_isb_image_source(&settlement).is_err(),
                         "a settled source must not publish a second release"
                     );
-                    assert_eq!(lease.bytes(), &[0; 8], "release retains immutable backing");
+                    assert_eq!(
+                        lease.cpu_bytes().unwrap(),
+                        &[0; 8],
+                        "release retains immutable backing"
+                    );
                     published.send(()).unwrap();
                 } else {
                     assert!(pending_release.replace(settlement).is_none());

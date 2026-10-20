@@ -434,7 +434,7 @@ fn component_disconnect_settles_real_debt_without_disposing_pixels_or_neighbor()
     );
     assert_eq!(h.owner.pending_revocations(), 0);
     assert_eq!(h.owner.work_area_bands(), bands);
-    assert_eq!(retained.bytes(), &[1, 2, 3, 255]);
+    assert_eq!(retained.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
     assert!(h.backend.copied_backings() > 0);
     assert!(h.owner.with_service(old, |_, _| ()).is_err());
     assert_eq!(
@@ -451,7 +451,7 @@ fn component_disconnect_settles_real_debt_without_disposing_pixels_or_neighbor()
         h.owner.phase(neighbor).unwrap(),
         ComponentConnectionPhase::Connected
     );
-    assert_eq!(neighbor_pixels.bytes(), &[1, 2, 3, 255]);
+    assert_eq!(neighbor_pixels.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
     let accounting = h.owner.accounting();
     assert!(!accounting.quiescent());
     for _ in 0..3 {
@@ -497,7 +497,7 @@ fn component_revocation_waits_for_runtime_and_retries_without_a_peer_message() {
             .unwrap(),
         0
     );
-    assert_eq!(retained.bytes(), &[1, 2, 3, 255]);
+    assert_eq!(retained.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
 }
 
 #[test]
@@ -592,7 +592,7 @@ fn replacement_with_retained_predecessor(has_dock: bool) {
             generation: 1,
         },
     );
-    assert_eq!(neighbor_next.bytes(), &[1, 2, 3, 255]);
+    assert_eq!(neighbor_next.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
     assert!(h.backend.retry().unwrap());
     assert!(h.backend.claims().is_empty());
     h.backend.simulate_submit(output().id);
@@ -655,7 +655,7 @@ fn replacement_with_retained_predecessor(has_dock: bool) {
     assert_eq!(accounting.active_epochs, 0);
     assert_eq!(accounting.memory.resident + accounting.memory.retiring, 4);
     assert_eq!(accounting.memory.backing, 4);
-    assert_eq!(retained.bytes(), &[1, 2, 3, 255]);
+    assert_eq!(retained.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
     drop(retained);
     assert!(h.owner.collect().quiescent());
     assert!(h.owner.collect().quiescent());
@@ -772,7 +772,7 @@ fn legacy_disconnect_keeps_its_distinct_revocation_join_and_deferred_claim() {
     );
     assert!(h.backend.claims().is_empty());
     assert_eq!(legacy.work_area_bands(), bands);
-    assert_eq!(retained.bytes(), &[1, 2, 3, 255]);
+    assert_eq!(retained.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
     assert_eq!(
         legacy
             .settle_revoked_content_grants(Some(h.backend.runtime_mut()))

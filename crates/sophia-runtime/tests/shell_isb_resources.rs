@@ -141,7 +141,8 @@ fn early_completion_errors_return_custody_for_the_exact_owner_to_retry() {
         store
             .lease(grant(), begin.resource)
             .unwrap()
-            .bytes()
+            .cpu_bytes()
+            .unwrap()
             .as_ptr(),
         address
     );
@@ -207,7 +208,7 @@ fn mapping_moves_without_copy_and_lives_through_every_retiring_lease() {
         .unwrap();
     let lease = store.lease(grant(), begin.resource).unwrap();
     assert_eq!(
-        lease.bytes().as_ptr(),
+        lease.cpu_bytes().unwrap().as_ptr(),
         address,
         "acceptance must not copy pixels"
     );
@@ -234,7 +235,7 @@ fn mapping_moves_without_copy_and_lives_through_every_retiring_lease() {
     drop(lease);
     store.collect();
     assert!(store.take_event().is_none());
-    assert_eq!(renderer.bytes(), &[1, 2, 3, 255, 4, 5, 6, 255]);
+    assert_eq!(renderer.cpu_bytes().unwrap(), &[1, 2, 3, 255, 4, 5, 6, 255]);
     drop(renderer);
     store.collect();
     assert_eq!(
@@ -392,7 +393,7 @@ fn dead_epoch_needs_no_live_journal_confirmation_but_keeps_leases() {
     store.revoke();
     assert_eq!(store.usage().backing, 8);
     assert!(!store.quiescent());
-    assert_eq!(lease.bytes().len(), 8);
+    assert_eq!(lease.cpu_bytes().unwrap().len(), 8);
     drop(lease);
     store.collect();
     assert_eq!(store.usage(), ContentMemoryUsage::default());

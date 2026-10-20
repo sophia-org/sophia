@@ -31,7 +31,7 @@ fn native_files_assemble_exact_catalog_candidate_and_keeps_source_until_retireme
         .unwrap();
     assert_eq!(bundle.native_launcher.unwrap().rows(), &[2, 1]);
     assert_eq!(
-        bundle.resource(RESOURCE).unwrap().bytes(),
+        bundle.resource(RESOURCE).unwrap().cpu_bytes().unwrap(),
         &[0, 0, 255, 255, 0, 128, 0, 128]
     );
     peer.transport
@@ -393,7 +393,8 @@ fn native_close_cancels_unsubmitted_work_but_retains_submitted_owner() {
                     .unwrap()
                     .resource(RESOURCE)
                     .unwrap()
-                    .bytes()
+                    .cpu_bytes()
+                    .unwrap()
                     .len(),
                 8
             );

@@ -179,7 +179,7 @@ fn revocation_retains_validation_and_both_pinned_source_classes() {
     drop(retiring);
     registry.collect();
     assert_eq!(registry.retired_bytes(), 4);
-    assert_eq!(resident.bytes(), &[0; 4]);
+    assert_eq!(resident.cpu_bytes().unwrap(), &[0; 4]);
     drop(resident);
     registry.collect();
     assert!(registry.accounting().quiescent());
@@ -225,7 +225,7 @@ fn both_full_profiles_can_admit_proposed_successors_without_freeing_old_pixels()
         assert_eq!(registry.accounting().retired_epochs, 2);
         assert!(registry.resources(grant(1)).is_none());
         assert!(!registry.disconnect(grant(1)));
-        assert_eq!(leases[0].bytes(), &[0; 4]);
+        assert_eq!(leases[0].cpu_bytes().unwrap(), &[0; 4]);
         drop(leases);
         registry.collect();
         assert_eq!(registry.accounting().retired_epochs, 0);
@@ -322,7 +322,11 @@ fn all_three_slots_keep_their_envelopes_in_every_reconnect_order() {
         assert_eq!(registry.accounting().active_epochs, 3);
         assert_eq!(registry.reserved_bytes(), CAP);
         assert!(registry.reserved_backing_bytes() <= CAP);
-        assert!(leases.iter().all(|lease| lease.bytes() == [0; 4]));
+        assert!(
+            leases
+                .iter()
+                .all(|lease| lease.cpu_bytes().unwrap() == [0; 4])
+        );
     }
 }
 
@@ -422,5 +426,5 @@ fn byte_saturation_recovers_only_after_a_real_source_consumer_ends() {
     registry.admit(fit(&registry).unwrap()).unwrap();
     assert_eq!(registry.reserved_bytes(), CAP);
     assert!(registry.resources(grant(1)).is_none());
-    assert_eq!(leases[0].bytes().len(), 4 * MIB as usize);
+    assert_eq!(leases[0].cpu_bytes().unwrap().len(), 4 * MIB as usize);
 }

@@ -496,7 +496,15 @@ fn candidate_roundtrip(renderer_failed: bool) {
     let render = session
         .begin_content_submission(&mut registry, output, 1, 20)
         .unwrap();
-    assert_eq!(render.resource(resource_id(1)).unwrap().bytes().len(), 8);
+    assert_eq!(
+        render
+            .resource(resource_id(1))
+            .unwrap()
+            .cpu_bytes()
+            .unwrap()
+            .len(),
+        8
+    );
     session
         .content_prepared(&mut registry, grant, output, 1, 7, 8, 21)
         .unwrap();
@@ -523,7 +531,15 @@ fn candidate_roundtrip(renderer_failed: bool) {
     assert!(session.content_backing_reserved_bytes(&registry) > 0);
     session.disconnect(&mut registry).unwrap();
     registry.collect();
-    assert_eq!(render.resource(resource_id(1)).unwrap().bytes().len(), 8);
+    assert_eq!(
+        render
+            .resource(resource_id(1))
+            .unwrap()
+            .cpu_bytes()
+            .unwrap()
+            .len(),
+        8
+    );
     assert!(session.content_reserved_bytes(&registry) > 0);
     assert!(!session.content_accounting(&registry).quiescent());
     drop(render);

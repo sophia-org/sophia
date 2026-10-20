@@ -229,7 +229,10 @@ fn catalog_wire_assembly_reaches_real_submission_and_exact_response_fifo() {
         .connection(&mut f.epochs)
         .begin_catalog_submission(1, context(&allocations), &catalog(), 0)
         .unwrap();
-    assert_eq!(bundle.resource(RESOURCE).unwrap().bytes(), &[0, 0, 0, 255]);
+    assert_eq!(
+        bundle.resource(RESOURCE).unwrap().cpu_bytes().unwrap(),
+        &[0, 0, 0, 255]
+    );
     assert_eq!(bundle.persistent_catalog.unwrap().catalog_generation, 4);
     f.transport
         .content_prepared(&mut f.epochs, GRANT, OUTPUT, 1, 1, 1, 0)

@@ -251,7 +251,7 @@ fn projection_keeps_exact_pixels_and_allocation_local_placement() {
             height: 1,
         }
     );
-    assert_eq!(projected.images[0].resource.bytes().len(), 8);
+    assert_eq!(projected.images[0].resource.cpu_bytes().unwrap().len(), 8);
     assert!(projected.targets.is_empty());
     let allocation = allocation();
     assert_eq!(

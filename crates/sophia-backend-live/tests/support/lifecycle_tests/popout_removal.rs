@@ -92,7 +92,7 @@ fn popout_withdrawal_preserves_parent_and_retains_old_pixels_until_replacement()
     );
     let key = (outputs[0].id, LiveShellContentLayer::Shell);
     assert_eq!(runtime.shell_content[&key].frame.images.len(), 2);
-    assert_eq!(popup.bytes().len(), 32);
+    assert_eq!(popup.cpu_bytes().unwrap().len(), 32);
     target.reject_output = None;
     assert!(
         runtime
@@ -124,7 +124,7 @@ fn popout_withdrawal_preserves_parent_and_retains_old_pixels_until_replacement()
     assert!(binding.popouts.is_empty());
     assert_eq!(binding.targets.len(), 1);
     assert_eq!(
-        popup.bytes().len(),
+        popup.cpu_bytes().unwrap().len(),
         32,
         "an independent lease still owns the pixels"
     );

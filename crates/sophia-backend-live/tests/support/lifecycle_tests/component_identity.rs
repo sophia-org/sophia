@@ -156,7 +156,7 @@ fn foreign_node_or_resource_grant_refuses_before_real_queue_admission() {
         assert!(!target.queue.pending(outputs[0].id));
         assert!(runtime.shell_content.is_empty());
         assert!(runtime.retained_projection_retirements.is_empty());
-        assert_eq!(lease.bytes().len(), 32);
+        assert_eq!(lease.cpu_bytes().unwrap().len(), 32);
     }
     // Exact custody is still usable after both refusals.
     runtime

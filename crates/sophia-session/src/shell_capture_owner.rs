@@ -1,7 +1,8 @@
 //! Experimental connection/resource correlation for native capture receipts.
 //!
-//! This is not admission and does not create a ContentResourceLease or emit a
-//! journal event. Submission requires the runtime owner's logical reservation;
+//! Admission remains disabled. Completed receipts can settle resource accounting,
+//! but SourceReleased remains a separate journal obligation. Submission requires
+//! the runtime owner's logical reservation;
 //! every settlement must be reconciled, and the live grant, allocation,
 //! topology and resource generation revalidated before publication. Native
 //! destination capacity is owned by the request/receipt. This table separately
@@ -72,13 +73,16 @@ pub(crate) enum SubmitFailure {
 }
 
 struct Pending {
+    image_id: sophia_renderer_live::LiveRendererImageId,
     job: LiveShellCaptureJob,
     binding: Binding,
     withdrawn: bool,
     reservation: ContentCaptureReservation,
 }
 
+#[must_use = "Retain the receipt until both resource and source-release obligations settle"]
 pub(crate) struct Settlement {
+    image_id: sophia_renderer_live::LiveRendererImageId,
     pub binding: Binding,
     pub receipt: LiveShellCaptureCompletion,
     pub withdrawn: bool,
@@ -86,6 +90,33 @@ pub(crate) struct Settlement {
 }
 
 impl Settlement {
+    /// Only an exact completed receipt can enter successful resource accounting.
+    /// This does not publish SourceReleased: the completion owner retains this
+    /// receipt/source until the image journal can settle that separate obligation.
+    pub(crate) fn accept_completed(
+        &mut self,
+        registry: &mut ContentEpochRegistry,
+        now: u64,
+    ) -> Result<(), ContentStoreError> {
+        let LiveShellCaptureOutcome::Completed {
+            output: Ok(snapshot),
+            stopped: None,
+            ..
+        } = self.receipt.outcome()
+        else {
+            return Err(ContentStoreError::Incomplete);
+        };
+        accept_proven_snapshot(
+            self.binding,
+            self.image_id,
+            self.withdrawn,
+            &mut self.reservation,
+            snapshot.storage(),
+            registry,
+            now,
+        )
+    }
+
     /// Only a real receipt for pre-use return or completed-but-unpublished copy
     /// can settle logical failure credit. Uncertainty and usable snapshots keep
     /// their ticket. A clock/owner error keeps both ticket and native receipt.
@@ -120,6 +151,46 @@ impl Settlement {
             registry.fail_capture(&mut self.reservation, failure, now)
         })
     }
+}
+
+// Private supplied-storage seam for deterministic owner accounting controls.
+// Production reaches it only from the opaque exact-job receipt above.
+fn accept_proven_snapshot(
+    binding: Binding,
+    image_id: sophia_renderer_live::LiveRendererImageId,
+    withdrawn: bool,
+    reservation: &mut Option<ContentCaptureReservation>,
+    snapshot: &std::sync::Arc<sophia_runtime::ContentCapturedImage>,
+    registry: &mut ContentEpochRegistry,
+    now: u64,
+) -> Result<(), ContentStoreError> {
+    let held = reservation.as_ref().ok_or(ContentStoreError::Stale)?;
+    if withdrawn {
+        return Err(ContentStoreError::Revoked);
+    }
+    if snapshot.image_id().raw() != image_id.raw() {
+        return Err(ContentStoreError::Stale);
+    }
+    if held.description().grant != binding.grant || held.metadata() != &binding.metadata {
+        return Err(ContentStoreError::Stale);
+    }
+    registry.accept_capture_image(reservation, &mut Some(snapshot.clone()), now)
+}
+
+/// Existing renderer-owner operation; no new context/thread or GPU wait. The
+/// owner-loop installation must service this intent even without a future frame.
+pub(crate) fn retire_captured_imports<T: AsFd>(
+    registry: &mut ContentEpochRegistry,
+    context: &mut sophia_renderer_live::NativeGbmRenderedScanoutContext<T>,
+    budget: usize,
+) -> Result<(), sophia_renderer_live::LiveRendererScanoutBufferExportDetail> {
+    registry.retire_capture_imports(&mut { budget }, &mut |image| {
+        context
+            .evict_renderer_image_imports(sophia_renderer_live::LiveRendererImageId::from_raw(
+                image.image_id().raw(),
+            ))
+            .map(|_| ())
+    })
 }
 
 // Private supplied-disposition seam; production obtains `outcome` only from
@@ -221,6 +292,7 @@ impl Owner {
                 reservation,
             });
         };
+        let image_id = request.image_id;
         let job = match self.inbox.submit(request, deadline) {
             Ok(job) => job,
             Err((error, request)) => {
@@ -232,6 +304,7 @@ impl Owner {
             }
         };
         self.pending[slot] = Some(Pending {
+            image_id,
             job,
             binding,
             withdrawn: false,
@@ -305,6 +378,7 @@ impl Owner {
             {
                 let p = self.pending[slot].take().expect("matched pending capture");
                 completed.push(Settlement {
+                    image_id: p.image_id,
                     binding: p.binding,
                     receipt,
                     withdrawn: p.withdrawn,

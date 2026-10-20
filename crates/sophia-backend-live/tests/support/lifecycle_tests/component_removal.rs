@@ -119,7 +119,7 @@ fn exact_component_removal_retains_bar_and_waits_for_actual_replacement() {
         old_bar
     );
     assert!(runtime.retained_projection_retirements.is_empty());
-    assert_eq!(held.bytes().len(), 32);
+    assert_eq!(held.cpu_bytes().unwrap().len(), 32);
     target.reject_output = None;
     assert!(
         runtime
@@ -160,7 +160,7 @@ fn exact_component_removal_retains_bar_and_waits_for_actual_replacement() {
         runtime.shell_content_presentation_epoch(outputs[0].id, bar, 1),
         Some(bar_epoch)
     );
-    assert_eq!(held.bytes().len(), 32); // receipt does not claim consumer release
+    assert_eq!(held.cpu_bytes().unwrap().len(), 32); // receipt does not claim consumer release
     // A stale close cannot revoke/remove a successor, even in the same grant.
     runtime
         .set_shell_component_content_on_target(

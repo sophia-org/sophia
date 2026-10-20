@@ -23,7 +23,7 @@ xcursor.workspace = true
 [features]
 default = []
 gbm-probe = ["dep:gbm", "dep:sophia-renderer-native-egl", "sophia-renderer-native-egl/gbm-platform"]
-experimental-shell-capture = ["gbm-probe", "sophia-renderer-native-egl/experimental-shell-capture", "dep:sophia-wake"]
+experimental-shell-capture = ["sophia-runtime/experimental-shell-capture", "gbm-probe", "sophia-renderer-native-egl/experimental-shell-capture", "dep:sophia-wake"]
 egl-probe = ["dep:sophia-renderer-native-egl"]
 
 [[example]]
@@ -34,4 +34,5 @@ required-features = ["gbm-probe"]
 workspace = true
 
 [dev-dependencies]
+sophia-renderer-image = { path = "../sophia-renderer-image" }
 sophia-linux-peer = { path = "../sophia-linux-peer" }

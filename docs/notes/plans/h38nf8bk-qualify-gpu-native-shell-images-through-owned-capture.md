@@ -183,10 +183,12 @@ this GPU-producing shell experiment.
 
 ## Current next deliverable
 
-The native exact-copy adapter and private mailbox driver are now implemented
-behind `experimental-shell-capture`. Next is Session's grant/resource-lease
-binding and owner-turn scheduling, followed by real-device controls before any
-GPU admission. The new driver is not called from Session yet; current tests use
+The native exact-copy adapter, private mailbox, resource-lease binding and native
+snapshot lowering are implemented behind `experimental-shell-capture`. Next is
+Session's live owner-turn integration: retain completion receipts through the
+source-release journal transition, reconcile rejected completed copies, and
+service retirement eviction even without a new frame. Real-device controls must
+follow before GPU admission. The driver is not called from Session yet; tests use
 supplied statuses/backends, not an EGL device. Production GPU capability remains
 disabled; no native experiment or performance result exists for this path.
 C42 remains independent: at this audit its stages and launcher receipts were
@@ -523,10 +525,73 @@ cache retirement, and treating uncharged data as retained. Restored controls
 passed. The ordinary native Session configuration also type-checked with the
 experimental feature; this was compilation, not a native launch.
 
-This prerequisite does not yet add a runtime GPU backing, accept a successful
-capture, lower it into a native frame or install the owner-loop driver. Those
-steps must carry the release obligation above. Production GPU admission remains
-off, and no device run or performance claim accompanies this extraction.
+At that prerequisite, runtime GPU backing, successful-copy acceptance and native
+lowering were still absent. The following slice adds those storage paths; the
+live owner-loop installation remains outstanding. Production GPU admission
+remains off, and no device run or performance claim accompanies either slice.
+
+#### Accepted capture leases and native lowering
+
+The next October 20 slice gives the runtime resource store a concrete captured
+backing under `experimental-shell-capture`. The resource lease retains the exact
+snapshot Arc from the native receipt, including its existing physical charge.
+There is no backing trait, replacement allocation, descriptor duplication or
+pixel readback at acceptance. Runtime logical resource bytes and renderer
+allocation bytes remain separate limits on the same storage.
+
+The private Session entry accepts only a completed, unstopped opaque receipt.
+It binds the requested renderer image ID, exact reservation, connection/grant,
+resource metadata, and the full allocation snapshot recorded at reservation.
+The registry rechecks the current allocation and topology: reusing an allocation
+number with identical dimensions but a new generation cannot accept an old copy.
+Refusals keep both reservation and snapshot. The lower public registry operation
+is trusted accounting, not a verifier of GPU execution; retained storage alone
+is never a completion proof.
+
+Successful accounting emits the resource status once. It does **not** emit
+`SourceReleased`. The completion owner must still retain the native receipt and
+source-release obligation until that separate journal transition succeeds.
+That live journal owner is not installed in this slice, and post-acceptance
+receipt retention is not yet enforced by a dedicated pending-release type.
+
+CPU consumers use `cpu_bytes()` or narrow to a `ContentCpuResourceLease` before
+an infallible byte view exists. CPU rendering explicitly refuses GPU content.
+Native head lowering carries the same snapshot Arc into the existing snapshot
+layer; identity uses declared logical bytes without reading pixels. Native
+imports, queued snapshots and duplicated descriptor owners continue holding
+the existing physical charge after the runtime lease itself is dropped.
+
+Retirement intent now exposes a bounded eviction operation across active and
+disconnected epochs. It marks storage non-cacheable and requests the existing
+native owner's import eviction. A failed callback retains the obligation and
+both budgets. Collection requires eviction acknowledgment, the last outer
+resource consumer, and the last inner snapshot/charge consumer. For a live
+epoch, backing and credit then remain held until `ResourceReleased` enters the
+journal and the owner confirms it. Disconnected epochs need no live journal
+confirmation, but revocation does not bypass physical ownership. The Session
+wrapper is present, but the live owner loop must still
+service it even without a future composition frame and revisit after consumers
+retire; otherwise custody is safely retained but progress can stall.
+
+Supplied memfd storage controls exercise accounting, exact binding, CPU refusal,
+native lowering and retirement. They do not fabricate native success receipts,
+prove a GPU copy, or qualify DMA-BUF admission. Evidence is retained under
+`~/.local/state/sophia/development-evidence/t339-owned-capture-20261020/accepted-leases-01/`.
+Selected suites passed 666 test executions across configurations (including
+three compile-fail docs; not a count of unique tests). Both Clippy configurations
+and changed-file formatting passed. Eight deliberate mutations produced runtime
+test failures, and restored controls passed. Muse's final read-only source review
+found no accepted-lease custody blocker; builds and mutation results are the
+parent's evidence, not independently run by Muse.
+The standalone renderer-live default build has a pre-existing optional-native
+dependency error in `renderer_image.rs` (unchanged since `7faa3a735`); CPU
+compatibility checks use `gbm-probe` with the experimental feature off. That
+substitute configuration must not be described as a standalone-default pass.
+The eight native-session reconnect fixtures also fail before resource work:
+their setup is refused because namespace recipes require normal Session with
+Factotum launch authentication. The same eight setup failures were reproduced
+at committed baseline `01dc5e19f` with the same features; current sources were
+restored byte-for-byte. This slice does not relax that authentication requirement.
 
 #### Remaining Session owner wiring
 
