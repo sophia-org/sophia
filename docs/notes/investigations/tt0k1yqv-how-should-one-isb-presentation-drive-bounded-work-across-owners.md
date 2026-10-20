@@ -748,3 +748,30 @@ entry. This is not behavior-identical or approved for implementation merely
 because default production would remain unchanged. The open decision is
 whether ACK-before-yield may change in an isolated experiment. No implementation,
 build or new capture was performed for this proposal.
+
+
+## Approved ACK handoff experiment implemented
+
+The user approved the dispatch-contract experiment. SDK branch
+`performance/t331-reply-storage` commit `e319d10` adds the independent,
+disabled-by-default `experimental-ack-handoff` feature. It carries an eligible
+ACK across one ordinary yield with new inbox work, advertises immediate work,
+and forbids re-handoff on entry with debt. Existing budgets, holds and pipeline
+ownership remain in force. The shared wait pre-check also covers the separate
+image-enabled poll path. Production and comparator SDK pins remain unchanged.
+
+Nine dedicated controls include mutation-sensitive first-entry absence and
+exact next-write order ACK/record/submit while the ACK reply is held, repeated
+entry, zero/tiny budgets, partial output, round exhaustion, manual ACK, closure,
+ACK refusal and the image-enabled wait. Final SDK runs: 199 default, 208 ACK-only
+and 208 combined-experiment tests pass; Clippy and formatting pass. Evidence:
+`candidate-30-sdk-ack-handoff`, including source patch, commands, results and
+hashes. The ACK mutation fails at the intended assertion.
+
+This is implementation evidence only. The image wait test uses zero timeout;
+server saturation/deadline qualification and native CPU/latency measurement
+remain open. C at `30cc519a4f17607880fcf1cdb5da0cf4efeea320` was inspected but
+has no corresponding experiment or new parity evidence. The SDK's
+`EXPERIMENTAL-ACK-HANDOFF.md` records that dispatch/error timing changes and
+that applications stopping progress have no wall-clock ACK guarantee. No
+promotion, native acceptance or performance saving is claimed.
