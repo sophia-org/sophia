@@ -483,14 +483,28 @@ bounded by 4096 bytes; oversized/write-error records force diagnostic refusal.
 The existing diagnostic capture hook is preserved, and feature-off output is
 unchanged. This remains diagnostic-only; it changes no scheduling or authority.
 
-The retry is prepared in `candidate-28-wait-sources-retry` with fresh
-`wait28r-*` stages, two 1000-frame progress plans and a 300-second bound. Pins,
-profiles, launcher/analyzer controls and six rebuilt-peer controls pass. Launch
-with `sh ~/.local/state/t331/run-wait-sources-retry-remote.sh`; sudo authentication
-is still required. Keep the pinned cargo-slot binaries and source checkouts
-unchanged until capture. Do not rerun the original wrapper or relax the analyzer's
-conflict/record-integrity checks. Native reconciliation, dominant-source
-attribution and any optimization conclusion remain open until a clean retry.
+**Retry accepted for count attribution.** Both `wait28r-*` runs joined 1000
+unique presentation generations and cleaned up successfully. The original
+offline analyzer swapped owner statistics and wait reasons by positional
+unpacking; `offline-analysis-v2` selects records by name and adds an end-to-end
+stage test. Original launch files and hashes remain preserved; no rerun was
+needed for this parser correction.
+
+The approximately ten-second interior windows contain 599 files completions
+and 600 IPC completions. Files has 8,595 waits: 6,503 9P-only, 295 simultaneous
+9P/image, 598 worker-only, 600 native-only and 599 deadline-only. IPC has 5,173:
+3,973 transport-only, 600 native-only and 600 deadline-only. Every mask and
+reason reconciles; conflict, overflow, missing-scope and unknown deltas are
+zero. Server wake pipes, relays, listeners and the ring contributed no ready
+waits in these windows. Image readiness overlaps 9P and is not additive.
+
+This is 14.35 versus 8.62 waits per completion, a count result from one
+diagnostic pair, not a duration or savings estimate. The next source audit
+should map socket wakes to request/reply, ACK, admission and publication
+dependencies, with worker completion accounted separately. It does not support
+broad idle-wire gating or weaker observation boundaries. Evidence and input
+hashes: `candidate-28-wait-sources-retry/offline-analysis-v2/`.
+
 
 The remaining discriminator is an obligation census at the existing
 component/transport boundaries on the C27 baseline: distinguish owner input,
