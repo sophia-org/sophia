@@ -14,6 +14,8 @@ use std::time::Instant;
 /// Shutdown must drain pending work before dropping this owner or the registry.
 pub struct ShellIsbImageOwner {
     jobs: IsbImageJobs,
+    #[cfg(feature = "experimental-draw")]
+    draw: super::draw::DrawJobs,
     worker: IsbValidationWorker,
     releases: [Option<IsbImageSettlement>; 4],
     waiting: Option<(ContentGrant, u64, Instant, Option<u16>)>,
@@ -23,6 +25,8 @@ impl ShellIsbImageOwner {
     pub fn new(max_resource_bytes: usize, validation_bytes: usize) -> std::io::Result<Self> {
         Ok(Self {
             jobs: IsbImageJobs::default(),
+            #[cfg(feature = "experimental-draw")]
+            draw: super::draw::DrawJobs::default(),
             worker: IsbValidationWorker::with_validation_budget(
                 4,
                 max_resource_bytes,
@@ -38,9 +42,10 @@ impl ShellIsbImageOwner {
     }
 
     pub fn deadline(&self) -> Option<Instant> {
-        self.jobs
-            .deadline()
-            .into_iter()
+        let deadlines = self.jobs.deadline().into_iter();
+        #[cfg(feature = "experimental-draw")]
+        let deadlines = deadlines.chain(self.draw.deadline());
+        deadlines
             .chain(
                 self.waiting
                     .filter(|(_, _, _, refusal)| refusal.is_none())
@@ -50,7 +55,11 @@ impl ShellIsbImageOwner {
     }
 
     pub fn pending(&self) -> usize {
-        self.jobs.pending() + self.releases.iter().flatten().count()
+        let image = self.jobs.pending() + self.releases.iter().flatten().count();
+        #[cfg(feature = "experimental-draw")]
+        return image + self.draw.pending();
+        #[cfg(not(feature = "experimental-draw"))]
+        image
     }
 
     fn reconcile(&mut self, epochs: &mut ContentEpochRegistry, now: u64) {
@@ -70,6 +79,9 @@ impl ShellIsbImageOwner {
         now: u64,
         instant: Instant,
     ) -> Result<(), ShellTransportError> {
+        #[cfg(feature = "experimental-draw")]
+        self.draw
+            .service(transport, epochs, &mut self.worker, now, instant)?;
         let grant = transport.content_grant();
         let ready = transport.isb_image_channel_ready();
         let mut lost = [None; 4];
@@ -89,12 +101,20 @@ impl ShellIsbImageOwner {
             .take_completed()
             .map_err(|e| ShellTransportError::Io(e.to_string()))?
         {
+            #[cfg(feature = "experimental-draw")]
+            let completion = match self.draw.receive(completion) {
+                Ok(()) => continue,
+                Err(completion) => completion,
+            };
             // This owner exclusively reserves, submits and receives this worker.
             assert!(
                 self.jobs.receive(completion).is_ok(),
                 "paired image worker completion"
             );
         }
+        #[cfg(feature = "experimental-draw")]
+        self.draw
+            .service(transport, epochs, &mut self.worker, now, instant)?;
         self.reconcile(epochs, now);
         self.jobs.expire(epochs, &mut self.worker, instant, now)?;
         self.reconcile(epochs, now);
@@ -160,7 +180,7 @@ impl ShellIsbImageOwner {
             Some(13)
         } else if instant >= self.waiting.expect("pending offer deadline").2 {
             Some(ContentReason::Budget as u16)
-        } else if self.pending() == 4 {
+        } else if self.pending() >= 4 {
             None
         } else {
             match transport.admit_pending_isb_image(

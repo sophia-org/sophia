@@ -23,6 +23,8 @@ use super::journal::{Journal, JournalBounds};
 use sophia_9p::journal::{Staging, StagingBounds};
 
 mod authentication;
+#[cfg(feature = "experimental-draw")]
+mod draw;
 mod image;
 pub(super) mod image_offers;
 mod image_topology;
@@ -77,6 +79,8 @@ pub(in crate::shell_transport) enum Node {
     ImageChannel,
     ImageLimits,
     ImageFormats,
+    #[cfg(feature = "experimental-draw")]
+    Draw,
 }
 
 impl Node {
@@ -100,6 +104,8 @@ impl Node {
             Self::ImageChannel => 19,
             Self::ImageLimits => 20,
             Self::ImageFormats => 21,
+            #[cfg(feature = "experimental-draw")]
+            Self::Draw => 22,
         }
     }
 
@@ -232,6 +238,8 @@ pub(in crate::shell_transport) struct ShellFiles {
     submission_watermark: u64,
     journal: Journal,
     inbound: VecDeque<Inbound>,
+    #[cfg(feature = "experimental-draw")]
+    draw: draw::DrawQueue,
     /// The Begin, Chunk and End of the candidate being handed to the owner.
     candidate_parts: VecDeque<(TransactionId, ShellContentRecord)>,
     /// As `candidate_parts`, for a whole `NativeCandidate` under assembly.
@@ -304,6 +312,8 @@ impl ShellFiles {
             submission_watermark: 0,
             journal: Journal::new(epoch, bounds, now),
             inbound: VecDeque::with_capacity(INBOUND_RECORDS),
+            #[cfg(feature = "experimental-draw")]
+            draw: draw::DrawQueue::default(),
             candidate_parts: VecDeque::with_capacity(3),
             native_candidate_parts: VecDeque::with_capacity(3),
             catalog_candidate_parts: VecDeque::with_capacity(3),
@@ -321,6 +331,10 @@ impl ShellFiles {
 
     pub(in crate::shell_transport) fn revoke(&mut self) {
         self.revoked = true;
+        #[cfg(feature = "experimental-draw")]
+        {
+            self.draw = draw::DrawQueue::default();
+        }
         self.staging = None;
         self.reuse_writer = None;
         self.accepted = None;
@@ -565,6 +579,8 @@ impl Export for ShellFiles {
                 Node::Root => 0o500,
                 Node::Transaction | Node::TransactionReuse => 0o600,
                 Node::Submit | Node::Ack => 0o200,
+                #[cfg(feature = "experimental-draw")]
+                Node::Draw => 0o200,
                 _ => 0o400,
             },
             size,
@@ -576,6 +592,8 @@ impl Export for ShellFiles {
         let valid = match node {
             Node::Transaction | Node::TransactionReuse => access == OpenAccess::ReadWrite,
             Node::Submit | Node::Ack => access == OpenAccess::Write,
+            #[cfg(feature = "experimental-draw")]
+            Node::Draw => access == OpenAccess::Write,
             _ => access == OpenAccess::Read,
         };
         if !valid || flags.truncate() || flags.append() {
@@ -694,6 +712,8 @@ impl Export for ShellFiles {
                 .filter(|s| s.handle == *id)
                 .ok_or(Errno::ESTALE)?
                 .write(offset, data, Instant::now()),
+            #[cfg(feature = "experimental-draw")]
+            (Node::Draw, _) if offset == 0 => self.write_draw(data),
             (Node::Submit, _) if offset == 0 => {
                 self.submit(data)?;
                 Ok(data.len() as u32)

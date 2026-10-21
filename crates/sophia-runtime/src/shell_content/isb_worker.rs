@@ -24,9 +24,25 @@ pub struct IsbValidationCompletion {
     pub result: Result<ValidatedIsbPixels, IsbValidationFailure>,
 }
 
+enum Source {
+    Isb(OwnedFd),
+    #[cfg(feature = "experimental-draw")]
+    Draw(sophia_draw::Batch),
+}
+
+impl Source {
+    fn into_isb(self) -> OwnedFd {
+        match self {
+            Self::Isb(fd) => fd,
+            #[cfg(feature = "experimental-draw")]
+            Self::Draw(_) => unreachable!("ISB submission returns its own source"),
+        }
+    }
+}
+
 struct Job {
     id: u64,
-    source: OwnedFd,
+    source: Source,
     bytes: usize,
     deadline: Instant,
     cancelled: Arc<AtomicBool>,
@@ -103,9 +119,16 @@ impl IsbValidationWorker {
                 let _exit = NotifyOnExit(notify.clone());
                 // Declared after the guard so the sender drops first on unwind.
                 let completion_sender = results;
+                #[cfg(feature = "experimental-draw")]
+                let mut raster = None;
                 while let Ok(job) = jobs.recv() {
                     let id = job.id;
-                    let result = validate(job, validation_bytes);
+                    let result = validate(
+                        job,
+                        validation_bytes,
+                        #[cfg(feature = "experimental-draw")]
+                        &mut raster,
+                    );
                     if completion_sender
                         .send(IsbValidationCompletion { job: id, result })
                         .is_err()
@@ -193,7 +216,7 @@ impl IsbValidationWorker {
         };
         let job = Job {
             id,
-            source,
+            source: Source::Isb(source),
             bytes: pending.bytes,
             deadline: pending.deadline,
             cancelled: pending.cancelled.clone(),
@@ -203,9 +226,11 @@ impl IsbValidationWorker {
                 pending.submitted = true;
                 Ok(())
             }
-            Err(mpsc::TrySendError::Full(job)) => Err((IsbSubmitFailure::Capacity, job.source)),
+            Err(mpsc::TrySendError::Full(job)) => {
+                Err((IsbSubmitFailure::Capacity, job.source.into_isb()))
+            }
             Err(mpsc::TrySendError::Disconnected(job)) => {
-                Err((IsbSubmitFailure::Closed, job.source))
+                Err((IsbSubmitFailure::Closed, job.source.into_isb()))
             }
         }
     }
@@ -281,7 +306,11 @@ impl Drop for IsbValidationWorker {
     }
 }
 
-fn validate(job: Job, validation_bytes: usize) -> Result<ValidatedIsbPixels, IsbValidationFailure> {
+fn validate(
+    job: Job,
+    validation_bytes: usize,
+    #[cfg(feature = "experimental-draw")] raster: &mut Option<sophia_draw::Rasterizer>,
+) -> Result<ValidatedIsbPixels, IsbValidationFailure> {
     let check = || {
         if job.cancelled.load(Ordering::Acquire) {
             Err(IsbValidationFailure::Cancelled)
@@ -292,7 +321,16 @@ fn validate(job: Job, validation_bytes: usize) -> Result<ValidatedIsbPixels, Isb
         }
     };
     check()?;
-    let mapping = SealedMapping::map(job.source, job.bytes).map_err(|error| {
+    let source = match job.source {
+        Source::Isb(fd) => fd,
+        #[cfg(feature = "experimental-draw")]
+        Source::Draw(batch) => draw_source(
+            raster.get_or_insert_with(sophia_draw::Rasterizer::default),
+            &batch,
+            || check().is_err(),
+        )?,
+    };
+    let mapping = SealedMapping::map(source, job.bytes).map_err(|error| {
         if error.raw_os_error() == Some(rustix::io::Errno::MSGSIZE.raw_os_error()) {
             IsbValidationFailure::SizeMismatch
         } else {
@@ -311,6 +349,71 @@ fn validate(job: Job, validation_bytes: usize) -> Result<ValidatedIsbPixels, Isb
             return validation
                 .finish()
                 .map_err(|_| IsbValidationFailure::Malformed);
+        }
+    }
+}
+
+#[cfg(feature = "experimental-draw")]
+fn draw_source(
+    raster: &mut sophia_draw::Rasterizer,
+    batch: &sophia_draw::Batch,
+    cancelled: impl Fn() -> bool,
+) -> Result<OwnedFd, IsbValidationFailure> {
+    use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, memfd_create};
+    use std::io::Write;
+    let bytes = raster
+        .render(batch, cancelled)
+        .map_err(|error| match error {
+            sophia_draw::Error::Cancelled => IsbValidationFailure::Cancelled,
+            _ => IsbValidationFailure::Malformed,
+        })?;
+    let mut file = std::fs::File::from(
+        memfd_create(
+            "sophia-draw",
+            MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING,
+        )
+        .map_err(|_| IsbValidationFailure::Malformed)?,
+    );
+    file.write_all(&bytes)
+        .map_err(|_| IsbValidationFailure::Malformed)?;
+    fcntl_add_seals(
+        &file,
+        SealFlags::WRITE | SealFlags::GROW | SealFlags::SHRINK | SealFlags::SEAL,
+    )
+    .map_err(|_| IsbValidationFailure::Malformed)?;
+    Ok(file.into())
+}
+
+#[cfg(feature = "experimental-draw")]
+impl IsbValidationWorker {
+    /// Raster work uses the same bounded slots, cancellation and wake source.
+    /// The owner has already charged the exact output size to its resource store.
+    pub(crate) fn submit_draw_reserved(
+        &mut self,
+        id: u64,
+        batch: sophia_draw::Batch,
+    ) -> Result<(), IsbSubmitFailure> {
+        batch.validate().map_err(|_| IsbSubmitFailure::Invalid)?;
+        let pending = self
+            .pending
+            .iter_mut()
+            .flatten()
+            .find(|p| p.id == id && !p.submitted && p.bytes == batch.pixel_bytes())
+            .ok_or(IsbSubmitFailure::Invalid)?;
+        let job = Job {
+            id,
+            source: Source::Draw(batch),
+            bytes: pending.bytes,
+            deadline: pending.deadline,
+            cancelled: pending.cancelled.clone(),
+        };
+        match self.sender.try_send(job) {
+            Ok(()) => {
+                pending.submitted = true;
+                Ok(())
+            }
+            Err(mpsc::TrySendError::Full(_)) => Err(IsbSubmitFailure::Capacity),
+            Err(mpsc::TrySendError::Disconnected(_)) => Err(IsbSubmitFailure::Closed),
         }
     }
 }

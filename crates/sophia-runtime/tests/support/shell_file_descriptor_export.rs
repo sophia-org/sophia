@@ -9,6 +9,10 @@ mod authentication;
 #[path = "shell_file_transaction_reuse.rs"]
 mod transaction_reuse;
 
+#[cfg(feature = "experimental-draw")]
+#[path = "shell_draw_export.rs"]
+mod draw;
+
 const EPOCH: u64 = 41;
 const BASE: u64 = 3;
 

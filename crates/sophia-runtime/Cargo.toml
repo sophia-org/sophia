@@ -7,11 +7,13 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
+experimental-draw = ["dep:sophia-draw", "rustix/fs"]
 experimental-shell-capture = ["dep:sophia-renderer-image"]
 # Opt-in shell-file control-turn observation; absent from default builds.
 experimental-custody-dispatch = []
 
 [dependencies]
+sophia-draw = { path = "../sophia-draw", optional = true }
 sophia-renderer-image = { path = "../sophia-renderer-image", optional = true }
 sophia-wake = { path = "../sophia-wake" }
 rustix = { version = "1.1", default-features = false, features = ["net", "process", "std", "event", "rand"] }
@@ -32,3 +34,7 @@ sophia-shell-client = { workspace = true }
 
 [lints]
 workspace = true
+
+[[example]]
+name = "vello_draw_panel"
+required-features = ["experimental-draw"]

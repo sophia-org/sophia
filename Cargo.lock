@@ -1440,6 +1440,15 @@ name = "sophia-desktop-ids"
 version = "0.3.0"
 
 [[package]]
+name = "sophia-draw"
+version = "0.1.0"
+dependencies = [
+ "parley",
+ "sophia-protocol",
+ "vello_cpu",
+]
+
+[[package]]
 name = "sophia-drm-clock"
 version = "0.1.0"
 dependencies = [
@@ -1616,6 +1625,7 @@ dependencies = [
  "sha2",
  "sophia-9p",
  "sophia-9p-client",
+ "sophia-draw",
  "sophia-engine",
  "sophia-linux-peer",
  "sophia-namespace-client",

@@ -41,6 +41,10 @@ impl ShellFiles {
     /// nor the rest of a whole candidate already being handed over in parts.
     /// A candidate the client is still writing is not Session's input yet.
     pub(in crate::shell_transport) fn inbound_is_empty(&self) -> bool {
+        #[cfg(feature = "experimental-draw")]
+        if self.pending_draw().is_some() {
+            return false;
+        }
         self.inbound.is_empty()
             && self.candidate_parts.is_empty()
             && self.native_candidate_parts.is_empty()
@@ -86,6 +90,12 @@ impl ShellFiles {
                 && self.inbound.iter().take(at).any(|earlier| {
                     matches!(earlier, Inbound::ImageBegin(metadata)
                     if metadata.offer_id == transaction.raw())
+                });
+            #[cfg(feature = "experimental-draw")]
+            let blocked = blocked
+                || self.pending_draw().is_some_and(|(batch, _)| {
+                    matches!(record.as_ref(), ShellContentRecord::ResourceCancel(cancel)
+                    if cancel.grant == batch.grant && cancel.resource == batch.resource)
                 });
             (!blocked && select(record)).then_some(at)
         })

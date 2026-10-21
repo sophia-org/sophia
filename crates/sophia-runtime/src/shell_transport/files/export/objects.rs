@@ -76,6 +76,10 @@ impl ShellFiles {
         if self.supports_indicators() {
             entries.push((b"indicators", Node::Indicators));
         }
+        #[cfg(feature = "experimental-draw")]
+        if self.negotiated && self.content {
+            entries.push((b"experimental-draw-v1", Node::Draw));
+        }
         if self.image_disclosed() {
             entries.extend([
                 (b"image-channel".as_slice(), Node::ImageChannel),

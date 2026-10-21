@@ -424,3 +424,17 @@ The recommended sequence is:
 This direction supports a smaller public core with explicit host proofs and
 optional content producers. It does not yet justify a new default client class,
 a new Engine layer abstraction or weaker immutable-content claims.
+
+
+## October 21 optional Vello prototype
+
+niltempus directed proceeding with the optional Vello producer while Claude and
+Muse investigate D4 B/COW independently. The isolated `experiment/t331-vello-draw`
+branch implements a bounded CPU command file and feeds its raster output through
+the existing worker, immutable resource store and presentation owners. The
+[prototype contract and runnable headless demo](../../experimental-vello-draw.md)
+record exact bounds, retry/retirement semantics, validation and remaining native
+qualification. The 64-candidate fixture retains one panel and updates eight value
+tiles using 693 distinct command payload bytes, with no client pixel payload.
+It supplies authentication decisions and backend completions: it establishes no
+native speedup, protected launch acceptance, default client class or stable ABI.

@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/sophia-draw",
     "crates/sophia-conformance",
     "crates/sophia-cli",
     "crates/sophia-backend-live",

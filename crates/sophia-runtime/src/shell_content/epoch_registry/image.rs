@@ -23,7 +23,7 @@ pub struct IsbImageAdmission {
 }
 
 impl ContentEpochRegistry {
-    pub(in crate::shell_content) fn isb_stop_reason(
+    pub(crate) fn isb_stop_reason(
         &self,
         grant: ContentGrant,
         resource: sophia_protocol::ContentResourceId,
@@ -36,7 +36,7 @@ impl ContentEpochRegistry {
             .isb_stop_reason(resource)
     }
 
-    pub(in crate::shell_content) fn stop_isb_image(
+    pub(crate) fn stop_isb_image(
         &mut self,
         grant: ContentGrant,
         resource: sophia_protocol::ContentResourceId,

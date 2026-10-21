@@ -40,6 +40,8 @@ mod descriptor_files;
 mod descriptor_state;
 mod files;
 pub use files::{ShellReadinessObservation, ShellReadinessSubscription};
+#[cfg(feature = "experimental-draw")]
+mod draw;
 mod image_configuration;
 mod image_offers;
 mod image_owner;
@@ -575,3 +577,7 @@ impl ShellComponentTransport {
         Ok(Some((transaction, record)))
     }
 }
+
+#[cfg(all(test, feature = "experimental-draw"))]
+#[path = "../tests/support/shell_draw_owner.rs"]
+mod draw_tests;
