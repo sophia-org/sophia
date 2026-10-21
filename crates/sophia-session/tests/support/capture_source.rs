@@ -52,6 +52,11 @@ fn alive(peer: &mut UnixStream) {
     );
 }
 fn gone(peer: &mut UnixStream) {
+    // Parallel process-launch fixtures can briefly inherit a CLOEXEC socket
+    // between fork and exec. Bound the EOF proof rather than assuming those
+    // transient kernel references have disappeared in this exact instant.
+    peer.set_nonblocking(false).unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
     assert_eq!(peer.read(&mut [0]).unwrap(), 0);
 }
 
@@ -394,6 +399,7 @@ fn shutdown_retains_waiting_source_after_all_grants_retire() {
             .service_capture_sources_with(0, now, |_, _, _| Ok(Publication::Disconnected))
             .is_empty()
     );
+    assert_eq!(f.inner.capture_pending(), 0);
     gone(&mut peer);
     assert!(f.inner.finish_after_backend_drop(()).is_ok());
 }
