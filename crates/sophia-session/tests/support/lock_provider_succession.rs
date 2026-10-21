@@ -11,6 +11,9 @@ use sophia_runtime::ProcessLaunchSpec;
 use super::*;
 use crate::session_lock_succession::LockProviderStart;
 
+#[path = "lock_provider_installed.rs"]
+mod installed;
+
 #[path = "lock_provider_authentication.rs"]
 mod authentication;
 use crate::live_session::tests::lock_provider_factotum as factotum;
