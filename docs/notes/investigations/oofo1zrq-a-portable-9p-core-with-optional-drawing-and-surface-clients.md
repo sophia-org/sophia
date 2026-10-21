@@ -29,7 +29,7 @@ role; it does not import Plan 9's process, security or drawing contracts.
 | D1 | Make command drawing the native default, with surface clients alongside it. | Optional draw class first. niltempus selected Vello CPU/GPU as its implementation family on October 20; default status and a stable wire ABI remain unapproved. |
 | D2 | Define an explicit host capability contract for process identity/lifetime, immutable storage, device buffers and display. | A useful design decomposition. POSIX portability does not establish equivalent enforcement on every host. |
 | D3 | Import sealed CPU buffers through Linux udmabuf. | Track A is blocked on the installed kernel as well as upstream. Track B, per-resource immutable texture uploads, is ready for comparator preparation after retained-content qualification; no native benefit yet. |
-| D4 | Permit reusable producer-writable buffers with fences. | Reopens immutable acceptance and consumer ownership, not just journal wording. Keep existing ISB requirements until that decision is explicit. |
+| D4 | Permit reusable producer-writable buffers with fences. | October 21: niltempus selected exploration of B, copying into Sophia-owned immutable resources, including a seal-free `pread` source adapter. A remains production; C and production promotion are not approved. |
 | D5 | Prioritize plain 9P2000, with 9P2000.L adapters. | Changes the accepted delivery order. Determine the first real client and its dialect needs before changing that order. |
 | D6 | Host Plan 9 or Inferno. | Remains shelved as a product/ecosystem decision. |
 
@@ -361,13 +361,14 @@ draft's claims that experimental dispatch is today's universal liveness proof,
 that notifications cannot arrive after messages, or that all leases settle just
 because the peer dies.
 
-### D4: retain A; B is a decision package; C is not accepted
+### D4: retain A; explore B by owner direction; C is not accepted
 
 A is the current sealed-ISB contract. B copies from a producer-writable source
 into Sophia-owned immutable resource storage. C composes directly from reusable
 producer-writable storage under fences. Recommendation: keep A; consider B only
-by an explicit decision; do not adopt C under the current ADRs. No D4 change has
-been authorized by filing this memo.
+by an explicit decision; do not adopt C under the current ADRs. Filing the
+original memo did not authorize a D4 change. The October 21 direction below
+authorizes exploration of B, not production admission.
 
 Claude's three single-process probe runs report roughly 55 microseconds for the
 fresh panel consumer stages versus 20 for ring copy/validation, and roughly 110
@@ -438,3 +439,121 @@ qualification. The 64-candidate fixture retains one panel and updates eight valu
 tiles using 693 distinct command payload bytes, with no client pixel payload.
 It supplies authentication decisions and backend completions: it establishes no
 native speedup, protected launch acceptance, default client class or stable ABI.
+## October 21 owner direction: D4 B and the portable copy adapter
+
+niltempus, relayed through Claude wB:pH on October 21, explicitly chose to
+seriously explore option B from `tmp/d4/D4-DECISION-MEMO.txt`, section 3.
+The direction and portability addendum were supplied in the conversation;
+that temporary memo was not present in the inspected crunch worktrees.
+The live master repair/release takes priority. Do not start a D4 implementation
+or the ring-producer port until the release is out and the record/lifecycle
+sketch is aligned. This is a draft amendment to
+[qujwzrdz](../decisions/qujwzrdz-admit-shell-content-through-a-negotiated-descriptor-channel-beside-the-9p-wire.md)
+and [mn4mzcnf](../decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md),
+not an amendment of their accepted production contracts yet.
+
+### Proposed guarantee
+
+The source ring remains producer-writable. The accepted resource is a separate
+Sophia-owned destination, copied once for that resource and validated **after**
+the copy. Consumers receive only the immutable destination and its ordinary
+resource identity, never a borrowed stable Rust slice of the mutable source.
+A producer's later writes cannot change accepted pixels. Source races cannot
+change the trusted dimensions, offsets, ownership or memory bounds. This uses
+the same containment principle as owned DMA-BUF capture in
+[the image-channel contract](../../sophia-image-channel.md#dma-buf-completion-and-release),
+and merits comparison with the X MIT-SHM copy-out implementation. Neither
+precedent proves the proposed ring implementation correct.
+
+The destination and any renderer leases live through the ordinary
+`ResourceReleased` lifecycle. Charge every accepted generation and peak copy /
+upload overlap, independently of the number of source slots. A two-slot ring
+must not imply a two-resource resident limit or permit recycling a destination
+still held by composition. D3's immutable texture cache can consume these
+resources without changing its identity/lifetime contract.
+
+The phrase “cannot admit a torn frame” needs an explicit threat model before
+alignment. A conforming producer relinquishes a slot from offer until release;
+an odd/in-progress, changed or unexpected generation rejects the offer, counts
+a torn-read observation and never silently retries it into an accepted frame.
+But an adversarial writer can change pixels without changing a generation word.
+Two equal reads of producer-controlled metadata do not prove a coherent snapshot.
+Copying still isolates subsequent writes, and validating the owned result still
+protects the pixel contract. Absolute hostile-writer snapshot consistency would
+need additional exclusion/snapshot enforcement; it is not supplied by B's
+proposed cooperative handoff or generation check alone. Do not conflate these
+claims or weaken bounds safety while resolving the distinction.
+
+### Protocol sketch for alignment, not allocated wire records
+
+| Operation | Required identity, bounds and obligation |
+| --- | --- |
+| Ring admission | Bound connection/grant and channel epochs; fresh ring identity/generation; supported backing kind; slot count, slot extent, row stride, data and generation offsets; checked total extent and arithmetic. Admit the fd on the existing authenticated descriptor channel. Copy geometry into trusted owner state once; reject incompatible descriptors and capacity before taking obligations. |
+| Slot offer | Ring identity, slot index, fresh slot generation, offer transaction, resource `(id, generation)`, bounded image dimensions/format under the admitted geometry. At most one outstanding use per slot. Source bytes cannot redefine offsets or lengths. Reserve destination bytes, worker credit and terminal journal capacity first. |
+| Slot release | Exact ring, slot, generation and offer identity; an explicit terminal disposition. Emit only when no source read remains. This permits rewriting that slot, not reuse of the accepted destination. Preserve pending release under live-journal backpressure. |
+| Resource lifecycle | Existing ResourceStatus, candidates, placements, outcomes and ResourceReleased. Copy completion is not presentation. Retire/revoke prevents new use; backing remains charged through actual consumer release. |
+
+Generation width, alignment, byte order, no-wrap behavior, publication ordering
+and host cross-process synchronization semantics remain design requirements,
+not assumed properties of an integer read. Ring replacement/close must drain
+all outstanding source reads. A dead journal permits no promised slot-release
+event; the client must treat unresolved custody as unknown rather than replay
+or reuse. Cancellation/expiry rejects interest but does not prove a copy stopped.
+No new reactor: keep ContentLimits, custody, epochs, export admission, revocation,
+the 20 ms authentication cadence and runtime_driver visual sequencing intact.
+Readiness remains distinct from authorization. This is an optional addition
+beside sealed ISB; withdrawn byte fallback stays withdrawn.
+
+### Two source-copy adapters to compare
+
+* **Mapped source:** verify GROW and SHRINK seals and fixed extent before mapping;
+  no WRITE seal is required. Copy through a narrowly audited mutable-source API
+  into owned storage, never by granting ordinary immutable Rust borrows over
+  producer-writable memory. Keep generation checks and post-copy validation.
+* **Unmapped source:** Session never maps any part of the ring, including its
+  generation word. Use bounded positional reads into owned buffers. Treat EOF,
+  short reads, errors, generation mismatch and cancellation as explicit failed
+  offers; do not concatenate partial reads across slot revisions or silently
+  recopy. Truncation then does not invalidate a source mapping inside Session.
+  Account for generation reads and all syscalls, not just the pixel read.
+
+The second adapter removes a seal requirement for source truncation safety,
+but “every POSIX host supports shm_open + pread” is too broad. POSIX specifies
+pread in terms of read and leaves reads of shared-memory objects unspecified.
+A port must select a seekable backing object with supported positional reads,
+for example a suitably provisioned regular file, or verify its host-specific
+shared-memory implementation. [POSIX read/pread specification](https://pubs.opengroup.org/onlinepubs/9799919799/functions/read.html).
+Descriptor passing, backing provisioning/permissions, producer publication
+visibility and nonblocking owner progress also require host evidence. Keep
+size seals as an additional check on Linux where available; do not call their
+admission/setup cost zero without measuring it. D2's immutable-storage group
+can admit ownership plus a proven safe-copy adapter, not require Linux seals
+universally or declare all POSIX ports qualified.
+
+A CPU-owned destination generally still needs its renderer upload. The proposed
+GPU-visible owned destination might replace that upload; this requires a
+separate native proof of write visibility, validation, synchronization, layout
+and retained lifetime. A linear-to-tiled GPU blit may remain. Do not advertise
+one end-to-end copy, zero-copy, or vendor-independent GPU mapping from the
+CPU copy probe.
+
+### Work and measurement order
+
+1. Claude's proposed useful design work is the temporary probe with one owned
+   destination per accepted resource retained until release, plus draft ADR and
+   protocol text. Compare fresh sealed ISB, mapped ring copy and positional-read
+   ring copy at identical panel and bulk sizes. Include ring setup/amortization,
+   producer and Session stages, page faults, bytes, peak overlapping resources,
+   release backpressure, and refused/torn offers. These remain local observations.
+2. Align the above lifetime, source-race, portable backing and record semantics;
+   then port a ring producer for an isolated measurement harness. No production
+   source-kind number or stable ABI is allocated by this sketch.
+3. After the release, freeze paired native fresh-ISB versus ring captures with
+   identical frames, panel/bulk geometry and completion semantics. Measure both
+   processes, CPU, latency, faults, memory and source/resource release outcomes;
+   apply the existing t331 +10% gates. A native harness is necessary for this
+   screen; local timings cannot substitute for it. D3's retained-content
+   qualification remains a different workload.
+4. Only a passing native screen supports proposing a production integration
+   lane, default-off build feature and same-binary kill switch. No default-on
+   promotion follows from this direction or from the standalone probe.
