@@ -88,6 +88,21 @@
             std::thread::sleep(Duration::from_millis(5));
             continue;
         }
+    #[cfg(feature = "experimental-shell-capture")]
+    if let Some(native) = native_scanout.as_mut() {
+        // Capture withdrawal/close progresses even when no component frame runs.
+        let _ = native.service_shell_capture_lifecycle();
+    }
+    #[cfg(feature = "experimental-shell-capture")]
+    if let (Some(components), Some(native)) = (shell_components.as_mut(), native_scanout.as_mut()) {
+        // Install only on reserved demand, then drain old receipts even when
+        // runtime/frame service is paused. Admission still cannot create demand.
+        components.service_capture_maintenance(native);
+        // Maintenance runs even without a new frame or during topology changes.
+        // Busy/error keeps the eviction obligation and both budgets. The component
+        // owner's maintenance deadline schedules a bounded retry, not permission.
+        let _ = components.retire_captured_imports(native);
+    }
     include!("lifecycle/native_service.rs");
         if let Some(runtime) = runtime.as_mut() {
             present_observer.drain_pending_feedback_with_layout(

@@ -66,6 +66,7 @@ fn admitted_request_reaches_owner_and_receipt_cleanup_is_driven() {
     let (mut driver, stream) = fixture();
     let (done_tx, done_rx) = std::sync::mpsc::channel();
     let (stop_tx, stop_rx) = std::sync::mpsc::channel();
+    let (parked_tx, parked_rx) = std::sync::mpsc::channel();
     let peer = std::thread::spawn(move || {
         let mut wire =
             Pipeline::over(stream, PipelineLimits::default(), Duration::from_secs(2)).unwrap();
@@ -125,7 +126,11 @@ fn admitted_request_reaches_owner_and_receipt_cleanup_is_driven() {
             Reply::Write(16)
         ));
         assert!(matches!(reply!(wire.clunk(tx)), Reply::Clunk));
-        let Reply::Read(bytes) = reply!(wire.read(events, 104, 4096)) else {
+        let request_read = wire.read(events, 104, 4096).unwrap();
+        wire.poll().unwrap();
+        assert!(!wire.io_interest().unwrap().writable);
+        parked_tx.send(()).unwrap();
+        let Reply::Read(bytes) = reply!(Ok::<_, ()>(request_read)) else {
             panic!()
         };
         assert_eq!(bytes.len(), 200);
@@ -169,6 +174,15 @@ fn admitted_request_reaches_owner_and_receipt_cleanup_is_driven() {
         done_tx.send(()).unwrap();
         stop_rx.recv_timeout(Duration::from_secs(2)).unwrap();
     });
+    // Drain startup traffic and park the journal read before publishing.
+    // No unrelated socket traffic may rescue a missing local-work wake.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while parked_rx.try_recv().is_err() {
+        assert!(Instant::now() < deadline);
+        driver.poll().unwrap();
+        std::thread::yield_now();
+    }
+    driver.poll().unwrap();
     let surface = SurfaceId::new(3, 4);
     let completion = driver
         .request(

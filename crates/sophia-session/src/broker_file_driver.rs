@@ -98,10 +98,10 @@ impl<R: Copy + Eq> BrokerFileDriver<R> {
                 .owner_mut()
                 .begin(id, request, route)
                 .map_err(owner_error)?;
-            match export.publish(id, request, Instant::now()) {
+            match self.service.publish(id, request, Instant::now()) {
                 Ok(()) => break,
                 Err(error) => {
-                    export.owner_mut().abort_unpublished();
+                    self.service.export_mut().owner_mut().abort_unpublished();
                     if error != Errno::EAGAIN {
                         return Err(owner_error(error));
                     }

@@ -85,6 +85,17 @@ impl<A: BrokerFileEffects> BrokerFileService<A> {
     pub fn export_mut(&mut self) -> &mut BrokerFileExport<A> {
         self.server.export_mut()
     }
+    /// Publish local work and wake a parked journal read before the next wait.
+    pub fn publish(
+        &mut self,
+        id: u64,
+        request: BrokerFileRequest<'_>,
+        now: Instant,
+    ) -> Result<(), Errno> {
+        self.server.export_mut().publish(id, request, now)?;
+        self.server.wake().wake();
+        Ok(())
+    }
     /// Close the socket now, retaining the owner's final state for inspection.
     pub fn close(&mut self) -> io::Result<()> {
         self.server.wake().stop();

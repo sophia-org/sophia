@@ -256,6 +256,129 @@ fn protected_native_broker_preserves_all_operations_and_atomic_lowering() {
     driver.close().unwrap();
 }
 
+fn admitted(driver: &mut BrokerFileDriver<u32>, surface: SurfaceId) {
+    assert!(matches!(
+        driver
+            .request(
+                Request::SurfaceAdmitted {
+                    surface,
+                    profile: NamespaceProfile::Confined,
+                },
+                42,
+                Duration::from_secs(3)
+            )
+            .expect("surface admission"),
+        BrokerCompletion::Applied {
+            rule: Some(rule),
+            ..
+        } if rule.disclosure == MetadataDisclosure::ClassOnly
+    ));
+}
+
+fn editor_candidate(driver: &mut BrokerFileDriver<u32>, surface: SurfaceId) {
+    assert!(matches!(
+        driver
+            .request(
+                Request::CandidateReduced {
+                    surface,
+                    disclosure: MetadataDisclosure::ClassOnly,
+                    label: Some("Editor"),
+                    redacted: false,
+                    generation: 1,
+                },
+                42,
+                Duration::from_secs(3)
+            )
+            .expect("candidate after interval"),
+        BrokerCompletion::Applied { .. }
+    ));
+    assert_eq!(
+        driver
+            .owner()
+            .descriptors()
+            .get(surface)
+            .unwrap()
+            .label
+            .as_ref()
+            .unwrap()
+            .text,
+        "Editor"
+    );
+}
+
+/// Owner absence means no driver service at all; polling services the
+/// driver every 10ms without issuing requests.
+fn idle(driver: &mut BrokerFileDriver<u32>, duration: Duration, polling: bool) {
+    let end = std::time::Instant::now() + duration;
+    if !polling {
+        std::thread::sleep(duration);
+        return;
+    }
+    while std::time::Instant::now() < end {
+        driver.poll().expect("broker poll during idle interval");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+#[ignore = "requires SOPHIA_TEST_EXECUTABLE and SOPHIA_TEST_BUBBLEWRAP absolute paths"]
+fn protected_native_broker_first_admission_after_three_second_idle() {
+    let (mut supervisor, service) = launch(BrokerFileOwner::new(1).unwrap());
+    let mut driver = BrokerFileDriver::new(service);
+    // Negotiate, then keep polling through an idle interval longer than
+    // the 2000ms acknowledgement-progress deadline before any request.
+    driver.negotiate(Duration::from_secs(3)).unwrap();
+    idle(&mut driver, Duration::from_millis(3000), true);
+    let surface = SurfaceId::new(3, 4);
+    admitted(&mut driver, surface);
+    editor_candidate(&mut driver, surface);
+    supervisor.terminate().unwrap();
+    driver.close().unwrap();
+}
+
+#[test]
+#[ignore = "requires SOPHIA_TEST_EXECUTABLE and SOPHIA_TEST_BUBBLEWRAP absolute paths"]
+fn protected_native_broker_refuses_after_unserviced_ack_deadline() {
+    let (mut supervisor, service) = launch(BrokerFileOwner::new(1).unwrap());
+    let mut driver = BrokerFileDriver::new(service);
+    let surface = SurfaceId::new(3, 4);
+    admitted(&mut driver, surface);
+    // The completion turn has published its receipt but has not serviced
+    // its ACK. An owner absence does not extend the receipt's deadline.
+    idle(&mut driver, Duration::from_millis(2100), false);
+    let error = driver
+        .request(
+            Request::CandidateReduced {
+                surface,
+                disclosure: MetadataDisclosure::ClassOnly,
+                label: Some("Editor"),
+                redacted: false,
+                generation: 1,
+            },
+            42,
+            Duration::from_secs(3),
+        )
+        .unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+    assert!(driver.closed());
+    supervisor.terminate().unwrap();
+    driver.close().unwrap();
+}
+
+#[test]
+#[ignore = "requires SOPHIA_TEST_EXECUTABLE and SOPHIA_TEST_BUBBLEWRAP absolute paths"]
+fn protected_native_broker_candidate_after_polled_interval() {
+    let (mut supervisor, service) = launch(BrokerFileOwner::new(1).unwrap());
+    let mut driver = BrokerFileDriver::new(service);
+    let surface = SurfaceId::new(3, 4);
+    admitted(&mut driver, surface);
+    // Control for the absence case: same interval, owner keeps polling.
+    idle(&mut driver, Duration::from_millis(2100), true);
+    editor_candidate(&mut driver, surface);
+    supervisor.terminate().unwrap();
+    driver.close().unwrap();
+}
+
 #[test]
 #[ignore = "requires SOPHIA_TEST_EXECUTABLE and SOPHIA_TEST_BUBBLEWRAP absolute paths"]
 fn protected_native_broker_retries_pressure_without_replacing_response() {
