@@ -354,7 +354,7 @@ fn two_protected_processes_retain_independent_stop_and_replacement_custody() {
     // the old lease stays charged until its consumer releases it.
     let retained = f.owner.collect();
     assert_eq!(retained.retired_epochs, 1);
-    assert_eq!(retained.reserved_bytes, 40 * 1024 * 1024 + 4);
+    assert_eq!(retained.reserved_bytes, 24 * 1024 * 1024 + 4);
     assert_eq!(menu_pixels.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
     assert!(f.owner.process_retained(bar));
     let replacement = f.owner.start(1, prepare, policy).unwrap();
@@ -367,12 +367,12 @@ fn two_protected_processes_retain_independent_stop_and_replacement_custody() {
         .unwrap();
     assert_eq!(limits.max_retiring_bytes, 8 * 1024 * 1024 - 4);
     assert_eq!(limits.max_resident_bytes, 12 * 1024 * 1024);
-    assert_eq!(f.owner.accounting().reserved_bytes, 64 * 1024 * 1024);
+    assert_eq!(f.owner.accounting().reserved_bytes, 48 * 1024 * 1024);
     assert_eq!(menu_pixels.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
     drop(menu_pixels);
     let released = f.owner.collect();
     assert_eq!(released.retired_epochs, 0);
-    assert_eq!(released.reserved_bytes, 64 * 1024 * 1024 - 4);
+    assert_eq!(released.reserved_bytes, 48 * 1024 * 1024 - 4);
     assert!(f.owner.request_stop(menu).is_err());
     for _ in 0..10 {
         f.visit();

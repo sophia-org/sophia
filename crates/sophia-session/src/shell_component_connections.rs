@@ -18,6 +18,9 @@ const MIB: u64 = 1024 * 1024;
 mod capture;
 pub(crate) mod images;
 pub(crate) use images::content_now_msec;
+#[cfg(test)]
+#[path = "../tests/support/component_ring_budget.rs"]
+mod ring_budget_tests;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ComponentConnectionKey {
@@ -263,7 +266,7 @@ impl ShellComponentConnections {
         // add() enforces unique roles and locks the role set before the first
         // attempt. Thus this immutable nominal envelope has exactly one profile
         // owner, including every retained predecessor of a reduced successor.
-        let nominal = role_limits(connection.role, grant, self.connections_have_dock);
+        let nominal = role_limits(grant, self.connections_have_dock);
         self.epochs.collect();
         let budget = self.epochs.reconnect_budget(profile);
         let allowance = content_reconnect_allowance(&nominal, budget)?;
@@ -688,18 +691,16 @@ impl ShellComponentConnections {
     }
 }
 
-fn role_limits(role: ShellComponentRole, grant: ContentGrant, has_dock: bool) -> ContentLimits {
+fn role_limits(grant: ContentGrant, has_dock: bool) -> ContentLimits {
     let mut limits = ContentLimits::prototype(grant);
+    // Leave source storage outside resource envelopes within the same 64 MiB.
+    // Three 17 MiB roles plus three full-size single-slot rings fit, including
+    // headers. The extra retiring MiB permits small retained reconnects.
+    limits.max_staging_bytes = 4 * MIB;
     if has_dock {
-        limits.max_staging_bytes = 4 * MIB;
-        limits.max_resident_bytes = if role == ShellComponentRole::Bar {
-            12 * MIB
-        } else {
-            8 * MIB
-        };
-        limits.max_retiring_bytes = 8 * MIB;
-    } else if role == ShellComponentRole::ApplicationLauncher {
-        limits.max_staging_bytes = 4 * MIB;
+        limits.max_resident_bytes = 8 * MIB;
+        limits.max_retiring_bytes = 5 * MIB;
+    } else {
         limits.max_resident_bytes = 12 * MIB;
         limits.max_retiring_bytes = 8 * MIB;
     }

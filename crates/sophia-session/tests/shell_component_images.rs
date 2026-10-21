@@ -159,11 +159,15 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
             let record =
                 decode_shell_file_record_at_revision(&bytes, ShellFileClass::Object, 9).unwrap();
             let limits = ShellImageLimits::decode(record.body).unwrap();
-            let role = ContentLimits::prototype(key.grant);
+            peer.open(18, b"limits", 0);
+            let role = decode_shell_file_limits(&peer.read(18, 0)).unwrap();
+            let source_bytes = OwnedRingGeometry::new(1, role.max_resource_bytes as usize)
+                .unwrap()
+                .source_bytes() as u64;
             assert_eq!(limits.max_resource_bytes, role.max_resource_bytes);
             assert_eq!(
                 limits.max_sealed_backing_bytes,
-                role.max_resident_bytes + role.max_retiring_bytes
+                role.max_resident_bytes + role.max_retiring_bytes + source_bytes
             );
             assert_eq!(limits.max_offers, role.max_open_transfers.min(4));
             let socket = rustix::net::socket_with(

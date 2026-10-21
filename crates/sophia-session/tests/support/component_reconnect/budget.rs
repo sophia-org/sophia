@@ -17,7 +17,7 @@ fn repeated_reduced_successors_keep_every_predecessor_until_its_consumer_ends() 
             .unwrap();
         assert_eq!(
             limits.max_retiring_bytes,
-            16 * 1024 * 1024 - 4 * u64::from(round)
+            8 * 1024 * 1024 - 4 * u64::from(round)
         );
         assert_eq!(limits.max_resource_bytes, 4 * 1024 * 1024);
         if let Some(old) = previous {
@@ -58,12 +58,12 @@ fn component_budget_refusal_is_named_and_recovers_after_real_collection() {
     h.complete(old, &mut peer, 1);
     let bands = h.owner.work_area_bands();
     let mut pins = Vec::new();
-    for id in 2..=7 {
+    for id in 2..=3 {
         let pin = wire::upload_maximum(&mut wire::Component(&mut h.owner, old), &mut peer, id);
         pins.push(
             h.owner
                 .with_service(old, |_, transport| {
-                    if id <= 4 {
+                    if id == 2 {
                         wire::send(
                             transport,
                             &mut peer,
@@ -90,7 +90,7 @@ fn component_budget_refusal_is_named_and_recovers_after_real_collection() {
     let before = h.owner.collect();
     assert_eq!(
         before.memory.resident + before.memory.retiring,
-        24 * 1024 * 1024 + 8
+        8 * 1024 * 1024 + 8
     );
     let error = h.owner.start(0).unwrap_err();
     assert_eq!(

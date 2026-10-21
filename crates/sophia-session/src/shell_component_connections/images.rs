@@ -1,4 +1,4 @@
-//! Session policy for sealed images and content accounting clocks.
+//! Session policy for CPU images and content accounting clocks.
 use super::Connection;
 use sophia_protocol::shell_files::{
     ShellImageDiscovery, ShellImageFormats, ShellImageLimits, ShellImageRoleBounds,
@@ -62,6 +62,15 @@ fn configure_with(
 ) -> Result<(), ShellTransportError> {
     let offers = limits.max_open_transfers.min(4);
     let generation = limits.grant.connection_epoch;
+    // The source is charged outside the resource envelope in the registry.
+    // Publish space for one default ring as well as the role's destinations.
+    let ring_bytes = sophia_runtime::OwnedRingGeometry::new(
+        1,
+        usize::try_from(limits.max_resource_bytes)
+            .map_err(|_| ShellTransportError::MissingCapability)?,
+    )
+    .map_err(|error| ShellTransportError::Io(error.to_string()))?
+    .source_bytes() as u64;
     const VALIDATION_BYTES: u32 = 65_536;
     configure(
         ShellImageDiscovery {
@@ -82,7 +91,9 @@ fn configure_with(
             channel_generation: generation,
             limits_generation: limits.limits_generation,
             max_resource_bytes: limits.max_resource_bytes,
-            max_sealed_backing_bytes: limits.max_resident_bytes + limits.max_retiring_bytes,
+            max_sealed_backing_bytes: limits.max_resident_bytes
+                + limits.max_retiring_bytes
+                + ring_bytes,
             max_dma_source_bytes: 0,
             max_renderer_allocation_bytes: 0,
             max_renderer_entries: 0,

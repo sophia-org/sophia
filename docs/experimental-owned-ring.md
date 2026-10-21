@@ -150,3 +150,18 @@ Use the accepted four-workload Wayland/XLibre bar on crunch and x13; IPC is an
 ungated diagnostic. External numerical thresholds remain unset. Retained
 resource qualification and D3 cache-on/off controls remain distinct from the
 per-frame lifecycle comparison. Production client migration and the broader external measurements remain outstanding.
+
+## Production source headroom
+
+The Session-wide 64 MiB source/backing ceilings are unchanged. With two roles,
+resource envelopes are 24 MiB each (4 staging, 12 resident, 8 retiring). With
+three roles they are 17 MiB each (4 staging, 8 resident, 5 retiring). This leaves
+space for one default 4 MiB ring plus its 4096-byte header per role. Larger rings
+remain subject to admission; no slot-count setting promises capacity.
+ImageLimits includes the default ring extent in its backing ceiling, separately
+from resident and retiring destinations. The registry still charges every source
+and destination against the unchanged global ceilings. A retained old ring can
+refuse a replacement until its worker/source custody ends; it is never refunded
+early to make a successor fit. The three-role case keeps 1 MiB above the minimum
+retiring envelope for small retained-resource reconnects; a larger retained set
+can legitimately refuse a replacement until consumers release it.

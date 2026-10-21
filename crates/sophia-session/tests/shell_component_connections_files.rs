@@ -48,7 +48,7 @@ fn retained_launcher_bytes_tighten_replacement_while_bar_uploads() {
     let retained = h.owner.collect();
     assert_eq!(retained.retired_epochs, 1);
     assert_eq!(retained.memory.resident, 4);
-    assert_eq!(retained.reserved_bytes, 40 * 1024 * 1024 + 4);
+    assert_eq!(retained.reserved_bytes, 24 * 1024 * 1024 + 4);
     assert_eq!(held.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
     let replacement = h.owner.reserve_attempt(1).unwrap();
     let _replacement = h.connect(replacement);
@@ -58,13 +58,13 @@ fn retained_launcher_bytes_tighten_replacement_while_bar_uploads() {
         .unwrap();
     assert_eq!(limits.max_retiring_bytes, 8 * 1024 * 1024 - 4);
     assert_eq!(limits.max_resident_bytes, 12 * 1024 * 1024);
-    assert_eq!(h.owner.accounting().reserved_bytes, 64 * 1024 * 1024);
+    assert_eq!(h.owner.accounting().reserved_bytes, 48 * 1024 * 1024);
     let bar_bytes = upload(&mut h, panel, &mut bar, 1);
     assert_eq!(bar_bytes.description().grant, panel.grant);
     drop(held);
     let released = h.owner.collect();
     assert_eq!(released.retired_epochs, 0);
-    assert_eq!(released.reserved_bytes, 64 * 1024 * 1024 - 4);
+    assert_eq!(released.reserved_bytes, 48 * 1024 * 1024 - 4);
     assert_eq!(replacement.grant.connection_epoch, 3);
     assert_eq!(replacement.grant.content_grant_epoch, 3);
     assert_eq!(
@@ -773,11 +773,11 @@ fn three_role_inventory_is_frozen_before_the_first_budget_reservation() {
         .unwrap();
     assert_eq!(dock, 2);
     let bar = h.owner.reserve_attempt(0).unwrap();
-    assert_eq!(h.owner.accounting().reserved_bytes, 24 * 1024 * 1024);
+    assert_eq!(h.owner.accounting().reserved_bytes, 17 * 1024 * 1024);
     let menu = h.owner.reserve_attempt(1).unwrap();
     let dock = h.owner.reserve_attempt(2).unwrap();
     assert_eq!(h.owner.accounting().active_epochs, 3);
-    assert_eq!(h.owner.accounting().reserved_bytes, 64 * 1024 * 1024);
+    assert_eq!(h.owner.accounting().reserved_bytes, 51 * 1024 * 1024);
     let _bar_socket = h.connect(bar);
     let _menu_socket = h.connect(menu);
     // The persistent role cannot negotiate as a bar or transient menu.
