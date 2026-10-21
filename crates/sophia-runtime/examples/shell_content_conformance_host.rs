@@ -245,7 +245,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let pixels = candidate
                 .resource(resource)
                 .ok_or("candidate omitted its referenced resource")?;
-            if pixels.bytes() != [0, 0, 255, 255, 0, 128, 0, 128] {
+            if pixels
+                .cpu_bytes()
+                .ok_or("candidate resource is not CPU-readable")?
+                != [0, 0, 255, 255, 0, 128, 0, 128]
+            {
                 return Err("independent client uploaded different canonical pixels".into());
             }
             if candidate.surfaces.len() != 1

@@ -114,16 +114,31 @@ impl Harness {
         owner.set_presentation_available(true).unwrap();
         let profile = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tools/fixtures/mixed_output_probe.kdl");
+        // Never discover the operator's namespace recipes for this supplied
+        // admission fixture. It does not launch applications through Factotum.
+        let core_path = root.join("core.kdl");
+        {
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut core = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&core_path)
+                .unwrap();
+            core.write_all(sophia_config::COMPILED_CORE_CONFIG.as_bytes())
+                .unwrap();
+        }
         Self {
             owner,
             backend: SessionContentFixture::new(&[output()]).unwrap(),
             root,
             catalog: Default::default(),
             launches: Default::default(),
-            config: PersistentXtermSessionConfig::from_args(&[format!(
-                "--desktop-profile={}",
-                profile.display()
-            )])
+            config: PersistentXtermSessionConfig::from_args(&[
+                format!("--config={}", core_path.display()),
+                format!("--desktop-profile={}", profile.display()),
+            ])
             .unwrap(),
         }
     }
