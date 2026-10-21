@@ -1,7 +1,11 @@
 //! Accepted sealed sources, retirement and late-packet controls.
 use super::*;
 
-pub(super) fn accepted_source(peer: &mut raw::Peer, socket: &std::os::fd::OwnedFd) {
+pub(super) fn accepted_source(
+    peer: &mut raw::Peer,
+    socket: &std::os::fd::OwnedFd,
+    publication: Option<std::sync::mpsc::Receiver<()>>,
+) {
     use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, memfd_create};
     use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
     use std::os::fd::AsFd;
@@ -53,6 +57,10 @@ pub(super) fn accepted_source(peer: &mut raw::Peer, socket: &std::os::fd::OwnedF
         200
     );
     drop(source);
+    // No further 9P request or ACK until the owner proves local eligibility.
+    if let Some(publication) = publication {
+        publication.recv_timeout(Duration::from_secs(5)).unwrap();
+    }
     let (mut status, mut released) = (false, false);
     for _ in 0..2 {
         let event = peer.next_event();

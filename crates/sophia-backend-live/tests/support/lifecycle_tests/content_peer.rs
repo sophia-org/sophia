@@ -321,7 +321,8 @@ fn run(client: &Path, wrong_action_epoch: bool) -> Result<(), Box<dyn std::error
                             generation: 1
                         })
                         .unwrap()
-                        .bytes(),
+                        .cpu_bytes()
+                        .unwrap(),
                     [0, 0, 255, 255, 0, 128, 0, 128]
                 );
                 if retained.is_none() {

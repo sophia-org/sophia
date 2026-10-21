@@ -48,6 +48,10 @@ mod native_scanout;
 mod shared_buffer;
 #[cfg(feature = "gbm-probe")]
 mod shared_pixmap;
+#[cfg(feature = "experimental-shell-capture")]
+mod shell_capture_jobs;
+#[cfg(feature = "experimental-shell-capture")]
+pub use shell_capture_jobs::api::*;
 
 pub use buffer_registry::*;
 pub use cpu_buffer_registry::*;

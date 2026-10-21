@@ -508,7 +508,15 @@ fn catalog_object_candidate_and_activate_cross_the_file_wire() {
         .connection(&mut registry)
         .begin_catalog_submission(1, context, &dock_catalog(9), 0)
         .unwrap();
-    assert_eq!(render.resource(RESOURCE).unwrap().bytes().len(), 8);
+    assert_eq!(
+        render
+            .resource(RESOURCE)
+            .unwrap()
+            .cpu_bytes()
+            .unwrap()
+            .len(),
+        8
+    );
     transport
         .content_prepared(&mut registry, GRANT, OUTPUT, 1, 1, 1, 0)
         .unwrap();

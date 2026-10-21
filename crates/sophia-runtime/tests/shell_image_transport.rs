@@ -285,6 +285,11 @@ fn disconnected_transport_reclaims_uncollected_source_custody() {
     cancellation::isolated_shutdown();
 }
 
+#[test]
+fn completed_source_release_needs_status_publication_but_no_peer_progress() {
+    run_image_epoch(false, false, true, 7);
+}
+
 fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, coordinated: u8) {
     let epoch = if legacy_successor { 2 } else { 1 };
     let directory = std::env::temp_dir().join(format!(
@@ -342,6 +347,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
     let (enabled_admission, wait_admission) = std::sync::mpsc::channel();
     let (source_submitted, await_submission) = std::sync::mpsc::channel();
     let (allow_completion, collect_completion) = std::sync::mpsc::channel();
+    let (published, await_publication) = std::sync::mpsc::channel();
     let worker = std::thread::spawn(move || {
         let mut peer = raw::Peer::connect(&path);
         setup(&mut peer);
@@ -491,7 +497,11 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
             } else if coordinated == 2 {
                 cancellation::cancelled_source(&mut peer);
             } else {
-                sources::accepted_source(&mut peer, &socket);
+                sources::accepted_source(
+                    &mut peer,
+                    &socket,
+                    (coordinated == 7).then_some(await_publication),
+                );
             }
             return;
         }
@@ -606,7 +616,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                             .ok()
                     })
                 {
-                    assert_eq!(lease.bytes(), &[0; 8]);
+                    assert_eq!(lease.cpu_bytes().unwrap(), &[0; 8]);
                     stored = true;
                 }
                 std::thread::yield_now();
@@ -698,8 +708,39 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                         },
                     )
                     .unwrap();
-                assert_eq!(lease.bytes(), &[0; 8]);
+                assert_eq!(lease.cpu_bytes().unwrap(), &[0; 8]);
                 stored = true;
+                #[cfg(feature = "experimental-shell-capture")]
+                {
+                    // Capture accounting cannot release a sealed-source
+                    // offer, nor invent a DMA offer by changing its kind.
+                    let mut metadata = settlement.admission.metadata;
+                    assert!(matches!(
+                        transport.release_capture_image_source(
+                            settlement.admission.grant,
+                            metadata,
+                            ShellSourceDisposition::CaptureComplete,
+                        ),
+                        Err(ShellTransportError::WrongContentRecord)
+                    ));
+                    metadata.source_kind = SHELL_IMAGE_SOURCE_DMA_BUF;
+                    assert!(matches!(
+                        transport.release_capture_image_source(
+                            settlement.admission.grant,
+                            metadata,
+                            ShellSourceDisposition::Retained,
+                        ),
+                        Err(ShellTransportError::WrongContentRecord)
+                    ));
+                    assert!(matches!(
+                        transport.release_capture_image_source(
+                            settlement.admission.grant,
+                            metadata,
+                            ShellSourceDisposition::CaptureComplete,
+                        ),
+                        Err(ShellTransportError::WrongContentGrant)
+                    ));
+                }
                 assert!(
                     matches!(
                         transport.release_isb_image_source(&settlement),
@@ -707,7 +748,28 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                     ),
                     "release must wait for the queued status to reach the journal"
                 );
-                assert!(pending_release.replace(settlement).is_none());
+                if coordinated == 7 {
+                    // The peer is parked after Source: status journal custody alone
+                    // must make this same settlement eligible, with no new ACK,
+                    // worker completion, source packet, or full image-owner visit.
+                    assert_eq!(jobs.pending(), 0);
+                    assert_eq!(validation.pending(), 0);
+                    transport.service_content_resources(&mut epochs, 0).unwrap();
+                    let sequence = transport.release_isb_image_source(&settlement).unwrap();
+                    assert!(sequence > 0);
+                    assert!(
+                        transport.release_isb_image_source(&settlement).is_err(),
+                        "a settled source must not publish a second release"
+                    );
+                    assert_eq!(
+                        lease.cpu_bytes().unwrap(),
+                        &[0; 8],
+                        "release retains immutable backing"
+                    );
+                    published.send(()).unwrap();
+                } else {
+                    assert!(pending_release.replace(settlement).is_none());
+                }
             }
         }
         std::thread::yield_now();

@@ -13,6 +13,7 @@ use crate::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveHeadCompositionLoweringError {
     MissingCpuSource(u64),
+    UnavailableContentImage,
     UnsupportedSource(BufferSource),
     /// The plan measured this buffer at one size and the source holds another.
     ///
@@ -296,29 +297,47 @@ pub fn lower_head_composition_plan_with_caches(
                             crate::lock_image_handle(image.identity)
                         }
                     };
-                    layers.push(LiveOwnedMixedCompositionLayer::Cpu {
-                        buffer: LiveSharedCpuBufferSource {
-                            handle,
-                            size: content.image.size_px,
-                            stride: content.image.stride,
-                            format: content.image.format,
-                            generation: content.image.generation,
-                            bytes: content.image.resource.clone().into(),
-                        },
-                        placement: LiveCompositionPlacement {
-                            target: content.geometry,
-                            clip: Some(content.clip),
-                            transform: Transform::IDENTITY,
-                            alpha: 1.0,
-                            sampling: head_sampling_class(
-                                content.image.size_px,
-                                Size {
-                                    width: content.geometry.width,
-                                    height: content.geometry.height,
-                                },
-                            ),
-                        },
-                    });
+                    let placement = LiveCompositionPlacement {
+                        target: content.geometry,
+                        clip: Some(content.clip),
+                        transform: Transform::IDENTITY,
+                        alpha: 1.0,
+                        sampling: head_sampling_class(
+                            content.image.size_px,
+                            Size {
+                                width: content.geometry.width,
+                                height: content.geometry.height,
+                            },
+                        ),
+                    };
+                    match crate::LiveCpuPixelStorage::try_from(content.image.resource.clone()) {
+                        Ok(bytes) => layers.push(LiveOwnedMixedCompositionLayer::Cpu {
+                            buffer: LiveSharedCpuBufferSource {
+                                handle,
+                                size: content.image.size_px,
+                                stride: content.image.stride,
+                                format: content.image.format,
+                                generation: content.image.generation,
+                                bytes,
+                            },
+                            placement,
+                        }),
+                        Err(_source) => {
+                            #[cfg(feature = "experimental-shell-capture")]
+                            {
+                                let snapshot = _source.shell()
+                                    .and_then(crate::LiveRetainedRendererImageSnapshot::from_content_lease)
+                                    .filter(|image| image.size() == content.image.size_px)
+                                    .ok_or(LiveHeadCompositionLoweringError::UnavailableContentImage)?;
+                                layers.push(LiveOwnedMixedCompositionLayer::Snapshot {
+                                    snapshot,
+                                    placement,
+                                });
+                            }
+                            #[cfg(not(feature = "experimental-shell-capture"))]
+                            return Err(LiveHeadCompositionLoweringError::UnavailableContentImage);
+                        }
+                    }
                 }
             }
         }

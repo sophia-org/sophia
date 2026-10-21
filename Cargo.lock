@@ -1569,6 +1569,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sophia-renderer-image"
+version = "0.1.0"
+dependencies = [
+ "rustix",
+]
+
+[[package]]
 name = "sophia-renderer-live"
 version = "0.1.0"
 dependencies = [
@@ -1578,8 +1585,10 @@ dependencies = [
  "sophia-engine",
  "sophia-linux-peer",
  "sophia-protocol",
+ "sophia-renderer-image",
  "sophia-renderer-native-egl",
  "sophia-runtime",
+ "sophia-wake",
  "sophia-xshmfence",
  "vello_cpu",
  "xcursor",
@@ -1593,6 +1602,7 @@ dependencies = [
  "glow",
  "khronos-egl",
  "rustix",
+ "sophia-renderer-image",
  "sophia-x-authority",
  "tracing",
 ]
@@ -1614,6 +1624,7 @@ dependencies = [
  "sophia-linux-peer",
  "sophia-namespace-client",
  "sophia-protocol",
+ "sophia-renderer-image",
  "sophia-shell-client",
  "sophia-wake",
  "stats_alloc",
@@ -1652,6 +1663,7 @@ dependencies = [
  "sophia-namespace-client",
  "sophia-portal",
  "sophia-protocol",
+ "sophia-renderer-image",
  "sophia-renderer-live",
  "sophia-renderer-native-egl",
  "sophia-runtime",

@@ -45,7 +45,7 @@ fn repeated_reduced_successors_keep_every_predecessor_until_its_consumer_ends() 
     let last = pins.pop().unwrap();
     drop(pins);
     assert_eq!(h.owner.collect().retired_epochs, 1);
-    assert_eq!(last.bytes(), &[1, 2, 3, 255]);
+    assert_eq!(last.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
 }
 
 #[test]
@@ -110,6 +110,6 @@ fn component_budget_refusal_is_named_and_recovers_after_real_collection() {
         ComponentConnectionPhase::Connected
     );
     assert_eq!(h.owner.work_area_bands(), bands);
-    assert_eq!(retained.bytes(), &[1, 2, 3, 255]);
+    assert_eq!(retained.cpu_bytes().unwrap(), &[1, 2, 3, 255]);
     assert!(h.owner.accounting().reserved_bytes <= 64 * 1024 * 1024);
 }

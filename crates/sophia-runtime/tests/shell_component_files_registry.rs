@@ -53,8 +53,8 @@ fn two_file_connections_share_actual_stores_and_keep_neighbor_live_through_retir
     b.send_upload(menu.grant, 1, 70);
     let a_pixels = a.uploaded(&mut registry, bar.grant, 1, 0);
     let b_pixels = b.uploaded(&mut registry, menu.grant, 1, 0);
-    assert_eq!(a_pixels.bytes(), [30, 0, 0, 255]);
-    assert_eq!(b_pixels.bytes(), [70, 0, 0, 255]);
+    assert_eq!(a_pixels.cpu_bytes().unwrap(), [30, 0, 0, 255]);
+    assert_eq!(b_pixels.cpu_bytes().unwrap(), [70, 0, 0, 255]);
     assert!(
         a.transport
             .lease_content_resource(&registry, menu.grant, resource(1))
@@ -79,7 +79,7 @@ fn two_file_connections_share_actual_stores_and_keep_neighbor_live_through_retir
     assert_eq!(a.transport.content_grant(), Some(bar.grant));
     a.send_upload(bar.grant, 2, 90);
     let next_a = a.uploaded(&mut registry, bar.grant, 2, 1);
-    assert_eq!(next_a.bytes(), [90, 0, 0, 255]);
+    assert_eq!(next_a.cpu_bytes().unwrap(), [90, 0, 0, 255]);
     assert_eq!(registry.retired_bytes(), 4);
 
     drop(b_pixels);
@@ -91,7 +91,7 @@ fn two_file_connections_share_actual_stores_and_keep_neighbor_live_through_retir
     // connect supplies a fresh authenticated peer owner for the successor.
     b.connect(&mut registry, replacement);
     assert_eq!(a.transport.content_grant(), Some(bar.grant));
-    assert_eq!(a_pixels.bytes(), [30, 0, 0, 255]);
+    assert_eq!(a_pixels.cpu_bytes().unwrap(), [30, 0, 0, 255]);
     drop((a_pixels, next_a));
     a.disconnect(&mut registry);
     b.disconnect(&mut registry);
@@ -151,7 +151,7 @@ fn file_peer_cannot_route_a_foreign_grant_into_its_neighbors_store() {
     a.disconnect(&mut registry);
     b.send_upload(menu.grant, 1, 70);
     let pixels = b.uploaded(&mut registry, menu.grant, 1, 0);
-    assert_eq!(pixels.bytes(), [70, 0, 0, 255]);
+    assert_eq!(pixels.cpu_bytes().unwrap(), [70, 0, 0, 255]);
     drop(pixels);
     b.disconnect(&mut registry);
     assert!(registry.accounting().quiescent());
@@ -288,7 +288,7 @@ fn explicit_three_owner_capacity_over_files_preserves_budget_and_neighbor_progre
         let grant = bounded(index as u64 + 1).grant;
         peer.send_upload(grant, 2, 80 + index as u8);
         let pixels = peer.uploaded(&mut registry, grant, 2, 1);
-        assert_eq!(pixels.bytes(), [80 + index as u8, 0, 0, 255]);
+        assert_eq!(pixels.cpu_bytes().unwrap(), [80 + index as u8, 0, 0, 255]);
     }
     drop(held.pop());
     registry.collect();

@@ -8,17 +8,17 @@ use std::os::unix::net::UnixStream;
 #[test]
 fn snapshot_duplicate_keeps_original_on_failed_import_and_survives_original_drop() {
     let (plane, mut peer) = UnixStream::pair().unwrap();
-    let original = NativeRendererImageSnapshot {
+    let original = RendererImageSnapshot {
         charge: None,
         epoch: None,
-        image_id: NativeRendererImageId::from_raw(7),
+        image_id: RendererImageId::from_raw(7),
         width: 32,
         height: 8,
         format: 0x3432_5258,
         modifier: 0,
         plane_count: 1,
         planes: [
-            Some(NativeOwnedDmaBufPlane {
+            Some(OwnedDmaBufPlane {
                 fd: plane.into(),
                 offset: 16,
                 stride: 128,

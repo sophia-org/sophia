@@ -62,7 +62,9 @@ pub(super) struct PreviewImages {
     live_stores: BTreeMap<u64, usize>,
     epochs: BTreeMap<(u64, u64), Arc<Epoch>>,
     inventory_generation: Option<u64>,
-    budget: Arc<Budget>,
+    pub(super) budget: Arc<Budget>,
+    #[cfg(feature = "experimental-shell-capture")]
+    pub(super) capture: super::shell_capture::CaptureOwner,
 }
 impl Default for PreviewImages {
     fn default() -> Self {
@@ -79,6 +81,8 @@ impl Default for PreviewImages {
             epochs: BTreeMap::new(),
             inventory_generation: None,
             budget: Budget::new(128, 256 * 1024 * 1024),
+            #[cfg(feature = "experimental-shell-capture")]
+            capture: Default::default(),
         }
     }
 }

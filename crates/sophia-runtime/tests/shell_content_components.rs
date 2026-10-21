@@ -59,7 +59,7 @@ fn two_real_stores_share_one_budget_and_keep_identical_resource_ids_distinct() {
     registry.admit(launcher(2)).unwrap();
     let a = upload(&mut registry, 1, 30);
     let b = upload(&mut registry, 2, 70);
-    assert_ne!(a.bytes(), b.bytes());
+    assert_ne!(a.cpu_bytes().unwrap(), b.cpu_bytes().unwrap());
     assert_eq!(registry.accounting().active_epochs, 2);
     assert_eq!(registry.accounting().resources, 2);
     assert_eq!(registry.reserved_bytes(), 64 * MIB);
@@ -82,8 +82,8 @@ fn independent_disconnect_keeps_neighbor_live_and_blocks_replacement_until_real_
     assert_eq!(registry.retired_bytes(), 4);
     assert_eq!(registry.reserved_bytes(), 40 * MIB + 4);
     assert_eq!(registry.admit(launcher(3)), Err(ContentStoreError::Budget));
-    assert_eq!(bar_pixels.bytes(), [1, 0, 0, 255]);
-    assert_eq!(old_launcher.bytes(), [2, 0, 0, 255]);
+    assert_eq!(bar_pixels.cpu_bytes().unwrap(), [1, 0, 0, 255]);
+    assert_eq!(old_launcher.cpu_bytes().unwrap(), [2, 0, 0, 255]);
     drop(old_launcher);
     registry.collect();
     assert_eq!(registry.retired_bytes(), 0);
@@ -137,7 +137,7 @@ fn final_backend_disposition_requires_every_live_grant_to_end() {
     registry.disconnect(grant(1));
     assert_eq!(registry.finish_after_backend_drop(backend).unwrap(), 0);
     assert!(!registry.accounting().quiescent());
-    assert_eq!(held.bytes(), [2, 0, 0, 255]);
+    assert_eq!(held.cpu_bytes().unwrap(), [2, 0, 0, 255]);
     drop(held);
     registry.collect();
     assert!(registry.accounting().quiescent());

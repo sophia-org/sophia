@@ -312,7 +312,8 @@ impl Peer {
             self.transport
                 .lease_content_resource(r, GRANT, RESOURCE)
                 .unwrap()
-                .bytes(),
+                .cpu_bytes()
+                .unwrap(),
             &[0, 0, 255, 255, 0, 128, 0, 128]
         );
     }

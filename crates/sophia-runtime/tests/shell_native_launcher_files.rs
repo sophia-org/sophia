@@ -449,7 +449,15 @@ fn opening_allocation_candidate_focus_input_activation_and_close_cross_the_file_
     let render = transport
         .begin_native_launcher_submission(&mut registry, 1, ctx, native_ctx, 0)
         .unwrap();
-    assert_eq!(render.resource(RESOURCE).unwrap().bytes().len(), 8);
+    assert_eq!(
+        render
+            .resource(RESOURCE)
+            .unwrap()
+            .cpu_bytes()
+            .unwrap()
+            .len(),
+        8
+    );
     transport
         .content_prepared(&mut registry, GRANT, OUTPUT, 1, 1, 1, 0)
         .unwrap();

@@ -1,5 +1,8 @@
 //! ISB image admission and worker custody against the real allocation owner.
 use super::*;
+#[cfg(feature = "experimental-shell-capture")]
+#[path = "shell_capture_admission.rs"]
+mod capture_tests;
 
 fn image_registry() -> ContentEpochRegistry {
     let mut registry = ContentEpochRegistry::new(64 << 20).unwrap();

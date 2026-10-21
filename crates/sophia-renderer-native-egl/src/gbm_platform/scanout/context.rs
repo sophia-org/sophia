@@ -37,6 +37,8 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     // One compatible context per supported capture format (XR24 and AR24).
     capture_targets: [Option<NativeCaptureTarget>; 2],
     capture_reuse: NativeCaptureReuse,
+    #[cfg(feature = "experimental-shell-capture")]
+    shell_capture_owner: std::rc::Rc<shell_capture::Owner>,
     snapshot_fences: Vec<NativeSnapshotFence>,
     snapshot_quarantine: Vec<std::rc::Rc<NativeCaptureAllocation>>,
     snapshot_reuse_enabled: bool,
@@ -243,6 +245,8 @@ where
             composition_target: None,
             capture_targets: [None, None],
             capture_reuse: NativeCaptureReuse::default(),
+            #[cfg(feature = "experimental-shell-capture")]
+            shell_capture_owner: std::rc::Rc::new(shell_capture::Owner::default()),
             snapshot_fences: Vec::new(),
             snapshot_quarantine: Vec::new(),
             snapshot_reuse_enabled: true,
@@ -853,6 +857,17 @@ include!("context/snapshot_fences.rs");
 include!("context/source_imports.rs");
 include!("context/capture_pool.rs");
 
+// Only the native shell-copy adapter may consume this exact-copy proof.
+#[cfg(feature = "experimental-shell-capture")]
+#[path = "context/shell_copy_completion.rs"]
+mod shell_copy_completion;
+
+#[cfg(feature = "experimental-shell-capture")]
+#[path = "context/shell_capture.rs"]
+mod shell_capture;
+#[cfg(feature = "experimental-shell-capture")]
+pub use shell_capture::*;
+
 #[cfg(test)]
 mod snapshot_lifetime_tests {
     include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/snapshot_lifetime.rs"));
@@ -909,6 +924,8 @@ where
     T: std::os::fd::AsFd,
 {
     fn drop(&mut self) {
+        #[cfg(feature = "experimental-shell-capture")]
+        self.shell_capture_owner.retire();
         if let Some(persistent) = self.composition_target.take() {
             self.destroy_persistent_composition_target(persistent);
         }

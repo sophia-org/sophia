@@ -573,7 +573,10 @@ impl LiveProductionCpuScene {
                                 stride: content.stride,
                                 format: content.format,
                                 generation: content.generation,
-                                bytes: content.resource.bytes(),
+                                bytes: content
+                                    .resource
+                                    .cpu_bytes()
+                                    .ok_or("GPU content is unavailable to the CPU renderer")?,
                             },
                         },
                     ));

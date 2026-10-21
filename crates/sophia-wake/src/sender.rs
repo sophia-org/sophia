@@ -7,6 +7,12 @@ pub struct SignalSender<T> {
     wake: WakeSlot,
 }
 
+impl<T> std::fmt::Debug for SignalSender<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SignalSender").finish_non_exhaustive()
+    }
+}
+
 impl<T> From<mpsc::SyncSender<T>> for SignalSender<T> {
     fn from(sender: mpsc::SyncSender<T>) -> Self {
         Self::new(sender, WakeSlot::default())

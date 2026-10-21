@@ -1,4 +1,8 @@
 mod output;
+// Endpoint demand has no production ingress caller; GPU admission remains disabled.
+#[cfg(feature = "experimental-shell-capture")]
+#[allow(dead_code)]
+mod shell_capture_owner;
 // Shared supplied verdicts for authenticated image transport fixtures.
 #[cfg(all(test, feature = "native-session"))]
 #[allow(clippy::duplicate_mod)]
@@ -266,3 +270,7 @@ pub mod shell_component_session {
         ShellComponentService, ShellComponentSession,
     };
 }
+
+#[cfg(all(test, feature = "experimental-shell-capture"))]
+#[path = "../../sophia-runtime/tests/support/captured_resource_fixture.rs"]
+mod captured_resource_fixture;

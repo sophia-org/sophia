@@ -5,6 +5,11 @@ use std::sync::Arc;
 
 use sophia_protocol::*;
 
+#[cfg(feature = "experimental-shell-capture")]
+mod capture;
+#[cfg(feature = "experimental-shell-capture")]
+pub use capture::*;
+
 /// Recoverable protocol outcomes; callers must not turn these into session loss.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ContentStoreError {
@@ -41,49 +46,34 @@ struct Transfer {
     ordinal: u32,
     deadline: u64,
     idle_deadline: u64,
-    source: TransferSource,
+    sealed: bool,
+    // A stopped worker retains its mapping and charge until completion.
+    stopped: Option<(ContentReason, TransactionId)>,
+    #[cfg(feature = "experimental-shell-capture")]
+    capture: Option<Arc<()>>,
 }
 
-enum TransferSource {
-    Bytes,
-    // A stopped worker still owns its mapping until completion. Keep the
-    // resource and every byte charged until the owner returns that completion.
-    Sealed {
-        stopped: Option<(ContentReason, TransactionId)>,
-    },
-}
-
-enum PixelBacking {
-    Bytes(Arc<Vec<u8>>),
-    Sealed(sophia_linux_peer::SealedMapping),
-}
-
-struct Pixels {
-    description: ContentResourceBegin,
-    bytes: PixelBacking,
-}
+mod backing;
+#[cfg(feature = "experimental-shell-capture")]
+pub use backing::ContentCapturedImage;
+pub use backing::{ContentCpuResourceLease, ContentResourceLease};
 
 struct Accepted {
-    pixels: Arc<Pixels>,
+    pixels: ContentResourceLease,
     retiring: bool,
     transaction: TransactionId,
     release_pending: bool,
+    #[cfg(feature = "experimental-shell-capture")]
+    capture_evicted: bool,
 }
 
-/// An immutable reference to accepted pixels. Clones are real storage consumers.
-/// Drop the last renderer/upload reference before asking the owner to collect.
-#[derive(Clone)]
-pub struct ContentResourceLease(Arc<Pixels>);
-
-impl ContentResourceLease {
-    pub fn bytes(&self) -> &[u8] {
-        match &self.0.bytes {
-            PixelBacking::Bytes(bytes) => bytes,
-            PixelBacking::Sealed(mapping) => mapping.bytes(),
+impl Accepted {
+    fn releasable(&self) -> bool {
+        #[cfg(feature = "experimental-shell-capture")]
+        if !self.capture_evicted {
+            return false;
         }
-    }
-    pub fn description(&self) -> &ContentResourceBegin {
-        &self.0.description
+        self.pixels.custody_is_exclusive()
     }
 }
 
@@ -317,14 +307,11 @@ impl ContentResourceStore {
                 bytes: storage,
                 ordinal: 0,
                 deadline,
-                // A descriptor has no canonical chunk cadence. Its original
-                // transfer deadline bounds both arrival and validation.
-                idle_deadline: if sealed { deadline } else { idle_deadline },
-                source: if sealed {
-                    TransferSource::Sealed { stopped: None }
-                } else {
-                    TransferSource::Bytes
-                },
+                idle_deadline,
+                sealed,
+                stopped: None,
+                #[cfg(feature = "experimental-shell-capture")]
+                capture: None,
             },
         );
         if !sealed {
@@ -347,7 +334,7 @@ impl ContentResourceStore {
         let Some(transfer) = self.transfers.get_mut(&chunk.resource) else {
             return Err(ContentStoreError::Stale);
         };
-        if !matches!(transfer.source, TransferSource::Bytes) {
+        if transfer.sealed {
             return Err(ContentStoreError::Malformed);
         }
         let remaining = transfer.layout.total_bytes - transfer.bytes.len() as u64;
@@ -385,7 +372,7 @@ impl ContentResourceStore {
         let Some(transfer) = self.transfers.get(&end.resource) else {
             return Err(ContentStoreError::Stale);
         };
-        if !matches!(transfer.source, TransferSource::Bytes) {
+        if transfer.sealed {
             return Err(ContentStoreError::Malformed);
         }
         if end.total_bytes != transfer.layout.total_bytes
@@ -408,13 +395,12 @@ impl ContentResourceStore {
         self.accepted.insert(
             end.resource,
             Accepted {
-                pixels: Arc::new(Pixels {
-                    description: transfer.description,
-                    bytes: PixelBacking::Bytes(Arc::new(transfer.bytes)),
-                }),
+                pixels: ContentResourceLease::bytes_owned(transfer.description, transfer.bytes),
                 retiring: false,
                 transaction,
                 release_pending: false,
+                #[cfg(feature = "experimental-shell-capture")]
+                capture_evicted: true,
             },
         );
         self.status(transaction, end.resource, 2, ContentReason::None, bytes);
@@ -442,9 +428,16 @@ impl ContentResourceStore {
             .transfers
             .get(&resource)
             .ok_or(ContentStoreError::Stale)?;
-        let TransferSource::Sealed { stopped } = transfer.source else {
+        if !transfer.sealed {
             return Err(ContentStoreError::Malformed);
-        };
+        }
+        let stopped = transfer.stopped;
+        // A CPU validator cannot settle a renderer-owned source, even with an
+        // identically sized mapping or a failure result.
+        #[cfg(feature = "experimental-shell-capture")]
+        if transfer.capture.is_some() {
+            return Err(ContentStoreError::Stale);
+        }
         let result = result.take().expect("completion checked");
         if let Some((reason, transaction)) = stopped {
             // The result and its mapping drop only after the worker returned.
@@ -474,13 +467,12 @@ impl ContentResourceStore {
         self.accepted.insert(
             resource,
             Accepted {
-                pixels: Arc::new(Pixels {
-                    description: transfer.description,
-                    bytes: PixelBacking::Sealed(pixels.0),
-                }),
+                pixels: ContentResourceLease::sealed(transfer.description, pixels.0),
                 retiring: false,
                 transaction: transfer.transaction,
                 release_pending: false,
+                #[cfg(feature = "experimental-shell-capture")]
+                capture_evicted: true,
             },
         );
         self.status(
@@ -519,16 +511,21 @@ impl ContentResourceStore {
             .transfers
             .get_mut(&resource)
             .ok_or(ContentStoreError::Stale)?;
-        let TransferSource::Sealed { stopped } = &mut transfer.source else {
+        if !transfer.sealed {
             return Err(ContentStoreError::Malformed);
         };
-        Ok(stopped.get_or_insert((reason, transfer.transaction)).0)
+        Ok(transfer
+            .stopped
+            .get_or_insert((reason, transfer.transaction))
+            .0)
     }
 
     pub(super) fn isb_stop_reason(&self, resource: ContentResourceId) -> Option<ContentReason> {
-        match &self.transfers.get(&resource)?.source {
-            TransferSource::Sealed { stopped } => stopped.map(|(reason, _)| reason),
-            TransferSource::Bytes => None,
+        let transfer = self.transfers.get(&resource)?;
+        if transfer.sealed {
+            transfer.stopped.map(|(reason, _)| reason)
+        } else {
+            None
         }
     }
 
@@ -539,9 +536,11 @@ impl ContentResourceStore {
         request: Option<TransactionId>,
     ) {
         if let Some(transfer) = self.transfers.get_mut(&key)
-            && let TransferSource::Sealed { stopped } = &mut transfer.source
+            && transfer.sealed
         {
-            stopped.get_or_insert((reason, request.unwrap_or(transfer.transaction)));
+            transfer
+                .stopped
+                .get_or_insert((reason, request.unwrap_or(transfer.transaction)));
             return;
         }
         self.abort_finished(key, reason, request);
@@ -577,7 +576,7 @@ impl ContentResourceStore {
         let expired: Vec<_> = self
             .transfers
             .iter()
-            .filter(|(_, t)| now >= t.deadline || now >= t.idle_deadline)
+            .filter(|(_, t)| now >= t.deadline || (!t.sealed && now >= t.idle_deadline))
             .map(|(key, _)| *key)
             .collect();
         for key in expired {
@@ -606,7 +605,7 @@ impl ContentResourceStore {
         if value.retiring {
             return Err(ContentStoreError::Stale);
         }
-        Ok(ContentResourceLease(value.pixels.clone()))
+        Ok(value.pixels.clone())
     }
 
     pub fn retire(
@@ -622,7 +621,7 @@ impl ContentResourceStore {
         if value.retiring {
             return Err(ContentStoreError::Stale);
         }
-        let bytes = value.pixels.description.total_bytes;
+        let bytes = value.pixels.description().total_bytes;
         if self.usage.retiring + bytes > self.limits.max_retiring_bytes {
             return Err(ContentStoreError::Budget);
         }
@@ -638,17 +637,13 @@ impl ContentResourceStore {
         let ready: Vec<_> = self
             .accepted
             .iter()
-            .filter(|(_, v)| {
-                !v.release_pending
-                    && (v.retiring || self.revoked)
-                    && Arc::strong_count(&v.pixels) == 1
-            })
+            .filter(|(_, v)| !v.release_pending && (v.retiring || self.revoked) && v.releasable())
             .map(|(key, _)| *key)
             .collect();
         for resource in ready {
             let value = self.accepted.get_mut(&resource).expect("selected resource");
             let transaction = value.transaction;
-            let defer = !self.revoked && matches!(value.pixels.bytes, PixelBacking::Sealed(_));
+            let defer = !self.revoked && value.pixels.needs_release_publication();
             if defer {
                 // Keep the backing and its byte charge until ResourceReleased
                 // enters the journal, not merely the outbound FIFO.
@@ -674,7 +669,7 @@ impl ContentResourceStore {
             let pending: Vec<_> = self
                 .accepted
                 .iter()
-                .filter(|(_, v)| v.release_pending && Arc::strong_count(&v.pixels) == 1)
+                .filter(|(_, v)| v.release_pending && v.releasable())
                 .map(|(key, _)| *key)
                 .collect();
             for key in pending {
@@ -685,7 +680,7 @@ impl ContentResourceStore {
 
     fn remove_accepted(&mut self, resource: ContentResourceId) {
         let value = self.accepted.remove(&resource).expect("selected resource");
-        let bytes = value.pixels.description.total_bytes;
+        let bytes = value.pixels.description().total_bytes;
         if value.retiring {
             self.usage.retiring -= bytes;
         } else {
@@ -706,7 +701,7 @@ impl ContentResourceStore {
             .get(&resource)
             .ok_or(ContentStoreError::Stale)?;
         if !value.release_pending
-            || Arc::strong_count(&value.pixels) != 1
+            || !value.releasable()
             || self.events.iter().any(|event| {
                 matches!(&event.record,
                 ShellContentRecord::ResourceReleased(released) if released.resource == resource)

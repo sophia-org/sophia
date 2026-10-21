@@ -292,7 +292,8 @@ impl Fixture {
                             generation: 1
                         })
                         .unwrap()
-                        .bytes(),
+                        .cpu_bytes()
+                        .unwrap(),
                     // The bytes the oracle sealed and sent, not a seeded value.
                     &[0, 0, 255, 255, 0, 128, 0, 128]
                 );

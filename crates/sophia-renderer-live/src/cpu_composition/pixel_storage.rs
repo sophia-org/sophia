@@ -6,7 +6,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub enum LiveCpuPixelStorage {
     Shared(Arc<Vec<u8>>),
-    Content(sophia_runtime::ContentResourceLease),
+    Content(sophia_runtime::ContentCpuResourceLease),
     /// A lock provider's image, shared with Session's custody.
     Bytes(Arc<[u8]>),
     /// Immutable lock backing, including a retained validated sealed mapping.
@@ -25,18 +25,22 @@ impl From<Arc<Vec<u8>>> for LiveCpuPixelStorage {
     }
 }
 
-impl From<sophia_engine::CompositorImageSource> for LiveCpuPixelStorage {
-    fn from(source: sophia_engine::CompositorImageSource) -> Self {
+impl TryFrom<sophia_engine::CompositorImageSource> for LiveCpuPixelStorage {
+    type Error = sophia_engine::CompositorImageSource;
+    fn try_from(source: sophia_engine::CompositorImageSource) -> Result<Self, Self::Error> {
         match source {
-            sophia_engine::CompositorImageSource::Shell(lease) => Self::Content(lease),
-            sophia_engine::CompositorImageSource::Lock(image) => Self::Lock(image.pixels),
+            sophia_engine::CompositorImageSource::Shell(lease) => lease
+                .into_cpu()
+                .map(Self::Content)
+                .map_err(sophia_engine::CompositorImageSource::Shell),
+            sophia_engine::CompositorImageSource::Lock(image) => Ok(Self::Lock(image.pixels)),
         }
     }
 }
-
-impl From<sophia_runtime::ContentResourceLease> for LiveCpuPixelStorage {
-    fn from(lease: sophia_runtime::ContentResourceLease) -> Self {
-        Self::Content(lease)
+impl TryFrom<sophia_runtime::ContentResourceLease> for LiveCpuPixelStorage {
+    type Error = sophia_runtime::ContentResourceLease;
+    fn try_from(lease: sophia_runtime::ContentResourceLease) -> Result<Self, Self::Error> {
+        lease.into_cpu().map(Self::Content)
     }
 }
 

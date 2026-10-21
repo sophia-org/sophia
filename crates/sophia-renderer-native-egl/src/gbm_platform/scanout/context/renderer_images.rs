@@ -193,20 +193,20 @@ where
         {
             return Err(NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor);
         }
-        Ok(Some(NativeRendererImageSnapshot {
+        Ok(Some(NativeRendererImageSnapshot::uncharged(
             image_id,
-            width: image.buffer.width(),
-            height: image.buffer.height(),
-            format: image.buffer.format(),
-            modifier: image
-                .buffer
-                .modifier()
-                .unwrap_or(u64::from(gbm::Modifier::Invalid)),
-            plane_count: image.buffer.plane_count(),
-            planes,
-            charge: None,
-            epoch: None,
-        }))
+            NativeOwnedSnapshotData {
+                width: image.buffer.width(),
+                height: image.buffer.height(),
+                format: image.buffer.format(),
+                modifier: image
+                    .buffer
+                    .modifier()
+                    .unwrap_or(u64::from(gbm::Modifier::Invalid)),
+                plane_count: image.buffer.plane_count(),
+                planes,
+            },
+        )))
     }
     pub fn restore_promoted_renderer_image(
         &mut self,

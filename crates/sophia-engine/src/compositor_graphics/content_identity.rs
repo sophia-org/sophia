@@ -42,10 +42,10 @@ impl CompositorImageSource {
         }
     }
 
-    pub fn bytes(&self) -> &[u8] {
+    pub fn cpu_bytes(&self) -> Option<&[u8]> {
         match self {
-            Self::Shell(lease) => lease.bytes(),
-            Self::Lock(image) => &image.pixels,
+            Self::Shell(lease) => lease.cpu_bytes(),
+            Self::Lock(image) => Some(&image.pixels),
         }
     }
 
@@ -135,7 +135,12 @@ impl CompositorContentMetadata for CompositorContentImage {
             stride: self.stride,
             format: self.format,
             resource: self.resource.identity(),
-            source_bytes: self.resource.bytes().len(),
+            source_bytes: match &self.resource {
+                CompositorImageSource::Shell(lease) => {
+                    usize::try_from(lease.description().total_bytes).unwrap_or(usize::MAX)
+                }
+                CompositorImageSource::Lock(image) => image.pixels.len(),
+            },
         }
     }
 }

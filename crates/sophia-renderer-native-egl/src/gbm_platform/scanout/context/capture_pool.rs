@@ -9,6 +9,17 @@ enum NativeCaptureDrawFailure {
     DestinationMayHaveWork(NativeGbmScanoutBufferExportDetail),
 }
 
+fn draw_within_destination_bound<R>(
+    bytes: u64,
+    bound: u64,
+    draw: impl FnOnce() -> Result<R, NativeGbmScanoutBufferExportDetail>,
+) -> Result<R, NativeGbmScanoutBufferExportDetail> {
+    if bytes > bound {
+        return Err(NativeGbmScanoutBufferExportDetail::RendererImageStoreFull);
+    }
+    draw()
+}
+
 // Only submitted work needs an allocation owner beyond this attempt. A source
 // import refusal happens before the destination clear and must release its
 // unused storage, otherwise repeated successful transfers exhaust the pool.
@@ -113,6 +124,8 @@ struct NativePooledCapture {
     generation: std::rc::Rc<NativeSnapshotGeneration>,
     copy_completion: Option<khronos_egl::Sync>,
     copy_use: Option<NativeSnapshotUse>,
+    #[cfg(feature = "experimental-shell-capture")]
+    shell_copy_observation: shell_copy_completion::Observation,
 }
 
 impl NativePooledCapture {
@@ -344,6 +357,22 @@ impl NativeCaptureReuse {
         available_bytes: u64,
         allocation_limit: usize,
     ) -> Result<Option<NativePooledCapture>, NativeGbmScanoutBufferExportDetail> {
+        self.capture_bounded(
+            egl, display, gbm_device, frame, available_bytes, allocation_limit, u64::MAX,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn capture_bounded<T: AsFd>(
+        &mut self,
+        egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
+        display: khronos_egl::Display,
+        gbm_device: &gbm::Device<T>,
+        frame: NativeMultiPlaneDmaBufFrame<'_>,
+        available_bytes: u64,
+        allocation_limit: usize,
+        destination_bound: u64,
+    ) -> Result<Option<NativePooledCapture>, NativeGbmScanoutBufferExportDetail> {
         use NativeGbmScanoutBufferExportDetail as E;
         let _whole =
             NativeCaptureTimingSpan::start(&self.accounting, NativeCaptureTimingKind::Capture);
@@ -506,8 +535,10 @@ impl NativeCaptureReuse {
         };
         drop(setup);
         let _copy = NativeCaptureTimingSpan::start(&self.accounting, NativeCaptureTimingKind::Copy);
-        let result = allocation.draw(frame, source_allowance);
-        finish_native_capture_attempt(allocation, result, &mut self.uncertain)
+        draw_within_destination_bound(allocation.bytes, destination_bound, || {
+            let result = allocation.draw(frame, source_allowance);
+            finish_native_capture_attempt(allocation, result, &mut self.uncertain)
+        })
     }
 
     fn clear(&mut self) {

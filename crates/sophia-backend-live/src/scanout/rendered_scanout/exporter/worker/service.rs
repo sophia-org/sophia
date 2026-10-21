@@ -75,12 +75,34 @@ pub(super) fn run_worker<D>(
         context = None;
     }
     let mut outputs = BTreeMap::<LiveRendererWorkerOutputKey, WorkerOutputState>::new();
+    #[cfg(feature = "experimental-shell-capture")]
+    let Ok(mut captures) = super::shell_capture::Captures::new(&control) else {
+        return;
+    };
     let mut next_lease_id = 1_u64;
     let mut reported_transfers = 0_u64;
     let mut observation_order = 0_u64;
 
     while !control.is_shutdown() {
         outputs.retain(|_, state| !state.claim.is_detached());
+        #[cfg(feature = "experimental-shell-capture")]
+        let command = {
+            if let Err(error) = captures.service(&mut context) {
+                // Capture has closed and retained uncertain custody. Keep the
+                // existing renderer/context serving its other output work.
+                tracing::warn!(%error, "shell capture service closed");
+            }
+            match captures.next(&command_receiver) {
+                Ok(Some(command)) => command,
+                Ok(None) => continue,
+                Err(error) if error.kind() == io::ErrorKind::BrokenPipe => break,
+                Err(_) => {
+                    captures.close();
+                    continue;
+                }
+            }
+        };
+        #[cfg(not(feature = "experimental-shell-capture"))]
         let Ok(command) = command_receiver.recv() else {
             break;
         };
@@ -90,6 +112,23 @@ pub(super) fn run_worker<D>(
         outputs.retain(|_, state| !state.claim.is_detached());
         observation_order = observation_order.saturating_add(1);
         match command {
+            #[cfg(all(test, feature = "experimental-shell-capture"))]
+            WorkerCommand::FailCaptureService => captures.fail_next_service(),
+            #[cfg(feature = "experimental-shell-capture")]
+            WorkerCommand::EnableShellCapture {
+                epoch,
+                budget,
+                custody,
+                completion_sender,
+            } => {
+                let result = captures.install(context.is_some(), epoch, budget, custody);
+                let installed = result.is_ok();
+                if completion_sender.try_send(result).is_err() && installed {
+                    captures.close();
+                }
+            }
+            #[cfg(feature = "experimental-shell-capture")]
+            WorkerCommand::CloseShellCapture => captures.close(),
             WorkerCommand::Register {
                 output,
                 reply,
@@ -243,6 +282,8 @@ pub(super) fn run_worker<D>(
                 devices,
                 completion_sender,
             } => {
+                #[cfg(feature = "experimental-shell-capture")]
+                captures.close();
                 let result = context.as_mut().map_or(
                     Err(LiveRendererScanoutBufferExportDetail::BackendDeviceUnavailable),
                     |context| context.replace_image_import_devices(devices),

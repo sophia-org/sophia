@@ -30,6 +30,7 @@ x11rb = { version = "0.13.1", features = ["xtest"] }
 zbus = { version = "5.19", optional = true, default-features = false, features = ["async-io", "blocking-api"] }
 
 [dev-dependencies]
+sophia-renderer-image = { path = "../sophia-renderer-image" }
 sophia-linux-peer = { path = "../sophia-linux-peer" }
 stats_alloc = "=0.1.10"
 # Present in x11rb imports dri3 even for this core-pixmap test client.
@@ -46,6 +47,7 @@ sophia-shell-client = { workspace = true }
 sophia-renderer-native-egl = { path = "../sophia-renderer-native-egl", features = ["gbm-platform"] }
 
 [features]
+experimental-shell-capture = ["sophia-renderer-live/experimental-shell-capture", "sophia-runtime/experimental-shell-capture", "sophia-backend-live/experimental-shell-capture"]
 experimental-custody-dispatch = ["sophia-runtime/experimental-custody-dispatch"]
 default = []
 comparator-profiling = ["sophia-runtime/comparator-profiling"]

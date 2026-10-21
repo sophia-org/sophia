@@ -134,7 +134,15 @@ fn persistent_binding_and_real_pixels_survive_until_exact_consumer_drops() {
         .unwrap();
     assert_eq!(bundle.persistent_catalog.unwrap().catalog_generation, 8);
     assert!(bundle.native_launcher.is_none());
-    assert_eq!(bundle.resource(RESOURCE).unwrap().bytes().len(), 8);
+    assert_eq!(
+        bundle
+            .resource(RESOURCE)
+            .unwrap()
+            .cpu_bytes()
+            .unwrap()
+            .len(),
+        8
+    );
     candidates.prepared(OUTPUT, 1, 1, 1, 0).unwrap();
     candidates.presented(OUTPUT, 1, 9, 1, 1).unwrap();
     let outcomes: Vec<_> = std::iter::from_fn(|| candidates.take_event()).collect();
@@ -147,7 +155,15 @@ fn persistent_binding_and_real_pixels_survive_until_exact_consumer_drops() {
     registry.collect();
     assert_eq!(registry.accounting().retired_epochs, 1);
     assert_eq!(registry.accounting().memory.resident, 8);
-    assert_eq!(bundle.resource(RESOURCE).unwrap().bytes().len(), 8);
+    assert_eq!(
+        bundle
+            .resource(RESOURCE)
+            .unwrap()
+            .cpu_bytes()
+            .unwrap()
+            .len(),
+        8
+    );
     drop(bundle);
     registry.collect();
     assert_eq!(registry.accounting().retired_epochs, 0);

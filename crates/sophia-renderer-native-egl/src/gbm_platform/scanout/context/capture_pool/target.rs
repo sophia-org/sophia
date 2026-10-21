@@ -469,6 +469,8 @@ impl NativeCaptureAllocation {
                     generation,
                     copy_completion: Some(sync),
                     copy_use: Some(copy_use),
+                    #[cfg(feature = "experimental-shell-capture")]
+                    shell_copy_observation: shell_copy_completion::Observation::default(),
                 }))
             }
             Err(error) => {

@@ -54,6 +54,42 @@ impl LiveRendererSnapshotWeak {
 }
 
 impl LiveRetainedRendererImageSnapshot {
+    /// Storage carried by the opaque completion, not a completion proof itself.
+    #[cfg(feature = "experimental-shell-capture")]
+    pub fn storage(&self) -> &std::sync::Arc<sophia_runtime::ContentCapturedImage> {
+        &self.inner
+    }
+
+    /// Lower an already accepted lease without another registry, copy or charge.
+    #[cfg(feature = "experimental-shell-capture")]
+    pub(crate) fn from_content_lease(lease: &sophia_runtime::ContentResourceLease) -> Option<Self> {
+        let inner = lease.captured_image()?;
+        let frame = inner.as_frame();
+        if !inner.is_retained() || !inner.is_current() || !frame.is_valid() {
+            return None;
+        }
+        let size = sophia_protocol::Size {
+            width: i32::try_from(frame.width).ok()?,
+            height: i32::try_from(frame.height).ok()?,
+        };
+        Some(Self {
+            size,
+            inner: inner.clone(),
+        })
+    }
+
+    /// The native adapter has already retained and charged this exact copy.
+    #[cfg(feature = "experimental-shell-capture")]
+    pub(crate) fn from_shell_capture(
+        inner: std::sync::Arc<sophia_renderer_native_egl::NativeRendererImageSnapshot>,
+    ) -> Self {
+        let frame = inner.as_frame();
+        let size = sophia_protocol::Size {
+            width: i32::try_from(frame.width).expect("capture preflight bounded width"),
+            height: i32::try_from(frame.height).expect("capture preflight bounded height"),
+        };
+        Self { size, inner }
+    }
     pub fn downgrade(&self) -> LiveRendererSnapshotWeak {
         LiveRendererSnapshotWeak(std::sync::Arc::downgrade(&self.inner))
     }
@@ -91,7 +127,55 @@ impl LiveRendererImageSnapshot {
         budget
             .retain(self.inner, epoch)
             .map(|inner| LiveRetainedRendererImageSnapshot { inner, size })
-            .map_err(super::reduced_native_owned_scanout_buffer_export_detail)
+            .map_err(|error| super::reduced_native_owned_scanout_buffer_export_detail(error.into()))
+    }
+}
+
+#[cfg(feature = "experimental-shell-capture")]
+#[derive(Debug)]
+#[must_use]
+pub struct LiveRendererSnapshotRetentionFailure {
+    pub detail: crate::LiveRendererScanoutBufferExportDetail,
+    pub snapshot: LiveRendererImageSnapshot,
+    pub reservation: super::LiveRendererSnapshotReservation,
+}
+
+#[cfg(feature = "experimental-shell-capture")]
+impl LiveRendererImageSnapshot {
+    /// Transfers reserved capacity, not proof of source-read completion.
+    pub fn retain_reserved(
+        self,
+        budget: &std::sync::Arc<super::LiveRendererSnapshotBudget>,
+        epoch: std::sync::Arc<super::LiveRendererSnapshotEpoch>,
+        reservation: super::LiveRendererSnapshotReservation,
+    ) -> Result<LiveRetainedRendererImageSnapshot, LiveRendererSnapshotRetentionFailure> {
+        let frame = self.inner.as_frame();
+        let size = i32::try_from(frame.width)
+            .ok()
+            .zip(i32::try_from(frame.height).ok())
+            .filter(|(width, height)| *width > 0 && *height > 0)
+            .map(|(width, height)| sophia_protocol::Size { width, height });
+        let Some(size) = size else {
+            return Err(LiveRendererSnapshotRetentionFailure {
+                detail: crate::LiveRendererScanoutBufferExportDetail::InvalidBufferDescriptor,
+                snapshot: self,
+                reservation,
+            });
+        };
+        let image_id = self.image_id;
+        budget
+            .retain_reserved(self.inner, epoch, reservation)
+            .map(|inner| LiveRetainedRendererImageSnapshot { size, inner })
+            .map_err(|failure| LiveRendererSnapshotRetentionFailure {
+                detail: super::reduced_native_owned_scanout_buffer_export_detail(
+                    failure.detail.into(),
+                ),
+                snapshot: Self {
+                    image_id,
+                    inner: failure.snapshot,
+                },
+                reservation: failure.reservation,
+            })
     }
 }
 

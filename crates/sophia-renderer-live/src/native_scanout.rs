@@ -19,11 +19,17 @@ mod image_reads;
 pub use image_reads::{LiveRendererImageRead, LiveRendererImageReads};
 
 mod renderer_images;
+#[cfg(feature = "experimental-shell-capture")]
+mod shell_capture;
+#[cfg(feature = "experimental-shell-capture")]
+pub use renderer_images::LiveRendererSnapshotRetentionFailure;
 pub use renderer_images::{
     LIVE_RENDERER_IMAGE_STORE_BYTE_BUDGET, LIVE_RENDERER_IMAGE_STORE_CAPACITY,
     LiveRendererImagePromotion, LiveRendererImageSnapshot, LiveRendererSnapshotWeak,
     LiveRetainedRendererImageSnapshot,
 };
+#[cfg(feature = "experimental-shell-capture")]
+pub use sophia_renderer_native_egl::NativeRendererSnapshotReservation as LiveRendererSnapshotReservation;
 pub use sophia_renderer_native_egl::{
     NativeRendererSnapshotBudget as LiveRendererSnapshotBudget,
     NativeRendererSnapshotEpoch as LiveRendererSnapshotEpoch,

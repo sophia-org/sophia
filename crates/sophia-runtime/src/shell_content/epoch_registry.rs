@@ -6,7 +6,11 @@ use super::{
     ContentStoreError, ContentStoreProfile,
 };
 use sophia_protocol::{ContentGrant, ContentLimits};
+#[cfg(feature = "experimental-shell-capture")]
+mod capture;
 mod image;
+#[cfg(feature = "experimental-shell-capture")]
+pub use capture::ContentCaptureAdmissionError;
 pub use image::{IsbImageAdmission, IsbImageAdmissionError};
 
 pub struct ContentEpochRegistry {

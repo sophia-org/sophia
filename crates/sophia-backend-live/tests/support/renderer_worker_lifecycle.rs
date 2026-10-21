@@ -122,10 +122,12 @@ fn dropping_a_full_queue_facade_and_core_does_not_wait_for_a_stalled_worker() {
         .unwrap();
     let core = std::sync::Arc::new(super::NativeGbmRendererWorkerCore {
         image_store: super::NEXT_IMAGE_STORE.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-        command_sender: commands,
+        command_sender: super::wrap_commands(commands, &control),
         _thread: std::sync::Mutex::new(thread),
         control,
         inventory_replacement: std::sync::Mutex::new(None),
+        #[cfg(feature = "experimental-shell-capture")]
+        capture_install: std::sync::Mutex::new(None),
         release_enqueue_failures: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     });
     let output = LiveRendererWorkerOutputKey::from_raw(405);
@@ -159,6 +161,7 @@ fn inventory_test_core(
     Receiver<WorkerCommand>,
     SyncSender<()>,
 ) {
+    let control = std::sync::Arc::new(super::WorkerControl::default());
     let registry = std::sync::Arc::new(super::WorkerRegistry::default());
     let identity = super::DeviceIdentity {
         device: 1,
@@ -178,10 +181,12 @@ fn inventory_test_core(
         .unwrap();
     let core = std::sync::Arc::new(super::NativeGbmRendererWorkerCore {
         image_store: super::NEXT_IMAGE_STORE.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-        command_sender: commands,
+        command_sender: super::wrap_commands(commands, &control),
         _thread: std::sync::Mutex::new(thread),
-        control: std::sync::Arc::new(super::WorkerControl::default()),
+        control,
         inventory_replacement: std::sync::Mutex::new(None),
+        #[cfg(feature = "experimental-shell-capture")]
+        capture_install: std::sync::Mutex::new(None),
         release_enqueue_failures: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     });
     (core, receive, resume)
@@ -380,10 +385,12 @@ fn missing_device_exporter()
         .unwrap();
     let core = std::sync::Arc::new(super::NativeGbmRendererWorkerCore {
         image_store: super::NEXT_IMAGE_STORE.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-        command_sender: commands,
+        command_sender: super::wrap_commands(commands, &control),
         _thread: std::sync::Mutex::new(thread),
         control,
         inventory_replacement: std::sync::Mutex::new(None),
+        #[cfg(feature = "experimental-shell-capture")]
+        capture_install: std::sync::Mutex::new(None),
         release_enqueue_failures: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     });
     let mut exporter =

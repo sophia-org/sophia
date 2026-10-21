@@ -17,6 +17,32 @@ engine optimization programme. Requested by niltempus on October 15.
 
 ## Task details
 
+### Approved owner-service optimization — October 18
+
+After reviewing native syscall evidence, niltempus explicitly approved service
+scheduling changes and directed implementation. This extends the earlier
+investigation-only scope to bounded publication batching inside the existing
+component-service callback. Preserve input/role order, force progress at journal
+capacity, flush before callback return, retain every operation/delivery check
+and every actual wire service's authentication polls, and preserve callback
+failure classification. Do not cache custody, suppress waiting-read retries,
+change authentication cadence, or change ACK/deadline policy.
+
+Add comparator-only service/retry counters, implement and validate batching,
+then replace temporary output-observation vectors with the existing bounded
+16-output capacity in a separate change. Carry shared changes onto both
+comparator paths without restoring IPC in production. Use separate unprofiled
+CPU and allocation pilots for each signed slice before the unchanged full
+qualification matrix. This approval does not alter any t331 exit threshold.
+
+The controlled native service-ledger pair subsequently showed approximately
+seven flushes per frame with batching both enabled and disabled, with unchanged
+read/write request counts. The cost pilot showed no CPU benefit. Publication
+batching is therefore retired under the rule to remove unproven changes;
+inline output observations and the comparator-only diagnostic ledger remain.
+See the owning investigation's October 18 service-ledger results. The four
+cost gates and latency qualification remain open.
+
 ### t331 — Reduce shell allocation overhead
 
 On October 17 niltempus accepted leaving the panel allocation result red while
@@ -76,8 +102,12 @@ supported. The [accepted amendment](../decisions/qujwzrdz-admit-shell-content-th
 selects Immutable Shared Buffers (ISB), backed by sealed memfds, for every
 production shell and lock CPU image upload.
 Remove byte fallback and byte-only compatibility rather than maintain a size
-threshold or adaptive transport choice. This migration is pending; recording
-the decision does not complete runtime or SDK removal and does not reopen t338.
+threshold or adaptive transport choice. The migration is published in Sophia
+`5632d5423c9344c709810e00697a3d464cad5600`; the subsequent mapped-builder import
+is `810223d79d9d34f86c06c2509bfdd3c8ac1e19ae`. SDK, client and export evidence is
+in the [current investigation](../investigations/2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#current-resumption).
+This completes neither t331's native cost gates nor its latency qualification,
+and does not reopen t338.
 
 1. Inventory production shell and lock byte-upload entry points, SDK APIs and
    actual client call sites. Require sealed capability and ChannelReady at

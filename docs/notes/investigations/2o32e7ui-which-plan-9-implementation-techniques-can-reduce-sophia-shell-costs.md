@@ -15,6 +15,916 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+On 2026-10-19, niltempus requested an architectural examination of work
+scheduling rather than another sequence of isolated syscall optimizations.
+Keep measured improvements, including candidate 27, but make the complete
+presentation's execution path the unit of analysis. The resulting
+[cross-owner execution-model investigation](tt0k1yqv-how-should-one-isb-presentation-drive-bounded-work-across-owners.md)
+maps scheduling, readiness, fresh authority, state lifetimes, credit progress
+and retirement together. It owns the new analysis and upstream synthesis;
+this note retains the candidate history and the original research brief below.
+The retained C27 interior wait windows show about 14.4 files owner passes per
+completion versus 8.7 for IPC, with no authentication-cap expirations in either
+window set. The next missing evidence is the work caused by those fd-ready
+visits, not proof of a timer-driven polling problem. No production scheduling
+change or acceptance-threshold change is implied.
+
+### Candidate 27 CPU screen
+
+Candidate 27 has a positive CPU screen on both transports. Production
+`7fca9e0e2` and comparator `16faa7a91` retain successful primary-plane property
+IDs per head, keyed by opened-card identity, target generation and KMS object
+IDs. Topology preparation and delegated I/O errors invalidate entries; live
+values, resource operations, commits, authority and ISB custody stay fresh.
+Warm frames omit metadata reads, so a disappearing target may first fail in
+resource or commit I/O rather than discovery.
+
+The eight-run screen completed with clean PAM/tty receipts and 1000 joined
+presentations per run. Files Session CPU fell 7.57% (91.98 us/frame), with
+combined CPU down 6.90%; IPC Session fell 8.01% (78.61 us/frame), with combined
+CPU down 6.09%. Candidate Session and combined ranges are below their controls
+in both balanced blocks. Observed within-arm Session spreads are smaller than
+the differences, but there are only two runs per arm. The unchanged peer also
+moved (-18.70 us files, +4.58 us IPC), so the entire combined saving cannot be
+assigned directly to metadata work. Median and p95 latency show no material
+shift; allocations and native ioctl reductions were not measured.
+
+Retain the candidate for qualification. This is shared-renderer work, not a
+solution to the files control-cost gap. Descriptive combined files/IPC excess
+is 31.97% old and 30.83% new; the two wires ran in separate blocks, so that is
+not a fresh paired gate. The +10% t331 target and dedicated latency/full
+acceptance remain open. Any qualification must carry the same candidate on
+both sides. The next analysis is the linked execution-model review; no further
+native capture was requested as part of that review.
+
+Evidence: `candidate-27-property-cache-screen/RESULTS.txt`, `results.json`,
+`analyze.py`, capture and result checksum manifests, and launcher receipts under
+the evidence root below. Binary provenance remains in `matched-builds.json`:
+old Session `d7eae929f`, new `16faa7a91`, common peer `b3f13dad6`.
+The preparation manifest is preserved. No rerun or further source change was
+needed to analyze the eight captures.
+
+Implementation evidence is in `candidate-27-property-cache/`: eight focused
+controls, a no-reuse mutation failing with 3000 discoveries versus 3, 975
+backend tests passed with 9 ignored, strict clippy, formatting and native CLI
+check. Minimal libdrm-events checking remains blocked by an unchanged renderer
+import, reproduced independently. The earlier read-only audit is retained in
+`candidate-27-property-discovery/`. Its historical ioctl counts and sampled
+attribution motivate the candidate but are not durations or savings bounds.
+
+### Work scheduling within the existing ISB architecture
+
+This section retains the October 19 research brief. The
+[execution-model investigation](tt0k1yqv-how-should-one-isb-presentation-drive-bounded-work-across-owners.md)
+owns the resulting source findings, causal map, invariant review and candidate
+decision, rather than maintaining a second evolving analysis here.
+
+The question is why one presentation revisits so much work, and which visits
+represent a new obligation. Repeated visits or checks show cost, not that the
+work is unnecessary. Some cost may buy guarantees absent from the IPC control.
+Historical recordings suggested roughly twenty wire services per frame; that
+count has not been established for candidate 27. Do not convert sampled
+attribution or syscall counts into removable CPU time.
+
+The published architecture stays intact: authenticated 9P control and lifecycle
+events; a SEQPACKET side channel transferring sealed descriptors; fresh immutable
+backing; and Session-owned admission, validation, resources and presentation.
+This investigation concerns the execution model underneath those boundaries.
+It does not propose replacing 9P, a mutable buffer pool, weaker seals or caching
+authority once per turn. Owner allocation alone cannot revoke a peer's retained
+writable mapping, and page-flip completion need not end every resource consumer.
+
+Candidate 27 is an example of correcting a lifetime mismatch: stable property
+IDs now belong to an opened device and target, rather than being rediscovered
+for every frame. It improves shared renderer work. Its new-arm means are about
+1123/902 us per frame for files/IPC Session and 370/240 us for the peer, leaving
+about 352 us combined difference. At that descriptive IPC baseline, the +10%
+target would require about 238 us less files CPU. These separate-block means
+are a sizing aid, not a qualification result or a promise that the difference
+is removable. Small independent syscall substitutions are not a credible plan
+for closing it without showing how they compose.
+
+The architectural analysis should follow one steady-state presentation from
+peer preparation through admission, descriptor transfer, validation, submission,
+presentation and acknowledgments. For each owner visit, wakeup and I/O exchange,
+identify its trigger, dependency, available information, required fresh checks,
+bounded work, and condition for sleeping or becoming runnable again. Distinguish
+more visits from more work per visit. Keep actual observations separate from
+the inferred causal path and include cancellation, backpressure and failure
+paths rather than treating the steady-state trace as a complete contract.
+
+Five questions organize that analysis:
+
+| Concern | Question |
+| --- | --- |
+| Work scheduling | Which input, completion, queued operation or deadline makes an owner runnable, and what ends that obligation? |
+| Readiness ownership | Which layer already knows readiness, and why is another layer probing again? How is stale identity rejected? |
+| Authority | Which guarantee requires each fresh check at its current boundary? Which cost is intentional? |
+| State lifetime | Which derived facts belong to a device, connection, resource or frame, and which change invalidates them? |
+| Progress dependencies | Which exchanges require a reply, which are already pipelined, and where does scheduling add another boundary? |
+
+Claude's requested prior-art scope is work scheduling, not another transport
+survey. Screen readiness-driven reactors, cooperative budgeted runtimes,
+ready queues and 9P servers, then examine the best-fitting mechanisms in depth.
+Useful leads include libuv/libevent/sd-event, Tokio/Mio and Seastar; naming a
+project is not an endorsement or evidence of speed. Require pinned source
+links, function-level invariants and an exact Sophia transfer point. Investigate
+enqueue-once runnable work, requeue after budget exhaustion, readiness handoff,
+draining to quiescence, fairness, backpressure and wake-before-sleep races.
+Describe descriptor reuse, partial I/O, EOF, cancellation, deadlines and any
+added observation or queueing delay. Upstream authority assumptions must be
+explicit; readiness never grants authority.
+
+For each promising mechanism, report whether Sophia already implements it,
+its strongest counterexample, the needed regression controls and the smallest
+measurement that would distinguish it from today's behavior. Existing batched
+Pipeline output, a max-size parked Tread and cumulative ACKs are not new
+opportunities. Publication batching and experimental read scheduling showed no
+measured benefit; do not revive either from counts alone. Preserve current
+checks, ACK/custody boundaries and deadlines in the initial implementation
+scope. Any required change in those contracts, including which call observes
+disconnect, must be presented separately for a decision.
+
+The intended result is one coherent execution-model candidate with a meaningful
+measured cost budget and explicit invariants. It may instead establish that
+some residual cost is inherent to the stronger contract. Either result is more
+useful than weakening guarantees to meet a percentage. New native profiling
+or implementation is not part of Claude's read-only research assignment.
+
+### Candidate 26 local MAP_POPULATE screen
+
+Candidate 26 stopped at local screening: `MAP_POPULATE` showed no total
+buffer-lifecycle benefit. Three optimized standalone Rust comparisons used
+64 warmups and 512 alternating-order pairs at each size, preserving fresh
+memfds, fallocate, size seals, DONTFORK, whole-pixel fill, unmap and final
+seals. Panel lifecycle medians rose 4.95–6.01%; 4 MiB medians rose
+6.37–6.60%. These are local wall times, not native CPU or a native regression
+claim. No SDK, comparator or production implementation changed, and no
+native screen is warranted by this result.
+
+The fault controls correct an important prediction: ordinary mappings
+recorded 45 panel or 1024 bulk minor faults during fill; POPULATE recorded
+the same counts during creation and zero during fill. It moved the recorded
+faults rather than eliminating them. Full content readback and refusal of
+writes after sealing passed in both arms. Linux documents population as
+best effort, not a guarantee that mmap fails when population fails or that
+later faults cannot occur. Historical sampled attribution is not a savings
+ceiling.
+
+Evidence: `candidate-26-map-populate/` under
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/` contains
+the standalone source, constant checks, successful `local-02..04.log`,
+`results.json`, `analyze.py`, `FINDINGS.txt`, build commands and checksums.
+The diagnostic uses libc calls with the SDK's syscall order; it is not the
+SDK implementation. Failed toolchain and readback-control attempts remain
+recorded separately and are excluded from results. No memory-pressure or
+fork test was performed. Mutable buffer reuse and per-turn liveness caching
+remain outside this slice. Keep t331 open, t340 deferred and experimental
+SDK read scheduling disabled; the candidate-23 panel gate remains red.
+
+### Candidate 25 withdrawal
+
+Candidate 25's native screen completed, but the fresh Ready-listener poll
+fallback showed no CPU benefit. Combined new-minus-old CPU was +3.42–3.68% in
+old/new/new/old and +1.23–1.45% in new/old/old/new. Session alone rose about
+50–54 microseconds/frame in the first block and 6–9 in the second. The second
+block's variation exceeds its mean shift; do not claim a causal regression or
+pool the blocks to conceal drift. Neither block demonstrates a saving.
+
+Withdraw the candidate fallback and its added idle-visit fixture block from
+both active source trees. Preserve the older borrowed-readiness optimization,
+all authority checks, and the shared whole-pixel fill. The local syscall test
+still proves that the candidate replaced empty accepts with polls, but its
+per-call savings did not establish native benefit. The frozen candidate
+`4f2a86722`, its production source `b00aa2300`, binaries and all evidence remain
+retained; the failed screen is not erased or reinterpreted.
+
+All eight runs joined 1000 unique presentations and accepted uploads each,
+with 184,320,000 logical bytes per run, no bulk probe, all outcomes presented,
+and zero major faults. The 520-second launch and PAM/tty4 cleanup succeeded.
+Only Session differed; the whole-pixel peer was identical across runs. Median
+presentation spacing stayed 16.683–16.684 ms. This is CPU screening, not an
+allocation measurement, dedicated latency gate or B9 acceptance.
+
+Evidence is in `candidate-25-listener-probe-screen/` under
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/`, especially
+`FINDINGS.txt`, `results.json`, `analyze.py` and `POSTRUN-SHA256SUMS`. Preserve the
+original receipts and completed `lp25-1..8` stages. The candidate23 panel gate
+below remains red. Keep t340 deferred and SDK read scheduling disabled. Next
+work needs a larger source-grounded candidate; do not repeat this screen or
+weaken checks, ACKs or custody to manufacture a passing result.
+
+### Current panel gate remains red
+
+Candidate 23 completed all six retry captures and cleanup on October 19. Every
+idle-60-Hz panel CPU pair fails the IPC +10% threshold. Files/ISB excess is
+27.30–27.67%, 30.44–30.78%, and 28.83–29.11% in pairs 1–3. These are conservative
+counter-attribution bounds, not statistical confidence intervals. Equal uploaded
+bytes make CPU/MiB and CPU/frame ratios identical. Do not pool away any failure.
+
+The sequence was files/IPC, IPC/files, files/IPC, using identical whole-pixel
+peer and Session executables. Each run joins 1000 unique presentations and
+accepted uploads, exactly 184,320,000 logical bytes, with all outcomes presented
+and zero major faults. Files combined CPU is 1.567–1.619 ms/frame versus IPC
+1.228–1.240 ms/frame. Session contributes about 210–230 microseconds/frame of
+the excess and the peer about 129–151. Median presentation spacing is unchanged;
+this CPU screen supplies neither allocation results nor latency acceptance.
+
+Keep the shared fill, leave experimental SDK read scheduling disabled, and
+keep t331 open. Defer the full qualification matrix while this condition is
+red. Next optimization work should use the retained candidate-19 profiles and
+candidate-16/17 syscall correlations to select a bounded change in Session
+service work or client pipeline work. Those are historical attribution leads,
+not proof of the cause of every microsecond in this screen. Preserve all fresh
+authority checks, custody, ACKs and deadlines; no transport redesign is implied.
+A candidate needs deterministic proof and a measured screen before promotion.
+
+Candidate 24 tested one concrete peer lead locally: replace std socket wrappers
+with the existing rustix dependency, without changing syscall cadence. Four
+alternating release repeats show only 43–64 ns less per empty receive and
+37–43 ns less per send-plus-peer-read cycle. Historical call counts suggest
+only a few microseconds/frame, not a native saving or an explanation for the
+remaining peer gap. Do not promote a wrapper-only change or launch another
+native campaign for it now. The SDK diagnostic is signed `0c5c6c8`; empty-read,
+data, half-close and failed-write controls pass, as do strict Clippy and format
+checks. Library behavior, C contracts and all production pins are unchanged.
+Logs and limits are in sibling `candidate-24-socket-wrappers/`. This narrows
+the search toward repeated service work and kernel costs; a sampled wrapper
+frame alone does not establish removable overhead.
+
+Evidence is in `candidate-23-panel-cpu-pairs-retry/` under
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/`, especially
+`FINDINGS.txt`, `results.json`, `analyze.py` and `POSTRUN-SHA256SUMS`. The launch
+finished in 389 seconds, PAM cleanup succeeded, no residual processes/sessions
+remained, and tty4's login prompt was restored. Do not rerun these stages.
+
+The original attempt remains a preparation failure, not a performance result:
+its 0664 desktop profile was refused with `Io(UnsafeMode)` before Session
+startup. The retry uses private permissions and passed both profile-only and
+Session-argument validation as uid 1000, including a refusal control against
+the original file. Preserve that package and failed `panel23-1` stage too.
+
+### t340 — Direct rustix socket wrappers
+
+Deferred at niltempus's request while higher-impact t331 work proceeds. The
+candidate replaces only the Rust pipeline's std socket wrappers with rustix
+recv/send, preserving every I/O attempt, byte/call budget, error class, partial
+I/O result, EOF observation and secret-buffer handling. Send must retain
+SIGPIPE suppression. Review supported-platform behavior and C parity before
+any implementation; an internal Rust-only wrapper cost does not require a
+literal C port.
+
+Candidate-24's local diagnostic (`0c5c6c8`) found 43–64 ns per empty receive and
+37–43 ns per send-plus-peer-read cycle. That suggests only a few microseconds
+per frame at historical call counts, not native savings. Revisit only after
+larger costs or stronger evidence justify it. Exit requires deterministic
+pipeline/role regression coverage, documented parity, and a matched native
+CPU comparison showing benefit without custody or latency regression before
+default adoption. No production library change or pin is currently authorized
+by this deferred row alone.
+
+### Whole-pixel native bulk result
+
+Candidate 22 completed all eight bulk CPU captures on October 19. Whole-pixel
+fill reduced mean peer CPU by 19.1% on files/ISB and 19.9% on IPC: about
+0.66 ms/frame on each wire. Combined CPU fell from 6.379 to 5.712 ms/frame on
+files (10.44–10.48%) and from 6.548 to 6.043 ms/frame on IPC (7.70–7.74%).
+The percentage ranges reflect counter attribution, not statistical confidence.
+Peer old/new ranges are disjoint and the changes exceed within-arm spreads.
+Files Session CPU overlaps; IPC Session CPU rose about 150 microseconds/frame,
+close to its 141-microsecond new/new spread, so its cause remains unresolved.
+
+Each run joins 1000 unique presentations and 2000 accepted uploads, exactly
+4,378,624,000 logical bytes. All outcomes are presented, major faults are zero,
+and peer minor faults are unchanged. The 520-second launch finished within its
+600-second bound; PAM cleanup and tty4 restoration passed. Original receipts
+and the harmless openvt deallocation warning are retained.
+
+Submit-to-present median latency increased about 0.5–0.7 ms. The interval from
+the previous completion to submission shortened by approximately the same amount;
+median presentation spacing stayed 16.683 ms in every run. Source inspection
+confirms that fill and timestamp placement did not move. Faster preparation
+followed by a longer wait for the refresh is consistent with these observations,
+but latency acceptance remains open. Do not erase the increased residence metric
+or declare a net qualification win from this CPU screen.
+
+Retain the shared fill in subsequent matched comparator work. It benefits both
+wires and is not a transport-specific improvement. Next are matched panel and
+bulk qualification, separate allocation and latency evidence, and repeatability
+controls. The experimental SDK scheduling feature stays disabled; production
+SDK pins and the published ISB architecture are unchanged. t331 remains open.
+
+Evidence, analysis and hashes are in `candidate-22-whole-pixel-native/` under
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/`, particularly
+`FINDINGS.txt`, `results.json`, `analyze.py` and `POSTRUN-SHA256SUMS`. The sequence
+was old/new/new/old within files, then within IPC, with one Session executable.
+All 75 peer compiler units match in features and profiles. The plan checkout is
+`b3f13dad6`; old Session/peer source is `d7eae929f`, new peer source `b3f13dad6`.
+Exact artifact identities are in `matched-builds.json`. Initial unused panel
+preparations remain superseded. Do not rerun or overwrite completed stages.
+
+### Whole-pixel local result
+
+Candidate 21 implements safe whole-pixel filling in the comparator's shared
+canvas routine, signed as `b3f13dad6`. Both IPC and mapped ISB use it. Fixed-size
+four-byte chunks let the compiler broadcast one packed BGRA pixel instead of
+repeatedly calculating byte positions; partial prefixes preserve the previous
+behavior. No unsafe code, intrinsics or SDK library changes are involved.
+The paired SDK diagnostic is signed as `220e2fd`.
+
+Three alternating local runs show full fresh-buffer preparation medians about
+19% lower for panel images and 20% lower for 4 MiB. These are local wall times,
+not native CPU savings or an ISB-versus-IPC win. Both versions already vectorize;
+the generated whole-pixel loop is simpler (169 versus 746 bytes on this build).
+Two SDK differential controls, five actual canvas tests and six rebuilt peer
+controls pass, with scoped Clippy and formatting clean. Final evidence is in
+`candidate-21-whole-pixel-fill/` beside the earlier directories below. No native
+capture has run for this change. Future comparisons must rebuild both arms
+with the shared fill; the production Sophia SDK pin is unchanged.
+
+### Current-baseline attribution and first-touch controls
+
+Candidate 19 completed its current-baseline kernel/syscall profile on
+2026-10-19. Files/ISB and comparison IPC use the same symbolized comparator
+`d7eae929f` binaries with experimental SDK scheduling disabled. Both captures
+pass the pinned report checks, including event attributes, interval/TGID
+binding and loss checks, and each joins 1000 unique presentations. The fixed
+launcher completed PAM cleanup, reported no residual processes and restored
+getty. It correctly classified the remaining openvt deallocation message as
+a warning. The new launcher also passed 18 offline checks and a PTY control
+that fails with the original self-counting query.
+
+The fresh profile identifies peer image preparation as a useful next target:
+210 of 591 peer CPU samples include `sealed::prepare`, with 77 passing through
+`fallocate`. The pipeline has 191 inclusive samples and image ticks 92.
+Session has 1581 samples, including 151 in custody liveness checks, 127 in
+`service_native`, 82 in image service and 38 in pixel validation. These counts
+overlap and must not be added. Authority checks remain intact.
+
+Tracing is material: 341 Session and 136 peer samples contain selected perf
+tracing frames (IPC: 189 and 29). Do not subtract those to invent uninstrumented
+durations or savings ceilings. This diagnostic pair is not an acceptance run.
+Raw reports, reconciled stack counts, capture hashes and four flamegraphs are
+under `candidate-19-current-hotspots/` in
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/`.
+The first stack parser failed before producing attribution; its corrected
+version reconciles all four totals with the independent profile reports.
+
+Candidate 20 now measures that local decomposition through unchanged SDK
+APIs. The ignored diagnostic is signed as `92948e1` in the Rust SDK; no library
+code, C contract or production pin changes. Three release repeats show panel
+create/fill/finish/close totals of 130–155 microseconds (median per repeat).
+Fresh fill alone is 62–75 microseconds versus 26–34 for the same compiled fill
+on an already populated ordinary canvas. A separate untimed per-thread fault
+control reports exactly 45 minor faults in panel fill and 1024 for 4 MiB,
+with zero in the other stages and reused-fill control. Full 4 MiB totals are
+2.663–2.728 ms. These are local wall times, not native CPU savings.
+
+Evidence is in sibling `candidate-20-mapped-stage-cost/`, with final data in
+`fault-fill-{1,2,3}.log` and `results.json`. Existing ISB controls, strict Clippy
+and formatting pass. The reused canvas is a diagnostic control, never an ISB
+replacement. First-touch handling is now a measured target, but a candidate
+must reduce total cost rather than merely move faults into creation. Preserve
+fresh backing, preallocation, size seals, DONTFORK and verified final seals.
+Any native performance claim still needs repeated uninstrumented comparisons.
+
+### Candidate 18 screening result
+
+Candidate 18 completed its four-run CPU screen on 2026-10-19 (`sc18-1`
+through `sc18-4`, control/candidate/candidate/control). Each run joined 1000
+unique presentations. Combined CPU averaged 1.599–1.601 ms/frame for control
+and 1.645–1.647 ms/frame for the candidate: nominally 2.73–2.96% higher.
+The controls drifted by about 3.8%, so these two runs per arm establish neither
+a saving nor a causal regression. There is no demonstrated benefit to promote;
+the feature stays disabled and the production SDK pin stays unchanged. This is
+screening evidence, not a B9 verdict or a statistical bound on effect size.
+
+All captures and PAM cleanup completed, and outer cleanup proved tty4 and its
+sessions empty before restoring getty. The launcher nevertheless refused the
+inner residual-PID receipt. A disposable-PTY reproduction confirms that the
+inner `ps -t tty4` query counts its own subprocess. A separately retained fix
+filters the exact query PID and passes both idle and live-child controls.
+The historical PID's command was not recorded; the original failed receipt
+has not been rewritten. No rerun is needed solely for this cleanup-check bug.
+Evidence, raw capture hashes, CPU bounds, corrected helper and PTY controls:
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/candidate-18-sdk-read-scheduling/post-run-review/`.
+The corrected helper has not been exercised as a root native launcher.
+
+### Candidate 18 preparation and qualification limits
+
+Candidate 18 is a disabled-by-default Rust SDK experiment at `2574d72` on
+`performance/t331-reply-storage`. The feature
+`experimental-write-read-scheduling` lets a shell drive defer a socket read
+only after the preceding round reached WouldBlock without receiving bytes
+and the current round successfully wrote bytes. Every drive starts with a
+normal read; deferred rounds clear the history, so deferral cannot chain.
+Generic pipeline polling and other role clients retain their default behavior.
+Sophia's imported SDK pin is unchanged.
+
+Device-hidden checks pass: 268 feature-enabled pipeline and shell tests,
+84 default FileWire tests, the earlier 909 default workspace tests,
+strict Clippy in both modes, and formatting. Eight deterministic pipeline
+controls cover deferral, productive and partial reads, final replies before EOF,
+failed writes and shared budgets. Disabling deferral makes its distinguishing
+control fail. Logs remain in `candidate-18-sdk-read-scheduling/`.
+
+Three new FileWire controls pass in both modes. Zero I/O credit deliberately
+leaves queued input unread, then a later dispatch verifies Submitted custody,
+ACK confirmation and EAGAIN backoff calculated from observation time. A corrected
+closure expectation matters: the EOF intake drive can return `Ok` while settling
+the final Submitted event; receive and readiness queries then report PeerClosed.
+
+This is not qualified for default enablement. Pipeline tests establish the
+mechanism and public FileWire tests establish the delayed-input contract. The
+dispatch control establishes bounded progress and immediate interest, not the
+exact deferred-write/close interleaving or feature-specific service-pending
+difference. Those integration limits remain explicit; no background-thread
+timing race is treated as deterministic proof. The SDK documents observable
+scheduling changes rather than claiming identical call timing. Applicable Sophia
+export gates and a fresh feature-on/off CPU comparison remain. No native candidate-18
+capture or performance claim exists. The C dispatch has no equivalent repeated
+socket-poll cost; no C implementation change is proposed. ISB, 9P records,
+authority checks and ACK content remain intact; t331 stays open.
+
+The comparator-only import is signed at `d7eae929f`; production retains its
+existing SDK pin. Both feature modes pass the comparator controls and strict
+Clippy, and both release peers pass six device-hidden peer controls. Four fresh
+files CPU plans are prepared in control/candidate/candidate/control order in
+`candidate-18-sdk-read-scheduling/ready.json`. They share one Session binary and
+the same SDK revision; only the peer's experimental feature differs. Build
+receipts verify the feature on both SDK crates. This screen may proceed with
+the integration limit above; it cannot qualify default promotion. Native runs
+have not started. The SSH launcher requires sudo for a real PAM tty4 session;
+Session and the capture remain unprivileged.
+
+The final plans use separate peer builds: all 75 compilation units match after
+removing only the experimental feature. The first combined Session/peer build
+unified extra dependency features; its unused preparation is retained as
+superseded. The replacement control again passes six peer controls. The remote
+launcher passes 16 offline tests and pin validation, with VT-child timeout and
+verified process/session cleanup before getty restoration. Entry on crunch is
+`sh ~/.local/state/t331/run-sdk-scheduling-remote.sh`; sudo authentication is
+required from the SSH session. No privilege or native test has been attempted.
+
+## October 19 send-aware peer diagnostic
+
+The send-aware peer diagnostic on comparator `bc3acf69e` is valid: 1,000
+unique joined presentations, matching supervised peer PID 20466, unchanged
+input hashes, successful control and native tracer exits, and clean PAM/tty
+restoration. All 73,458 receives and 25,984 sends reconcile across interior,
+boundary and outside bins. No interior cross-FD receive contexts, unbracketed
+shell sends, unexpected receive/send outcomes or zero-receive polls occurred.
+
+Of 27,764 later empty polls in fully included 100 ms bins, 24,867 (89.6%)
+followed a successful send in that poll. The rest followed a productive
+previous poll. SDK `c6ad4fa` repeats its full write/read poll after local
+progress; the dominant empty retries therefore follow real request writes.
+The proposed rule to read only on entry or after a productive previous poll
+would cover 10,850 observed empty polls and 668 observed productive polls.
+This is exposure, not predicted savings: deferring those replies changes
+later rounds, current-call disconnect observations and custody settlement.
+No production change follows from the counts alone. A candidate needs
+bounded-progress, reply/EOF and custody controls before a CPU comparison;
+preserve ACK progress, deadlines and the published ISB/9P contract.
+
+Evidence: `candidate-17-peer-send-polls-retry/analysis.json`, original traces
+and `CAPTURE-SHA256SUMS`. Poll bins use return time; syscall bins use syscall
+timestamps. Drive histograms cover the whole run. Uprobes perturb scheduling;
+there is no CPU or latency acceptance claim. The original candidate-17 run
+stopped in a faulty histogram assertion before native launch and is preserved.
+The retry checks histogram frequencies and passes a replay of that control.
+The launcher now accepts the exact console-deallocation warning only after
+successful child, tracer and PAM cleanup receipts; the retry exercised it.
+
+Keep listener-readiness candidate `c535a0310`. Accept calls fell from
+23,024 / 23,066 image-service visits to 8,034 / 23,176, a 65.3% reduction
+per visit. Authority and receive calls remain about 99.7% of visits.
+Evidence: `candidate-14-listener-ready/profile-check/listener-count-analysis.json`.
+Its earlier fresh files-only ABBA screen showed a
+1.92–2.15% mean combined CPU reduction and roughly 21–25 microseconds/frame
+less Session CPU, with run drift and a lower unchanged-peer cost that prevent
+a firm causal estimate. The new instrumented timing is not additional CPU
+acceptance evidence. t331 remains open; the published ISB/9P architecture,
+authority checks, ACK progression and deadlines are unchanged.
+
+## October 19 listener-readiness CPU screen
+
+The listener-readiness candidate (`c535a0310`, comparator `bc3acf69e`) passed
+its four-run files-only CPU screen. All four runs join 1,000 unique presented
+frames without capture errors; plan, artifact and source pins were verified.
+Control/candidate/candidate/control combined CPU is respectively
+1.725–1.728, 1.675–1.677, 1.639–1.640 and 1.657–1.659 ms/frame.
+The candidate mean is 1.92–2.15% lower, with Session CPU about 21–25
+microseconds/frame lower. This is a positive screening signal, not a proven
+causal reduction: costs drift across the sequence and unchanged peer CPU
+also falls about 11 microseconds/frame on average. Counter brackets are not
+confidence intervals. t331 remains open; full repeated qualification is absent.
+
+Evidence: `candidate-14-listener-ready/native-screening-analysis.json` plus
+hashed raw captures. Preserve the candidate on the performance branch, without
+calling the remaining panel gap solved. The next discriminator is the accept
+call reduction under profiling, or a repeat of the fresh files-only control;
+SDK read-loop changes still require EAGAIN/data/EOF measurements first.
+The temporary source-only control worktree can now be removed; its signed
+revision and external artifact hashes remain recorded in the evidence.
+
+## October 19 listener-readiness implementation and screening
+
+The listener-only readiness candidate is implemented on the performance
+branches; native CPU benefit is still unmeasured. A fresh owner-wait
+observation can skip one accept probe only in Ready state with no backoff.
+The exact server identity/generation/connection must still match, followed by
+the listener descriptor/epoch/channel generation at service time. Missing,
+stale or mismatched observations fall back to probing. Flushes, handshakes,
+fresh custody checks, receives, final-packet/HUP handling and ACKs are unchanged.
+A duplicate arriving after an idle poll stays queued until the next visit;
+readiness is never authorization. No SDK or wire protocol changes are involved.
+
+Real-socket tests cover Waiting, late duplicate arrival, one-shot consumption,
+stale observations, absent/wrong listener descriptors and same-visit revocation.
+Disabling the skip fails the late-duplicate assertion; restoring it passes.
+Image controls (5), owner turn (1), transport readiness (3), Session reconnect
+(10), strict Clippy and scoped formatting pass. Claude's read-only source review
+found no safety blocker. Evidence: `candidate-14-listener-ready/`.
+
+Next run files control/candidate/candidate/control with CPU-only instrumentation.
+The control reuses signed `8c7479085` binaries and a detached source-only worktree
+at `~/dev/sophia-t331-listener-control`; remove that worktree after analysis.
+This four-run screen does not qualify t331. Keep the candidate only on evidence;
+do not infer its CPU benefit from the preceding instrumented accept timings.
+
+## October 19 image-service diagnosis
+
+The image-phase pair is complete and valid: both arms join 1,000 unique
+presented frames with matching plan, revision and artifact hashes and no
+capture errors. Files records image_accept 80.044 ms / 23,024 calls,
+image_authority 40.043 ms / 22,997 calls, and image_receive 33.853 ms /
+22,997 calls. IPC has no image-channel calls. The enclosing wire_image is
+209.633 ms / 23,066 calls, versus 131.96 ms in the preceding less-instrumented
+pair. Nested guard overhead and run variation prevent treating that difference
+as application work, or the child sums as predicted savings. Detailed evidence:
+`candidate-13-image-service/image-service-attribution.json`.
+
+The next candidate should target listener accept probes using a fresh,
+one-shot owner-wait observation, before considering broader SDK changes.
+Retain the duplicate/unauthorized-join drain on readiness, fall back to the
+existing probe without a valid observation, and bind observations to the
+registered descriptor and channel state. Do not remove or cache custody
+checks. Any later receive gating must preserve final-packet-before-HUP
+handling. The available fraction of observed owner visits still limits the
+saving; measure a CPU-only candidate/control pair before claiming improvement.
+The earlier pending-capture statements below are historical.
+
+Read-only analysis of the retained candidate-03 kernel pair confirms 86,307
+peer recvfrom entries on files versus 12,006 on IPC, but all entry addresses
+resolve to libc's syscall wrapper: exact Rust caller counts cannot be recovered
+from these tracepoints. Of 580 files CPU samples, 20 have receive functions
+on their stacks and all 20 pass through the 9P Pipeline; none pass through the
+image adapter. These overlapping, instrumented samples support investigation
+of pipeline reads, not a count of empty reads or a duration estimate. The
+SDK drain loop can poll the pipeline repeatedly per drive, and each pipeline
+poll reads until blocked or budget-limited. A later diagnostic must distinguish
+data, EAGAIN, EOF and retry rounds before altering this behavior. The small
+SDK image-readiness cache remains deferred. Evidence is retained as
+`candidate-13-image-service/peer-recvfrom-attribution.json` and
+`peer-receive-cpu-attribution.json`. The image-phase native pair is still pending.
+
+The preview-idle allocation saving is confirmed, but its CPU screen shows no
+speedup: files remains 29.51–29.77% above IPC. t331 is open. Stop optimizing
+empty preview bookkeeping; preserve the published 9P/ISB and authority model.
+
+Comparator `63d6687c9` now splits image-channel service into `image_accept`,
+`image_authority` and `image_receive` scopes. The latest parent scope measured
+131.96 ms across 23,160 visits per 1,000 frames. The new scopes distinguish
+listener/receive probes from mandatory fresh custody checks before considering
+readiness handoff. They nest inside `wire_image`; receive excludes source
+admission, and Hello/publication work remains in the enclosing remainder.
+This is diagnostic-only instrumentation, with no production behavior change.
+Counter and image-transport controls, strict scoped Clippy, feature-off check
+and scoped formatting pass. Evidence and analysis limits are retained in
+`candidate-13-image-service/`. The next native attribution pair measures the
+available opportunity; it is not CPU acceptance. Claude is reviewing SDK probe
+costs read-only; no SDK change is authorized by these measurements alone.
+
+## October 19 preview bookkeeping screens
+
+The preview-idle CPU screen is complete. Files costs 1.668899–1.671071 ms
+per frame against IPC's 1.287682–1.288642 ms, or 29.51–29.77% more. The
+session contributes about 228–231 microseconds of excess and the peer about
+152 microseconds. Reaching the ten-percent threshold would require another
+251–255 microseconds/frame in this pair. Both arms have 1,000 unique presented
+frames, no capture errors, and verified plan, artifact and revision pins.
+Evidence: `candidate-12-preview-idle/cpu-screen/native-screening-analysis.json`.
+
+The allocation reduction below is confirmed, but there is no demonstrated
+CPU benefit. The preceding SIMD screen was 25.85–26.07% above IPC; comparing
+these separate pairs does not establish a regression or a causal effect.
+Do not count preview-idle as a CPU win or spend further effort on empty
+preview bookkeeping. The next investigation should target the larger
+wire-service and peer costs, preserving fresh authority checks and the
+published ISB architecture. t331 remains open; these are screening results,
+not repeated qualification runs. Earlier next-step text below is historical.
+
+The preview-idle candidate is signed and published as production `ebde050a9`
+and comparator `8c7479085`. The follow-up attribution pair confirms the
+intended allocation reduction: files preview preparation falls from 67,059
+operations over 33,522 calls to 12 over 33,536; IPC falls from 41,806 over
+20,894 calls to 15 over 21,002. Retirement, nested inside preparation, falls
+from roughly one allocation per call to five total on files and six on IPC.
+Whole-owner allocations fall by 67,166 on files and 40,833 on IPC, with
+slightly different pass counts; these totals are diagnostic, not a controlled
+CPU result. Both captures match their plan hashes and join 1,000 unique
+presented frames without capture errors. The retained analysis is
+`candidate-12-preview-idle/preview-attribution-analysis.json`.
+
+Next is a CPU-only panel screening pair. The allocation result does not
+establish a CPU improvement or qualify t331. The following paragraphs retain
+the baseline and implementation rationale.
+
+The attribution pair has now completed. Its preview preparation scopes report
+67,059 allocation operations over 33,522 calls on files, and 41,806 over
+20,894 calls on IPC. Retirement accounts for approximately one allocation
+per call inside preparation. Demand construction records only eight and two
+allocation operations respectively, so an unchanged-demand clone guard is
+not a useful target in this workload. These process-wide counts include
+workers; the nested scopes must not be added together.
+
+The next candidate skips donor inventory construction when demand is empty
+and skips the retired-import traversal after weak-entry pruning leaves no
+requests. Epoch synchronization and obsolete snapshot retirement remain
+unconditional. Production backend tests pass (354, one ignored), comparator
+preview tests pass (38), and strict library Clippy passes in both checkouts.
+Evidence is in `candidate-12-preview-idle/`. The allocation saving still
+needs a native attribution pair; no CPU improvement is claimed. The earlier
+measurement plan below is retained as context and has now been executed.
+
+The fixed-block ISB validator remains accepted in production `cfa256424` and
+comparator `914e86378`. The client-drive experiment is retired. Latest native
+screening leaves panel CPU 25.85–26.07% above IPC, while bulk is 5.37–5.41%
+below IPC. These single pairs do not qualify t331; details and limits follow.
+
+The next step measures the remaining panel cost rather than applying an
+unmeasured bookkeeping fix. Comparator `39524e005` adds feature-gated scopes
+for preview demand construction, preparation and retired-import service.
+Retirement nests in preparation, and both nest in lifecycle_native; do not add
+these totals. Demand also runs during policy installation. Allocation deltas
+are process-wide and can include workers. The optional backend-to-runtime
+diagnostic dependency exists only in this comparator profiling feature.
+
+A new ignored timing control uses the production `LaunchCustody::is_live`
+against a real protected wrapper and peer. Two optimized runs measure median
+0.436 and 0.432 microseconds/check. Multiplying by the stale profile's roughly
+110 checks/frame suggests about 48 microseconds/frame, not the full remaining
+208–210 microseconds/frame gap. This warm isolated estimate is neither a native
+attribution nor permission to cache authority or remove checks.
+
+Evidence is in `candidate-11-panel-cost/`. Custody timing, scoped Clippy,
+38 preview controls and counter controls pass; the profiling-disabled backend
+check passes with `test-support`. A bare no-feature backend check still fails
+on the renderer's missing native EGL import, outside this patch. Scoped
+rustfmt finds pre-existing formatting in preview_preparation and its included
+fixtures; the diagnostic additions do not reformat those files. The next
+attended files/IPC attribution pair will use existing wire/authentication/owner
+scopes plus the three new preview scopes. It is diagnostic, not acceptance.
+
+## October 18 ISB scan and control screening
+
+Publication batching is retired in production `78d7d062b` and comparator
+`8cfeac2a7`. The controlled native pair showed approximately seven actual
+flushes per frame with batching either enabled or disabled, unchanged protocol
+read/write counts, and no clear CPU benefit in the earlier cost pilot. Inline
+output observations remain: their screening result reduced files allocations
+by 6.5–6.8% and IPC allocations by 4.8–5.1%. The latest cost screening still
+misses the ceiling: CPU +37.31–37.72%, allocations +19.10–19.45% against IPC.
+That cost screening included batching; it is not qualification of the retired
+candidate or a new measurement of the remaining code.
+
+The removal passes 965 Session tests, runtime owner/custody controls, comparator
+controls and scoped strict Clippy. The schema-4 service ledger remains solely
+in the comparator, with `wire_flush_deferred` retained as a zero field for
+historical replay. Evidence and exact sampling brackets are in
+`candidate-06-service-ledger/service-ledger-analysis.json`; removal checks are
+under `candidate-07-service-ledger-control/remove-batch-*.log`. Both captured
+arms have 1,000 unique joined presentations and no capture error. The temporary
+batched source worktree has been removed; published commits and captures remain.
+
+The next isolated candidate replaces the worker's byte-at-a-time premultiplied
+BGRA scan with aligned pixel comparisons accumulated in blocks of sixteen.
+The comparator candidate is `613fcb288`; the matching production change is in
+this checkpoint. Partial-pixel edges retain the original predicate, and each
+unit still checks at most 64 KiB. Failure remains sticky, and progress advances
+only after the whole unit succeeds. Worker deadlines and cancellation checks,
+9P control/events, the descriptor side channel, and authority checks are unchanged.
+
+Differential controls compare every step against the frozen scalar predicate,
+including arbitrary budgets, invalid RGB components, cap boundaries and 512
+seeded random buffers. Existing resource, worker, shell/lock image transport
+and cancellation controls pass, as does strict runtime Clippy. An optimized
+warm-mapping experiment over 4 MiB reports a 51.2–52.0% median scan-time
+reduction across two invocations and opaque/mixed-alpha patterns. The quieter
+repeat measures approximately 1.338 ms scalar versus 0.652 ms block scan.
+Generated x86-64 code remains scalar: one alpha load per pixel and accumulated
+RGB comparisons. This is not a native CPU or latency claim. Evidence, source
+hashes, timing limits and codegen are under
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/candidate-08-isb-scan/`,
+particularly `scan-analysis.json`, `controls.log`, `comparator-controls.log`,
+`benchmark-repeat.log` and `scan-disassembly.txt`.
+
+The attended CPU-only screening pair completed on comparator `613fcb288`.
+Both arms have 1,000 unique joined presentations, matching 184,320,000 logical
+image bytes and no capture error; retained plan and artifact hashes match.
+Files costs 1.615–1.617 ms/frame against IPC's 1.244–1.245 ms/frame, an excess
+of 29.67–29.93%. The remaining difference is 242–244 microseconds in Session
+and 128 microseconds in the peer. Reaching the +10% ceiling still requires
+approximately 245–248 microseconds/frame of combined savings. Captures are
+`~/.local/state/t331/scan-cpu-{C,A}-01`; the checked results are in
+`candidate-08-isb-scan/native-screening-analysis.json`.
+
+This screening gap is smaller than the earlier 37.31–37.72%, but that older
+pair included publication batching and there is no matched native pre-scan
+control. Do not attribute the entire improvement to T1. The isolated scan
+experiment supports the scan change itself. This is one panel pair without
+environment readback, allocation measurement or full latency qualification.
+The source-layout audit also reports two pre-existing inline-test violations
+in backend-live; both offending files match the pre-scan source byte-for-byte.
+
+The client-drive experiment `c4b0056d7` is retired by comparator `7449a114a`.
+Both native arms completed 1,000 joined presentations without capture errors,
+but files CPU was 1.658–1.661 ms/frame against IPC's 1.239–1.241 ms/frame
+(+33.68–34.08%); peer CPU was 404 microseconds, versus 402 in the preceding
+scan pair. This single pair shows no useful saving, not proof of a regression.
+No SDK or production client adopted the experiment. Checked capture hashes,
+counts and results are in `candidate-09-client-drive/native-screening-analysis.json`.
+
+The next candidate exposes fixed arrays of sixteen whole pixels to the compiler,
+with a scalar remainder. Comparator `914e86378` includes this change and the
+client-drive revert. The compiler emits SSE2 loads, shuffles and comparisons
+on crunch from safe Rust; there is no unsafe code, explicit SIMD intrinsic,
+assembly or architecture-specific dispatch. Scalar partial-pixel edges, the
+64 KiB unit cap, failure state, worker deadlines and authority remain unchanged.
+Added differential controls target full-block/remainder boundaries under
+unaligned budgets. Resource, image transport, cancellation and worker controls
+and strict runtime Clippy pass in the affected checkouts.
+
+Two warm-mapping benchmark invocations compare this candidate to a frozen
+copy of the **improved scalar-block scan**, not the original byte scan. Panel
+buffers (184,320 bytes) take approximately 20.5 versus 28.6 microseconds;
+4 MiB buffers take approximately 0.47 versus 0.65 ms. The median reduction is
+27.6–28.3%. This saves only about 8 microseconds per panel scan in isolation;
+it cannot by itself explain or close the remaining whole-frame CPU gap.
+Evidence and codegen are in `candidate-10-isb-vector/scan-analysis.json`,
+`benchmark{,-repeat}.log` and `fixed-block-disassembly.txt`.
+
+The attended vector-candidate screening completed all four arms, each with
+1,000 unique joined presentations and no capture error. Plan and artifact hashes
+match. Panel files+ISB costs 1.648–1.649 ms/frame against IPC's 1.308–1.309 ms,
+an excess of 25.85–26.07%. Reaching the +10% ceiling still requires roughly
+208–210 microseconds/frame of combined savings. Bulk, including a fresh 4 MiB
+probe each frame, costs 6.287–6.288 ms for files versus 6.645–6.647 ms for IPC:
+files is 5.37–5.41% lower in this pair. Session saves approximately 520
+microseconds in bulk while the peer costs approximately 161 microseconds more.
+Captures are `~/.local/state/t331/vector-cpu-{C,A}-{panel,bulk}-01`; checked
+counts, hashes and intervals are in
+`candidate-10-isb-vector/native-screening-analysis.json`.
+
+These are single CPU-only screening pairs without environment readback,
+allocation measurement or full latency qualification. There is no matched
+pre-SIMD native control. Panel absolute files CPU is slightly higher than in
+the earlier scalar scan pair even though the relative files/IPC gap is smaller;
+do not claim a demonstrated native panel CPU reduction from SIMD. The isolated
+scan controls support keeping the safe fixed-block optimization. Bulk is within
+the CPU ceiling in this pair, but t331 is not qualified or closed.
+
+The remaining measured blocker is panel control/owner overhead, not a reason
+to replace 9P or the ISB architecture. Further work should isolate that cost;
+readiness handoff and server image-probe gating remain deferred experiments.
+Other targets and compiler versions may vectorize differently. Do not cache liveness,
+suppress Ready retries, or change ACK/deadline policy. t331 remains open;
+full cost and latency qualification has not been rerun.
+
+## October 18 service-ledger results
+
+The files-only diagnostic compared batched `ef07b18a8` with immediate-service
+control `a0dfcdf57`. Their only source difference is the three role callback
+sites; peer hashes, workload, inline observations and instrumentation match.
+Both use runner `3a34520` and progress schema 4. Session counters are bracketed
+to the peer's first and last progress records over 1,000 frames, excluding the
+remaining idle hold. Bounds below reflect the sampling brackets, not statistical
+confidence intervals or CPU durations.
+
+| Per-frame count | Batched | Immediate |
+| --- | ---: | ---: |
+| Actual flushes | 6.992–7.001 | 6.993–7.001 |
+| Shell owner input | 14.242–14.292 | 14.279–14.317 |
+| Flushes writing bytes | 2.997–3.000 | 3.997–4.000 |
+| Flushes writing no bytes | 3.995–4.001 | 2.996–3.001 |
+| Protocol reads | 10.987–11.015 | 10.989–11.015 |
+| Protocol writes | 18.977–19.006 | 18.979–19.006 |
+| Waiting-read retry attempts | 11.239–11.266 | 13.267–13.293 |
+
+Batching saved about two waiting-read attempts per frame, approximately one
+Ready and one Pending, but removed no flush services. The 22.973–23.001 deferred
+polls per frame were not saved flushes: repeated polls with the same pending
+publication counted again. There were no failed or journal-blocked flushes in
+either bracket. The earlier estimate of only 1.4 flushes per frame from ppoll
+sites was incorrect; actual service counts replace that inference. The source
+review and this single diagnostic pair support retiring the added batching API
+and its boundary-close classification change. They do not identify which empty
+flushes are safe to omit or establish a CPU duration for retry checks.
+
+A subsequent source review explains why byte-empty flushes are plausible but
+does not identify their exact native causes. `publication_pending` means a
+journal append or image publication occurred since the previous service; it
+does not mean a read is parked or socket output exists. A peer's next read may
+still be unparsed in its socket, and flush deliberately does not read requests.
+However, flush also drains the shared wake pipe, invalidates the readiness
+observation, checks authority before and after service, retries waiting reads,
+closes ended connections, expires held requests and services the image channel.
+Skipping it solely because no bytes were written could leave a wake pending or
+delay revocation and deadlines. Any further experiment must first distinguish
+queued replies, parked reads and unparsed input, while preserving these effects.
+This is a source-based hypothesis, not a causal attribution from the counters.
+
+## October 18 optimization and pilot preparation — superseded
+
+October 18 implementation checkpoint: bounded publication batching is signed
+and published as production `2b60076d0` and comparator `6fb397748`.
+Inline output observations are separately signed and published as production
+`73dd4eba1` and comparator `43bcd5bef`; their patches have the same stable patch
+ID on both branches. These implement niltempus's approved optimization plan.
+Dock, Launcher and
+Bar visits now share publication flushes within each callback; catalog execution
+and direct activation remain immediate. Journal capacity still forces progress,
+and authentication and delivery checks remain intact. A boundary close becomes
+a per-role service failure; a callback error keeps precedence over a flush error.
+Supplied-authority controls prove live delivery, no delivery after revocation,
+callback-error precedence and disconnect on unwind. These are transport controls,
+not evidence of real Factotum launch authentication.
+
+The comparator-only ledger separates input, useful/empty/deferred flushes and
+waiting-read retry sources/outcomes. Its controls allocate nothing. Write-path
+retries do return Ready in the supplied-owner fixtures, so retry suppression is
+not part of this change. Native CPU and allocation pilots must measure batching
+and bounded observations separately before the unchanged qualification matrix.
+Evidence is in `candidate-03/batch-*.log`; no native performance improvement is
+claimed for either new slice. The final Session scope passes 965 tests with
+private XDG directories; runtime tests pass across 88 targets, and the backend
+suite passes. The engine's 12 focused tests include a zero-allocation and
+zero-reallocation control for valid and overflowing observation sets. Scoped
+strict Clippy passes for engine, backend, runtime and Session. The backend's
+native request-construction allocation claim remains static; the engine
+construction/reduction control is measured.
+
+Both separate four-arm panel screenings completed. All eight captures have
+1,000 unique joined presentations, no capture error, and the expected plan,
+source and instrumentation identities. Batching alone shows no clear panel
+benefit: files CPU/MiB remains IPC +37.70–37.96%, allocations/frame +21.27–21.73%.
+Adding inline observations lowers files allocations from 1,169–1,171 to
+1,091–1,093 per frame and IPC from 962–964 to 915–916. The remaining allocation
+gap is +19.10–19.45%; CPU remains +37.31–37.72%. These are accounting bounds,
+not statistical confidence intervals. One pair cannot establish causality.
+
+Exact hashes, plans and analysis are under `candidate-04-batch` and
+`candidate-05-output`; the combined report is
+`candidate-05-output/paired-screening-analysis.json`. Captures use short
+`~/.local/state/t331/{batch,out}-*` destinations. Their source-only batching
+worktree was removed after capture validation. These are screening results
+without environment readback, not qualification. Do not advance to the full
+matrix while the panel remains red. Next, use the existing service ledger to
+check whether this workload actually coalesces publications; do not infer a
+CPU improvement from the allocation reduction. t331 remains open.
+
+The next diagnostic pair is prepared in `candidate-06-service-ledger` and
+`candidate-07-service-ledger-control`. Both use the same files workload, peer
+binary and inline observations: batched comparator `ef07b18a8` versus control
+`a0dfcdf57`, whose only change is three calls back to immediate service. Runner
+`3a34520` validates progress schema 4 (30 original counters plus 17 ledger
+counters), while preserving schemas 1–3. Six reader tests, two emitter tests,
+six rebuilt peer controls, ten control Session tests and scoped Clippy pass.
+Run `~/.local/state/t331/run-service-ledger.sh` attended on tty4. The batched
+source-only worktree `~/dev/sophia-t331-ledger-batched` stays until capture
+validation, then should be removed. Bracket counters to the 1,000-frame workload,
+excluding the idle hold. Compare actual useful/empty/failed flushes per frame
+and owner inputs; deferred polls are not a saved-flush count. These diagnostic
+arms cannot establish CPU cost or qualification. Batching remains unproven.
+
+## October 18 preceding diagnostic checkpoint
+
+The first user-space perf pair has completed and its process/time-filtered
+reports pass the raw-sample and histogram checks. Session has 153 files samples
+versus 114 IPC samples; peers have only 34 versus 14. Image validation and
+sealed-source preparation appear in the files samples, but this sparse pair
+cannot explain the remaining CPU gap. Kernel sampling and syscall tracing are
+now available after niltempus changed the host permissions. The next diagnostic
+pair completed with external runner `32c2d61`, at 997 Hz with 26 stackless
+syscall-entry tracepoints. Both `~/.local/state/t331/kern-{files,ipc}-01` reports
+pass event, loss, identity, interval and histogram validation. Session ppoll
+entries are 169,454 files versus 24,693 IPC over 1,000 frames; the peer adds
+54,333 versus zero. Stacks include launch-custody checks on waiting-read retries.
+Profiler overhead is substantial, so these CPU timings are not acceptance
+evidence. Review redundant retry work without weakening revocation boundaries;
+t331 remains open. Reports and summary are under `candidate-03/kernel-*`.
+
 October 18 follow-up: the ISB-only integration is signed and published as
 `5632d5423c9344c709810e00697a3d464cad5600`. Provlita
 `78e14e3528137449aa83ad2ed6bc8768c6efefeb` and Lom
@@ -22,10 +932,11 @@ October 18 follow-up: the ISB-only integration is signed and published as
 both full client checks passed before signing and publication. The earlier
 client pins below describe the preceding migration checkpoint.
 
-The isolated comparator worktree is on `performance/t331-isb-cost`, merging
-that production checkpoint into `30b822381`. Its frozen historical branch and
-captures remain unchanged. Six supplied-owner peer controls pass after the
-merge; the actual native Session/CLI check also passes. New diagnostic-only
+The isolated comparator is signed and published on `performance/t331-isb-cost`
+at `7b636c5ad9bf38c11d430f9d590baa08d52946f2`, including the shared admission
+optimization and mapped SDK imports. Its frozen historical branch and captures
+remain unchanged. Six supplied-owner peer controls pass; the actual native
+Session/CLI check also passes. New diagnostic-only
 request scopes count thread CPU and process-wide allocations during each
 interval. A control verifies allocation/reallocation counts and zero overhead
 allocations for an empty scope; four paired supplied-owner runs pass. In those
@@ -53,7 +964,7 @@ all four unchanged +10% gates and the latency gates remain open. Muse is offline
 Codex owns integration/publication and Claude assists with bounded SDK and
 diagnostic work.
 
-The next shared optimization validates and sizes outbound content with the SDK's
+The shared optimization published as `4f243332f` validates and sizes outbound content with the SDK's
 borrowed value counter instead of allocating encoded buffers for admission.
 Production runtime all-target tests and strict Clippy pass; a differential
 control preserves encoded charges and refusals. The same change is on both
@@ -73,9 +984,334 @@ at `niltempus@879b672`: 72 arms per refresh rate, preserving both workloads,
 three restarted pairs, idle/load, separate CPU/allocation/latency methods, and
 all existing gates. Its campaign, comparison, provenance, historical pilot and
 calibration controls pass, with strict Clippy and formatting clean. Passive
-journal identity traces and their negative controls also pass. Freeze the
-comparator's signed source and optimized artifacts, then coordinate an attended
-native window. No installed desktop has been changed.
+journal identity traces and their negative controls also pass. The broader
+runtime gate passes 705 tests; the three older comparator fixtures now use
+authenticated ISB on the files side and pass separately, with their resource,
+lease and backpressure assertions preserved. Strict all-target Clippy and
+formatting pass. The first attended ISB latency arm captured successfully, but
+its IPC pair failed during negotiation. The comparator's unauthenticated
+process-start path inherited production's content denial; the narrow IPC-only
+repair now passes a Session-start regression and its unfixed negative control.
+Replacement binaries and short-path campaigns `isb60b`/`isb120b` are frozen.
+The replacement's first 12 arms captured successfully, with terminal recovery
+verified for every arm. The first idle pair at 60 Hz exceeds the +10% limit for
+panel CPU, panel allocations and bulk CPU. Two separate diagnostic pairs have
+since completed. Preview-store reuse, borrowed inventory comparison and the
+idle cursor no-work path are validated below. The four-arm panel cost screening
+completed with clean recovery. Allocations fell substantially, but the paired
+gap remains +20.44–21.00%; CPU remains +37.57–37.84%. See
+`candidate-03/screening-analysis.json`. Prioritize remaining wire-service and
+peer CPU costs, preserving authentication and service semantics, before another
+full qualification block. A separate symbolized perf pair is prepared below
+and awaits attendance; further source changes should wait for its hotspots.
+Full cost and latency qualification remain open;
+no installed desktop has been changed.
+
+## October 18 repaired first-pair results
+
+Campaign `~/.local/state/t331/isb60b` captured all 12 first-pair arms on the
+repaired comparator `7b636c5ad9bf38c11d430f9d590baa08d52946f2`. Every recovery
+log reports restored termios and keyboard mode, restored keyd state and no
+emergency recovery. The bounded Session-plus-peer cost comparisons are:
+
+| Measure | ISB relative to IPC | First-pair +10% result |
+| --- | --- | --- |
+| Panel CPU per uploaded MiB | +36.30% to +36.67% | Exceeds limit |
+| Panel allocations per frame | +30.19% to +30.65% | Exceeds limit |
+| Bulk CPU per uploaded MiB | +11.43% to +11.47% | Exceeds limit |
+| Bulk allocations per frame | -46.93% to -46.86% | Within limit |
+
+Evidence: `t331-isb-cost-20261018/candidate-02/first-block-analysis.json`, with
+the immutable arm captures under the campaign root. These are single-pair
+diagnostics, not the three-pair idle/load verdict or complete latency gates.
+The next step is to explain the native panel CPU/allocation excess and bulk CPU
+excess using separate diagnostic runs; preserve this candidate and its captures.
+Do not relax the gates or subtract measured overhead to make the result pass.
+
+The native counters locate the panel allocation excess in Session:
+1,514–1,517 operations/frame versus IPC's 1,145–1,147; peer counts are
+72–73 versus 71–72. Read-only review finds roughly 57–60 additional Session
+allocations per additional owner pass in both workloads. This is a correlation,
+not attribution: inspect per-pass work before changing protocol behavior.
+Authenticated requests also check live launch custody through pidfd polling,
+which the supplied-authority fixtures do not exercise. ISB's extra mapping and
+validation faults remain a separate bulk CPU hypothesis.
+
+A separate panel diagnostic pair is built from the same comparator revision
+with `comparator-request-attribution` (including phase profiling). Plans and
+artifact hashes are under `candidate-02/native-attribution/`; its launcher is
+`~/dev/niltempus/.artifacts/t331-native-attribution-20261018/run.sh`. Both
+profiles pass device-hidden configuration checks. Both attended captures
+(`prof-files-01` and `prof-ipc-01`) completed with clean terminal recovery.
+They use the existing recovery wrapper and produce diagnostic evidence only:
+no campaign environment readback or acceptance verdict. Frozen cost artifacts
+and campaigns remain unchanged. No authentication, polling or ACK policy was
+changed to prepare this diagnostic.
+
+The workload-aligned analysis is
+`candidate-02/native-attribution-workload-analysis.json`; the separately labeled
+`native-attribution-analysis.json` covers the whole diagnostic capture, including
+its idle tail. Lifecycle and authority account for most of the allocation
+difference, while component wire service accounts for most of the owner-thread
+CPU difference. Request-handler intervals alone do not explain that CPU gap.
+These are nested intervals with process-wide allocation counters, not exclusive
+stack attribution. Static review confirms repeated preview-store map creation
+and cloning, native service-request vectors and temporary idle-cursor collections;
+see `native-service-allocation-audit.md` in the same directory.
+
+Comparator `bc0270c79097363ef135cda8c9c70b5eba122be1` adds diagnostic-only nested
+scopes for native requests, native waits, authority waits, lifecycle native
+service, authentication polling, server turns and image-channel service. Counter
+tests, native CLI strict Clippy, feature-off checking and scoped formatting pass.
+Both nested diagnostic captures (`prof-files-02` and `prof-ipc-02`) completed
+with clean recovery. `nested-attribution-workload-analysis.json` brackets the
+1,000-frame workload with cumulative snapshots. Files lifecycle-native service
+observes 422,256–422,958 allocations over 14,004–14,058 calls, versus IPC's
+291,333–294,219 over 8,219–8,344 calls. Authority waiting accounts for only
+23,349–23,357 versus 20,500–20,560 operations, ruling it out as the dominant
+allocation interval. Files wire subscopes measure about 51 ms authentication
+polling, 220 ms server service and 113 ms image-channel service; these diagnostic
+thread-CPU intervals are not qualification measurements or exclusive call stacks.
+
+The first shared fix retains `PreviewImages::live_stores` when the complete
+store-to-renderer-group map is unchanged. Generation invalidation still runs
+before assignment, and every retain and stale-snapshot cleanup still runs
+afterward. The new storage-reuse regression fails under the old unconditional
+clone and passes with the guard; it also checks disabled-owner pruning,
+renderer-group changes and store removal. Both production and comparator pass
+35 preview tests; production backend library/tests strict Clippy and scoped
+formatting pass. Evidence is `preview-store-reuse-{tests,unfixed,clippy}.log`
+and `preview-store-reuse-comparator-tests.log`. The comparator change is
+`fbca2d4c3`; the production change accompanies this note.
+
+This removes one map clone per unchanged synchronization, normally called twice
+per native-service pass. It does not remove construction of the input map or
+other preview/cursor collections and has not yet been measured in a native cost
+pair. Those are the next bounded-storage candidates; preserve separate evidence
+for each change. Authentication, deadlines, service order and ACK behavior
+remain unchanged; t331 remains open.
+
+The next inventory change is published as production `6f367ceb8` and comparator
+`910414b7c`. It compares borrowed store/group pairs before constructing a map.
+All current keys must occur, and every supplied pair must match; conflicting
+duplicates fall back to collection, preserving the old last-entry-wins rule.
+Changed inventories are moved into place only after generation invalidation.
+Cleanup still runs on unchanged inventories. The isolated allocation control
+records 2,000 allocations for 1,000 old collections and zero for 1,000 unchanged
+borrowed comparisons. Both trees pass 35 preview tests and the allocation
+control; strict backend Clippy passes. Evidence:
+`preview-inventory-borrow-tests-03.log`,
+`preview-inventory-borrow-comparator-tests.log`, and
+`preview-inventory-borrow-clippy-02.log` under `candidate-02/`.
+
+A separate cursor change returns before constructing output/head collections
+when the path is non-atomic or no head has a pending atomic cursor. The old
+per-output service already returned or skipped every head before any mutation,
+clock read, commit or error in those cases. Pending cursors, including those on
+disabled heads, retain the existing path. The 13 cursor-owner controls and 316
+libdrm-event controls pass (one opt-in test remains ignored); strict Clippy and
+scoped formatting pass. Evidence: `idle-cursor-{tests,clippy}.log`. These controls
+and static review do not measure physical cursor latency or native cost savings.
+The next native cost screening will measure the combined bookkeeping changes
+before another full qualification block; frozen earlier captures remain intact.
+
+The cursor change is published as production `5c81e518c` and comparator
+`890215a3e3d4fcc2155f45c67afc63a03d792065`. Fresh CPU-only and Rust-global
+allocation release builds at that comparator revision exclude all profiling
+and trace features. Four panel plans (ISB then IPC, CPU then allocations) and
+device-hidden profile checks pass; both source trees match their signed declared
+revisions and are clean. The attended launcher is
+`~/dev/niltempus/.artifacts/t331-bookkeeping-20261018/run.sh`; evidence and hashes
+are under `t331-isb-cost-20261018/candidate-03/`. New run destinations are
+`~/.local/state/t331/book-{cpu,alloc}-{C,A}-01`. All four captured successfully,
+with restored termios, keyboard mode and keyd state and no emergency recovery.
+This is a
+four-arm cost screening without campaign environment readback, not the full
+three-pair idle/load cost and latency qualification.
+
+| Panel measure | ISB | IPC | ISB relative to IPC |
+| --- | --- | --- | --- |
+| CPU ns per uploaded MiB | 9,845,151–9,857,028 | 7,151,086–7,156,433 | +37.57–37.84% |
+| Allocation operations per frame | 1,161–1,164 | 962–964 | +20.44–21.00% |
+
+The earlier candidate recorded 1,587–1,590 ISB allocations/frame and
+1,217–1,219 IPC allocations/frame. The observed reduction is substantial on
+both wires, while the paired gap narrows from about 30% to about 21%. CPU shows
+no corresponding closure: Session remains about 1.309 ms/frame versus IPC's
+0.978 ms/frame, and the peer about 0.423 ms versus 0.280 ms. These separate
+screenings do not establish a statistically controlled between-candidate CPU
+change. Retain the unchanged +10% cost ceiling and full latency requirements;
+t331 is not complete.
+
+## October 18 sampling profiler preparation
+
+The existing external `run-cpu-profile` runner captures inherited user-space
+CPU samples at 199 Hz with 8 KiB DWARF stacks, then verifies and filters reports
+to the outer Session and peer process IDs and workload interval. Its explicit
+device-hidden inheritance/filtering control passes (`candidate-03/perf-control.log`).
+The comparator remains `890215a3e3d4fcc2155f45c67afc63a03d792065`; separate
+CPU-only release binaries were built with `CARGO_PROFILE_RELEASE_DEBUG=1`.
+Both have `.debug_info`, `.symtab` and `.eh_frame`; profiling/allocation/trace
+features are absent. Build records and artifacts are separate from acceptance
+binaries. Two observed panel plans and device-hidden configuration checks pass;
+source trees are clean at the declared signed revisions.
+
+Prepared descriptors and hashes: `candidate-03/perf/ready.json`. Attended tty4
+launcher: `~/dev/niltempus/.artifacts/t331-perf-20261018/run.sh`. Fresh capture
+destinations are `~/.local/state/t331/perf-{files,ipc}-01`; both completed.
+The normal recovery wrapper and environment observer remained active. Reports
+are `candidate-03/perf-{files,ipc}-no-inline-report.json`; the summary is
+`perf-user-summary.json`. Inline expansion repeatedly invoked addr2line and
+made reporting slow; disabling that expansion preserved recorded callchains,
+symbols and exact sample-count checks. The original slow report attempts were
+stopped while processing peers. These runs are diagnostic, not cost or latency
+acceptance.
+
+The original denied probes remain in `perf-kernel-access.log` and
+`perf-syscall-access.log`. After this pair, niltempus set
+`perf_event_paranoid=-1`, `kptr_restrict=0`, mounted tracefs and made syscall
+event metadata readable. Kernel-clock and syscall-read probes now pass. These
+permission changes do not add kernel information to the existing captures.
+Restore the original sysctls (2 and 1 respectively) and unmount tracefs after
+profiling.
+
+Within the workload interval, files Session has 153 samples (6 unknown leaves)
+and IPC 114 (9 unknown); peers have 34 and 14, both fully symbolized. All four
+reports have zero lost samples and agree with independently filtered raw sample
+counts. Files validation accounts for 16 Session self samples; sealed-source
+preparation accounts for 12 peer self samples. These are leads for a denser
+kernel-inclusive capture, not precise attribution of the CPU difference.
+
+The kernel/syscall mode is published in external integration revision
+`32c2d616725a3ce3da41a566f82b1374d2926a5c`. Old descriptors retain user-only
+sampling. The new mode verifies actual recorded event attributes, loss counts,
+TGIDs, workload timestamps and CPU histogram totals. Syscall-entry counts are
+not durations. Both real-perf controls passed with retained unfiltered output
+in `candidate-03/kernel-profile-controls.log` (18 tests). Strict Clippy passed
+(`kernel-profile-clippy.log`). The full serial xtask suite passed 415 tests,
+13 ignored (`kernel-profile-tests-02.log`); the first parallel run hit an
+unrelated launcher fixture's `ExecutableFileBusy`, retained in
+`kernel-profile-tests.log`. Scoped formatting and diff checks passed.
+
+The fresh pair reuses comparator `890215a3e` and the first pair's symbolized
+CPU-only binaries. Both plans and device-hidden desktop configuration checks
+pass (`kernel-perf/preparation.log`). An initial generated configuration had
+unsafe permissions and was rejected before launch; the corrected inputs use
+private permissions, and the rejected attempt remains in
+`kernel-perf-preparation-01`. The native wrapper and environment observer are
+unchanged. This pair supplies diagnostic evidence only.
+
+## October 18 kernel and syscall results
+
+Both captures completed and their reports passed all validation. Evidence:
+`candidate-03/kernel-{files,ipc}-report.json`, `kernel-profile-summary.json`,
+and the retained `~/.local/state/t331/kern-{files,ipc}-01` directories. The
+recorders noted 7 and 14 out-of-order events respectively; reports show zero
+lost samples and no lost-event warnings. CPU histogram totals equal the
+independently filtered raw counts. Data files are 214 and 166 MiB respectively.
+
+The following counts cover the verified 1,000-frame workload intervals, not
+the entire 60-second recordings:
+
+| Observation | Files | IPC |
+| --- | ---: | ---: |
+| Session CPU samples | 1,671 | 1,238 |
+| Session unknown leaves | 43 | 50 |
+| Peer CPU samples | 580 | 353 |
+| Peer unknown leaves | 0 | 0 |
+| Session ppoll entries | 169,454 | 24,693 |
+| Peer ppoll entries | 54,333 | 0 |
+| Session read entries | 73,618 | 25,396 |
+| Session recvmsg entries | 22,144 | 668 |
+| Peer recvfrom entries | 86,307 | 12,006 |
+| Peer sendto entries | 25,996 | 10,001 |
+| Peer memfd_create entries | 1,000 | 0 |
+| Session mmap entries | 1,015 | 13 |
+
+The files stacks include `LaunchCustody::is_live` through
+`Authority::authorize`, authenticated export checks, `read_now` and
+`retry_waiting`. This confirms the mechanism exists in the measured native
+path; it does not assign every ppoll entry to authentication. Validation has
+103 Session self samples; sealed-source preparation has 46 peer self samples.
+The corresponding IPC canvas fill has 49 peer self samples.
+
+Instrumentation cost is visible: functions named `perf_*` account for 302
+files Session self samples and 157 peer samples, versus 199 and 54 on IPC.
+These counts are a visible subset of profiler overhead, not a correction that
+can be subtracted to reconstruct uninstrumented timings. Kernel percentages
+and the profiled CPU gap therefore cannot establish the optimization budget.
+The useful result is the syscall-volume difference and the identified call
+paths. Next review waiting-read retry work while preserving authentication,
+delivery and revocation checks; any accepted change still needs an unprofiled
+paired measurement and the unchanged full qualification gates.
+
+## October 18 first attended block
+
+The initial deep evidence path exceeded the Unix-socket address limit while
+creating the environment monitor. The claimed failed arm remains under
+`t331-isb-cost-20261018/campaigns/t331-isb-60000-20261018/`; no Session launched.
+Replacement campaigns used short roots `~/.local/state/t331/isb60a` and
+`isb120a`, preserving the plans, artifacts and ordering. External tooling
+`c832a1f54418b749303fd28e116443006c551d3b` now checks that address at freeze and
+before an arm claim; boundary and no-write tests, strict Clippy and format pass.
+
+In `isb60a`, `idle-p1-panel-latency-C` captured all outcomes and recovered.
+`idle-p1-panel-latency-A` failed with `ContentAdmissionRefused`, reason 4,
+denied capabilities 384. Session downgraded Granted to Unavailable on its
+unauthenticated compatibility start, which the isolated IPC baseline retains
+deliberately. The peer then reported message kind 160 instead of a welcome.
+The block stopped; tty4 text mode, keyboard mode and termios were restored,
+with no emergency recovery. The attempt, wrapper, Session and recovery records
+are retained beneath that arm. This is an invalid pair, not a measured cost
+regression. `native-first-block-result.json` in the current evidence directory
+indexes both failures. No old attempt will be overwritten or resumed.
+
+Comparator repair `7b636c5ad9bf38c11d430f9d590baa08d52946f2` preserves Granted
+on ComparisonIpc only; unauthenticated NineP remains refused and the native
+protected-baseline opt-in guard is unchanged. A device-hidden protected-child
+test exercises `ShellComponentProcesses::start`, negotiated content grants and
+retained process custody. Restoring the old downgrade reproduces message kind
+160; restoring the fix passes. Session library/test strict Clippy passes with
+and without native-session. See `claude-ipc-start-*` logs under
+`isb-client-migration-20261018/`. Production source is unchanged.
+
+Replacement optimized artifacts are staged separately under
+`niltempus/.artifacts/t331-isb-cost-20261018-r2/`; their builds, hashes, 24
+profile checks and new plans are recorded in
+`t331-isb-cost-20261018/candidate-02/`. `ready.json` binds the repaired comparator
+and runner to the short-path campaigns `~/.local/state/t331/isb60b` and
+`isb120b`. The ordinary peer is byte-identical to the previously tested
+optimized peer. The old first-block command now delegates to the new launcher;
+each arm still requires the foreground attended console and stops on failure.
+
+## October 18 initial frozen native campaigns — superseded
+
+The signed comparator `bebb9db9b69b5eda1eae63e1124374f808abd8f6` and external
+runner `879b6729375b9330304abadd867b85718b5025fd` bind three optimized host/peer
+builds: ordinary latency, CPU-only and Rust allocation counting. Diagnostic
+trace and attribution features are absent. The staged ordinary peer passes all
+six device-hidden controls; 24 explicit profiles and the core configuration
+pass the prepared Sophia checker. No native arm has run.
+
+Evidence is under
+`~/.local/state/sophia/development-evidence/t331-isb-cost-20261018/`:
+`final-artifacts.json`, `final-*-build.{jsonl,log}`,
+`frozen-latency-peer-controls.log`, `frozen-profile-checks-02.log`,
+`native-preparation.log`, `campaign-freeze.log` and `native-ready.json`.
+Binaries are staged outside evidence in the external integration checkout's
+ignored `.artifacts/t331-isb-cost-20261018/` directory.
+
+The 60 Hz campaign digest is
+`bc2fa379aa4acfec6e0cb6cf64d176a146d6bd5773088763ea1d73a2782b7a1b`;
+the 120 Hz digest is
+`c49da844db420dbee13b67e2dde60d82c7c31d144937a595926580b8b2fc1f54`.
+Each freezes 72 ordered arms across both workloads, three restarted pairs,
+idle/load and separate latency/CPU/allocation methods. Profiles explicitly
+select DP-1, card0, output 1, 1920×1080, scale 1 and VRR off, continuing the
+historical target without hardware autodetection. Runtime observations must
+still confirm it. `operator-commands.txt` contains the exact attended tty4
+commands. Preserve failed or incomplete attempts; a frozen matrix is not a
+passing measurement.
 
 ## October 18 journal read pairing
 

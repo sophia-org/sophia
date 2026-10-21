@@ -128,7 +128,7 @@ fn rows_survive_actual_assembly_and_submission_while_real_bytes_remain_owned() {
     assert_eq!(binding.catalog_generation, 8);
     assert_eq!(binding.state_revision, 1);
     assert_eq!(
-        bundle.resource(RESOURCE).unwrap().bytes(),
+        bundle.resource(RESOURCE).unwrap().cpu_bytes().unwrap(),
         &[0, 0, 255, 255, 0, 128, 0, 128]
     );
     // Supplied renderer boundaries, not a native presentation observation.
@@ -318,8 +318,11 @@ fn revoked_native_submission_keeps_its_bytes_while_the_bar_uploads_and_replaceme
     };
     upload(&mut r, bar, 37);
     let neighbor = r.resources(bar).unwrap().lease(bar, RESOURCE).unwrap();
-    assert_eq!(neighbor.bytes()[2], 37);
-    assert_eq!(bundle.resource(RESOURCE).unwrap().bytes()[2], 255);
+    assert_eq!(neighbor.cpu_bytes().unwrap()[2], 37);
+    assert_eq!(
+        bundle.resource(RESOURCE).unwrap().cpu_bytes().unwrap()[2],
+        255
+    );
     let mut next = limits();
     next.grant = ContentGrant {
         connection_epoch: 3,
@@ -352,5 +355,5 @@ fn revoked_native_submission_keeps_its_bytes_while_the_bar_uploads_and_replaceme
         Some(ContentStoreProfile::NativeLauncher)
     );
     assert_eq!(r.profile(bar), Some(ContentStoreProfile::Legacy));
-    assert_eq!(neighbor.bytes()[2], 37);
+    assert_eq!(neighbor.cpu_bytes().unwrap()[2], 37);
 }

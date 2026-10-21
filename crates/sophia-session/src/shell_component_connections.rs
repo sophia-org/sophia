@@ -14,6 +14,8 @@ use sophia_runtime::{
 };
 
 const MIB: u64 = 1024 * 1024;
+#[cfg(feature = "experimental-shell-capture")]
+mod capture;
 pub(crate) mod images;
 pub(crate) use images::content_now_msec;
 
@@ -109,6 +111,12 @@ pub struct ShellComponentConnections {
     next_content: u64,
     cursor: usize,
     connections_have_dock: bool,
+    #[cfg(feature = "experimental-shell-capture")]
+    capture: Option<crate::shell_capture_owner::Owner>,
+    #[cfg(feature = "experimental-shell-capture")]
+    capture_link: capture::endpoint::Link,
+    #[cfg(feature = "experimental-shell-capture")]
+    capture_sources: capture::source::Sources,
 }
 
 pub type ComponentNegotiationEvent = (
@@ -131,6 +139,12 @@ impl ShellComponentConnections {
             next_content: 1,
             cursor: 0,
             connections_have_dock: false,
+            #[cfg(feature = "experimental-shell-capture")]
+            capture: None,
+            #[cfg(feature = "experimental-shell-capture")]
+            capture_link: capture::endpoint::Link::default(),
+            #[cfg(feature = "experimental-shell-capture")]
+            capture_sources: capture::source::Sources::default(),
         })
     }
 
@@ -414,6 +428,8 @@ impl ShellComponentConnections {
     }
 
     pub fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(rustix::event::PollFd<'a>)) {
+        #[cfg(feature = "experimental-shell-capture")]
+        self.visit_capture_completion(&mut visit);
         for connection in &self.connections {
             if matches!(
                 connection.attempt,
@@ -433,6 +449,8 @@ impl ShellComponentConnections {
         fds: &mut smallvec::SmallVec<[rustix::event::PollFd<'a>; 64]>,
     ) -> smallvec::SmallVec<[ComponentWait<'a>; MAX_SHELL_COMPONENTS]> {
         let mut registrations = smallvec::SmallVec::new();
+        #[cfg(feature = "experimental-shell-capture")]
+        self.visit_capture_completion(&mut |fd| fds.push(fd));
         for (slot, connection) in self.connections.iter().enumerate() {
             connection.readiness.take();
             images::visit_worker(connection, &mut |fd| fds.push(fd));
@@ -470,7 +488,8 @@ impl ShellComponentConnections {
 
     /// Active wire deadlines and retained image jobs may shorten the wait.
     pub fn authentication_wait(&self, now: std::time::Instant) -> std::time::Duration {
-        self.connections
+        let wait = self
+            .connections
             .iter()
             .filter(|connection| {
                 matches!(
@@ -490,7 +509,10 @@ impl ShellComponentConnections {
                     .map(|at| at.saturating_duration_since(now))
             }))
             .min()
-            .unwrap_or(std::time::Duration::MAX)
+            .unwrap_or(std::time::Duration::MAX);
+        #[cfg(feature = "experimental-shell-capture")]
+        let wait = wait.min(self.capture_maintenance_wait());
+        wait
     }
 
     /// Whether a connected wire holds records its next turn can move.
@@ -543,6 +565,27 @@ impl ShellComponentConnections {
                 *failure = Some((key, error));
             }
         }
+        #[cfg(feature = "experimental-shell-capture")]
+        for (binding, error) in self.service_capture_completions() {
+            if self
+                .connections
+                .get(binding.slot)
+                .is_some_and(|connection| {
+                    connection
+                        .attempt
+                        .is_some_and(|(grant, _)| grant == binding.grant)
+                })
+                && failures[binding.slot].is_none()
+            {
+                failures[binding.slot] = Some((
+                    ComponentConnectionKey {
+                        slot: binding.slot,
+                        grant: binding.grant,
+                    },
+                    error,
+                ));
+            }
+        }
         failures
     }
 
@@ -577,6 +620,10 @@ impl ShellComponentConnections {
         if phase == ComponentConnectionPhase::Revoked {
             return Ok(());
         }
+        #[cfg(feature = "experimental-shell-capture")]
+        if let Some(owner) = self.capture.as_mut() {
+            owner.withdraw(key.slot, key.grant);
+        }
         let result = connection.transport.disconnect(&mut self.epochs);
         connection.attempt = Some((grant, ComponentConnectionPhase::Revoked));
         result?;
@@ -600,6 +647,10 @@ impl ShellComponentConnections {
         &mut self,
         backend: B,
     ) -> Result<(usize, ContentEpochAccounting), B> {
+        #[cfg(feature = "experimental-shell-capture")]
+        if self.capture_pending() != 0 {
+            return Err(backend);
+        }
         if self.connections.iter().any(|connection| {
             connection
                 .images
