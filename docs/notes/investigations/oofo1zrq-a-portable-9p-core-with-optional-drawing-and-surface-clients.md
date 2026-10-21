@@ -273,6 +273,43 @@ count and retained generations when reporting memory. Keep the uncommitted
 `sophia-d3` worktree until import and evidence are settled; no native CPU benefit
 or production default is accepted here.
 
+### Comparator import and prepared retained screen, October 20
+
+D3 Track B is imported on `performance/t331-isb-cost` at signed commit
+`001e5b45517978012598702b080b42327bfb4244`. The original dirty `sophia-d3`
+worktree is preserved. Renderer/cache and real sealed-resource identity tests,
+six real peer controls (including four retained resources across 64 rotated
+presentations), and strict CLI Clippy pass. The layout audit still reports the
+pre-existing direct-library-printing failure in unchanged Session `lib.rs`.
+Import patch, hashes and logs are in development evidence
+`t331-d3-20261020/comparator-import-01`.
+
+`t331-d3-20261020/retained-native-01` freezes cache-off/cache-on ABBA then BAAB:
+eight 1000-presentation runs, one identical CPU-counting peer, four 480x24
+sealed tiles in a 1920x24 panel, and only the cache feature differing across
+235 matched compiler units. Initial sealed pool preparation precedes measured
+CPU windows; this is steady-state presentation cost, not lifecycle cost.
+Shutdown records include actual cache uploads/hits, composition passes and
+target count. The memory cap remains 128 MiB per persistent target. Production
+setter callers are absent, and the cache environment override is removed in
+both arms. Twenty-two offline launcher/analyzer controls pass; the native
+screen is prepared but has not been launched.
+
+The frozen discriminator requires combined CPU savings beyond within-arm
+spread in both blocks and candidate p99 within control p99 plus 1000 usec,
+after exact joins, rotated resource references and cache activity qualify.
+This evaluates retained texture reuse; it cannot establish the fresh CPU
+files/IPC gate. The next action is this prepared retained screen, not another
+fresh-panel baseline or additional render-node fixture shape.
+
+The intervening C43-r2 fresh-panel capture at `1bfe3ae8e` was valid but resumed
+the wrong investigation. Its three files/IPC pairs reported combined CPU
+excess of 27.98–28.40%, 32.85–33.20%, and 43.08–43.43%; all 6000 presentations
+joined and no major faults occurred. Temporal drift prevents treating those
+pairs as a pooled comparison against older captures. They establish neither
+D3 benefit nor the cost of the proposed draw/GPU paths. C43 receipts and
+findings remain under `t331-isb-cost-20261018/candidate-43-current-panel-pairs-r2`.
+
 ### D2: scoped host-proof checklist, with corrected lifetime claims
 
 These are four host-proof groups relevant to this image/identity investigation,
