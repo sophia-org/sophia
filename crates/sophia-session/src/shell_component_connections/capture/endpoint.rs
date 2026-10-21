@@ -228,6 +228,15 @@ impl ShellComponentConnections {
         now: u64,
     ) -> Result<sophia_renderer_live::LiveShellCaptureJob, crate::shell_capture_owner::Rejected>
     {
+        if self.capture_pending() >= crate::shell_capture_owner::MAX_JOBS
+            || self.capture_sources.contains(binding)
+        {
+            return Err(crate::shell_capture_owner::Rejected {
+                reason: crate::shell_capture_owner::SubmitFailure::Capacity,
+                request,
+                reservation,
+            });
+        }
         let key = ComponentConnectionKey {
             slot: binding.slot,
             grant: binding.grant,

@@ -115,6 +115,8 @@ pub struct ShellComponentConnections {
     capture: Option<crate::shell_capture_owner::Owner>,
     #[cfg(feature = "experimental-shell-capture")]
     capture_link: capture::endpoint::Link,
+    #[cfg(feature = "experimental-shell-capture")]
+    capture_sources: capture::source::Sources,
 }
 
 pub type ComponentNegotiationEvent = (
@@ -141,6 +143,8 @@ impl ShellComponentConnections {
             capture: None,
             #[cfg(feature = "experimental-shell-capture")]
             capture_link: capture::endpoint::Link::default(),
+            #[cfg(feature = "experimental-shell-capture")]
+            capture_sources: capture::source::Sources::default(),
         })
     }
 
@@ -633,11 +637,7 @@ impl ShellComponentConnections {
         backend: B,
     ) -> Result<(usize, ContentEpochAccounting), B> {
         #[cfg(feature = "experimental-shell-capture")]
-        if self
-            .capture
-            .as_ref()
-            .is_some_and(|owner| owner.pending() != 0)
-        {
+        if self.capture_pending() != 0 {
             return Err(backend);
         }
         if self.connections.iter().any(|connection| {

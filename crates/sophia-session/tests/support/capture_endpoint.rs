@@ -7,6 +7,9 @@ use sophia_renderer_live::{
 };
 use std::os::{fd::AsRawFd, unix::net::UnixStream};
 
+#[path = "capture_source.rs"]
+mod source_tests;
+
 #[derive(Default)]
 struct Native {
     requests: Vec<OutputId>,

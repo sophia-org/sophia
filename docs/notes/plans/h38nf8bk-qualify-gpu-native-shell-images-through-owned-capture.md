@@ -738,6 +738,41 @@ a live GPU completion, DMA-BUF admission or performance result. Outer shutdown
 still refuses disposal of unresolved capture custody; it does not fabricate
 completion from backend teardown.
 
+#### Pre-submit source retention (2026-10-20)
+
+Session now privately retains an unsubmitted descriptor with its exact binding,
+logical reservation and validation deadline while the existing native endpoint
+is prepared. Waiting sources, submitted jobs, retained receipts and orphaned
+completions share the four-slot bound. Capacity and identity refusals return the
+original source and ticket. Pending sources participate in maintenance waits
+and prevent final owner disposal.
+
+The explicit handoff requires a renderer allocation byte bound and reserves
+against the endpoint's exact physical budget before submission. It does not
+infer destination allocation size from source bytes. A missing endpoint or
+unavailable budget retains the source; a failed enqueue restores it and releases
+only unused physical credit. The original deadline cannot be renewed by retry.
+
+Before native submission, timeout, withdrawal or refusal can failure-settle the
+exact logical ticket without GPU completion. The source descriptor and its slot
+remain retained until the terminal status precedes SourceReleased in the exact
+journal, or that journal is disconnected. Clock errors retain custody. After
+successful enqueue, the existing opaque-receipt path owns all settlement;
+uncertainty still cannot release anything.
+
+Evidence: `t339-owned-capture-20261020/source-retention-01`. Supplied-descriptor
+controls cover endpoint absence, timeout/journal pressure, old-grant disposal,
+shared capacity, physical-budget refusal, expired submission, malformed/foreign
+tickets, clock regression and actual native-inbox enqueue refusal. They prove
+pre-use retention and rollback, not a real GPU copy or DMA-BUF admission.
+
+The production offer path remains sealed-only. No live source-ingress caller
+uses the new private retention API yet. Next are admission-time capture
+reservation and kind-aware Source transfer, negotiated device/format and byte
+bounds, and real provider-completed GPU qualification. The intake must derive
+its deadline from negotiated validation/transfer limits. No GPU capability,
+default behavior or performance claim changes in this slice.
+
 #### Remaining source intake and qualification
 
 Use the existing owner, not a second capture thread or context. The bounded

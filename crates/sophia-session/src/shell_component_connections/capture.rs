@@ -5,6 +5,7 @@ use crate::shell_capture_owner::{Binding, Owner, Publication};
 // for supplied mailbox controls without constructing a native owner.
 #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
 pub(super) mod endpoint;
+pub(super) mod source;
 
 #[cfg(test)]
 #[path = "../../tests/support/component_capture_owner.rs"]
@@ -25,13 +26,13 @@ fn publish_current(
 }
 
 impl ShellComponentConnections {
+    pub(super) fn capture_pending(&self) -> usize {
+        self.capture_sources.pending() + self.capture.as_ref().map_or(0, Owner::pending)
+    }
     pub(super) fn capture_maintenance_wait(&self) -> Duration {
         if self.epochs.capture_retirement_active()
             || self.capture_link.needs_turn()
-            || self
-                .capture
-                .as_ref()
-                .is_some_and(|owner| owner.pending() != 0)
+            || self.capture_pending() != 0
         {
             Duration::from_millis(10)
         } else {
@@ -74,11 +75,13 @@ impl ShellComponentConnections {
     }
 
     pub(crate) fn service_capture_completions(&mut self) -> Vec<(Binding, ShellTransportError)> {
+        let mut errors =
+            self.service_capture_sources(content_now_msec(), std::time::Instant::now());
         let Some(owner) = self.capture.as_mut() else {
-            return Vec::new();
+            return errors;
         };
         let connections = &mut self.connections;
-        owner.service(
+        errors.extend(owner.service(
             &mut self.epochs,
             content_now_msec(),
             std::time::Instant::now(),
@@ -90,7 +93,8 @@ impl ShellComponentConnections {
                         .map(|_| ())
                 })
             },
-        )
+        ));
+        errors
     }
 
     pub(crate) fn retire_capture_imports<E>(

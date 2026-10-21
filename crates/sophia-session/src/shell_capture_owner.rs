@@ -28,7 +28,7 @@ use std::{
 mod settlement;
 pub(crate) use settlement::Publication;
 
-const MAX_JOBS: usize = 4;
+pub(crate) const MAX_JOBS: usize = 4;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Binding {
@@ -47,8 +47,18 @@ impl Binding {
     }
 
     fn matches(&self, request: &LiveShellCaptureRequest) -> bool {
+        self.matches_source(&request.source)
+    }
+
+    pub(crate) fn conflicts(&self, other: &Self) -> bool {
+        self.slot == other.slot
+            && self.grant == other.grant
+            && (self.metadata.offer_id == other.metadata.offer_id
+                || self.resource() == other.resource())
+    }
+
+    pub(crate) fn matches_source(&self, s: &sophia_renderer_live::LiveShellCaptureSource) -> bool {
         let m = self.metadata;
-        let s = &request.source;
         self.grant.connection_epoch != 0
             && self.grant.content_grant_epoch != 0
             && m.admission_epoch == self.grant.content_grant_epoch
@@ -227,6 +237,15 @@ pub(crate) struct Owner {
 }
 
 impl Owner {
+    pub(crate) fn contains(&self, binding: Binding) -> bool {
+        self.pending
+            .iter()
+            .flatten()
+            .map(|p| p.binding)
+            .chain(self.settling.iter().flatten().map(|p| p.binding))
+            .any(|held| held.conflicts(&binding))
+    }
+
     pub(crate) fn replaceable(&self) -> bool {
         self.closed && self.pending() == 0
     }
