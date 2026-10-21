@@ -26,19 +26,27 @@ role; it does not import Plan 9's process, security or drawing contracts.
 
 | Item | Proposal | Evaluation and outstanding decision |
 | --- | --- | --- |
-| D1 | Make command drawing the native default, with surface clients alongside it. | Investigate an optional draw class first. Making it the default requires separate approval and evidence across representative clients. |
+| D1 | Make command drawing the native default, with surface clients alongside it. | Optional draw class first. niltempus selected Vello CPU/GPU as its implementation family on October 20; default status and a stable wire ABI remain unapproved. |
 | D2 | Define an explicit host capability contract for process identity/lifetime, immutable storage, device buffers and display. | A useful design decomposition. POSIX portability does not establish equivalent enforcement on every host. |
-| D3 | Import sealed CPU buffers through Linux udmabuf. | Direct import of current write-sealed ISBs is blocked by upstream Linux 6.18's seal checks; see the correction below. Any alternative needs its own immutability proof. |
+| D3 | Import sealed CPU buffers through Linux udmabuf. | Track A is blocked on the installed kernel as well as upstream. Track B, per-resource immutable texture uploads, is ready for comparator preparation after retained-content qualification; no native benefit yet. |
 | D4 | Permit reusable producer-writable buffers with fences. | Reopens immutable acceptance and consumer ownership, not just journal wording. Keep existing ISB requirements until that decision is explicit. |
 | D5 | Prioritize plain 9P2000, with 9P2000.L adapters. | Changes the accepted delivery order. Determine the first real client and its dialect needs before changing that order. |
 | D6 | Host Plan 9 or Inferno. | Remains shelved as a product/ecosystem decision. |
 
-The handback proposes vello_cpu first, then Vello and Blend2D, against a
-Vello-inspired scene vocabulary. These are candidate implementations, not a
-selected dependency or a stable wire ABI. Claims about their relative speed,
-JIT configuration or cross-platform support need pinned verification before
-selection. Plan 9 raster exactness is reported as unnecessary; compatibility
-with libdraw therefore needs a translator and a stated supported subset.
+On October 20 niltempus selected the Vello implementation family for the optional
+draw service: **vello_cpu for CPU and vello for GPU**. Blend2D is not selected and
+is not a dependency candidate for now. This supersedes the handback-03
+“backend order held open” status. The existing renderer manifest pins
+`vello_cpu = "=0.2.0"`; that is an existing dependency fact, not qualification of
+the proposed draw service. Vello-shaped scene vocabulary can guide the prototype,
+but neither a stable wire ABI nor production dependency versions/configuration
+are selected by this decision. Pinned speed, portability and configuration
+verification remains required. D1 as a default client class still needs its own
+evidence and decision. Surface clients, Engine ownership and immutable-content
+contracts remain unchanged.
+
+Plan 9 raster exactness was reported as unnecessary; compatibility with libdraw
+therefore still needs a translator and a stated supported subset.
 
 ## Proposed GPU-native content path
 
@@ -223,6 +231,99 @@ guarantee: writable access through the exported object and the legality of
 later sealing require independent proof. DMA-BUF synchronization and immutable
 acceptance remain different contracts. D3 is a research question, not a ready
 zero-copy path for current ISBs.
+
+## October 20 handback-03 disposition
+
+The original D2 draft, D4 memo/probe, D3 diff and render-node receipts are retained
+under `t331-d3-20261020/claude-handback-03` in development evidence. The original
+drafts remain attributable to Claude; the qualifications below supersede their
+stronger claims. Parent inspection and Muse's independent D3 review were
+read-only: neither reran the builds or device controls.
+
+### D3: retained-content qualification is sufficient for comparator preparation
+
+The installed-kernel udmabuf probe reported WRITE- and FUTURE_WRITE-sealed export
+refusal, writable aliasing for an export without those seals, and EBUSY when
+adding WRITE while that export remained open. It closes track A for the current
+ISB contract on the tested kernel; export-before-seal is not a demonstrated
+escape. This is retained probe evidence, separate from the upstream source check
+above.
+
+Track B retains immutable content and changes only renderer upload reuse. The
+resource/candidate audit confirms that later candidates can place the same
+accepted resource generation without another upload. Placement may change;
+opacity is not a ContentPlacement field and damage is engine-derived. The
+identity-bridge controls use real sealed mappings and the resource store. The
+reported render-node controls compare every recomposed frame with the uncached
+path, mix unidentified fresh content, and re-offer new generations. The retained
+48-frame fixture reports seven uploads and 277 hits with equal pixels; those are
+fixture observations, not predictions for another workload.
+
+Disposition: enough for comparator import/preparation; no additional render-node
+fixture shapes are required before that work. This is not a launch or promotion
+gate. A native fixture must actually reuse resources through demand, permit,
+candidate and outcome, and its join analyzer must permit uploads independent of
+presentation count. A fresh-resource-per-frame panel cannot establish the
+retained-reuse benefit. Freeze separately built feature arms and identical peer,
+measure actual passes/uploads/hits, both processes' CPU and latency, and retain
+pixel equivalence and custody controls. The cache feature controls construction
+defaults, not hard API exclusion; the setter can enable either build. The
+128 MiB bound is per persistent target, not aggregate device memory. State target
+count and retained generations when reporting memory. Keep the uncommitted
+`sophia-d3` worktree until import and evidence are settled; no native CPU benefit
+or production default is accepted here.
+
+### D2: scoped host-proof checklist, with corrected lifetime claims
+
+These are four host-proof groups relevant to this image/identity investigation,
+not a complete inventory of everything a portable core needs. No non-Linux host
+is claimed equivalent, and host differences need not leave every mechanism
+unchanged.
+
+| Group | Required proof and ownership boundary | Current status / port obligation |
+| --- | --- | --- |
+| Process identity and lifetime | Correlate credentials with a stable process identity; process death is observable. Continue grant, epoch, admission, revocation and expiry checks. | Linux pidfds remain handles to the exited process; they become readable, not reusable identities. Default fresh liveness checks remain; bounded custody dispatch is experimental and not promoted. A port must specify race behavior and detection/observation bounds. No ordering guarantee puts exit notification before every last socket message. |
+| Immutable storage | Accepted bytes and bounds remain stable for all consumers; validation applies to those retained bytes. | Current CPU ISBs require the seal/size checks. A host without equivalent write/truncation exclusion needs an owned copy and safe source-copy API, with validation after copying. A consumer read-only mapping is insufficient. |
+| Device buffers | The exact source read must complete or be proven unused before source release; retained destination storage is owned and stable. | t339 is experimental, with shell DMA admission still disabled. A copy can race hostile producer writes; containment must preserve bounds/ownership, and future composition uses the owned destination. Producer fences alone do not exclude later writes. Ports must establish completion, generation and teardown behavior. |
+| Display | Keep output buffers alive through their actual uses and correlate completion to the submitted frame under stated backend semantics. | A composition-plan checksum is not a cryptographic proof of every displayed pixel. Each backend must define completion and buffer-age semantics; unknown age requires full repaint. |
+
+Death initiates revocation; it does not prove consumers stopped or GPU source
+reads ended. Uncertain custody can remain quarantined. Descriptor passing remains
+a separate bounded, close-on-exec ingress obligation within the platform layer;
+no table entry turns readiness into authorization. These corrections replace the
+draft's claims that experimental dispatch is today's universal liveness proof,
+that notifications cannot arrive after messages, or that all leases settle just
+because the peer dies.
+
+### D4: retain A; B is a decision package; C is not accepted
+
+A is the current sealed-ISB contract. B copies from a producer-writable source
+into Sophia-owned immutable resource storage. C composes directly from reusable
+producer-writable storage under fences. Recommendation: keep A; consider B only
+by an explicit decision; do not adopt C under the current ADRs. No D4 change has
+been authorized by filing this memo.
+
+Claude's three single-process probe runs report roughly 55 microseconds for the
+fresh panel consumer stages versus 20 for ring copy/validation, and roughly 110
+versus 24 for producer work. These are local wall-time observations, **not upper
+bounds, native CPU savings, or a partition of the c23 files/IPC excess**. The
+probe sequences producer and consumer in one process, assigns last-close work
+to its consumer stage, and reuses one destination vector. It does not include
+concurrent retained accepted resources, cross-process scheduling, renderer
+uploads, protocol traffic or release backpressure. The actual owner of last-close
+cost also depends on descriptor lifetimes. Subtracting these timings from c23
+CPU measurements cannot establish the remaining bottleneck.
+
+Before B can be screened, specify a race-safe bounded copy API, fixed source
+extent, validation of the completed owned copy, and immutable destination
+storage retained until its last consumer releases it. Define source-slot release
+separately from ResourceReleased, per-generation identity and failure/withdrawal
+accounting. The probe's single reused destination is not that implementation.
+A generation re-read does not make hostile mutable input safe to expose as a
+stable Rust slice. D3 texture caching can apply to B only after the accepted
+copy has the same stable identity and lifetime guarantees. A native comparison
+would then measure the complete ownership path; further local timing alone
+cannot decide D4.
 
 ## Evidence and next discriminator
 
