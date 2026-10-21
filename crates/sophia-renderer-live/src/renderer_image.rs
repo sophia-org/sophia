@@ -1,3 +1,4 @@
+#[cfg(any(feature = "egl-probe", feature = "gbm-probe"))]
 pub use sophia_renderer_native_egl::NativeRendererImageCustody as LiveRendererImageCustody;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
