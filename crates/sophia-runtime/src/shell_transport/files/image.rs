@@ -62,8 +62,8 @@ impl ImageService {
         use rustix::event::{PollFd, PollFlags};
         #[cfg(feature = "comparator-progress")]
         let mut visit = |fd: rustix::event::PollFd<'a>| {
+            use sophia_9p::progress::wait_sources::{Role, register};
             use std::os::fd::{AsFd, AsRawFd};
-            use sophia_9p::progress::wait_sources::{register, Role};
             let role = if fd.as_fd().as_raw_fd() == self.listener.readiness().as_raw_fd() {
                 Role::ImageListener
             } else {

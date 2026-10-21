@@ -21,6 +21,12 @@ mod canvas;
 #[path = "shell_timing_peer/sealed.rs"]
 mod sealed;
 use sealed::SealedConfig;
+#[path = "shell_timing_peer/retained.rs"]
+mod retained;
+use retained::{Geometry, Workload};
+
+/// Journal schema: 2 for the fresh workload (unchanged records), 3 for retained.
+static JOURNAL_SCHEMA: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(2);
 
 #[cfg(feature = "comparator-allocation-counting")]
 #[global_allocator]
@@ -243,7 +249,11 @@ fn clock_usec() -> u64 {
 }
 
 fn emit(event: Event<'_>) -> Result<()> {
-    journal::write(&mut std::io::stdout().lock(), event)?;
+    journal::write(
+        &mut std::io::stdout().lock(),
+        JOURNAL_SCHEMA.load(std::sync::atomic::Ordering::Relaxed),
+        event,
+    )?;
     Ok(())
 }
 
@@ -263,7 +273,7 @@ fn run() -> Result<()> {
     let object = config
         .as_object()
         .ok_or("configuration must be an object")?;
-    if !(5..=8).contains(&object.len())
+    if !(5..=10).contains(&object.len())
         || object.keys().any(|k| {
             ![
                 "wire",
@@ -274,11 +284,13 @@ fn run() -> Result<()> {
                 "probe_bytes",
                 "source",
                 "image",
+                "workload",
+                "retained_resources",
             ]
             .contains(&k.as_str())
         })
     {
-        return Err("configuration requires wire, output, frames, height, hold_msec and optional probe_bytes, source and image".into());
+        return Err("configuration requires wire, output, frames, height, hold_msec and optional probe_bytes, source, image, workload and retained_resources".into());
     }
     let number = |key: &str| -> Result<u64> {
         config[key]
@@ -322,6 +334,7 @@ fn run() -> Result<()> {
     if sealed.is_some() && !files {
         return Err("sealed source requires the file wire".into());
     }
+    let workload = retained::parse(object, sealed.is_some() && files)?;
     let mut wire = Wire::connect(files, sealed)?;
     let ShellContentRecord::Limits(limits) = wire.receive()? else {
         return Err("missing limits".into());
@@ -382,11 +395,27 @@ fn run() -> Result<()> {
     if sealed.is_some() {
         sealed::wait_ready(wire.client()?, WAIT)?;
     }
+    // Retained tiles split the granted bar; their limits must hold with every
+    // tile resident at once, and their records carry schema 3.
+    let geometry = match workload {
+        Workload::Retained { tiles } => {
+            let geometry = Geometry::new(allocation.pixel.width, allocation.pixel.height, tiles)?;
+            geometry.check_limits(&limits, probe_bytes)?;
+            JOURNAL_SCHEMA.store(
+                retained::JOURNAL_SCHEMA,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            Some(geometry)
+        }
+        Workload::Fresh => None,
+    };
     emit(Event::Start {
         frames,
         wire: if files { "files" } else { "ipc" },
         probe_bytes,
         source: sealed.map(|_| "sealed"),
+        workload: geometry.map(|_| workload.name()),
+        retained_resources: workload.tiles().map(u64::from),
     })?;
     let bar_bytes = canvas::rgba_bytes(allocation.pixel.width, allocation.pixel.height)
         .ok_or("upload size overflow")?;
@@ -396,6 +425,64 @@ fn run() -> Result<()> {
         canvas::rgba_bytes(1024, 1024).ok_or("upload size overflow")?
     };
     let mut canvas = canvas::Canvas::new(usize::try_from(bar_bytes.max(probe_canvas_bytes))?);
+    // Retained workload: every tile is uploaded and accepted before the first
+    // demand. The offers carry candidate_generation 0: they belong to no frame.
+    if let Some(geometry) = &geometry {
+        for index in 0..geometry.tiles {
+            let resource = retained::tile(index);
+            let length = geometry.tile_bytes()?;
+            let source = sealed::prepare(
+                geometry.tile_width,
+                geometry.height,
+                limits.max_resource_bytes,
+                u64::from(index) + 1,
+            )?;
+            let begin_usec = clock_usec();
+            emit(Event::UploadOffer {
+                upload: Upload {
+                    connection_epoch: grant.connection_epoch,
+                    content_grant_epoch: grant.content_grant_epoch,
+                    output: output.output.id,
+                    candidate_generation: 0,
+                    resource_id: resource.id,
+                    resource_generation: resource.generation,
+                    width: geometry.tile_width,
+                    height: geometry.height,
+                    total_bytes: length,
+                    begin_usec,
+                },
+            })?;
+            let metadata = ProducerMetadata {
+                offer_id: 0,
+                resource: resource.id,
+                resource_generation: resource.generation,
+                admission_epoch: grant.content_grant_epoch,
+                output_id: output.output.id,
+                allocation_id: allocation.allocation.id,
+                topology_generation: facts.facts_generation,
+                source_kind: 1,
+                source_format: 1,
+                width: geometry.tile_width,
+                height: geometry.height,
+                stride: geometry
+                    .tile_width
+                    .checked_mul(4)
+                    .ok_or("row size overflow")?,
+                plane_count: 1,
+                descriptor_count: 1,
+                declared_bytes: length,
+                modifier: 0,
+            };
+            let offer = sealed::begin(wire.client()?, metadata, source)?;
+            expect_status(&mut wire, grant, resource, 2)?;
+            sealed::settle(wire.client()?, offer, resource, WAIT)?;
+            emit(Event::UploadAccepted {
+                resource_id: resource.id,
+                resource_generation: resource.generation,
+                accepted_usec: clock_usec(),
+            })?;
+        }
+    }
     for generation in 1..=frames {
         #[cfg(feature = "comparator-counters")]
         sophia_runtime::comparator_counters::record("peer", "frame_start", generation)?;
@@ -404,6 +491,11 @@ fn run() -> Result<()> {
         // New IDs must increase: probe 1, then alternating bar IDs 2 and 3.
         for probe in [true, false] {
             if probe && probe_bytes == 0 {
+                continue;
+            }
+            // Retained tiles were uploaded before the loop; only the probe
+            // is a per-frame transfer.
+            if !probe && geometry.is_some() {
                 continue;
             }
             let resource = if probe {
@@ -571,6 +663,16 @@ fn run() -> Result<()> {
             demand_usec: demand_time,
             received_usec: clock_usec(),
         })?;
+        let placements = match &geometry {
+            Some(geometry) => retained::placements(geometry, generation),
+            None => vec![ContentPlacement {
+                resource,
+                surface_index: 0,
+                destination_x_px: 0,
+                destination_y_px: 0,
+            }],
+        };
+        let placement_count = u32::try_from(placements.len())?;
         let records = [
             ShellContentRecord::CandidateBegin(ContentCandidateBegin {
                 grant,
@@ -580,7 +682,7 @@ fn run() -> Result<()> {
                 pacing_permit: permit.permit_id,
                 interaction_generation: 1,
                 surface_count: 1,
-                placement_count: 1,
+                placement_count,
                 target_count: 0,
             }),
             ShellContentRecord::CandidateChunk(ContentCandidateChunk {
@@ -597,22 +699,23 @@ fn run() -> Result<()> {
                     parent_surface_index: u16::MAX,
                     anchor_parent_rect: ContentPixelRect::default(),
                 }],
-                placements: vec![ContentPlacement {
-                    resource,
-                    surface_index: 0,
-                    destination_x_px: 0,
-                    destination_y_px: 0,
-                }],
+                placements: placements.clone(),
                 targets: vec![],
             }),
             ShellContentRecord::CandidateEnd(ContentCandidateEnd {
                 grant,
                 candidate_generation: generation,
                 surface_count: 1,
-                placement_count: 1,
+                placement_count,
                 target_count: 0,
             }),
         ];
+        if geometry.is_some() {
+            emit(Event::CandidatePlacements {
+                candidate_generation: generation,
+                placements: retained::journal_placements(&placements),
+            })?;
+        }
         emit(Event::Offer {
             connection_epoch: grant.connection_epoch,
             content_grant_epoch: grant.content_grant_epoch,
@@ -663,7 +766,11 @@ fn run() -> Result<()> {
             break;
         }
         // Keep the currently displayed resource until a successor is shown.
-        if generation > 1 {
+        // Retained tiles are never retired by the peer: the last presented
+        // candidate keeps every tile leased, so a retire could not be
+        // released before connection retirement (same end state as the
+        // fresh workload's final resource).
+        if generation > 1 && geometry.is_none() {
             let old = resource_for_frame(generation - 1, probe_bytes != 0);
             wire.send(
                 7,
@@ -682,6 +789,9 @@ fn run() -> Result<()> {
         #[cfg(feature = "comparator-counters")]
         sophia_runtime::comparator_counters::record("peer", "frame_end", generation)?;
     }
+    // Retained tiles stay live through End and the hold; the Session releases
+    // them at connection retirement, and the peer makes no ResourceReleased
+    // claim for them.
     emit(Event::End {
         offered: frames,
         completed: frames,

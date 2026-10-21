@@ -279,9 +279,12 @@ impl ContentResourceStore {
         let deadline = now
             .checked_add(u64::from(self.limits.transfer_timeout_ms))
             .ok_or(ContentStoreError::Malformed)?;
-        let idle_deadline = now
-            .checked_add(u64::from(self.limits.transfer_idle_timeout_ms))
-            .ok_or(ContentStoreError::Malformed)?;
+        let idle_deadline = if sealed {
+            deadline
+        } else {
+            now.checked_add(u64::from(self.limits.transfer_idle_timeout_ms))
+                .ok_or(ContentStoreError::Malformed)?
+        };
         let mut storage = Vec::new();
         if !sealed {
             storage

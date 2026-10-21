@@ -47,7 +47,6 @@ macro_rules! session_wait_diagnostic {
 #[cfg_attr(not(feature = "native-session"), allow(unused_imports))]
 pub(crate) use session_wait_diagnostic;
 
-
 macro_rules! session_eprintln {
     ($($argument:tt)*) => {{
         crate::output::stderr(format_args!($($argument)*));
