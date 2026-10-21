@@ -101,6 +101,56 @@ The R choice remains pending with niltempus, as requested in conversation.
 
 ## Task details
 
+### Four-workload external bar and runner choice — October 21
+
+Niltempus approves idle, bursty, retained and fresh as the gated t331 external
+workloads. Idle, bursty and retained describe ordinary CPU-backed shell use;
+fresh is the worst-case bound, not the headline. Fast dynamic GPU-buffer work
+remains in t289/t339. Each workload must match across Sophia, Wayland and
+composited XLibre. IPC remains diagnostic. Numerical R values remain unset.
+
+| Workload | Matched work | Proposed measured quantities |
+| --- | --- | --- |
+| idle | One presented panel, then a 60-second quiet measurement window | Server CPU/s, server voluntary/involuntary context switches/s across all threads, client CPU/s |
+| bursty | Whole fresh 1920×24 storage at absolute 250 ms intervals; only the rightmost 96×24 pixels change visibly | Server/client CPU per update and per second; fill-start to presentation |
+| retained | Eight 240×24 tiles filled once with generations 1–8, rotated by submission index each vsync | Server/client CPU per frame and per second; pacing to presentation; D3 cache on gated, off reported |
+| fresh | Whole new 1920×24 content each vsync | Existing fresh quantities, reported as the worst-case bound |
+
+**Runner choice is (b), before any bursty/idle run:** add schema-4 and idle
+support to the typed niltempus runner in `measurement/t331-external-bar`.
+`sophia2journal.py` stays downstream of its validated native join, preserving
+exact resource/candidate identities, kernel timestamps and complete-head
+requirements. Direct peer configuration plus an unvalidated converter is not
+an alternative acceptance path. No bursty/idle run has been made here.
+
+The received rev-5 files and two peer changes were hash-verified and frozen at
+`t331-d4-owned-copy-20261021/external-bar-handback-03` (23 receipted sources).
+Receipt verification does not qualify the new implementations. Preserve the
+integration lane's parser/refusal and presentation fixes when importing them.
+
+Corrections required before measurement:
+
+- Bursty's received whole-frame changing shade contradicts its small damage
+  rectangle. Keep pixels outside that rectangle constant in every fresh buffer
+  on every arm; initialize each X back pixmap completely before partial updates.
+  Fill the whole producer buffer on every update, as approved. Sophia still
+  uploads the whole resource; compare this actual behavior with correct partial
+  damage on the references. Capture pixels to verify equivalent visuals.
+- An idle window from first presentation +2 s to +62 s requires the reference
+  clients and Sophia peer to remain alive beyond +62 s, with a teardown margin.
+  The received 60-second sleeps do not cover that window. Anchor sampling on
+  validated presentation; retain source timestamps and actual sampling brackets.
+- Context switches are not wakeups. Keep voluntary and involuntary counts and
+  thread identities; thread creation/exit can invalidate a simple difference
+  of live-thread sums. Refuse or explicitly mark incomplete coverage, never
+  report missing threads as zero. Neither quantity alone proves battery life.
+- Schema 4 declares an interval but does not record the actual scheduled due
+  timestamp. Upload start is observed work, not necessarily its deadline. Add
+  schedule evidence before labelling a bursty pacing column as due time.
+- Retain the previous matching requirements: pinned output/configured geometry,
+  actual generation values, synchronized CPU windows, correct final composed
+  presentation evidence and explicit software/GPU qualification.
+
 ### Approved owner-service optimization — October 18
 
 After reviewing native syscall evidence, niltempus explicitly approved service
