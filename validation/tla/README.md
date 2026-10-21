@@ -927,3 +927,28 @@ presented identity while the original press record remains historical. The
 revocation, replacement, click-through, Prepared, ACK and WM controls remain
 registered. Geometry/semantic equivalence is abstracted by the model's target,
 interaction and allocation identities; Rust controls check the concrete fields.
+
+## ImageSourceSettlement
+
+`ImageSourceSettlement.tla` checks terminal-status provenance and source release
+for sealed ISB images and the default-off owned-copy ring. Only a store final
+settlement may spend an admitted offer's held status reservation; a failed
+client control reply cannot spend it, even when its transaction equals the
+offer id. A cancellation may settle under its own transaction. Source release
+follows that final status in the same journal, and a ring slot cannot be
+rewritten while its read ticket is live.
+
+The two positive configurations check safety and eventual release under weak
+fairness of owner, worker and publication progress. The bounded model has two
+offers, one grant and at most one channel loss. It omits pixels, generation-word
+checks, budgets, topology, journal ACK capacity and re-registration; it is not
+a refinement proof or native performance evidence. The source mapping and
+reported state counts are in
+`../specula/image-source-settlement-modeling-brief.md`.
+
+`tools/check_tla.sh` also runs five controls against the same module:
+`TransactionReply` and `RingResourceKeyed` must violate `StatusBeforeRelease`,
+`TransactionCancelLeak` must fail liveness, `RingEarlyRelease` must violate
+`NoWriteDuringRead`, and `RingReleaseIgnoresEpoch` must violate
+`ReleaseInOwnEpoch`. The two transaction controls reproduce the sealed-path
+bugs covered by `sealed_image_control_provenance.rs` before the provenance fix.

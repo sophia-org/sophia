@@ -526,6 +526,40 @@ for control in X11ClientOutputSpillBlockingWriter X11ClientOutputSpillUnbounded 
     }
 done
 
+# Image-source settlement: both source types use the same module, with distinct
+# configurations. Keep each run's state files and failure trace separate.
+for config in ImageSourceSettlement ImageSourceSettlementRing; do
+    model_dir="$TEMP_DIR/$config"
+    mkdir "$model_dir"
+    cp "$MODEL_DIR/ImageSourceSettlement.tla" "$MODEL_DIR/$config.cfg" "$model_dir/"
+    (cd "$model_dir" && timeout 30m java -XX:+UseParallelGC -jar "$JAR_PATH" \
+        -deadlock -workers 1 -fp 0 -config "$config.cfg" ImageSourceSettlement.tla)
+done
+
+for suffix in TransactionReply TransactionCancelLeak RingResourceKeyed RingEarlyRelease RingReleaseIgnoresEpoch; do
+    control="ImageSourceSettlement$suffix"
+    control_dir="$TEMP_DIR/$control"
+    mkdir "$control_dir"
+    cp "$MODEL_DIR/ImageSourceSettlement.tla" "$MODEL_DIR/$control.cfg" "$control_dir/"
+    log="$control_dir/control.log"
+    if (cd "$control_dir" && timeout 30m java -XX:+UseParallelGC -jar "$JAR_PATH" \
+        -deadlock -workers 1 -fp 0 -config "$control.cfg" ImageSourceSettlement.tla) >"$log" 2>&1; then
+        echo "TLA+ image-source settlement control unexpectedly passed: $control" >&2
+        exit 1
+    fi
+    case "$suffix" in
+        TransactionReply|RingResourceKeyed) expected='Invariant StatusBeforeRelease is violated.' ;;
+        TransactionCancelLeak) expected='Temporal properties were violated.' ;;
+        RingEarlyRelease) expected='Invariant NoWriteDuringRead is violated.' ;;
+        RingReleaseIgnoresEpoch) expected='Invariant ReleaseInOwnEpoch is violated.' ;;
+    esac
+    grep -Fq "$expected" "$log" || {
+        cat "$log" >&2
+        echo "TLA+ image-source settlement control failed for the wrong reason: $control" >&2
+        exit 1
+    }
+done
+
 # Ownership controls must fail their named invariant, never just parse or exit.
 for entry in \
     DuplicateTransfer:OneCustodian \
