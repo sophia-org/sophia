@@ -1,5 +1,5 @@
 mod output;
-// Native executor installation and GPU admission remain disabled pending qualification.
+// Endpoint demand has no production ingress caller; GPU admission remains disabled.
 #[cfg(feature = "experimental-shell-capture")]
 #[allow(dead_code)]
 mod shell_capture_owner;

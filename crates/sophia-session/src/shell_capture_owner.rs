@@ -227,6 +227,26 @@ pub(crate) struct Owner {
 }
 
 impl Owner {
+    pub(crate) fn replaceable(&self) -> bool {
+        self.closed && self.pending() == 0
+    }
+
+    pub(crate) fn is_closed(&self) -> bool {
+        self.closed
+    }
+
+    /// Stop publication/submission without dropping source or journal custody.
+    pub(crate) fn stop(&mut self) {
+        self.closed = true;
+        for held in self.pending.iter_mut().flatten() {
+            held.withdrawn = true;
+            self.inbox.cancel(held.job);
+        }
+        for held in self.settling.iter_mut().flatten() {
+            held.withdrawn = true;
+        }
+    }
+
     pub(crate) fn new(inbox: LiveShellCaptureInbox) -> Self {
         Self {
             inbox,

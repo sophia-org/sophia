@@ -295,6 +295,10 @@ fn unmatched_receipt_is_retained_and_closes_submission() {
     assert!(batch.fault);
     assert!(batch.completed.is_empty());
     assert_eq!(f.owner.orphaned.len(), 1);
+    assert!(
+        !f.owner.replaceable(),
+        "orphaned source custody blocks replacement"
+    );
     assert_eq!(f.budget.usage(), (1, 64));
     let r = f.request();
     let reservation = f.reserve(binding(2, 1));

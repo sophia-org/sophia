@@ -27,16 +27,22 @@ fn journal_pressure_retains_source_and_slot_without_repeating_settlement() {
     let b = binding(1, 1);
     let (_, fd) = f.submit(b);
     drop(f.executor.take());
+    f.owner.stop();
+    assert!(!f.owner.replaceable());
     for _ in 0..3 {
         let errors = f
             .owner
             .service(&mut f.registries[0], 0, f.now, |got, disposition| {
                 assert_eq!(got, b);
-                assert_eq!(disposition, ShellSourceDisposition::RefusedBeforeUse);
+                assert_eq!(disposition, ShellSourceDisposition::CancelledBeforeImport);
                 Err(ShellTransportError::ContentQueueSaturated)
             });
         assert!(errors.is_empty());
         assert_eq!(f.owner.pending(), 1);
+        assert!(
+            !f.owner.replaceable(),
+            "journal pressure retains closed owner"
+        );
         assert!(!f.owner.awaiting_completion());
         assert_eq!(f.budget.usage(), (1, 64));
         let held = f.owner.settling.iter().flatten().next().unwrap();
@@ -63,6 +69,7 @@ fn journal_pressure_retains_source_and_slot_without_repeating_settlement() {
             .is_empty()
     );
     assert_eq!(f.owner.pending(), 0);
+    assert!(f.owner.replaceable());
     assert_eq!(f.budget.usage(), (0, 0));
 }
 

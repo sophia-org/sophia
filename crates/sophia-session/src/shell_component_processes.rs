@@ -281,6 +281,21 @@ impl ShellComponentProcesses {
     ) -> Result<(), E> {
         self.connections.retire_capture_imports(remaining, evict)
     }
+
+    #[cfg(all(feature = "experimental-shell-capture", feature = "native-session"))]
+    pub(crate) fn service_capture_maintenance(
+        &mut self,
+        native: &mut sophia_backend_live::LiveProductionNativeScanout,
+        available: bool,
+    ) -> (
+        std::io::Result<()>,
+        Vec<(crate::shell_capture_owner::Binding, ShellTransportError)>,
+    ) {
+        let installation = self.connections.service_capture_endpoint(native, available);
+        // Even a failed/closing installation must reconcile old receipts.
+        let errors = self.connections.service_capture_completions();
+        (installation, errors)
+    }
     pub fn finish_after_backend_drop<B>(
         &mut self,
         backend: B,

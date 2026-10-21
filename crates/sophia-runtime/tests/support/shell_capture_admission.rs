@@ -98,3 +98,83 @@ fn registry_cannot_settle_a_ticket_from_a_different_identical_owner() {
     a.fail_capture(&mut r, ContentCaptureFailure::Renderer, 0)
         .unwrap();
 }
+
+#[test]
+fn capture_target_requires_current_exact_unstopped_reservation_without_releasing_credit() {
+    for case in 0..5 {
+        let mut registry = image_registry();
+        let metadata = capture_metadata();
+        let mut ticket = Some(
+            registry
+                .reserve_capture_image(grant(), &metadata, 10)
+                .unwrap(),
+        );
+        assert_eq!(
+            registry
+                .capture_output(ticket.as_ref().unwrap(), 10)
+                .unwrap()
+                .id,
+            metadata.output_id
+        );
+        match case {
+            0 => {
+                // Advancing topology invalidates the previously bound allocation.
+                registry
+                    .allocations_mut(grant())
+                    .unwrap()
+                    .publish_outputs(tx(3), 2, vec![facts(100)])
+                    .unwrap();
+            }
+            1 => {
+                assert!(registry.disconnect(grant()));
+            }
+            2 => {
+                registry
+                    .resources_mut(grant())
+                    .unwrap()
+                    .cancel(
+                        tx(3),
+                        &ContentResourceCancel {
+                            grant: grant(),
+                            resource: ticket.as_ref().unwrap().description().resource,
+                        },
+                    )
+                    .unwrap();
+            }
+            3 => {
+                let mut foreign = image_registry();
+                let foreign_ticket = foreign
+                    .reserve_capture_image(grant(), &metadata, 10)
+                    .unwrap();
+                assert_eq!(
+                    registry.capture_output(&foreign_ticket, 10),
+                    Err(ContentStoreError::Stale)
+                );
+                assert!(
+                    registry
+                        .capture_output(ticket.as_ref().unwrap(), 10)
+                        .is_ok()
+                );
+            }
+            _ => assert_eq!(
+                registry.capture_output(ticket.as_ref().unwrap(), 9),
+                Err(ContentStoreError::ClockRegression)
+            ),
+        }
+        if case < 3 {
+            assert!(
+                registry
+                    .capture_output(ticket.as_ref().unwrap(), 10)
+                    .is_err()
+            );
+        }
+        assert!(ticket.is_some());
+        registry
+            .fail_capture(&mut ticket, ContentCaptureFailure::Renderer, 10)
+            .unwrap();
+        assert!(
+            ticket.is_none(),
+            "only explicit pre-use settlement returns credit"
+        );
+    }
+}

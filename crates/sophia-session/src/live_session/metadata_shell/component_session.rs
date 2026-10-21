@@ -78,6 +78,23 @@ pub struct ShellComponentSession {
 }
 impl ShellComponentSession {
     #[cfg(feature = "experimental-shell-capture")]
+    pub(crate) fn service_capture_maintenance(
+        &mut self,
+        native: &mut sophia_backend_live::LiveProductionNativeScanout,
+    ) {
+        let (installation, errors) = self
+            .processes
+            .service_capture_maintenance(native, !self.stopping);
+        if let Err(error) = installation {
+            tracing::warn!(%error, "shell capture endpoint maintenance retained for retry");
+        }
+        for (binding, error) in errors {
+            tracing::warn!(slot = binding.slot, grant = ?binding.grant, ?error,
+                "shell capture settlement retained for exact owner");
+        }
+    }
+
+    #[cfg(feature = "experimental-shell-capture")]
     pub(crate) fn retire_captured_imports(
         &mut self,
         native: &mut sophia_backend_live::LiveProductionNativeScanout,

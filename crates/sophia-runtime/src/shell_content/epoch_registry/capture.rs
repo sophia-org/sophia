@@ -10,6 +10,35 @@ pub enum ContentCaptureAdmissionError {
 }
 
 impl ContentEpochRegistry {
+    /// Current allocation target for an exact reserved capture. This checks
+    /// logical ownership, not source completion or renderer capability.
+    pub fn capture_output(
+        &mut self,
+        held: &ContentCaptureReservation,
+        now: u64,
+    ) -> Result<sophia_protocol::ContentOutputId, ContentStoreError> {
+        let epoch = self
+            .active
+            .iter_mut()
+            .find(|e| e.resources.grant() == held.description().grant)
+            .ok_or(ContentStoreError::Stale)?;
+        if epoch.resources.capture_stop_reason(held, now)?.is_some() {
+            return Err(ContentStoreError::Revoked);
+        }
+        let current = epoch
+            .allocations
+            .capture_image_description(held.metadata())
+            .map_err(|_| ContentStoreError::Stale)?;
+        let allocation = epoch
+            .allocations
+            .capture_image_allocation(held.metadata())
+            .map_err(|_| ContentStoreError::Stale)?;
+        if &current != held.description() || held.allocation() != Some(&allocation) {
+            return Err(ContentStoreError::Stale);
+        }
+        Ok(allocation.output)
+    }
+
     /// Trusted image-owner accounting after an exact native completion receipt.
     /// A retained snapshot is NOT that proof. Session's private settlement path
     /// supplies it only from the opaque receipt, never from a peer or caller's

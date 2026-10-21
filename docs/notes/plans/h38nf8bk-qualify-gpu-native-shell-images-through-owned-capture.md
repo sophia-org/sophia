@@ -189,9 +189,12 @@ implemented behind `experimental-shell-capture`. The existing renderer worker
 now has bounded capture installation, command/request wakes, fence follow-ups
 and close-before-context-drop. The backend supplies its shared snapshot budget
 and a capture epoch tied to an explicit output, device generation and store.
-Next is connecting that endpoint to Session's retained per-connection owner and
-driving the complete settlement/journal path. The Session capture inbox installer
-is still dormant; no admitted source reaches the executor yet.
+Session now coordinates that endpoint with its single retained capture owner,
+whose jobs route by connection slot and grant. Installation is demand-driven by
+a current logical reservation, with no production ingress caller while admission
+is disabled. Next is negotiated DMA-BUF source intake and destination reservation,
+then the complete device-backed settlement/journal qualification. No admitted
+source reaches the executor yet.
 Real-device controls must follow before GPU admission. Tests use supplied
 storage/backends and real mailbox pre-use rollback, not an EGL device. Production
 GPU capability remains disabled; no native experiment or performance result
@@ -691,7 +694,51 @@ and mutation controls are retained under
 real GPU completion, end-to-end Session installation or performance. Production
 admission remains sealed-only with zero capture jobs.
 
-#### Remaining Session owner wiring
+#### Session endpoint coordination
+
+The next October 20 slice connects the existing native maintenance turn to the
+connections-level capture owner. There is one inbox consumer and one global
+four-slot bound; jobs retain their exact connection/grant bindings. A private
+link requests an endpoint only after a current reserved allocation supplies its
+output. It refuses another output while that endpoint is pending or active.
+The installation reply supplies the backend's budget and epoch; submission
+requires those exact Arcs and revalidates the logical ticket and allocation.
+Failure returns both source request and reservation unchanged to their owner.
+The query and endpoint are not permission or source-read completion proofs.
+
+Pending demand is tied to the original connection key. Disconnect or slot reuse
+before the reply closes the pending endpoint; another waiting connection must
+prepare again from its own live reservation. Once installed, the mailbox is
+shared and survives individual connection replacement. Reservation expiry alone
+may leave an idle endpoint installed, but cannot authorize submission. No
+production ingress invokes preparation/submission with admission disabled.
+
+Native lifecycle runs before endpoint polling; endpoint service precedes receipt
+drain and eviction maintenance on the native turn, outside runtime/frame gates.
+Shutdown or an invalid backend epoch withdraws submission/publication. Transient
+presentation unavailability alone does not close capture. Close-queue pressure
+keeps the exact intent for a later maintenance turn. Receipt reconciliation still
+runs when installation fails. Existing ordinary component turns also reconcile
+receipts; settlement is idempotent and preserves journal pressure.
+
+An owner is replaceable only when closed and completely drained: pending jobs,
+settlements and orphaned receipts all count. Uncertain reads retain source and
+reservation, blocking replacement. The old direct installer is test-only, so
+production cannot replace the inbox while leaving link destination facts stale.
+Source publication routes only to the exact Connected slot/grant; a replacement
+grant has a different journal, and publication errors retain custody.
+
+Controls use real mailboxes with supplied endpoints and pre-use rollback. They
+cover idle demand, request/close pressure, output mismatch, stale replies,
+disconnected requesters, foreign budgets/epochs/tickets, owner replacement and
+exact publication routing. The existing retained-receipt controls now also pin
+replacement refusal during journal pressure and orphan retention. Evidence is
+`t339-owned-capture-20261020/session-endpoint-01`. These controls do not constitute
+a live GPU completion, DMA-BUF admission or performance result. Outer shutdown
+still refuses disposal of unresolved capture custody; it does not fabricate
+completion from backend teardown.
+
+#### Remaining source intake and qualification
 
 Use the existing owner, not a second capture thread or context. The bounded
 mailbox carries runtime-neutral job IDs, source descriptors and metadata; Session

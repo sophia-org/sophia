@@ -1,14 +1,33 @@
 //! Existing component owner services capture receipts, including old epochs.
 use super::*;
 use crate::shell_capture_owner::{Binding, Owner, Publication};
+// The consumer is the native owner loop; feature-only builds retain the types
+// for supplied mailbox controls without constructing a native owner.
+#[cfg_attr(not(feature = "native-session"), allow(dead_code))]
+pub(super) mod endpoint;
 
 #[cfg(test)]
 #[path = "../../tests/support/component_capture_owner.rs"]
 mod tests;
 
+fn publish_current(
+    connections: &mut [Connection],
+    binding: Binding,
+    publish: impl FnOnce(&mut Connection) -> Result<(), ShellTransportError>,
+) -> Result<Publication, ShellTransportError> {
+    let Some(connection) = connections.get_mut(binding.slot).filter(|connection| {
+        connection.attempt == Some((binding.grant, ComponentConnectionPhase::Connected))
+    }) else {
+        return Ok(Publication::Disconnected);
+    };
+    publish(connection)?;
+    Ok(Publication::Journaled)
+}
+
 impl ShellComponentConnections {
     pub(super) fn capture_maintenance_wait(&self) -> Duration {
         if self.epochs.capture_retirement_active()
+            || self.capture_link.needs_turn()
             || self
                 .capture
                 .as_ref()
@@ -20,14 +39,18 @@ impl ShellComponentConnections {
         }
     }
     /// The backend must supply a real native-owner inbox. Policy still exposes
-    /// zero capture jobs, so no live admission installs one yet. Never replace
-    /// an owner whose exact receipts or source-journal obligations may remain.
-    #[allow(dead_code)]
+    /// zero capture jobs, so no live admission installs one yet. Replacement
+    /// requires a closed owner with no receipt or source-journal obligations.
+    #[cfg(test)]
     pub(crate) fn install_capture_owner(
         &mut self,
         inbox: sophia_renderer_live::LiveShellCaptureInbox,
     ) -> Result<(), sophia_renderer_live::LiveShellCaptureInbox> {
-        if self.capture.is_some() {
+        if self
+            .capture
+            .as_ref()
+            .is_some_and(|owner| !owner.replaceable())
+        {
             return Err(inbox);
         }
         self.capture = Some(Owner::new(inbox));
@@ -50,7 +73,7 @@ impl ShellComponentConnections {
         }
     }
 
-    pub(super) fn service_capture_completions(&mut self) -> Vec<(Binding, ShellTransportError)> {
+    pub(crate) fn service_capture_completions(&mut self) -> Vec<(Binding, ShellTransportError)> {
         let Some(owner) = self.capture.as_mut() else {
             return Vec::new();
         };
@@ -60,17 +83,12 @@ impl ShellComponentConnections {
             content_now_msec(),
             std::time::Instant::now(),
             |binding, disposition| {
-                let Some(connection) = connections.get_mut(binding.slot).filter(|connection| {
-                    connection.attempt == Some((binding.grant, ComponentConnectionPhase::Connected))
-                }) else {
-                    return Ok(Publication::Disconnected);
-                };
-                connection.transport.release_capture_image_source(
-                    binding.grant,
-                    binding.metadata,
-                    disposition,
-                )?;
-                Ok(Publication::Journaled)
+                publish_current(connections, binding, |connection| {
+                    connection
+                        .transport
+                        .release_capture_image_source(binding.grant, binding.metadata, disposition)
+                        .map(|_| ())
+                })
             },
         )
     }

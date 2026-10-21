@@ -113,6 +113,8 @@ pub struct ShellComponentConnections {
     connections_have_dock: bool,
     #[cfg(feature = "experimental-shell-capture")]
     capture: Option<crate::shell_capture_owner::Owner>,
+    #[cfg(feature = "experimental-shell-capture")]
+    capture_link: capture::endpoint::Link,
 }
 
 pub type ComponentNegotiationEvent = (
@@ -137,6 +139,8 @@ impl ShellComponentConnections {
             connections_have_dock: false,
             #[cfg(feature = "experimental-shell-capture")]
             capture: None,
+            #[cfg(feature = "experimental-shell-capture")]
+            capture_link: capture::endpoint::Link::default(),
         })
     }
 

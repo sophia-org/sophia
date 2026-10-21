@@ -6,6 +6,9 @@ if let Some(native) = native_scanout.as_mut() {
 }
 #[cfg(feature = "experimental-shell-capture")]
 if let (Some(components), Some(native)) = (shell_components.as_mut(), native_scanout.as_mut()) {
+    // Install only on reserved demand, then drain old receipts even when
+    // runtime/frame service is paused. Admission still cannot create demand.
+    components.service_capture_maintenance(native);
     // Maintenance runs even without a new frame or during topology changes.
     // Busy/error keeps the eviction obligation and both budgets. The component
     // owner's maintenance deadline schedules a bounded retry, not permission.
