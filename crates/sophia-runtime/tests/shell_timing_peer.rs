@@ -1493,7 +1493,9 @@ fn placed_canvas_matches(bundle: &ContentRenderBundle, width: u32, height: u32) 
     let Some(lease) = bundle.resource(placement.resource) else {
         return false;
     };
-    let bytes = lease.bytes();
+    let Some(bytes) = lease.cpu_bytes() else {
+        return false;
+    };
     bytes.len() == width as usize * height as usize * 4
         && bytes
             .iter()
