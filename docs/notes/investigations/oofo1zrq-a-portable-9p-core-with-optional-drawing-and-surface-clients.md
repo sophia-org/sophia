@@ -443,8 +443,11 @@ native speedup, protected launch acceptance, default client class or stable ABI.
 
 niltempus, relayed through Claude wB:pH on October 21, explicitly chose to
 seriously explore option B from `tmp/d4/D4-DECISION-MEMO.txt`, section 3.
-The direction and portability addendum were supplied in the conversation;
-that temporary memo was not present in the inspected crunch worktrees.
+The direction and portability addendum were supplied in the conversation.
+The original memo and probe were subsequently located in retained evidence at
+`t331-d3-20261020/claude-handback-03/d4`; working sources are under
+`~/.claude/jobs/c55837ea/tmp/d4`. Original timing claims called bounds remain
+superseded by the correction above.
 The live master repair/release takes priority. Do not start a D4 implementation
 or the ring-producer port until the release is out and the record/lifecycle
 sketch is aligned. This is a draft amendment to
@@ -557,3 +560,44 @@ CPU copy probe.
 4. Only a passing native screen supports proposing a production integration
    lane, default-off build feature and same-binary kill switch. No default-on
    promotion follows from this direction or from the standalone probe.
+
+
+### October 21: retained-destination probe and current sequence
+
+Vello's default-off prototype merged as signed `2464e1d4b`; niltempus deferred
+the authenticated draw client/native qualification as `t341` and directed
+continuing B. Claude's COW rejection is recorded in the separate `8sjpt4pf` note;
+B continues with an explicit owned copy, not page-protection snapshotting.
+
+The new [standalone retained-resource probe](../../../tools/probes/d4_owned_ring/README.md)
+compares fresh ISBs, mapped copy and sealed/unsealed pread. Three rotating source
+slots and four independently retained destinations address the original lifetime
+omission. Four controls pass for source reuse, changed-generation refusal, owned
+pixel validation, missing seals, fixed geometry and truncation without a consumer
+source mapping. Strict Clippy passes. These remain serialized local observations,
+not production memory-safety or native scheduling/CPU acceptance.
+
+Three forward/reverse/forward runs, 128 measured iterations per cell, are retained
+in `t331-d4-owned-copy-20261021/probe-01`. Ranges below are the three run medians
+for acceptance plus old-resource release, in microseconds; payload retention is
+four resources and source-ring setup/final teardown are separate records.
+
+| Payload | Fresh sealed | Mapped copy | Sealed pread | Unsealed pread |
+| --- | --- | --- | --- | --- |
+| 1920 x 24 | 53.51–53.66 | 20.90–21.35 | 26.34–26.89 | 26.25–26.83 |
+| 1024 x 1024 | 1026.12–1032.71 | 523.02–526.36 | 610.85–701.67 | 610.81–697.65 |
+
+All samples had zero major faults. The bulk pread spread shows sensitivity to
+allocation/cache conditions; there is no savings confidence interval or native
+benefit claim. Fresh last-close cost is charged to Session by this model, not
+established as its native owner. The producer fill loop also differs from the
+old probe. The raw samples include generation syscall overhead, new per-resource
+destination allocation and resource retirement, rather than timing memcpy alone.
+
+Use pread for the first integration experiment: it avoids mapping a hostile
+mutable source and gives explicit short-read refusal with an owned destination.
+Retain mapped copy as the local comparison; do not promote it as a production
+racy-read API merely because this serialized probe succeeds. Next integrate
+actual bounded ring admission/copy/slot release with immutable resource custody
+in an isolated native comparison path. Source-slot release and ResourceReleased
+must stay distinct, and the proposed +10% native gates remain unchanged.
