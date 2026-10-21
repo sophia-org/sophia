@@ -147,7 +147,7 @@ fn run_smoke(config: Config) {
             1,
             Duration::from_secs(3),
             ShellContentAdmissionPolicy::Granted {
-                discrete_input: false,
+                discrete_input: true,
             },
         )
         .unwrap();
@@ -212,6 +212,11 @@ fn run_smoke(config: Config) {
                 .poll_negotiation(&mut epochs, 65536)
                 .unwrap()
                 .is_some();
+            if negotiated {
+                // The native profile enables input; PanelComponentService
+                // refuses a peer that did not negotiate this capability.
+                assert!(transport.supports_content_discrete_input());
+            }
         } else {
             match transport.service_owner_turn(&mut epochs) {
                 Ok(()) | Err(ShellTransportError::NotConnected) => {}

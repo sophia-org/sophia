@@ -288,6 +288,7 @@ fn serve(client: &mut Client, config: &Config, socket: &std::ffi::OsStr) -> Resu
                 maximum_revision: 9,
                 required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
                     | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+                    | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
                     | 1 << 13,
             },
         )
