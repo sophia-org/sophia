@@ -261,6 +261,34 @@ impl ShellFileWire {
         }
     }
 
+    /// Only the store-event drain may identify a transfer settlement. Replies
+    /// to rejected controls cannot consume a transfer's terminal hold.
+    pub(super) fn append_resource_settlement(
+        &mut self,
+        transaction: sophia_protocol::TransactionId,
+        status: &sophia_protocol::ContentResourceStatus,
+        body: &[u8],
+        credited: bool,
+    ) -> Result<bool, ShellTransportError> {
+        if !(2..=4).contains(&status.status) {
+            return Err(ShellTransportError::WrongContentRecord);
+        }
+        match self
+            .export_mut()
+            .append_resource_settlement(transaction, status, body)
+        {
+            Ok(Some(_)) => {
+                self.image_publication_pending();
+                Ok(true)
+            }
+            Ok(None) => self.append(ShellFileKind::ResourceStatus, body, credited),
+            Err(sophia_9p::Errno::EAGAIN) => Ok(false),
+            Err(error) => Err(ShellTransportError::Io(format!(
+                "resource settlement: {error:?}"
+            ))),
+        }
+    }
+
     /// Publishes one snapshot object with its journaled announcement, and
     /// wakes waiting reads. `Ok(false)` leaves it queued.
     pub(super) fn publish(

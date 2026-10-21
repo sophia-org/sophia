@@ -195,6 +195,14 @@ impl ShellComponentTransport {
             if store.pending_event() != Some(&event) {
                 return Err(ShellTransportError::WrongContentRecord);
             }
+            let admitted = {
+                let mut admitted = admitted;
+                // Store events report final transfer settlement; synthetic
+                // control refusals use send_content_record and keep this false.
+                admitted.resource_settlement =
+                    matches!(&event.record, ShellContentRecord::ResourceStatus(_));
+                admitted
+            };
             self.transfer_record(admitted);
             store.take_event();
         }

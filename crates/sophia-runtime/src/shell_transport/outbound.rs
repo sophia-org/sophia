@@ -40,6 +40,8 @@ pub(super) enum OutboundRecord {
 /// moving it into the FIFO is the one infallible custody transfer.
 #[derive(Debug)]
 pub(super) struct Admitted {
+    /// Internal provenance, set only when taking a terminal store event.
+    pub(super) resource_settlement: bool,
     pub(super) record: OutboundRecord,
     pub(super) control: bool,
     pub(super) charge: usize,

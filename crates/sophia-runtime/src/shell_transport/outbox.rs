@@ -14,6 +14,7 @@ pub(super) struct ShellOutbox {
 }
 
 pub(super) struct Queued {
+    pub(super) resource_settlement: bool,
     pub(super) record: OutboundRecord,
     pub(super) control: bool,
     pub(super) charge: usize,
@@ -54,6 +55,7 @@ impl ShellOutbox {
             self.bulk += admitted.charge;
         }
         self.records.push_back(Queued {
+            resource_settlement: admitted.resource_settlement,
             record: admitted.record,
             control: admitted.control,
             charge: admitted.charge,

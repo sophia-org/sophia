@@ -78,6 +78,7 @@ impl ShellComponentTransport {
             return Err(oversize);
         }
         Ok(Admitted {
+            resource_settlement: false,
             record,
             control,
             charge: body_len,

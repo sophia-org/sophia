@@ -150,6 +150,9 @@ impl ContentResourceStore {
     pub fn take_event(&mut self) -> Option<ContentResourceEvent> {
         self.events.pop_front()
     }
+    // This event queue contains authoritative lifecycle events, not replies
+    // synthesized for failed client controls. ResourceStatus entries are final
+    // transfer settlements; the shell outbox preserves that provenance.
     pub fn pending_event(&self) -> Option<&ContentResourceEvent> {
         self.events.front()
     }

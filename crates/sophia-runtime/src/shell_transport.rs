@@ -49,6 +49,8 @@ pub use image_owner::ShellIsbImageOwner;
 mod indicator_responses;
 pub(crate) mod outbound;
 mod outbox;
+#[cfg(feature = "experimental-owned-copy")]
+mod owned_copy;
 mod publication;
 mod reference;
 pub use reference::ShellReferenceCandidateEvent;
@@ -497,6 +499,20 @@ impl ShellComponentTransport {
                 return Ok(false);
             }
             let (kind, body) = queued.record.native()?;
+            if queued.resource_settlement {
+                let outbound::OutboundRecord::Content(
+                    transaction,
+                    sophia_protocol::ShellContentRecord::ResourceStatus(status),
+                ) = &queued.record
+                else {
+                    return Err(ShellTransportError::WrongContentRecord);
+                };
+                if !files.append_resource_settlement(*transaction, status, &body, queued.control)? {
+                    return Ok(false);
+                }
+                output.pop_front();
+                continue;
+            }
             let taken = if sophia_protocol::shell_files::shell_file_class(kind)
                 == sophia_protocol::shell_files::ShellFileClass::Object
             {

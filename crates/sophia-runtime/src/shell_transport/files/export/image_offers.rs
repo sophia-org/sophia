@@ -281,27 +281,44 @@ impl ShellFiles {
 
     pub(super) fn append_image_status(
         &mut self,
-        transaction: TransactionId,
+        _transaction: TransactionId,
         status: &sophia_protocol::ContentResourceStatus,
         body: &[u8],
     ) -> Result<Option<u64>, Errno> {
         let Some(state) = &mut self.image else {
             return Ok(None);
         };
-        let Some(offer) = state.offers.live.iter_mut().flatten().find(|offer| {
-            offer.metadata.offer_id == transaction.raw()
+        // begin_isb consumes a resource generation during jobs.reserve, before
+        // admission commits its holds. Two offers cannot both owe a status for
+        // this grant/resource identity, even when cancellation changes the tx.
+        let owes_status = |offer: &Offer| {
+            offer.status.is_some()
+                && status.grant.connection_epoch == self.epoch
+                && status.grant.content_grant_epoch == offer.metadata.admission_epoch
                 && offer.metadata.resource == status.resource.id
                 && offer.metadata.resource_generation == status.resource.generation
-        }) else {
+        };
+        debug_assert!(
+            state
+                .offers
+                .live
+                .iter()
+                .flatten()
+                .filter(|offer| owes_status(offer))
+                .count()
+                <= 1
+        );
+        let Some(offer) = state
+            .offers
+            .live
+            .iter_mut()
+            .flatten()
+            .find(|offer| owes_status(offer))
+        else {
             return Ok(None);
         };
-        if status.status == 1 {
-            return Err(Errno::EINVAL);
-        }
-        if status.grant.connection_epoch != self.epoch
-            || status.grant.content_grant_epoch != offer.metadata.admission_epoch
-        {
-            return Err(Errno::ESTALE);
+        if !(2..=4).contains(&status.status) {
+            return Err(Errno::EPROTO);
         }
         let sequence = self.journal.append_consuming_reservation(
             offer.status.ok_or(Errno::EINVAL)?,

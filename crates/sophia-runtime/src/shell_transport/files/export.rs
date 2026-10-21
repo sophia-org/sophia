@@ -394,7 +394,7 @@ impl ShellFiles {
         Ok(())
     }
 
-    /// Journals one event, preserving image-offer status accounting.
+    /// Journals an ordinary event. Only the store-settlement path spends image holds.
     pub(in crate::shell_transport) fn append_event(
         &mut self,
         kind: ShellFileKind,
@@ -419,7 +419,7 @@ impl ShellFiles {
             .map_err(|_| Errno::EINVAL)?;
             decode_shell_file_descriptor(&record, kind).map_err(|_| Errno::EINVAL)?;
         }
-        let status = if kind == ShellFileKind::ResourceStatus {
+        if kind == ShellFileKind::ResourceStatus {
             let record = encode_shell_file_record(
                 ShellFileHeader {
                     kind,
@@ -430,23 +430,23 @@ impl ShellFiles {
                 body,
             )
             .map_err(|_| Errno::EINVAL)?;
-            let decoded = decode_shell_file_resource_status(&record).map_err(|_| Errno::EINVAL)?;
-            match decoded.record {
-                ShellContentRecord::ResourceStatus(status) => Some((decoded.transaction, status)),
-                _ => return Err(Errno::EINVAL),
-            }
-        } else {
-            None
-        };
-        let sequence = if let Some((transaction, status)) = &status {
-            match self.append_image_status(*transaction, status, body)? {
-                Some(sequence) => sequence,
-                None => self.journal.append(kind, body, credited)?,
-            }
-        } else {
-            self.journal.append(kind, body, credited)?
-        };
-        Ok(sequence)
+            decode_shell_file_resource_status(&record).map_err(|_| Errno::EINVAL)?;
+        }
+        self.journal.append(kind, body, credited)
+    }
+
+    /// Authoritative store settlement, including a cancel's own transaction.
+    /// Synthetic replies to failed controls never enter this path.
+    pub(in crate::shell_transport) fn append_resource_settlement(
+        &mut self,
+        transaction: TransactionId,
+        status: &sophia_protocol::ContentResourceStatus,
+        body: &[u8],
+    ) -> Result<Option<u64>, Errno> {
+        if !(2..=4).contains(&status.status) {
+            return Err(Errno::EPROTO);
+        }
+        self.append_image_status(transaction, status, body)
     }
 
     pub(in crate::shell_transport) fn journal(&self) -> &Journal {

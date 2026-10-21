@@ -10,6 +10,7 @@ pub(in crate::shell_transport) mod files;
 
 fn record(transaction: u64, control: bool, charge: usize) -> Admitted {
     Admitted {
+        resource_settlement: false,
         record: OutboundRecord::Content(
             TransactionId::from_raw(transaction),
             ShellContentRecord::OutputFacts(ContentOutputFacts {
