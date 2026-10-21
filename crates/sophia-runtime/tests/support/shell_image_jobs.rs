@@ -3,6 +3,9 @@ use super::*;
 #[cfg(feature = "experimental-shell-capture")]
 #[path = "shell_capture_admission.rs"]
 mod capture_tests;
+#[cfg(feature = "experimental-owned-copy")]
+#[path = "shell_owned_copy_jobs.rs"]
+mod owned_copy_tests;
 
 fn image_registry() -> ContentEpochRegistry {
     let mut registry = ContentEpochRegistry::new(64 << 20).unwrap();

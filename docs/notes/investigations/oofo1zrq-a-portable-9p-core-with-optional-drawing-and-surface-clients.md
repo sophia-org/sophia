@@ -734,6 +734,60 @@ copy, drawing and capture enabled together. Evidence is retained under
 accounting gap; authenticated ring admission and its journal obligations remain
 unimplemented. No native or external performance result follows from these tests.
 
+### Owned-copy image job custody — October 21
+
+The default-off experiment now connects ring reads to the persistent CPU image
+job lifecycle and actual allocation/resource owners. `OwnedCopyImageRequest`
+is an internal type with exact output/allocation generations, topology,
+destination dimensions and resource identity, plus offer/slot/generation. It
+does not serialize as sealed ISB metadata or allocate a public source kind.
+The ordinary sealed path retains its existing types as aliases of the shared
+job lifecycle; both use the existing validation worker and resource store.
+
+Reservation checks the ring's actual grant and source-accounting owner, then
+the live allocation, destination layout, fixed ring payload size and available
+slot identity before consuming destination and worker credits. Another registry
+with coincidentally identical epoch numbers cannot take a source charged to the
+first registry. Submission additionally checks an opaque in-process ring identity
+and the exact offer/slot/generation. Refusal returns the read ticket intact.
+The identity token keeps no source descriptor alive after its readers are gone.
+
+Completed copies stay in the bounded job table until their exact resource owner
+consumes the result, including across clock regression and disconnect. Before
+owned-copy acceptance, the current allocation-derived description must still
+match the reserved one. Cancellation, expiry, revocation and allocation loss
+retain existing store-side stop precedence. Accepted resources retain their
+separate immutable allocations through consumer and journal-confirmed release.
+Slot release remains a different obligation and is not consumed by resource
+settlement or refusal.
+
+Controls cover three accepted resources retained while one source slot is
+reused, source truncation after copying, distinct source/resource releases,
+cross-ring and wrong-generation submission, cross-registry custody, invalid
+allocation/topology/dimensions, clock retry, and cancellation/expiry/topology
+change/disconnect after a successful copy. Validation receipts are under
+`t331-d4-owned-copy-20261021/owner-jobs-01`. The first retention fixture supplied
+a regressed time on its second reservation and was corrected to use increasing
+times; the runtime's clock rejection was correct.
+
+The owned-copy runtime suite passed (729 reported passes, 41 ignored) before the
+last cross-registry guard; the final 28-test allocation group includes that guard
+and passes. Strict runtime Clippy with draw/capture/owned-copy enabled passes.
+The first full workspace run failed in the unchanged Session stale-socket test,
+which observed its just-dropped listener as active. The exact same test binary
+passed in isolation; the complete `RUST_TEST_THREADS=1 cargo xtask check` then
+passed, including that fixture, SDK checks and render-node regressions. Both
+workspace results remain in the receipts; the parallel failure's cause is not
+established by its successful retry.
+
+This closes the internal job-custody connection, not authenticated wire ingress.
+The export owner must still reserve terminal and slot-release journal credits,
+perform custody/export checks, bind negotiated ring/channel identities, and
+deliver distinct slot-release records. Host backing qualification, the live
+feature/kill switch and native comparison remain outstanding. No live Session or
+desktop was launched. Acceptance follows the later four-workload external-bar
+amendment in `mvbubiv9`; older IPC +10% wording above is historical and superseded.
+
 
 ### Joint handback supersedes the earlier IPC-floor decision
 

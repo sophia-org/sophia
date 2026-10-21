@@ -12,15 +12,17 @@ pub enum IsbImageAdmissionError {
     Worker(IsbSubmitFailure),
 }
 
-/// Owner custody, not a journal event. The owner must publish ImageAdmitted
-/// before allowing Source and reconcile this job even after losing the peer.
+/// Owner custody, not a journal event. The transport owner must publish its
+/// admission before allowing source reads and reconcile jobs after peer loss.
 #[derive(Debug)]
-pub struct IsbImageAdmission {
-    pub metadata: ShellImageMetadata,
+pub struct CpuImageAdmission<M> {
+    pub metadata: M,
     pub worker_job: u64,
     pub grant: ContentGrant,
     pub deadline: Instant,
 }
+
+pub type IsbImageAdmission = CpuImageAdmission<ShellImageMetadata>;
 
 impl ContentEpochRegistry {
     pub(crate) fn isb_stop_reason(

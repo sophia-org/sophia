@@ -13,7 +13,7 @@ mod image;
 mod owned_ring;
 #[cfg(feature = "experimental-shell-capture")]
 pub use capture::ContentCaptureAdmissionError;
-pub use image::{IsbImageAdmission, IsbImageAdmissionError};
+pub use image::{CpuImageAdmission, IsbImageAdmission, IsbImageAdmissionError};
 #[cfg(feature = "experimental-owned-copy")]
 pub use owned_ring::OwnedRingSourceReservation;
 

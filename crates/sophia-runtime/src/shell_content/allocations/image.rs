@@ -3,6 +3,52 @@ use super::*;
 use sophia_protocol::shell_files::{SHELL_IMAGE_SOURCE_SEALED_MEMORY, ShellImageMetadata};
 
 impl ContentAllocationStore {
+    #[cfg(feature = "experimental-owned-copy")]
+    pub(crate) fn owned_copy_description(
+        &self,
+        request: &crate::OwnedCopyImageRequest,
+    ) -> Result<ContentResourceBegin, ContentAllocationError> {
+        self.check_grant(self.limits.grant)?;
+        if request.topology_generation != self.facts_generation {
+            return Err(ContentAllocationError::Stale);
+        }
+        let allocation = self
+            .active
+            .values()
+            .find(|a| a.allocation == request.allocation)
+            .ok_or(ContentAllocationError::AllocationLost)?;
+        if allocation.output != request.output
+            || !self.outputs.iter().any(|o| o.output == request.output)
+        {
+            return Err(ContentAllocationError::OutputLost);
+        }
+        let row = request
+            .width
+            .checked_mul(4)
+            .ok_or(ContentAllocationError::Malformed)?;
+        let rows = self
+            .limits
+            .max_chunk_bytes
+            .checked_div(row)
+            .filter(|n| *n != 0)
+            .ok_or(ContentAllocationError::Malformed)?;
+        let description = ContentResourceBegin {
+            grant: self.limits.grant,
+            resource: request.resource,
+            width_px: request.width,
+            height_px: request.height,
+            rendered_scale_numerator: allocation.scale_numerator,
+            rendered_scale_denominator: allocation.scale_denominator,
+            pixel_format: 1,
+            chunk_count: request.height.div_ceil(rows),
+            total_bytes: u64::from(row) * u64::from(request.height),
+        };
+        description
+            .layout(&self.limits)
+            .map_err(|_| ContentAllocationError::Malformed)?;
+        Ok(description)
+    }
+
     #[cfg(feature = "experimental-shell-capture")]
     pub(crate) fn capture_image_allocation(
         &self,

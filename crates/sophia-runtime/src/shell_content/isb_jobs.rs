@@ -2,11 +2,10 @@
 use super::*;
 use sophia_protocol::shell_files::ShellImageMetadata;
 use sophia_protocol::{ContentGrant, ContentReason, ContentResourceId};
-use std::os::fd::OwnedFd;
 use std::time::Instant;
 
-struct Pending {
-    admission: IsbImageAdmission,
+struct Pending<M> {
+    admission: CpuImageAdmission<M>,
     result: Option<Result<ValidatedIsbPixels, ContentStoreError>>,
     failure: Option<IsbValidationFailure>,
     submitted: bool,
@@ -36,14 +35,54 @@ impl IsbImageWithdrawal {
 /// that worker. A taken
 /// worker completion continues to occupy a slot until its exact resource owner
 /// consumes it. In particular, clock regression cannot discard a mapping.
-#[derive(Default)]
-pub struct IsbImageJobs {
-    pending: [Option<Pending>; 4],
+pub struct CpuImageJobs<M> {
+    pending: [Option<Pending<M>>; 4],
+}
+
+impl<M> Default for CpuImageJobs<M> {
+    fn default() -> Self {
+        Self {
+            pending: std::array::from_fn(|_| None),
+        }
+    }
+}
+
+pub type IsbImageJobs = CpuImageJobs<ShellImageMetadata>;
+pub type IsbImageSettlement = CpuImageSettlement<ShellImageMetadata>;
+
+#[cfg(feature = "experimental-owned-copy")]
+mod owned_copy;
+mod sealed;
+#[cfg(feature = "experimental-owned-copy")]
+pub use owned_copy::*;
+
+pub(crate) mod metadata_sealed {
+    pub trait Sealed {}
+}
+
+/// Only the runtime's sealed-FD and owned-copy admission types implement this.
+/// It shares resource custody, not transport or source authentication.
+pub trait CpuImageMetadata: metadata_sealed::Sealed {
+    fn resource(&self) -> ContentResourceId;
+    /// Transport owners may already perform this check. Owned-copy admission
+    /// additionally rechecks its exact allocation before accepting a result.
+    fn allocation_current(&self, _registry: &ContentEpochRegistry, _grant: ContentGrant) -> bool {
+        true
+    }
+}
+impl metadata_sealed::Sealed for ShellImageMetadata {}
+impl CpuImageMetadata for ShellImageMetadata {
+    fn resource(&self) -> ContentResourceId {
+        ContentResourceId {
+            id: self.resource,
+            generation: self.resource_generation,
+        }
+    }
 }
 
 #[derive(Debug)]
-pub struct IsbImageSettlement {
-    pub admission: IsbImageAdmission,
+pub struct CpuImageSettlement<M> {
+    pub admission: CpuImageAdmission<M>,
     pub outcome: Result<(), ContentStoreError>,
     /// Retained separately from the store outcome for SourceReleased policy.
     pub validation_failure: Option<IsbValidationFailure>,
@@ -51,57 +90,7 @@ pub struct IsbImageSettlement {
     pub stopped: Option<ContentReason>,
 }
 
-impl IsbImageJobs {
-    /// Journal and offer credits must already be held by the channel owner.
-    /// No ImageAdmitted is published here. Failure leaves no table entry.
-    pub fn reserve(
-        &mut self,
-        registry: &mut ContentEpochRegistry,
-        worker: &mut IsbValidationWorker,
-        grant: ContentGrant,
-        metadata: ShellImageMetadata,
-        now: u64,
-        deadline: Instant,
-    ) -> Result<u64, IsbImageAdmissionError> {
-        let slot = self
-            .pending
-            .iter_mut()
-            .find(|slot| slot.is_none())
-            .ok_or(IsbImageAdmissionError::Worker(IsbSubmitFailure::Capacity))?;
-        let admission = registry.reserve_isb_image(grant, metadata, worker, now, deadline)?;
-        let job = admission.worker_job;
-        *slot = Some(Pending {
-            admission,
-            result: None,
-            failure: None,
-            submitted: false,
-            stopped: None,
-        });
-        Ok(job)
-    }
-
-    /// The channel validates packet identity and shape before this handoff.
-    /// Refusal returns the FD; a withdrawn or already submitted job never sends
-    /// a second source to the worker.
-    pub fn submit(
-        &mut self,
-        worker: &mut IsbValidationWorker,
-        job: u64,
-        source: OwnedFd,
-    ) -> Result<(), (IsbSubmitFailure, OwnedFd)> {
-        let Some(pending) = self.pending.iter_mut().flatten().find(|pending| {
-            pending.admission.worker_job == job
-                && !pending.submitted
-                && pending.stopped.is_none()
-                && pending.result.is_none()
-        }) else {
-            return Err((IsbSubmitFailure::Invalid, source));
-        };
-        worker.submit_reserved(job, source)?;
-        pending.submitted = true;
-        Ok(())
-    }
-
+impl<M: CpuImageMetadata> CpuImageJobs<M> {
     /// Mark the store before cancelling worker work. Unsent reservations have
     /// no worker completion, so manufacture only their local refusal handoff.
     /// Submitted jobs keep their credit and source until the real completion.
@@ -125,10 +114,7 @@ impl IsbImageJobs {
         let metadata = &pending.admission.metadata;
         let reason = registry.stop_isb_image(
             pending.admission.grant,
-            ContentResourceId {
-                id: metadata.resource,
-                generation: metadata.resource_generation,
-            },
+            metadata.resource(),
             cause.reason(),
             now,
         )?;
@@ -235,12 +221,25 @@ impl IsbImageJobs {
         &mut self,
         registry: &mut ContentEpochRegistry,
         now: u64,
-    ) -> Option<IsbImageSettlement> {
+    ) -> Option<CpuImageSettlement<M>> {
         for slot in &mut self.pending {
             let Some(pending) = slot.as_mut().filter(|pending| pending.result.is_some()) else {
                 continue;
             };
             let metadata = &pending.admission.metadata;
+            if pending.stopped.is_none()
+                && !metadata.allocation_current(registry, pending.admission.grant)
+            {
+                match registry.stop_isb_image(
+                    pending.admission.grant,
+                    metadata.resource(),
+                    ContentReason::AllocationLost,
+                    now,
+                ) {
+                    Ok(reason) => pending.stopped = Some(reason),
+                    Err(_) => continue,
+                }
+            }
             // A validation deadline can precede the transfer timeout. Preserve
             // that timeout as a store outcome instead of reporting bad pixels.
             if pending.stopped.is_none()
@@ -256,10 +255,7 @@ impl IsbImageJobs {
                 };
                 match registry.stop_isb_image(
                     pending.admission.grant,
-                    ContentResourceId {
-                        id: metadata.resource,
-                        generation: metadata.resource_generation,
-                    },
+                    metadata.resource(),
                     reason,
                     now,
                 ) {
@@ -269,16 +265,13 @@ impl IsbImageJobs {
             }
             let outcome = registry.complete_isb(
                 pending.admission.grant,
-                ContentResourceId {
-                    id: metadata.resource,
-                    generation: metadata.resource_generation,
-                },
+                metadata.resource(),
                 &mut pending.result,
                 now,
             );
             if pending.result.is_none() {
                 let pending = slot.take().expect("consumed job occupies its slot");
-                return Some(IsbImageSettlement {
+                return Some(CpuImageSettlement {
                     admission: pending.admission,
                     outcome,
                     validation_failure: pending.failure,
@@ -293,7 +286,7 @@ impl IsbImageJobs {
         self.pending.iter().flatten().count()
     }
 
-    pub fn admissions(&self) -> impl Iterator<Item = &IsbImageAdmission> {
+    pub fn admissions(&self) -> impl Iterator<Item = &CpuImageAdmission<M>> {
         self.pending
             .iter()
             .flatten()
@@ -313,13 +306,7 @@ impl IsbImageJobs {
         let jobs = self.pending.each_ref().map(|slot| {
             let pending = slot.as_ref()?;
             let admission = &pending.admission;
-            registry.isb_stop_reason(
-                admission.grant,
-                ContentResourceId {
-                    id: admission.metadata.resource,
-                    generation: admission.metadata.resource_generation,
-                },
-            )?;
+            registry.isb_stop_reason(admission.grant, admission.metadata.resource())?;
             Some(admission.worker_job)
         });
         let mut first_error = None;

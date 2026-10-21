@@ -71,7 +71,13 @@ struct RingSource {
     // Close the fd before returning its charge (struct fields drop in order).
     file: File,
     reservation: OwnedRingSourceReservation,
+    identity: Arc<()>,
 }
+
+/// In-process identity only. Retaining this token does not keep a source FD or
+/// its byte charge alive, and cannot grant transport authority.
+#[derive(Clone, Debug)]
+pub(crate) struct OwnedRingBinding(Arc<()>);
 
 /// One bounded source owner. Admission consumes a Session reservation for the
 /// complete source extent, separate from every accepted destination.
@@ -99,6 +105,7 @@ impl OwnedRing {
             source: Arc::new(RingSource {
                 file: source,
                 reservation,
+                identity: Arc::new(()),
             }),
             geometry,
             slots: std::array::from_fn(|_| Slot::default()),
@@ -110,27 +117,24 @@ impl OwnedRing {
         self.source.reservation.grant()
     }
 
+    pub(crate) fn binding(&self) -> OwnedRingBinding {
+        OwnedRingBinding(self.source.identity.clone())
+    }
+
+    pub(crate) fn geometry(&self) -> OwnedRingGeometry {
+        self.geometry
+    }
+
+    pub(crate) fn is_charged_to(&self, used: &Arc<std::sync::atomic::AtomicU64>) -> bool {
+        self.source.reservation.is_charged_to(used)
+    }
+
     /// The caller must already hold destination, worker and terminal journal
     /// credits. A slot remains busy until both its read ended and its release
     /// was committed to the live journal. Failed offers do not consume identity.
     pub fn offer(&mut self, identity: OwnedSlotIdentity) -> io::Result<OwnedRingRead> {
-        if identity.slot >= self.geometry.slots
-            || identity.offer <= self.greatest_offer
-            || identity.generation == 0
-            || !identity.generation.is_multiple_of(2)
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "owned ring offer",
-            ));
-        }
+        self.check_offer(identity)?;
         let slot = &mut self.slots[identity.slot];
-        if slot.pending.is_some() || identity.generation <= slot.generation {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "slot busy or stale generation",
-            ));
-        }
         let finished = Arc::new(AtomicBool::new(false));
         slot.generation = identity.generation;
         slot.pending = Some(PendingSlot {
@@ -144,6 +148,27 @@ impl OwnedRing {
             identity,
             finished,
         })
+    }
+
+    pub(crate) fn check_offer(&self, identity: OwnedSlotIdentity) -> io::Result<()> {
+        if identity.slot >= self.geometry.slots
+            || identity.offer <= self.greatest_offer
+            || identity.generation == 0
+            || !identity.generation.is_multiple_of(2)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "owned ring offer",
+            ));
+        }
+        let slot = &self.slots[identity.slot];
+        if slot.pending.is_some() || identity.generation <= slot.generation {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "slot busy or stale generation",
+            ));
+        }
+        Ok(())
     }
 
     /// Repeated polling retains the same obligation under journal backpressure.
@@ -189,6 +214,10 @@ impl Drop for OwnedRingRead {
     }
 }
 impl OwnedRingRead {
+    pub(crate) fn matches(&self, binding: &OwnedRingBinding, identity: OwnedSlotIdentity) -> bool {
+        Arc::ptr_eq(&self.source.identity, &binding.0) && self.identity == identity
+    }
+
     pub(crate) fn pixel_bytes(&self) -> usize {
         self.geometry.pixels
     }
