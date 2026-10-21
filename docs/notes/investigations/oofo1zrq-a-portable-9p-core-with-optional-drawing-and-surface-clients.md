@@ -601,3 +601,118 @@ racy-read API merely because this serialized probe succeeds. Next integrate
 actual bounded ring admission/copy/slot release with immutable resource custody
 in an isolated native comparison path. Source-slot release and ResourceReleased
 must stay distinct, and the proposed +10% native gates remain unchanged.
+
+
+### October 21 addendum: two measurement bars and external-work split
+
+Niltempus prioritizes battery and CPU headroom on older computers. B therefore
+first removes the per-frame create/fallocate/first-touch/seal/map/unmap/close
+lifecycle; a retained copy is not itself a failure. The c23 retry's reported
+panel excess (files 1.567–1.619 versus IPC 1.228–1.240 ms/frame) motivates the
+experiment, not a transferable prediction for another CPU or proof of which
+individual kernel operation dominates. Record both absolute work and ratios.
+
+Use two separately named bars in FINDINGS:
+
+* **IPC regression floor:** retain the frozen t331 +10% gates. Passing them
+  means the replacement meets that regression screen, not external parity.
+* **External reference:** work per delivered frame versus Wayland and XLibre
+  with equivalent visuals, latency, throughput, buffer ownership and PID-set
+  accounting. Numerical external acceptance thresholds remain to be frozen
+  with the delivered gate proposal; never choose them after seeing results.
+
+Run the same paired recipe and gates on crunch and a second, slower target
+(the x13). Do not pool machine results or extrapolate crunch's microseconds.
+Panel cost measures active work, not idle wakeups or battery life. Keep the
+approved 20 ms authentication cadence unchanged; idle wake rate and direct
+energy measurement would be separate experiments.
+
+There are two external workloads. The whole-desktop wmbench recipe should have
+Sophia, XLibre and a Wayland arm, preferring River with sway as the fallback
+if required protocol coverage is missing. Freeze the common test rows after
+protocol inspection; unsupported tests stay “not done”, never zero cost. Use
+both heads, 120 warmup and 300 measured frames, pinned builds, explicit desktop
+PID sets and capture artifacts. Refresh the prepared native retry against the
+actual current master before running; old READY files are not current receipts.
+Then repeat with B to measure its delta. Software QEMU results and source-only
+niri review do not establish matched native GPU performance.
+
+The separate shell-path pair uses a fresh whole-panel fill (1920 x 24 at (0,0))
+and a 4 MiB bulk arm, matching frame count, cadence and heads. Record client and
+server/compositor CPU per delivered frame, completion counts, faults, and
+submit-to-present p50/p95/p99 where wp_presentation or XPresent supplies genuine
+presentation feedback. A copy-complete/SHM-buffer-safe event is not presentation.
+Document the external paths' cooperative mutable-buffer release and absence of
+Sophia's evidence journal and resource identity/checksum semantics. Do not
+silently normalize those differences away.
+
+Claude wB:pH and Muse wB:pJ own temporary standalone reference clients, their
+shared fill/journal/accounting code, protocol coverage and reference launch
+recipe, plus the proposed gate text. Their stated boundary is job tmp only:
+no desktop/server/Session launches and no production, comparator, notes or
+evidence edits. This lane owns importing and reviewing receipts, native recipe
+integration, gate changes and filing. Avoid duplicating their client work or
+claiming their deliverables are already received. Seated runs remain pending;
+no external shell-path or matched native three-way result is claimed here.
+
+
+### Isolated B storage/worker foundation (not live image admission)
+
+The runtime's default-off `experimental-owned-copy` feature now provides the
+measurement foundation. `CpuPixelValidation` scans either the existing sealed
+mapping or a consumed owned Box; the old ISB names remain compatibility aliases.
+Acceptance moves the same allocation into the ordinary resource store and CPU
+renderer leases. A shared view keeps an Arc of the Box, avoiding conversion to
+Arc<[u8]> that would copy the payload. Per-resource staging/resident/retiring
+charges and final journal-confirmed release use the existing store.
+
+`OwnedRing` fixes geometry at admission and lends a non-cloneable read ticket to
+the existing four-credit ISB worker. The experimental layout has 1–4 slots,
+4 bytes–4 MiB of pixels per slot (a multiple of four), a 4096-byte header,
+page-rounded payload, and a little-endian u64 ready generation at offset zero. Total source extent is checked against the caller's separately
+reserved source bytes; only an exact-size regular file is admitted. Session
+maps none of it. The worker makes two bounded generation reads around one
+payload pread and rejects short/error reads or changed generations, without a
+retry. It scans only the copied destination. Cancellation/deadline checkpoints
+surround syscalls and validation chunks; a blocking regular-file read still has
+no hard duration bound. The local Linux memfd tests do not qualify all backing
+files or other hosts.
+
+The ticket retains the source fd while reads may occur. Dropping it marks only
+source-read completion. The slot owner keeps its exact offer/slot/generation
+release pending until journal confirmation; cancellation, resource retention
+and merely observing the release do not free the slot. Offer ids increase across
+the ring, each slot's even nonzero generations increase without wrap, and failed
+admission leaves those high-water marks untouched. A changed-generation outcome
+is distinct for future evidence counting. Equal words still do not authenticate
+producer pixels or prove a hostile writer's coherent snapshot.
+
+Tests cover destination pointer identity and retention, resident limits,
+revocation/cancellation/expiry charges, invalid pixels and partial scans;
+reusing two source slots while eight immutable destinations survive; source
+truncation; exact-release identity and backpressure; refused submission custody;
+and deterministic generation change/cancellation between source reads.
+
+This feature is reachable by isolated tests/harness APIs only. There is no ring
+wire allocation, SDK change, authenticated source admission, connection-wide
+source accounting, journal slot-release record, native recipe, live enablement
+or performance acceptance yet. The export owner must bind ring/connection epochs,
+reserve source and per-resource budgets plus journal credits, retain source
+charges through disconnected workers, and reconcile every terminal completion.
+The next integration step is that owner and its negotiated experimental record
+path on the existing descriptor channel and journal. Do not silently reuse the
+sealed source kind, bypass export.check, add a reactor, or patch SDK snapshots.
+Native measurements must still pass the regression floor and report external
+references independently before proposing a production path.
+
+
+### Joint handback supersedes the earlier IPC-floor decision
+
+Niltempus's subsequent explicit direction removes the four IPC +10% gates from
+t331 acceptance. IPC is now an ungated diagnostic, and Wayland/XLibre is the
+performance bar. The [accepted plan amendment](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#accepted-performance-direction-amendment--october-21-2026)
+supersedes this note's earlier “regression floor” and “unchanged +10% gates”
+requirements. External numerical thresholds remain unset; R=2.0 is a proposal,
+not an approved ceiling. Whole-desktop wmbench belongs to t289 separately.
+The handback's clients are received but require review/correction and protocol
+smoke before native capture. No IPC or external pass is inferred by this change.

@@ -15,6 +15,59 @@ resource custody, queue bounds or presentation semantics. This is a targeted
 prerequisite for t252's existing cost gate, not a promotion of t289's broader
 engine optimization programme. Requested by niltempus on October 15.
 
+## Accepted performance-direction amendment — October 21, 2026
+
+Niltempus explicitly replaces t331's four IPC +10% acceptance gates with
+Wayland/XLibre external reference rows. This supersedes the unchanged-IPC-gate
+requirements in the historical entries below, including the earlier October 21
+proposal to keep IPC as a regression floor. IPC remains an **ungated diagnostic**
+with the same peer and owner obligations; retain all old failures and evidence.
+No existing result becomes a pass by changing this decision.
+
+The t331 bar is work per delivered shell-image frame against River (or another
+qualified wlroots compositor) and XLibre under equivalent visuals, cadence,
+throughput and buffer ownership. Report Session/owner CPU and client CPU
+separately, with process identities, interval bounds, delivered counts, latency
+and spacing distributions and faults. Compare each external reference separately,
+not their average or whichever happens to be slower. Repeat on crunch and x13;
+never transfer absolute cost between machines. Battery/headroom motivates removal
+of per-frame file lifecycle work; neither these active-frame measurements nor
+unchanged 20 ms authentication cadence establishes idle battery performance.
+
+**Numerical acceptance remains open.** Claude/Muse propose an opening server
+and client CPU multiple R=2.0 and p50/p95 latency within one refresh; these are
+proposals for niltempus, not adopted limits and not values to tighten after
+seeing a result. Freeze quantities, references, intervals, pacing equivalence,
+minimum delivered count, uncertainty rule and R values before scoring. A pending
+threshold is no passing verdict. IPC percentages must not decide the new gate.
+Until the external recipe and numerical amendment are finalized, the old xtask
+comparator verdict is historical diagnostic output only. The shared shell-file
+budget/spec copies and gate code must be updated consistently before acceptance;
+this plan files the authorized t331 decision without silently editing vendored
+SDK contracts or claiming that integration is already complete.
+
+External rows price the pixel path. Their cooperative mutable buffers and
+release events differ from Sophia's immutable owned resources and evidence,
+identity, epochs, revocation and expiry. Report those differences with every
+result; preserve all Sophia correctness, authority and custody obligations.
+X Present, presentation feedback, buffer-safe completion and client receipt
+must not be silently mixed into one presentation-latency distribution.
+
+Whole-desktop wmbench is a separate t289 comparison: Sophia / XLibre / River,
+with X compatibility clients on Sophia and the native Wayland backend on River.
+It does not gate the shell 9P image path. Use the common supported workload rows,
+record “not done” for unavailable protocols, and pin builds, heads, modes and
+complete desktop PID accounting. The prepared native retry needs current-master
+receipts before use. No matched native external or three-way result exists here.
+
+The joint Claude wB:pH / Muse wB:pJ handback supplies uncommitted standalone
+clients and a draft accounting recipe, not qualified runs. This lane owns
+receipt verification, correction, headless protocol smoke and seated recipe
+integration. In particular, received bulk arms differ (visible Wayland surface
+versus offscreen X copy), the Wayland bind needs a second registry roundtrip,
+and the received journal parser cannot parse its spaced clock note. Measurement
+windows and presentation source validation also need hardening before gating.
+
 ## Task details
 
 ### Approved owner-service optimization — October 18
