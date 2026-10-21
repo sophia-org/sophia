@@ -1621,12 +1621,15 @@ name = "sophia-runtime"
 version = "0.1.0"
 dependencies = [
  "rustix",
+ "serde",
  "serde_json",
  "sha2",
  "sophia-9p",
  "sophia-9p-client",
  "sophia-draw",
  "sophia-engine",
+ "sophia-isb",
+ "sophia-launch-client",
  "sophia-linux-peer",
  "sophia-namespace-client",
  "sophia-protocol",

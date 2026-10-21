@@ -111,8 +111,28 @@ owner and worker, using a supplied test authority. Shared arrival ordinals asser
 that final status precedes slot release on both cancellation and success. This
 does not qualify a live Session or the native authentication setup.
 
-A real timing-peer ring producer and paired native measurements remain required.
-No native or performance acceptance follows from these automated controls.
+The feature-gated `shell_timing_peer_ring` example speaks raw 9P after the
+normal authenticated launch attach, so it can consume private D4 events without
+changing the SDK decoder. Its ring and sealed sources share the frame loop,
+pixel fill, resource cycling, demand and retirement. The ring smoke covers
+three frames through two slots against the actual in-process transport. This
+is a protocol smoke with test authority and supplied presentation outcomes,
+not a native Session or renderer run.
+
+The first paired diagnostic uses 120 warmup frames and 2,000 measured completion
+intervals, in sealed/ring/ring/sealed order. Both sources keep one frame in
+flight and finish source settlement before demanding a candidate. The ring
+slots rotate without overlapping offers; this measures amortized source
+lifecycle cost, not pipelined ring throughput. Warmup covers each slot's first
+mapping faults. `ready_usec - admitted_usec` includes producer ring creation
+and is setup time, not Session admission latency.
+
+The producer fills its mapped ring directly. The current Session destination
+is initialized before the payload pread overwrites it, and renderer upload is
+still separate. CPU observations therefore include that destination work;
+this implementation does not yet demonstrate the proposed single-copy GPU
+destination. Paired native measurements remain required. No performance
+acceptance follows from the automated controls or serializer replay.
 
 Use the accepted four-workload Wayland/XLibre bar on crunch and x13; IPC is an
 ungated diagnostic. External numerical thresholds remain unset. Retained
