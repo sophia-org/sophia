@@ -7,6 +7,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
+# Isolated D4 measurement foundation; no negotiated source kind or live routing.
+experimental-owned-copy = []
 experimental-draw = ["dep:sophia-draw", "rustix/fs"]
 experimental-shell-capture = ["dep:sophia-renderer-image"]
 # Opt-in shell-file control-turn observation; absent from default builds.

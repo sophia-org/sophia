@@ -13,6 +13,8 @@ mod epochs;
 mod isb_jobs;
 mod isb_pixels;
 mod isb_worker;
+#[cfg(feature = "experimental-owned-copy")]
+mod owned_ring;
 mod profile;
 mod reconnect_budget;
 mod resources;
@@ -25,6 +27,8 @@ pub use epochs::*;
 pub use isb_jobs::*;
 pub use isb_pixels::*;
 pub use isb_worker::*;
+#[cfg(feature = "experimental-owned-copy")]
+pub use owned_ring::*;
 pub use profile::*;
 pub use reconnect_budget::*;
 pub use resources::*;

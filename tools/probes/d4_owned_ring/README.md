@@ -63,3 +63,9 @@ The first three retained runs are in
 `~/.local/state/sophia/development-evidence/t331-d4-owned-copy-20261021/probe-01`.
 They alternate forward/reverse/forward arm order. Native fresh-ISB versus ring
 measurement, using the t331 gates, is still required before any production path.
+
+To reproduce the retained medians, run `python3 tools/probes/d4_owned_ring/summarize.py`
+with the captured JSONL paths. It checks all 16 cells per run, 128 ordered samples
+per cell and zero remaining destination bytes at drain. Its `session_us` is the
+median of each sample's acceptance plus old-resource release; it is not the sum
+of two independently calculated medians or a native gate result.

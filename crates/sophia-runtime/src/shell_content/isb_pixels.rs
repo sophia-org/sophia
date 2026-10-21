@@ -1,20 +1,41 @@
-//! Bounded validation on a worker-owned immutable mapping. No owner-loop scan.
+//! Bounded validation on immutable CPU storage. No owner-loop scan.
 use super::ContentStoreError;
 use sophia_linux_peer::SealedMapping;
 
 /// Default validation unit; an owner may publish a smaller byte budget.
 pub const ISB_PIXEL_VALIDATION_BYTES: usize = 65_536;
 
-pub struct IsbPixelValidation {
-    mapping: SealedMapping,
+pub struct CpuPixelValidation {
+    backing: ImmutableCpuPixels,
     checked: usize,
     failed: bool,
 }
 
 /// Only the complete premultiplied-pixel scan can construct this value.
-pub struct ValidatedIsbPixels(pub(super) SealedMapping);
+pub struct ValidatedCpuPixels(pub(super) ImmutableCpuPixels);
 
-impl ValidatedIsbPixels {
+/// Existing sealed-ISB entry point; owned-copy admission is feature-gated.
+pub type IsbPixelValidation = CpuPixelValidation;
+/// Compatibility name for the existing sealed-ISB completion API.
+pub type ValidatedIsbPixels = ValidatedCpuPixels;
+
+pub(super) enum ImmutableCpuPixels {
+    Sealed(SealedMapping),
+    #[cfg(feature = "experimental-owned-copy")]
+    Owned(Box<[u8]>),
+}
+
+impl ImmutableCpuPixels {
+    pub(super) fn bytes(&self) -> &[u8] {
+        match self {
+            Self::Sealed(mapping) => mapping.bytes(),
+            #[cfg(feature = "experimental-owned-copy")]
+            Self::Owned(bytes) => bytes,
+        }
+    }
+}
+
+impl ValidatedCpuPixels {
     pub fn bytes(&self) -> &[u8] {
         self.0.bytes()
     }
@@ -22,17 +43,33 @@ impl ValidatedIsbPixels {
     /// Transfer validated backing to an immutable consumer lease without a
     /// pixel copy. This does not grant presentation or release accounting.
     pub fn into_shared(self) -> crate::SharedPixels {
-        crate::SharedPixels::isb(self.0)
+        match self.0 {
+            ImmutableCpuPixels::Sealed(mapping) => crate::SharedPixels::isb(mapping),
+            #[cfg(feature = "experimental-owned-copy")]
+            ImmutableCpuPixels::Owned(bytes) => crate::SharedPixels::owned(bytes),
+        }
     }
 }
 
-impl IsbPixelValidation {
+impl CpuPixelValidation {
     pub fn new(mapping: SealedMapping) -> Result<Self, ContentStoreError> {
-        if !mapping.bytes().len().is_multiple_of(4) {
+        Self::from_backing(ImmutableCpuPixels::Sealed(mapping))
+    }
+
+    /// Consume a Session-owned copy. No producer mapping or mutable alias may
+    /// enter here. This supplies pixel validation, not ring admission or budget
+    /// authorization: the caller must reserve resource/worker credit first.
+    #[cfg(feature = "experimental-owned-copy")]
+    pub fn from_owned(bytes: Box<[u8]>) -> Result<Self, ContentStoreError> {
+        Self::from_backing(ImmutableCpuPixels::Owned(bytes))
+    }
+
+    fn from_backing(backing: ImmutableCpuPixels) -> Result<Self, ContentStoreError> {
+        if !backing.bytes().len().is_multiple_of(4) {
             return Err(ContentStoreError::Malformed);
         }
         Ok(Self {
-            mapping,
+            backing,
             checked: 0,
             failed: false,
         })
@@ -56,21 +93,21 @@ impl IsbPixelValidation {
         let end = self
             .checked
             .saturating_add(bytes.min(ISB_PIXEL_VALIDATION_BYTES))
-            .min(self.mapping.bytes().len());
-        let pixels = self.mapping.bytes();
+            .min(self.backing.bytes().len());
+        let pixels = self.backing.bytes();
         if !valid_unit(pixels, self.checked, end) {
             self.failed = true;
             return Err(ContentStoreError::Malformed);
         }
         self.checked = end;
-        Ok(end == self.mapping.bytes().len())
+        Ok(end == self.backing.bytes().len())
     }
 
-    pub fn finish(self) -> Result<ValidatedIsbPixels, ContentStoreError> {
-        if self.failed || self.checked != self.mapping.bytes().len() {
+    pub fn finish(self) -> Result<ValidatedCpuPixels, ContentStoreError> {
+        if self.failed || self.checked != self.backing.bytes().len() {
             return Err(ContentStoreError::Incomplete);
         }
-        Ok(ValidatedIsbPixels(self.mapping))
+        Ok(ValidatedCpuPixels(self.backing))
     }
 }
 

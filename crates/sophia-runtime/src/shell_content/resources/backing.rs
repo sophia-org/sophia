@@ -4,9 +4,9 @@ use super::*;
 #[cfg(feature = "experimental-shell-capture")]
 pub use sophia_renderer_image::RendererImageSnapshot as ContentCapturedImage;
 
-struct SealedPixels {
+struct CpuPixels {
     description: ContentResourceBegin,
-    bytes: sophia_linux_peer::SealedMapping,
+    bytes: super::super::isb_pixels::ImmutableCpuPixels,
 }
 
 #[cfg(feature = "experimental-shell-capture")]
@@ -17,7 +17,7 @@ struct CapturedPixels {
 
 #[derive(Clone)]
 enum Backing {
-    Sealed(Arc<SealedPixels>),
+    Cpu(Arc<CpuPixels>),
     #[cfg(feature = "experimental-shell-capture")]
     Captured(Arc<CapturedPixels>),
 }
@@ -30,7 +30,7 @@ pub struct ContentResourceLease(Backing);
 /// A checked CPU view which retains the original accepted resource owner.
 /// GPU backing cannot construct this type or reach its infallible byte view.
 #[derive(Clone)]
-pub struct ContentCpuResourceLease(Arc<SealedPixels>);
+pub struct ContentCpuResourceLease(Arc<CpuPixels>);
 
 impl ContentCpuResourceLease {
     pub fn bytes(&self) -> &[u8] {
@@ -42,14 +42,11 @@ impl ContentCpuResourceLease {
 }
 
 impl ContentResourceLease {
-    pub(super) fn sealed(
+    pub(super) fn cpu(
         description: ContentResourceBegin,
-        bytes: sophia_linux_peer::SealedMapping,
+        bytes: super::super::isb_pixels::ImmutableCpuPixels,
     ) -> Self {
-        Self(Backing::Sealed(Arc::new(SealedPixels {
-            description,
-            bytes,
-        })))
+        Self(Backing::Cpu(Arc::new(CpuPixels { description, bytes })))
     }
 
     #[cfg(feature = "experimental-shell-capture")]
@@ -65,7 +62,7 @@ impl ContentResourceLease {
 
     pub fn cpu_bytes(&self) -> Option<&[u8]> {
         match &self.0 {
-            Backing::Sealed(pixels) => Some(pixels.bytes.bytes()),
+            Backing::Cpu(pixels) => Some(pixels.bytes.bytes()),
             #[cfg(feature = "experimental-shell-capture")]
             Backing::Captured(_) => None,
         }
@@ -73,7 +70,7 @@ impl ContentResourceLease {
 
     pub fn into_cpu(self) -> Result<ContentCpuResourceLease, Self> {
         match self.0 {
-            Backing::Sealed(pixels) => Ok(ContentCpuResourceLease(pixels)),
+            Backing::Cpu(pixels) => Ok(ContentCpuResourceLease(pixels)),
             #[cfg(feature = "experimental-shell-capture")]
             backing @ Backing::Captured(_) => Err(Self(backing)),
         }
@@ -81,7 +78,7 @@ impl ContentResourceLease {
 
     pub fn description(&self) -> &ContentResourceBegin {
         match &self.0 {
-            Backing::Sealed(pixels) => &pixels.description,
+            Backing::Cpu(pixels) => &pixels.description,
             #[cfg(feature = "experimental-shell-capture")]
             Backing::Captured(pixels) => &pixels.description,
         }
@@ -90,14 +87,14 @@ impl ContentResourceLease {
     #[cfg(feature = "experimental-shell-capture")]
     pub fn captured_image(&self) -> Option<&Arc<ContentCapturedImage>> {
         match &self.0 {
-            Backing::Sealed(_) => None,
+            Backing::Cpu(_) => None,
             Backing::Captured(pixels) => Some(&pixels.image),
         }
     }
 
     pub(super) fn custody_is_exclusive(&self) -> bool {
         match &self.0 {
-            Backing::Sealed(pixels) => Arc::strong_count(pixels) == 1,
+            Backing::Cpu(pixels) => Arc::strong_count(pixels) == 1,
             #[cfg(feature = "experimental-shell-capture")]
             Backing::Captured(pixels) => {
                 Arc::strong_count(pixels) == 1 && pixels.image.custody_is_exclusive()

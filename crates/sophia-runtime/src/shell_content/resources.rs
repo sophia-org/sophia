@@ -318,7 +318,7 @@ impl ContentResourceStore {
         self.accepted.insert(
             resource,
             Accepted {
-                pixels: ContentResourceLease::sealed(transfer.description, pixels.0),
+                pixels: ContentResourceLease::cpu(transfer.description, pixels.0),
                 retiring: false,
                 transaction: transfer.transaction,
                 release_pending: false,

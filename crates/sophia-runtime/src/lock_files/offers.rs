@@ -488,6 +488,14 @@ impl LockFileCustody {
                 LOCK_RESOURCE_REASON_INVALID_SOURCE,
                 RefusedBeforeUse,
             ),
+            // Lock has no ring admission path. Fail closed if an experimental
+            // worker result is ever misrouted here; no new lock wire reason.
+            #[cfg(feature = "experimental-owned-copy")]
+            (None, Err(IsbValidationFailure::GenerationChanged)) => (
+                Rejected,
+                LOCK_RESOURCE_REASON_INVALID_SOURCE,
+                RefusedBeforeUse,
+            ),
             (None, Err(IsbValidationFailure::SizeMismatch)) => {
                 (Rejected, reason::SIZE_MISMATCH, RefusedBeforeUse)
             }

@@ -107,3 +107,7 @@ pub use shell_content::*;
 #[cfg(all(test, target_os = "linux"))]
 #[path = "../tests/support/content_isb.rs"]
 mod test_content_isb;
+
+#[cfg(all(test, target_os = "linux", feature = "experimental-owned-copy"))]
+#[path = "../tests/support/owned_ring_races.rs"]
+mod owned_ring_races;

@@ -17,6 +17,8 @@ pub enum IsbValidationFailure {
     Timeout,
     Malformed,
     SizeMismatch,
+    #[cfg(feature = "experimental-owned-copy")]
+    GenerationChanged,
 }
 
 pub struct IsbValidationCompletion {
@@ -26,6 +28,8 @@ pub struct IsbValidationCompletion {
 
 enum Source {
     Isb(OwnedFd),
+    #[cfg(feature = "experimental-owned-copy")]
+    Ring(super::OwnedRingRead),
     #[cfg(feature = "experimental-draw")]
     Draw(sophia_draw::Batch),
 }
@@ -34,6 +38,8 @@ impl Source {
     fn into_isb(self) -> OwnedFd {
         match self {
             Self::Isb(fd) => fd,
+            #[cfg(feature = "experimental-owned-copy")]
+            Self::Ring(_) => unreachable!("ISB submission returns its own source"),
             #[cfg(feature = "experimental-draw")]
             Self::Draw(_) => unreachable!("ISB submission returns its own source"),
         }
@@ -321,24 +327,21 @@ fn validate(
         }
     };
     check()?;
-    let source = match job.source {
-        Source::Isb(fd) => fd,
+    let mut validation = match job.source {
+        Source::Isb(fd) => sealed_validation(fd, job.bytes)?,
+        #[cfg(feature = "experimental-owned-copy")]
+        Source::Ring(read) => IsbPixelValidation::from_owned(read.copy(check)?)
+            .map_err(|_| IsbValidationFailure::Malformed)?,
         #[cfg(feature = "experimental-draw")]
-        Source::Draw(batch) => draw_source(
-            raster.get_or_insert_with(sophia_draw::Rasterizer::default),
-            &batch,
-            || check().is_err(),
+        Source::Draw(batch) => sealed_validation(
+            draw_source(
+                raster.get_or_insert_with(sophia_draw::Rasterizer::default),
+                &batch,
+                || check().is_err(),
+            )?,
+            job.bytes,
         )?,
     };
-    let mapping = SealedMapping::map(source, job.bytes).map_err(|error| {
-        if error.raw_os_error() == Some(rustix::io::Errno::MSGSIZE.raw_os_error()) {
-            IsbValidationFailure::SizeMismatch
-        } else {
-            IsbValidationFailure::Malformed
-        }
-    })?;
-    let mut validation =
-        IsbPixelValidation::new(mapping).map_err(|_| IsbValidationFailure::Malformed)?;
     loop {
         check()?;
         let complete = validation
@@ -352,6 +355,23 @@ fn validate(
         }
     }
 }
+
+fn sealed_validation(
+    source: OwnedFd,
+    bytes: usize,
+) -> Result<IsbPixelValidation, IsbValidationFailure> {
+    let mapping = SealedMapping::map(source, bytes).map_err(|error| {
+        if error.raw_os_error() == Some(rustix::io::Errno::MSGSIZE.raw_os_error()) {
+            IsbValidationFailure::SizeMismatch
+        } else {
+            IsbValidationFailure::Malformed
+        }
+    })?;
+    IsbPixelValidation::new(mapping).map_err(|_| IsbValidationFailure::Malformed)
+}
+
+#[cfg(feature = "experimental-owned-copy")]
+mod owned_copy;
 
 #[cfg(feature = "experimental-draw")]
 fn draw_source(
