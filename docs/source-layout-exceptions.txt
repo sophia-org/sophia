@@ -104,3 +104,26 @@ inline-tests crates/sophia-backend-live/src/production_output_runtime.rs
 inline-tests crates/sophia-renderer-native-egl/src/gbm_platform/scanout/context.rs
 inline-tests crates/sophia-renderer-native-egl/src/gbm_platform/scanout/context/source_imports.rs
 inline-tests crates/sophia-renderer-native-egl/src/gbm_platform/scanout/context/capture_pool.rs
+
+# t331/t339: private custody faults, snapshot charging, capture lifecycle and
+# endpoint routing fixtures. Test bodies live in tests/support; test-only hooks
+# cannot be exposed publicly without allowing fabricated custody/completion.
+# Rationale and scope are recorded in docs/style-guide.md.
+inline-tests crates/sophia-backend-live/src/drm/native_atomic/properties/target_cache.rs
+inline-tests crates/sophia-backend-live/src/lib.rs
+inline-tests crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout/preview_custody.rs
+inline-tests crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout/shell_capture.rs
+inline-tests crates/sophia-backend-live/src/scanout/rendered_scanout/exporter/worker/shell_capture.rs
+inline-tests crates/sophia-renderer-image/src/custody.rs
+inline-tests crates/sophia-renderer-image/src/snapshot.rs
+inline-tests crates/sophia-renderer-live/src/shell_capture_jobs.rs
+inline-tests crates/sophia-renderer-live/src/shell_capture_jobs/api.rs
+inline-tests crates/sophia-renderer-live/src/shell_capture_jobs/graveyard.rs
+inline-tests crates/sophia-renderer-live/src/shell_capture_jobs/native.rs
+inline-tests crates/sophia-renderer-native-egl/src/gbm_platform/scanout/context/shell_capture.rs
+inline-tests crates/sophia-renderer-native-egl/src/gbm_platform/scanout/context/shell_capture/escrow.rs
+inline-tests crates/sophia-renderer-native-egl/src/gbm_platform/scanout/context/shell_copy_completion.rs
+inline-tests crates/sophia-runtime/src/supervisor/launch_custody/dispatch.rs
+inline-tests crates/sophia-session/src/shell_capture_owner.rs
+inline-tests crates/sophia-session/src/shell_component_connections/capture.rs
+inline-tests crates/sophia-session/src/shell_component_connections/capture/endpoint.rs
