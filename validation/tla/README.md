@@ -951,4 +951,7 @@ reported state counts are in
 `TransactionCancelLeak` must fail liveness, `RingEarlyRelease` must violate
 `NoWriteDuringRead`, and `RingReleaseIgnoresEpoch` must violate
 `ReleaseInOwnEpoch`. The two transaction controls reproduce the sealed-path
-bugs covered by `sealed_image_control_provenance.rs` before the provenance fix.
+bugs reproduced by `sealed_image_control_provenance.rs` (retained in historical
+commit `c1e6942de`). The current r10 wire regression is
+`crates/sophia-runtime/tests/support/owned_ring_transport.rs`, which checks
+foreign-transaction cancellation, failed retires and status-before-slot-release.

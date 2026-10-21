@@ -1,10 +1,15 @@
 //! Supplied allocation policy for the Session image lifecycle test.
 use super::raw;
 use sophia_protocol::{shell_files::*, *};
-use sophia_runtime::{ContentAllocationSnapshot, ShellTransportConnection};
+use sophia_runtime::owned_ring_protocol::{
+    CONTROL_FILE, Event, EventKind, Identity, Offer, Registration,
+};
+use sophia_runtime::{
+    ContentAllocationSnapshot, OwnedCopyImageRequest, OwnedSlotIdentity, ShellTransportConnection,
+};
 
 pub fn ack(peer: &mut raw::Peer, bytes: &[u8]) {
-    let record = decode_shell_file_record_at_revision(bytes, ShellFileClass::Event, 9).unwrap();
+    let record = decode_shell_file_record_at_revision(bytes, ShellFileClass::Event, 10).unwrap();
     let bytes = encode_shell_file_ack(ShellFileAck {
         connection_epoch: record.header.connection_epoch,
         sequence: record.header.sequence,
@@ -17,7 +22,7 @@ pub fn next_kind(peer: &mut raw::Peer, kind: ShellFileKind) -> Vec<u8> {
     for _ in 0..16 {
         let bytes = peer.next_event();
         let record =
-            decode_shell_file_record_at_revision(&bytes, ShellFileClass::Event, 9).unwrap();
+            decode_shell_file_record_at_revision(&bytes, ShellFileClass::Event, 10).unwrap();
         if record.header.kind == kind {
             return bytes;
         }
@@ -42,7 +47,7 @@ fn submit(peer: &mut raw::Peer, bytes: &[u8], grant: ContentGrant, id: u64) {
     assert_eq!(peer.write(3, &submit).0, 119);
     let receipt = next_kind(peer, ShellFileKind::Submitted);
     assert_eq!(
-        decode_shell_file_submitted_at_revision(&receipt, 9)
+        decode_shell_file_submitted_at_revision(&receipt, 10)
             .unwrap()
             .submission_id,
         id
@@ -51,7 +56,7 @@ fn submit(peer: &mut raw::Peer, bytes: &[u8], grant: ContentGrant, id: u64) {
     peer.clear();
 }
 
-pub fn admit_unsent(peer: &mut raw::Peer, grant: ContentGrant) -> ShellImageMetadata {
+pub fn admit_unsent(peer: &mut raw::Peer, grant: ContentGrant) -> Registration {
     let allocation = encode_shell_file_allocation_request(
         ShellFileHeader {
             kind: ShellFileKind::AllocationRequest,
@@ -85,80 +90,62 @@ pub fn admit_unsent(peer: &mut raw::Peer, grant: ContentGrant) -> ShellImageMeta
     submit(peer, &allocation, grant, 2);
     let result = next_kind(peer, ShellFileKind::AllocationResult);
     ack(peer, &result);
-    let metadata = ShellImageMetadata {
-        offer_id: 1,
-        resource: 1,
-        resource_generation: 1,
-        admission_epoch: grant.content_grant_epoch,
-        output_id: 1,
-        allocation_id: 1,
-        topology_generation: 2,
-        source_kind: 1,
-        source_format: 1,
-        width: 2,
-        height: 1,
-        stride: 8,
-        plane_count: 1,
-        descriptor_count: 1,
-        declared_bytes: 8,
-        modifier: 0,
-    };
-    let begin = encode_shell_file_record_at_revision(
-        ShellFileHeader {
-            kind: ShellFileKind::ImageBegin,
-            connection_epoch: grant.connection_epoch,
-            submission_id: 3,
-            sequence: 0,
+    let registration = Registration {
+        identity: Identity {
+            grant,
+            channel: grant.connection_epoch,
+            ring: 1,
+            generation: 1,
         },
-        &metadata.encode().unwrap(),
-        9,
-    )
+        slots: 1,
+        pixels: 8,
+    };
+    peer.open(29, CONTROL_FILE, 1);
+    assert_eq!(peer.write(29, &registration.encode()).0, 119);
+    expect_ring(peer, registration.identity, EventKind::RingAdmitted);
+    registration
+}
+
+fn expect_ring(peer: &mut raw::Peer, identity: Identity, kind: EventKind) -> Event {
+    let bytes = peer.next_event();
+    let event = Event::decode(&bytes).expect("ring event");
+    assert_eq!(event.identity, identity);
+    assert_eq!(event.kind, kind);
+    let ack = encode_shell_file_ack(ShellFileAck {
+        connection_epoch: identity.grant.connection_epoch,
+        sequence: event.sequence,
+    })
     .unwrap();
-    submit(peer, &begin, grant, 3);
-    let admitted = next_kind(peer, ShellFileKind::ImageAdmitted);
-    let record = decode_shell_file_record_at_revision(&admitted, ShellFileClass::Event, 9).unwrap();
-    assert_eq!(ShellImageMetadata::decode(record.body).unwrap(), metadata);
-    ack(peer, &admitted);
-    metadata
+    assert_eq!(peer.write(4, &ack).0, 119);
+    event
 }
 
 pub fn complete_source(
     peer: &mut raw::Peer,
     socket: &std::os::fd::OwnedFd,
     grant: ContentGrant,
-    metadata: ShellImageMetadata,
+    registration: Registration,
     channel_generation: u64,
 ) {
     use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, memfd_create};
     use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
     use std::os::fd::AsFd;
+    use std::os::unix::fs::FileExt;
     let source = std::fs::File::from(
         memfd_create(
-            c"session-sealed-source",
+            c"session-ring-source",
             MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING,
         )
         .unwrap(),
     );
-    source.set_len(8).unwrap();
-    fcntl_add_seals(
-        &source,
-        SealFlags::WRITE | SealFlags::GROW | SealFlags::SHRINK | SealFlags::SEAL,
-    )
-    .unwrap();
-    let mut planes = [ShellImagePlane {
-        offset: 0,
-        stride: 0,
-        fd_index: 0,
-    }; 4];
-    planes[0].stride = 8;
-    let packet = ShellImagePacket::Source {
-        connection_epoch: grant.connection_epoch,
-        channel_generation,
-        metadata,
-        planes,
-    }
-    .encode()
-    .unwrap();
+    source
+        .set_len(registration.geometry().unwrap().source_bytes() as u64)
+        .unwrap();
+    source.write_all_at(&2u64.to_le_bytes(), 0).unwrap();
+    source.write_all_at(&[0; 8], 4096).unwrap();
+    fcntl_add_seals(&source, SealFlags::GROW | SealFlags::SHRINK).unwrap();
+    assert_eq!(registration.identity.channel, channel_generation);
+    let packet = registration.source_packet();
     let mut space = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
     let mut control = SendAncillaryBuffer::new(&mut space);
     let rights = [source.as_fd()];
@@ -171,38 +158,55 @@ pub fn complete_source(
             SendFlags::NOSIGNAL
         )
         .unwrap(),
-        200
+        packet.len()
     );
     drop(source);
-    let (mut status, mut released) = (false, false);
-    for _ in 0..2 {
-        let bytes = peer.next_event();
-        let record =
-            decode_shell_file_record_at_revision(&bytes, ShellFileClass::Event, 9).unwrap();
-        match record.header.kind {
-            ShellFileKind::ResourceStatus => {
-                assert!(!status);
-                let value = decode_shell_file_resource_status(&bytes).unwrap();
-                assert!(
-                    matches!(value.record, ShellContentRecord::ResourceStatus(value) if value.status == 2 && value.resource.id == 1 && value.admitted_bytes == 8)
-                );
-                status = true;
+    expect_ring(peer, registration.identity, EventKind::RingReady);
+    let request = OwnedCopyImageRequest {
+        slot: OwnedSlotIdentity {
+            offer: 1,
+            slot: 0,
+            generation: 2,
+        },
+        resource: ContentResourceId {
+            id: 1,
+            generation: 1,
+        },
+        allocation: ContentAllocationId {
+            id: 1,
+            generation: 1,
+        },
+        output: ContentOutputId {
+            id: 1,
+            generation: 1,
+        },
+        topology_generation: 2,
+        width: 2,
+        height: 1,
+    };
+    assert_eq!(
+        peer.write(
+            29,
+            &Offer {
+                identity: registration.identity,
+                request
             }
-            ShellFileKind::SourceReleased => {
-                assert!(!released);
-                assert_eq!(
-                    ShellSourceReleased::decode(record.body)
-                        .unwrap()
-                        .disposition,
-                    ShellSourceDisposition::Retained
-                );
-                released = true;
-            }
-            _ => panic!("unexpected image terminal event"),
-        }
-        ack(peer, &bytes);
-    }
-    assert!(status && released);
+            .encode()
+        )
+        .0,
+        119
+    );
+    let status = next_kind(peer, ShellFileKind::ResourceStatus);
+    assert!(
+        matches!(decode_shell_file_resource_status_at_revision(&status, 10).unwrap().record,
+        ShellContentRecord::ResourceStatus(value) if value.status == 2 && value.resource == request.resource && value.admitted_bytes == 8)
+    );
+    ack(peer, &status);
+    let released = expect_ring(peer, registration.identity, EventKind::SlotReleased);
+    assert_eq!(released.slot, request.slot);
+    assert_eq!(released.resource, request.resource);
+    assert_eq!(released.reason, 0);
+    assert!(!released.changed_generation);
     let retire = encode_shell_file_resource_retire(
         ShellFileHeader {
             kind: ShellFileKind::ResourceRetire,

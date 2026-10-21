@@ -101,12 +101,12 @@ pub fn paced_draw_panel(preview: Option<&std::path::Path>) {
         let capabilities = SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
             | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
             | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
-            | (1 << 13);
+            | (1 << 15);
         let offer = encode_shell_file_negotiate(
             candidate(ShellFileKind::Negotiate, 1, 1),
             ShellV1ClientHello {
-                minimum_revision: 9,
-                maximum_revision: 9,
+                minimum_revision: 10,
+                maximum_revision: 10,
                 required_capabilities: capabilities,
             },
         )

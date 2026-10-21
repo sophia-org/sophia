@@ -116,8 +116,7 @@ short sophia_ip_poll_events(const struct sophia_ip *p)
 }
 
 #ifdef __linux__
-/* Sends one whole packet. 1 sent, 0 EAGAIN, -1 failed (errno kept). */
-static int send_packet(int sock, const uint8_t *b, size_t n, int fd)
+int ip_send_packet(int sock, const uint8_t *b, size_t n, int fd)
 {
     struct msghdr msg;
     struct iovec iov;
@@ -177,7 +176,7 @@ static int send_hello(struct sophia_ip *p)
         ip_fail(p, SOPHIA_IPX_FAULT);
         return 1;
     }
-    r = send_packet(p->fd, b, sizeof b, -1);
+    r = ip_send_packet(p->fd, b, sizeof b, -1);
     if (!r)
         return 0;
     if (r < 0)
@@ -212,7 +211,7 @@ static int send_sources(struct sophia_ip *p)
             ip_fail(p, SOPHIA_IPX_FAULT);
             return 1;
         }
-        r = send_packet(p->fd, b, sizeof b, next->fd);
+        r = ip_send_packet(p->fd, b, sizeof b, next->fd);
         if (!r)
             return changed;
         /* Sent or not, Sophia holds its own reference or nothing: this
@@ -229,6 +228,16 @@ static int send_sources(struct sophia_ip *p)
                                                          : SOPHIA_IPX_FAULT);
         return 1;
     }
+}
+#else
+int ip_send_packet(int sock, const uint8_t *b, size_t n, int fd)
+{
+    (void)sock;
+    (void)b;
+    (void)n;
+    (void)fd;
+    errno = ENOTSUP;
+    return -1;
 }
 #endif
 

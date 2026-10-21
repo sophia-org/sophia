@@ -1,5 +1,23 @@
 # Extraction and contract provenance
 
+## Shell r10 owned ring, 2026-10-21
+
+Pins the shell owned-ring contract from Sophia's signed commit
+`c2193fa4baa1af01ea46ef3eac48106029258e98`. The files are copied byte for
+byte: new `spec/sophia-owned-ring.md`, `spec/sophia-owned-ring-v1.kdl` and
+`spec/golden/sophia-owned-ring-v1.tsv`, and the amended
+`spec/sophia-image-channel.md`, `spec/sophia-shell-files.md` and
+`spec/sophia-shell-files-v1.kdl`. `spec/SHA256SUMS` is regenerated. The pinned
+copies at that commit's parent matched this SDK's previous spec, so the
+contract commit is the only change.
+
+The source base is C `7a8f77eae2a68d2464b022b8883b8ecfb2b43a28`; there is no
+vendored or Kleis change. Lock r2 and metadata r1–r8 APIs are unchanged, and
+the r9 sealed shell adapter stays. The Rust pair is Muse's `shellr10-owned-ring`
+series. Record both published revisions here before Sophia imports them.
+[API-PARITY.md](API-PARITY.md#shell-r10-owned-ring-2026-10-21) records the
+custody contract, tests and evidence limits.
+
 ## Mapped ISB builder, 2026-10-18
 
 Adds in-place ISB construction to both SDKs: the Rust leaf crate `sophia-isb`

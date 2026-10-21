@@ -28,7 +28,7 @@ fn image_config() -> (
             connection_epoch: 1,
             channel_generation: 1,
             endpoint: "image.sock".into(),
-            source_kinds: 1,
+            source_kinds: 4,
             max_offers: 4,
             max_packets_per_turn: 1,
             hello_timeout_ms: 250,
@@ -81,28 +81,7 @@ fn ring_peer_against_real_transport() {
         frames: 3,
         height: 20,
         hold: 0,
-        source: Source::Ring { slots: 2 },
-    });
-}
-
-#[test]
-fn sealed_peer_against_real_transport() {
-    let limits = ContentLimits::prototype(GRANT);
-    run_smoke(Config {
-        output_id: 1,
-        frames: 2,
-        height: 20,
-        hold: 0,
-        source: Source::Sealed {
-            bounds: SealedBounds {
-                max_resource_bytes: limits.max_resource_bytes,
-                max_width: limits.max_width_px,
-                max_height: limits.max_height_px,
-                max_admitted_outputs: limits.max_outputs,
-                transfer_slots: limits.max_open_transfers,
-                transfer_timeout_ms: limits.transfer_timeout_ms,
-            },
-        },
+        slots: 2,
     });
 }
 
@@ -111,10 +90,7 @@ fn run_smoke(config: Config) {
     let directory = std::env::temp_dir().join(format!(
         "shell-owned-ring-smoke-{}-{}",
         std::process::id(),
-        match config.source {
-            Source::Ring { slots } => format!("ring{slots}"),
-            Source::Sealed { .. } => "sealed".to_string(),
-        }
+        config.slots
     ));
     let _ = std::fs::remove_dir_all(&directory);
     let mut transport = ShellComponentTransport::bind_for_supervised_uid(

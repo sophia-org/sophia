@@ -300,11 +300,20 @@ fn encoders_refuse_values_outside_kdl_constraints() {
     released[24] = 6;
     assert!(ShellSourceReleased::decode(&released).is_err());
 
-    // ChannelReady mask is min=1 max=3.
+    // ChannelReady mask names the known kind bits 1|2|4 (owned ring
+    // is bit 4 since shell revision 10); bit 8 is outside the shape.
     assert!(
         ShellChannelReady {
             channel_generation: 64,
             granted_source_kinds: 4,
+        }
+        .encode()
+        .is_ok()
+    );
+    assert!(
+        ShellChannelReady {
+            channel_generation: 64,
+            granted_source_kinds: 8,
         }
         .encode()
         .is_err()

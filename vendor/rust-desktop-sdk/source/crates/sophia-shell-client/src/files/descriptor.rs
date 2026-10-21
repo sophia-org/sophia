@@ -32,7 +32,10 @@ pub(super) fn validate_negotiated(
         allowed |=
             SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS | SOPHIA_SHELL_CAPABILITY_INDICATOR_ACTIVATION;
     }
-    if revision > 8
+    if revision >= sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION {
+        allowed |= crate::IMAGE_CAPABILITY_OWNED_RING;
+    }
+    if revision > sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
         || options.required_capabilities & SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER == 0
         || caps != options.required_capabilities | SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
         || caps & !allowed != 0

@@ -1107,6 +1107,7 @@ static void cancel_lost_with_session(void)
 /* A refused image cancel is not a byte upload's refused End, whether its
  * resource differs in ID or only in generation. */
 #include "native_image_adoption.h"
+#include "owned_ring_session.h"
 
 int main(void)
 {
@@ -1128,6 +1129,7 @@ int main(void)
     cancel_before_admission();
     cancel_races();
     cancel_lost_with_session();
+    owned_ring_session();
     assert(fd_count() == base);
     puts("shell_image_test: ok");
     return 0;

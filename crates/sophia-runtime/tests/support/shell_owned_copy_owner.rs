@@ -305,3 +305,81 @@ fn old_settlement_cannot_release_a_successor_rings_matching_slot() {
         Some(request().slot)
     );
 }
+
+#[test]
+fn expiry_keeps_its_cause_after_later_cancel_until_worker_completion() {
+    let mut registry = registry();
+    let mut worker = IsbValidationWorker::new(1, 4).unwrap();
+    let (mut owner, job) = admitted(&mut registry, &mut worker);
+    let ticket = owner
+        .active
+        .as_mut()
+        .unwrap()
+        .ring
+        .offer(request().slot, 4)
+        .unwrap();
+    assert!(owner.jobs.submit(&mut worker, job, ticket).is_ok());
+    // Withhold completion delivery even if the real worker has already copied.
+    // Expiry is authoritative before the later cancel arrives at the store.
+    let expiry = owner.jobs.deadline().unwrap();
+    owner
+        .jobs
+        .expire(&mut registry, &mut worker, expiry, 0)
+        .unwrap();
+    assert!(owner.jobs.deadline().is_none());
+    let store = registry.resources_mut(identity().grant).unwrap();
+    store
+        .cancel(
+            TransactionId::from_raw(999),
+            &ContentResourceCancel {
+                grant: identity().grant,
+                resource: request().resource,
+            },
+        )
+        .unwrap();
+    assert!(
+        store.take_event().is_none(),
+        "cancel cannot invent worker completion"
+    );
+    owner.reconcile(&mut registry, 0);
+    assert!(matches!(owner.work[0], Some(Work::Working { .. })));
+    assert_eq!(owner.pending(), 1);
+    assert_eq!(worker.pending(), 1);
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(completion) = worker.take_completed().unwrap() {
+            assert!(owner.receive(completion).is_ok());
+            break;
+        }
+        assert!(Instant::now() < deadline, "bounded worker completion");
+        std::thread::yield_now();
+    }
+    owner.reconcile(&mut registry, 0);
+    let Some(Work::Releasing { settlement, .. }) = &owner.work[0] else {
+        panic!("completion owes an ordered slot release");
+    };
+    assert_eq!(settlement.stopped, Some(ContentReason::Timeout));
+    assert!(settlement.outcome.is_err());
+    assert_eq!(worker.pending(), 0);
+    let store = registry.resources_mut(identity().grant).unwrap();
+    let event = store.take_event().unwrap();
+    assert_eq!(event.transaction.raw(), request().slot.offer);
+    assert!(
+        matches!(event.record, ShellContentRecord::ResourceStatus(status)
+        if status.status == 3 && status.reason == ContentReason::Timeout as u16)
+    );
+    assert!(
+        store.take_event().is_none(),
+        "one terminal status despite the later cancel"
+    );
+    assert_eq!(store.usage().staging, 0);
+    assert_eq!(store.usage().backing, 0);
+    // Publication is covered by wire_tests. This test stops at the owner
+    // boundary: completion alone has not returned the producer's slot.
+    assert_eq!(
+        owner.active.as_ref().unwrap().ring.pending_release(0),
+        Some(request().slot)
+    );
+    assert_eq!(owner.pending(), 1);
+}

@@ -33,6 +33,16 @@ int sf_session_file_read(struct sophia_sf_client *, const char *name, void *buf,
 int sf_session_file_result(struct sophia_sf_client *, size_t *bytes, uint32_t *error);
 int sf_session_file_drive(struct sophia_sf_client *);
 int sf_session_file_reply(struct sophia_sf_client *, const struct sophia_9p_reply *);
+/* Shell r10 with the image adapter attached and owned rings granted. */
+int sf_session_image_r10(const struct sophia_sf_client *);
+/* One whole record written to owned-ring-v1 at offset 0, copied here. BUSY
+ * while a write is active. The result is 0 when Rwrite took every byte,
+ * AGAIN for EAGAIN, or INVALID with the errno in *error (0 for a malformed
+ * reply). A failed walk or open is INVALID with its errno too. */
+int sf_session_control_write(struct sophia_sf_client *, const void *, size_t);
+int sf_session_control_result(struct sophia_sf_client *, uint32_t *error);
+int sf_session_control_drive(struct sophia_sf_client *);
+int sf_session_control_reply(struct sophia_sf_client *, const struct sophia_9p_reply *);
 static inline int sf_same(struct sophia_sf_operation *op, struct sophia_9p_handle h)
 {
     return op->active && op->handle.slot == h.slot && op->handle.serial == h.serial;

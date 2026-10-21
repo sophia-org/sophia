@@ -1,7 +1,4 @@
-//! Journal records for the raw panel arms. Schema 5 is the owned-ring
-//! arm (separate ring registration/offer/slot-release records, never a
-//! sealed `UploadOffer`); schema 2 is the sealed arm with the legacy
-//! shapes of the existing peer journal.
+//! Schema 5 owned-ring panel journal: registration, offer, acceptance and slot release.
 use serde::Serialize;
 use std::io::{self, Write};
 
@@ -31,14 +28,6 @@ pub enum Event<'a> {
         workload: Option<&'a str>,
         #[serde(skip_serializing_if = "Option::is_none")]
         ring_slots: Option<u64>,
-    },
-    UploadOffer {
-        upload: Upload,
-    },
-    UploadAccepted {
-        resource_id: u64,
-        resource_generation: u64,
-        accepted_usec: u64,
     },
     RingReady {
         connection_epoch: u64,
@@ -209,69 +198,6 @@ mod tests {
             },
         ] {
             write(&mut out, 5, event).unwrap();
-        }
-        print!("{}", String::from_utf8(out).unwrap());
-    }
-
-    /// One complete sealed frame, rendered for the runner parser check.
-    #[test]
-    fn sealed_sample_journal() {
-        let mut out = Vec::new();
-        let upload = Upload {
-            connection_epoch: 1,
-            content_grant_epoch: 1,
-            output: 1,
-            candidate_generation: 1,
-            resource_id: 1,
-            resource_generation: 1,
-            width: 200,
-            height: 20,
-            total_bytes: 16000,
-            begin_usec: 400,
-        };
-        for event in [
-            Event::Start {
-                frames: 1,
-                wire: "files",
-                probe_bytes: 0,
-                source: Some("sealed"),
-                workload: None,
-                ring_slots: None,
-            },
-            Event::UploadOffer { upload },
-            Event::UploadAccepted {
-                resource_id: 1,
-                resource_generation: 1,
-                accepted_usec: 600,
-            },
-            Event::Permit {
-                generation: 1,
-                demand_usec: 700,
-                received_usec: 800,
-            },
-            Event::Offer {
-                connection_epoch: 1,
-                content_grant_epoch: 1,
-                output: 1,
-                candidate_generation: 1,
-                submitted_monotonic_usec: 900,
-            },
-            Event::Terminal {
-                connection_epoch: 1,
-                content_grant_epoch: 1,
-                output: 1,
-                candidate_generation: 1,
-                outcome: "presented",
-                kind: 2,
-                reason: 0,
-                observed_monotonic_usec: 1000,
-            },
-            Event::End {
-                offered: 1,
-                completed: 1,
-            },
-        ] {
-            write(&mut out, 2, event).unwrap();
         }
         print!("{}", String::from_utf8(out).unwrap());
     }

@@ -36,6 +36,9 @@ pub(crate) enum Outbound {
     /// example a candidate's Begin/Chunk*/End), encoded as one file record.
     ContentGroup(TransactionId, Vec<ShellContentRecord>),
     /// One r9 ImageBegin candidate: the producer's 96-byte body.
+    /// Historical; no longer constructed since shell revision 10
+    /// made the owned ring the only shell image source.
+    #[allow(dead_code)]
     ImageBegin([u8; 96]),
     /// One indicator activation naming an exact published generation.
     IndicatorActivation(TransactionId, ShellIndicatorActivation),

@@ -11,15 +11,25 @@ impl ShellComponentTransport {
     ) -> Result<(ShellV1ServerWelcome, Option<ContentLimits>), ShellTransportError> {
         const SEALED: u64 = 1 << 13;
         const DMA: u64 = 1 << 14;
-        if hello.required_capabilities & (SEALED | DMA) != 0 {
+        const OWNED: u64 = crate::owned_ring_protocol::CAPABILITY;
+        if hello.required_capabilities & (SEALED | DMA | OWNED) != 0 {
             if hello.minimum_revision == 0
-                || hello.minimum_revision > 9
-                || hello.maximum_revision < 9
+                || hello.minimum_revision > 10
+                || hello.maximum_revision < 10
                 || hello.minimum_revision > hello.maximum_revision
             {
                 return Err(ShellTransportError::UnsupportedRevision);
             }
-            if hello.required_capabilities & DMA != 0
+            let retired_or_unavailable = hello.required_capabilities & (SEALED | DMA);
+            if retired_or_unavailable != 0 {
+                return Err(ShellTransportError::ContentAdmissionRefused(
+                    ContentAdmissionRefused {
+                        reason: 4,
+                        denied_capabilities: retired_or_unavailable,
+                    },
+                ));
+            }
+            if hello.required_capabilities & OWNED == 0
                 || !self.authentication_required
                 || self
                     .image_config
@@ -36,15 +46,15 @@ impl ShellComponentTransport {
             let base = ShellV1ClientHello {
                 minimum_revision: 1,
                 maximum_revision: 8,
-                required_capabilities: hello.required_capabilities & !SEALED,
+                required_capabilities: hello.required_capabilities & !OWNED,
             };
             let (mut welcome, limits) =
                 self.select_legacy_negotiation(epochs, connection_epoch, content_policy, base)?;
             if limits.is_none() {
                 return Err(ShellTransportError::MissingCapability);
             }
-            welcome.selected_revision = 9;
-            welcome.capabilities |= SEALED;
+            welcome.selected_revision = crate::owned_ring_protocol::REVISION;
+            welcome.capabilities |= OWNED;
             return Ok((welcome, limits));
         }
         self.select_legacy_negotiation(epochs, connection_epoch, content_policy, hello)

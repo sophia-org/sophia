@@ -152,8 +152,14 @@ pub struct Peer {
     /// of being answered.
     pub hold_transactions: bool,
     pub held_transactions: VecDeque<Held>,
+    /// Refuse `Tlopen` of `owned-ring-v1` with this errno.
+    pub control_open_error: Option<u32>,
+    /// Tclunk requests answered so far.
+    pub clunks: usize,
     /// Every record written to `transaction`, in order.
     pub transactions: Vec<Vec<u8>>,
+    /// Every record written to `owned-ring-v1`, in order.
+    pub control_writes: Vec<Vec<u8>>,
     pub acks: Vec<Ack>,
     /// The count to answer `ack` writes with; the written length when unset.
     pub ack_reply: Option<u32>,
@@ -339,7 +345,10 @@ impl Peer {
             submits: VecDeque::new(),
             hold_transactions: false,
             held_transactions: VecDeque::new(),
+            control_open_error: None,
+            clunks: 0,
             transactions: Vec::new(),
+            control_writes: Vec::new(),
             acks: Vec::new(),
             ack_reply: None,
             walks: Vec::new(),
@@ -433,6 +442,15 @@ impl Peer {
     /// The sequence the next event will carry.
     pub fn next_sequence(&self) -> u64 {
         self.next_sequence
+    }
+
+    /// Take the next journal sequence for a record built elsewhere
+    /// (D4E1 ring events share this sequence space).
+    #[allow(dead_code)]
+    pub fn take_sequence(&mut self) -> u64 {
+        let sequence = self.next_sequence;
+        self.next_sequence += 1;
+        sequence
     }
 
     /// One whole r9 image event record with the next sequence.
@@ -628,6 +646,12 @@ impl Peer {
             TLOPEN => {
                 let fid = u32_at(&body, 0);
                 let node = self.fids.get(&fid).cloned().unwrap_or_default();
+                if node == "owned-ring-v1"
+                    && let Some(errno) = self.control_open_error
+                {
+                    self.answer_error(tag, errno);
+                    return;
+                }
                 let reported = self.qid_of(&node);
                 if let Some(object) = self.objects.get(&node) {
                     self.pins.insert(fid, object.clone());
@@ -745,6 +769,10 @@ impl Peer {
                         self.answer_write(tag, count);
                     }
                     "submit" => self.submits.push_back(Held { tag, data }),
+                    "owned-ring-v1" => {
+                        self.control_writes.push(data);
+                        self.answer_write(tag, count);
+                    }
                     slot if slot.starts_with("upload/") => {
                         // Slot bytes land at the written offset, in order.
                         let offset = u64_at(&body, 4) as usize;
@@ -789,6 +817,7 @@ impl Peer {
             }
             TCLUNK => {
                 let fid = u32_at(&body, 0);
+                self.clunks += 1;
                 self.fids.remove(&fid);
                 self.pins.remove(&fid);
                 if self.hold_clunks {

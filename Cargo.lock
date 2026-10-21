@@ -1327,7 +1327,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-9p-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
  "sophia-9p-records",
@@ -1335,7 +1335,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-9p-records"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "sophia-backend-live"
@@ -1372,7 +1372,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-broker-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "sophia-9p-client",
  "sophia-9p-records",
@@ -1381,7 +1381,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-broker-protocol"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "sophia-cli"
@@ -1437,7 +1437,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-desktop-ids"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "sophia-draw"
@@ -1500,7 +1500,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-image-producer"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
  "sophia-isb",
@@ -1517,14 +1517,14 @@ dependencies = [
 
 [[package]]
 name = "sophia-isb"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
 ]
 
 [[package]]
 name = "sophia-launch-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
  "sophia-9p-client",
@@ -1539,11 +1539,11 @@ dependencies = [
 
 [[package]]
 name = "sophia-lock-protocol"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "sophia-namespace-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
 ]
@@ -1628,7 +1628,6 @@ dependencies = [
  "sophia-9p-client",
  "sophia-draw",
  "sophia-engine",
- "sophia-isb",
  "sophia-launch-client",
  "sophia-linux-peer",
  "sophia-namespace-client",
@@ -1687,7 +1686,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-shell-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
  "sophia-9p-client",
@@ -1698,7 +1697,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-shell-protocol"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "sophia-desktop-ids",
 ]

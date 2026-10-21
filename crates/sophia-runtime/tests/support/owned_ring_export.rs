@@ -1,4 +1,4 @@
-//! Export handshake controls for the experimental owned ring: registration
+//! Export handshake controls for the owned ring: registration
 //! replay and deadlines, FD admission, offer retries, and the ordered
 //! status-then-slot-release publication. Real memfds and a real
 //! SOCK_SEQPACKET pair carry every FD; nothing here mutates the
@@ -88,7 +88,7 @@ fn fixture() -> ShellFiles {
                 connection_epoch: 1,
                 channel_generation: 1,
                 endpoint: "image.sock".into(),
-                source_kinds: 1,
+                source_kinds: 4,
                 max_offers: 4,
                 max_packets_per_turn: 1,
                 hello_timeout_ms: 250,
@@ -134,12 +134,12 @@ fn fixture() -> ShellFiles {
         }))
         .unwrap();
     files.negotiated = true;
-    files.image_revision = 9;
-    files.capabilities = crate::shell_transport::files::export::image::IMAGE_CAPABILITIES;
+    files.image_revision = 10;
+    files.capabilities = crate::owned_ring_protocol::CAPABILITY;
     files.content = true;
     files.content_limits = Some(sophia_protocol::ContentLimits::prototype(identity().grant));
     files.image.as_mut().unwrap().readiness = ShellImageReadiness::Ready {
-        granted_source_kinds: 1,
+        granted_source_kinds: 4,
     };
     files
 }

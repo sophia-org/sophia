@@ -1,6 +1,5 @@
 //! Transfer a verified ISB offer into the native resource registry.
 use super::*;
-use sophia_image_producer::{OfferState, ResourceStatusKind};
 
 impl NativeLauncherSession {
     /// Negotiated bounds for constructing the image adapter and its sources.
@@ -28,6 +27,18 @@ impl NativeLauncherSession {
     }
 
     /// The connection returns the source descriptor on refusal before custody.
+    /// Queue one owned-ring upload on this session's connection;
+    /// see [`ShellConnection::image_upload_ring`]. The image is
+    /// adoptable only once its offer reports `Settled`.
+    pub fn image_upload_ring(
+        &mut self,
+        upload: crate::RingUpload,
+        pixels: &[u8],
+        now: std::time::Instant,
+    ) -> Result<u64, crate::ImageAdapterError> {
+        self.connection.image_upload_ring(upload, pixels, now)
+    }
+
     pub fn image_begin(
         &mut self,
         metadata: crate::ProducerMetadata,
@@ -85,24 +96,26 @@ impl ShellConnection {
         lifecycle.service(self)?;
         let invalid = || ShellClientError::InvalidArgument("native image not adoptable");
         let adapter = self.image.as_ref().ok_or_else(invalid)?;
-        let info = adapter.offer(offer).ok_or_else(invalid)?;
-        let metadata = adapter.ticket_metadata(offer).ok_or_else(invalid)?;
+        let info = adapter.ring_offer(offer).ok_or_else(invalid)?;
+        let identity = adapter.ring_identity().ok_or_else(invalid)?;
         let limits = &lifecycle.limits;
-        if info.state != OfferState::Settled
-            || info.status != Some(ResourceStatusKind::Accepted)
-            || info.disposition != 1
-            || metadata.admission_epoch != limits.grant.content_grant_epoch
-            || metadata.width > limits.max_width_px
-            || metadata.height > limits.max_height_px
-            || metadata.declared_bytes > limits.max_resource_bytes
+        let declared = u64::from(info.width)
+            .checked_mul(u64::from(info.height))
+            .and_then(|bytes| bytes.checked_mul(4));
+        if info.state != crate::RingOfferState::Settled
+            || identity.content_grant_epoch != limits.grant.content_grant_epoch
+            || info.width > limits.max_width_px
+            || info.height > limits.max_height_px
+            || declared.is_none_or(|bytes| bytes > limits.max_resource_bytes)
         {
             return Err(invalid());
         }
-        // Shape and source-kind admissibility were checked by the producer on
-        // begin and exact ImageAdmitted. Recheck the lifecycle's own bounds here.
+        // Settled already proves the successful status followed by
+        // the exact successful SlotReleased. Recheck the
+        // lifecycle's own bounds here.
         let resource = ContentResourceId {
-            id: metadata.resource,
-            generation: metadata.resource_generation,
+            id: info.resource,
+            generation: info.resource_generation,
         };
         if lifecycle.resource_index(resource).is_some() {
             return Err(ShellClientError::InvalidArgument(

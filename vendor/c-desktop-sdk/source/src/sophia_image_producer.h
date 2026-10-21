@@ -90,9 +90,10 @@ enum sophia_ip_status {
 
 struct sophia_ip_config {
     uint16_t role;                       /* SOPHIA_IC_ROLE_SHELL or _LOCK */
-    uint16_t revision;                   /* negotiated; shell >= 9, lock >= 2 */
+    uint16_t revision;                   /* negotiated; shell 9 or 10, lock 2 */
     uint64_t connection_epoch;           /* the 9P connection epoch */
-    uint32_t granted_kinds;              /* source-kind bits from negotiated capabilities */
+    uint32_t granted_kinds;              /* source-kind bits from negotiated capabilities;
+                                          * exactly the owned ring at shell r10 */
     struct sophia_ic_role_bounds bounds; /* the role's negotiated limits */
     uint32_t transfer_timeout_ms;        /* the role's transfer deadline, nonzero */
     uint64_t startup_deadline_ms;        /* absolute: discovery through ChannelReady */
@@ -236,4 +237,29 @@ int sophia_ip_isb_create(uint32_t width, uint32_t height, int *fd, void **pixels
  * place; REFUSED means the mapping is gone but the seals are missing, so fd
  * must not be offered. */
 int sophia_ip_isb_finish(int fd, void *pixels, size_t bytes);
+
+/* A shell r10 owned-ring source (spec/sophia-owned-ring.md): one memfd of
+ * slots * (4096 + capacity rounded up to 4096) bytes, mapped writable once.
+ * Slot i starts at i * extent with its u64 generation word; pixels start
+ * 4096 bytes later. The backing is allocated up front and GROW and SHRINK
+ * are sealed at once; after mapping, FUTURE_WRITE and SEAL forbid every
+ * other writable alias (pwrite or a later writable mapping of fd), and the
+ * mapping is not inherited by fork. A forked child must not touch or unmap
+ * it. The descriptor exists only to be sent once as the ring source. This
+ * memory API grants no slot custody: the adapter decides which slot may be
+ * written, and nothing here authenticates pixels. */
+struct sophia_ip_ring {
+    uint8_t *base;
+    size_t bytes, extent;
+    uint64_t capacity;
+    uint32_t slots;
+    int fd;
+};
+/* ARGUMENT, before anything is allocated, for invalid geometry
+ * (sophia_or_geometry); REFUSED with errno for a system failure. On OK the
+ * caller owns the ring until sophia_ip_ring_close; otherwise ring is cleared
+ * with fd -1. */
+int sophia_ip_ring_create(struct sophia_ip_ring *, uint32_t slots, uint64_t capacity);
+/* Unmaps and closes; idempotent on a cleared ring. */
+void sophia_ip_ring_close(struct sophia_ip_ring *);
 #endif

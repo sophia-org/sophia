@@ -356,7 +356,7 @@ fn the_proof_loop_serves_a_protected_independent_file_peer() {
         "status=complete",
         "protected=true",
         "wire=9p2000.L",
-        "revision=9",
+        "revision=10",
         "renders=2",
         "pixels=full_surface_raster",
         "end=client_exits",

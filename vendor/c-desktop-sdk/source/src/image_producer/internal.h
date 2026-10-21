@@ -12,4 +12,7 @@ struct sophia_ip_slot *ip_slot(struct sophia_ip *, uint64_t offer);
 void ip_free_slot(struct sophia_ip_slot *);
 /* Marks passed deadlines; returns nonzero if anything changed. */
 int ip_expire(struct sophia_ip *, uint64_t now_ms);
+/* Linux: sends one whole SEQPACKET packet with fd (or -1) attached.
+ * 1 sent, 0 EAGAIN, -1 failed (errno kept). Elsewhere always -1. */
+int ip_send_packet(int sock, const uint8_t *, size_t, int fd);
 #endif

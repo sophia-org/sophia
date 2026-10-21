@@ -29,5 +29,14 @@ void ss_image_drive(struct sophia_ss *, uint64_t now_ms);
 int ss_image_event(struct sophia_ss *, const struct sophia_sf_record *);
 void ss_image_status(struct sophia_ss *);
 int ss_pump(struct sophia_ss *, size_t budget);
+/* Owned-ring hooks (shell r10), called by the image adapter. */
+struct sophia_ss_image;
+int ss_ring_mode(const struct sophia_ss_image *);
+void ss_ring_drive(struct sophia_ss_image *, uint64_t now_ms);
+void ss_ring_lost(struct sophia_ss_image *);
+void ss_ring_event(struct sophia_ss_image *, const uint8_t *, size_t);
+void ss_ring_status(struct sophia_ss_image *, const struct sophia_sf_record *);
+int ss_ring_poll_out(const struct sophia_ss_image *);
+int64_t ss_ring_timeout(const struct sophia_ss_image *, uint64_t now_ms);
 int ss_handoff(struct sophia_ss *);
 #endif

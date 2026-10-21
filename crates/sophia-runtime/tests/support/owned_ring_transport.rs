@@ -96,7 +96,7 @@ fn config() -> (
             connection_epoch: 1,
             channel_generation: 1,
             endpoint: "image.sock".into(),
-            source_kinds: 1,
+            source_kinds: 4,
             max_offers: 4,
             max_packets_per_turn: 1,
             hello_timeout_ms: 250,
@@ -143,7 +143,7 @@ fn config() -> (
 }
 
 fn ack(peer: &mut raw::Peer, event: &[u8]) {
-    let record = decode_shell_file_record_at_revision(event, ShellFileClass::Event, 9).unwrap();
+    let record = decode_shell_file_record_at_revision(event, ShellFileClass::Event, 10).unwrap();
     let bytes = encode_shell_file_ack(ShellFileAck {
         connection_epoch: record.header.connection_epoch,
         sequence: record.header.sequence,
@@ -181,17 +181,17 @@ impl Wire {
             return;
         }
         let record =
-            decode_shell_file_record_at_revision(&bytes, ShellFileClass::Event, 9).unwrap();
+            decode_shell_file_record_at_revision(&bytes, ShellFileClass::Event, 10).unwrap();
         match record.header.kind {
             ShellFileKind::Submitted => {
                 self.submitted.push(
-                    decode_shell_file_submitted_at_revision(&bytes, 9)
+                    decode_shell_file_submitted_at_revision(&bytes, 10)
                         .unwrap()
                         .submission_id,
                 );
             }
             ShellFileKind::ResourceStatus => {
-                let decoded = decode_shell_file_resource_status_at_revision(&bytes, 9).unwrap();
+                let decoded = decode_shell_file_resource_status_at_revision(&bytes, 10).unwrap();
                 let ShellContentRecord::ResourceStatus(status) = decoded.record else {
                     panic!("expected ResourceStatus record");
                 };
@@ -352,11 +352,11 @@ fn owned_ring_cancel_releases_slot_and_reuse_succeeds() {
                 sequence: 0,
             },
             ShellV1ClientHello {
-                minimum_revision: 9,
-                maximum_revision: 9,
+                minimum_revision: 10,
+                maximum_revision: 10,
                 required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
                     | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
-                    | 1 << 13,
+                    | crate::owned_ring_protocol::CAPABILITY,
             },
         )
         .unwrap();
@@ -367,7 +367,7 @@ fn owned_ring_cancel_releases_slot_and_reuse_succeeds() {
                 .unwrap()
                 .welcome
                 .selected_revision,
-            9
+            10
         );
         ack(&mut peer, &negotiated);
         peer.open(6, b"image-channel", 0);
@@ -396,7 +396,7 @@ fn owned_ring_cancel_releases_slot_and_reuse_succeeds() {
         rustix::net::send(&socket, &hello, rustix::net::SendFlags::NOSIGNAL).unwrap();
         let ready = peer.next_event();
         let record =
-            decode_shell_file_record_at_revision(&ready, ShellFileClass::Event, 9).unwrap();
+            decode_shell_file_record_at_revision(&ready, ShellFileClass::Event, 10).unwrap();
         assert_eq!(record.header.kind, ShellFileKind::ChannelReady);
         ack(&mut peer, &ready);
         let mut wire = Wire {

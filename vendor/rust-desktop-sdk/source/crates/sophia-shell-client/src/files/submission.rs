@@ -61,7 +61,7 @@ impl FileWire {
                     sophia_shell_protocol::shell_files::decode_shell_file_record_at_revision(
                         bytes,
                         ShellFileClass::Candidate,
-                        9,
+                        sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION,
                     )?
                     .header
                 } else {

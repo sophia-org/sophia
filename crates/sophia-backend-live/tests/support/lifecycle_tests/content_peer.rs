@@ -4,7 +4,7 @@
 //! The independent C peer is built from the pinned SDK without its IPC
 //! library. It drives the actual component registry and production owners.
 //! It attaches through an afid whose verdicts are supplied here, and its
-//! pixels arrive only as a sealed image the actual image owner admits.
+//! pixels arrive through the owned ring the actual image owner admits.
 use super::*;
 use sophia_runtime::*;
 use std::path::{Path, PathBuf};

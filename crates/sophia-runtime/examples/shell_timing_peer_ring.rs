@@ -1,8 +1,7 @@
 //! Raw owned-ring panel peer for the D4 performance arm (schema 5).
 //!
-//! The SDK connection cannot carry D4E1 journal records, so this peer uses
-//! the same authenticated launch attach and then speaks raw 9P on that one
-//! connection: production D4 codec for the ring, shell-file records for
+//! This measurement peer uses the authenticated launch attach and then speaks raw 9P on that one
+//! connection: the owned-ring codec and shell-file records for
 //! limits, allocation, demand, candidate and retire. Fresh workload only;
 //! no sealed `UploadOffer` is emitted for a ring frame.
 //!
@@ -79,36 +78,17 @@ fn fill_pixels(bytes: &mut [u8], generation: u64) {
     remainder.fill(shade);
 }
 
-#[derive(Clone, Copy)]
-struct SealedBounds {
-    max_resource_bytes: u64,
-    max_width: u32,
-    max_height: u32,
-    max_admitted_outputs: u32,
-    transfer_slots: u32,
-    transfer_timeout_ms: u32,
-}
-
-#[derive(Clone, Copy)]
-enum Source {
-    Ring { slots: usize },
-    Sealed { bounds: SealedBounds },
-}
-
 struct Config {
     output_id: u64,
     frames: u64,
     height: u64,
     hold: u64,
-    source: Source,
+    slots: usize,
 }
 
 impl Config {
     fn schema(&self) -> u8 {
-        match self.source {
-            Source::Ring { .. } => 5,
-            Source::Sealed { .. } => 2,
-        }
+        5
     }
 }
 
@@ -133,7 +113,6 @@ fn parse_config() -> Result<Config> {
         "hold_msec",
         "source",
         "ring_slots",
-        "image",
         "probe_bytes",
         "workload",
     ];
@@ -155,62 +134,13 @@ fn parse_config() -> Result<Config> {
     let frames = number("frames")?;
     let height = number("height")?;
     let hold = number("hold_msec")?;
-    // The two arms take disjoint source keys: ring_slots is required for
-    // the ring and forbidden for sealed, and conversely for image.
-    let source = match config["source"].as_str() {
-        Some("owned_ring") => {
-            if object.contains_key("image") || !object.contains_key("ring_slots") {
-                return Err("ring source requires ring_slots and no image".into());
-            }
-            let slots = number("ring_slots")?;
-            if !(2..=4).contains(&slots) {
-                return Err("ring_slots outside 2..=4".into());
-            }
-            Source::Ring {
-                slots: slots as usize,
-            }
-        }
-        Some("sealed") => {
-            if object.contains_key("ring_slots") {
-                return Err("sealed source forbids ring_slots".into());
-            }
-            let image = config["image"]
-                .as_object()
-                .ok_or("image must be an object")?;
-            let keys = [
-                "max_resource_bytes",
-                "max_width",
-                "max_height",
-                "max_admitted_outputs",
-                "transfer_slots",
-                "transfer_timeout_ms",
-            ];
-            if image.len() != keys.len() || image.keys().any(|k| !keys.contains(&k.as_str())) {
-                return Err(format!("image requires exactly {}", keys.join(", ")).into());
-            }
-            let small = |key: &str| -> Result<u32> {
-                let value = image[key]
-                    .as_u64()
-                    .filter(|n| *n != 0)
-                    .ok_or_else(|| format!("invalid image {key}"))?;
-                Ok(u32::try_from(value)?)
-            };
-            Source::Sealed {
-                bounds: SealedBounds {
-                    max_resource_bytes: image["max_resource_bytes"]
-                        .as_u64()
-                        .filter(|n| *n != 0)
-                        .ok_or("invalid image max_resource_bytes")?,
-                    max_width: small("max_width")?,
-                    max_height: small("max_height")?,
-                    max_admitted_outputs: small("max_admitted_outputs")?,
-                    transfer_slots: small("transfer_slots")?,
-                    transfer_timeout_ms: small("transfer_timeout_ms")?,
-                },
-            }
-        }
-        _ => return Err("source must be owned_ring or sealed".into()),
-    };
+    if config["source"].as_str() != Some("owned_ring") {
+        return Err("source must be owned_ring; sealed shell uploads are retired".into());
+    }
+    let slots = number("ring_slots")?;
+    if !(1..=4).contains(&slots) {
+        return Err("ring_slots outside 1..=4".into());
+    }
     if config["wire"].as_str() != Some("files")
         || object
             .get("probe_bytes")
@@ -230,7 +160,7 @@ fn parse_config() -> Result<Config> {
         frames,
         height,
         hold,
-        source,
+        slots: slots as usize,
     })
 }
 
@@ -279,17 +209,17 @@ fn serve(client: &mut Client, config: &Config, socket: &std::ffi::OsStr) -> Resu
         submissions += 1;
         submissions
     };
-    // Negotiate revision 9 with the sealed capability, as the sealed arm.
+    // Negotiate the production owned-ring capability explicitly.
     submit_record(client, &mut next_submission, |submission| {
         encode_shell_file_negotiate(
             header(epoch, ShellFileKind::Negotiate, submission),
             ShellV1ClientHello {
-                minimum_revision: 9,
-                maximum_revision: 9,
+                minimum_revision: 10,
+                maximum_revision: 10,
                 required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
                     | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
                     | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
-                    | 1 << 13,
+                    | 1 << 15,
             },
         )
         .codec()
@@ -298,7 +228,7 @@ fn serve(client: &mut Client, config: &Config, socket: &std::ffi::OsStr) -> Resu
         Inbound::Negotiated(welcome) => welcome,
         other => return Err(format!("expected negotiated, got {other:?}").into()),
     };
-    if welcome.selected_revision != 9 || welcome.connection_epoch != epoch {
+    if welcome.selected_revision != 10 || welcome.connection_epoch != epoch {
         return Err("wrong negotiated revision or epoch".into());
     }
     // Limits is a connect-time object; output facts follow their
@@ -328,16 +258,6 @@ fn serve(client: &mut Client, config: &Config, socket: &std::ffi::OsStr) -> Resu
     }
     if limits.max_resource_ids < 2 {
         return Err("insufficient resource identities for paced workload".into());
-    }
-    if let Source::Sealed { bounds } = config.source
-        && (bounds.max_resource_bytes != limits.max_resource_bytes
-            || bounds.max_width != limits.max_width_px
-            || bounds.max_height != limits.max_height_px
-            || bounds.max_admitted_outputs != limits.max_outputs
-            || bounds.transfer_slots != limits.max_open_transfers
-            || bounds.transfer_timeout_ms != limits.transfer_timeout_ms)
-    {
-        return Err("image bounds differ from content limits".into());
     }
     // Grant the panel allocation before any ring registration: ring pixel
     // geometry must equal the granted allocation geometry exactly.
@@ -379,30 +299,17 @@ fn serve(client: &mut Client, config: &Config, socket: &std::ffi::OsStr) -> Resu
         return Err("allocation refused, misattributed or geometry differs".into());
     }
     let schema = config.schema();
-    match config.source {
-        Source::Ring { slots } => emit(
-            schema,
-            JournalEvent::Start {
-                frames: config.frames,
-                wire: "files",
-                probe_bytes: 0,
-                source: Some("owned_ring"),
-                workload: Some("fresh"),
-                ring_slots: Some(slots as u64),
-            },
-        )?,
-        Source::Sealed { .. } => emit(
-            schema,
-            JournalEvent::Start {
-                frames: config.frames,
-                wire: "files",
-                probe_bytes: 0,
-                source: Some("sealed"),
-                workload: None,
-                ring_slots: None,
-            },
-        )?,
-    }
+    emit(
+        schema,
+        JournalEvent::Start {
+            frames: config.frames,
+            wire: "files",
+            probe_bytes: 0,
+            source: Some("owned_ring"),
+            workload: Some("fresh"),
+            ring_slots: Some(config.slots as u64),
+        },
+    )?;
     // Image channel: discovery, limits precheck, Hello, ChannelReady.
     let discovery_fid = client.open(b"image-channel", 0)?;
     let discovery_text = client.read(discovery_fid, 0, 65500)?;
@@ -410,7 +317,7 @@ fn serve(client: &mut Client, config: &Config, socket: &std::ffi::OsStr) -> Resu
     let limits_fid = client.open(b"image-limits", 0)?;
     let limits_text = client.read(limits_fid, 0, 65500)?;
     let limits_record =
-        decode_shell_file_record_at_revision(&limits_text, ShellFileClass::Object, 9).codec()?;
+        decode_shell_file_record_at_revision(&limits_text, ShellFileClass::Object, 10).codec()?;
     let image_limits = ShellImageLimits::decode(limits_record.body).codec()?;
     let width = allocation.pixel.width;
     let height = allocation.pixel.height;
@@ -421,37 +328,26 @@ fn serve(client: &mut Client, config: &Config, socket: &std::ffi::OsStr) -> Resu
     {
         return Err("panel geometry exceeds image limits".into());
     }
-    let ring_setup = match config.source {
-        Source::Ring { slots } => {
-            let identity = Identity {
-                grant,
-                channel: discovery.channel_generation,
-                ring: 1,
-                generation: 1,
-            };
-            let registration = Registration {
-                identity,
-                slots,
-                pixels: pixels as usize,
-            };
-            let geometry = registration.geometry()?;
-            if geometry.slot_extent()
-                != SLOT_HEADER_BYTES + (pixels as usize).next_multiple_of(SLOT_HEADER_BYTES)
-            {
-                return Err("ring geometry does not match the slot header layout".into());
-            }
-            if geometry.source_bytes() as u64 + pixels > image_limits.max_sealed_backing_bytes {
-                return Err("ring geometry exceeds image limits".into());
-            }
-            Some((identity, registration, geometry))
-        }
-        Source::Sealed { .. } => {
-            if pixels > image_limits.max_sealed_backing_bytes {
-                return Err("sealed geometry exceeds image limits".into());
-            }
-            None
-        }
+    let identity = Identity {
+        grant,
+        channel: discovery.channel_generation,
+        ring: 1,
+        generation: 1,
     };
+    let registration = Registration {
+        identity,
+        slots: config.slots,
+        pixels: pixels as usize,
+    };
+    let geometry = registration.geometry()?;
+    if geometry.slot_extent()
+        != SLOT_HEADER_BYTES + (pixels as usize).next_multiple_of(SLOT_HEADER_BYTES)
+    {
+        return Err("ring geometry does not match the slot header layout".into());
+    }
+    if geometry.source_bytes() as u64 + pixels > image_limits.max_sealed_backing_bytes {
+        return Err("ring geometry exceeds image limits".into());
+    }
     let image_path = std::path::Path::new(socket)
         .parent()
         .ok_or("file endpoint has no directory")?
@@ -474,92 +370,69 @@ fn serve(client: &mut Client, config: &Config, socket: &std::ffi::OsStr) -> Resu
     .codec()?;
     rustix::net::send(&image_socket, &hello, rustix::net::SendFlags::NOSIGNAL)?;
     match client.take()? {
-        Inbound::ChannelReady(granted) if granted & 1 != 0 => {}
+        Inbound::ChannelReady(4) => {}
         other => return Err(format!("expected channel ready, got {other:?}").into()),
     }
-    // D4C1 registration, then D4F1 with the sealed ring descriptor. The
+    // D4C1 registration, then D4F1 with the size-sealed ring descriptor. The
     // ring is mapped once; per-frame fills write the mapping directly.
-    let mut ring_source;
-    let mut sealed_source;
-    let source: &mut dyn FrameSource = if let Some((identity, registration, geometry)) = ring_setup
-    {
-        let control = client.open(CONTROL_FILE, 1)?;
-        let register = registration.encode();
-        client.write(control, &register)?;
-        let admitted_usec = match client.take()? {
-            Inbound::Owned(event) if event.kind == EventKind::RingAdmitted => {
-                if event.identity != identity {
-                    return Err("ring admitted for another identity".into());
-                }
-                clock_usec()
+    let control = client.open(CONTROL_FILE, 1)?;
+    let register = registration.encode();
+    client.write(control, &register)?;
+    let admitted_usec = match client.take()? {
+        Inbound::Owned(event) if event.kind == EventKind::RingAdmitted => {
+            if event.identity != identity {
+                return Err("ring admitted for another identity".into());
             }
-            other => return Err(format!("expected ring admitted, got {other:?}").into()),
-        };
-        let producer = sophia_linux_peer::ProducerRing::create(geometry.source_bytes())?;
-        ring_source = RingSource {
-            control,
-            producer,
-            geometry,
-            identity,
-            slots: match config.source {
-                Source::Ring { slots } => slots,
-                Source::Sealed { .. } => unreachable!(),
-            },
-        };
-        {
-            let packet = registration.source_packet();
-            let mut space = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
-            let mut control_msg = rustix::net::SendAncillaryBuffer::new(&mut space);
-            let rights = [ring_source.producer.source_fd()];
-            if !control_msg.push(rustix::net::SendAncillaryMessage::ScmRights(&rights)) {
-                return Err("ring descriptor did not fit ancillary buffer".into());
-            }
-            rustix::net::sendmsg(
-                &image_socket,
-                &[std::io::IoSlice::new(&packet)],
-                &mut control_msg,
-                rustix::net::SendFlags::NOSIGNAL,
-            )?;
+            clock_usec()
         }
-        let ready_usec = match client.take()? {
-            Inbound::Owned(event) if event.kind == EventKind::RingReady => {
-                if event.identity != identity {
-                    return Err("ring ready for another identity".into());
-                }
-                clock_usec()
-            }
-            other => return Err(format!("expected ring ready, got {other:?}").into()),
-        };
-        emit(
-            schema,
-            JournalEvent::RingReady {
-                connection_epoch: grant.connection_epoch,
-                content_grant_epoch: grant.content_grant_epoch,
-                channel: identity.channel,
-                ring: identity.ring,
-                ring_generation: identity.generation,
-                slots: match config.source {
-                    Source::Ring { slots } => slots as u64,
-                    Source::Sealed { .. } => unreachable!(),
-                },
-                pixel_bytes: pixels,
-                admitted_usec,
-                ready_usec,
-            },
-        )?;
-        &mut ring_source
-    } else {
-        let bounds = match config.source {
-            Source::Sealed { bounds } => bounds,
-            Source::Ring { .. } => unreachable!(),
-        };
-        sealed_source = SealedSource {
-            socket: image_socket,
-            channel_generation: discovery.channel_generation,
-            max_resource_bytes: bounds.max_resource_bytes,
-        };
-        &mut sealed_source
+        other => return Err(format!("expected ring admitted, got {other:?}").into()),
     };
+    let producer = sophia_linux_peer::ProducerRing::create(geometry.source_bytes())?;
+    let mut ring_source = RingSource {
+        control,
+        producer,
+        geometry,
+        identity,
+        slots: config.slots,
+    };
+    {
+        let packet = registration.source_packet();
+        let mut space = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
+        let mut control_msg = rustix::net::SendAncillaryBuffer::new(&mut space);
+        let rights = [ring_source.producer.source_fd()];
+        if !control_msg.push(rustix::net::SendAncillaryMessage::ScmRights(&rights)) {
+            return Err("ring descriptor did not fit ancillary buffer".into());
+        }
+        rustix::net::sendmsg(
+            &image_socket,
+            &[std::io::IoSlice::new(&packet)],
+            &mut control_msg,
+            rustix::net::SendFlags::NOSIGNAL,
+        )?;
+    }
+    let ready_usec = match client.take()? {
+        Inbound::Owned(event) if event.kind == EventKind::RingReady => {
+            if event.identity != identity {
+                return Err("ring ready for another identity".into());
+            }
+            clock_usec()
+        }
+        other => return Err(format!("expected ring ready, got {other:?}").into()),
+    };
+    emit(
+        schema,
+        JournalEvent::RingReady {
+            connection_epoch: grant.connection_epoch,
+            content_grant_epoch: grant.content_grant_epoch,
+            channel: identity.channel,
+            ring: identity.ring,
+            ring_generation: identity.generation,
+            slots: config.slots as u64,
+            pixel_bytes: pixels,
+            admitted_usec,
+            ready_usec,
+        },
+    )?;
     run_frames(
         client,
         &mut next_submission,
@@ -568,7 +441,7 @@ fn serve(client: &mut Client, config: &Config, socket: &std::ffi::OsStr) -> Resu
         &facts,
         output,
         &allocation,
-        source,
+        &mut ring_source,
         width,
         height,
     )?;
@@ -596,21 +469,7 @@ struct FrameCtx<'a> {
     height: u32,
 }
 
-/// Fill, offer and settlement for one frame. Demand, candidate and
-/// retire sequencing is the shared frame loop's, for either source.
-trait FrameSource {
-    fn upload(
-        &mut self,
-        client: &mut Client,
-        ctx: &FrameCtx<'_>,
-        next_submission: &mut dyn FnMut() -> u64,
-    ) -> Result<()>;
-}
-
-/// The ring as a frame source: fill, offer and settlement for one frame,
-/// kept separate from demand/candidate sequencing so a sealed source can
-/// drive the same frame loop in a later arm. Fills land directly in the
-/// producer mapping (header word and pixels); no per-frame write syscall.
+/// Direct mapped fill and acceptance settlement, separate from visual sequencing.
 struct RingSource {
     control: sophia_9p_client::records::Fid,
     producer: sophia_linux_peer::ProducerRing,
@@ -619,13 +478,8 @@ struct RingSource {
     slots: usize,
 }
 
-impl FrameSource for RingSource {
-    fn upload(
-        &mut self,
-        client: &mut Client,
-        ctx: &FrameCtx<'_>,
-        _next_submission: &mut dyn FnMut() -> u64,
-    ) -> Result<()> {
+impl RingSource {
+    fn upload(&mut self, client: &mut Client, ctx: &FrameCtx<'_>) -> Result<()> {
         let frame = ctx.frame;
         let resource = ctx.resource;
         let slot = ((frame - 1) % self.slots as u64) as usize;
@@ -684,7 +538,7 @@ impl FrameSource for RingSource {
             },
         )?;
         client.write(self.control, &offer.encode())?;
-        // Settlement pacing matches the sealed arm: status 2, then the
+        // Settlement pacing matches the historical sealed baseline: status 2, then the
         // exact slot release, and only then the frame demand.
         match client.take()? {
             Inbound::Status(tx, status)
@@ -729,179 +583,6 @@ impl FrameSource for RingSource {
     }
 }
 
-/// The sealed memfd as a frame source, through the same image channel:
-/// ImageBegin, descriptor packet after ImageAdmitted, then exact status
-/// and SourceReleased settlement.
-struct SealedSource {
-    socket: std::os::fd::OwnedFd,
-    channel_generation: u64,
-    max_resource_bytes: u64,
-}
-
-impl FrameSource for SealedSource {
-    fn upload(
-        &mut self,
-        client: &mut Client,
-        ctx: &FrameCtx<'_>,
-        next_submission: &mut dyn FnMut() -> u64,
-    ) -> Result<()> {
-        use std::os::fd::AsFd;
-        let frame = ctx.frame;
-        let resource = ctx.resource;
-        let epoch = client.epoch();
-        let mut isb = sophia_isb::MappedIsb::create(ctx.width, ctx.height, self.max_resource_bytes)
-            .map_err(|e| format!("sealed source: {e:?}"))?;
-        fill_pixels(isb.pixels_mut(), frame);
-        let fd = isb
-            .finish()
-            .map_err(|e| format!("sealed source finish: {e:?}"))?;
-        let metadata = ShellImageMetadata {
-            offer_id: frame,
-            resource: resource.id,
-            resource_generation: resource.generation,
-            admission_epoch: ctx.grant.content_grant_epoch,
-            output_id: ctx.output.output.id,
-            allocation_id: ctx.allocation.allocation.id,
-            topology_generation: ctx.facts.facts_generation,
-            source_kind: 1,
-            source_format: 1,
-            width: ctx.width,
-            height: ctx.height,
-            stride: ctx.width * 4,
-            plane_count: 1,
-            descriptor_count: 1,
-            declared_bytes: u64::from(ctx.width) * u64::from(ctx.height) * 4,
-            modifier: 0,
-        };
-        let upload = Upload {
-            connection_epoch: ctx.grant.connection_epoch,
-            content_grant_epoch: ctx.grant.content_grant_epoch,
-            output: ctx.output.output.id,
-            candidate_generation: frame,
-            resource_id: resource.id,
-            resource_generation: resource.generation,
-            width: ctx.width,
-            height: ctx.height,
-            total_bytes: metadata.declared_bytes,
-            begin_usec: clock_usec(),
-        };
-        // Producer evidence precedes submission, as in the existing peer.
-        emit(ctx.schema, JournalEvent::UploadOffer { upload })?;
-        submit_record(client, next_submission, |submission| {
-            encode_shell_file_record_at_revision(
-                header(epoch, ShellFileKind::ImageBegin, submission),
-                &metadata.encode().codec()?,
-                9,
-            )
-            .codec()
-        })?;
-        // The descriptor follows only after the exact admission.
-        match client.take()? {
-            Inbound::ImageAdmitted(admitted)
-                if admitted.offer_id == frame
-                    && admitted.resource == resource.id
-                    && admitted.resource_generation == resource.generation => {}
-            other => {
-                return Err(format!("expected image admitted, got {other:?}").into());
-            }
-        }
-        let packet = ShellImagePacket::Source {
-            connection_epoch: ctx.grant.connection_epoch,
-            channel_generation: self.channel_generation,
-            metadata,
-            planes: [
-                ShellImagePlane {
-                    offset: 0,
-                    stride: ctx.width * 4,
-                    fd_index: 0,
-                },
-                ShellImagePlane {
-                    offset: 0,
-                    stride: 0,
-                    fd_index: 0,
-                },
-                ShellImagePlane {
-                    offset: 0,
-                    stride: 0,
-                    fd_index: 0,
-                },
-                ShellImagePlane {
-                    offset: 0,
-                    stride: 0,
-                    fd_index: 0,
-                },
-            ],
-        }
-        .encode()
-        .codec()?;
-        {
-            let mut space = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
-            let mut control_msg = rustix::net::SendAncillaryBuffer::new(&mut space);
-            let rights = [fd.as_fd()];
-            if !control_msg.push(rustix::net::SendAncillaryMessage::ScmRights(&rights)) {
-                return Err("sealed descriptor did not fit ancillary buffer".into());
-            }
-            rustix::net::sendmsg(
-                &self.socket,
-                &[std::io::IoSlice::new(&packet)],
-                &mut control_msg,
-                rustix::net::SendFlags::NOSIGNAL,
-            )?;
-        }
-        drop(fd);
-        // Exact settlement: status 2 for the resource and the retained
-        // SourceReleased for this offer, in whichever order they arrive.
-        // The ImageBegin transfer transaction is the offer id. Envelope
-        // epoch is already validated in raw classify; the released body
-        // carries no channel field to check. Duplicates are refused
-        // rather than silently accepted.
-        let mut accepted = false;
-        let mut source_released = false;
-        while !accepted || !source_released {
-            match client.take()? {
-                Inbound::Status(tx, status)
-                    if tx.raw() == frame
-                        && status.grant == ctx.grant
-                        && status.resource == resource
-                        && status.status == 2 =>
-                {
-                    if accepted {
-                        return Err("duplicate sealed status".into());
-                    }
-                    accepted = true;
-                }
-                Inbound::SourceReleased(released)
-                    if released.offer_id == frame
-                        && released.resource == resource.id
-                        && released.resource_generation == resource.generation
-                        && released.disposition == ShellSourceDisposition::Retained =>
-                {
-                    if source_released {
-                        return Err("duplicate source released".into());
-                    }
-                    source_released = true;
-                }
-                other => {
-                    return Err(format!("expected sealed settlement, got {other:?}").into());
-                }
-            }
-        }
-        // Schema 2 has no SourceReleased journal record: the flat
-        // acceptance is emitted after both settlement observations, with
-        // the post-settlement clock, exactly as the comparator peer does.
-        // The wire release itself stays checked above, not journaled.
-        emit(
-            ctx.schema,
-            JournalEvent::UploadAccepted {
-                resource_id: resource.id,
-                resource_generation: resource.generation,
-                accepted_usec: clock_usec(),
-            },
-        )
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
 fn run_frames(
     client: &mut Client,
     next_submission: &mut dyn FnMut() -> u64,
@@ -910,7 +591,7 @@ fn run_frames(
     facts: &ContentOutputFacts,
     output: &ContentOutputFactsEntry,
     allocation: &ContentAllocationResult,
-    source: &mut dyn FrameSource,
+    source: &mut RingSource,
     width: u32,
     height: u32,
 ) -> Result<()> {
@@ -929,7 +610,7 @@ fn run_frames(
             width,
             height,
         };
-        source.upload(client, &ctx, next_submission)?;
+        source.upload(client, &ctx)?;
         let demand_usec = clock_usec();
         submit_record(client, next_submission, |submission| {
             encode_shell_file_transaction(
@@ -1085,21 +766,8 @@ fn run_frames(
 
 fn main() {
     if let Err(error) = run() {
-        // The failure record carries the arm's schema when it can still
-        // be read from the configuration, and the ring schema otherwise.
-        let schema = std::env::var_os("SOPHIA_SHELL_CONFIG")
-            .and_then(|path| std::fs::read_to_string(path).ok())
-            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-            .map(|config| {
-                if config["source"].as_str() == Some("sealed") {
-                    2
-                } else {
-                    5
-                }
-            })
-            .unwrap_or(5);
         let _ = emit(
-            schema,
+            5,
             JournalEvent::Failed {
                 error: &error.to_string(),
             },

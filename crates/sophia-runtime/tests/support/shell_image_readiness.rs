@@ -134,7 +134,7 @@ impl sophia_runtime::authenticated_files::FileAuthentication for Owner {
 /// A connector on the image listener. Until the owner accepts it, it sits in
 /// the backlog and its peek would block; an accepted-and-refused duplicate
 /// sees end of stream.
-fn connector(image_path: &std::path::Path) -> OwnedFd {
+pub(super) fn connector(image_path: &std::path::Path) -> OwnedFd {
     let socket = rustix::net::socket_with(
         rustix::net::AddressFamily::UNIX,
         rustix::net::SocketType::SEQPACKET,
@@ -276,11 +276,11 @@ fn idle_listener_observation_skips_only_the_ready_accept() {
                 sequence: 0,
             },
             ShellV1ClientHello {
-                minimum_revision: 9,
-                maximum_revision: 9,
+                minimum_revision: 10,
+                maximum_revision: 10,
                 required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
                     | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
-                    | 1 << 13,
+                    | 1 << 15,
             },
         )
         .unwrap();
@@ -291,7 +291,7 @@ fn idle_listener_observation_skips_only_the_ready_accept() {
                 .unwrap()
                 .welcome
                 .selected_revision,
-            9
+            10
         );
         peer.ack(&event);
         peer.open(6, b"image-channel", 0);
@@ -302,7 +302,7 @@ fn idle_listener_observation_skips_only_the_ready_accept() {
         proceed.recv_timeout(WAIT).unwrap();
         let ready = peer.next_event();
         let record =
-            decode_shell_file_record_at_revision(&ready, ShellFileClass::Event, 9).unwrap();
+            decode_shell_file_record_at_revision(&ready, ShellFileClass::Event, 10).unwrap();
         assert_eq!(record.header.kind, ShellFileKind::ChannelReady);
         ack(&mut peer, &ready);
         signal.send(()).unwrap();

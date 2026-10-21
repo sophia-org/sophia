@@ -16,12 +16,13 @@ mod files;
 pub use descriptor::DescriptorObservation;
 pub use files::Connecting;
 pub use files::image_adapter::{
-    IMAGE_CAPABILITY_DMA_BUF, IMAGE_CAPABILITY_SEALED, ImageAdapter, ImageAdapterError,
-    ImageBeginAdmission, ImageBeginError, ShellImageConfig,
+    IMAGE_CAPABILITY_DMA_BUF, IMAGE_CAPABILITY_OWNED_RING, IMAGE_CAPABILITY_SEALED, ImageAdapter,
+    ImageAdapterError, ImageBeginAdmission, ImageBeginError, ShellImageConfig,
 };
 pub use sophia_image_producer::{
     ChannelState as ImageChannelState, CloseCause as ImageCloseCause, ImagePath, OfferInfo,
     OfferState, ProducerMetadata, ProducerRoleBounds, ReadyEvents as ImageReadyEvents,
+    RingOfferInfo, RingOfferState, RingUpload,
 };
 mod lifecycle;
 mod native_launcher;
@@ -751,77 +752,83 @@ impl ShellConnection {
         }))
     }
 
-    /// Forget a settled image offer, freeing its adapter slot.
+    /// Forget a settled ring offer, freeing its producer record. The
+    /// producer validates the settled state first: a refused forget
+    /// of a live offer must not destroy the identity its cancellation
+    /// still needs.
     pub fn image_forget(&mut self, offer: u64) -> Result<(), ImageAdapterError> {
         let adapter = self.image.as_mut().ok_or(ImageAdapterError::NotEnabled)?;
-        // The producer validates the settled state first: a refused
-        // forget of a live offer must not destroy the metadata its
-        // cancellation still needs.
-        let producer = adapter.producer_mut().ok_or(ImageAdapterError::Closed)?;
-        producer.forget(offer).map_err(ImageAdapterError::from)?;
-        adapter.forget_offer(offer);
-        Ok(())
+        adapter.ring_forget(offer)
     }
 
-    /// Queue one sealed source as an ImageBegin candidate. On
-    /// success the producer owns `source`; on any refusal in
-    /// [`ImageBeginError`] the descriptor is returned whenever the
-    /// producer or the queue has not taken it.
+    /// Queue one owned-ring upload: `pixels` (exactly
+    /// `width * height * 4` bytes) are copied into a free ring slot
+    /// and the offer record is written to the control file. Returns
+    /// the producer-assigned offer id. The image is adoptable only
+    /// once [`image_ring_offer`](Self::image_ring_offer) reports
+    /// `RingOfferState::Settled` (successful status and the exact
+    /// successful `SlotReleased` both observed).
+    pub fn image_upload_ring(
+        &mut self,
+        upload: RingUpload,
+        pixels: &[u8],
+        now: std::time::Instant,
+    ) -> Result<u64, ImageAdapterError> {
+        let adapter = self.image.as_mut().ok_or(ImageAdapterError::NotEnabled)?;
+        if self.wire.peer_closed() {
+            return Err(ImageAdapterError::Closed);
+        }
+        let offer = adapter.upload_ring(&mut self.wire, upload, pixels, now)?;
+        let _ = self.poll_io();
+        Ok(offer)
+    }
+
+    /// Direct-fill variant of [`image_upload_ring`](Self::image_upload_ring):
+    /// `fill` writes pixels directly into the mapped ring slot, so
+    /// the producer performs no copy. `byte_len` is the exact filled
+    /// extent and must equal `width * height * 4`.
+    pub fn image_upload_ring_fill(
+        &mut self,
+        upload: RingUpload,
+        byte_len: usize,
+        now: std::time::Instant,
+        fill: impl FnOnce(&mut [u8]),
+    ) -> Result<u64, ImageAdapterError> {
+        let adapter = self.image.as_mut().ok_or(ImageAdapterError::NotEnabled)?;
+        if self.wire.peer_closed() {
+            return Err(ImageAdapterError::Closed);
+        }
+        let offer = adapter.upload_ring_fill(&mut self.wire, upload, byte_len, now, fill)?;
+        let _ = self.poll_io();
+        Ok(offer)
+    }
+
+    /// One ring offer, including adoptability.
+    pub fn image_ring_offer(&self, offer: u64) -> Option<RingOfferInfo> {
+        self.image
+            .as_ref()
+            .and_then(|adapter| adapter.ring_offer(offer))
+    }
+
+    /// Withdrawn at shell revision 10: the shell CPU image source is
+    /// the owned ring ([`image_upload_ring`](Self::image_upload_ring)).
+    /// Kept only so existing callers get an explicit refusal with
+    /// their descriptor returned, never a sealed fallback.
     pub fn image_begin(
         &mut self,
-        metadata: ProducerMetadata,
+        _metadata: ProducerMetadata,
         source: std::os::fd::OwnedFd,
-        now: std::time::Instant,
+        _now: std::time::Instant,
     ) -> Result<ImageBeginAdmission, ImageBeginError> {
-        let refuse = |error: ImageAdapterError, source| ImageBeginError {
+        let error = if self.image.is_none() {
+            ImageAdapterError::NotEnabled
+        } else {
+            ImageAdapterError::Refused
+        };
+        Err(ImageBeginError {
             error,
             source: Some(source),
-        };
-        if self.image.is_none() {
-            return Err(refuse(ImageAdapterError::NotEnabled, source));
-        }
-        if self.wire.peer_closed() {
-            return Err(refuse(ImageAdapterError::Closed, source));
-        }
-        // Room and a free adapter ticket first: once the producer
-        // owns the descriptor, admission cannot be allowed to fail
-        // for local queue capacity.
-        if !self.output.has_room(1, 128, false) || !self.image.as_ref().unwrap().has_free_ticket() {
-            return Err(refuse(ImageAdapterError::Busy, source));
-        }
-        let now_ms = match self.image.as_mut().unwrap().advance_clock(now) {
-            Ok(now_ms) => now_ms,
-            Err(error) => return Err(refuse(error, source)),
-        };
-        let adapter = self.image.as_mut().unwrap();
-        let producer = match adapter.producer_mut() {
-            Some(producer) => producer,
-            None => return Err(refuse(ImageAdapterError::Closed, source)),
-        };
-        let (offer, body, assigned) = match producer.begin(metadata, source, now_ms) {
-            Ok(begun) => begun,
-            Err((error, source)) => return Err(refuse(error.into(), source)),
-        };
-        let admission = match self.admit(Outbound::ImageBegin(body), false) {
-            Ok(admission) => admission,
-            Err(_) => {
-                // Unreachable after the room check; keep custody
-                // honest rather than leak the offer.
-                if let Some(producer) = self.image.as_mut().and_then(|a| a.producer_mut()) {
-                    let _ = producer.begin_refused(offer, now_ms);
-                }
-                return Err(ImageBeginError {
-                    error: ImageAdapterError::Refused,
-                    source: None,
-                });
-            }
-        };
-        let ticket = admission.first;
-        if let Some(adapter) = &mut self.image {
-            let _ = adapter.register_ticket(ticket.0, offer, assigned);
-        }
-        let _ = self.poll_io();
-        Ok(ImageBeginAdmission { offer, ticket })
+        })
     }
 
     /// Queue a ResourceCancel naming a live image offer. Queue room
@@ -837,25 +844,27 @@ impl ShellConnection {
                 "image adapter not enabled",
             ));
         }
-        let now_ms = self
-            .image
+        self.image
             .as_mut()
             .expect("adapter checked above")
             .advance_clock(now)
             .map_err(|_| ShellClientError::InvalidArgument("image clock"))?;
         let adapter = self.image.as_ref().expect("adapter checked above");
-        let metadata = adapter
-            .ticket_metadata(offer)
+        let info = adapter
+            .ring_offer(offer)
+            .ok_or(ShellClientError::InvalidArgument("unknown image offer"))?;
+        let identity = adapter
+            .ring_identity()
             .ok_or(ShellClientError::InvalidArgument("unknown image offer"))?;
         let record =
             ShellContentRecord::ResourceCancel(sophia_shell_protocol::ContentResourceCancel {
                 grant: sophia_shell_protocol::ContentGrant {
-                    connection_epoch: self.welcome.connection_epoch,
-                    content_grant_epoch: metadata.admission_epoch,
+                    connection_epoch: identity.connection_epoch,
+                    content_grant_epoch: identity.content_grant_epoch,
                 },
                 resource: sophia_shell_protocol::ContentResourceId {
-                    id: metadata.resource,
-                    generation: metadata.resource_generation,
+                    id: info.resource,
+                    generation: info.resource_generation,
                 },
             });
         // Prepare the queue slot before marking the offer: a
@@ -870,18 +879,9 @@ impl ShellConnection {
                 return Err(error);
             }
         };
-        if let Some(producer) = self.image.as_mut().and_then(|a| a.producer_mut())
-            && let Err(error) = producer.cancel(offer, now_ms)
-        {
-            drop(prepared);
-            self.wire.cancel_encoded();
-            return Err(match error {
-                sophia_image_producer::ProducerError::Argument => {
-                    ShellClientError::InvalidArgument("unknown image offer")
-                }
-                _ => ShellClientError::QueueSaturated,
-            });
-        }
+        // No producer marking: settlement arrives as the resource's
+        // terminal status (which may carry this cancel transaction)
+        // plus the exact SlotReleased, matched by grant and resource.
         let admission = self.output.commit(prepared, &mut self.ledger);
         self.wire.commit_encoded();
         Ok(admission.first)
@@ -1083,15 +1083,15 @@ fn parse_files_api(bytes: &[u8]) -> Result<(u64, &str), ShellClientError> {
 }
 
 /// Validate the opt-in image shape against the negotiated offer:
-/// the offer must span revision 9, require the sealed bit and not
-/// require the DMA-BUF bit, and the config must be internally sound.
+/// the offer must span revision 10, require the owned-ring bit and
+/// not require the DMA-BUF bit, and the config must be internally sound.
 fn validate_image_options(
     options: &ShellClientOptions,
     image: &ShellImageConfig,
 ) -> Result<(), ShellClientError> {
-    if options.minimum_revision > 9
-        || options.maximum_revision < 9
-        || options.required_capabilities & IMAGE_CAPABILITY_SEALED == 0
+    if options.minimum_revision > sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
+        || options.maximum_revision < sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
+        || options.required_capabilities & IMAGE_CAPABILITY_OWNED_RING == 0
         || options.required_capabilities & IMAGE_CAPABILITY_DMA_BUF != 0
         || image.transfer_timeout_ms == 0
         || image.formats_capacity < 64

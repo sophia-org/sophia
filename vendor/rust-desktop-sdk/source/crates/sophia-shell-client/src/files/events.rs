@@ -224,21 +224,34 @@ impl FileWire {
         let Some(size) = complete_record(&self.event_buf) else {
             return Ok(false);
         };
-        let header = if self.image_enabled {
-            decode_shell_file_record_at_revision(&self.event_buf[..size], ShellFileClass::Event, 9)?
-                .header
+        // D4E1 ring records have no shell envelope to pre-decode; they
+        // are consumed by the image adapter like other image events.
+        let ring_record = self.image_enabled && self.event_buf.get(4..8) == Some(b"D4E1");
+        let header = if ring_record {
+            None
+        } else if self.image_enabled {
+            Some(
+                decode_shell_file_record_at_revision(
+                    &self.event_buf[..size],
+                    ShellFileClass::Event,
+                    sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION,
+                )?
+                .header,
+            )
         } else {
-            decode_shell_file_record(&self.event_buf[..size], ShellFileClass::Event)?.header
+            Some(decode_shell_file_record(&self.event_buf[..size], ShellFileClass::Event)?.header)
         };
-        let needs_inbox_room = !matches!(
-            header.kind,
-            ShellFileKind::Submitted
-                | ShellFileKind::ObjectPublished
-                | ShellFileKind::ChannelReady
-                | ShellFileKind::ChannelClosed
-                | ShellFileKind::ImageAdmitted
-                | ShellFileKind::SourceReleased
-        );
+        let needs_inbox_room = header.is_some_and(|header| {
+            !matches!(
+                header.kind,
+                ShellFileKind::Submitted
+                    | ShellFileKind::ObjectPublished
+                    | ShellFileKind::ChannelReady
+                    | ShellFileKind::ChannelClosed
+                    | ShellFileKind::ImageAdmitted
+                    | ShellFileKind::SourceReleased
+            )
+        });
         if needs_inbox_room && inbox.len() >= crate::MAX_QUEUED_FRAMES {
             return Ok(false);
         }
@@ -309,9 +322,27 @@ impl FileWire {
     /// normal intake and the close scan use it, so neither accepts what the
     /// other would refuse. It changes nothing.
     fn decode_event(&self, record: &[u8]) -> Result<(u64, Event), ShellClientError> {
+        // D4E1 owned-ring records share the journal sequence but are not
+        // shell envelopes: dispatch their magic before envelope decoding
+        // (shell revision 10 with the owned-ring capability only).
+        if self.image_enabled && record.get(4..8) == Some(b"D4E1") {
+            use sophia_image_producer::ImageEvent;
+            use sophia_shell_protocol::shell_files::RingEvent;
+            let event = RingEvent::decode(record)
+                .map_err(|_| ShellClientError::Protocol("owned ring event"))?;
+            if event.identity.connection_epoch != self.epoch {
+                return Err(ShellClientError::Protocol(
+                    "owned ring event from another connection epoch",
+                ));
+            }
+            return Ok((event.sequence, Event::Image(ImageEvent::Ring(event))));
+        }
         if self.image_enabled
-            && let Ok(parsed) =
-                decode_shell_file_record_at_revision(record, ShellFileClass::Event, 9)
+            && let Ok(parsed) = decode_shell_file_record_at_revision(
+                record,
+                ShellFileClass::Event,
+                sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION,
+            )
             && matches!(
                 parsed.header.kind,
                 ShellFileKind::ChannelReady
@@ -430,7 +461,8 @@ impl FileWire {
             ShellFileKind::Submitted => {
                 let value = if self.image_enabled {
                     sophia_shell_protocol::shell_files::decode_shell_file_submitted_at_revision(
-                        record, 9,
+                        record,
+                        sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION,
                     )?
                 } else {
                     decode_shell_file_submitted(record)?

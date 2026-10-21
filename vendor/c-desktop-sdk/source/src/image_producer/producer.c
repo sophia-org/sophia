@@ -49,9 +49,14 @@ int sophia_ip_init(struct sophia_ip *p, const struct sophia_ip_config *c, uint64
 {
     unsigned i;
     if (!p || !c || !c->connection_epoch || !c->transfer_timeout_ms || now_ms >= c->startup_deadline_ms ||
-        !c->granted_kinds || (c->granted_kinds & ~3u))
+        !c->granted_kinds)
         return SOPHIA_IPR_ARGUMENT;
-    if (c->role == SOPHIA_IC_ROLE_SHELL ? c->revision != 9
+    /* Shell r10 is exactly the owned ring; r9 and lock r2 subsets of 1|2. */
+    if (c->role == SOPHIA_IC_ROLE_SHELL && c->revision == 10
+            ? c->granted_kinds != SOPHIA_IC_KIND_BIT_OWNED_RING
+            : (c->granted_kinds & ~3u) != 0)
+        return SOPHIA_IPR_ARGUMENT;
+    if (c->role == SOPHIA_IC_ROLE_SHELL ? c->revision != 9 && c->revision != 10
         : c->role == SOPHIA_IC_ROLE_LOCK ? c->revision != 2
                                          : 1)
         return SOPHIA_IPR_ARGUMENT;
@@ -63,6 +68,12 @@ int sophia_ip_init(struct sophia_ip *p, const struct sophia_ip_config *c, uint64
     for (i = 0; i < SOPHIA_IP_MAX_OFFERS; i++)
         p->slots[i].fd = -1;
     return SOPHIA_IPR_OK;
+}
+
+/* The kind this producer's sources use: owned ring at shell r10, else sealed. */
+static uint32_t source_kind_bit(const struct sophia_ip *p)
+{
+    return p->config.revision == 10 ? SOPHIA_IC_KIND_BIT_OWNED_RING : SOPHIA_IC_KIND_BIT_SEALED;
 }
 
 static int same_generations(const struct sophia_ic_discovery *d, const struct sophia_ic_record *l,
@@ -115,12 +126,12 @@ int sophia_ip_discover(struct sophia_ip *p, const void *text, size_t text_bytes,
     }
     /* Discovery may withhold a negotiated kind (availability) but never
      * names one negotiation did not grant. Version 1 producers send sealed
-     * sources only. */
+     * sources only; shell r10 producers send owned rings only. */
     if (p->expect.source_kinds & ~p->config.granted_kinds) {
         ip_fail(p, SOPHIA_IPX_DISCOVERY);
         return SOPHIA_IPR_CLOSED;
     }
-    if (!(p->expect.source_kinds & SOPHIA_IC_KIND_BIT_SEALED)) {
+    if (!(p->expect.source_kinds & source_kind_bit(p))) {
         ip_fail(p, SOPHIA_IPX_UNAVAILABLE);
         return SOPHIA_IPR_CLOSED;
     }
@@ -150,7 +161,7 @@ static int channel_record(struct sophia_ip *p, const struct sophia_ic_record *r)
         if (p->channel != SOPHIA_IPC_HELLO_SENT || (c->value & ~p->expect.source_kinds))
             return fault(p);
         p->expect.source_kinds = c->value;
-        if (!(c->value & SOPHIA_IC_KIND_BIT_SEALED)) {
+        if (!(c->value & source_kind_bit(p))) {
             ip_fail(p, SOPHIA_IPX_UNAVAILABLE);
             return SOPHIA_IPR_CLOSED;
         }

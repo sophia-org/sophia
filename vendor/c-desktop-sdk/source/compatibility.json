@@ -8,7 +8,8 @@
   "shell_file_profiles": {
     "bar": { "maximum_revision": 6, "capabilities": "negotiated" },
     "native_launcher": { "revision": 7, "required_capabilities": "0x9a0" },
-    "persistent_catalog": { "revision": 8, "required_capabilities": "0x11a2" }
+    "persistent_catalog": { "revision": 8, "required_capabilities": "0x11a2" },
+    "owned_ring_image": { "revision": 10, "required_capabilities": "0x8080", "source_kind": 4 }
   },
   "ipc_compatibility": "removed",
   "wm_files": true,

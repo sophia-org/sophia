@@ -18,63 +18,66 @@ fn image_ready() -> (ShellConnection, Peer, NativeLauncherLifecycle, ImagePeer) 
         4096,
         Profile {
             role: "launcher",
-            revision: 9,
-            capabilities: CAPS | image::SEALED,
+            revision: 10,
+            capabilities: CAPS | image::OWNED,
             limits_published: true,
         },
         false,
     );
     let (mut c, mut p, mut l) = setup_with((c, p));
-    let owner = image::drive_to_ready(&mut c, &mut p, &listener);
-    let mut m = image::metadata();
-    m.resource = resource().id;
-    m.admission_epoch = b().grant.content_grant_epoch;
-    c.image_begin(m, image::sealed_fd(), Instant::now())
+    let accepted = image::drive_to_channel_ready(&mut c, &mut p, &listener);
+    let (_source, _size) = image::drive_to_ring_ready(&mut c, &mut p, &accepted);
+    let writes = p.control_writes.len();
+    let offer = c
+        .image_upload_ring(
+            sophia_shell_client::RingUpload {
+                resource: resource().id,
+                resource_generation: resource().generation,
+                allocation: 61,
+                allocation_generation: 1,
+                output: 71,
+                output_generation: 1,
+                topology_generation: 1,
+                width: 2,
+                height: 2,
+            },
+            &[9u8; 16],
+            Instant::now(),
+        )
         .unwrap();
-    image::answer_submit(&mut c, &mut p, ShellFileKind::ImageBegin);
-    let m = ShellImageMetadata::decode(&p.transactions.last().unwrap()[32..]).unwrap();
-    let event = p.event_image(ShellFileKind::ImageAdmitted, &m.encode().unwrap());
-    p.push(event);
-    image::drive(&mut c, &mut p, |c, _| {
-        c.image_adapter().unwrap().offer(m.offer_id).unwrap().state == OfferState::Sent
+    image::drive(&mut c, &mut p, |_, peer| {
+        peer.control_writes.len() == writes + 1
     });
-    let (_, fds) = image::recv_packet(&owner);
-    assert_eq!(fds.len(), 1);
-    let body = encode_shell_file_resource_status_body(&ShellFileTransactionRecord {
-        transaction: tx(m.offer_id),
-        record: ShellContentRecord::ResourceStatus(ContentResourceStatus {
-            grant: b().grant,
-            resource: resource(),
-            status: 2,
-            reason: 0,
-            next_ordinal: 0,
-            admitted_bytes: m.declared_bytes,
-        }),
-    })
-    .unwrap();
-    let event = p.event(ShellFileKind::ResourceStatus, &body);
-    p.push(event);
-    let body = ShellSourceReleased {
-        offer_id: m.offer_id,
-        resource: m.resource,
-        resource_generation: m.resource_generation,
-        disposition: ShellSourceDisposition::Retained,
-    }
-    .encode()
-    .unwrap();
-    let event = p.event_image(ShellFileKind::SourceReleased, &body);
-    p.push(event);
-    image::drive(&mut c, &mut p, |c, _| {
-        c.image_adapter().unwrap().offer(m.offer_id).unwrap().state == OfferState::Settled
-    });
-    assert_eq!(
-        c.adopt_native_image(&mut l, m.offer_id).unwrap(),
-        resource()
+    let event = p.event(
+        ShellFileKind::ResourceStatus,
+        &image::status_body(offer, resource().id, resource().generation, 2),
     );
+    p.push(event);
+    let released = image::ring_released(
+        p.take_sequence(),
+        offer,
+        2,
+        resource().id,
+        resource().generation,
+        0,
+    );
+    p.push(released);
+    image::drive(&mut c, &mut p, |c, _| {
+        c.image_ring_offer(offer).unwrap().state == sophia_shell_client::RingOfferState::Settled
+    });
+    assert_eq!(c.adopt_native_image(&mut l, offer).unwrap(), resource());
     while let Some(value) = c.take_native_launcher_observation().unwrap() {
         l.observe(&value).unwrap();
     }
-    (c, p, l, ImagePeer { _owner: owner, dir })
+    (
+        c,
+        p,
+        l,
+        ImagePeer {
+            _owner: accepted,
+            dir,
+        },
+    )
 }
 fn scene_ready() -> (
     ShellConnection,

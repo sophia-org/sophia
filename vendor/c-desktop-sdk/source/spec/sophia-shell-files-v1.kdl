@@ -191,7 +191,8 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     // refuses a selection outside the range it offered, or capabilities that
     // lack a bit it required; the exact role profile is Session's decision.
     // r9 adds shell capability bits 13 (sealed) and 14 (DMA-BUF).
-    // Revision alone grants neither; current Session does not offer r9.
+    // r10 adds bit 15 (owned ring) and retires sealed bit 13 for shell.
+    // See sophia-owned-ring-v1.kdl. Revision alone grants no capability.
     body "Negotiated" size=32 {
         field "selected_revision" type="u16" offset=0
         field "reserved" type="u16" offset=2 value=0
@@ -1526,7 +1527,8 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     }
     body "ChannelReady" size=16 {
         field "channel_generation" type="u64" offset=0 nonzero=#true
-        field "granted_source_kinds" type="u32" offset=8 min=1 max=3
+        // Shell r10: exactly 4. Legacy channel layouts retain their role semantics.
+        field "granted_source_kinds" type="u32" offset=8 min=1 max=4
         field "reserved" type="u32" offset=12 value=0
     }
     body "ChannelClosed" size=16 {
@@ -1538,6 +1540,7 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "channel_generation" type="u64" offset=0 nonzero=#true
         field "limits_generation" type="u64" offset=8 nonzero=#true
         field "max_resource_bytes" type="u64" offset=16 nonzero=#true
+        // Shell r10: ring source plus immutable owned resource backing.
         field "max_sealed_backing_bytes" type="u64" offset=24
         field "max_dma_source_bytes" type="u64" offset=32
         field "max_renderer_allocation_bytes" type="u64" offset=40

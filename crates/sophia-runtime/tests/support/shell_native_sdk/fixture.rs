@@ -434,6 +434,17 @@ impl Fixture {
     }
     pub fn cleanup(&mut self) {
         self.transport.disconnect(&mut self.registry).unwrap();
+        if let Some(owner) = &mut self.image_owner {
+            owner
+                .service(
+                    &mut self.transport,
+                    &mut self.registry,
+                    NOW,
+                    std::time::Instant::now(),
+                )
+                .unwrap();
+            assert_eq!(owner.pending(), 0);
+        }
         self.registry.collect();
         assert!(
             self.transport

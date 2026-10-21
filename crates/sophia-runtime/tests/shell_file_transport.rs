@@ -456,12 +456,12 @@ fn paced_candidate(with_action: bool) {
         let capabilities = SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
             | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
             | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
-            | (1 << 13);
+            | (1 << 15);
         let offer = encode_shell_file_negotiate(
             candidate(ShellFileKind::Negotiate, 1, 1),
             ShellV1ClientHello {
-                minimum_revision: 9,
-                maximum_revision: 9,
+                minimum_revision: 10,
+                maximum_revision: 10,
                 required_capabilities: capabilities,
             },
         )
@@ -524,25 +524,19 @@ fn paced_candidate(with_action: bool) {
         image::upload(
             &mut peer,
             &image_socket,
-            grant.connection_epoch,
-            3,
-            ShellImageMetadata {
-                offer_id: 1,
-                resource: resource.id,
-                resource_generation: resource.generation,
-                admission_epoch: grant.content_grant_epoch,
-                output_id: output.id,
-                allocation_id: allocation.allocation.id,
+            grant,
+            OwnedCopyImageRequest {
+                slot: OwnedSlotIdentity {
+                    offer: 1,
+                    slot: 0,
+                    generation: 2,
+                },
+                resource,
+                allocation: allocation.allocation,
+                output,
                 topology_generation: 3,
-                source_kind: 1,
-                source_format: 1,
                 width: 2,
                 height: 1,
-                stride: 8,
-                plane_count: 1,
-                descriptor_count: 1,
-                declared_bytes: 8,
-                modifier: 0,
             },
             &sent,
         );
@@ -829,6 +823,10 @@ fn paced_candidate(with_action: bool) {
     peer.join().unwrap();
     drop(render);
     transport.disconnect(&mut registry).unwrap();
+    image_owner
+        .service(&mut transport, &mut registry, 0, Instant::now())
+        .unwrap();
+    assert_eq!(image_owner.pending(), 0);
     registry.collect();
     std::fs::remove_dir_all(directory).unwrap();
 }

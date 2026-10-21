@@ -161,6 +161,76 @@ impl MappedIsb {
     }
 }
 
+/// A writable ring source under construction: one private memfd, sized
+/// and size-sealed at creation, mapped once and kept writable for the
+/// ring's whole life. Unlike [`MappedIsb`] it is never finished into an
+/// immutable buffer; the Session's owned copy is the immutable side.
+/// `FUTURE_WRITE` is sealed after the mapping exists, so no new writable
+/// mapping or descriptor write can appear while this mapping stays
+/// writable, and the mapping is excluded from `fork`. Dropping unmaps
+/// and closes; the descriptor may escape only as a borrow (for
+/// `SCM_RIGHTS`) while the ring is alive.
+pub struct MappedRing {
+    // Declared first so it drops first: unmap, then close.
+    mapping: mapping::Mapping,
+    fd: OwnedFd,
+}
+
+impl MappedRing {
+    /// Create a fallocated `source_bytes` ring. Refuses a zero or
+    /// oversized length before allocating.
+    pub fn create(source_bytes: u64) -> Result<Self, IsbError> {
+        if source_bytes == 0 || source_bytes > MAX_BYTES {
+            return Err(IsbError::Argument);
+        }
+        let len = usize::try_from(source_bytes).map_err(|_| IsbError::Argument)?;
+        let fd = memfd_create(
+            c"sophia-ring",
+            MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING,
+        )
+        .map_err(IsbError::Refused)?;
+        fallocate(&fd, FallocateFlags::empty(), 0, source_bytes).map_err(IsbError::Refused)?;
+        fcntl_add_seals(&fd, SealFlags::GROW | SealFlags::SHRINK).map_err(IsbError::Refused)?;
+        let mapping = mapping::Mapping::new(fd.as_fd(), len).map_err(IsbError::Refused)?;
+        // The existing mapping stays writable; no new writable mapping,
+        // descriptor write or seal change can be added after this.
+        let hardening = SealFlags::FUTURE_WRITE | SealFlags::SEAL;
+        fcntl_add_seals(&fd, hardening).map_err(IsbError::Refused)?;
+        let seals = fcntl_get_seals(&fd).map_err(IsbError::Refused)?;
+        if !seals.contains(SealFlags::GROW | SealFlags::SHRINK | hardening) {
+            return Err(IsbError::Unsealed(seals));
+        }
+        Ok(Self { mapping, fd })
+    }
+
+    /// Total mapped bytes.
+    pub fn len(&self) -> usize {
+        self.mapping.bytes().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The whole ring, writable in place through this one mapping.
+    pub fn bytes_mut(&mut self) -> &mut [u8] {
+        self.mapping.bytes_mut()
+    }
+
+    /// The source descriptor for `SCM_RIGHTS`; custody stays with the ring.
+    pub fn source_fd(&self) -> std::os::fd::BorrowedFd<'_> {
+        self.fd.as_fd()
+    }
+}
+
+impl std::fmt::Debug for MappedRing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MappedRing")
+            .field("len", &self.len())
+            .finish_non_exhaustive()
+    }
+}
+
 impl std::fmt::Debug for MappedIsb {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MappedIsb")

@@ -168,9 +168,12 @@ static void shell_image_begin(void)
     assert(back.value.submitted.candidate_kind == SOPHIA_SF_KIND_IMAGE_BEGIN);
     /* Revision bounds and capacity. */
     assert(sophia_sf_decode_revision(b, n, 0, &back) == -4);
-    assert(sophia_sf_decode_revision(b, n, 10, &back) == -4);
+    /* r10 has no ImageBegin receipt; revisions above 10 are unknown. */
+    assert(sophia_sf_decode_revision(b, n, 10, &back) == -1);
+    assert(sophia_sf_decode_revision(b, n, 11, &back) == -4);
     assert(sophia_sf_encode_revision(b, sizeof b, 0, &r, &m) == -4);
-    assert(sophia_sf_encode_revision(b, sizeof b, 10, &r, &m) == -4);
+    assert(sophia_sf_encode_revision(b, sizeof b, 10, &r, &m) == -1);
+    assert(sophia_sf_encode_revision(b, sizeof b, 11, &r, &m) == -4);
     assert(sophia_sf_encode_revision(bad, SUBMITTED_BYTES - 1, 9, &r, &m) == -4);
     /* Only ImageBegin: the other image kinds and the neighbors stay out. */
     for (kind = 0x7001; kind <= 0x7006; kind++) {

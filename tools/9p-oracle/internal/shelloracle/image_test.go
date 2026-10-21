@@ -69,11 +69,13 @@ func TestEncodedLeavesImageBeginIdentity(t *testing.T) {
 }
 
 func TestDiscoveryOrderIsExact(t *testing.T) {
-	good := "sophia-image-channel version=1\nrole=1\nconnection_epoch=17\nchannel_generation=2\nendpoint=image.sock\nsource_kinds=1\nmax_packet_bytes=200\nmax_fds=4\nmax_offers=4\nmax_packets_per_turn=8\nhello_timeout_ms=2000\nvalidation_timeout_ms=2000\nvalidation_chunk_bytes=65536\ncapture_interest_timeout_ms=500\nformats_generation=1\nlimits_generation=1\n"
+	good := "sophia-image-channel version=1\nrole=1\nconnection_epoch=17\nchannel_generation=2\nendpoint=image.sock\nsource_kinds=4\nmax_packet_bytes=200\nmax_fds=4\nmax_offers=4\nmax_packets_per_turn=8\nhello_timeout_ms=2000\nvalidation_timeout_ms=2000\nvalidation_chunk_bytes=65536\ncapture_interest_timeout_ms=500\nformats_generation=1\nlimits_generation=1\n"
 	if d := parseDiscovery([]byte(good)); d.epoch != 17 || d.generation != 2 || d.endpoint != "image.sock" {
 		t.Fatalf("parsed %+v", d)
 	}
 	for name, bad := range map[string]string{
+		"sealed":  replaceOnce(good, "source_kinds=4", "source_kinds=1"),
+		"mixed":   replaceOnce(good, "source_kinds=4", "source_kinds=5"),
 		"order":   swapLines(good, 2, 3),
 		"leading": replaceOnce(good, "channel_generation=2", "channel_generation=02"),
 		"packet":  replaceOnce(good, "max_packet_bytes=200", "max_packet_bytes=199"),

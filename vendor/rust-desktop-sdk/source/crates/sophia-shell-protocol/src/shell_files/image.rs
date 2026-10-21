@@ -61,6 +61,11 @@ impl From<crate::byte_cursor::CursorError> for ShellImageCodecError {
 pub const SHELL_IMAGE_CHANNEL_ROLE: u16 = 1;
 pub const SHELL_IMAGE_SOURCE_SEALED_MEMORY: u32 = 1;
 pub const SHELL_IMAGE_SOURCE_DMA_BUF: u32 = 2;
+pub const SHELL_IMAGE_SOURCE_OWNED_RING: u32 = 4;
+/// Every source-kind bit this version knows. Byte-shape bound only:
+/// which masks a role may hold is admission policy, not codec shape.
+pub const SHELL_IMAGE_SOURCE_KINDS_ALL: u32 =
+    SHELL_IMAGE_SOURCE_SEALED_MEMORY | SHELL_IMAGE_SOURCE_DMA_BUF | SHELL_IMAGE_SOURCE_OWNED_RING;
 pub const SHELL_IMAGE_SEALED_FORMAT: u32 = 1;
 pub const SHELL_IMAGE_MAX_PLANES: usize = 4;
 pub const SHELL_IMAGE_MAX_FORMAT_ROWS: usize = 4096;
@@ -577,7 +582,9 @@ pub struct ShellChannelReady {
 impl ShellChannelReady {
     pub fn encode(&self) -> Result<Vec<u8>, ShellImageCodecError> {
         nonzero(self.channel_generation, "channel_generation")?;
-        if self.granted_source_kinds == 0 || self.granted_source_kinds & !0b11 != 0 {
+        if self.granted_source_kinds == 0
+            || self.granted_source_kinds & !SHELL_IMAGE_SOURCE_KINDS_ALL != 0
+        {
             return Err(invalid("granted_source_kinds"));
         }
         let mut bytes = Vec::with_capacity(16);
@@ -595,7 +602,9 @@ impl ShellChannelReady {
         };
         reserved(&mut cursor, 4)?;
         cursor.finish()?;
-        if ready.granted_source_kinds == 0 || ready.granted_source_kinds & !0b11 != 0 {
+        if ready.granted_source_kinds == 0
+            || ready.granted_source_kinds & !SHELL_IMAGE_SOURCE_KINDS_ALL != 0
+        {
             return Err(invalid("granted_source_kinds"));
         }
         Ok(ready)
@@ -851,7 +860,7 @@ impl ShellImageDiscovery {
         {
             return Err(invalid("endpoint"));
         }
-        if self.source_kinds == 0 || self.source_kinds & !0b11 != 0 {
+        if self.source_kinds == 0 || self.source_kinds & !SHELL_IMAGE_SOURCE_KINDS_ALL != 0 {
             return Err(invalid("source_kinds"));
         }
         range(u64::from(self.max_offers), 1, 4, "max_offers")?;
@@ -1018,7 +1027,9 @@ impl ShellImageExpect {
         }
         nonzero(self.connection_epoch, "connection_epoch")?;
         nonzero(self.channel_generation, "channel_generation")?;
-        if self.granted_source_kinds == 0 || self.granted_source_kinds & !0b11 != 0 {
+        if self.granted_source_kinds == 0
+            || self.granted_source_kinds & !SHELL_IMAGE_SOURCE_KINDS_ALL != 0
+        {
             return Err(invalid("granted_source_kinds"));
         }
         nonzero_u32(self.max_width, "max_width")?;
@@ -1133,13 +1144,16 @@ impl ShellImageDiscovery {
         {
             return Err(invalid("coherence"));
         }
-        let sealed = self.source_kinds & 1 != 0;
-        let dma_buf = self.source_kinds & 2 != 0;
+        // Both CPU source kinds (sealed memory and the owned ring)
+        // are served by the validation worker; DMA-BUF is not.
+        let cpu = self.source_kinds
+            & (SHELL_IMAGE_SOURCE_SEALED_MEMORY | SHELL_IMAGE_SOURCE_OWNED_RING)
+            != 0;
+        let dma_buf = self.source_kinds & SHELL_IMAGE_SOURCE_DMA_BUF != 0;
         if !formats.rows.is_empty() && !dma_buf {
             return Err(invalid("formats_unsupported"));
         }
-        if sealed != (limits.max_validation_jobs != 0) || dma_buf != (limits.max_capture_jobs != 0)
-        {
+        if cpu != (limits.max_validation_jobs != 0) || dma_buf != (limits.max_capture_jobs != 0) {
             return Err(invalid("capacity"));
         }
         if limits.max_resource_bytes > role_bounds.max_resource_bytes

@@ -92,7 +92,7 @@ impl Fixture {
         }
     }
     pub fn authorize(&mut self, pid: u32) {
-        // Every role but the indicator bar negotiates shell r9 sealed images,
+        // Every role but the indicator bar negotiates shell r10 owned rings,
         // including peers outside this oracle that share the fixture.
         if self.bar {
             self.transport
@@ -295,6 +295,21 @@ impl Fixture {
     }
     pub fn cleanup(&mut self) {
         self.transport.disconnect(&mut self.registry).unwrap();
+        if let Some(owner) = &mut self.image_owner {
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                // Even an idle ring retains its source charge until the owner
+                // observes the retired connection.
+                owner
+                    .service(&mut self.transport, &mut self.registry, 10, Instant::now())
+                    .unwrap();
+                if owner.pending() == 0 {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "{} image owner drain", self.name);
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
         self.registry.collect();
         assert!(
             self.transport

@@ -16,9 +16,10 @@
  *                                 below is encoded by hand from the offsets in
  *                                 protocol/sophia-shell-files-v1.kdl
  *
- * Every mode attaches with an authenticated afid and negotiates shell r9 with
- * sealed images (bit 13). Pixels reach the owner only as a sealed memfd over
- * the image channel, through the SDK's image adapter; there is no byte upload.
+ * Every mode attaches with an authenticated afid and negotiates shell r10 with
+ * the owned ring (bit 15). Pixels reach the owner only through a slot of the
+ * SDK's sealed ring, offered on owned-ring-v1 and copied by the owner; there is
+ * no byte upload.
  *
  * All but content-malformed use the public session API. PEER_MUTATION builds
  * red controls that the host must refuse. content-lifecycle encodes, from the
@@ -51,8 +52,8 @@
 #define CAP_DESCRIPTOR_SWITCHER 1u
 #define CAP_CONTENT_SURFACE 128u
 #define CAP_CONTENT_DISCRETE_INPUT 256u
-#define CAP_SEALED_IMAGES 0x2000u
-#define SHELL_REVISION 9u
+#define CAP_OWNED_RING 0x8000u
+#define SHELL_REVISION 10u
 #define MSIZE 16384u
 #define EVENT_QUEUE 16u
 #define DEADLINE_MS 10000u
@@ -328,7 +329,7 @@ static void open_scenario(struct scenario *c, const char *path, void **storage)
 {
     struct sophia_ss_config config = {
         {SHELL_REVISION, SHELL_REVISION,
-         CAP_DESCRIPTOR_SWITCHER | CAP_CONTENT_SURFACE | CAP_SEALED_IMAGES},
+         CAP_DESCRIPTOR_SWITCHER | CAP_CONTENT_SURFACE | CAP_OWNED_RING},
         SOPHIA_SF_BAR, MSIZE, 8, 65536, NULL, 0};
     struct sophia_ss_image_config image = {0};
     struct sophia_9p_handle request;
@@ -337,14 +338,14 @@ static void open_scenario(struct scenario *c, const char *path, void **storage)
     uint32_t afid, root;
     char directory[256], *slash;
     if (c->required)
-        config.offer.required_capabilities = c->required | CAP_SEALED_IMAGES;
+        config.offer.required_capabilities = c->required | CAP_OWNED_RING;
     c->deadline = now_ms() + DEADLINE_MS;
     *storage = malloc(bytes);
     c->wire_storage = malloc(wire_bytes);
     require(*storage != NULL && c->wire_storage != NULL, "storage");
     c->fd = connect_admitted(path, c->deadline);
     require(c->fd >= 0, "connected fd");
-    /* Sealed images are granted only on an attach through an afid. */
+    /* The owned ring is granted only on an attach through an afid. */
     require(!sophia_9p_init(&c->wire, c->fd, MSIZE, 8, 32, c->wire_storage, wire_bytes),
             "9P init");
     require(!sophia_9p_version(&c->wire, &request), "version");
@@ -383,7 +384,7 @@ static void open_scenario(struct scenario *c, const char *path, void **storage)
 static void close_scenario(struct scenario *c)
 {
     sophia_ss_close(&c->s);
-    sophia_ip_close(&c->image.producer);
+    sophia_ss_image_close(&c->image);
     close(c->image_dir);
     sophia_9p_close(&c->wire);
     close(c->fd);
@@ -497,52 +498,54 @@ static void retire(struct scenario *c)
     submit(c, &record);
 }
 
-/* Stages shared by both scenarios, through the accepted resource: one sealed
- * memfd offer, accepted, and settled by the owner's retained release. */
+/* Stages shared by both scenarios, through the accepted resource: one ring
+ * slot filled in place and offered, accepted, and settled by the exact
+ * SlotReleased that returns the slot. */
 static void upload_resource(struct scenario *c)
 {
-    struct sophia_ic_metadata metadata;
-    struct sophia_ip_offer_info info;
-    uint64_t offer, ticket;
-    void *pixels;
-    size_t bytes;
-    int source, r;
-    require(!sophia_ip_isb_create(c->pixel_width, c->pixel_height, &source, &pixels, &bytes),
-            "sealed source");
-    require(bytes == c->pixel_bytes, "sealed source size");
-    memcpy(pixels, c->pixels, bytes);
-    require(!sophia_ip_isb_finish(source, pixels, bytes), "seal source");
-    memset(&metadata, 0, sizeof(metadata));
-    metadata.resource_id = metadata.resource_generation = 1;
-    metadata.admission_epoch = c->content_epoch;
-    metadata.output = c->output_id;
-    metadata.allocation = c->allocation_id;
-    metadata.topology_generation = c->facts_generation;
-    metadata.source_kind = metadata.source_format = 1;
-    metadata.width = c->pixel_width;
-    metadata.height = c->pixel_height;
-    metadata.stride = c->pixel_width * 4u;
-    metadata.plane_count = metadata.descriptor_count = 1;
-    metadata.logical_bytes = bytes;
-    /* AGAIN until ChannelReady; BUSY while the session queue is full. */
+    struct sophia_ss_ring_image m;
+    struct sophia_ss_ring_offer_info info;
+    uint64_t offer;
+    uint8_t *slot;
+    int r;
+    /* The SDK registers the ring after ChannelReady; slots open at RingReady. */
+    while (sophia_ss_image_ring_state(&c->image, NULL) < SOPHIA_SS_RING_READY)
+        pump(c);
+    require(sophia_ss_image_ring_state(&c->image, NULL) == SOPHIA_SS_RING_READY,
+            "owned ring was not ready");
+    require(c->pixel_bytes <= sophia_ss_image_ring_capacity(&c->image, NULL), "ring capacity");
+    slot = sophia_ss_image_ring_pixels(&c->image, 0);
+    require(slot != NULL, "ring slot");
+    memcpy(slot, c->pixels, c->pixel_bytes);
+    memset(&m, 0, sizeof(m));
+    m.resource_id = m.resource_generation = 1;
+    m.output_id = c->output_id;
+    m.output_generation = c->output_generation;
+    m.allocation_id = c->allocation_id;
+    m.allocation_generation = c->allocation_generation;
+    m.topology_generation = c->facts_generation;
+    m.width = c->pixel_width;
+    m.height = c->pixel_height;
+    /* AGAIN while another owned-ring control write is in flight. */
     for (;;) {
-        r = sophia_ss_image_begin(&c->image, &metadata, source, now_ms(), &offer, &ticket);
-        if (r != SOPHIA_IPR_BUSY && r != SOPHIA_IPR_AGAIN)
+        r = sophia_ss_image_ring_offer(&c->image, 0, &m, now_ms(), &offer);
+        if (r != SOPHIA_IPR_AGAIN)
             break;
         pump(c);
     }
-    require(!r, "image begin");
-    c->ticket = ticket;
+    require(!r, "ring offer");
     for (;;) {
         pump(c);
-        require(!sophia_ip_offer(&c->image.producer, offer, &info), "image offer");
-        if (c->accepted && info.state == SOPHIA_IPO_SETTLED)
+        require(!sophia_ss_image_ring_info(&c->image, offer, &info), "ring offer info");
+        if (info.state != SOPHIA_SS_SLOT_OFFERING && info.state != SOPHIA_SS_SLOT_OFFERED)
             break;
     }
-    require(info.status == SOPHIA_IPS_ACCEPTED && info.disposition == 1,
-            "image was not accepted and retained");
-    require(custodied(c, c->ticket), "image begin custody");
-    require(!sophia_ip_forget(&c->image.producer, offer), "image forget");
+    while (!c->accepted)
+        pump(c);
+    require(info.state == SOPHIA_SS_SLOT_RELEASED && info.status == SOPHIA_IPS_ACCEPTED &&
+                !info.reason && !info.changed_generation && info.adoptable,
+            "image was not accepted and released");
+    require(!sophia_ss_image_ring_forget(&c->image, offer), "ring forget");
 }
 
 static void publish_resource(struct scenario *c)
@@ -1187,11 +1190,11 @@ static int content_malformed(const char *path)
     r.submit = raw_open(&r, submit, 1, 1);
     r.ack = raw_open(&r, ack, 1, 1);
 
-    /* Negotiate r9: bar content with sealed images, without discrete input. */
+    /* Negotiate r10: bar content with the owned ring, without discrete input. */
     header(record, 48, 256, r.epoch, ++r.submission);
     put(record + 32, SHELL_REVISION, 2);
     put(record + 34, SHELL_REVISION, 2);
-    put(record + 40, CAP_DESCRIPTOR_SWITCHER | CAP_CONTENT_SURFACE | CAP_SEALED_IMAGES, 8);
+    put(record + 40, CAP_DESCRIPTOR_SWITCHER | CAP_CONTENT_SURFACE | CAP_OWNED_RING, 8);
     raw_accepted(&r, record, 48);
     e = raw_event(&r, 16);
     require(get(e, 2) == SHELL_REVISION && get(e + 4, 8) == r.epoch && get(e + 26, 2) == 1,

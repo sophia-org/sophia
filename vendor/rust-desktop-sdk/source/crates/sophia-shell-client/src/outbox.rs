@@ -284,6 +284,9 @@ impl ClientOutbox {
         ledger.issue(records)
     }
     /// Whether `slots` more frames of `bytes` would fit right now.
+    // Retained for queued-offer callers; the withdrawn sealed begin
+    // was its last in-tree caller.
+    #[allow(dead_code)]
     pub(crate) fn has_room(&self, slots: usize, bytes: usize, control: bool) -> bool {
         self.fits(slots, bytes, control)
     }

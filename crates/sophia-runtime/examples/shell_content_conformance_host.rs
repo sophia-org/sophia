@@ -13,7 +13,7 @@ use sophia_runtime::{
     SupervisorCommand, SupervisorEvent,
 };
 
-// The client's pixels arrive only as sealed images over the authenticated
+// The client's pixels arrive only through owned rings over the authenticated
 // channel. Its afid verdicts are supplied by the shared test authority; this
 // host makes no launch-authentication claim.
 #[allow(dead_code)]
@@ -287,6 +287,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         std::thread::yield_now();
     }
     owner.disconnect(&mut epochs)?;
+    let drain_deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        image_owner.service(
+            &mut owner,
+            &mut epochs,
+            started.elapsed().as_millis() as u64,
+            Instant::now(),
+        )?;
+        if image_owner.pending() == 0 {
+            break;
+        }
+        if Instant::now() >= drain_deadline {
+            return Err("shell image worker did not return conformance custody".into());
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
     epochs.collect();
     println!(
         "sophia_shell_content_transport schema=1 status=complete protected=true wire=9p2000.L allocation=granted bytes=8 accepted=true candidate=accepted renderer_outcome={} lease_retained=true released=true native_presentation=false transaction={}",

@@ -24,17 +24,20 @@ type session struct {
 	revision                        uint16
 	queue                           []record
 	last                            []byte
-	// Shell r9 sealed-image state; image is the SEQPACKET channel fd or -1.
-	sealed    bool
-	image     int
-	offers    uint64
-	discovery discovery
+	// Shell r10 owned-ring state; image is the SEQPACKET channel fd or -1.
+	ring           bool
+	image          int
+	offers         uint64
+	discovery      discovery
+	ringFD         int
+	ringRegistered bool
+	ringBusy       bool
 }
 
-// sealedFixture names attaches that negotiate shell r9 sealed images over an
+// ringFixture names attaches that negotiate shell r10 owned rings over an
 // authenticated afid. Metadata-only fixtures keep their earlier revisions.
-func sealedFixture(name string) bool {
-	return name == "main" || name == "missing" || name == "cancelled" || strings.HasPrefix(name, "launcher") || strings.HasPrefix(name, "dock")
+func ringFixture(name string) bool {
+	return (name == "main" || strings.HasPrefix(name, "main-")) || name == "missing" || name == "cancelled" || strings.HasPrefix(name, "launcher") || strings.HasPrefix(name, "dock")
 }
 
 var apiLine = regexp.MustCompile(`^sophia-shell-files version=1 role=([a-z][a-z0-9_-]*) epoch=([1-9][0-9]*) fd_transfer=none\n$`)
@@ -55,9 +58,9 @@ func (r *runner) connect(name string, msize uint32) *session {
 	endpoint, err := os.ReadFile(filepath.Join(r.root, name+".endpoint"))
 	must(err)
 	need(len(endpoint) > 0 && len(endpoint) < 256, "endpoint length")
-	sealed := sealedFixture(name)
-	w := dial(string(endpoint), msize, sealed)
-	s := &session{w: w, runner: r, fixture: name, endpoint: string(endpoint), nextID: 1, sealed: sealed, image: -1}
+	ring := ringFixture(name)
+	w := dial(string(endpoint), msize, ring)
+	s := &session{w: w, runner: r, fixture: name, endpoint: string(endpoint), nextID: 1, ring: ring, image: -1, ringFD: -1}
 	// Read the complete bounded line, including EOF, before emitting any records.
 	w.file(10, 0, "api")
 	var api []byte
@@ -87,6 +90,9 @@ func (r *runner) connect(name string, msize uint32) *session {
 	return s
 }
 func (s *session) close() {
+	if s.ringFD >= 0 {
+		unix.Close(s.ringFD)
+	}
 	if s.image >= 0 {
 		unix.Close(s.image)
 	}
@@ -164,7 +170,7 @@ func (s *session) readEvents() []byte {
 		must(err)
 		need(e.kind >= 16 && e.epoch == s.epoch && e.sequence > s.sequence, "event epoch/sequence")
 		// Image events carry resource or channel fields @8, not the epoch.
-		if e.kind >= 32 && !imageKind(e.kind) {
+		if e.kind >= 32 && !imageKind(e.kind) && !ringEventKind(e.kind) {
 			need(u64(e.body, 8) == s.epoch, "event grant epoch")
 		}
 		// Only a validated Negotiated selects the revision later events use.
@@ -203,8 +209,8 @@ func (s *session) ack(e record) {
 	need(wrote(s.w.write(4, 0, b)) == 16, "ack count")
 }
 func (s *session) offer() []byte {
-	if s.sealed {
-		return sealedOffer()
+	if s.ring {
+		return ringOfferHello()
 	}
 	return offer()
 }
@@ -213,8 +219,8 @@ func (s *session) negotiate() record {
 	s.ack(s.custody(id, 256))
 	e := s.expect(16)
 	revision, required := uint16(6), uint64(385)
-	if s.sealed {
-		revision, required = 9, 385|sealedCapability
+	if s.ring {
+		revision, required = 10, 385|ringCapability
 	}
 	need(u16(e.body, 0) == revision && u64(e.body, 4) == s.epoch && u64(e.body, 12)&required == required && u16(e.body, 26) == 1, "selected profile")
 	s.ack(e)

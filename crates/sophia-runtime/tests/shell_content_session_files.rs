@@ -62,12 +62,12 @@ fn session() -> (ShellComponentTransport, ContentEpochRegistry) {
 
 fn connect(socket: std::path::PathBuf, capabilities: u64) -> ShellConnection {
     let options = ShellClientOptions {
-        minimum_revision: if capabilities & (1 << 13) != 0 { 9 } else { 5 },
-        maximum_revision: if capabilities & (1 << 13) != 0 { 9 } else { 6 },
+        minimum_revision: if capabilities & (1 << 15) != 0 { 10 } else { 5 },
+        maximum_revision: if capabilities & (1 << 15) != 0 { 10 } else { 6 },
         required_capabilities: capabilities,
         handshake_timeout: Duration::from_secs(2),
     };
-    if capabilities & (1 << 13) != 0 {
+    if capabilities & (1 << 15) != 0 {
         sdk_image::authenticated_client(&socket, options).unwrap()
     } else {
         ShellConnection::connect_files(socket, options).unwrap()
@@ -108,7 +108,7 @@ fn admitted_resource_transfer_settles_and_releases_over_the_file_wire() {
     let (done_tx, done_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel::<()>();
     let client = std::thread::spawn(move || {
-        let mut client = connect(socket.clone(), CONTENT | (1 << 13));
+        let mut client = connect(socket.clone(), CONTENT | (1 << 15));
         let ShellContentRecord::Limits(limits) = next_content(&mut client) else {
             panic!("expected limits");
         };
@@ -116,22 +116,16 @@ fn admitted_resource_transfer_settles_and_releases_over_the_file_wire() {
         let resource = resource_id(1);
         sdk_image::upload(
             &mut client,
-            sophia_shell_client::ProducerMetadata {
+            sophia_shell_client::RingUpload {
                 resource: resource.id,
                 resource_generation: resource.generation,
-                admission_epoch: limits.grant.content_grant_epoch,
-                output_id: 1,
-                allocation_id: 1,
+                output: 1,
+                output_generation: 1,
+                allocation: 1,
+                allocation_generation: 1,
                 topology_generation: 1,
-                source_kind: 1,
-                source_format: 1,
                 width: 2,
                 height: 1,
-                stride: 8,
-                plane_count: 1,
-                descriptor_count: 1,
-                declared_bytes: 8,
-                ..Default::default()
             },
             &[0, 0, 255, 255, 0, 128, 0, 128],
         );
@@ -181,6 +175,10 @@ fn admitted_resource_transfer_settles_and_releases_over_the_file_wire() {
         std::thread::yield_now();
     }
     session.disconnect(&mut registry).unwrap();
+    image_owner
+        .service(&mut session, &mut registry, 0, Instant::now())
+        .unwrap();
+    assert_eq!(image_owner.pending(), 0);
     registry.collect();
     release_tx.send(()).unwrap();
     client.join().unwrap();
@@ -322,7 +320,7 @@ fn candidate_roundtrip(renderer_failed: bool) {
     let socket = session.socket_path().to_path_buf();
     let (uploaded_tx, uploaded_rx) = mpsc::channel();
     let client = std::thread::spawn(move || {
-        let mut client = connect(socket.clone(), CONTENT | (1 << 13));
+        let mut client = connect(socket.clone(), CONTENT | (1 << 15));
         let ShellContentRecord::Limits(limits) = next_content(&mut client) else {
             panic!("expected limits");
         };
@@ -344,22 +342,16 @@ fn candidate_roundtrip(renderer_failed: bool) {
         let resource = resource_id(1);
         sdk_image::upload(
             &mut client,
-            sophia_shell_client::ProducerMetadata {
+            sophia_shell_client::RingUpload {
                 resource: resource.id,
                 resource_generation: resource.generation,
-                admission_epoch: limits.grant.content_grant_epoch,
-                output_id: output.id,
-                allocation_id: allocation.allocation.id,
+                output: output.id,
+                output_generation: output.generation,
+                allocation: allocation.allocation.id,
+                allocation_generation: allocation.allocation.generation,
                 topology_generation: facts.facts_generation,
-                source_kind: 1,
-                source_format: 1,
                 width: 2,
                 height: 1,
-                stride: 8,
-                plane_count: 1,
-                descriptor_count: 1,
-                declared_bytes: 8,
-                ..Default::default()
             },
             &[0, 0, 255, 255, 0, 128, 0, 128],
         );
@@ -523,6 +515,10 @@ fn candidate_roundtrip(renderer_failed: bool) {
         std::thread::yield_now();
     }
     session.disconnect(&mut registry).unwrap();
+    image_owner
+        .service(&mut session, &mut registry, 0, Instant::now())
+        .unwrap();
+    assert_eq!(image_owner.pending(), 0);
     registry.collect();
     client.join().unwrap();
     // The GPU preflight's disconnect / held renderer / release sequence.
@@ -551,7 +547,7 @@ fn candidate_roundtrip(renderer_failed: bool) {
     session.disconnect(&mut registry).unwrap();
     registry.collect();
     assert!(session.content_accounting(&registry).quiescent());
-    assert_eq!(welcome.selected_revision, 9);
+    assert_eq!(welcome.selected_revision, 10);
 }
 
 #[test]

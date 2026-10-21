@@ -51,7 +51,7 @@ fn native_files_assemble_exact_catalog_candidate_and_keeps_source_until_retireme
         assert_eq!(outcome.kind, expected);
         assert_eq!(outcome.candidate_generation, 1);
     }
-    peer.transport.disconnect(&mut r).unwrap();
+    peer.disconnect(&mut r);
     r.collect();
     assert_eq!(r.accounting().memory.resident, 8);
     assert_eq!(r.accounting().retired_epochs, 1);
@@ -74,8 +74,8 @@ fn role_reservation_cannot_be_selected_or_widened_by_peer_capabilities() {
             limits(),
         );
         let mut request = ShellV1ClientHello {
-            minimum_revision: 9,
-            maximum_revision: 9,
+            minimum_revision: 10,
+            maximum_revision: 10,
             required_capabilities: CAPS,
         };
         if mode == 1 {
@@ -123,14 +123,14 @@ fn operator_denial_is_an_encoded_refusal_and_retires_exact_reservation() {
         peer.refuse_offer(
             &mut r,
             ShellV1ClientHello {
-                minimum_revision: 9,
-                maximum_revision: 9,
+                minimum_revision: 10,
+                maximum_revision: 10,
                 required_capabilities: CAPS,
             },
             policy,
             ShellTransportError::ContentAdmissionRefused(ContentAdmissionRefused {
                 reason,
-                denied_capabilities: CAPS & !(1 << 13),
+                denied_capabilities: CAPS & !(1 << 15),
             }),
         );
         assert_eq!(r.reserved_bytes(), 0);
@@ -309,7 +309,7 @@ fn peer_eof_revokes_unconsumed_submissions_but_preserves_owned_requests() {
             consumed.then_some(1)
         );
         assert_eq!(peer.transport.content_grant(), Some(GRANT));
-        peer.transport.disconnect(&mut r).unwrap();
+        peer.disconnect(&mut r);
         r.collect();
         assert!(r.accounting().quiescent());
     }
@@ -418,7 +418,7 @@ fn native_close_cancels_unsubmitted_work_but_retains_submitted_owner() {
         peer.no_event(&mut r);
         // Active allocation remains owned: close is not pixel disappearance.
         assert_eq!(r.allocations_mut(GRANT).unwrap().snapshots(), allocations);
-        peer.transport.disconnect(&mut r).unwrap();
+        peer.disconnect(&mut r);
         r.collect();
         if phase == 3 {
             assert_eq!(r.accounting().memory.resident, 8);
@@ -505,7 +505,7 @@ fn native_close_refuses_pending_allocation_and_cancels_standing_demand() {
             peer.read_native(&mut r).1,
             ShellNativeLauncherRecord::Closed(_)
         ));
-        peer.transport.disconnect(&mut r).unwrap();
+        peer.disconnect(&mut r);
         r.collect();
         assert_eq!(r.accounting().retired_epochs, 0);
     }
@@ -665,7 +665,7 @@ fn late_closed_begin_gets_one_terminal_and_tails_cannot_reenter_submission() {
             .closed_native_owners_settled(&r, opening())
             .unwrap()
     );
-    peer.transport.disconnect(&mut r).unwrap();
+    peer.disconnect(&mut r);
     r.collect();
     assert_eq!(r.accounting().retired_epochs, 0);
 }
@@ -821,7 +821,7 @@ fn reopened_native_fifo_refuses_old_begin_without_consuming_new_permit() {
         assert!(matches!(peer.read_content(&mut r).1,
             ShellContentRecord::CandidateOutcome(v) if v.candidate_generation == 2 && v.kind == kind));
     }
-    peer.transport.disconnect(&mut r).unwrap();
+    peer.disconnect(&mut r);
     drop(bundle);
     r.collect();
     assert_eq!(r.accounting().retired_epochs, 0);

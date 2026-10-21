@@ -20,7 +20,7 @@ fn undisclosed_image_snapshots_follow_facts_before_negotiation() {
                 connection_epoch: 1,
                 channel_generation: 1,
                 endpoint: "image.sock".into(),
-                source_kinds: 1,
+                source_kinds: 4,
                 max_offers: 4,
                 max_packets_per_turn: 1,
                 hello_timeout_ms: 250,

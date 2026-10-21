@@ -103,38 +103,27 @@ func (r *runner) mainScenario() {
 	s.ack(cancelled)
 }
 
-// images judges sealed image transfer at the current output topology. Every
-// accepted image arrives as a sealed memfd over the authenticated channel.
+// images judges ring registration, immutable owned copies and ordered slot release.
 func (r *runner) images(s *session, topology uint64) {
 	r.check(17, s.discover())
-	// ImageBegin before Hello is busy and leaves no custody.
+	// Sealed ImageBegin is refused before custody at r10, including before Hello.
 	early := imageMetadata(1, 1, topology, 16, 8)
 	raw := s.encoded(kindImageBegin, s.nextID, early)
 	s.stage(raw, 0)
-	busy := errno(s.submitRaw(raw)) == 16
+	refused := errno(s.submitRaw(raw)) == 13
 	s.w.clunk(5)
 	s.noEvents()
 	ready := s.hello()
-	r.check(18, busy && u64(ready.body, 0) == s.discovery.generation && u32(ready.body, 8) == 1)
-	m := imageMetadata(s.nextOffer(), 1, topology, 16, 8)
-	custody, admitted := s.admit(m)
-	r.check(19, u16(custody.body, 8) == kindImageBegin && identical(admitted.body, m))
-	pixels := make([]byte, 16*8*4)
-	sent := s.source(m, memfd(pixels, true))
-	status, release := s.settle(m)
-	r.check(20, sent == 200 && u16(status.body, 40) == 2 && u16(status.body, 42) == 0)
-	r.check(21, u32(release.body, 24) == 1)
-	// Bad backing refuses the offer, not the channel.
-	m = imageMetadata(s.nextOffer(), 2, topology, 16, 8)
-	s.admit(m)
-	sent = s.source(m, memfd(pixels, false))
-	status, release = s.settle(m)
-	r.check(22, sent == 200 && u16(status.body, 40) == 3 && u16(status.body, 42) != 0 && u32(release.body, 24) == 3)
-	m = imageMetadata(s.nextOffer(), 3, topology, 16, 8)
-	s.admit(m)
-	sent = s.source(m, memfd(pixels[:len(pixels)-4], true))
-	status, release = s.settle(m)
-	r.check(23, sent == 200 && u16(status.body, 40) == 3 && u16(status.body, 42) != 0 && u32(release.body, 24) == 3)
+	r.check(18, refused && u64(ready.body, 0) == s.discovery.generation && u32(ready.body, 8) == 4)
+	registered := s.registerRing(false, false)
+	r.check(19, registered.kind == ringReady)
+	offer := s.ringUpload(1, topology, 16, 8, make([]byte, 512))
+	status, release := s.settleRing(offer)
+	r.check(20, u16(status.body, 40) == 2 && u16(status.body, 42) == 0)
+	r.check(21, u64(release.body, 104) == 0 && status.sequence < release.sequence)
+	// Registration is final; invalid backing gets its own authenticated connection.
+	r.check(22, r.badRingSource("main-unsealed", true, false))
+	r.check(23, r.badRingSource("main-size", false, true))
 	// Retired byte uploads: no upload directory, Begin/End refused before custody.
 	walk := make([]byte, 10, 18)
 	p32(walk, 0, 1)
@@ -157,5 +146,5 @@ func (r *runner) images(s *session, topology uint64) {
 	r.check(25, errno(s.submitRaw(raw)) == 22)
 	s.w.clunk(5)
 	s.noEvents()
-	r.check(26, sealedResource(s, 5, topology))
+	r.check(26, ringResource(s, 5, topology))
 }

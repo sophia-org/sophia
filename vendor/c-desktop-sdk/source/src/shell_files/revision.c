@@ -6,8 +6,8 @@
  *   image_channel_unavailable; other statuses keep their bounds.
  *   Submitted naming ImageBegin (0x7000), the receipt for an accepted
  *   ImageBegin candidate; the kind is carried, never relabeled.
- * Only these explicit entry points, given a negotiated revision of at least
- * 9, accept either value. Each one is validated by the legacy codec with one
+ * Only these explicit entry points, given negotiated revision 9, accept
+ * either value; r10 refuses both. Each one is validated by the legacy codec with one
  * legal stand-in value, then the r9 value is restored. */
 #define STATUS_AT (SOPHIA_SF_HEADER_BYTES + 40)
 #define REASON_AT (SOPHIA_SF_HEADER_BYTES + 42)
@@ -18,13 +18,14 @@
 
 static int r9_rejection(uint16_t revision, uint16_t kind, uint16_t status, uint16_t reason)
 {
-    return revision >= SOPHIA_SF_REVISION_IMAGE_CHANNEL && kind == SOPHIA_SF_RESOURCE_STATUS &&
+    /* r10 retires sealed ingress, the only source of reason 13. */
+    return revision == SOPHIA_SF_REVISION_IMAGE_CHANNEL && kind == SOPHIA_SF_RESOURCE_STATUS &&
            status == REJECTED && reason == SOPHIA_SF_REASON_IMAGE_CHANNEL_UNAVAILABLE;
 }
 
 static int r9_receipt(uint16_t revision, uint16_t kind, uint16_t candidate_kind)
 {
-    return revision >= SOPHIA_SF_REVISION_IMAGE_CHANNEL && kind == SOPHIA_SF_SUBMITTED &&
+    return revision == SOPHIA_SF_REVISION_IMAGE_CHANNEL && kind == SOPHIA_SF_SUBMITTED &&
            candidate_kind == SOPHIA_SF_KIND_IMAGE_BEGIN;
 }
 
@@ -43,7 +44,7 @@ int sophia_sf_decode_revision(const void *src, size_t bytes, uint16_t revision,
 {
     const uint8_t *b = src;
     struct sophia_sf_record v;
-    if (!src || !out || !revision || revision > SOPHIA_SF_REVISION_IMAGE_CHANNEL)
+    if (!src || !out || !revision || revision > SOPHIA_SF_REVISION_OWNED_RING)
         return -4;
     if (bytes == STATUS_BYTES &&
         r9_rejection(revision, (uint16_t)sf_get(b + 6, 2), (uint16_t)sf_get(b + STATUS_AT, 2),
@@ -71,7 +72,7 @@ int sophia_sf_encode_revision(void *dst, size_t capacity, uint16_t revision,
     size_t at;
     uint16_t value;
     int status;
-    if (!dst || !r || !written || !revision || revision > SOPHIA_SF_REVISION_IMAGE_CHANNEL)
+    if (!dst || !r || !written || !revision || revision > SOPHIA_SF_REVISION_OWNED_RING)
         return -4;
     copy = *r;
     if (r->header.kind == SOPHIA_SF_RESOURCE_STATUS &&

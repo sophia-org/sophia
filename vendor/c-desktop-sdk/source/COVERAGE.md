@@ -17,6 +17,12 @@ and the hardened `sophia_ip_isb_create`, paired with Rust's `MappedIsb` /
 records bounds, seals, fork exclusion, ownership and `isb_mapped_test` coverage.
 No performance result is claimed.
 
+Shell r10 owned-ring producers (`sophia_owned_ring.h`, `sophia_ip_ring_*`,
+`sophia_ss_image_ring_*`) follow Sophia's signed `c2193fa4b` contract. The
+[owned-ring map](API-PARITY.md#shell-r10-owned-ring-2026-10-21) records custody,
+settlement, the shared corpus and scripted coverage. Production-export runs
+and client migration remain separate gates.
+
 The [launch operation map](LAUNCH-PARITY.md) compares C's caller-driven
 authentication with Rust, including partial I/O, deadlines and relay ownership.
 

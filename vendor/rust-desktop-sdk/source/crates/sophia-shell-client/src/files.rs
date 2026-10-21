@@ -278,6 +278,12 @@ pub(crate) struct FileWire {
     /// Image adapter enabled: image journal events are consumed and
     /// routed instead of delivered, and the staged discovery reader runs.
     pub(crate) image_enabled: bool,
+    /// The owned-ring control write in flight, if any: walk, open,
+    /// then one write of the adapter's pending record. Its terminal
+    /// outcome is reported once in `control_outcome`.
+    pub(crate) control_write: Option<ControlWrite>,
+    pub(crate) control_fid: Option<sophia_9p_records::Fid>,
+    pub(crate) control_outcome: Option<Result<(), u32>>,
     pub(crate) image_fetch: Option<image_adapter::ImageFetch>,
     pub(crate) image_discovery: Option<image_adapter::DiscoveryOutcome>,
     pub(crate) image_routed: VecDeque<image_adapter::Routed>,
@@ -286,6 +292,23 @@ pub(crate) struct FileWire {
     event_fault: bool,
     /// A connection-ending failure, returned again by every later call.
     fatal: Option<ShellClientError>,
+}
+
+/// One owned-ring control write in flight: the current tag, the
+/// phase it answers, and the exact bytes (an `EAGAIN` refusal retries
+/// them unchanged).
+pub(crate) struct ControlWrite {
+    pub(crate) tag: Tag,
+    pub(crate) phase: ControlPhase,
+    pub(crate) fid: sophia_9p_records::Fid,
+    pub(crate) bytes: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ControlPhase {
+    Walk,
+    Open,
+    Write,
 }
 
 /// Merges a `ContentGroup`'s Begin/Chunk*/End records into one whole
@@ -413,7 +436,11 @@ impl FileWire {
         match outbound {
             Outbound::ImageBegin(body) => {
                 let header = self.next_header(ShellFileKind::ImageBegin);
-                let bytes = encode_shell_file_record_at_revision(header, &body, 9)?;
+                let bytes = encode_shell_file_record_at_revision(
+                    header,
+                    &body,
+                    sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION,
+                )?;
                 Ok(self.stage_records(vec![bytes]))
             }
             Outbound::CatalogActivation(transaction, activation) => {

@@ -73,7 +73,10 @@ append and release. There is no fairness for client actions or expiry.
 
 The two transaction-keyed controls reproduce the counterexamples that the
 runtime test `crates/sophia-runtime/tests/sealed_image_control_provenance.rs`
-showed on the committed sealed path.
+showed on the committed sealed path (historical test at `c1e6942de`). The
+sealed shell transport is now retired;
+`crates/sophia-runtime/tests/support/owned_ring_transport.rs` preserves the
+wire cancellation and failed-retire controls on the production ring path.
 
 ## Not modeled
 

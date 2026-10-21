@@ -1,0 +1,101 @@
+// Owned ring byte contract, version 1. Shell r10, capability bit 15,
+// image-channel source kind bit 2 (value 4). Lock never uses these records.
+// Framing (the existing D4 framing, unchanged): u32 LE total_bytes @0, 4-byte
+// ASCII magic @4, then little-endian u64 words from @8. total_bytes equals the
+// record length exactly. Magic as a LE u32: D4C1 = 0x31433444,
+// D4F1 = 0x31463444, D4E1 = 0x31453444. Every u64 named nonzero below is
+// refused at zero. Unknown kinds, sizes and magics are refused.
+// Identity words 1..5 are shared: connection_epoch, content_grant_epoch,
+// channel_generation (ChannelReady), ring_id, ring_generation; all nonzero.
+// Parsing proves shape only, never authorization, custody or freshness.
+protocol "sophia_owned_ring_v1" api-version=1 byte-order="little" {
+    framing size=8 {
+        field "total_bytes" type="u32" offset=0
+        field "magic" type="u32" offset=4
+    }
+
+    // Written to the shell 9P file `owned-ring-v1`, one record per write.
+    // Accepted once per connection epoch; may be refused for budget (RingRefused)
+    // since source_bytes is charged to Session headroom outside the role
+    // resource envelopes. Geometry: extent = 4096 +
+    // round_up(capacity, 4096); source_bytes = slots * extent; each slot holds
+    // a u64 LE generation word @0 of a 4096-byte header, pixels from @4096.
+    record "Register" magic=0x31433444 size=72 {
+        field "kind" type="u64" offset=8 value=1
+        field "connection_epoch" type="u64" offset=16 nonzero=#true
+        field "content_grant_epoch" type="u64" offset=24 nonzero=#true
+        field "channel_generation" type="u64" offset=32 nonzero=#true
+        field "ring_id" type="u64" offset=40 nonzero=#true
+        field "ring_generation" type="u64" offset=48 nonzero=#true
+        field "slots" type="u64" offset=56 min=1 max=4
+        // Per-slot pixel capacity in bytes: multiple of 4, <= 4194304 and
+        // <= ImageLimits.max_resource_bytes.
+        field "capacity" type="u64" offset=64 min=4 max=4194304
+    }
+
+    // Written to `owned-ring-v1`. width*height*4 <= Register.capacity; Session
+    // copies and charges exactly width*height*4 bytes from slot offset 4096.
+    // offer_id strictly increases per connection; slot_generation is even and
+    // strictly increases per slot and must equal the slot's generation word
+    // before and after Session's read.
+    record "Offer" magic=0x31433444 size=152 {
+        field "kind" type="u64" offset=8 value=2
+        field "connection_epoch" type="u64" offset=16 nonzero=#true
+        field "content_grant_epoch" type="u64" offset=24 nonzero=#true
+        field "channel_generation" type="u64" offset=32 nonzero=#true
+        field "ring_id" type="u64" offset=40 nonzero=#true
+        field "ring_generation" type="u64" offset=48 nonzero=#true
+        field "offer_id" type="u64" offset=56 nonzero=#true
+        field "slot" type="u64" offset=64 max=3
+        field "slot_generation" type="u64" offset=72 nonzero=#true even=#true
+        field "resource_id" type="u64" offset=80 nonzero=#true
+        field "resource_generation" type="u64" offset=88 nonzero=#true
+        field "allocation_id" type="u64" offset=96 nonzero=#true
+        field "allocation_generation" type="u64" offset=104 nonzero=#true
+        field "output_id" type="u64" offset=112 nonzero=#true
+        field "output_generation" type="u64" offset=120 nonzero=#true
+        field "topology_generation" type="u64" offset=128 nonzero=#true
+        field "width" type="u64" offset=136 nonzero=#true max=4294967295
+        field "height" type="u64" offset=144 nonzero=#true max=4294967295
+    }
+
+    // Sent once on the image-channel socket after RingAdmitted, with exactly
+    // one SCM_RIGHTS descriptor; words equal the accepted Register. Dispatched
+    // by magic before the channel version-1 header parse (r10 shell only).
+    record "Source" magic=0x31463444 size=72 {
+        field "kind" type="u64" offset=8 value=1
+        field "connection_epoch" type="u64" offset=16 nonzero=#true
+        field "content_grant_epoch" type="u64" offset=24 nonzero=#true
+        field "channel_generation" type="u64" offset=32 nonzero=#true
+        field "ring_id" type="u64" offset=40 nonzero=#true
+        field "ring_generation" type="u64" offset=48 nonzero=#true
+        field "slots" type="u64" offset=56 min=1 max=4
+        field "capacity" type="u64" offset=64 min=4 max=4194304
+    }
+
+    // Shell journal record; shares journal sequence and ACK custody. Dispatched
+    // by magic before the 32-byte shell header parse (r10 + bit 15 only).
+    // kind 1 RingAdmitted, 2 RingReady: reason 0, words @64..@96 zero,
+    //   changed_generation 0.
+    // kind 3 RingRefused: reason nonzero, words @64..@96 zero; final.
+    // kind 4 SlotReleased: offer_id, slot_generation (even), resource words
+    //   nonzero, slot <= 3; changed_generation 1 requires reason nonzero.
+    //   Follows the resource's final store ResourceStatus. Cancellation may use
+    //   the cancel transaction; failed control replies are not settlement.
+    record "Event" magic=0x31453444 size=120 {
+        field "kind" type="u64" offset=8 min=1 max=4
+        field "connection_epoch" type="u64" offset=16 nonzero=#true
+        field "content_grant_epoch" type="u64" offset=24 nonzero=#true
+        field "channel_generation" type="u64" offset=32 nonzero=#true
+        field "ring_id" type="u64" offset=40 nonzero=#true
+        field "ring_generation" type="u64" offset=48 nonzero=#true
+        field "sequence" type="u64" offset=56 nonzero=#true
+        field "offer_id" type="u64" offset=64
+        field "slot" type="u64" offset=72 max=3
+        field "slot_generation" type="u64" offset=80
+        field "resource_id" type="u64" offset=88
+        field "resource_generation" type="u64" offset=96
+        field "reason" type="u64" offset=104 max=65535
+        field "changed_generation" type="u64" offset=112 max=1
+    }
+}

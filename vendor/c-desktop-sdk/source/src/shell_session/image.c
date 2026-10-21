@@ -5,11 +5,13 @@
 #include "../sophia_shell_image.h"
 #include "../image_producer/internal.h"
 #include <errno.h>
+#include <poll.h>
 #include <unistd.h>
 
-#define SEALED_BIT (UINT64_C(1) << 13)
-#define DMA_BIT (UINT64_C(1) << 14)
-#define CONTENT_BIT (UINT64_C(1) << 7)
+#define SEALED_BIT SOPHIA_SF_CAP_SEALED_IMAGE
+#define DMA_BIT SOPHIA_SF_CAP_DMABUF_IMAGE
+#define CONTENT_BIT SOPHIA_SF_CAP_CONTENT_SURFACE
+#define RING_BIT SOPHIA_SF_CAP_OWNED_RING
 
 enum { STAGE_NEGOTIATING, STAGE_DISCOVERING, STAGE_CONNECTING, STAGE_RUNNING };
 
@@ -21,26 +23,40 @@ int sophia_ss_image_init(struct sophia_ss_image *img, const struct sophia_ss_ima
     memset(img, 0, sizeof(*img));
     img->config = *c;
     img->producer.fd = -1;
+    img->ring.memory.fd = -1;
     return SOPHIA_IPR_OK;
+}
+
+/* The image bit a mode requires (sealed at r9, owned ring at r10); the
+ * other image bits must be absent. */
+static uint64_t image_bit(uint16_t revision)
+{
+    return revision == SOPHIA_SF_REVISION_OWNED_RING ? RING_BIT : SEALED_BIT;
+}
+
+static int image_mask(uint64_t capabilities, uint16_t revision)
+{
+    uint64_t want = image_bit(revision) | CONTENT_BIT;
+    return (capabilities & want) == want &&
+           !(capabilities & (SEALED_BIT | DMA_BIT | RING_BIT) & ~image_bit(revision));
 }
 
 int sophia_ss_image_attach(struct sophia_ss *s, struct sophia_ss_image *img)
 {
     const struct sophia_sf_negotiate *o;
+    uint16_t revision;
     if (!s || !img || img->session)
         return SOPHIA_IPR_ARGUMENT;
     o = &s->files.offer;
-    if (o->minimum_revision > 9 || o->maximum_revision < 9 ||
-        (o->required_capabilities & (SEALED_BIT | CONTENT_BIT)) != (SEALED_BIT | CONTENT_BIT) ||
-        (o->required_capabilities & DMA_BIT))
+    revision = o->required_capabilities & RING_BIT ? SOPHIA_SF_REVISION_OWNED_RING
+                                                   : SOPHIA_SF_REVISION_IMAGE_CHANNEL;
+    if (o->minimum_revision > revision || o->maximum_revision < revision ||
+        !image_mask(o->required_capabilities, revision))
         return SOPHIA_IPR_ARGUMENT;
     if ((s->state != SOPHIA_SS_NEGOTIATING && s->state != SOPHIA_SS_READY) || s->image)
         return SOPHIA_IPR_BUSY;
-    if (s->files.negotiated &&
-        (s->files.welcome.selected_revision != SOPHIA_SF_REVISION_IMAGE_CHANNEL ||
-         (s->files.welcome.capabilities & (SEALED_BIT | CONTENT_BIT)) !=
-             (SEALED_BIT | CONTENT_BIT) ||
-         (s->files.welcome.capabilities & DMA_BIT)))
+    if (s->files.negotiated && (s->files.welcome.selected_revision != revision ||
+                                !image_mask(s->files.welcome.capabilities, revision)))
         return SOPHIA_IPR_ARGUMENT;
     img->session = s;
     s->image = img;
@@ -60,7 +76,13 @@ int sophia_ss_image_poll_fd(const struct sophia_ss_image *img)
 
 short sophia_ss_image_poll_events(const struct sophia_ss_image *img)
 {
-    return img && img->started ? sophia_ip_poll_events(&img->producer) : 0;
+    short events;
+    if (!img || !img->started)
+        return 0;
+    events = sophia_ip_poll_events(&img->producer);
+    if (events && ss_ring_poll_out(img))
+        events |= POLLOUT;
+    return events;
 }
 
 int64_t sophia_ss_image_timeout(const struct sophia_ss_image *img, uint64_t now_ms)
@@ -69,6 +91,11 @@ int64_t sophia_ss_image_timeout(const struct sophia_ss_image *img, uint64_t now_
     if (!img || !img->started)
         return -1;
     t = sophia_ip_timeout(&img->producer, now_ms);
+    if (ss_ring_mode(img)) {
+        int64_t ring = ss_ring_timeout(img, now_ms);
+        if (ring >= 0 && (t < 0 || ring < t))
+            t = ring;
+    }
     if ((img->stage == STAGE_DISCOVERING || img->stage == STAGE_CONNECTING) && !img->file) {
         int64_t retry = img->retry_at <= now_ms ? 0
                         : img->retry_at - now_ms > INT64_MAX ? INT64_MAX
@@ -92,10 +119,11 @@ static int start_producer(struct sophia_ss_image *img, uint64_t now)
     const struct sophia_sf_negotiated *w = &img->session->files.welcome;
     struct sophia_ip_config c = img->config.producer;
     c.role = SOPHIA_IC_ROLE_SHELL;
-    c.revision = SOPHIA_SF_REVISION_IMAGE_CHANNEL;
+    c.revision = w->selected_revision;
     c.connection_epoch = img->session->files.epoch;
     c.granted_kinds = ((w->capabilities & SEALED_BIT) ? SOPHIA_IC_KIND_BIT_SEALED : 0u) |
-                      ((w->capabilities & DMA_BIT) ? SOPHIA_IC_KIND_BIT_DMABUF : 0u);
+                      ((w->capabilities & DMA_BIT) ? SOPHIA_IC_KIND_BIT_DMABUF : 0u) |
+                      ((w->capabilities & RING_BIT) ? SOPHIA_IC_KIND_BIT_OWNED_RING : 0u);
     if (sophia_ip_init(&img->producer, &c, now) != SOPHIA_IPR_OK) {
         /* A configuration that cannot serve this epoch: close as the caller. */
         memset(&img->producer, 0, sizeof(img->producer));
@@ -262,8 +290,12 @@ void ss_image_drive(struct sophia_ss *s, uint64_t now)
         else
             connecting(img, now);
     }
-    if ((ss_final(s) || img->lost) && img->started)
+    if (ss_ring_mode(img) && img->stage == STAGE_RUNNING && !ss_final(s))
+        ss_ring_drive(img, now);
+    if ((ss_final(s) || img->lost) && img->started) {
         sophia_ip_journal_lost(&img->producer);
+        ss_ring_lost(img);
+    }
 }
 
 /* Image events at the head of the journal: decode and route, then the
@@ -275,6 +307,11 @@ int ss_image_event(struct sophia_ss *s, const struct sophia_sf_record *e)
     struct sophia_ic_record v;
     if (!img || !sf_session_image_kind(e->header.kind))
         return 0;
+    if (e->header.kind == SOPHIA_SS_RING_EVENT) {
+        if (img->started)
+            ss_ring_event(img, s->files.event_bytes, (size_t)sf_get(s->files.event_bytes, 4));
+        return 1;
+    }
     if (img->started && sophia_ic_record_decode(s->files.event_bytes,
                                                 (size_t)sf_get(s->files.event_bytes, 4),
                                                 &v) == SOPHIA_IC_OK)
@@ -295,6 +332,10 @@ void ss_image_status(struct sophia_ss *s)
         e->header.kind != SOPHIA_SF_RESOURCE_STATUS || e->header.sequence <= img->status_seen)
         return;
     img->status_seen = e->header.sequence;
+    if (ss_ring_mode(img)) {
+        ss_ring_status(img, e);
+        return;
+    }
     v = &e->value.resource_status;
     if (v->status < 2 || v->status > 4 ||
         sophia_ip_offer(&img->producer, v->transaction, &info) != SOPHIA_IPR_OK ||
@@ -335,6 +376,9 @@ int sophia_ss_image_begin(struct sophia_ss_image *img, struct sophia_ic_metadata
     s = img->session;
     if (!img->started || ss_final(s))
         return SOPHIA_IPR_CLOSED;
+    /* r10 withdraws the sealed source: no fallback beside the ring. */
+    if (ss_ring_mode(img))
+        return SOPHIA_IPR_REFUSED;
     if (s->state != SOPHIA_SS_READY)
         return SOPHIA_IPR_AGAIN;
     for (i = 0; i < SOPHIA_IP_MAX_OFFERS; i++)

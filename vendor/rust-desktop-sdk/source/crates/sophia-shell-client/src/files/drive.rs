@@ -293,6 +293,9 @@ impl FileWire {
             if self.on_image_fetch_reply(tag, &reply)? {
                 continue;
             }
+            if self.on_control_reply(tag, &reply)? {
+                continue;
+            }
             return Err(ShellClientError::Protocol("reply to an untracked tag"));
         }
         Ok(progressed)

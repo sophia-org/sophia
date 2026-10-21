@@ -1,4 +1,4 @@
-//! Experimental file custody. Only the persistent owner accepts resources.
+//! Owned-ring file custody. Only the persistent owner accepts resources.
 use super::super::journal::JournalReservation;
 use super::*;
 use crate::owned_ring_protocol::{
@@ -80,7 +80,7 @@ impl ShellFiles {
             && matches!(
                 self.image_readiness(),
                 ShellImageReadiness::Ready {
-                    granted_source_kinds: 1
+                    granted_source_kinds: crate::owned_ring_protocol::SOURCE_KIND
                 }
             )
     }

@@ -8,9 +8,9 @@ import (
 func (r *runner) roleFatal(name string, native bool) {
 	s := r.connect(name, 4096)
 	defer s.close()
-	revision, mask, kind := uint16(9), uint64(0x31a2), uint16(270)
+	revision, mask, kind := uint16(10), uint64(0x91a2), uint16(270)
 	if native {
-		revision, mask, kind = 9, 0x29a0, 267
+		revision, mask, kind = 10, 0x89a0, 267
 	}
 	roleNegotiate(s, revision, mask, mask)
 	s.phase("publish")

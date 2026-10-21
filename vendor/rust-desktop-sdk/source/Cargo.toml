@@ -28,20 +28,20 @@ resolver = "3"
 authors = ["Mason Austin Green"]
 edition = "2024"
 license = "BSD-3-Clause"
-version = "0.3.0"
+version = "0.4.0"
 rust-version = "1.96"
 repository = "https://github.com/sophia-org/sophia-desktop-sdk-rs"
 
 [workspace.dependencies]
 kdl = { version = "6.7.1", default-features = false, features = ["span"] }
 rustix = { version = "1.1", default-features = false }
-sophia-9p-client = { path = "crates/sophia-9p-client", version = "0.3.0" }
-sophia-9p-records = { path = "crates/sophia-9p-records", version = "0.3.0" }
-sophia-desktop-ids = { path = "crates/sophia-desktop-ids", version = "0.3.0" }
-sophia-isb = { path = "crates/sophia-isb", version = "0.3.0" }
-sophia-shell-protocol = { path = "crates/sophia-shell-protocol", version = "0.3.0" }
-sophia-wm-protocol = { path = "crates/sophia-wm-protocol", version = "0.3.0" }
-sophia-output-protocol = { path = "crates/sophia-output-protocol", version = "0.3.0" }
+sophia-9p-client = { path = "crates/sophia-9p-client", version = "0.4.0" }
+sophia-9p-records = { path = "crates/sophia-9p-records", version = "0.4.0" }
+sophia-desktop-ids = { path = "crates/sophia-desktop-ids", version = "0.4.0" }
+sophia-isb = { path = "crates/sophia-isb", version = "0.4.0" }
+sophia-shell-protocol = { path = "crates/sophia-shell-protocol", version = "0.4.0" }
+sophia-wm-protocol = { path = "crates/sophia-wm-protocol", version = "0.4.0" }
+sophia-output-protocol = { path = "crates/sophia-output-protocol", version = "0.4.0" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

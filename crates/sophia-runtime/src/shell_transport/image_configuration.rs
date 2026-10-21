@@ -5,7 +5,7 @@ use sophia_protocol::shell_files::{
 };
 
 impl ShellComponentTransport {
-    /// Enables the sealed-image channel for a future authenticated file epoch.
+    /// Enables the owned-ring image channel for a future authenticated file epoch.
     /// The owner supplies its actual budgets; this does not grant a capability
     /// until the peer requests it and ordinary content admission succeeds.
     pub fn configure_image_channel(
@@ -19,8 +19,8 @@ impl ShellComponentTransport {
             return Err(ShellTransportError::WrongContentGrant);
         }
         // DMA-BUF needs the later capture owner. A refuse-only channel still
-        // publishes coherent sealed budgets, never a zero-budget fake grant.
-        if discovery.source_kinds != 1 {
+        // publishes coherent owned-copy budgets, never a zero-budget fake grant.
+        if discovery.source_kinds != crate::owned_ring_protocol::SOURCE_KIND {
             return Err(ShellTransportError::MissingCapability);
         }
         discovery

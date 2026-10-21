@@ -56,6 +56,7 @@ fn attach(peer: &mut raw::Peer) {
         .0,
         105
     );
+    peer.set_revision(10);
     peer.open(2, b"events", 0);
     peer.open(3, b"submit", 1);
     peer.open(4, b"ack", 1);
@@ -73,7 +74,7 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
             rustix::process::geteuid().as_raw(),
         )
         .unwrap();
-    for revision in [9, 6, 9] {
+    for revision in [10, 6, 10] {
         let key = owner.reserve_attempt(slot).unwrap();
         owner
             .begin_authenticated_negotiation(
@@ -113,7 +114,7 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
                     maximum_revision: revision,
                     required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
                         | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
-                        | if revision == 9 { 1 << 13 } else { 0 },
+                        | if revision == 10 { 1 << 15 } else { 0 },
                 },
             )
             .unwrap();
@@ -127,7 +128,7 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
                 revision
             );
             peer.ack(&event);
-            if revision != 9 {
+            if revision != 10 {
                 let reply = peer
                     .rpc(
                         110,
@@ -153,11 +154,11 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
                     .unwrap();
             assert_eq!(discovery.connection_epoch, key.grant.connection_epoch);
             assert_eq!(discovery.channel_generation, key.grant.connection_epoch);
-            assert_eq!(discovery.source_kinds, 1);
+            assert_eq!(discovery.source_kinds, 4);
             peer.open(7, b"image-limits", 0);
             let bytes = peer.read(7, 0);
             let record =
-                decode_shell_file_record_at_revision(&bytes, ShellFileClass::Object, 9).unwrap();
+                decode_shell_file_record_at_revision(&bytes, ShellFileClass::Object, 10).unwrap();
             let limits = ShellImageLimits::decode(record.body).unwrap();
             peer.open(18, b"limits", 0);
             let role = decode_shell_file_limits(&peer.read(18, 0)).unwrap();
@@ -191,7 +192,7 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
             rustix::net::send(&socket, &hello, rustix::net::SendFlags::NOSIGNAL).unwrap();
             let event = image_custody::next_kind(&mut peer, ShellFileKind::ChannelReady);
             let record =
-                decode_shell_file_record_at_revision(&event, ShellFileClass::Event, 9).unwrap();
+                decode_shell_file_record_at_revision(&event, ShellFileClass::Event, 10).unwrap();
             assert_eq!(
                 ShellChannelReady::decode(record.body)
                     .unwrap()
@@ -226,7 +227,7 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
             peer.open(11, b"image-formats", 0);
             let bytes = peer.read(11, 0);
             let record =
-                decode_shell_file_record_at_revision(&bytes, ShellFileClass::Object, 9).unwrap();
+                decode_shell_file_record_at_revision(&bytes, ShellFileClass::Object, 10).unwrap();
             assert_eq!(
                 ShellImageFormats::decode(record.body)
                     .unwrap()
@@ -267,7 +268,7 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
                     .with_connection(key, |transport| image_custody::publish(transport, 2))
                     .unwrap();
             }
-            if revision == 9 && owner.phase(key) == Ok(ComponentConnectionPhase::Connected) {
+            if revision == 10 && owner.phase(key) == Ok(ComponentConnectionPhase::Connected) {
                 let now = owner.content_clock_msec();
                 owner
                     .with_connection(key, |transport| {
@@ -276,11 +277,12 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
                     .unwrap();
             }
             if admission.try_recv().is_ok() {
-                assert_eq!(owner.accounting().memory.staging, 8);
+                assert_eq!(owner.accounting().memory.staging, 0);
+                assert_eq!(owner.accounting().source_bytes, 8192);
                 assert_eq!(
                     owner.poll_fds().len(),
-                    ready_fds.unwrap() + 1,
-                    "worker retained beside the wire"
+                    ready_fds.unwrap(),
+                    "registration holds storage, not a worker job"
                 );
                 close_source.send(()).unwrap();
             }

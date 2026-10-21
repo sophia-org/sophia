@@ -319,8 +319,8 @@ fn paced_candidate_via_client(with_action: bool) {
     let sent: [u8; 8] = [0, 0, 255, 255, 0, 128, 0, 128];
     let (uploaded_tx, uploaded_rx) = std::sync::mpsc::channel::<()>();
     let capabilities =
-        base_capabilities() | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT | (1 << 13);
-    let opts = options(9, 9, capabilities);
+        base_capabilities() | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT | (1 << 15);
+    let opts = options(10, 10, capabilities);
     let client = std::thread::spawn(move || {
         let mut client = sdk_image::authenticated_client(&socket, opts).unwrap();
         let ShellContentRecord::Limits(image_limits) = next_content(&mut client) else {
@@ -359,22 +359,16 @@ fn paced_candidate_via_client(with_action: bool) {
 
         sdk_image::upload(
             &mut client,
-            sophia_shell_client::ProducerMetadata {
+            sophia_shell_client::RingUpload {
                 resource: resource.id,
                 resource_generation: resource.generation,
-                admission_epoch: grant.content_grant_epoch,
-                output_id: output.id,
-                allocation_id: allocation.allocation.id,
+                output: output.id,
+                output_generation: output.generation,
+                allocation: allocation.allocation.id,
+                allocation_generation: allocation.allocation.generation,
                 topology_generation: 3,
-                source_kind: 1,
-                source_format: 1,
                 width: 2,
                 height: 1,
-                stride: 8,
-                plane_count: 1,
-                descriptor_count: 1,
-                declared_bytes: 8,
-                ..Default::default()
             },
             &sent,
         );

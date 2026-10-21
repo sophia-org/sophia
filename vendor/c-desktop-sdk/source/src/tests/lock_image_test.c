@@ -43,7 +43,7 @@ static void make_set(struct set *s, uint32_t kinds) {
       s->text, sizeof(s->text),
       "sophia-image-channel version=1\nrole=2\nconnection_epoch=%u\n"
       "channel_generation=%u\nendpoint=image.sock\nsource_kinds=%u\n"
-      "max_packet_bytes=200\nmax_fds=4\nmax_offers=4\nmax_packets_per_turn=8\n"
+      "max_packet_bytes=200\nmax_fds=4\nmax_offers=2\nmax_packets_per_turn=8\n"
       "hello_timeout_ms=500\nvalidation_timeout_ms=100\n"
       "validation_chunk_bytes=65536\ncapture_interest_timeout_ms=200\n"
       "formats_generation=5\nlimits_generation=6\n",
@@ -55,7 +55,7 @@ static void make_set(struct set *s, uint32_t kinds) {
   r.value.limits.limits_generation = 6;
   r.value.limits.max_resource_bytes = 1u << 20;
   r.value.limits.max_sealed_bytes = 1u << 21;
-  r.value.limits.max_offers = 4;
+  r.value.limits.max_offers = 2;
   r.value.limits.max_validation_jobs = 2;
   r.value.limits.max_outputs = 2;
   r.value.limits.max_rows_per_output = 1;
@@ -1040,7 +1040,40 @@ static void cancel_journal_loss(void) {
   assert(fd_count() == base);
 }
 
+static void negotiated_role_bounds(void) {
+  unsigned slots;
+  for (slots = 1; slots <= 4; slots *= 2) {
+    struct image_rig t;
+    struct sophia_lf_record role;
+    struct sophia_ic_record image_limits;
+    struct sophia_ip *p;
+    struct sophia_lf_negotiate o = image_offer(2, 2, CAPS | SOPHIA_LF_CAP_IMAGE_SEALED);
+    image_start(&t, 2, &o);
+    memset(&role, 0, sizeof role);
+    role.header.kind = SOPHIA_LF_LIMITS;
+    role.header.epoch = EPOCH;
+    role.value.limits = limits;
+    role.value.limits.upload_slots = (uint16_t)slots;
+    assert(!sophia_lf_encode(t.r->peer.limits, sizeof(t.r->peer.limits), &role,
+                              &t.r->peer.limits_size));
+    assert(sophia_ic_record_decode(t.set.limits, t.set.limits_bytes, &image_limits) == SOPHIA_IC_OK);
+    image_limits.value.limits.max_offers = slots;
+    image_limits.value.limits.max_validation_jobs = slots < 2 ? slots : 2;
+    assert(sophia_ic_record_encode(t.set.limits, sizeof(t.set.limits), &image_limits,
+                                     &t.set.limits_bytes) == SOPHIA_IC_OK);
+    strstr(t.set.text, "max_offers=")[11] = (char)('0' + slots);
+    p = image_ready(&t);
+    assert(p->config.bounds.transfer_slots == slots);
+    assert(p->config.bounds.max_resource_bytes == limits.max_resource_bytes);
+    assert(p->config.bounds.max_width == limits.max_width_px);
+    assert(p->config.bounds.max_height == limits.max_height_px);
+    assert(p->config.bounds.max_outputs == limits.max_outputs);
+    image_close(&t);
+  }
+}
+
 int main(void) {
+  negotiated_role_bounds();
   offers_and_attach();
   explicit_selection();
   sealed_offer_end_to_end();

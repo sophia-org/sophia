@@ -1216,7 +1216,7 @@ Rows marked as product gaps belong to their own tasks, not to this transport.
 | Dock (Provlita, r8) | Per-output allocations and edge reservations, checked against the allowed reservation extent. Pinned tiles from the catalog, with r8 identities at the 4 MiB cap. Activation names the catalog generation and slot and is accepted only against the Presented target. Launch context taken by Session from the committed WM output context, refused when stale. Replacing the dock does not disturb bar or launcher. Retained dock content retires after revocation, and storage is reclaimed. | Running-window feed (t043); reservation arbitration (t106) |
 | Launcher (Bemenu, r7) | Opening from Session; parentless allocation with no reservation. Focus lease minted only after an actual Presented, and FocusRevoked on loss. Semantic input with stale acknowledgements. A query edit disarms activation. Activation admits a queue slot only; the revocation semantics above hold. Close, and the opening timeout. | Popout workflow (t099) |
 | Bar (Lom, r6) | Panel allocation per output with its reservation. Indicator snapshot and exact activation echo. Presented work-area bands survive reconnect until the new first Present. Content upload and retirement within role limits. | Recovery (t100) |
-| Legacy descriptor (Narthex, r1-r8) | Descriptor snapshot, candidate, activation and ack; tabs; shortcuts and reference; launcher catalog when r4 and bit 5 are selected. Reservation via candidate, and withdrawal. | The parked `overview` branch has no reserved revision or capability bit; its informal r9/bit-13 claim is withdrawn. Revival needs fresh allocation (currently r10/bit 15) |
+| Legacy descriptor (Narthex, r1-r8) | Descriptor snapshot, candidate, activation and ack; tabs; shortcuts and reference; launcher catalog when r4 and bit 5 are selected. Reservation via candidate, and withdrawal. | The parked `overview` branch has no reserved revision or capability bit; its informal r9/bit-13 claim is withdrawn. Revival needs fresh allocation (currently r11/bit 16) |
 
 ## Budgets
 
@@ -1302,3 +1302,20 @@ The remaining public IPC is tracked separately:
   it is Session-initiated, holds no pre-reserved credit (`crates/sophia-runtime/src/shell_content/allocations.rs:379-407`),
   and uses the non-reserve journal space. A guaranteed variant would reserve +16
   (`max_allocations_total`).
+
+## Revision 10: owned-ring CPU images
+
+Revision 10 allocates capability bit 15, `OWNED_RING`, with
+`CONTENT_SURFACE` (bit 7). The [owned-ring contract](sophia-owned-ring.md)
+and [byte layout](../protocol/sophia-owned-ring-v1.kdl) govern registration,
+slot offers and release. The authenticated root discloses `owned-ring-v1`
+only after the image channel is ready with source kind 4. Its D4E1 events
+share the journal sequence and acknowledgement custody; dispatch their magic
+before attempting the ordinary shell header decode, only on r10 with bit 15.
+
+Shell r9 sealed CPU ingress is retired. When image negotiation cannot select
+r10, refuse with UnsupportedRevision; when r10 is in range but sealed bit 13
+is required, refuse that capability. Metadata-only r1–r8 profiles remain
+unchanged. Neither revision nor capability is inferred from the other. Lock
+r2 and DMA-BUF retain their separate contracts. The parked overview proposal
+must use a later allocation; it does not own r10 or bit 15.

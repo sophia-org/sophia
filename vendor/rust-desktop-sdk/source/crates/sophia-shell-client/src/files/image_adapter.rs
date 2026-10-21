@@ -24,12 +24,16 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use sophia_image_producer::{
-    ChannelState, CloseCause, ImagePath, ImageProducer, ImageProducerConfig, ImageRole, OfferInfo,
-    ProducerError, ProducerMetadata, ProducerRoleBounds, ReadyEvents, ResourceStatusKind,
+    ChannelState, CloseCause, ImagePath, ProducerError, ProducerRoleBounds, ReadyEvents,
+    ResourceStatusKind, RingProducer, RingProducerConfig,
 };
 
-/// Negotiated capability bit 13: sealed image channel.
+/// Negotiated capability bit 13: sealed image channel (lock plane;
+/// shell revision 10 does not use it).
 pub const IMAGE_CAPABILITY_SEALED: u64 = 1 << 13;
+/// Negotiated capability bit 15: owned-ring image channel, shell
+/// revision 10's sole CPU image source.
+pub const IMAGE_CAPABILITY_OWNED_RING: u64 = 1 << 15;
 /// Negotiated capability bit 14: DMA-BUF image channel. The adapter
 /// never requests it and image opt-in refuses it as required.
 pub const IMAGE_CAPABILITY_DMA_BUF: u64 = 1 << 14;
@@ -47,6 +51,17 @@ pub struct ShellImageConfig {
     /// Caller storage bound for the formats object; at least 64 and
     /// never widened past the contract maximum.
     pub formats_capacity: usize,
+    /// Owned-ring slots for the one registration: 0 means one slot,
+    /// at most 4. The per-slot capacity is the discovered grant's
+    /// `max_resource_bytes`, fixed at registration.
+    pub ring_slots: u8,
+    /// Fixed per-slot capacity in bytes: 0 means the grant's
+    /// `max_resource_bytes` rounded down to a multiple of four. A
+    /// capacity above the grant is refused locally before any write.
+    pub ring_capacity: u64,
+    /// The negotiated content grant epoch, from the caller's
+    /// `ContentLimits`; part of every ring record's identity.
+    pub content_grant_epoch: u64,
 }
 
 /// Adapter outcomes, mirroring the producer's result vocabulary.
@@ -104,8 +119,11 @@ pub(crate) enum Routed {
     Status(StatusRoute),
 }
 
-/// One routed `ResourceStatus` outcome for the producer.
+/// One routed `ResourceStatus` outcome for the producer. Ring
+/// settlement matches by grant and resource; `transaction` is kept
+/// for diagnosis and never routes by itself.
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub(crate) struct StatusRoute {
     /// The event's transaction: status routes only to the offer it
     /// names, with matching resource identity.
@@ -205,9 +223,13 @@ impl crate::ShellConnection {
         if self.wire.peer_closed() {
             return Err(ShellClientError::PeerClosed);
         }
-        let required = IMAGE_CAPABILITY_SEALED
+        // Shell revision 10's sole CPU image source is the owned ring:
+        // revision 10 with the owned-ring capability and content
+        // surface. Sealed bit 13 is the lock plane and is not a shell
+        // fallback; DMA opt-in remains refused as required.
+        let required = IMAGE_CAPABILITY_OWNED_RING
             | sophia_shell_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
-        if self.welcome.selected_revision != 9
+        if self.welcome.selected_revision != sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
             || self.welcome.capabilities & required != required
             || self.welcome.capabilities & IMAGE_CAPABILITY_DMA_BUF != 0
         {
@@ -261,6 +283,105 @@ impl FileWire {
         by_message
             .min(by_iounit)
             .min(u32::try_from(remaining).unwrap_or(u32::MAX))
+    }
+
+    /// Issue the adapter's pending owned-ring control write: walk and
+    /// open `owned-ring-v1` once, then write the exact bytes. Progress
+    /// is reply-driven; the terminal outcome lands in
+    /// `control_outcome` exactly once.
+    pub(super) fn start_control_write(&mut self, bytes: Vec<u8>) {
+        if self.control_write.is_some() || self.control_outcome.is_some() {
+            return;
+        }
+        if let Some(fid) = self.control_fid {
+            let Ok(tag) = self.pipeline.write(fid, 0, &bytes) else {
+                self.control_outcome = Some(Err(sophia_9p_records::Errno::EIO.0));
+                return;
+            };
+            self.control_write = Some(crate::files::ControlWrite {
+                tag,
+                phase: crate::files::ControlPhase::Write,
+                fid,
+                bytes,
+            });
+            return;
+        }
+        let Ok((tag, fid)) = self.pipeline.walk(
+            self.root,
+            &[sophia_shell_protocol::shell_files::OWNED_RING_CONTROL_FILE],
+        ) else {
+            self.control_outcome = Some(Err(sophia_9p_records::Errno::EIO.0));
+            return;
+        };
+        self.control_write = Some(crate::files::ControlWrite {
+            tag,
+            phase: crate::files::ControlPhase::Walk,
+            fid,
+            bytes,
+        });
+    }
+
+    pub(super) fn on_control_reply(
+        &mut self,
+        tag: Tag,
+        reply: &Reply,
+    ) -> Result<bool, ShellClientError> {
+        let Some(write) = &self.control_write else {
+            return Ok(false);
+        };
+        if write.tag != tag {
+            return Ok(false);
+        }
+        use crate::files::ControlPhase;
+        let write = self.control_write.take().unwrap();
+        let finish = |wire: &mut Self, outcome: Result<(), u32>| {
+            wire.control_outcome = Some(outcome);
+            Ok(true)
+        };
+        match (write.phase, reply) {
+            (ControlPhase::Walk, Reply::Walk(qids)) if qids.len() == 1 => {
+                match self.pipeline.lopen(write.fid, 1) {
+                    Ok(tag) => {
+                        self.control_write = Some(crate::files::ControlWrite {
+                            tag,
+                            phase: ControlPhase::Open,
+                            ..write
+                        });
+                        Ok(true)
+                    }
+                    Err(_) => finish(self, Err(sophia_9p_records::Errno::EIO.0)),
+                }
+            }
+            (ControlPhase::Open, Reply::Error(errno)) => {
+                // A refused control open clunks the walked fid: the
+                // connection keeps no custody of it. The clunk reply
+                // is forgettable, like other custody-free clunks.
+                let errno = errno.0;
+                if let Ok(tag) = self.pipeline.clunk(write.fid) {
+                    self.forgettable.insert(tag);
+                }
+                finish(self, Err(errno))
+            }
+            (ControlPhase::Open, Reply::Lopen { .. }) => {
+                self.control_fid = Some(write.fid);
+                match self.pipeline.write(write.fid, 0, &write.bytes) {
+                    Ok(tag) => {
+                        self.control_write = Some(crate::files::ControlWrite {
+                            tag,
+                            phase: ControlPhase::Write,
+                            ..write
+                        });
+                        Ok(true)
+                    }
+                    Err(_) => finish(self, Err(sophia_9p_records::Errno::EIO.0)),
+                }
+            }
+            (ControlPhase::Write, Reply::Write(count)) if *count as usize == write.bytes.len() => {
+                finish(self, Ok(()))
+            }
+            (_, Reply::Error(errno)) => finish(self, Err(errno.0)),
+            _ => finish(self, Err(sophia_9p_records::Errno::EIO.0)),
+        }
     }
 
     pub(super) fn drive_image_fetch(&mut self) -> Result<bool, ShellClientError> {
@@ -474,16 +595,27 @@ enum Stage {
     Running,
 }
 
-struct TicketSlot {
-    ticket: u64,
-    offer: u64,
+/// One queued control-file write: the registration (`offer` is `None`)
+/// or one offer record. A definitive refusal spends the offer; `EAGAIN`
+/// retries these identical bytes on a later turn.
+struct PendingControl {
+    bytes: Vec<u8>,
+    offer: Option<u64>,
 }
 
-/// The adapter state for one image-enabled connection. Queries are
-/// on this type; the connection drives it from its session drives.
+/// The adapter state for one image-enabled connection: shell revision
+/// 10's owned ring, the shell's sole CPU image source. Queries are on
+/// this type; the connection drives it from its session drives.
 pub struct ImageAdapter {
     config: ShellImageConfig,
-    producer: Option<ImageProducer>,
+    epoch: u64,
+    ring: Option<RingProducer>,
+    failure: Option<CloseCause>,
+    socket: Option<std::os::fd::OwnedFd>,
+    hello_sent: bool,
+    channel_generation: u64,
+    max_resource_bytes: u64,
+    pending: Option<PendingControl>,
     origin: Instant,
     origin_ms: u64,
     /// The highest caller millisecond accepted so far: drives and
@@ -492,8 +624,6 @@ pub struct ImageAdapter {
     /// still rejected before anything mutates.
     last_ms: u64,
     stage: Stage,
-    tickets: [Option<TicketSlot>; 4],
-    offer_metadata: [Option<(u64, ProducerMetadata)>; 4],
     pass: u64,
     retry_at_ms: u64,
     retry_delay_ms: u64,
@@ -506,34 +636,27 @@ impl ImageAdapter {
     pub(crate) fn new(
         config: ShellImageConfig,
         connection_epoch: u64,
-        capabilities: u64,
+        _capabilities: u64,
         origin: Instant,
         origin_ms: u64,
     ) -> Result<Self, ShellClientError> {
-        let producer_config = ImageProducerConfig {
-            role: ImageRole::Shell,
-            revision: 9,
-            connection_epoch,
-            granted_kinds: u32::from(capabilities & IMAGE_CAPABILITY_SEALED != 0)
-                | (u32::from(capabilities & IMAGE_CAPABILITY_DMA_BUF != 0) << 1),
-            bounds: config.bounds,
-            transfer_timeout_ms: config.transfer_timeout_ms,
-            startup_deadline_ms: config.startup_deadline_ms,
-        };
-        // An invalid producer configuration is refused here, at
-        // construction: no adapter exists to swallow it into.
-        let producer = ImageProducer::new(producer_config, origin_ms)
-            .map_err(|_| ShellClientError::InvalidArgument("image producer config"))?;
-        let producer = Some(producer);
+        if config.content_grant_epoch == 0 || config.ring_slots > 4 {
+            return Err(ShellClientError::InvalidArgument("image ring config"));
+        }
         Ok(Self {
             config,
-            producer,
+            epoch: connection_epoch,
+            ring: None,
+            failure: None,
+            socket: None,
+            hello_sent: false,
+            channel_generation: 0,
+            max_resource_bytes: 0,
+            pending: None,
             origin,
             origin_ms,
             last_ms: origin_ms,
             stage: Stage::Discovering,
-            tickets: Default::default(),
-            offer_metadata: Default::default(),
             pass: 0,
             retry_at_ms: origin_ms,
             retry_delay_ms: 0,
@@ -576,62 +699,34 @@ impl ImageAdapter {
         self.retry_at_ms = now_ms.saturating_add(self.retry_delay_ms);
     }
 
-    /// Drive one adapter turn: routed records and statuses, ticket
-    /// outcomes, discovery/connect stages, then producer dispatch
-    /// with real readiness polled (zero wait) on its socket.
+    /// Drive one adapter turn: routed records and statuses, discovery
+    /// and connect stages, then the pending control write and source
+    /// send. Control writes use bounded synchronous pipeline waits;
+    /// replies for other tags stay buffered in arrival order.
     pub(crate) fn tick(
         &mut self,
         wire: &mut FileWire,
-        ledger: &crate::custody::Ledger,
+        _ledger: &crate::custody::Ledger,
         now: Instant,
     ) -> Result<(), ShellClientError> {
-        // The clock conversion is validated before anything is
-        // drained or mutated: a backwards or overflowing instant is
-        // an argument error the session drive surfaces.
         let now_ms = self
             .advance_clock(now)
             .map_err(|_| ShellClientError::InvalidArgument("image clock"))?;
         if wire.peer_closed() {
             self.on_session_final();
         }
-        {
-            let Some(producer) = &mut self.producer else {
-                return Ok(());
+        while let Some(routed) = wire.image_routed.pop_front() {
+            let result = match routed {
+                Routed::Event(event) => self.on_event(event, now_ms),
+                Routed::Status(route) => self.on_status(route, now_ms),
             };
-            while let Some(routed) = wire.image_routed.pop_front() {
-                let result = match routed {
-                    Routed::Event(event) => producer.record(wire_epoch(wire), event, now_ms),
-                    Routed::Status(route) => {
-                        // Only the offer the status names, with the
-                        // exact resource identity, is forwarded; any
-                        // other status is the application's alone and
-                        // never mutates image custody.
-                        let named = producer.offer(route.transaction).is_some_and(|info| {
-                            info.resource == route.resource
-                                && info.resource_generation == route.generation
-                        });
-                        if named {
-                            producer.resource_status(
-                                route.resource,
-                                route.generation,
-                                route.status,
-                                route.unavailable,
-                                now_ms,
-                            )
-                        } else {
-                            Ok(())
-                        }
-                    }
-                };
-                if let Err(ProducerError::Argument) = result {
-                    return Err(ShellClientError::InvalidArgument("image clock"));
-                }
+            if let Err(ProducerError::Argument) = result {
+                return Err(ShellClientError::InvalidArgument("image clock"));
             }
         }
-        self.settle_tickets(ledger, now_ms);
         if self.lost {
-            if let Some(producer) = &mut self.producer {
-                producer.journal_lost();
+            if let Some(ring) = &mut self.ring {
+                ring.journal_lost();
             }
             self.lost = false;
         }
@@ -640,59 +735,100 @@ impl ImageAdapter {
             Stage::Connecting => self.connect(now_ms),
             Stage::Running => {}
         }
-        let Some(producer) = &mut self.producer else {
-            return Ok(());
-        };
-        if let Some(fd) = producer.poll_fd() {
-            let wanted = producer.poll_events();
-            let mut fds = [rustix::event::PollFd::new(
-                &fd,
-                rustix::event::PollFlags::from_bits_retain(wanted.0),
-            )];
-            let zero = rustix::event::Timespec {
-                tv_sec: 0,
-                tv_nsec: 0,
-            };
-            if rustix::event::poll(&mut fds, Some(&zero)).is_ok() {
-                let revents = ReadyEvents(fds[0].revents().bits());
-                if let Err(ProducerError::Argument) = producer.dispatch(revents, now_ms) {
-                    return Err(ShellClientError::InvalidArgument("image clock"));
-                }
+        if self.stage != Stage::Running
+            && self.failure.is_none()
+            && now_ms >= self.config.startup_deadline_ms
+        {
+            self.failure = Some(CloseCause::Timeout);
+            if let Some(ring) = &mut self.ring {
+                ring.channel_closed();
             }
-        } else if let Err(ProducerError::Argument) = producer.dispatch(ReadyEvents::NONE, now_ms) {
-            return Err(ShellClientError::InvalidArgument("image clock"));
+            self.stage = Stage::Running;
         }
+        if let Some(ring) = &mut self.ring {
+            ring.expire(now_ms);
+        }
+        self.drive_control(wire, now_ms);
+        self.drive_source();
         Ok(())
     }
 
-    fn settle_tickets(&mut self, ledger: &crate::custody::Ledger, now_ms: u64) {
-        for slot in &mut self.tickets {
-            let Some(entry) = slot.as_ref() else { continue };
-            let (ticket, offer) = (entry.ticket, entry.offer);
-            match ledger.get(crate::Ticket(ticket)) {
-                Some(crate::Custody::Submitted) => *slot = None,
-                Some(crate::Custody::Refused(_) | crate::Custody::DroppedUnsent) => {
-                    if let Some(producer) = &mut self.producer {
-                        let _ = producer.begin_refused(offer, now_ms);
-                    }
-                    *slot = None;
+    fn on_event(
+        &mut self,
+        event: sophia_image_producer::ImageEvent,
+        now_ms: u64,
+    ) -> Result<(), ProducerError> {
+        use sophia_image_producer::ImageEvent;
+        match event {
+            ImageEvent::Ring(event) => match &mut self.ring {
+                Some(ring) => ring.ring_event(event, now_ms),
+                None => Err(ProducerError::Refused),
+            },
+            ImageEvent::ChannelReady {
+                channel_generation,
+                granted_source_kinds,
+            } => {
+                if self.ring.is_some()
+                    || channel_generation != self.channel_generation
+                    || granted_source_kinds
+                        != sophia_shell_protocol::shell_files::SHELL_IMAGE_SOURCE_OWNED_RING
+                {
+                    self.failure = Some(CloseCause::Fault);
+                    return Ok(());
                 }
-                // Unknown fate, or local history evicted: the C
-                // adapter treats both as journal loss.
-                Some(crate::Custody::Unknown) | None => {
-                    self.lost = true;
-                    *slot = None;
+                let identity = sophia_shell_protocol::shell_files::RingIdentity {
+                    connection_epoch: self.epoch,
+                    content_grant_epoch: self.config.content_grant_epoch,
+                    channel_generation,
+                    ring: 1,
+                    generation: 1,
+                };
+                let mut ring = RingProducer::new(
+                    RingProducerConfig {
+                        identity,
+                        slots: self.config.ring_slots,
+                        capacity: self.config.ring_capacity,
+                        max_resource_bytes: self.max_resource_bytes,
+                        transfer_timeout_ms: self.config.transfer_timeout_ms,
+                    },
+                    now_ms,
+                )?;
+                if let Some(bytes) = ring.registration() {
+                    self.pending = Some(PendingControl { bytes, offer: None });
                 }
-                _ => {}
+                self.ring = Some(ring);
+                self.stage = Stage::Running;
+                Ok(())
             }
+            ImageEvent::ChannelClosed { .. } => {
+                if let Some(ring) = &mut self.ring {
+                    ring.channel_closed();
+                } else {
+                    self.failure = Some(CloseCause::Fault);
+                }
+                Ok(())
+            }
+            // Sealed-plane records are not used at revision 10.
+            ImageEvent::ImageAdmitted { .. } | ImageEvent::SourceReleased { .. } => Ok(()),
+        }
+    }
+
+    fn on_status(&mut self, route: StatusRoute, now_ms: u64) -> Result<(), ProducerError> {
+        let Some(ring) = &mut self.ring else {
+            return Ok(());
+        };
+        if ring
+            .offer_for_resource(route.resource, route.generation)
+            .is_some()
+        {
+            ring.resource_status(route.resource, route.generation, route.status, now_ms)
+        } else {
+            Ok(())
         }
     }
 
     fn discovery(&mut self, wire: &mut FileWire, now_ms: u64) {
-        let Some(producer) = &self.producer else {
-            return;
-        };
-        if producer.channel() != sophia_image_producer::ChannelState::Idle {
+        if self.ring.is_some() || self.failure.is_some() {
             self.stage = Stage::Running;
             return;
         }
@@ -707,93 +843,88 @@ impl ImageAdapter {
             return;
         };
         self.pass += 1;
-        let result = match outcome {
+        match outcome {
             DiscoveryOutcome::Set {
                 text,
                 limits,
                 formats,
             } => {
                 self.discovery_text.clone_from(&text);
-                // The staged reader fetched whole records; the
-                // producer's discovery set carries bodies, with the
-                // header epochs supplied separately.
                 let parsed = (|| {
                     use sophia_shell_protocol::shell_files::{
-                        ShellFileClass, ShellFileKind, decode_shell_file_record_at_revision,
+                        ShellFileClass, ShellFileKind, ShellImageDiscovery, ShellImageFormats,
+                        ShellImageLimits, decode_shell_file_record_at_revision,
                     };
-                    let limits_record =
-                        decode_shell_file_record_at_revision(&limits, ShellFileClass::Object, 9)
-                            .ok()?;
-                    let formats_record =
-                        decode_shell_file_record_at_revision(&formats, ShellFileClass::Object, 9)
-                            .ok()?;
+                    let limits_record = decode_shell_file_record_at_revision(
+                        &limits,
+                        ShellFileClass::Object,
+                        sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION,
+                    )
+                    .ok()?;
+                    let formats_record = decode_shell_file_record_at_revision(
+                        &formats,
+                        ShellFileClass::Object,
+                        sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION,
+                    )
+                    .ok()?;
                     if limits_record.header.kind != ShellFileKind::ImageLimits
                         || formats_record.header.kind != ShellFileKind::ImageFormats
                     {
                         return None;
                     }
-                    Some((
-                        limits_record.body.to_vec(),
-                        formats_record.body.to_vec(),
-                        limits_record.header.connection_epoch,
-                        formats_record.header.connection_epoch,
-                    ))
+                    let discovery =
+                        ShellImageDiscovery::decode(std::str::from_utf8(&text).ok()?).ok()?;
+                    let limits = ShellImageLimits::decode(limits_record.body).ok()?;
+                    let formats = ShellImageFormats::decode(formats_record.body).ok()?;
+                    Some((discovery, limits, formats))
                 })();
-                let Some((limits_body, formats_body, limits_epoch, formats_epoch)) = parsed else {
-                    match &mut self.producer {
-                        Some(producer) => {
-                            let _ = producer.discover(
-                                sophia_image_producer::DiscoveryRead::Failed,
-                                self.pass,
-                                now_ms,
-                            );
-                            self.stage = Stage::Running;
-                            return;
-                        }
-                        None => return,
-                    }
+                let Some((discovery, limits, formats)) = parsed else {
+                    self.failure = Some(CloseCause::Discovery);
+                    self.stage = Stage::Running;
+                    return;
                 };
-                let read = sophia_image_producer::DiscoveryRead::Present {
-                    text: &text,
-                    limits_body: &limits_body,
-                    formats_body: &formats_body,
-                    limits_connection_epoch: limits_epoch,
-                    formats_connection_epoch: formats_epoch,
-                };
-                match &mut self.producer {
-                    Some(producer) => producer.discover(read, self.pass, now_ms),
-                    None => return,
+                if limits.channel_generation != discovery.channel_generation
+                    || formats.channel_generation != discovery.channel_generation
+                    || formats.limits_generation != discovery.limits_generation
+                {
+                    // An incoherent set may be a mid-reconnect mix; the
+                    // staged reader retries on a later pass.
+                    self.back_off(now_ms);
+                    return;
                 }
-            }
-            DiscoveryOutcome::Absent => match &mut self.producer {
-                Some(producer) => producer.discover(
-                    sophia_image_producer::DiscoveryRead::Absent,
-                    self.pass,
-                    now_ms,
-                ),
-                None => return,
-            },
-            DiscoveryOutcome::Failed => match &mut self.producer {
-                Some(producer) => producer.discover(
-                    sophia_image_producer::DiscoveryRead::Failed,
-                    self.pass,
-                    now_ms,
-                ),
-                None => return,
-            },
-        };
-        match result {
-            Ok(()) => {
+                if discovery.connection_epoch != self.epoch
+                    || discovery.source_kinds
+                        != sophia_shell_protocol::shell_files::SHELL_IMAGE_SOURCE_OWNED_RING
+                    || limits.limits_generation != discovery.limits_generation
+                    || limits.max_resource_bytes == 0
+                    || (self.config.bounds.max_resource_bytes != 0
+                        && limits.max_resource_bytes > self.config.bounds.max_resource_bytes)
+                {
+                    self.failure = Some(CloseCause::Discovery);
+                    self.stage = Stage::Running;
+                    return;
+                }
+                self.channel_generation = discovery.channel_generation;
+                self.max_resource_bytes = limits.max_resource_bytes;
                 self.stage = Stage::Connecting;
                 self.retry_delay_ms = 0;
                 self.retry_at_ms = now_ms;
             }
-            Err(ProducerError::Again) => self.back_off(now_ms),
-            Err(_) => self.stage = Stage::Running,
+            DiscoveryOutcome::Absent => {
+                self.failure = Some(CloseCause::Absent);
+                self.stage = Stage::Running;
+            }
+            DiscoveryOutcome::Failed => {
+                self.failure = Some(CloseCause::Discovery);
+                self.stage = Stage::Running;
+            }
         }
     }
 
     fn connect(&mut self, now_ms: u64) {
+        if self.hello_sent {
+            return;
+        }
         if now_ms < self.retry_at_ms {
             return;
         }
@@ -802,38 +933,188 @@ impl ImageAdapter {
         )
         .map(|discovery| discovery.endpoint);
         let Ok(endpoint) = endpoint else {
-            if let Some(producer) = &mut self.producer {
-                producer.close();
-            }
+            self.failure = Some(CloseCause::Discovery);
             self.stage = Stage::Running;
             return;
         };
         match sophia_image_producer::connect(&self.config.endpoint_dir, &endpoint) {
             Ok(fd) => {
-                let result = match &mut self.producer {
-                    Some(producer) => producer.attach(fd, now_ms).map_err(|(error, fd)| {
-                        drop(fd);
-                        error
-                    }),
-                    None => Err(ProducerError::Closed),
+                let hello = sophia_shell_protocol::shell_files::ShellImagePacket::Hello {
+                    connection_epoch: self.epoch,
+                    channel_generation: self.channel_generation,
                 };
-                if result.is_err()
-                    && let Some(producer) = &mut self.producer
-                {
-                    producer.close();
+                let sent = hello
+                    .encode()
+                    .map_err(|_| CloseCause::Fault)
+                    .and_then(|bytes| {
+                        rustix::net::send(&fd, &bytes, rustix::net::SendFlags::NOSIGNAL)
+                            .map_err(|_| CloseCause::Fault)
+                    });
+                match sent {
+                    Ok(_) => {
+                        self.socket = Some(fd);
+                        self.hello_sent = true;
+                    }
+                    Err(cause) => {
+                        self.failure = Some(cause);
+                        self.stage = Stage::Running;
+                    }
                 }
             }
-            Err(ProducerError::Again) => {
-                self.back_off(now_ms);
-                return;
-            }
+            Err(ProducerError::Again) => self.back_off(now_ms),
             Err(_) => {
-                if let Some(producer) = &mut self.producer {
-                    producer.close();
-                }
+                self.failure = Some(CloseCause::Discovery);
+                self.stage = Stage::Running;
             }
         }
-        self.stage = Stage::Running;
+    }
+
+    /// Drive the pending control write through the wire's
+    /// reply-driven state machine. `EAGAIN` reissues the identical
+    /// bytes; any other error definitively refuses the record.
+    fn drive_control(&mut self, wire: &mut FileWire, now_ms: u64) {
+        if let Some(outcome) = wire.control_outcome.take() {
+            match outcome {
+                Ok(()) => {
+                    self.pending = None;
+                }
+                Err(11) => {}
+                Err(errno) => self.refuse_pending(now_ms, errno),
+            }
+        }
+        if let Some(pending) = &self.pending
+            && wire.control_write.is_none()
+            && wire.control_outcome.is_none()
+        {
+            wire.start_control_write(pending.bytes.clone());
+        }
+    }
+
+    fn refuse_pending(&mut self, now_ms: u64, errno: u32) {
+        let Some(pending) = self.pending.take() else {
+            return;
+        };
+        if let Some(ring) = &mut self.ring {
+            match pending.offer {
+                // An offer whose acceptance an event already proved
+                // cannot be refused by a late control error: the
+                // stream is incoherent and the ring fails.
+                Some(offer) if ring.offer(offer).is_some_and(|info| info.status.is_some()) => {
+                    ring.control_refused(errno);
+                }
+                Some(offer) => {
+                    let _ = ring.begin_refused(offer, now_ms);
+                }
+                None => ring.control_refused(errno),
+            }
+        }
+    }
+
+    /// Send the D4F1 source packet with its one descriptor, once the
+    /// producer reports it after `RingAdmitted`.
+    fn drive_source(&mut self) {
+        let Some(ring) = &mut self.ring else {
+            return;
+        };
+        let Some((bytes, fd)) = ring.source_packet() else {
+            return;
+        };
+        let Some(socket) = &self.socket else {
+            return;
+        };
+        use std::os::fd::AsFd;
+        let mut space = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
+        let mut control = rustix::net::SendAncillaryBuffer::new(&mut space);
+        let rights = [fd];
+        if !control.push(rustix::net::SendAncillaryMessage::ScmRights(&rights)) {
+            return;
+        }
+        match rustix::net::sendmsg(
+            socket.as_fd(),
+            &[std::io::IoSlice::new(&bytes)],
+            &mut control,
+            rustix::net::SendFlags::NOSIGNAL,
+        ) {
+            Ok(_) => {
+                let _ = ring.source_sent();
+            }
+            // A closed image socket fails the ring; Session's reset
+            // journals no SlotReleased for live slots.
+            Err(error) if error == rustix::io::Errno::PIPE => ring.channel_closed(),
+            Err(_) => {}
+        }
+    }
+
+    /// Queue one owned-ring upload: pixels are copied into a free
+    /// slot and the offer record is written to the control file. The
+    /// returned offer id is assigned by the producer; the image is
+    /// adoptable only once [`ring_offer`](Self::ring_offer) reports
+    /// `Settled`.
+    pub(crate) fn upload_ring(
+        &mut self,
+        wire: &mut FileWire,
+        upload: sophia_image_producer::RingUpload,
+        pixels: &[u8],
+        now: Instant,
+    ) -> Result<u64, ImageAdapterError> {
+        let now_ms = self.advance_clock(now)?;
+        if wire.peer_closed() {
+            return Err(ImageAdapterError::Closed);
+        }
+        if self.pending.is_some() {
+            return Err(ImageAdapterError::Again);
+        }
+        let Some(ring) = &mut self.ring else {
+            return Err(ImageAdapterError::Closed);
+        };
+        let (offer, bytes) = ring.upload(upload, pixels, now_ms)?;
+        self.pending = Some(PendingControl {
+            bytes,
+            offer: Some(offer),
+        });
+        if self.pending.is_none()
+            && self
+                .ring
+                .as_ref()
+                .and_then(|ring| ring.offer(offer))
+                .is_some_and(|info| info.state == sophia_image_producer::RingOfferState::Refused)
+        {
+            return Err(ImageAdapterError::Refused);
+        }
+        Ok(offer)
+    }
+
+    /// Direct-fill upload: `fill` writes the pixels into the mapped
+    /// slot itself (no producer copy), then the offer is committed
+    /// with exactly `byte_len` bytes and queued for the control file.
+    pub(crate) fn upload_ring_fill(
+        &mut self,
+        wire: &mut FileWire,
+        upload: sophia_image_producer::RingUpload,
+        byte_len: usize,
+        now: Instant,
+        fill: impl FnOnce(&mut [u8]),
+    ) -> Result<u64, ImageAdapterError> {
+        let now_ms = self.advance_clock(now)?;
+        if wire.peer_closed() {
+            return Err(ImageAdapterError::Closed);
+        }
+        if self.pending.is_some() {
+            return Err(ImageAdapterError::Again);
+        }
+        let Some(ring) = &mut self.ring else {
+            return Err(ImageAdapterError::Closed);
+        };
+        let (offer, bytes) = {
+            let mut slot = ring.acquire_slot(now_ms)?;
+            fill(slot.pixels_mut());
+            slot.commit(upload, byte_len, now_ms)?
+        };
+        self.pending = Some(PendingControl {
+            bytes,
+            offer: Some(offer),
+        });
+        Ok(offer)
     }
 
     /// The session ended: unsettled offers become Unknown, once.
@@ -842,102 +1123,87 @@ impl ImageAdapter {
             return;
         }
         self.final_notified = true;
-        if let Some(producer) = &mut self.producer {
-            producer.journal_lost();
+        if let Some(ring) = &mut self.ring {
+            ring.journal_lost();
         }
     }
 
     /// The next instant the caller should drive the connection for
     /// the adapter's sake, if any.
     pub(crate) fn next_deadline(&self, now: Instant) -> Option<Instant> {
-        let now_ms = self.now_ms(now).ok()?;
+        self.now_ms(now).ok()?;
         let mut due: Option<u64> = None;
-        if matches!(self.stage, Stage::Discovering | Stage::Connecting) && self.producer.is_some() {
+        if matches!(self.stage, Stage::Discovering | Stage::Connecting) {
             due = Some(self.retry_at_ms);
-        }
-        if let Some(producer) = &self.producer
-            && let Some(timeout) = producer.timeout(now_ms)
-        {
-            let at = now_ms.saturating_add(timeout);
-            due = Some(due.map_or(at, |current| current.min(at)));
+            let startup = self.config.startup_deadline_ms;
+            due = Some(due.map_or(startup, |current| current.min(startup)));
         }
         due.map(|due_ms| self.origin + Duration::from_millis(due_ms.saturating_sub(self.origin_ms)))
     }
 
     pub fn channel(&self) -> Option<ChannelState> {
-        self.producer.as_ref().map(ImageProducer::channel)
+        if self.failure.is_some() {
+            return Some(ChannelState::Closed);
+        }
+        self.ring.as_ref().map(|ring| {
+            if ring.closed() {
+                ChannelState::Closed
+            } else if ring.ready() {
+                ChannelState::Ready
+            } else {
+                ChannelState::HelloSent
+            }
+        })
     }
 
     pub fn cause(&self) -> Option<CloseCause> {
-        self.producer.as_ref().map(ImageProducer::cause)
+        self.ring.as_ref().map(RingProducer::cause).or(self.failure)
     }
 
     pub fn path(&self) -> Option<ImagePath> {
-        self.producer.as_ref().map(ImageProducer::path)
+        Some(if self.failure.is_some() {
+            ImagePath::Error
+        } else if self.ring.as_ref().is_some_and(RingProducer::ready) {
+            ImagePath::Descriptor
+        } else if self.ring.as_ref().is_some_and(RingProducer::closed) {
+            ImagePath::Error
+        } else {
+            ImagePath::Wait
+        })
     }
 
-    pub fn offer(&self, offer: u64) -> Option<OfferInfo> {
-        self.producer.as_ref().and_then(|p| p.offer(offer))
+    /// One ring offer, including adoptability (`RingOfferState::Settled`).
+    pub fn ring_offer(&self, offer: u64) -> Option<sophia_image_producer::RingOfferInfo> {
+        self.ring.as_ref().and_then(|ring| ring.offer(offer))
     }
 
-    pub fn offers(&self) -> Vec<OfferInfo> {
-        self.producer
+    pub fn ring_offers(&self) -> Vec<sophia_image_producer::RingOfferInfo> {
+        self.ring
             .as_ref()
-            .map(|p| p.offers().collect())
+            .map(|ring| ring.offers().collect())
             .unwrap_or_default()
     }
 
+    pub fn ring_identity(&self) -> Option<sophia_shell_protocol::shell_files::RingIdentity> {
+        self.ring
+            .as_ref()
+            .map(|ring| ring.registration_info().identity)
+    }
+
     pub fn poll_fd(&self) -> Option<std::os::fd::BorrowedFd<'_>> {
-        self.producer.as_ref().and_then(ImageProducer::poll_fd)
+        use std::os::fd::AsFd;
+        self.socket.as_ref().map(|socket| socket.as_fd())
     }
 
     pub fn poll_events(&self) -> ReadyEvents {
-        self.producer
-            .as_ref()
-            .map_or(ReadyEvents::NONE, ImageProducer::poll_events)
+        ReadyEvents::NONE
     }
 
-    pub(crate) fn producer_mut(&mut self) -> Option<&mut ImageProducer> {
-        self.producer.as_mut()
-    }
-
-    pub(crate) fn has_free_ticket(&self) -> bool {
-        self.tickets.iter().any(Option::is_none)
-    }
-
-    pub(crate) fn register_ticket(
-        &mut self,
-        ticket: u64,
-        offer: u64,
-        metadata: ProducerMetadata,
-    ) -> Result<(), ImageAdapterError> {
-        let Some(slot) = self.tickets.iter_mut().find(|slot| slot.is_none()) else {
-            return Err(ImageAdapterError::Busy);
+    pub(crate) fn ring_forget(&mut self, offer: u64) -> Result<(), ImageAdapterError> {
+        let Some(ring) = &mut self.ring else {
+            return Err(ImageAdapterError::Closed);
         };
-        *slot = Some(TicketSlot { ticket, offer });
-        if let Some(entry) = self.offer_metadata.iter_mut().find(|entry| entry.is_none()) {
-            *entry = Some((offer, metadata));
-        }
+        ring.forget(offer)?;
         Ok(())
     }
-
-    pub(crate) fn ticket_metadata(&self, offer: u64) -> Option<ProducerMetadata> {
-        self.offer_metadata
-            .iter()
-            .flatten()
-            .find(|(id, _)| *id == offer)
-            .map(|(_, metadata)| *metadata)
-    }
-
-    pub(crate) fn forget_offer(&mut self, offer: u64) {
-        for entry in &mut self.offer_metadata {
-            if entry.is_some_and(|(id, _)| id == offer) {
-                *entry = None;
-            }
-        }
-    }
-}
-
-fn wire_epoch(wire: &FileWire) -> u64 {
-    wire.epoch
 }

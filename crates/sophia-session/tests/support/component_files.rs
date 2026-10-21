@@ -60,7 +60,7 @@ impl Harness {
 
     pub fn connect(&mut self, key: ComponentConnectionKey) -> ShellConnection {
         let native = key.slot == 1;
-        let revision = 9;
+        let revision = 10;
         let capabilities = if key.slot == 2 {
             SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG
                 | SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
@@ -78,7 +78,7 @@ impl Harness {
                 | SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS
                 | SOPHIA_SHELL_CAPABILITY_INDICATOR_ACTIVATION
         };
-        let capabilities = capabilities | (1 << 13);
+        let capabilities = capabilities | (1 << 15);
         self.owner
             .begin_authenticated_negotiation(
                 key,
@@ -321,22 +321,16 @@ pub fn upload(
         }
         assert!(Instant::now() < deadline, "allocation not granted");
     }
-    let metadata = sophia_shell_client::ProducerMetadata {
+    let metadata = sophia_shell_client::RingUpload {
         resource: id,
         resource_generation: 1,
-        admission_epoch: grant.content_grant_epoch,
-        output_id: 1,
-        allocation_id: 1,
+        output: 1,
+        output_generation: 1,
+        allocation: 1,
+        allocation_generation: 1,
         topology_generation: 1,
-        source_kind: 1,
-        source_format: 1,
         width: 1,
         height: 1,
-        stride: 4,
-        plane_count: 1,
-        descriptor_count: 1,
-        declared_bytes: 4,
-        ..Default::default()
     };
     std::thread::scope(|scope| {
         let peer = scope.spawn(|| image::upload(client, metadata, &[1, 2, 3, 255]));

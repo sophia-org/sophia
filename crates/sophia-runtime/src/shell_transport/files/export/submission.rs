@@ -135,7 +135,7 @@ impl ShellFiles {
         &self,
         bytes: &[u8],
     ) -> Result<(Option<Inbound>, SubmissionEffect), Errno> {
-        if self.owned_mode() {
+        if self.image_revision == crate::owned_ring_protocol::REVISION {
             return Err(Errno::EACCES);
         }
         if !self.image_disclosed() {

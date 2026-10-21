@@ -4,18 +4,42 @@ This is the D4 option B implementation under
 [oofo1zrq](notes/investigations/oofo1zrq-a-portable-9p-core-with-optional-drawing-and-surface-clients.md).
 On 2026-10-21, after the first native ABBA panel result, niltempus selected
 B as the default and sole shell CPU upload path, with no build feature or
-runtime fallback switch. Those switches have been removed. Promotion of the
-wire contract, SDKs and real shell clients is in progress; sealed shell
-ingress remains temporarily during that coordinated migration, not as the
-intended production alternative. Lock images and DMA-BUF are separate paths.
+runtime fallback switch. Those switches have been removed. The production
+contract and paired SDK implementation are filed. The r10
+production handshake refuses sealed shell ingress. Lock images and DMA-BUF
+are separate paths.
+
+The shell integration pins signed C SDK
+`4222139b842f2fe6dc4c7e0db9c51250f69bcd94` and Rust SDK
+`ce926b531b0185faf3d88f7b82a8d8803ea520f7`. Both accumulate terminal status
+kinds for the exact grant/resource until SlotReleased selects the outcome:
+success needs Accepted, cancellation needs Cancelled, and other refusals need
+Rejected. Failed control replies cannot erase earlier evidence or release a
+slot. A release without compatible status evidence faults the ring.
+
+Lom and Provlita use the same Rust SDK pin in their manifests and lockfiles:
+
+| Client | Migration | Lockfile follow-up |
+| --- | --- | --- |
+| Lom | `31bcdb365f5ec6c2031f1e5261d4b9d2c0b1a811` | `27b64c5c79e2186895178ff05cbbaac63e15c322` |
+| Provlita | `37b92af56cc0d0ab21ce067ea334c0818889e7f4` | `109f5cb220eb2efb54b4c074ba4e57910952db1d` |
+
+Both clients passed tests and strict clippy with `--locked`. Their current
+slice-upload API copies into the reusable producer ring; it does not claim
+direct-fill performance. These local signed revisions have not been published
+or deployed. Fresh upstream builds need the SDK revision published first.
+
+An image revision range excluding r10 ends attachment with UnsupportedRevision
+and no Refused event. A range that can select r10 but requires retired sealed
+or unavailable DMA capability receives capability refusal reason 4.
 
 The measured d4p-03 result is recorded in
 `~/.local/state/t331/d4p-03/FINDINGS.txt`: combined Session+peer CPU fell by
 252.5–332.5 microseconds per frame in this single-head panel ABBA set. This
 is an observation on crunch, not a Wayland/XLibre acceptance verdict.
 
-The private framing described below is the implementation being promoted;
-it is not yet the public SDK contract. Ring slots now bound capacity rather
+The authoritative public contract is [sophia-owned-ring.md](sophia-owned-ring.md),
+with its shared KDL and corpus. This page records implementation and measurement scope. Ring slots now bound capacity rather
 than requiring every resource to have identical dimensions: the owner copies
 and charges only each offer’s exact byte extent, within that fixed capacity.
 
@@ -30,23 +54,23 @@ worker results. This uses the limited SAM analogy in
 explicit Rust states and move-only source and budget ownership. It introduces
 no reactor, worker thread, scheduler, or authorization cadence.
 
-The prototype shares each component's existing validation worker and its four
-outstanding work credits across sealed ISB, draw and owned-copy jobs. Credits
+The implementation reuses each component's existing validation worker and its
+four outstanding work credits. Credits
 remain occupied through terminal release publication. This is a per-component
 bound; resource and source storage also consume Session-wide registry budgets.
 The image-channel job and backing ceilings still apply. Registration reserves
 the whole ring; every accepted resource reserves its own immutable destination.
 
-## Private transport
+## Transport
 
-With content and the image channel ready, an enabled export discloses the
-write-only `experimental-owned-ring-v1` file. Normal export checks apply.
-The peer must choose this mode before any sealed-image or draw submission on
-that connection. Version 1 permits one registration, with no ring replacement.
-Other connections retain the ordinary sealed path. Candidates, allocation
+With r10 content and owned-ring image capability granted and the channel ready,
+the authenticated export discloses the
+write-only `owned-ring-v1` file. Normal export checks apply.
+Ring registration cannot share a connection with experimental draw submissions. Version 1 permits one registration, with no ring replacement.
+Old sealed shell clients are refused during negotiation. Candidates, allocation
 controls, resource outcomes and ResourceReleased use their existing records.
 
-All experimental records begin with a little-endian u32 total byte length and
+All ring records begin with a little-endian u32 total byte length and
 a four-byte magic; remaining fields are canonical little-endian u64 words.
 The exact encoding and validation live in `owned_ring_protocol.rs`.
 
@@ -75,8 +99,8 @@ custody. A backpressured refusal retries on existing service/authorization turns
 without repeatedly waking on an already-expired deadline.
 
 D4E1 events use the existing event journal, sequence, byte offsets and ACK.
-They are not ResourceReleased and must not be decoded as stable SDK events.
-Experimental peers must parse both framings. Exact latest-control retries are
+They are distinct from ResourceReleased. SDK peers dispatch the documented
+magic before the ordinary shell header and preserve the common journal sequence. Exact latest-control retries are
 idempotent and do not renew deadlines or generate a second outcome. Older or
 changed retries are refused. Accepted offer IDs and slot generations advance
 at write custody, including offers later rejected by the resource owner.
@@ -91,7 +115,7 @@ control state. Ready generations are nonzero, even and increasing per slot.
 
 The first live adapter requires Linux F_GET_SEALS to report GROW and SHRINK,
 and requires the exact regular-file extent. WRITE is not required. This
-qualifies backing for this experiment; it does not establish a syscall timing
+qualifies backing for this adapter; it does not establish a syscall timing
 bound. The internal seal-free pread probe remains separate. Other hosts need
 their own backing and read-behavior qualification before live admission.
 
@@ -116,22 +140,30 @@ destination is still measurement and implementation work.
 
 ## Qualification still required
 
-Automated controls cover the private codec, journal reservations, export custody
+The r10 integration was checked with Runtime tests, native-enabled Session
+integration tests and the Session library suite (1,056 passed, 65 intentionally
+ignored). The C native launcher and dock run against the production export;
+four content-conformance cases and three protected proof-loop cases retain
+their malformed-record and mutation controls. The backend's three protected
+popout lifecycle cases, the independent Go oracle's 96 judgments, the ring
+example and the existing drawing-path regression also pass. These are local
+automated checks with the fixtures' stated authority and completion boundaries.
+
+Automated controls cover the shared codec corpus, journal reservations, export custody
 and owner lifecycle. An authenticated in-process transport fixture exercises
 registration, descriptor delivery, cancellation and slot reuse with the actual
 owner and worker, using a supplied test authority. Shared arrival ordinals assert
 that final status precedes slot release on both cancellation and success. This
 does not qualify a live Session or the native authentication setup.
 
-The `shell_timing_peer_ring` example speaks raw 9P after the
-normal authenticated launch attach, so it can consume private D4 events without
-changing the SDK decoder. Its ring and sealed sources share the frame loop,
-pixel fill, resource cycling, demand and retirement. The ring smoke covers
-three frames through two slots against the actual in-process transport. This
-is a protocol smoke with test authority and supplied presentation outcomes,
-not a native Session or renderer run.
+The `shell_timing_peer_ring` example now speaks r10 after the normal
+launch attach and accepts only the owned-ring source. The same-binary sealed
+comparison remains reproducible at c1e6942de with its frozen d4p-03 receipts;
+it is not a second production mode. The ring smoke covers three frames through
+two slots against the actual in-process transport, with supplied authority and
+presentation outcomes. It does not establish native launch or pixel correctness.
 
-The first paired diagnostic uses 120 warmup frames and 2,000 measured completion
+The completed first paired diagnostic used 120 warmup frames and 2,000 measured completion
 intervals, in sealed/ring/ring/sealed order. Both sources keep one frame in
 flight and finish source settlement before demanding a candidate. The ring
 slots rotate without overlapping offers; this measures amortized source
@@ -143,13 +175,20 @@ The producer fills its mapped ring directly. The current Session destination
 is initialized before the payload pread overwrites it, and renderer upload is
 still separate. CPU observations therefore include that destination work;
 this implementation does not yet demonstrate the proposed single-copy GPU
-destination. Paired native measurements remain required. No performance
-acceptance follows from the automated controls or serializer replay.
+destination. Further native configurations and external comparisons remain
+unmeasured. No performance acceptance follows from automated controls or serializer replay.
 
 Use the accepted four-workload Wayland/XLibre bar on crunch and x13; IPC is an
 ungated diagnostic. External numerical thresholds remain unset. Retained
 resource qualification and D3 cache-on/off controls remain distinct from the
-per-frame lifecycle comparison. Production client migration and the broader external measurements remain outstanding.
+per-frame lifecycle comparison. Native qualification of the migrated clients
+and the broader external measurements remain outstanding.
+
+One non-blocking SDK follow-up remains: Rust's status routing currently drops
+the content grant and matches status evidence by resource, while C also checks
+the grant. SlotReleased still checks exact ring identity and controls custody.
+The follow-up must carry the grant into Rust's adapter and test that a foreign
+grant's Accepted status supplies no evidence for settlement.
 
 ## Production source headroom
 

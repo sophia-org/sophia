@@ -35,7 +35,9 @@ impl ShellConnection {
     pub(crate) fn require_catalog(&self) -> Result<(), ShellClientError> {
         if !matches!(
             self.welcome.selected_revision,
-            SOPHIA_SHELL_PERSISTENT_CATALOG_REVISION | 9
+            SOPHIA_SHELL_PERSISTENT_CATALOG_REVISION
+                | 9
+                | sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
         ) || self.welcome.capabilities & SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG == 0
         {
             return Err(ShellClientError::MissingCapability);

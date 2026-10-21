@@ -59,7 +59,7 @@ impl Journal {
     }
 
     pub(super) fn enable_image_revision(&mut self) {
-        self.revision = 9;
+        self.revision = crate::owned_ring_protocol::REVISION;
     }
 
     /// Unsolicited records leave the terminal reserve (records and bytes)

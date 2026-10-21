@@ -80,6 +80,14 @@ struct sophia_sf_client {
     uint8_t *file_buf;
     size_t file_cap, file_used;
     struct sophia_sf_operation file_op;
+    /* Shell r10 owned-ring control file: one write at a time through one
+     * fid kept open from the first write until disposal. */
+    uint8_t ctl_stage, ctl_ready, ctl_open;
+    int ctl_status;
+    uint32_t ctl_fid, ctl_error;
+    size_t ctl_used;
+    uint8_t ctl_bytes[152];
+    struct sophia_sf_operation ctl_op;
 };
 /* wire must be fresh and exclusively owned by this client until disposal.
  * The epoch is learned from api after attach. The caller supplies its offer.

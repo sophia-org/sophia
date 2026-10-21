@@ -22,7 +22,7 @@ pub(crate) const CAPS: u64 = SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
     | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
     | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
     | SOPHIA_SHELL_CAPABILITY_NATIVE_LAUNCHER
-    | (1 << 13);
+    | (1 << 15);
 
 pub(crate) fn empty() -> ContentEpochRegistry {
     ContentEpochRegistry::new(64 * 1024 * 1024).unwrap()
@@ -35,6 +35,14 @@ pub(crate) struct Peer {
 }
 
 impl Peer {
+    pub fn disconnect(&mut self, r: &mut ContentEpochRegistry) {
+        self.transport.disconnect(r).unwrap();
+        self.image_owner
+            .service(&mut self.transport, r, 0, Instant::now())
+            .unwrap();
+        assert_eq!(self.image_owner.pending(), 0);
+    }
+
     pub fn with_limits(
         r: &mut ContentEpochRegistry,
         profile: ContentStoreProfile,
@@ -82,8 +90,8 @@ impl Peer {
                 let offer = encode_shell_file_negotiate(
                     client.header(ShellFileKind::Negotiate),
                     ShellV1ClientHello {
-                        minimum_revision: 9,
-                        maximum_revision: 9,
+                        minimum_revision: 10,
+                        maximum_revision: 10,
                         required_capabilities: CAPS,
                     },
                 )
@@ -113,7 +121,7 @@ impl Peer {
                 std::thread::yield_now();
             }
             assert_eq!(worker.join().unwrap(), welcome);
-            assert_eq!(welcome.selected_revision, 9);
+            assert_eq!(welcome.selected_revision, 10);
             assert_eq!(welcome.capabilities, CAPS);
             assert_eq!(welcome.connection_epoch, self.limits.grant.connection_epoch);
         });

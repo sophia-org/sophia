@@ -29,9 +29,10 @@
 #define SOPHIA_LC_IMAGE_BEGIN_BYTES 128u
 
 struct sophia_lc_image_config {
-  /* role, revision and connection_epoch are set from the client;
-   * granted_kinds from the negotiated capabilities. The rest is the
-   * caller's: bounds, transfer timeout, startup deadline. */
+  /* role, revision, connection_epoch and bounds are set from the client;
+   * granted_kinds from the negotiated capabilities. The caller supplies
+   * transfer timeout and startup deadline. producer.bounds is ignored;
+   * discovery must match the role's Limits, not caller estimates. */
   struct sophia_ip_config producer;
   /* Borrowed directory fd holding the lock provider's 9P socket. */
   int endpoint_dir;

@@ -131,7 +131,9 @@ fn independent_go_judges_the_production_shell_file_export() {
             );
         }
         for f in &mut fixtures {
-            f.tick();
+            if let Err(error) = f.tick() {
+                owner_errors.push(error);
+            }
         }
         for f in &mut roles {
             if let Err(error) = f.tick() {
@@ -162,6 +164,9 @@ fn independent_go_judges_the_production_shell_file_export() {
     };
     let output = std::fs::read_to_string(&stdout).unwrap();
     let errors = std::fs::read_to_string(&stderr).unwrap();
+    if !status.success() {
+        eprintln!("{output}\n{errors}\n{owner_errors:?}");
+    }
     for f in &mut fixtures {
         f.cleanup();
     }

@@ -45,6 +45,9 @@ pub fn enable(client: &mut ShellConnection, directory: &std::path::Path, limits:
                 transfer_timeout_ms: limits.transfer_timeout_ms,
                 startup_deadline_ms: 10000,
                 formats_capacity: 65536,
+                ring_slots: 1,
+                ring_capacity: 0,
+                content_grant_epoch: limits.grant.content_grant_epoch,
             },
             Instant::now(),
             0,
@@ -52,36 +55,24 @@ pub fn enable(client: &mut ShellConnection, directory: &std::path::Path, limits:
         .unwrap();
 }
 
-pub fn source(pixels: &[u8]) -> std::os::fd::OwnedFd {
-    use rustix::fs::{MemfdFlags, SealFlags};
-    use std::io::Write;
-    let mut source = std::fs::File::from(
-        rustix::fs::memfd_create(
-            c"sdk-image-fixture",
-            MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING,
-        )
-        .unwrap(),
-    );
-    source.write_all(pixels).unwrap();
-    rustix::fs::fcntl_add_seals(
-        &source,
-        SealFlags::WRITE | SealFlags::GROW | SealFlags::SHRINK | SealFlags::SEAL,
-    )
-    .unwrap();
-    source.into()
-}
-
-pub fn upload(client: &mut ShellConnection, metadata: ProducerMetadata, pixels: &[u8]) {
+pub fn upload(client: &mut ShellConnection, metadata: RingUpload, pixels: &[u8]) {
     let deadline = Instant::now() + Duration::from_secs(5);
     while client.image_adapter().unwrap().channel() != Some(ImageChannelState::Ready) {
         client.poll_io().unwrap();
         assert!(Instant::now() < deadline, "image channel not ready");
         std::thread::yield_now();
     }
-    let offer = client
-        .image_begin(metadata, source(pixels), Instant::now())
-        .unwrap()
-        .offer;
+    let offer = loop {
+        match client.image_upload_ring(metadata, pixels, Instant::now()) {
+            Ok(offer) => break offer,
+            Err(ImageAdapterError::Again | ImageAdapterError::Busy) => {
+                client.poll_io().unwrap();
+                assert!(Instant::now() < deadline, "ring not ready");
+                std::thread::yield_now();
+            }
+            Err(error) => panic!("ring upload refused: {error:?}"),
+        }
+    };
     let mut accepted = false;
     loop {
         if let Some((_, record)) = client.poll_content().unwrap() {
@@ -92,9 +83,8 @@ pub fn upload(client: &mut ShellConnection, metadata: ProducerMetadata, pixels: 
             assert_eq!(status.status, 2, "{status:?}");
             accepted = true;
         }
-        let info = client.image_adapter().unwrap().offer(offer).unwrap();
-        if accepted && info.state == OfferState::Settled {
-            assert_eq!(info.disposition, 1);
+        let info = client.image_ring_offer(offer).unwrap();
+        if accepted && info.state == RingOfferState::Settled {
             break;
         }
         assert!(Instant::now() < deadline, "image not settled: {info:?}");

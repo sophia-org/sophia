@@ -8,7 +8,7 @@
 mod image;
 #[path = "shell_file_peer.rs"]
 mod shell_file_peer;
-use sophia_shell_client::{ImageChannelState, OfferState, ProducerMetadata};
+use sophia_shell_client::{ImageAdapterError, ImageChannelState, RingOfferState, RingUpload};
 #[allow(dead_code)]
 #[path = "shell_sdk_image.rs"]
 mod sdk_image;
@@ -43,8 +43,8 @@ pub fn granted() -> ShellContentAdmissionPolicy {
 
 pub fn options(capabilities: u64) -> ShellClientOptions {
     ShellClientOptions {
-        minimum_revision: if capabilities & (1 << 13) != 0 { 9 } else { 5 },
-        maximum_revision: if capabilities & (1 << 13) != 0 { 9 } else { 6 },
+        minimum_revision: if capabilities & (1 << 15) != 0 { 10 } else { 5 },
+        maximum_revision: if capabilities & (1 << 15) != 0 { 10 } else { 6 },
         required_capabilities: capabilities,
         handshake_timeout: Duration::from_secs(2),
     }
@@ -109,7 +109,7 @@ impl Component {
     ) {
         let socket = self.transport.socket_path().to_owned();
         let peer = std::thread::spawn(move || {
-            let mut client = if capabilities & (1 << 13) != 0 {
+            let mut client = if capabilities & (1 << 15) != 0 {
                 authenticated_client(&socket, options(capabilities))?
             } else {
                 ShellConnection::connect_files(socket, options(capabilities))?
@@ -152,7 +152,7 @@ impl Component {
         let (welcome, client) = self.negotiate(
             registry,
             expected.grant.connection_epoch,
-            CONTENT | (1 << 13),
+            CONTENT | (1 << 15),
         );
         let welcome = welcome.unwrap();
         let (mut client, received) = client.unwrap();
@@ -215,32 +215,33 @@ impl Component {
         pixels: &[u8],
         now: u64,
     ) -> ContentResourceLease {
-        let source = sdk_image::source(pixels);
-        let metadata = ProducerMetadata {
+        let metadata = RingUpload {
             resource: id,
             resource_generation: 1,
-            admission_epoch: grant.content_grant_epoch,
-            output_id: 1,
-            allocation_id: 1,
+            output: 1,
+            output_generation: 1,
+            allocation: 1,
+            allocation_generation: 1,
             topology_generation: 1,
-            source_kind: 1,
-            source_format: 1,
             width,
             height,
-            stride: width * 4,
-            plane_count: 1,
-            descriptor_count: 1,
-            declared_bytes: pixels.len() as u64,
-            ..Default::default()
         };
-        let offer = self
-            .client
-            .as_mut()
-            .unwrap()
-            .image_begin(metadata, source, Instant::now())
-            .unwrap()
-            .offer;
         let start = Instant::now();
+        let offer = loop {
+            self.service_image(registry, now);
+            match self
+                .client
+                .as_mut()
+                .unwrap()
+                .image_upload_ring(metadata, pixels, Instant::now())
+            {
+                Ok(offer) => break offer,
+                Err(ImageAdapterError::Again | ImageAdapterError::Busy) => {}
+                Err(error) => panic!("ring upload refused: {error:?}"),
+            }
+            assert!(start.elapsed() < Duration::from_secs(5), "ring not ready");
+            std::thread::yield_now();
+        };
         let mut accepted = false;
         loop {
             self.service_image(registry, now);
@@ -257,12 +258,9 @@ impl Component {
                 .client
                 .as_ref()
                 .unwrap()
-                .image_adapter()
-                .unwrap()
-                .offer(offer)
+                .image_ring_offer(offer)
                 .unwrap();
-            if accepted && info.state == OfferState::Settled {
-                assert_eq!(info.disposition, 1);
+            if accepted && info.state == RingOfferState::Settled {
                 break;
             }
             assert!(
@@ -280,6 +278,22 @@ impl Component {
     pub fn disconnect(&mut self, registry: &mut ContentEpochRegistry) {
         self.transport.disconnect(registry).unwrap();
         self.client = None;
+        if let Some(owner) = &mut self.image_owner {
+            // The source remains charged until its persistent owner observes
+            // the disconnected epoch, even when no copy jobs are pending.
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                owner
+                    .service(&mut self.transport, registry, 0, Instant::now())
+                    .unwrap();
+                if owner.pending() == 0 {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "image owner did not drain");
+                std::thread::yield_now();
+            }
+        }
+        registry.collect();
     }
 }
 

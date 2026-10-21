@@ -1,10 +1,10 @@
 //! Two protected component processes keep independent stop and replacement
 //! custody under real Factotum launch authentication and the production
 //! component owner. Each child is this test binary: it authenticates over its
-//! inherited relay with the Rust SDK, negotiates shell r9 with sealed images,
-//! and sends one sealed image for an allocation the fixture's supplied
+//! inherited relay with the Rust SDK, negotiates shell r10 with owned-ring images,
+//! and sends one owned image for an allocation the fixture's supplied
 //! placement policy grants. Resource and budget assertions are retained from
-//! the socket fixture at ef1f93a53. The same child also parks after an r9
+//! the socket fixture at ef1f93a53. The same child also parks after an r10
 //! negotiation for the production-launched launcher evidence test. Requires
 //! nested user namespaces.
 use super::*;
@@ -16,7 +16,7 @@ use sophia_runtime::{
     ContentCandidateContext, ContentResourceLease, NativeLauncherCandidateContext,
 };
 use sophia_shell_client::{
-    NativeLauncherObservation, ProducerMetadata, ShellClientOptions, ShellConnection,
+    NativeLauncherObservation, RingUpload, ShellClientOptions, ShellConnection,
 };
 use std::path::{Path, PathBuf};
 
@@ -543,18 +543,25 @@ fn native_until(
 
 /// `sdk_image::upload` for the launcher, whose content records arrive on its
 /// native-launcher event stream rather than through `poll_content`.
-fn native_upload(client: &mut ShellConnection, metadata: ProducerMetadata, pixels: &[u8]) {
-    use sophia_shell_client::{ImageChannelState, OfferState};
+fn native_upload(client: &mut ShellConnection, metadata: RingUpload, pixels: &[u8]) {
+    use sophia_shell_client::{ImageAdapterError, ImageChannelState, RingOfferState};
     let deadline = Instant::now() + Duration::from_secs(5);
     while client.image_adapter().unwrap().channel() != Some(ImageChannelState::Ready) {
         client.poll_io().unwrap();
         assert!(Instant::now() < deadline, "image channel not ready");
         std::thread::yield_now();
     }
-    let offer = client
-        .image_begin(metadata, sdk_image::source(pixels), Instant::now())
-        .unwrap()
-        .offer;
+    let offer = loop {
+        match client.image_upload_ring(metadata, pixels, Instant::now()) {
+            Ok(offer) => break offer,
+            Err(ImageAdapterError::Again | ImageAdapterError::Busy) => {
+                client.poll_io().unwrap();
+                assert!(Instant::now() < deadline, "ring not ready");
+                std::thread::yield_now();
+            }
+            Err(error) => panic!("ring upload refused: {error:?}"),
+        }
+    };
     let mut accepted = false;
     loop {
         client.poll_io().unwrap();
@@ -566,9 +573,8 @@ fn native_upload(client: &mut ShellConnection, metadata: ProducerMetadata, pixel
             assert_eq!(status.status, 2, "{status:?}");
             accepted = true;
         }
-        let info = client.image_adapter().unwrap().offer(offer).unwrap();
-        if accepted && info.state == OfferState::Settled {
-            assert_eq!(info.disposition, 1);
+        let info = client.image_ring_offer(offer).unwrap();
+        if accepted && info.state == RingOfferState::Settled {
             break;
         }
         assert!(Instant::now() < deadline, "image not settled: {info:?}");
@@ -615,7 +621,7 @@ fn protected_custody_child() {
     }
     let admitted = auth.into_authenticated().unwrap();
     // Bit 13: sealed images, required for every content attach at r9.
-    let capabilities = (1 << 13)
+    let capabilities = (1 << 15)
         | if native {
             SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
                 | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
@@ -628,15 +634,15 @@ fn protected_custody_child() {
         admitted.role,
         admitted.root,
         ShellClientOptions {
-            minimum_revision: 9,
-            maximum_revision: 9,
+            minimum_revision: 10,
+            maximum_revision: 10,
             required_capabilities: capabilities,
             handshake_timeout: Duration::from_secs(5),
         },
     )
     .expect("Rust SDK must continue on the authenticated shell root");
     let welcome = client.welcome();
-    assert_eq!(welcome.selected_revision, 9);
+    assert_eq!(welcome.selected_revision, 10);
     if park {
         // Hold the negotiated connection until Session revokes and reaps it.
         std::thread::sleep(Duration::from_secs(10));
@@ -718,22 +724,16 @@ fn protected_custody_child() {
         };
         assert_eq!(result.status, 1, "{result:?}");
     }
-    let metadata = ProducerMetadata {
+    let metadata = RingUpload {
         resource: RESOURCE.id,
         resource_generation: RESOURCE.generation,
-        admission_epoch: grant.content_grant_epoch,
-        output_id: OUTPUT.id,
-        allocation_id: ALLOCATION.id,
+        output: OUTPUT.id,
+        output_generation: OUTPUT.generation,
+        allocation: ALLOCATION.id,
+        allocation_generation: ALLOCATION.generation,
         topology_generation: 1,
-        source_kind: 1,
-        source_format: 1,
         width: 1,
         height: 1,
-        stride: 4,
-        plane_count: 1,
-        descriptor_count: 1,
-        declared_bytes: 4,
-        ..Default::default()
     };
     if native {
         native_upload(&mut client, metadata, &[1, 2, 3, 255]);

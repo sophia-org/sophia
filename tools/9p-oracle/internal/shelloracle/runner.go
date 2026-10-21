@@ -10,7 +10,7 @@ var Names = []string{
 	"negotiation/api-accepted", "negotiation/policy-refused", "negotiation/second", "negotiation/allocation-before", "negotiation/candidate-before",
 	"objects/limits", "objects/outputs", "objects/announcement", "objects/getattr", "objects/second-pin", "objects/old-pin", "objects/fresh-qid", "objects/fresh-generation",
 	"allocation/granted", "allocation/rejected", "allocation/geometry",
-	"image/discovery", "image/channel-ready", "image/admitted", "image/sealed-accepted", "image/source-retained", "image/unsealed-refused", "image/size-refused", "image/byte-begin-refused", "image/byte-end-refused", "image/successor",
+	"image/discovery", "image/channel-ready", "image/ring-ready", "image/owned-accepted", "image/slot-released", "image/unsealed-refused", "image/size-refused", "image/byte-begin-refused", "image/byte-end-refused", "image/successor",
 	"candidate/permit", "candidate/custody", "candidate/prepared", "candidate/presented", "candidate/missing-revokes", "candidate/cancel", "candidate/cancelled-revokes",
 	"action/identity", "action/echo",
 	"custody/before-outcome", "custody/retry", "custody/watermark", "custody/eagain-empty", "custody/eagain-retry", "journal/offset", "journal/reread", "journal/floor", "journal/past-tail", "journal/pending", "custody/domain-id",

@@ -1,5 +1,5 @@
-//! Reduced grants reach the SDK unchanged. Two full-size sealed images remain
-//! resident within a 4/8/4 MiB staging/resident/retiring profile. Source FDs cross
+//! Reduced grants reach the SDK unchanged. Two full-size owned images remain
+//! resident within a 4/8/4 MiB staging/resident/retiring profile. A reusable source FD crosses
 //! the real image endpoint; authentication verdicts are supplied.
 #[allow(dead_code)] // Shared file-component fixture; this file drives only part of it.
 #[path = "support/file_component.rs"]
@@ -63,12 +63,12 @@ fn floor_limits_reach_the_file_client_as_its_first_welcome_record() {
 }
 
 #[test]
-fn floor_limits_hold_two_full_size_sealed_images_resident() {
+fn floor_limits_hold_two_full_size_owned_images_resident() {
     full_size_images_with_limits(floor(1));
 }
 
 #[test]
-fn reduced_chunk_limits_hold_two_full_size_sealed_images_resident() {
+fn reduced_chunk_limits_hold_two_full_size_owned_images_resident() {
     let mut limits = floor(1);
     limits.max_chunk_bytes = 32768;
     limits.validate().unwrap();

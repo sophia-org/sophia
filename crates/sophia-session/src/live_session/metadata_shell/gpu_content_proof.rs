@@ -512,6 +512,18 @@ fn serve(
     // Disconnect removes authority; collection settles owners whose last
     // consumer is gone. A renderer-held lease must survive both.
     owner.disconnect(epochs)?;
+    // Service once even without pending jobs: the owner still holds the ring.
+    let drain_deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        images.service(owner, epochs, elapsed_msec(started), Instant::now())?;
+        if images.pending() == 0 {
+            break;
+        }
+        if Instant::now() >= drain_deadline {
+            return Err("shell image worker did not return proof custody".into());
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
     epochs.collect();
     if let Some(bundle) = retained.take() {
         if owner.connection(epochs).content_reserved_bytes() == 0 {

@@ -342,9 +342,12 @@ work never wait for an image reservation, renderer job or provider acknowledgeme
 
 ## Byte layout, version 1
 
-This namespace is allocated for shell r9 and lock r2. All integers are
+This namespace is allocated for legacy shell r9, lock r2 and shell r10.
+The [owned-ring amendment](sophia-owned-ring.md) supersedes sealed CPU uploads
+for shell r10, using capability bit 15 and source-kind bit 2 (value 4). All integers are
 unsigned little-endian; unknown versions, flags, reserved values and kinds are
-refused. Role capability bits are shell 13 (sealed) and 14 (DMA-BUF),
+refused. On r10 shell channels only, magic D4F1 at bytes 4..8 selects the
+owned-ring source framing before the version-1 header decode. Role capability bits are shell 13 (sealed) and 14 (DMA-BUF),
 gated at r9, and lock 2 (sealed) and 3 (DMA-BUF), gated at r2. Existing role
 header/API version 1 remains unchanged. Descriptor support is never inferred
 from a higher role revision alone.
@@ -490,7 +493,7 @@ max_packet_bytes=200, max_fds=4, max_offers, max_packets_per_turn=1,
 hello_timeout_ms=250, validation_timeout_ms=2000,
 validation_chunk_bytes=65536, capture_interest_timeout_ms=500, and
 formats_generation and limits_generation. Integers are unsigned decimal, source_kinds is a numeric
-bitmask (bit 0 sealed, bit 1 DMA-BUF), and endpoint is a single basename with no
+bitmask (bit 0 sealed, bit 1 DMA-BUF, bit 2 owned ring), and endpoint is a single basename with no
 slash or dot component. Refuse duplicate, missing or unknown fields in version 1.
 The separately versioned formats object publishes only this assignee's admitted
 outputs/device, with at most 256 exact format/modifier rows per output.
@@ -519,7 +522,7 @@ These are additional objects; the existing role objects keep their layouts.
 Expose three read-only files in the authenticated role root: `image-channel`,
 `image-limits` and `image-formats`. No file grants authority by being readable.
 Legacy exports may omit all three; they cannot serve production image producers
-under the sealed-only requirement. ENOENT on `image-channel`, a missing companion,
+under the negotiated image-source requirement. ENOENT on `image-channel`, a missing companion,
 malformed object or access error fails image setup without byte fallback.
 
 `image-channel` is at most 2048 bytes, ASCII with LF line endings and a final LF.
@@ -544,12 +547,15 @@ formats_generation=9
 limits_generation=1
 ```
 
-These values form the sealed-only shell fixture, not a universal capacity grant.
+These values preserve the legacy r9 sealed fixture, not a production r10 grant.
+For shell r10, source_kinds is exactly 4; the other field names and discovery
+version remain unchanged.
 Lock changes role to 2 and uses its own limits. Integers are canonical unsigned
 decimal (no signs or leading zeros except `0`), checked in their destination
 width. `role` is the channel contract-family code (1 shell, 2 lock), not the
 profile-name value in the adjacent `api` file. Role is u16; epochs and generations are nonzero u64; all other integers
-are u32. `source_kinds` is a nonzero subset of bits 0 and 1. Endpoint is 1–64
+are u32. `source_kinds` is exactly 4 for shell r10; lock retains a nonzero subset of
+bits 0 and 1. Legacy r9 fixtures retain their historical mask. Endpoint is 1–64
 bytes from ASCII letters, digits, `_`, `-` and `.`, excluding `.` and `..`.
 It is resolved beneath the component endpoint directory containing the role's
 9P socket, never as an arbitrary path. Version 1 requires max_packet_bytes=200
@@ -677,3 +683,15 @@ Other permission, size, stale-allocation and budget refusals retain their role's
 existing meanings. Malformed transaction bytes keep ordinary submit errors.
 ChannelClosed is the prompt state-change notification; this rejection covers
 the race between observing readiness and submitting the next offer.
+
+### Shell r10 replacement
+
+At r10, ImageBegin, ImageAdmitted, SourceReleased and kind-2 Source packets
+are not the shell CPU upload protocol. Registration and slot offers follow
+[sophia-owned-ring.md](sophia-owned-ring.md); the existing Hello, ChannelReady,
+ChannelClosed and companion object layouts remain in use. Source kind 4 uses
+CPU validation capacity and `max_sealed_backing_bytes`, whose existing name
+now denotes ring source plus immutable owned resource backing for this role.
+Renderer/DMA capacity is not implied. Lock codecs and their sealed APIs remain
+unchanged. A source whose kind was not granted is refused; there is no byte
+or sealed fallback for an r10 shell producer.

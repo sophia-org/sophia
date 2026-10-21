@@ -27,7 +27,6 @@ tracing-subscriber.workspace = true
 [dev-dependencies]
 sophia-linux-peer = { path = "../sophia-linux-peer" }
 serde = { version = "1", features = ["derive"] }
-sophia-isb = { workspace = true }
 sophia-launch-client = { workspace = true }
 sophia-namespace-client = { workspace = true }
 rustix = { workspace = true, features = ["fs"] }

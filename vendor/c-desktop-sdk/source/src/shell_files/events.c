@@ -22,16 +22,22 @@ int sf_session_event_parse(struct sophia_sf_client *c)
             v->selected_revision > c->offer.maximum_revision ||
             (v->capabilities & c->offer.required_capabilities) != c->offer.required_capabilities)
             return SOPHIA_9P_INVALID;
-        /* Image bits exist only at r9; the revision is never inferred. */
-        if (c->image_mode && (v->capabilities & (UINT64_C(3) << 13)) &&
-            v->selected_revision != SOPHIA_SF_REVISION_IMAGE_CHANNEL)
+        /* Sealed and DMA bits exist only at r9, the owned ring only at r10;
+         * the revision is never inferred. */
+        if (c->image_mode &&
+            (((v->capabilities & (SOPHIA_SF_CAP_SEALED_IMAGE | SOPHIA_SF_CAP_DMABUF_IMAGE)) &&
+              v->selected_revision != SOPHIA_SF_REVISION_IMAGE_CHANNEL) ||
+             ((v->capabilities & SOPHIA_SF_CAP_OWNED_RING) &&
+              v->selected_revision != SOPHIA_SF_REVISION_OWNED_RING)))
             return SOPHIA_9P_INVALID;
         if (v->connection_epoch != c->epoch ||
             (c->profile == SOPHIA_SF_DESCRIPTOR && !sf_descriptor_welcome(c, v)))
             return SOPHIA_9P_INVALID;
         if (c->profile == SOPHIA_SF_LAUNCHER || c->profile == SOPHIA_SF_DOCK) {
-            unsigned revision = c->offer.required_capabilities & (UINT64_C(1) << 13)
-                                    ? 9 : c->profile == SOPHIA_SF_LAUNCHER ? 7 : 8;
+            unsigned revision = c->offer.required_capabilities & SOPHIA_SF_CAP_SEALED_IMAGE ? 9
+                                : c->offer.required_capabilities & SOPHIA_SF_CAP_OWNED_RING ? 10
+                                : c->profile == SOPHIA_SF_LAUNCHER                        ? 7
+                                                                                          : 8;
             if (v->selected_revision != revision ||
                 v->capabilities != c->offer.required_capabilities)
                 return SOPHIA_9P_INVALID;

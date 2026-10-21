@@ -10,10 +10,10 @@ repository.workspace = true
 
 [dependencies]
 rustix = { workspace = true, features = ["event", "std"] }
-sophia-image-producer = { path = "../sophia-image-producer", version = "0.3.0" }
+sophia-image-producer = { path = "../sophia-image-producer", version = "0.4.0" }
 sophia-9p-client.workspace = true
 sophia-9p-records.workspace = true
-sophia-lock-protocol = { path = "../sophia-lock-protocol", version = "0.3.0" }
+sophia-lock-protocol = { path = "../sophia-lock-protocol", version = "0.4.0" }
 
 [lints]
 workspace = true

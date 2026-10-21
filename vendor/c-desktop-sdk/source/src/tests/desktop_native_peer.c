@@ -236,15 +236,13 @@ static void launcher(void)
     const struct sophia_ns_config config = {1000, 5};
     const struct sophia_sf_record *object;
     struct sophia_ns_allocation_params p = {1, 64, 32, 0, 0, 0, 0};
-    struct sophia_ic_metadata metadata;
-    struct sophia_ip_offer_info info;
+    struct sophia_ss_ring_image m;
+    struct sophia_ss_ring_offer_info info;
     struct sophia_ss_image_config image_config;
     const struct sophia_sf_limits *limits;
     char directory[4096], *slash;
     uint64_t offer;
-    int source;
-    void *mapped;
-    size_t mapped_bytes;
+    uint8_t *mapped;
     struct sophia_ss_reservation hold;
     struct sophia_ns_obligations o;
     struct sophia_ns_event e;
@@ -295,39 +293,47 @@ static void launcher(void)
            e.record->value.allocation_result.allocation_request_id == 1);
     done();
     custody(ticket);
-    /* Accepted status alone does not settle source custody. */
-    while (sophia_ip_channel(&image.producer) != SOPHIA_IPC_READY)
+    /* Owned ring: fill the slot in place, then offer it. Accepted status
+     * alone settles nothing; adoption needs the exact SlotReleased. */
+    while (sophia_ss_image_ring_state(&image, NULL) < SOPHIA_SS_RING_READY)
         step();
-    memset(&metadata, 0, sizeof(metadata));
-    metadata.resource_id = 5;
-    metadata.resource_generation = 1;
-    metadata.admission_epoch = limits->grant_content_epoch;
-    metadata.output = sophia_ns_allocation(&ns)->output_id;
-    metadata.allocation = sophia_ns_allocation(&ns)->allocation_id;
-    metadata.topology_generation = 3;
-    metadata.source_kind = metadata.source_format = 1;
-    metadata.width = 2;
-    metadata.height = 1;
-    metadata.stride = 8;
-    metadata.plane_count = metadata.descriptor_count = 1;
-    metadata.logical_bytes = sizeof(pixels);
-    assert(!sophia_ip_isb_create(2, 1, &source, &mapped, &mapped_bytes));
-    assert(mapped_bytes == sizeof(pixels));
-    memcpy(mapped, pixels, mapped_bytes);
-    assert(!sophia_ip_isb_finish(source, mapped, mapped_bytes));
-    RETRY(sophia_ss_image_begin(&image, &metadata, source, now_ms(), &offer, &ticket));
+    assert(sophia_ss_image_ring_state(&image, NULL) == SOPHIA_SS_RING_READY);
+    mapped = sophia_ss_image_ring_pixels(&image, 0);
+    assert(mapped);
+    memcpy(mapped, pixels, sizeof(pixels));
+    memset(&m, 0, sizeof(m));
+    m.resource_id = 5;
+    m.resource_generation = 1;
+    m.output_id = sophia_ns_allocation(&ns)->output_id;
+    m.output_generation = sophia_ns_allocation(&ns)->output_generation;
+    m.allocation_id = sophia_ns_allocation(&ns)->allocation_id;
+    m.allocation_generation = sophia_ns_allocation(&ns)->allocation_generation;
+    m.topology_generation = 3;
+    m.width = 2;
+    m.height = 1;
+    {
+        int r;
+        while ((r = sophia_ss_image_ring_offer(&image, 0, &m, now_ms(), &offer)) ==
+               SOPHIA_IPR_AGAIN)
+            step();
+        assert(!r);
+    }
     e = next(SOPHIA_NS_EV_RESOURCE);
     assert(e.record->value.resource_status.status == 2);
     done();
-    custody(ticket);
     for (;;) {
-        assert(!sophia_ip_offer(&image.producer, offer, &info));
-        if (info.state == SOPHIA_IPO_SETTLED)
+        assert(!sophia_ss_image_ring_info(&image, offer, &info));
+        if (info.state != SOPHIA_SS_SLOT_OFFERING && info.state != SOPHIA_SS_SLOT_OFFERED)
             break;
+        assert(!info.adoptable);
         step();
     }
-    assert(info.status == SOPHIA_IPS_ACCEPTED && info.disposition == 1);
+    assert(info.state == SOPHIA_SS_SLOT_RELEASED && info.status == SOPHIA_IPS_ACCEPTED &&
+           !info.reason && !info.changed_generation && info.adoptable);
     assert(!sophia_ns_adopt_image(&ns, &image, offer));
+    /* Adoption consumed the offer: the slot is writable again. */
+    assert(sophia_ss_image_ring_info(&image, offer, &info) == SOPHIA_IPR_ARGUMENT);
+    assert(sophia_ss_image_ring_pixels(&image, 0));
     frame(1);
     /* Semantic input: no edit without reserved ack room; exactly one ack. */
     phase("text");
@@ -424,8 +430,8 @@ int main(int argc, char **argv)
     control = argv[1];
     export_path = argv[2];
     memset(&config, 0, sizeof(config));
-    config.offer.minimum_revision = config.offer.maximum_revision = 9;
-    config.offer.required_capabilities = 0x29a0;
+    config.offer.minimum_revision = config.offer.maximum_revision = SOPHIA_SF_REVISION_OWNED_RING;
+    config.offer.required_capabilities = 0x89a0;
     config.profile = SOPHIA_SF_LAUNCHER;
     config.msize = 8192;
     config.queue_slots = 8;
@@ -481,7 +487,7 @@ int main(int argc, char **argv)
     }
     assert(sophia_ns_state(&ns) == SOPHIA_NS_LIVE);
     sophia_ss_close(&ss);
-    sophia_ip_close(&image.producer);
+    sophia_ss_image_close(&image);
     close(image_dir);
     sophia_9p_close(&wire);
     close(fd);

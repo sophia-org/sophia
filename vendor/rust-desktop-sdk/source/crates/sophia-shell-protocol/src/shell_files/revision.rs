@@ -67,7 +67,7 @@ pub fn decode_shell_file_submitted_at_revision(
 }
 
 fn check_revision(revision: u16) -> Result<(), ShellFilePayloadError> {
-    if !(1..=9).contains(&revision) {
+    if !(1..=10).contains(&revision) {
         return Err(ShellFileCodecError::Version.into());
     }
     Ok(())

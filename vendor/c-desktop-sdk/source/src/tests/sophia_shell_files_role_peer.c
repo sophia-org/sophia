@@ -209,35 +209,39 @@ static void allocate(int native)
 }
 static void upload(void)
 {
-    struct sophia_ic_metadata metadata = {0};
-    struct sophia_ip_offer_info info;
+    struct sophia_ss_ring_image m = {0};
+    struct sophia_ss_ring_offer_info info;
     struct sophia_sf_record status;
-    uint64_t offer, ticket;
-    int source, result;
-    void *pixels;
-    size_t bytes;
-    assert(!sophia_ip_isb_create(2, 1, &source, &pixels, &bytes));
-    memset(pixels, 0, bytes);
-    assert(!sophia_ip_isb_finish(source, pixels, bytes));
-    metadata.resource_id = 5; metadata.resource_generation = 1;
-    metadata.admission_epoch = 1;
-    metadata.output = 2; metadata.allocation = 1; metadata.topology_generation = 3;
-    metadata.source_kind = metadata.source_format = 1;
-    metadata.width = 2; metadata.height = 1; metadata.stride = 8;
-    metadata.plane_count = metadata.descriptor_count = 1; metadata.logical_bytes = 8;
+    uint64_t offer;
+    uint8_t *pixels;
+    int result;
+    while (sophia_ss_image_ring_state(&image, NULL) < SOPHIA_SS_RING_READY)
+        step();
+    assert(sophia_ss_image_ring_state(&image, NULL) == SOPHIA_SS_RING_READY);
+    /* Direct fill: the pixels are written straight into the ring slot. */
+    pixels = sophia_ss_image_ring_pixels(&image, 0);
+    assert(pixels);
+    memset(pixels, 0, 8);
+    m.resource_id = 5; m.resource_generation = 1;
+    m.allocation_id = 1; m.allocation_generation = 1;
+    m.output_id = 2; m.output_generation = 1; m.topology_generation = 3;
+    m.width = 2; m.height = 1;
     do {
-        result = sophia_ss_image_begin(&image, &metadata, source, now_ms(), &offer, &ticket);
-        if (result == SOPHIA_IPR_BUSY || result == SOPHIA_IPR_AGAIN) step();
-    } while (result == SOPHIA_IPR_BUSY || result == SOPHIA_IPR_AGAIN);
+        result = sophia_ss_image_ring_offer(&image, 0, &m, now_ms(), &offer);
+        if (result == SOPHIA_IPR_AGAIN) step();
+    } while (result == SOPHIA_IPR_AGAIN);
     assert(!result);
     status = event(SOPHIA_SF_RESOURCE_STATUS);
     assert(status.value.resource_status.status == 2);
+    /* Settled only after the final status and the exact SlotReleased. */
     do {
         step();
-        assert(!sophia_ip_offer(&image.producer, offer, &info));
-    } while (info.state != SOPHIA_IPO_SETTLED);
-    assert(info.status == SOPHIA_IPS_ACCEPTED && info.disposition == 1);
-    assert(!sophia_ip_forget(&image.producer, offer));
+        assert(!sophia_ss_image_ring_info(&image, offer, &info));
+    } while (info.state == SOPHIA_SS_SLOT_OFFERING || info.state == SOPHIA_SS_SLOT_OFFERED);
+    assert(info.state == SOPHIA_SS_SLOT_RELEASED && info.status == SOPHIA_IPS_ACCEPTED &&
+           !info.reason && !info.changed_generation && info.adoptable);
+    assert(!sophia_ss_image_ring_forget(&image, offer));
+    assert(sophia_ss_image_ring_pixels(&image, 0));
 }
 static uint64_t permit(uint64_t demand)
 {
@@ -493,8 +497,8 @@ int main(int argc, char **argv)
     endpoint[n] = 0;
     fd = connect_path(endpoint);
     assert(!sophia_9p_init(&wire, fd, 4096, 8, 32, memory, bytes));
-    offer.minimum_revision = offer.maximum_revision = 9;
-    offer.required_capabilities = profile == SOPHIA_SF_LAUNCHER ? 0x29a0 : 0x31a2;
+    offer.minimum_revision = offer.maximum_revision = SOPHIA_SF_REVISION_OWNED_RING;
+    offer.required_capabilities = profile == SOPHIA_SF_LAUNCHER ? 0x89a0 : 0x91a2;
     assert(!sophia_9p_version(&wire, &request)); auth_reply(&wire, request, 101);
     assert(!sophia_9p_auth(&wire, "", "", &request, &afid)); auth_reply(&wire, request, 103);
     assert(!sophia_9p_attach_with_afid(&wire, afid, "", "", &request, &attached_root)); auth_reply(&wire, request, 105);
@@ -533,7 +537,7 @@ int main(int argc, char **argv)
         while (client.submit_stage || client.ack_op.active || client.acked_sequence != client.consumed_sequence) step();
     }
     sophia_ss_close(&session);
-    sophia_ip_close(&image.producer);
+    sophia_ss_image_close(&image);
     close(image_dir);
     sophia_9p_close(&wire);
     free(session_storage);

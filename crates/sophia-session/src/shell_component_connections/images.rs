@@ -77,7 +77,7 @@ fn configure_with(
             connection_epoch: generation,
             channel_generation: generation,
             endpoint: sophia_runtime::image_channel::IMAGE_ENDPOINT_BASENAME.into(),
-            source_kinds: 1,
+            source_kinds: sophia_runtime::owned_ring_protocol::SOURCE_KIND,
             max_offers: offers,
             max_packets_per_turn: 1,
             hello_timeout_ms: 250,

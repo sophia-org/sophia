@@ -138,7 +138,9 @@ enum sophia_ic_refusal sophia_ic_discovery_decode(const void *src, size_t n,
         return SOPHIA_IC_EPOCH;
     if (!d.channel_generation || !d.formats_generation || !d.limits_generation)
         return SOPHIA_IC_GENERATION;
-    if (!d.source_kinds || d.source_kinds & ~3u)
+    /* Shell r10 is exactly the owned ring; lock never names it. */
+    if (!d.source_kinds || (d.source_kinds & ~3u && (d.role != SOPHIA_IC_ROLE_SHELL ||
+                                                   d.source_kinds != SOPHIA_IC_KIND_BIT_OWNED_RING)))
         return SOPHIA_IC_SOURCE_KIND;
     if (d.max_packet_bytes != SOPHIA_IC_SOURCE_BYTES || d.max_fds != SOPHIA_IC_MAX_FDS)
         return SOPHIA_IC_CONSTANTS;
@@ -198,7 +200,8 @@ enum sophia_ic_refusal sophia_ic_discovery_coherent(const struct sophia_ic_disco
         l->validation_chunk_bytes != d->validation_chunk_bytes ||
         l->max_packets_per_turn != d->max_packets_per_turn)
         return SOPHIA_IC_COHERENCE;
-    sealed = (d->source_kinds & SOPHIA_IC_KIND_BIT_SEALED) != 0;
+    /* Owned rings use CPU validation capacity, as sealed sources do. */
+    sealed = (d->source_kinds & (SOPHIA_IC_KIND_BIT_SEALED | SOPHIA_IC_KIND_BIT_OWNED_RING)) != 0;
     dmabuf = (d->source_kinds & SOPHIA_IC_KIND_BIT_DMABUF) != 0;
     if (f->row_count && !dmabuf)
         return SOPHIA_IC_FORMATS_UNSUPPORTED;

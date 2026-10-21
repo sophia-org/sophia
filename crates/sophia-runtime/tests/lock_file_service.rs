@@ -6,9 +6,6 @@
 mod provider;
 #[path = "support/shell_file_peer.rs"]
 mod raw_peer;
-#[allow(dead_code)]
-#[path = "support/shell_sdk_image.rs"]
-mod sdk_image;
 
 use std::time::Duration;
 
@@ -264,7 +261,7 @@ fn a_revoked_candidates_late_outcome_does_not_stop_the_service() {
         &metadata.encode().unwrap(),
     );
     wait_for(&mut peer, &mut offset, LockFileKind::ImageAdmitted);
-    let source = sdk_image::source(&[7; 64]);
+    let source = sealed_source(&[7; 64]);
     let mut planes = [LockImagePlane {
         offset: 0,
         stride: 0,
@@ -840,4 +837,23 @@ fn a_full_handoff_ignores_readable_peer_until_the_owner_drains() {
         }
     }
     drop(peer.join().unwrap());
+}
+
+fn sealed_source(pixels: &[u8]) -> std::os::fd::OwnedFd {
+    use rustix::fs::{MemfdFlags, SealFlags};
+    use std::io::Write;
+    let mut source = std::fs::File::from(
+        rustix::fs::memfd_create(
+            c"lock-image-fixture",
+            MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING,
+        )
+        .unwrap(),
+    );
+    source.write_all(pixels).unwrap();
+    rustix::fs::fcntl_add_seals(
+        &source,
+        SealFlags::WRITE | SealFlags::GROW | SealFlags::SHRINK | SealFlags::SEAL,
+    )
+    .unwrap();
+    source.into()
 }

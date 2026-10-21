@@ -67,6 +67,9 @@ func decodeRecord(bytes []byte, values bool, revision uint16) (r record, err err
 		}
 	}()
 	need(len(bytes) >= 32 && len(bytes) <= 4194304 && int(u32(bytes, 0)) == len(bytes), "length")
+	if string(bytes[4:8]) == "D4E1" {
+		return decodeRingEvent(bytes, revision), nil
+	}
 	need(u16(bytes, 4) == 1 && u64(bytes, 8) != 0, "header")
 	r = record{u16(bytes, 6), u64(bytes, 8), u64(bytes, 16), u64(bytes, 24), bytes[32:], bytes}
 	need((r.submission == 0 && ((r.kind < 16 && r.sequence == 0) || (r.kind >= 16 && r.kind < 256 && r.sequence != 0))) || (r.kind >= 266 && r.kind <= 272 && r.submission != 0 && r.sequence == 0) || imageClass(r, revision), "record class")
@@ -197,12 +200,12 @@ func offer() []byte {
 	return b
 }
 
-// sealedOffer asks for shell r9 with sealed images required.
-func sealedOffer() []byte {
+// ringOfferHello requires the sole shell CPU image path, r10 owned ring.
+func ringOfferHello() []byte {
 	b := offer()
-	p16(b, 0, 9)
-	p16(b, 2, 9)
-	p64(b, 8, 1|1<<7|1<<8|sealedCapability)
+	p16(b, 0, 10)
+	p16(b, 2, 10)
+	p64(b, 8, 1|1<<7|1<<8|ringCapability)
 	return b
 }
 func allocation(tx, id, output uint64) []byte {

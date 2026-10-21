@@ -3,7 +3,7 @@ package shelloracle
 func (r *runner) nativeScenario() {
 	s := r.connect("launcher", 4096)
 	defer s.close()
-	roleNegotiate(s, 9, 0x29a0, 0x29a0)
+	roleNegotiate(s, 10, 0x89a0, 0x89a0)
 	r.check(65, true)
 	s.phase("publish")
 	catalog := roleObject(s, 3, 3)

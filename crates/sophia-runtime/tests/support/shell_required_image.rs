@@ -1,10 +1,13 @@
-//! Actual sealed image admission for otherwise role-focused file-wire tests.
+//! Actual owned-ring image admission for otherwise role-focused file-wire tests.
 //! Authentication decisions are supplied; this is not launch acceptance.
 use super::shell_file_peer::Peer;
 use sophia_protocol::{shell_files::*, *};
+use sophia_runtime::owned_ring_protocol::{
+    CONTROL_FILE, Control, Event, EventKind, Identity, Offer, Registration,
+};
 use sophia_runtime::*;
-use std::io::Write;
 use std::os::fd::{AsFd, OwnedFd};
+use std::os::unix::fs::FileExt;
 use std::path::Path;
 #[path = "image_test_authority.rs"]
 mod authority;
@@ -40,7 +43,7 @@ pub fn configure_for_peer(
         connection_epoch: limits.grant.connection_epoch,
         channel_generation: 2,
         endpoint: "image.sock".into(),
-        source_kinds: 1,
+        source_kinds: 4,
         max_offers: offers,
         max_packets_per_turn: 8,
         hello_timeout_ms: 2000,
@@ -54,7 +57,11 @@ pub fn configure_for_peer(
         channel_generation: 2,
         limits_generation: 1,
         max_resource_bytes: limits.max_resource_bytes,
-        max_sealed_backing_bytes: limits.max_resident_bytes + limits.max_retiring_bytes,
+        max_sealed_backing_bytes: limits.max_resident_bytes
+            + limits.max_retiring_bytes
+            + OwnedRingGeometry::new(1, limits.max_resource_bytes as usize)
+                .unwrap()
+                .source_bytes() as u64,
         max_dma_source_bytes: 0,
         max_renderer_allocation_bytes: 0,
         max_renderer_entries: 0,
@@ -88,7 +95,7 @@ pub fn configure_for_peer(
 }
 
 pub fn setup(peer: &mut Peer) {
-    peer.set_revision(9);
+    peer.set_revision(10);
     assert_eq!(
         peer.rpc(
             100,
@@ -158,65 +165,56 @@ pub fn ready(peer: &mut Peer, directory: &Path, epoch: u64) -> OwnedFd {
     .unwrap();
     rustix::net::send(&socket, &hello, rustix::net::SendFlags::NOSIGNAL).unwrap();
     let event = peer.next_event();
-    let record = decode_shell_file_record_at_revision(&event, ShellFileClass::Event, 9).unwrap();
+    let record = decode_shell_file_record_at_revision(&event, ShellFileClass::Event, 10).unwrap();
     assert_eq!(record.header.kind, ShellFileKind::ChannelReady);
     peer.ack(&event);
     socket
 }
 
+/// One initial resource per connection in these role-focused fixtures.
 pub fn upload(
     peer: &mut Peer,
     socket: &OwnedFd,
-    epoch: u64,
-    submission: u64,
-    metadata: ShellImageMetadata,
+    grant: ContentGrant,
+    request: OwnedCopyImageRequest,
     pixels: &[u8],
 ) {
-    let bytes = encode_shell_file_record_at_revision(
-        ShellFileHeader {
-            kind: ShellFileKind::ImageBegin,
-            connection_epoch: epoch,
-            submission_id: submission,
-            sequence: 0,
+    let registration = Registration {
+        identity: Identity {
+            grant,
+            channel: 2,
+            ring: 1,
+            generation: 1,
         },
-        &metadata.encode().unwrap(),
-        9,
-    )
-    .unwrap();
-    peer.submit_acknowledged(&bytes, submission);
-    let event = peer.next_event();
-    let record = decode_shell_file_record_at_revision(&event, ShellFileClass::Event, 9).unwrap();
-    assert_eq!(record.header.kind, ShellFileKind::ImageAdmitted);
-    assert_eq!(ShellImageMetadata::decode(record.body).unwrap(), metadata);
-    peer.ack(&event);
-    let mut file = std::fs::File::from(
+        slots: 1,
+        pixels: pixels.len(),
+    };
+    peer.open(29, CONTROL_FILE, 1);
+    let bytes = registration.encode();
+    assert!(matches!(
+        Control::decode(&bytes),
+        Some(Control::Register(_))
+    ));
+    assert_eq!(peer.write(29, &bytes).0, 119);
+    expect_ring(peer, registration.identity, EventKind::RingAdmitted);
+    let file = std::fs::File::from(
         rustix::fs::memfd_create(
-            c"role-isb-fixture",
+            c"role-ring-fixture",
             rustix::fs::MemfdFlags::CLOEXEC | rustix::fs::MemfdFlags::ALLOW_SEALING,
         )
         .unwrap(),
     );
-    file.write_all(pixels).unwrap();
-    use rustix::fs::SealFlags;
+    file.set_len(registration.geometry().unwrap().source_bytes() as u64)
+        .unwrap();
     rustix::fs::fcntl_add_seals(
         &file,
-        SealFlags::WRITE | SealFlags::GROW | SealFlags::SHRINK | SealFlags::SEAL,
+        rustix::fs::SealFlags::GROW | rustix::fs::SealFlags::SHRINK,
     )
     .unwrap();
-    let mut planes = [ShellImagePlane {
-        offset: 0,
-        stride: 0,
-        fd_index: 0,
-    }; 4];
-    planes[0].stride = metadata.stride;
-    let bytes = ShellImagePacket::Source {
-        connection_epoch: epoch,
-        channel_generation: 2,
-        metadata,
-        planes,
-    }
-    .encode()
-    .unwrap();
+    file.write_all_at(&request.slot.generation.to_le_bytes(), 0)
+        .unwrap();
+    file.write_all_at(pixels, 4096).unwrap();
+    let bytes = registration.source_packet();
     let mut space = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
     let mut control = rustix::net::SendAncillaryBuffer::new(&mut space);
     let rights = [file.as_fd()];
@@ -229,24 +227,39 @@ pub fn upload(
             rustix::net::SendFlags::NOSIGNAL
         )
         .unwrap(),
-        200
+        bytes.len()
     );
+    expect_ring(peer, registration.identity, EventKind::RingReady);
+    let offer = Offer {
+        identity: registration.identity,
+        request,
+    };
+    assert_eq!(peer.write(29, &offer.encode()).0, 119);
     let status = peer.next_event();
-    let value = decode_shell_file_resource_status_at_revision(&status, 9).unwrap();
-    assert!(
-        matches!(value.record, ShellContentRecord::ResourceStatus(s) if s.resource.id == metadata.resource && s.status == 2)
-    );
+    let value = decode_shell_file_resource_status_at_revision(&status, 10).unwrap();
+    assert!(matches!(value.record, ShellContentRecord::ResourceStatus(s)
+        if s.grant == grant && s.resource == request.resource && s.status == 2));
     peer.ack(&status);
-    let release = peer.next_event();
-    let record = decode_shell_file_record_at_revision(&release, ShellFileClass::Event, 9).unwrap();
-    assert_eq!(record.header.kind, ShellFileKind::SourceReleased);
-    assert_eq!(
-        ShellSourceReleased::decode(record.body)
-            .unwrap()
-            .disposition,
-        ShellSourceDisposition::Retained
-    );
-    peer.ack(&release);
+    let release = expect_ring(peer, registration.identity, EventKind::SlotReleased);
+    assert_eq!(release.slot, request.slot);
+    assert_eq!(release.resource, request.resource);
+    assert_eq!(release.reason, 0);
+    assert!(!release.changed_generation);
+    peer.clunk(29);
+}
+
+fn expect_ring(peer: &mut Peer, identity: Identity, kind: EventKind) -> Event {
+    let bytes = peer.next_event();
+    let event = Event::decode(&bytes).expect("canonical ring event");
+    assert_eq!(event.kind, kind);
+    assert_eq!(event.identity, identity);
+    let ack = encode_shell_file_ack(ShellFileAck {
+        connection_epoch: identity.grant.connection_epoch,
+        sequence: event.sequence,
+    })
+    .unwrap();
+    assert_eq!(peer.write(4, &ack).0, 119);
+    event
 }
 
 #[allow(dead_code)] // Role-focused fixtures may grant their own allocation.

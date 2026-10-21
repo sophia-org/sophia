@@ -15,7 +15,7 @@ impl Fixture {
             return Ok(());
         }
         self.transport.poll_io(&mut self.registry)?;
-        // Pixels reach the store only through the peer's sealed Source.
+        // Pixels reach the store only through the peer's owned ring.
         if let Some(owner) = &mut self.image_owner {
             owner.service(&mut self.transport, &mut self.registry, 10, Instant::now())?;
         }

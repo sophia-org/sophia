@@ -1,5 +1,5 @@
-//! Experimental records share the normal journal, sequence and ACK custody.
-//! Their caller must first establish explicit experimental-file admission.
+//! Owned-ring records share the normal journal, sequence and ACK custody.
+//! Their caller must first establish authenticated r10 owned-ring admission.
 use super::*;
 use crate::owned_ring_protocol::Event;
 

@@ -20,11 +20,15 @@ mod io;
 mod isb;
 mod offers;
 mod producer;
+mod ring;
 mod role;
 
 pub use io::connect;
 pub use isb::{IsbSource, create_isb, create_mapped_isb, finish_isb};
 pub use producer::ImageProducer;
+pub use ring::{
+    RingOfferInfo, RingOfferState, RingProducer, RingProducerConfig, RingSlotFill, RingUpload,
+};
 pub use sophia_isb::{IsbError, MappedIsb};
 
 /// The role this producer speaks on its channel.
@@ -193,6 +197,8 @@ pub enum ImageEvent {
         /// Role disposition value, 1..=5.
         disposition: u32,
     },
+    /// One D4E1 owned-ring journal event (shell revision 10 only).
+    Ring(sophia_shell_protocol::shell_files::RingEvent),
 }
 
 /// The read outcome for one discovery object set.

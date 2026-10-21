@@ -4,7 +4,7 @@ use sophia_runtime::*;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-pub const NAMES: [&str; 8] = [
+pub const NAMES: [&str; 10] = [
     "main",
     "refused",
     "unservable",
@@ -13,6 +13,8 @@ pub const NAMES: [&str; 8] = [
     "stream",
     "missing",
     "cancelled",
+    "main-unsealed",
+    "main-size",
 ];
 pub struct Fixture {
     pub name: &'static str,
@@ -28,10 +30,13 @@ pub struct Fixture {
     pub revoked: bool,
     image_owner: Option<ShellIsbImageOwner>,
 }
-/// Fixtures whose oracle attach negotiates shell r9 sealed images. The rest
+/// Fixtures whose oracle attach negotiates shell r10 owned rings. The rest
 /// judge metadata-only behavior at their earlier revisions.
-fn sealed(name: &str) -> bool {
-    matches!(name, "main" | "missing" | "cancelled")
+fn ring(name: &str) -> bool {
+    matches!(
+        name,
+        "main" | "main-unsealed" | "main-size" | "missing" | "cancelled"
+    )
 }
 fn output() -> ContentOutputId {
     ContentOutputId {
@@ -72,7 +77,7 @@ impl Fixture {
     }
     pub fn authorize(&mut self, pid: u32) {
         let limits = ContentLimits::prototype(self.grant);
-        if sealed(self.name) {
+        if ring(self.name) {
             self.image_owner = Some(image::configure_for_peer(&mut self.transport, &limits, pid));
         } else {
             self.transport
@@ -248,7 +253,7 @@ impl Fixture {
                 )?;
             }
         }
-        // Pixels reach the store only through the oracle's sealed Source.
+        // Pixels reach the store only through the oracle's owned-ring Source.
         if let Some(owner) = &mut self.image_owner {
             owner.service(&mut self.transport, &mut self.registry, 10, Instant::now())?;
         }
@@ -294,7 +299,7 @@ impl Fixture {
                         .unwrap()
                         .cpu_bytes()
                         .unwrap(),
-                    // The bytes the oracle sealed and sent, not a seeded value.
+                    // The bytes the oracle filled and sent, not a seeded value.
                     &[0, 0, 255, 255, 0, 128, 0, 128]
                 );
                 self.transport.content_prepared(
@@ -345,7 +350,7 @@ impl Fixture {
         }
         Ok(())
     }
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self) -> Result<(), String> {
         if let Err(error) = self.service() {
             let expected = match self.name {
                 "refused" => matches!(error, ShellTransportError::ContentAdmissionRefused(_)),
@@ -357,15 +362,33 @@ impl Fixture {
                 _ => false,
             };
             if !expected && !matches!(error, ShellTransportError::NotConnected) {
-                panic!("{} owner error: {error}", self.name);
+                self.transport.disconnect(&mut self.registry).unwrap();
+                self.state = 3;
+                return Err(format!("{} owner error: {error}", self.name));
             }
             self.revoked = expected;
             self.transport.disconnect(&mut self.registry).unwrap();
             self.state = 3;
         }
+        Ok(())
     }
     pub fn cleanup(&mut self) {
         self.transport.disconnect(&mut self.registry).unwrap();
+        if let Some(owner) = &mut self.image_owner {
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                // Even an idle ring retains its source charge until the owner
+                // observes the retired connection.
+                owner
+                    .service(&mut self.transport, &mut self.registry, 10, Instant::now())
+                    .unwrap();
+                if owner.pending() == 0 {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "{} image owner drain", self.name);
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
         self.registry.collect();
         assert!(
             self.transport

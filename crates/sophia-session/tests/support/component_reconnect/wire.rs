@@ -7,8 +7,7 @@
 use super::*;
 use crate::shell_component_connections::content_now_msec;
 use sophia_shell_client::{
-    Admission, Custody, NativeLauncherObservation, ProducerMetadata, ShellClientOptions,
-    ShellConnection,
+    Admission, Custody, NativeLauncherObservation, RingUpload, ShellClientOptions, ShellConnection,
 };
 
 /// The actual owner of one connection. Each visit runs that owner's image
@@ -104,7 +103,7 @@ pub(super) fn client(socket: std::path::PathBuf, slot: usize) -> (ShellConnectio
     assert!(slot <= 2, "role");
     // Bit 13: sealed images, required for every content attach at r9.
     let capabilities = SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
-        | (1 << 13)
+        | (1 << 15)
         | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
         | match slot {
             0 => {
@@ -126,8 +125,8 @@ pub(super) fn client(socket: std::path::PathBuf, slot: usize) -> (ShellConnectio
     let mut peer = sdk_image::authenticated_client(
         &socket,
         ShellClientOptions {
-            minimum_revision: 9,
-            maximum_revision: 9,
+            minimum_revision: 10,
+            maximum_revision: 10,
             required_capabilities: capabilities,
             handshake_timeout: Duration::from_secs(3),
         },
@@ -198,7 +197,7 @@ pub(super) fn upload_id(
     upload_sealed(owner, peer, resource, 1, 1, &[1, 2, 3, 255])
 }
 
-/// One sealed memfd offer for a live allocation at facts generation 1. The
+/// One owned-ring offer for a live allocation at facts generation 1. The
 /// SDK peer awaits Accepted and its retained release; the owner admits it.
 fn upload_sealed(
     owner: &mut impl Owner,
@@ -209,22 +208,16 @@ fn upload_sealed(
     pixels: &[u8],
 ) -> ContentResourceLease {
     let grant = owner.visit(|t, _| t.content_grant().unwrap());
-    let metadata = ProducerMetadata {
+    let metadata = RingUpload {
         resource: resource.id,
         resource_generation: resource.generation,
-        admission_epoch: grant.content_grant_epoch,
-        output_id: OUTPUT.id,
-        allocation_id: ALLOCATION.id,
+        output: OUTPUT.id,
+        output_generation: OUTPUT.generation,
+        allocation: ALLOCATION.id,
+        allocation_generation: ALLOCATION.generation,
         topology_generation: 1,
-        source_kind: 1,
-        source_format: 1,
         width,
         height,
-        stride: width * 4,
-        plane_count: 1,
-        descriptor_count: 1,
-        declared_bytes: pixels.len() as u64,
-        ..Default::default()
     };
     std::thread::scope(|scope| {
         let worker = scope.spawn(|| sdk_image::upload(peer, metadata, pixels));
@@ -235,7 +228,7 @@ fn upload_sealed(
                 t.service_content_resources(now).unwrap();
                 t.poll_io().unwrap();
             });
-            assert!(Instant::now() < deadline, "sealed image admission hung");
+            assert!(Instant::now() < deadline, "owned image admission hung");
             std::thread::yield_now();
         }
         worker.join().unwrap();

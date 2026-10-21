@@ -427,3 +427,84 @@ fn content_refusal_waits_for_the_exact_peer_ack_before_terminal_error() {
     let _peer = worker.join().unwrap();
     assert!(host.server.content_accounting(&registry).quiescent());
 }
+
+#[test]
+fn retired_sealed_shell_clients_follow_revision_and_capability_refusal_contract() {
+    for (minimum, maximum) in [(9, 9), (8, 10)] {
+        let mut registry = ContentEpochRegistry::new(64 * 1024 * 1024).unwrap();
+        let mut host = Host::new(&mut registry, 1, granted());
+        let socket = host.server.socket_path().to_owned();
+        let expected = ContentAdmissionRefused {
+            reason: 4,
+            denied_capabilities: 1 << 13,
+        };
+        let peer_expected = expected.clone();
+        let worker = std::thread::spawn(move || {
+            let mut peer = Peer::connect(&socket);
+            peer.setup();
+            let hello = encode_shell_file_negotiate(
+                header(1, 1, ShellFileKind::Negotiate),
+                ShellV1ClientHello {
+                    minimum_revision: minimum,
+                    maximum_revision: maximum,
+                    required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
+                        | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+                        | (1 << 13),
+                },
+            )
+            .unwrap();
+            if maximum < 10 {
+                assert_eq!(peer.submit(&hello).0, 119);
+                // An unsupported revision closes the attach; only the submit
+                // receipt may race that close, never a Refused event.
+                let closed = match peer.try_next_event() {
+                    Ok(event) => {
+                        assert_eq!(
+                            decode_shell_file_submitted(&event).unwrap().submission_id,
+                            1
+                        );
+                        match peer.try_ack(&event) {
+                            Ok(()) => peer.try_next_event().unwrap_err(),
+                            Err(error) => error,
+                        }
+                    }
+                    Err(error) => error,
+                };
+                assert!(matches!(
+                    closed.kind(),
+                    std::io::ErrorKind::UnexpectedEof
+                        | std::io::ErrorKind::ConnectionReset
+                        | std::io::ErrorKind::BrokenPipe
+                ));
+                return peer;
+            }
+            peer.submit_acknowledged(&hello, 1);
+            let event = peer.next_event();
+            assert_eq!(decode_shell_file_refused(&event).unwrap(), peer_expected);
+            peer.ack(&event);
+            peer
+        });
+        let deadline = Instant::now() + WAIT;
+        loop {
+            match host.server.poll_negotiation(&mut registry, 65536) {
+                Ok(None) => {}
+                Err(error) => {
+                    assert_eq!(
+                        error,
+                        if maximum < 10 {
+                            ShellTransportError::UnsupportedRevision
+                        } else {
+                            ShellTransportError::ContentAdmissionRefused(expected)
+                        }
+                    );
+                    break;
+                }
+                other => panic!("sealed client was admitted: {other:?}"),
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        let _peer = worker.join().unwrap();
+        assert!(host.server.content_accounting(&registry).quiescent());
+    }
+}

@@ -45,7 +45,7 @@ impl ShellFiles {
                 sequence: 0,
             },
             &formats_body,
-            9,
+            crate::owned_ring_protocol::REVISION,
         )
         .map_err(|_| Errno::EINVAL)?;
         let discovery_snapshot = Arc::new(DiscoverySnapshot {

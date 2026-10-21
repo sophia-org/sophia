@@ -375,8 +375,8 @@ impl ShellFiles {
             return Err(EALREADY);
         }
         let image_objects = if self.image.is_some()
-            && image_revision == 9
-            && capabilities & ((1 << 13) | (1 << 14)) != 0
+            && image_revision == crate::owned_ring_protocol::REVISION
+            && capabilities & crate::owned_ring_protocol::CAPABILITY != 0
         {
             let (_, content_limits) = limits.as_ref().ok_or(Errno::EACCES)?;
             self.validate_image_content_limits(content_limits)?;
@@ -391,7 +391,7 @@ impl ShellFiles {
         }
         self.capabilities = capabilities;
         self.image_revision = image_revision;
-        if image_revision == 9 {
+        if image_revision == crate::owned_ring_protocol::REVISION {
             self.journal.enable_image_revision();
         }
         self.negotiated = true;

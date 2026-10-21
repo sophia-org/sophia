@@ -49,7 +49,7 @@ fn image_envelopes_require_explicit_r9() {
                 Err(ShellFileCodecError::Kind)
             );
         }
-        for revision in [0, 10, u16::MAX] {
+        for revision in [0, u16::MAX] {
             assert_eq!(
                 decode_shell_file_record_at_revision(&bytes, class, revision),
                 Err(ShellFileCodecError::Version)
@@ -67,6 +67,89 @@ fn image_envelopes_require_explicit_r9() {
             .unwrap()
             .header,
         h
+    );
+}
+
+#[test]
+fn r10_envelopes_retain_channel_and_companions_and_refuse_sealed_kinds() {
+    // Retained at r10: the channel events and companion objects keep
+    // their r9 layouts and round-trip unchanged.
+    for kind in [
+        ShellFileKind::ChannelReady,
+        ShellFileKind::ChannelClosed,
+        ShellFileKind::ImageLimits,
+        ShellFileKind::ImageFormats,
+    ] {
+        let h = header(kind);
+        let class = shell_file_class(kind);
+        let bytes = encode_shell_file_record_at_revision(h, &[], 10).unwrap();
+        assert_eq!(
+            decode_shell_file_record_at_revision(&bytes, class, 10)
+                .unwrap()
+                .header,
+            h
+        );
+    }
+    // Retired at r10: the sealed-plane kinds refuse in both
+    // directions, while the same bytes remain valid at r9.
+    for kind in [
+        ShellFileKind::ImageBegin,
+        ShellFileKind::ImageAdmitted,
+        ShellFileKind::SourceReleased,
+    ] {
+        let h = header(kind);
+        let class = shell_file_class(kind);
+        let bytes = encode_shell_file_record_at_revision(h, &[], 9).unwrap();
+        assert_eq!(
+            encode_shell_file_record_at_revision(h, &[], 10),
+            Err(ShellFileCodecError::Kind)
+        );
+        assert_eq!(
+            decode_shell_file_record_at_revision(&bytes, class, 10),
+            Err(ShellFileCodecError::Kind)
+        );
+    }
+    // Ordinary envelope kinds are revision-10 vocabulary too.
+    for kind in [
+        ShellFileKind::Limits,
+        ShellFileKind::Negotiate,
+        ShellFileKind::ResourceStatus,
+    ] {
+        let h = header(kind);
+        let class = shell_file_class(kind);
+        let bytes = encode_shell_file_record_at_revision(h, &[], 10).unwrap();
+        assert_eq!(
+            decode_shell_file_record_at_revision(&bytes, class, 10)
+                .unwrap()
+                .header,
+            h
+        );
+    }
+    // A Submitted receipt naming ImageBegin is refused at r10; an
+    // ordinary candidate kind is not.
+    let h = header(ShellFileKind::Submitted);
+    let sealed = ShellFileSubmitted {
+        submission_id: 17,
+        candidate_kind: ShellFileKind::ImageBegin,
+    };
+    assert!(encode_shell_file_submitted_at_revision(h, sealed, 10).is_err());
+    let ordinary = ShellFileSubmitted {
+        submission_id: 17,
+        candidate_kind: ShellFileKind::ResourceBegin,
+    };
+    let bytes = encode_shell_file_submitted_at_revision(h, ordinary, 10).unwrap();
+    assert_eq!(
+        decode_shell_file_submitted_at_revision(&bytes, 10).unwrap(),
+        ordinary
+    );
+    // An ordinary ResourceStatus encodes at r10; reason 13 stays
+    // an r9-only extension there.
+    let h = header(ShellFileKind::ResourceStatus);
+    let accepted = status(2, 0);
+    let bytes = encode_shell_file_resource_status_at_revision(h, &accepted, 10).unwrap();
+    assert_eq!(
+        decode_shell_file_resource_status_at_revision(&bytes, 10).unwrap(),
+        accepted
     );
 }
 

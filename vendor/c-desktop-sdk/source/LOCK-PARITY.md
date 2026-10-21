@@ -181,3 +181,20 @@ not a claim that revocation interrupted a partially transmitted wire payload.
 The existing raw in-place-fragment test owns that separate boundary. Fresh
 authorized replacement and SDK reauthentication are covered by the current
 three-scenario fixture described above; this paragraph records the earlier run.
+
+## Negotiated ISB lock bounds, 2026-10-20
+
+The C image adapter now derives every producer role bound from the lock
+client's received Limits, as Rust LockImageAdapter::new already does. The
+producer configuration's bounds field is ignored by this adapter; callers
+still supply the transfer timeout and startup deadline. No wire or struct
+layout changes. This fixes valid two-slot production discovery being rejected
+against a caller's four-slot estimate. Discovery must still agree with the
+negotiated slot count and stay within the role's dimensions/resource limits.
+
+The C scripted peer now advertises coherent two-slot discovery; new cases
+exercise one, two and four negotiated slots with deliberately different caller
+estimates. Removing the fix fails the Hello barrier assertion; restoring it
+passes the full C suite. The Rust counterpart implementation is already present
+in c6ad4fa04395565297beeecaa18edc459ad9cb01 (lock-client/src/image.rs).
+Production-client and physical acceptance are recorded separately by Sophia.

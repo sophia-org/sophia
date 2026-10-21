@@ -15,8 +15,14 @@ pub(super) fn validate_negotiated(
     value: &ShellFileNegotiated,
 ) -> Result<(), ShellClientError> {
     if native {
+        let ring = options.required_capabilities & crate::IMAGE_CAPABILITY_OWNED_RING != 0;
         let image = options.required_capabilities & crate::IMAGE_CAPABILITY_SEALED != 0;
-        let (revision, capabilities) = if image {
+        let (revision, capabilities) = if ring {
+            (
+                sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION,
+                NATIVE_CAPS | crate::IMAGE_CAPABILITY_OWNED_RING,
+            )
+        } else if image {
             (9, NATIVE_CAPS | crate::IMAGE_CAPABILITY_SEALED)
         } else {
             (7, NATIVE_CAPS)

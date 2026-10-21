@@ -73,7 +73,7 @@ impl ShellFiles {
                     sequence: 1,
                 },
                 &record,
-                9,
+                crate::owned_ring_protocol::REVISION,
             )
             .map_err(|_| Errno::EINVAL)?;
             self.append_owned_status(transaction, &status, &bytes[SHELL_FILE_HEADER_BYTES..])?

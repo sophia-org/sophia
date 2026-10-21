@@ -5,7 +5,7 @@ use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use super::file_wire_peer::{EPOCH, Object, Peer, Profile};
+use super::file_wire_peer::{CONTENT_GRANT_EPOCH, EPOCH, Object, Peer, Profile};
 use rustix::net::{
     AddressFamily, RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, SocketAddrUnix,
     SocketFlags, SocketType, accept_with, listen, recvmsg, socket_with,
@@ -18,21 +18,22 @@ use sophia_shell_protocol::*;
 pub(super) const BAR: u64 =
     SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
 pub(super) const SEALED: u64 = IMAGE_CAPABILITY_SEALED;
+pub(super) const OWNED: u64 = IMAGE_CAPABILITY_OWNED_RING;
 
 pub(super) fn profile() -> Profile {
     Profile {
         role: "bar",
-        revision: 9,
-        capabilities: BAR | SEALED,
+        revision: 10,
+        capabilities: BAR | OWNED,
         limits_published: false,
     }
 }
 
 pub(super) fn options() -> ShellClientOptions {
     ShellClientOptions {
-        minimum_revision: 9,
-        maximum_revision: 9,
-        required_capabilities: BAR | SEALED,
+        minimum_revision: 10,
+        maximum_revision: 10,
+        required_capabilities: BAR | OWNED,
         handshake_timeout: Duration::from_secs(5),
     }
 }
@@ -50,6 +51,9 @@ pub(super) fn image_config(dir: PathBuf) -> ShellImageConfig {
         transfer_timeout_ms: 1_000,
         startup_deadline_ms: 60_000,
         formats_capacity: 4096,
+        ring_slots: 0,
+        ring_capacity: 0,
+        content_grant_epoch: CONTENT_GRANT_EPOCH,
     }
 }
 
@@ -68,7 +72,7 @@ pub(super) fn discovery_text(endpoint: &str) -> Vec<u8> {
         connection_epoch: EPOCH,
         channel_generation: 3,
         endpoint: endpoint.to_owned(),
-        source_kinds: 1,
+        source_kinds: 4,
         max_offers: 4,
         max_packets_per_turn: 1,
         hello_timeout_ms: 250,
@@ -356,7 +360,89 @@ pub(super) fn sealed_fd() -> OwnedFd {
     source.into_fd()
 }
 
-pub(super) fn drive_to_ready(
+pub(super) const RING_IDENTITY: sophia_shell_protocol::shell_files::RingIdentity =
+    sophia_shell_protocol::shell_files::RingIdentity {
+        connection_epoch: EPOCH,
+        content_grant_epoch: CONTENT_GRANT_EPOCH,
+        channel_generation: 3,
+        ring: 1,
+        generation: 1,
+    };
+
+pub(super) fn ring_event_kind(
+    kind: sophia_shell_protocol::shell_files::RingEventKind,
+    sequence: u64,
+) -> Vec<u8> {
+    use sophia_shell_protocol::shell_files::RingEvent;
+    RingEvent {
+        kind,
+        identity: RING_IDENTITY,
+        sequence,
+        offer_id: 0,
+        slot: 0,
+        slot_generation: 0,
+        resource: 0,
+        resource_generation: 0,
+        reason: u16::from(kind == RingEventKind::RingRefused),
+        changed_generation: false,
+    }
+    .encode()
+}
+
+pub(super) fn ring_released(
+    sequence: u64,
+    offer_id: u64,
+    slot_generation: u64,
+    resource: u64,
+    resource_generation: u64,
+    reason: u16,
+) -> Vec<u8> {
+    use sophia_shell_protocol::shell_files::{RingEvent, RingEventKind};
+    RingEvent {
+        kind: RingEventKind::SlotReleased,
+        identity: RING_IDENTITY,
+        sequence,
+        offer_id,
+        slot: 0,
+        slot_generation,
+        resource,
+        resource_generation,
+        reason,
+        changed_generation: false,
+    }
+    .encode()
+}
+
+pub(super) fn status_body(
+    transaction: u64,
+    resource: u64,
+    generation: u64,
+    status: u16,
+) -> Vec<u8> {
+    encode_shell_file_resource_status_body(&ShellFileTransactionRecord {
+        transaction: TransactionId::from_raw(transaction),
+        record: ShellContentRecord::ResourceStatus(ContentResourceStatus {
+            grant: ContentGrant {
+                connection_epoch: EPOCH,
+                content_grant_epoch: CONTENT_GRANT_EPOCH,
+            },
+            resource: ContentResourceId {
+                id: resource,
+                generation,
+            },
+            status,
+            reason: 0,
+            next_ordinal: 0,
+            admitted_bytes: 8,
+        }),
+    })
+    .unwrap()
+}
+
+/// Drive discovery and Hello, answer ChannelReady with kind 4, and
+/// return the accepted image socket. The Register record is left in
+/// `peer.control_writes` for the caller's assertions.
+pub(super) fn drive_to_image_hello(
     connection: &mut ShellConnection,
     peer: &mut Peer,
     listener: &OwnedFd,
@@ -365,19 +451,96 @@ pub(super) fn drive_to_ready(
         connection.image_poll_fd().is_some()
     });
     let accepted = accept_endpoint(listener);
-    let _hello = recv_packet(&accepted);
+    let (hello, hello_fds) = recv_packet(&accepted);
+    assert_eq!(hello.len(), 40);
+    assert!(hello_fds.is_empty());
+    accepted
+}
+
+pub(super) fn push_channel_ready(peer: &mut Peer) {
     let ready = ShellChannelReady {
         channel_generation: 3,
-        granted_source_kinds: 1,
+        granted_source_kinds: 4,
     }
     .encode()
     .unwrap();
     let bytes = peer.event_image(ShellFileKind::ChannelReady, &ready);
     peer.push(bytes);
+}
+
+pub(super) fn drive_to_channel_ready(
+    connection: &mut ShellConnection,
+    peer: &mut Peer,
+    listener: &OwnedFd,
+) -> OwnedFd {
+    let accepted = drive_to_image_hello(connection, peer, listener);
+    push_channel_ready(peer);
+    drive(connection, peer, |_, peer| !peer.control_writes.is_empty());
+    accepted
+}
+
+/// From ChannelReady: admit the ring, receive the D4F1 source packet,
+/// mark it ready. Returns the source descriptor and its size.
+pub(super) fn drive_to_ring_ready(
+    connection: &mut ShellConnection,
+    peer: &mut Peer,
+    accepted: &OwnedFd,
+) -> (OwnedFd, u64) {
+    use sophia_shell_protocol::shell_files::RingEventKind;
+    let admitted = ring_event_kind(RingEventKind::RingAdmitted, peer.take_sequence());
+    peer.push(admitted);
+    let (packet, fds) = drive_packet(connection, peer, accepted);
+    assert_eq!(fds.len(), 1);
+    let registration =
+        sophia_shell_protocol::shell_files::RingRegistration::decode_source(&packet).unwrap();
+    let ready = ring_event_kind(RingEventKind::RingReady, peer.take_sequence());
+    peer.push(ready);
     drive(connection, peer, |connection, _| {
         connection.image_adapter().unwrap().channel() == Some(ImageChannelState::Ready)
     });
-    accepted
+    let fd = fds.into_iter().next().unwrap();
+    let bytes = rustix::fs::fstat(&fd).unwrap().st_size as u64;
+    assert_eq!(bytes, registration.source_bytes().unwrap());
+    (fd, bytes)
+}
+
+fn drive_packet(
+    connection: &mut ShellConnection,
+    peer: &mut Peer,
+    accepted: &OwnedFd,
+) -> (Vec<u8>, Vec<OwnedFd>) {
+    // Pump the session while waiting for the side-socket packet.
+    let start = Instant::now();
+    loop {
+        connection.poll_io().unwrap();
+        peer.pump();
+        let mut buf = vec![0u8; 512];
+        let mut space = [std::mem::MaybeUninit::uninit(); 128];
+        let mut ancillary = RecvAncillaryBuffer::new(&mut space);
+        let mut iov = [IoSliceMut::new(&mut buf)];
+        match recvmsg(
+            accepted,
+            &mut iov,
+            &mut ancillary,
+            RecvFlags::DONTWAIT | RecvFlags::CMSG_CLOEXEC,
+        ) {
+            Ok(result) => {
+                buf.truncate(result.bytes);
+                let mut fds = Vec::new();
+                for message in ancillary.drain() {
+                    if let rustix::net::RecvAncillaryMessage::ScmRights(rights) = message {
+                        fds.extend(rights);
+                    }
+                }
+                return (buf, fds);
+            }
+            Err(error) if error == rustix::io::Errno::AGAIN => {
+                assert!(start.elapsed() < Duration::from_secs(5));
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Err(error) => panic!("recv failed: {error}"),
+        }
+    }
 }
 
 pub(super) fn answer_submit(

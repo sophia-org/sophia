@@ -103,7 +103,7 @@ static int expect_valid(const struct sophia_ic_expect *e)
 {
     return e && (e->role == SOPHIA_IC_ROLE_SHELL || e->role == SOPHIA_IC_ROLE_LOCK) &&
            e->connection_epoch && e->channel_generation && e->source_kinds &&
-           !(e->source_kinds & ~3u) && e->max_width && e->max_height && e->max_resource_bytes;
+           !(e->source_kinds & ~7u) && e->max_width && e->max_height && e->max_resource_bytes;
 }
 
 static enum sophia_ic_refusal planes(const uint8_t *p, struct sophia_ic_packet *out)

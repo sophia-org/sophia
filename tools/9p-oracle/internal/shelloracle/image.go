@@ -19,7 +19,7 @@ const (
 	kindChannelClosed  = 28676
 	kindImageLimits    = 28677
 	kindImageFormats   = 28678
-	sealedCapability   = 1 << 13
+	ringCapability     = 1 << 15
 	contentGrantEpoch  = 1
 )
 
@@ -55,7 +55,7 @@ func validateImage(r record) {
 		need(u32(b, 24) >= 1 && u32(b, 24) <= 5 && u32(b, 28) == 0, "SourceReleased")
 	case kindChannelReady:
 		nonzero64(b, 0)
-		need(u32(b, 8) >= 1 && u32(b, 8) <= 3 && u32(b, 12) == 0, "ChannelReady")
+		need(u32(b, 8) >= 1 && u32(b, 8) <= 4 && u32(b, 12) == 0, "ChannelReady")
 	case kindChannelClosed:
 		nonzero64(b, 0)
 		need(u32(b, 8) >= 1 && u32(b, 8) <= 4 && u32(b, 12) == 0, "ChannelClosed")
@@ -167,7 +167,7 @@ func parseDiscovery(text []byte) discovery {
 	need(number("role", 16) == 1, "image-channel role")
 	need(d.epoch != 0 && d.generation != 0 && d.formats != 0 && d.limits != 0, "image-channel zero generation")
 	need(endpointName.MatchString(d.endpoint) && d.endpoint != "." && d.endpoint != "..", "image-channel endpoint")
-	need(d.sourceKinds != 0 && d.sourceKinds&^3 == 0, "image-channel source kinds")
+	need(d.sourceKinds == 4, "image-channel source kinds")
 	need(number("max_packet_bytes", 32) == 200 && number("max_fds", 32) == 4, "image-channel packet/fd bounds")
 	offers := number("max_offers", 32)
 	need(offers >= 1 && offers <= 4, "image-channel offers")
@@ -205,7 +205,7 @@ func (s *session) discover() bool {
 	limits := s.imageObject("image-limits", 32+104)
 	formats := s.imageObject("image-formats", 163904)
 	s.discovery = d
-	return d.epoch == s.epoch && d.sourceKinds&1 != 0 && limits.kind == kindImageLimits && formats.kind == kindImageFormats &&
+	return d.epoch == s.epoch && d.sourceKinds == 4 && limits.kind == kindImageLimits && formats.kind == kindImageFormats &&
 		u64(limits.body, 0) == d.generation && u64(limits.body, 8) == d.limits &&
 		u64(formats.body, 0) == d.generation && u64(formats.body, 8) == d.formats && u64(formats.body, 16) == d.limits
 }
@@ -236,80 +236,7 @@ func (s *session) hello() record {
 	return e
 }
 
-// memfd returns a source file holding bytes; sealed adds every required seal.
-func memfd(bytes []byte, sealed bool) int {
-	fd, err := unix.MemfdCreate("oracle-isb", unix.MFD_CLOEXEC|unix.MFD_ALLOW_SEALING)
-	must(err)
-	for off := 0; off < len(bytes); {
-		n, err := unix.Write(fd, bytes[off:])
-		must(err)
-		off += n
-	}
-	if sealed {
-		_, err = unix.FcntlInt(uintptr(fd), unix.F_ADD_SEALS, unix.F_SEAL_WRITE|unix.F_SEAL_GROW|unix.F_SEAL_SHRINK|unix.F_SEAL_SEAL)
-		must(err)
-	}
-	return fd
-}
-func (s *session) source(metadata []byte, fd int) int {
-	b := packetHeader(200, 2, 1, s.epoch, s.discovery.generation, u64(metadata, 0))
-	copy(b[40:], metadata)
-	p32(b, 136+8, u32(metadata, 72))
-	n, err := unix.SendmsgN(s.image, b, unix.UnixRights(fd), nil, unix.MSG_NOSIGNAL)
-	must(err)
-	must(unix.Close(fd))
-	return n
-}
-
-// admit submits ImageBegin and returns the exact ImageAdmitted record.
-func (s *session) admit(metadata []byte) (record, record) {
-	id := s.submit(kindImageBegin, metadata)
-	custody := s.custody(id, kindImageBegin)
-	s.ack(custody)
-	e := s.expect(kindImageAdmitted)
-	s.ack(e)
-	return custody, e
-}
-
-// settle returns the offer's ResourceStatus and SourceReleased. The contract
-// promises both but orders them on independent credits, so accept either order.
-func (s *session) settle(metadata []byte) (status, release record) {
-	for status.kind == 0 || release.kind == 0 {
-		e := s.next()
-		switch {
-		case e.kind == 33 && status.kind == 0:
-			need(u64(e.body, 24) == u64(metadata, 8) && u64(e.body, 32) == u64(metadata, 16), "image ResourceStatus identity")
-			status = e
-		case e.kind == kindSourceReleased && release.kind == 0:
-			need(identical(e.body[:24], metadata[:24]), "SourceReleased identity")
-			release = e
-		default:
-			need(false, "image settlement event %d", e.kind)
-		}
-		s.ack(e)
-	}
-	return status, release
-}
-func (s *session) nextOffer() uint64 {
-	s.offers++
-	return s.offers
-}
-
-// sealedResource transfers one accepted image through the channel. It is the
-// only way pixels reach the export; no fixture seeds resources.
-func sealedResource(s *session, resource, topology uint64) bool {
-	if s.image < 0 {
-		need(s.discover(), "image discovery")
-		s.hello()
-	}
-	m := imageMetadata(s.nextOffer(), resource, topology, 2, 1)
-	_, admitted := s.admit(m)
-	sent := s.source(m, memfd([]byte{0, 0, 255, 255, 0, 128, 0, 128}, true))
-	status, release := s.settle(m)
-	return identical(admitted.body, m) && sent == 200 && u16(status.body, 40) == 2 && u32(release.body, 24) == 1
-}
-
 // smallResource supplies the 2x1 resource that role candidates present.
 func smallResource(s *session, topology uint64) {
-	need(sealedResource(s, 5, topology), "sealed resource 5")
+	need(ringResource(s, 5, topology), "ring resource 5")
 }

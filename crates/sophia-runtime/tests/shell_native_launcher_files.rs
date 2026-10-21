@@ -146,17 +146,17 @@ fn opening_allocation_candidate_focus_input_activation_and_close_cross_the_file_
         let offer = encode_shell_file_negotiate(
             header(ShellFileKind::Negotiate, GRANT.connection_epoch, 1),
             ShellV1ClientHello {
-                minimum_revision: 9,
-                maximum_revision: 9,
-                required_capabilities: CAPS | (1 << 13),
+                minimum_revision: 10,
+                maximum_revision: 10,
+                required_capabilities: CAPS | (1 << 15),
             },
         )
         .unwrap();
         peer.submit_acknowledged(&offer, 1);
         let negotiated = peer.next_event();
         let value = decode_shell_file_negotiated(&negotiated).unwrap();
-        assert_eq!(value.welcome.selected_revision, 9);
-        assert_eq!(value.welcome.capabilities, CAPS | (1 << 13));
+        assert_eq!(value.welcome.selected_revision, 10);
+        assert_eq!(value.welcome.capabilities, CAPS | (1 << 15));
         peer.ack(&negotiated);
         peer.open(6, b"limits", 0);
         assert_eq!(
@@ -228,25 +228,19 @@ fn opening_allocation_candidate_focus_input_activation_and_close_cross_the_file_
         image::upload(
             &mut peer,
             &image_socket,
-            GRANT.connection_epoch,
-            3,
-            ShellImageMetadata {
-                offer_id: 1,
-                resource: RESOURCE.id,
-                resource_generation: RESOURCE.generation,
-                admission_epoch: GRANT.content_grant_epoch,
-                output_id: OUTPUT.id,
-                allocation_id: ALLOCATION.id,
+            GRANT,
+            OwnedCopyImageRequest {
+                slot: OwnedSlotIdentity {
+                    offer: 1,
+                    slot: 0,
+                    generation: 2,
+                },
+                resource: RESOURCE,
+                allocation: ALLOCATION,
+                output: OUTPUT,
                 topology_generation: 5,
-                source_kind: 1,
-                source_format: 1,
                 width: 2,
                 height: 1,
-                stride: 8,
-                plane_count: 1,
-                descriptor_count: 1,
-                declared_bytes: 8,
-                modifier: 0,
             },
             &[0, 0, 255, 255, 0, 128, 0, 128],
         );
@@ -384,7 +378,7 @@ fn opening_allocation_candidate_focus_input_activation_and_close_cross_the_file_
 
     let start = Instant::now();
     let welcome = negotiate(&mut transport, &mut registry, GRANT.connection_epoch, &peer);
-    assert_eq!(welcome.capabilities, CAPS | (1 << 13));
+    assert_eq!(welcome.capabilities, CAPS | (1 << 15));
     assert!(transport.supports_native_launcher());
 
     transport
@@ -558,6 +552,10 @@ fn opening_allocation_candidate_focus_input_activation_and_close_cross_the_file_
     }
     peer.join().unwrap();
     transport.disconnect(&mut registry).unwrap();
+    image_owner
+        .service(&mut transport, &mut registry, 0, Instant::now())
+        .unwrap();
+    assert_eq!(image_owner.pending(), 0);
     registry.collect();
     std::fs::remove_dir_all(directory).unwrap();
 }

@@ -114,7 +114,7 @@ impl ShellFiles {
                     sequence: 0,
                 },
                 &body,
-                9,
+                crate::owned_ring_protocol::REVISION,
             )
             .map_err(|_| Errno::EINVAL)?;
             prepared.push((kind, bytes));
@@ -193,12 +193,12 @@ impl ShellFiles {
     }
 
     /// Whether the negotiated outcome discloses the image objects:
-    /// configured, shell r9 selected, and at least one image capability.
+    /// configured, shell r10 selected, and owned-ring capability granted.
     pub(super) fn image_disclosed(&self) -> bool {
         self.image.is_some()
             && self.negotiated
-            && self.image_revision == 9
-            && self.capabilities & IMAGE_CAPABILITIES != 0
+            && self.image_revision == crate::owned_ring_protocol::REVISION
+            && self.capabilities & crate::owned_ring_protocol::CAPABILITY != 0
     }
 
     pub(in crate::shell_transport) fn image_readiness(&self) -> ShellImageReadiness {
@@ -229,8 +229,11 @@ impl ShellFiles {
                 } => granted_source_kinds,
                 _ => {
                     state.config.discovery.source_kinds
-                        & (((self.capabilities & IMAGE_CAPABILITY_SEALED_MEMORY != 0) as u32)
-                            | (((self.capabilities & IMAGE_CAPABILITY_DMA_BUF != 0) as u32) << 1))
+                        & if self.capabilities & crate::owned_ring_protocol::CAPABILITY != 0 {
+                            crate::owned_ring_protocol::SOURCE_KIND
+                        } else {
+                            0
+                        }
                 }
             },
             readiness: state.readiness,
@@ -257,8 +260,11 @@ impl ShellFiles {
             return Err(Errno::ESTALE);
         }
         let configured = state.config.discovery.source_kinds;
-        let negotiated = ((self.capabilities & IMAGE_CAPABILITY_SEALED_MEMORY) != 0) as u32
-            | (((self.capabilities & IMAGE_CAPABILITY_DMA_BUF) != 0) as u32) << 1;
+        let negotiated = if self.capabilities & crate::owned_ring_protocol::CAPABILITY != 0 {
+            crate::owned_ring_protocol::SOURCE_KIND
+        } else {
+            0
+        };
         if granted_source_kinds == 0 || granted_source_kinds & !(configured & negotiated) != 0 {
             return Err(Errno::EINVAL);
         }
@@ -365,8 +371,12 @@ impl ShellFiles {
             submission_id: 0,
             sequence: 1,
         };
-        let bytes = encode_shell_file_resource_status_at_revision(header, &record, 9)
-            .map_err(|_| Errno::EINVAL)?;
+        let bytes = encode_shell_file_resource_status_at_revision(
+            header,
+            &record,
+            crate::owned_ring_protocol::REVISION,
+        )
+        .map_err(|_| Errno::EINVAL)?;
         let body = &bytes[SHELL_FILE_HEADER_BYTES..];
         if !self
             .journal
@@ -457,11 +467,3 @@ impl ShellFiles {
         }
     }
 }
-
-/// Shell capability bit 13: sealed-memory image sources may be granted.
-pub(super) const IMAGE_CAPABILITY_SEALED_MEMORY: u64 = 1 << 13;
-/// Shell capability bit 14: DMA-BUF image sources may be granted.
-pub(super) const IMAGE_CAPABILITY_DMA_BUF: u64 = 1 << 14;
-/// Capability bits that name an image source kind (shell bits 13 and 14).
-pub(super) const IMAGE_CAPABILITIES: u64 =
-    IMAGE_CAPABILITY_SEALED_MEMORY | IMAGE_CAPABILITY_DMA_BUF;

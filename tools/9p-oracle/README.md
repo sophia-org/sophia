@@ -31,14 +31,13 @@ at shell r9. This oracle is revision-aware. A session records the revision
 selected in Negotiated and checks later events against it. At revision 9 or
 higher it admits reason 13 only for ResourceStatus status 3. Every other status
 and reason field keeps its existing bound, and records decoded outside a
-session use the pre-r9 bound. The oracle does not offer r9, and Sophia does not
-advertise it. The Rust SDK codec and Sophia's emission codec still enforce <=12
-until their own t338 changes land. Changing the KDL ceiling alone enables
-nothing.
+session use the pre-r9 bound. The historical r9 decoder remains covered as a
+passive codec; production image fixtures negotiate r10 with bit 15 and source
+kind 4. They reject retired sealed ImageBegin at the submission boundary.
 
 `cmd/shell-oracle` judges the production shell file export with 96 named checks.
-It uses only the Go standard library. The director owns the t252 task and
-plan-note updates.
+It uses the Go standard library plus `x/sys/unix` for the authenticated image
+socket and ring memfd. No Sophia or SDK implementation is imported.
 
 The approved extension plan is in [ROLE-COVERAGE.md](ROLE-COVERAGE.md). Phase 1
 adds independent codecs for the 17 Catalog, Indicators, native launcher and
@@ -213,3 +212,23 @@ Shared xtask integration and any future Session-policy harness are separate
 follow-ups. This fixture proves wire/owner interoperability within the boundary
 above; it does not prove native rendering, protected launch, latency budgets or
 attended desktop acceptance.
+
+## Owned-ring shell image coverage
+
+The image fixtures negotiate shell r10 and independently encode D4C1 Register
+and Offer, D4F1 with one SCM_RIGHTS descriptor, and decode D4E1 from the shared
+journal. No SDK codecs or seeded resources supply the judgment. A bounded
+one-slot ring is registered once per connection and reused only after the
+exact SlotReleased following its resource's final ResourceStatus. The main
+fixture proves an accepted resource survives slot reuse through presentation.
+
+The 96 named checks retain the role/candidate/custody checks. Image checks now
+name ring-ready, owned-accepted and slot-released. Unsealed backing closes the image channel as a protocol fault; wrong-extent
+backing receives RingRefused. Both use separate authenticated connections, since
+registration is final per connection. Retired sealed ImageBegin and byte
+Begin/End remain refusal controls. These are transport and content-owner tests,
+not native display or launch-policy acceptance.
+
+The `r7/*` and `r8/*` verdict names continue to identify the native-launcher and
+persistent-catalog record families; their image-bearing fixtures now negotiate
+r10. The indicator-only `r6/*` fixture retains revision 6.

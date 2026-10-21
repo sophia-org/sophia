@@ -1,4 +1,4 @@
-//! D4 measurement-only source custody. No source mapping, wire or authority.
+//! Owned-ring source custody. The export owns wire identity and authorization.
 use super::{IsbValidationFailure, OwnedRingSourceReservation};
 use std::fs::File;
 use std::io;
@@ -8,14 +8,14 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-const HEADER: usize = 4096;
+const HEADER: usize = sophia_protocol::shell_files::OWNED_RING_HEADER_BYTES as usize;
 const MAX_SLOTS: usize = 4;
-const MAX_PIXELS: usize = 4 << 20;
+const MAX_PIXELS: usize = sophia_protocol::shell_files::OWNED_RING_MAX_CAPACITY_BYTES as usize;
 
 /// Fixed slot layout: a little-endian u64 generation at each slot's
 /// start, 4096 header bytes, then pixel capacity padded to 4096 bytes.
 /// Each offer copies only its declared tightly packed resource extent.
-/// This is an internal harness layout, not an allocated public protocol.
+/// Layout is specified by protocol/sophia-owned-ring-v1.kdl.
 #[derive(Clone, Copy, Debug)]
 pub struct OwnedRingGeometry {
     slots: usize,
@@ -82,9 +82,9 @@ pub(crate) struct OwnedRingBinding(Arc<()>);
 
 /// One bounded source owner. Admission consumes a Session reservation for the
 /// complete source extent, separate from every accepted destination.
-/// All offers belong to this object; connection/ring identities are its future
-/// export owner's obligation. Readable regular files can block: this experiment
-/// supplies no syscall-duration bound or portable backing qualification.
+/// All offers belong to this object; the export binds connection/ring identity
+/// and qualifies shmem with seals before admission. This reader alone provides
+/// neither backing qualification nor a syscall-duration bound.
 pub struct OwnedRing {
     source: Arc<RingSource>,
     geometry: OwnedRingGeometry,

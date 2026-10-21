@@ -239,7 +239,7 @@ enum sophia_ic_refusal sophia_ic_record_decode(const void *src, size_t n, struct
     case SOPHIA_IC_CHANNEL_READY:
     case SOPHIA_IC_CHANNEL_CLOSED: {
         struct sophia_ic_channel_state *c = &v.value.channel;
-        uint32_t top = v.header.kind == SOPHIA_IC_CHANNEL_READY ? 3 : SOPHIA_IC_CLOSED_REVOKED;
+        uint32_t top = v.header.kind == SOPHIA_IC_CHANNEL_READY ? 4 : SOPHIA_IC_CLOSED_REVOKED;
         c->channel_generation = ic_get(b, 8);
         c->value = (uint32_t)ic_get(b + 8, 4);
         r = !c->channel_generation              ? SOPHIA_IC_GENERATION

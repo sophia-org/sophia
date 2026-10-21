@@ -425,6 +425,9 @@ impl ImageProducer {
             return Ok(());
         }
         match event {
+            // Ring events belong to RingProducer; routing one here is a
+            // caller error, not a channel fault.
+            ImageEvent::Ring(_) => Err(ProducerError::Argument),
             ImageEvent::ChannelReady {
                 channel_generation,
                 granted_source_kinds,

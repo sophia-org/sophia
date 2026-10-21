@@ -60,9 +60,13 @@ static int initialize(struct sophia_sf_client *c, struct sophia_9p_client *wire,
     if (profile == SOPHIA_SF_LAUNCHER || profile == SOPHIA_SF_DOCK) {
         unsigned revision = profile == SOPHIA_SF_LAUNCHER ? 7 : 8;
         uint64_t mask = profile == SOPHIA_SF_LAUNCHER ? 0x9a0 : 0x11a2;
-        if (offer.required_capabilities & (UINT64_C(1) << 13)) {
+        /* Image profiles: r9 sealed or r10 owned ring, never both. */
+        if (offer.required_capabilities & SOPHIA_SF_CAP_SEALED_IMAGE) {
             revision = 9;
-            mask |= UINT64_C(1) << 13;
+            mask |= SOPHIA_SF_CAP_SEALED_IMAGE;
+        } else if (offer.required_capabilities & SOPHIA_SF_CAP_OWNED_RING) {
+            revision = 10;
+            mask |= SOPHIA_SF_CAP_OWNED_RING;
         }
         if (offer.minimum_revision > revision || offer.maximum_revision < revision ||
             offer.required_capabilities != mask)
@@ -233,7 +237,7 @@ int sf_session_drive(struct sophia_sf_client *c)
     r = sf_session_file_drive(c);
     if (r)
         return r;
-    return 0;
+    return sf_session_control_drive(c);
 }
 /* ESTALE on the events, submit or ack stream is kept distinct from a
  * protocol violation. Object retention never set it. */
@@ -418,6 +422,10 @@ static int receive(struct sophia_sf_client *c, const struct sophia_9p_reply *r)
     if (sf_same(&c->file_op, r->handle)) {
         c->file_op.active = 0;
         return sf_session_file_reply(c, r);
+    }
+    if (sf_same(&c->ctl_op, r->handle)) {
+        c->ctl_op.active = 0;
+        return sf_session_control_reply(c, r);
     }
     return SOPHIA_9P_INVALID;
 }

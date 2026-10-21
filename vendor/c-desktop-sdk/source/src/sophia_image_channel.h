@@ -36,9 +36,12 @@ enum sophia_ic_kind {
     SOPHIA_IC_IMAGE_FORMATS = 0x7006
 };
 enum sophia_ic_source_kind { SOPHIA_IC_SOURCE_SEALED = 1, SOPHIA_IC_SOURCE_DMABUF = 2 };
-/* Source-kind masks in discovery and ChannelReady: bit 0 sealed, bit 1 DMA-BUF. */
+/* Source-kind masks in discovery and ChannelReady: bit 0 sealed, bit 1 DMA-BUF,
+ * bit 2 owned ring. Shell r10 is exactly the owned ring (sophia_owned_ring.h);
+ * lock and legacy shell r9 masks are nonzero subsets of bits 0 and 1. */
 #define SOPHIA_IC_KIND_BIT_SEALED 1u
 #define SOPHIA_IC_KIND_BIT_DMABUF 2u
+#define SOPHIA_IC_KIND_BIT_OWNED_RING 4u
 enum sophia_ic_disposition {
     SOPHIA_IC_RETAINED = 1,
     SOPHIA_IC_CAPTURED = 2,

@@ -1,11 +1,14 @@
-//! Internal D4 experiment framing. Not a stable SDK ABI or sealed source kind.
+//! Shell r10 owned-ring framing, defined by protocol/sophia-owned-ring-v1.kdl.
 //! All records are length-prefixed, canonical little-endian u64 words.
 //! Parsing proves shape only, never authorization, source custody or freshness.
-//! Only the explicitly enabled experimental file may accept these records.
+//! Only the authenticated r10 owned-ring file may accept these records.
 use crate::{OwnedCopyImageRequest, OwnedRingGeometry, OwnedSlotIdentity};
 use sophia_protocol::{ContentAllocationId, ContentGrant, ContentOutputId, ContentResourceId};
 
-pub const CONTROL_FILE: &[u8] = b"experimental-owned-ring-v1";
+pub use sophia_protocol::shell_files::OWNED_RING_CONTROL_FILE as CONTROL_FILE;
+pub const REVISION: u16 = sophia_protocol::SOPHIA_SHELL_OWNED_RING_REVISION;
+pub const CAPABILITY: u64 = 1 << 15;
+pub const SOURCE_KIND: u32 = sophia_protocol::shell_files::SHELL_IMAGE_SOURCE_OWNED_RING;
 pub const EVENT_BYTES: usize = 120;
 const CONTROL: &[u8; 4] = b"D4C1";
 const SOURCE: &[u8; 4] = b"D4F1";

@@ -64,7 +64,11 @@ fn retained_launcher_bytes_tighten_replacement_while_bar_uploads() {
     drop(held);
     let released = h.owner.collect();
     assert_eq!(released.retired_epochs, 0);
-    assert_eq!(released.reserved_bytes, 48 * 1024 * 1024 - 4);
+    let ring_bytes = OwnedRingGeometry::new(1, 4 * 1024 * 1024)
+        .unwrap()
+        .source_bytes() as u64;
+    assert_eq!(released.source_bytes, ring_bytes);
+    assert_eq!(released.reserved_bytes, 48 * 1024 * 1024 - 4 + ring_bytes);
     assert_eq!(replacement.grant.connection_epoch, 3);
     assert_eq!(replacement.grant.content_grant_epoch, 3);
     assert_eq!(
@@ -162,7 +166,7 @@ fn three_roles_negotiate_independent_profiles_and_catalog_service_borrows_only_i
     let mut bar_peer = h.connect(bar);
     let mut menu_peer = h.connect(menu);
     let mut client = h.connect(dock);
-    assert_eq!(client.welcome().selected_revision, 9);
+    assert_eq!(client.welcome().selected_revision, 10);
     assert_eq!(
         client.welcome().capabilities,
         SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG
@@ -170,7 +174,7 @@ fn three_roles_negotiate_independent_profiles_and_catalog_service_borrows_only_i
             | SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
             | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
             | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
-            | (1 << 13)
+            | (1 << 15)
     );
     let accounting = h.owner.accounting();
     let mut service = h

@@ -93,7 +93,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-9p-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
  "sophia-9p-records",
@@ -101,11 +101,11 @@ dependencies = [
 
 [[package]]
 name = "sophia-9p-records"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "sophia-admin-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
  "sophia-9p-client",
@@ -115,11 +115,11 @@ dependencies = [
 
 [[package]]
 name = "sophia-admin-protocol"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "sophia-broker-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "sophia-9p-client",
  "sophia-9p-records",
@@ -128,15 +128,15 @@ dependencies = [
 
 [[package]]
 name = "sophia-broker-protocol"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "sophia-desktop-ids"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "sophia-image-producer"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
  "sophia-isb",
@@ -146,14 +146,14 @@ dependencies = [
 
 [[package]]
 name = "sophia-isb"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
 ]
 
 [[package]]
 name = "sophia-launch-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
  "sophia-9p-client",
@@ -161,7 +161,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-lock-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
  "sophia-9p-client",
@@ -173,21 +173,21 @@ dependencies = [
 
 [[package]]
 name = "sophia-lock-protocol"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "kdl",
 ]
 
 [[package]]
 name = "sophia-namespace-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
 ]
 
 [[package]]
 name = "sophia-output-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
  "sophia-9p-client",
@@ -198,7 +198,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-output-protocol"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "kdl",
  "sophia-desktop-ids",
@@ -206,7 +206,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-portal-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
  "sophia-9p-client",
@@ -218,11 +218,11 @@ dependencies = [
 
 [[package]]
 name = "sophia-portal-protocol"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "sophia-shell-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
  "sophia-9p-client",
@@ -233,7 +233,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-shell-protocol"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "kdl",
  "sophia-desktop-ids",
@@ -241,7 +241,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-wm-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rustix",
  "sophia-9p-client",
@@ -252,7 +252,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-wm-protocol"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "sophia-desktop-ids",
 ]

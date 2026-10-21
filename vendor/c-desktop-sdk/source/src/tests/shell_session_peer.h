@@ -14,7 +14,7 @@
 
 enum { F_NONE, F_ROOT, F_API, F_EVENTS, F_TX, F_SUBMIT, F_ACK, F_LIMITS, F_OUTPUTS, F_UPLOAD,
        F_CATALOG, F_INDICATORS, F_DESCRIPTORS, F_TABS, F_SHORTCUTS, F_IMAGE_CHANNEL,
-       F_IMAGE_LIMITS, F_IMAGE_FORMATS };
+       F_IMAGE_LIMITS, F_IMAGE_FORMATS, F_OWNED_RING };
 /* ACCEPT: Rwrite then Submitted. SILENT: Rwrite only. HOLD: no reply.
  * ERROR: Rlerror. CUSTODY: Submitted journaled while the Rwrite is held. */
 enum { P_ACCEPT, P_SILENT, P_HOLD, P_ERROR, P_CUSTODY };
@@ -73,6 +73,12 @@ struct peer {
     size_t image_bytes[3];
     uint32_t image_error[3];
     unsigned image_walks[3];
+    /* owned-ring-v1: every write recorded; ring_error[i] answers write i
+     * with Rlerror instead of Rwrite; ring_open_error refuses Tlopen. */
+    uint8_t ring_bytes[16][152];
+    size_t ring_used[16];
+    uint32_t ring_error[16], ring_open_error;
+    unsigned ring_writes, ring_walks, ring_clunks;
 };
 static inline unsigned peer_object_kind(uint8_t file)
 {
@@ -334,7 +340,8 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
     static const char *const names[] = {"",       "",       "api",  "events", "transaction",
                                         "submit", "ack",    "limits", "outputs", "upload",
                                         "catalog", "indicators", "descriptors", "tabs", "shortcuts",
-                                        "image-channel", "image-limits", "image-formats"};
+                                        "image-channel", "image-limits", "image-formats",
+                                        "owned-ring-v1"};
     uint8_t type = m[4], b[16384], file;
     uint16_t tag = (uint16_t)peer_get(m + 5, 2);
     const uint8_t *body = m + 7;
@@ -383,7 +390,9 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
             peer_error(p, tag, p->object_error);
             return;
         }
-        if (file >= F_IMAGE_CHANNEL) {
+        if (file == F_OWNED_RING)
+            p->ring_walks++;
+        else if (file >= F_IMAGE_CHANNEL) {
             p->image_walks[file - F_IMAGE_CHANNEL]++;
             if (p->image_error[file - F_IMAGE_CHANNEL]) {
                 peer_error(p, tag, p->image_error[file - F_IMAGE_CHANNEL]);
@@ -408,6 +417,10 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
             return;
         }
         file = peer_file(p, (uint32_t)peer_get(body, 4));
+        if (file == F_OWNED_RING && p->ring_open_error) {
+            peer_error(p, tag, p->ring_open_error);
+            return;
+        }
         if (file == F_TX)
             p->tx_opens++;
         peer_qid(b, file);
@@ -419,6 +432,8 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
     case 120:
         if (peer_file(p, (uint32_t)peer_get(body, 4)) == F_UPLOAD)
             p->upload_clunks++;
+        if (peer_file(p, (uint32_t)peer_get(body, 4)) == F_OWNED_RING)
+            p->ring_clunks++;
         if (peer_file(p, (uint32_t)peer_get(body, 4)) == F_TX) {
             p->staged_used = 0;
             p->tx_clunks++;
@@ -439,7 +454,7 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
             peer_answer_events(p);
             return;
         }
-        if (file >= F_IMAGE_CHANNEL) {
+        if (file >= F_IMAGE_CHANNEL && file <= F_IMAGE_FORMATS) {
             unsigned i = file - F_IMAGE_CHANNEL;
             n = offset >= p->image_bytes[i] ? 0 : p->image_bytes[i] - (size_t)offset;
             if (n > count) n = count;
@@ -506,6 +521,15 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
             }
             p->upload_bytes += count;
             peer_count(p, tag, count);
+        } else if (file == F_OWNED_RING) {
+            unsigned i = p->ring_writes++;
+            assert(i < 16 && offset == 0 && count <= sizeof(p->ring_bytes[0]));
+            memcpy(p->ring_bytes[i], body + 16, count);
+            p->ring_used[i] = count;
+            if (p->ring_error[i])
+                peer_error(p, tag, p->ring_error[i]);
+            else
+                peer_count(p, tag, count);
         } else if (file == F_SUBMIT) {
             assert(count == 24);
             peer_submit(p, tag, body + 16);

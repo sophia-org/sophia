@@ -23,6 +23,9 @@ pub fn validate_shell_content_record(
 pub const SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE: u64 = 1 << 7;
 pub const SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT: u64 = 1 << 8;
 pub const SOPHIA_SHELL_CONTENT_REVISION: u16 = 5;
+/// Shell revision whose CPU image source is the owned ring
+/// (`docs/sophia-owned-ring.md`), negotiated with capability bit 15.
+pub const SOPHIA_SHELL_OWNED_RING_REVISION: u16 = 10;
 
 /// Connection identity and the independently issued content permission epoch.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]

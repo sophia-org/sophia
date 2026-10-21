@@ -1,4 +1,4 @@
-//! One private writable mapping for the experimental ring producer.
+//! One private writable mapping for an owned-ring producer.
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::ptr::NonNull;

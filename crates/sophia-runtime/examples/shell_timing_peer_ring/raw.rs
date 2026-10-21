@@ -29,8 +29,6 @@ pub enum Inbound {
     Negotiated(ShellV1ServerWelcome),
     ChannelReady(u64),
     Published(ShellFileKind),
-    ImageAdmitted(ShellImageMetadata),
-    SourceReleased(ShellSourceReleased),
     Refused(u16),
     Facts(ContentOutputFacts),
     Allocation(ContentAllocationResult),
@@ -235,7 +233,7 @@ impl Client {
             self.ack(event.sequence)?;
             return Ok(Inbound::Owned(event));
         }
-        let parsed = decode_shell_file_record_at_revision(bytes, ShellFileClass::Event, 9)
+        let parsed = decode_shell_file_record_at_revision(bytes, ShellFileClass::Event, 10)
             .map_err(|e| format!("journal record: {e:?}"))?;
         if parsed.header.connection_epoch != self.epoch {
             return Err("journal record from another connection epoch".into());
@@ -245,7 +243,7 @@ impl Client {
         let inbound = match parsed.header.kind {
             ShellFileKind::Submitted => Inbound::Submitted(
                 sequence,
-                decode_shell_file_submitted_at_revision(bytes, 9)
+                decode_shell_file_submitted_at_revision(bytes, 10)
                     .codec()?
                     .submission_id,
             ),
@@ -259,12 +257,6 @@ impl Client {
             )),
             ShellFileKind::Refused => {
                 Inbound::Refused(decode_shell_file_refused(bytes).codec()?.reason)
-            }
-            ShellFileKind::ImageAdmitted => {
-                Inbound::ImageAdmitted(ShellImageMetadata::decode(parsed.body).codec()?)
-            }
-            ShellFileKind::SourceReleased => {
-                Inbound::SourceReleased(ShellSourceReleased::decode(parsed.body).codec()?)
             }
             ShellFileKind::ObjectPublished => {
                 Inbound::Published(decode_shell_file_object_published(bytes).codec()?.object)
@@ -280,7 +272,7 @@ impl Client {
                 }
             }
             ShellFileKind::ResourceStatus => {
-                let decoded = decode_shell_file_resource_status_at_revision(bytes, 9).codec()?;
+                let decoded = decode_shell_file_resource_status_at_revision(bytes, 10).codec()?;
                 match decoded.record {
                     ShellContentRecord::ResourceStatus(status) => {
                         Inbound::Status(decoded.transaction, status)

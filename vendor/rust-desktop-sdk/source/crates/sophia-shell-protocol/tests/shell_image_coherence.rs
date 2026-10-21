@@ -289,3 +289,32 @@ fn coherence_revalidates_directly_constructed_inputs() {
             .is_err()
     );
 }
+
+#[test]
+fn coherent_ring_discovery_is_a_cpu_capacity() {
+    // Kind 4 (owned ring) is a CPU source: validation jobs present is
+    // coherent, exactly like sealed memory kind 1.
+    let expect = discovery(SHELL_IMAGE_SOURCE_OWNED_RING)
+        .coherent(&limits(), &formats(vec![]), 11, 11, &bounds())
+        .unwrap();
+    assert_eq!(expect.granted_source_kinds, SHELL_IMAGE_SOURCE_OWNED_RING);
+}
+
+#[test]
+fn coherent_ring_discovery_without_validation_jobs_is_refused() {
+    // A CPU kind (ring or sealed) with no validation capacity is the
+    // missing-CPU-capacity refusal, not a coherent set.
+    let mut no_jobs = limits();
+    no_jobs.max_validation_jobs = 0;
+    no_jobs.max_sealed_backing_bytes = 0;
+    assert!(
+        discovery(SHELL_IMAGE_SOURCE_OWNED_RING)
+            .coherent(&no_jobs, &formats(vec![]), 11, 11, &bounds())
+            .is_err()
+    );
+    assert!(
+        discovery(SHELL_IMAGE_SOURCE_SEALED_MEMORY)
+            .coherent(&no_jobs, &formats(vec![]), 11, 11, &bounds())
+            .is_err()
+    );
+}

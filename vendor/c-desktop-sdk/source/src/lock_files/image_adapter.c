@@ -99,6 +99,13 @@ static int start_producer(struct sophia_lc_image *img, uint64_t now) {
   p.role = SOPHIA_IC_ROLE_LOCK;
   p.revision = SOPHIA_LF_REVISION_IMAGE_CHANNEL;
   p.connection_epoch = c->epoch;
+  /* Discovery is coherent with the role's negotiated Limits, including
+   * max_offers == min(upload_slots, 4). Caller guesses are not authority. */
+  p.bounds.max_resource_bytes = c->limits.max_resource_bytes;
+  p.bounds.max_width = c->limits.max_width_px;
+  p.bounds.max_height = c->limits.max_height_px;
+  p.bounds.max_outputs = c->limits.max_outputs;
+  p.bounds.transfer_slots = c->limits.upload_slots;
   p.granted_kinds = SOPHIA_IC_KIND_BIT_SEALED |
                     ((w->granted_capabilities & SOPHIA_LF_CAP_IMAGE_DMABUF)
                          ? SOPHIA_IC_KIND_BIT_DMABUF
