@@ -78,7 +78,7 @@ fn slot_release_allows_new_copies_while_prior_resource_leases_remain_immutable()
             .unwrap();
         publish(&file, request);
         assert!(
-            jobs.submit(&mut worker, job, ring.offer(request.slot).unwrap())
+            jobs.submit(&mut worker, job, ring.offer(request.slot, 16000).unwrap())
                 .is_ok()
         );
         assert!(jobs.receive(completed(&mut worker)).is_ok());
@@ -127,6 +127,42 @@ fn slot_release_allows_new_copies_while_prior_resource_leases_remain_immutable()
 }
 
 #[test]
+fn slot_capacity_is_not_copied_or_charged_as_resource_bytes() {
+    let mut registry = image_registry();
+    let (file, mut ring) = ring(&mut registry);
+    let mut request = request(1);
+    request.height = 10;
+    let pixels = request.pixel_bytes().unwrap();
+    assert_eq!(pixels, 8000);
+    // Invalid premultiplied padding must not enter the owned image or scan.
+    file.write_all_at(&[255, 0, 0, 0].repeat(4000), 4096)
+        .unwrap();
+    file.write_all_at(&vec![1; pixels], 4096).unwrap();
+    file.write_all_at(&request.slot.generation.to_le_bytes(), 0)
+        .unwrap();
+    let mut jobs = OwnedCopyImageJobs::default();
+    let mut worker = IsbValidationWorker::new(1, 16000).unwrap();
+    let job = jobs
+        .reserve(&mut registry, &mut worker, &ring, request, 0, deadline())
+        .unwrap();
+    assert_eq!(
+        registry.resources(grant()).unwrap().usage().staging,
+        pixels as u64
+    );
+    assert!(
+        jobs.submit(&mut worker, job, ring.offer(request.slot, pixels).unwrap())
+            .is_ok()
+    );
+    assert!(jobs.receive(completed(&mut worker)).is_ok());
+    assert_eq!(jobs.reconcile(&mut registry, 1).unwrap().outcome, Ok(()));
+    let store = registry.resources_mut(grant()).unwrap();
+    assert_eq!(store.usage().backing, pixels as u64);
+    let lease = store.lease(grant(), request.resource).unwrap();
+    assert_eq!(lease.cpu_bytes().unwrap(), vec![1; pixels]);
+    assert_eq!(ring.pending_release(0), Some(request.slot));
+}
+
+#[test]
 fn another_ring_or_slot_generation_cannot_supply_a_reserved_job() {
     let mut registry = image_registry();
     let (_, mut original) = ring(&mut registry);
@@ -148,7 +184,7 @@ fn another_ring_or_slot_generation_cannot_supply_a_reserved_job() {
         } else {
             request(2).slot
         };
-        let read = source_ring.offer(wrong).unwrap();
+        let read = source_ring.offer(wrong, 16000).unwrap();
         let (error, returned) = jobs.submit(&mut worker, job, read).err().unwrap();
         assert_eq!(error, IsbSubmitFailure::Invalid);
         assert_eq!(source_ring.pending_release(0), None);
@@ -181,7 +217,7 @@ fn admission_refuses_wrong_destination_allocation_and_slot_before_any_charge() {
     for case in 0..7 {
         let mut request = request(1);
         match case {
-            0 => request.width = 199,
+            0 => request.width = 201,
             1 => request.allocation.generation = 2,
             2 => request.output.generation += 1,
             3 => request.topology_generation += 1,
@@ -251,7 +287,7 @@ fn completed_copy_cannot_be_accepted_after_cancel_expiry_topology_change_or_disc
             .unwrap();
         publish(&file, request);
         assert!(
-            jobs.submit(&mut worker, job, ring.offer(request.slot).unwrap())
+            jobs.submit(&mut worker, job, ring.offer(request.slot, 16000).unwrap())
                 .is_ok()
         );
         let done = completed(&mut worker);

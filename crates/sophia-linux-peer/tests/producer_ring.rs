@@ -1,4 +1,3 @@
-#![cfg(feature = "experimental-ring-producer")]
 use sophia_linux_peer::ProducerRing;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::FileExt;

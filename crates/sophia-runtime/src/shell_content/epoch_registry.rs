@@ -9,12 +9,10 @@ use sophia_protocol::{ContentGrant, ContentLimits};
 #[cfg(feature = "experimental-shell-capture")]
 mod capture;
 mod image;
-#[cfg(feature = "experimental-owned-copy")]
 mod owned_ring;
 #[cfg(feature = "experimental-shell-capture")]
 pub use capture::ContentCaptureAdmissionError;
 pub use image::{CpuImageAdmission, IsbImageAdmission, IsbImageAdmissionError};
-#[cfg(feature = "experimental-owned-copy")]
 pub use owned_ring::OwnedRingSourceReservation;
 
 pub struct ContentEpochRegistry {
@@ -33,7 +31,6 @@ struct ContentEpoch {
     candidates: ContentCandidateStore,
     reserved_bytes: u64,
     reserved_backing_bytes: u64,
-    #[cfg(feature = "experimental-owned-copy")]
     source_bytes: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
@@ -51,16 +48,12 @@ impl ContentEpoch {
             resources: ContentResourceStore::new(limits)?,
             reserved_bytes,
             reserved_backing_bytes,
-            #[cfg(feature = "experimental-owned-copy")]
             source_bytes: Default::default(),
         })
     }
 
     fn source_bytes(&self) -> u64 {
-        #[cfg(feature = "experimental-owned-copy")]
-        return self.source_bytes.load(std::sync::atomic::Ordering::Acquire);
-        #[cfg(not(feature = "experimental-owned-copy"))]
-        0
+        self.source_bytes.load(std::sync::atomic::Ordering::Acquire)
     }
 
     fn quiescent(&self) -> bool {

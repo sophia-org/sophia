@@ -2,7 +2,7 @@
 //! replay and deadlines, FD admission, offer retries, and the ordered
 //! status-then-slot-release publication. Real memfds and a real
 //! SOCK_SEQPACKET pair carry every FD; nothing here mutates the
-//! environment, and the kill switch is the test-local `enabled` field.
+//! environment.
 use super::*;
 use crate::owned_ring_protocol::{Event, EventKind, Identity, Offer, Registration};
 use sophia_protocol::{
@@ -271,6 +271,25 @@ fn ready(files: &mut ShellFiles, epochs: &mut ContentEpochRegistry) -> OwnedRing
         .unwrap()
         .expect("ring ready");
     ring
+}
+
+#[test]
+fn offers_may_use_less_than_slot_capacity_but_cannot_exceed_it() {
+    let mut files = fixture();
+    let mut epochs = epochs();
+    let _ring = ready(&mut files, &mut epochs);
+    let mut request = offer(1, 0, 2);
+    request.request.width = 49;
+    assert_eq!(
+        files.write_owned_ring(&request.encode()),
+        Err(Errno::EINVAL)
+    );
+    request.request.width = 24;
+    assert_eq!(
+        files.write_owned_ring(&request.encode()),
+        Ok(request.encode().len() as u32)
+    );
+    assert_eq!(files.owned_pending_offer().unwrap().0, request);
 }
 
 #[test]
@@ -680,20 +699,6 @@ fn refuse_offer_publishes_status_four_for_cancelled_and_distinct_revoked() {
                 .any(|e| e.kind == EventKind::SlotReleased && e.reason == reason as u16)
         );
     }
-}
-
-#[test]
-fn kill_switch_closes_disclosure_without_env_mutation() {
-    let mut files = fixture();
-    let mut epochs = epochs();
-    files.owned.enabled = false;
-    let bytes = registration().encode();
-    assert_eq!(files.write_owned_ring(&bytes), Err(Errno::EACCES));
-    assert!(matches!(
-        files.service_owned_ring_setup(&mut epochs, Instant::now()),
-        Ok(None)
-    ));
-    assert!(!files.owned_mode());
 }
 
 #[test]

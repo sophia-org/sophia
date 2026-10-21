@@ -5,13 +5,11 @@ pub(super) struct DrawQueue {
     last: Option<sophia_draw::Batch>,
 }
 impl ShellFiles {
-    #[cfg(feature = "experimental-owned-copy")]
     pub(super) fn has_draw_work(&self) -> bool {
         self.draw.last.is_some()
     }
 
     pub(in crate::shell_transport) fn write_draw(&mut self, bytes: &[u8]) -> Result<u32, Errno> {
-        #[cfg(feature = "experimental-owned-copy")]
         if self.owned_mode() {
             return Err(Errno::EACCES);
         }

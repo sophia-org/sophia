@@ -1,5 +1,4 @@
 //! Local D4 source/worker custody; no authenticated wire or native qualification.
-#![cfg(feature = "experimental-owned-copy")]
 use sophia_runtime::*;
 use std::fs::File;
 use std::os::unix::fs::FileExt;
@@ -63,7 +62,7 @@ fn slot_reuse_is_independent_of_retained_accepted_pixels() {
     for offer in 1..=8 {
         let identity = identity(offer, offer as usize % 2, offer * 2);
         publish(&file, geometry, identity, offer as u8);
-        let read = ring.offer(identity).unwrap();
+        let read = ring.offer(identity, 8).unwrap();
         assert_eq!(ring.pending_release(identity.slot), None);
         assert!(!ring.confirm_release(identity));
         let job = submit(&mut worker, read, Instant::now() + Duration::from_secs(5));
@@ -76,11 +75,14 @@ fn slot_reuse_is_independent_of_retained_accepted_pixels() {
         assert_eq!(ring.pending_release(identity.slot), Some(identity));
         assert_eq!(ring.pending_release(identity.slot), Some(identity));
         assert!(
-            ring.offer(OwnedSlotIdentity {
-                offer: offer + 1,
-                generation: identity.generation + 2,
-                ..identity
-            })
+            ring.offer(
+                OwnedSlotIdentity {
+                    offer: offer + 1,
+                    generation: identity.generation + 2,
+                    ..identity
+                },
+                8
+            )
             .is_err()
         );
         assert!(!ring.confirm_release(OwnedSlotIdentity {
@@ -102,7 +104,7 @@ fn slot_reuse_is_independent_of_retained_accepted_pixels() {
 fn rejected_submit_keeps_ticket_and_original_credit_until_explicit_reconciliation() {
     let (_, _, mut ring) = source();
     let identity = identity(1, 0, 2);
-    let read = ring.offer(identity).unwrap();
+    let read = ring.offer(identity, 8).unwrap();
     let mut worker = IsbValidationWorker::new(1, 8).unwrap();
     let job = worker
         .reserve(4, Instant::now() + Duration::from_secs(5))
@@ -116,11 +118,14 @@ fn rejected_submit_keeps_ticket_and_original_credit_until_explicit_reconciliatio
     assert!(worker.release_reserved(job));
     assert!(ring.confirm_release(identity));
     assert!(
-        ring.offer(OwnedSlotIdentity {
-            offer: 2,
-            slot: 0,
-            generation: 2
-        })
+        ring.offer(
+            OwnedSlotIdentity {
+                offer: 2,
+                slot: 0,
+                generation: 2
+            },
+            8
+        )
         .is_err()
     );
 }
@@ -143,7 +148,7 @@ fn truncation_changed_generation_bad_pixels_and_expiry_settle_once() {
         } else {
             Instant::now() + Duration::from_secs(5)
         };
-        let job = submit(&mut worker, ring.offer(identity).unwrap(), deadline);
+        let job = submit(&mut worker, ring.offer(identity, 8).unwrap(), deadline);
         let done = complete(&mut worker);
         assert_eq!(done.job, job);
         assert_eq!(
@@ -181,12 +186,12 @@ fn admission_checks_geometry_extent_reservation_and_non_wrapping_identity() {
         identity(1, 0, 0),
         identity(1, 0, 3),
     ] {
-        assert!(ring.offer(identity).is_err());
+        assert!(ring.offer(identity, 8).is_err());
     }
     let last = identity(u64::MAX, 0, u64::MAX - 1);
-    drop(ring.offer(last).unwrap());
+    drop(ring.offer(last, 8).unwrap());
     assert!(ring.confirm_release(last));
-    assert!(ring.offer(identity(1, 0, 2)).is_err());
+    assert!(ring.offer(identity(1, 0, 2), 8).is_err());
     file.set_len(1).unwrap();
     assert!(OwnedRing::admit(file, reserved(geometry)).is_err());
 }

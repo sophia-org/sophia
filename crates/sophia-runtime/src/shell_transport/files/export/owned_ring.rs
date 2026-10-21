@@ -18,7 +18,6 @@ mod setup;
 mod tests;
 
 pub(super) struct OwnedRingExport {
-    enabled: bool,
     registration: Option<Setup>,
     last: Option<Control>,
     pending: Option<(Offer, Instant)>,
@@ -29,7 +28,6 @@ pub(super) struct OwnedRingExport {
 impl OwnedRingExport {
     pub(super) fn new() -> Self {
         Self {
-            enabled: std::env::var_os("SOPHIA_DISABLE_OWNED_COPY").is_none_or(|v| v != "1"),
             registration: None,
             last: None,
             pending: None,
@@ -75,8 +73,7 @@ struct Credits {
 
 impl ShellFiles {
     pub(super) fn owned_disclosed(&self) -> bool {
-        self.owned.enabled
-            && !self.revoked
+        !self.revoked
             && self.content
             && self.negotiated
             && self.image_disclosed()
@@ -127,7 +124,7 @@ impl ShellFiles {
             && usage
                 .backing
                 .checked_add(geometry.source_bytes() as u64)
-                .and_then(|n| n.checked_add(geometry.pixel_bytes() as u64))
+                .and_then(|n| n.checked_add(offer.request.pixel_bytes()? as u64))
                 .is_some_and(|n| n <= config.max_sealed_backing_bytes))
     }
     pub(in crate::shell_transport) fn owned_publication_sequence(&self) -> u64 {
@@ -218,7 +215,7 @@ impl ShellFiles {
                 if r.slot.slot >= request.slots
                     || r.width > image.config.limits.max_width
                     || r.height > image.config.limits.max_height
-                    || u64::from(r.width) * u64::from(r.height) * 4 != request.pixels as u64
+                    || r.pixel_bytes().is_none_or(|bytes| bytes > request.pixels)
                 {
                     return Err(Errno::EINVAL);
                 }

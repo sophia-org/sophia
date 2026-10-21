@@ -80,7 +80,6 @@ impl ShellFiles {
         if self.negotiated && self.content {
             entries.push((b"experimental-draw-v1", Node::Draw));
         }
-        #[cfg(feature = "experimental-owned-copy")]
         if self.owned_disclosed() {
             entries.push((crate::owned_ring_protocol::CONTROL_FILE, Node::OwnedRing));
         }

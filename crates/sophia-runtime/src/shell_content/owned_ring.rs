@@ -12,8 +12,9 @@ const HEADER: usize = 4096;
 const MAX_SLOTS: usize = 4;
 const MAX_PIXELS: usize = 4 << 20;
 
-/// Fixed experimental layout: a little-endian u64 generation at each slot's
-/// start, 4096 header bytes, then tightly packed pixels padded to 4096 bytes.
+/// Fixed slot layout: a little-endian u64 generation at each slot's
+/// start, 4096 header bytes, then pixel capacity padded to 4096 bytes.
+/// Each offer copies only its declared tightly packed resource extent.
 /// This is an internal harness layout, not an allocated public protocol.
 #[derive(Clone, Copy, Debug)]
 pub struct OwnedRingGeometry {
@@ -134,7 +135,17 @@ impl OwnedRing {
     /// The caller must already hold destination, worker and terminal journal
     /// credits. A slot remains busy until both its read ended and its release
     /// was committed to the live journal. Failed offers do not consume identity.
-    pub fn offer(&mut self, identity: OwnedSlotIdentity) -> io::Result<OwnedRingRead> {
+    pub fn offer(
+        &mut self,
+        identity: OwnedSlotIdentity,
+        pixels: usize,
+    ) -> io::Result<OwnedRingRead> {
+        if pixels == 0 || !pixels.is_multiple_of(4) || pixels > self.geometry.pixels {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "slot payload extent",
+            ));
+        }
         self.check_offer(identity)?;
         let slot = &mut self.slots[identity.slot];
         let finished = Arc::new(AtomicBool::new(false));
@@ -147,6 +158,7 @@ impl OwnedRing {
         Ok(OwnedRingRead {
             source: self.source.clone(),
             geometry: self.geometry,
+            pixels,
             identity,
             finished,
         })
@@ -207,6 +219,7 @@ impl OwnedRing {
 pub struct OwnedRingRead {
     source: Arc<RingSource>,
     geometry: OwnedRingGeometry,
+    pixels: usize,
     identity: OwnedSlotIdentity,
     finished: Arc<AtomicBool>,
 }
@@ -221,7 +234,7 @@ impl OwnedRingRead {
     }
 
     pub(crate) fn pixel_bytes(&self) -> usize {
-        self.geometry.pixels
+        self.pixels
     }
 
     pub(crate) fn copy(
@@ -244,9 +257,9 @@ impl OwnedRingRead {
         check()?;
         let mut bytes = Vec::new();
         bytes
-            .try_reserve_exact(self.geometry.pixels)
+            .try_reserve_exact(self.pixels)
             .map_err(|_| IsbValidationFailure::Malformed)?;
-        bytes.resize(self.geometry.pixels, 0);
+        bytes.resize(self.pixels, 0);
         // One payload read: short reads, EINTR and errors reject the offer. Never
         // stitch partial revisions or silently retry a possibly torn snapshot.
         check()?;

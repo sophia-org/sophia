@@ -70,8 +70,9 @@ impl ContentEpochRegistry {
             .allocations
             .owned_copy_description(&request)
             .map_err(Error::Allocation)?;
-        let bytes = ring.geometry().pixel_bytes();
-        if description.total_bytes != bytes as u64 || request.slot.offer == 0 {
+        let bytes = usize::try_from(description.total_bytes)
+            .map_err(|_| Error::Resource(ContentStoreError::Malformed))?;
+        if bytes > ring.geometry().pixel_bytes() || request.slot.offer == 0 {
             return Err(Error::Resource(ContentStoreError::Malformed));
         }
         let job = worker.reserve(bytes, deadline).map_err(Error::Worker)?;

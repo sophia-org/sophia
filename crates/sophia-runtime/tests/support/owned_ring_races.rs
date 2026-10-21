@@ -18,7 +18,7 @@ fn owned_ring_changed_after_payload_read_is_rejected_without_retry() {
         generation: 2,
     };
     let checks = Cell::new(0);
-    let result = ring.offer(identity).unwrap().copy(|| {
+    let result = ring.offer(identity, 8).unwrap().copy(|| {
         checks.set(checks.get() + 1);
         if checks.get() == 4 {
             file.write_all_at(&4_u64.to_le_bytes(), 0).unwrap();
@@ -45,7 +45,7 @@ fn owned_ring_cancellation_between_reads_releases_only_the_source_ticket() {
         generation: 2,
     };
     let checks = Cell::new(0);
-    let result = ring.offer(identity).unwrap().copy(|| {
+    let result = ring.offer(identity, 8).unwrap().copy(|| {
         checks.set(checks.get() + 1);
         if checks.get() == 3 {
             Err(IsbValidationFailure::Cancelled)

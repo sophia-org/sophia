@@ -1,8 +1,47 @@
-#![cfg(all(target_os = "linux", feature = "experimental-owned-copy"))]
+#![cfg(target_os = "linux")]
 
 use sophia_protocol::{ContentAllocationId, ContentGrant, ContentOutputId, ContentResourceId};
 use sophia_runtime::owned_ring_protocol::*;
 use sophia_runtime::{OwnedCopyImageRequest, OwnedSlotIdentity};
+
+#[test]
+fn authoritative_owned_ring_corpus_matches_codec_and_capacity_admission() {
+    let corpus = include_str!("../../../protocol/golden/sophia-owned-ring-v1.tsv");
+    let mut rows = 0;
+    for line in corpus
+        .lines()
+        .filter(|line| !line.starts_with('#') && !line.is_empty())
+    {
+        let fields: Vec<_> = line.split('\t').collect();
+        assert_eq!(fields.len(), 6, "{line}");
+        let bytes: Vec<_> = fields[4]
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect();
+        assert_eq!(bytes.len() * 2, fields[4].len());
+        let fds: usize = fields[3].parse().unwrap();
+        let accepted = match fields[1] {
+            "control" => {
+                fds == 0
+                    && match Control::decode(&bytes) {
+                        Some(Control::Register(_)) => true,
+                        Some(Control::Offer(offer)) => {
+                            offer.request.pixel_bytes().is_some_and(|n| n <= 184320)
+                        }
+                        None => false,
+                    }
+            }
+            "source" => fds == 1 && Registration::decode_source(&bytes).is_some(),
+            "event" => fds == 0 && Event::decode(&bytes).is_some(),
+            other => panic!("unknown corpus surface {other}"),
+        };
+        assert_eq!(accepted, fields[2] == "1", "{} ({})", fields[0], fields[5]);
+        rows += 1;
+    }
+    assert_eq!(rows, 36);
+}
+
 fn identity() -> Identity {
     Identity {
         grant: ContentGrant {

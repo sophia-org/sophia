@@ -205,7 +205,7 @@ fn disconnected_owner_drops_ring_but_read_ticket_keeps_source_charge() {
         .as_mut()
         .unwrap()
         .ring
-        .offer(request().slot)
+        .offer(request().slot, 4)
         .unwrap();
     let charge = registry.accounting().source_bytes;
     assert!(charge > 0);
@@ -244,7 +244,7 @@ fn successful_completion_cannot_authorize_acceptance_after_channel_loss() {
         .as_mut()
         .unwrap()
         .ring
-        .offer(request().slot)
+        .offer(request().slot, 4)
         .unwrap();
     assert!(owner.jobs.submit(&mut worker, job, ticket).is_ok());
     complete(&mut owner, &mut worker);
@@ -281,7 +281,7 @@ fn old_settlement_cannot_release_a_successor_rings_matching_slot() {
         .as_mut()
         .unwrap()
         .ring
-        .offer(request().slot)
+        .offer(request().slot, 4)
         .unwrap();
     assert!(owner.jobs.submit(&mut worker, job, ticket).is_ok());
     complete(&mut owner, &mut worker);
@@ -291,7 +291,7 @@ fn old_settlement_cannot_release_a_successor_rings_matching_slot() {
         ..identity()
     };
     let mut next_ring = ring(&mut registry);
-    drop(next_ring.offer(request().slot).unwrap());
+    drop(next_ring.offer(request().slot, 4).unwrap());
     owner.active = Some(ActiveRing {
         identity: successor,
         ring: next_ring,

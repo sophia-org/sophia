@@ -17,6 +17,16 @@ pub struct OwnedCopyImageRequest {
     pub height: u32,
 }
 
+impl OwnedCopyImageRequest {
+    pub fn pixel_bytes(&self) -> Option<usize> {
+        self.width
+            .checked_mul(self.height)?
+            .checked_mul(4)?
+            .try_into()
+            .ok()
+    }
+}
+
 #[derive(Debug)]
 pub struct OwnedCopyImageMetadata {
     pub(crate) request: OwnedCopyImageRequest,

@@ -64,7 +64,16 @@ impl OwnedCopyOwner {
                         // Reservation checks fixed geometry, slot ownership and
                         // allocation against authority; only then take the read
                         // ticket. No source bytes are read on this owner thread.
-                        let source = active.ring.offer(offer.request.slot);
+                        let source = offer
+                            .request
+                            .pixel_bytes()
+                            .ok_or_else(|| {
+                                std::io::Error::new(
+                                    std::io::ErrorKind::InvalidInput,
+                                    "slot payload extent",
+                                )
+                            })
+                            .and_then(|bytes| active.ring.offer(offer.request.slot, bytes));
                         *self
                             .work
                             .iter_mut()

@@ -1,5 +1,4 @@
 //! Source extents cannot escape the Session budget across reconnect or workers.
-#![cfg(feature = "experimental-owned-copy")]
 use sophia_protocol::*;
 use sophia_runtime::*;
 use std::fs::File;
@@ -88,11 +87,14 @@ fn disconnected_source_reads_keep_epoch_and_reconnect_charge_until_last_ticket_d
         .unwrap();
     let mut ring = OwnedRing::admit(source(geometry), held).unwrap();
     let read = ring
-        .offer(OwnedSlotIdentity {
-            offer: 1,
-            slot: 0,
-            generation: 2,
-        })
+        .offer(
+            OwnedSlotIdentity {
+                offer: 1,
+                slot: 0,
+                generation: 2,
+            },
+            8,
+        )
         .unwrap();
     assert!(registry.disconnect(grant(1)));
     drop(ring);
@@ -140,7 +142,7 @@ fn slot_release_does_not_return_a_live_rings_extent_reservation() {
         slot: 0,
         generation: 2,
     };
-    drop(ring.offer(identity).unwrap());
+    drop(ring.offer(identity, 8).unwrap());
     assert!(ring.confirm_release(identity));
     assert_eq!(
         registry.accounting().source_bytes,

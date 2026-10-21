@@ -49,11 +49,8 @@ impl<M> Default for CpuImageJobs<M> {
 
 pub type IsbImageJobs = CpuImageJobs<ShellImageMetadata>;
 pub type IsbImageSettlement = CpuImageSettlement<ShellImageMetadata>;
-
-#[cfg(feature = "experimental-owned-copy")]
 mod owned_copy;
 mod sealed;
-#[cfg(feature = "experimental-owned-copy")]
 pub use owned_copy::*;
 
 pub(crate) mod metadata_sealed {

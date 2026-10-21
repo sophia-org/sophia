@@ -14,14 +14,13 @@ pub struct CpuPixelValidation {
 /// Only the complete premultiplied-pixel scan can construct this value.
 pub struct ValidatedCpuPixels(pub(super) ImmutableCpuPixels);
 
-/// Existing sealed-ISB entry point; owned-copy admission is feature-gated.
+/// Existing sealed-ISB entry point; owned-copy admission uses its own source type.
 pub type IsbPixelValidation = CpuPixelValidation;
 /// Compatibility name for the existing sealed-ISB completion API.
 pub type ValidatedIsbPixels = ValidatedCpuPixels;
 
 pub(super) enum ImmutableCpuPixels {
     Sealed(SealedMapping),
-    #[cfg(feature = "experimental-owned-copy")]
     Owned(Box<[u8]>),
 }
 
@@ -29,7 +28,6 @@ impl ImmutableCpuPixels {
     pub(super) fn bytes(&self) -> &[u8] {
         match self {
             Self::Sealed(mapping) => mapping.bytes(),
-            #[cfg(feature = "experimental-owned-copy")]
             Self::Owned(bytes) => bytes,
         }
     }
@@ -45,7 +43,6 @@ impl ValidatedCpuPixels {
     pub fn into_shared(self) -> crate::SharedPixels {
         match self.0 {
             ImmutableCpuPixels::Sealed(mapping) => crate::SharedPixels::isb(mapping),
-            #[cfg(feature = "experimental-owned-copy")]
             ImmutableCpuPixels::Owned(bytes) => crate::SharedPixels::owned(bytes),
         }
     }
@@ -59,7 +56,6 @@ impl CpuPixelValidation {
     /// Consume a Session-owned copy. No producer mapping or mutable alias may
     /// enter here. This supplies pixel validation, not ring admission or budget
     /// authorization: the caller must reserve resource/worker credit first.
-    #[cfg(feature = "experimental-owned-copy")]
     pub fn from_owned(bytes: Box<[u8]>) -> Result<Self, ContentStoreError> {
         Self::from_backing(ImmutableCpuPixels::Owned(bytes))
     }

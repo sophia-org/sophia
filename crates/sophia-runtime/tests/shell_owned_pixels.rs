@@ -1,5 +1,4 @@
 //! D4's immutable destination in the real store; no ring/wire/native claim.
-#![cfg(feature = "experimental-owned-copy")]
 use sophia_protocol::*;
 use sophia_runtime::*;
 

@@ -1,11 +1,23 @@
-# Experimental owned-copy ring
+# Owned-copy ring
 
-This is the default-off D4 option B experiment under
+This is the D4 option B implementation under
 [oofo1zrq](notes/investigations/oofo1zrq-a-portable-9p-core-with-optional-drawing-and-surface-clients.md).
-It is not a stable SDK protocol or a new meaning for sealed source kind 1.
-The `experimental-owned-copy` build feature forwards from CLI through Session
-to runtime. `SOPHIA_DISABLE_OWNED_COPY=1`, sampled when an export is constructed,
-disables experimental disclosure and admission in the same binary.
+On 2026-10-21, after the first native ABBA panel result, niltempus selected
+B as the default and sole shell CPU upload path, with no build feature or
+runtime fallback switch. Those switches have been removed. Promotion of the
+wire contract, SDKs and real shell clients is in progress; sealed shell
+ingress remains temporarily during that coordinated migration, not as the
+intended production alternative. Lock images and DMA-BUF are separate paths.
+
+The measured d4p-03 result is recorded in
+`~/.local/state/t331/d4p-03/FINDINGS.txt`: combined Session+peer CPU fell by
+252.5–332.5 microseconds per frame in this single-head panel ABBA set. This
+is an observation on crunch, not a Wayland/XLibre acceptance verdict.
+
+The private framing described below is the implementation being promoted;
+it is not yet the public SDK contract. Ring slots now bound capacity rather
+than requiring every resource to have identical dimensions: the owner copies
+and charges only each offer’s exact byte extent, within that fixed capacity.
 
 ## Authority and custody
 
@@ -111,7 +123,7 @@ owner and worker, using a supplied test authority. Shared arrival ordinals asser
 that final status precedes slot release on both cancellation and success. This
 does not qualify a live Session or the native authentication setup.
 
-The feature-gated `shell_timing_peer_ring` example speaks raw 9P after the
+The `shell_timing_peer_ring` example speaks raw 9P after the
 normal authenticated launch attach, so it can consume private D4 events without
 changing the SDK decoder. Its ring and sealed sources share the frame loop,
 pixel fill, resource cycling, demand and retirement. The ring smoke covers
@@ -137,4 +149,4 @@ acceptance follows from the automated controls or serializer replay.
 Use the accepted four-workload Wayland/XLibre bar on crunch and x13; IPC is an
 ungated diagnostic. External numerical thresholds remain unset. Retained
 resource qualification and D3 cache-on/off controls remain distinct from the
-per-frame lifecycle comparison. This feature is not production-default-on.
+per-frame lifecycle comparison. Production client migration and the broader external measurements remain outstanding.

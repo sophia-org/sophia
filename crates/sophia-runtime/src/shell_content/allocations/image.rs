@@ -3,7 +3,6 @@ use super::*;
 use sophia_protocol::shell_files::{SHELL_IMAGE_SOURCE_SEALED_MEMORY, ShellImageMetadata};
 
 impl ContentAllocationStore {
-    #[cfg(feature = "experimental-owned-copy")]
     pub(crate) fn owned_copy_description(
         &self,
         request: &crate::OwnedCopyImageRequest,

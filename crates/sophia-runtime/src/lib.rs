@@ -36,7 +36,7 @@ mod output_file_reads;
 mod output_file_service;
 #[cfg(target_os = "linux")]
 mod output_file_transport;
-#[cfg(all(target_os = "linux", feature = "experimental-owned-copy"))]
+#[cfg(target_os = "linux")]
 pub mod owned_ring_protocol;
 #[cfg(target_os = "linux")]
 mod policy_capabilities;
@@ -113,6 +113,6 @@ pub use shell_content::*;
 #[path = "../tests/support/content_isb.rs"]
 mod test_content_isb;
 
-#[cfg(all(test, target_os = "linux", feature = "experimental-owned-copy"))]
+#[cfg(all(test, target_os = "linux"))]
 #[path = "../tests/support/owned_ring_races.rs"]
 mod owned_ring_races;

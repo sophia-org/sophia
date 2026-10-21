@@ -2,8 +2,6 @@
 //! until acknowledged. Credited responses own a terminal reserve that
 //! unsolicited records can never consume.
 use std::time::Instant;
-
-#[cfg(feature = "experimental-owned-copy")]
 mod owned;
 
 use sophia_9p::journal::{Journal as Custody, JournalBounds as Limits};
@@ -269,11 +267,11 @@ impl Journal {
 #[path = "../../../tests/support/shell_file_journal.rs"]
 mod tests;
 
-#[cfg(all(test, feature = "experimental-owned-copy"))]
+#[cfg(test)]
 #[path = "../../../tests/support/shell_file_owned_journal.rs"]
 mod owned_tests;
 
-#[cfg(all(test, feature = "experimental-owned-copy"))]
+#[cfg(test)]
 impl Journal {
     pub(in crate::shell_transport) fn prepare_owned_event(
         &mut self,

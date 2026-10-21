@@ -17,7 +17,6 @@ pub enum IsbValidationFailure {
     Timeout,
     Malformed,
     SizeMismatch,
-    #[cfg(feature = "experimental-owned-copy")]
     GenerationChanged,
 }
 
@@ -28,7 +27,6 @@ pub struct IsbValidationCompletion {
 
 enum Source {
     Isb(OwnedFd),
-    #[cfg(feature = "experimental-owned-copy")]
     Ring(super::OwnedRingRead),
     #[cfg(feature = "experimental-draw")]
     Draw(sophia_draw::Batch),
@@ -38,7 +36,6 @@ impl Source {
     fn into_isb(self) -> OwnedFd {
         match self {
             Self::Isb(fd) => fd,
-            #[cfg(feature = "experimental-owned-copy")]
             Self::Ring(_) => unreachable!("ISB submission returns its own source"),
             #[cfg(feature = "experimental-draw")]
             Self::Draw(_) => unreachable!("ISB submission returns its own source"),
@@ -329,7 +326,6 @@ fn validate(
     check()?;
     let mut validation = match job.source {
         Source::Isb(fd) => sealed_validation(fd, job.bytes)?,
-        #[cfg(feature = "experimental-owned-copy")]
         Source::Ring(read) => IsbPixelValidation::from_owned(read.copy(check)?)
             .map_err(|_| IsbValidationFailure::Malformed)?,
         #[cfg(feature = "experimental-draw")]
@@ -369,8 +365,6 @@ fn sealed_validation(
     })?;
     IsbPixelValidation::new(mapping).map_err(|_| IsbValidationFailure::Malformed)
 }
-
-#[cfg(feature = "experimental-owned-copy")]
 mod owned_copy;
 
 #[cfg(feature = "experimental-draw")]

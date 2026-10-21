@@ -7,7 +7,6 @@ use std::sync::{Arc, Weak};
 enum Backing {
     Bytes(Arc<[u8]>),
     Isb(Arc<sophia_linux_peer::SealedMapping>),
-    #[cfg(feature = "experimental-owned-copy")]
     Owned(Arc<Box<[u8]>>),
 }
 
@@ -24,7 +23,6 @@ pub struct SharedPixelsWatch(WeakBacking);
 enum WeakBacking {
     Bytes(Weak<[u8]>),
     Isb(Weak<sophia_linux_peer::SealedMapping>),
-    #[cfg(feature = "experimental-owned-copy")]
     Owned(Weak<Box<[u8]>>),
 }
 
@@ -33,7 +31,6 @@ impl SharedPixelsWatch {
         match &self.0 {
             WeakBacking::Bytes(bytes) => bytes.strong_count() == 0,
             WeakBacking::Isb(mapping) => mapping.strong_count() == 0,
-            #[cfg(feature = "experimental-owned-copy")]
             WeakBacking::Owned(bytes) => bytes.strong_count() == 0,
         }
     }
@@ -50,13 +47,11 @@ impl SharedPixels {
         SharedPixelsWatch(match &self.0 {
             Backing::Bytes(bytes) => WeakBacking::Bytes(Arc::downgrade(bytes)),
             Backing::Isb(mapping) => WeakBacking::Isb(Arc::downgrade(mapping)),
-            #[cfg(feature = "experimental-owned-copy")]
             Backing::Owned(bytes) => WeakBacking::Owned(Arc::downgrade(bytes)),
         })
     }
 
     // Keep the Box allocation intact: Arc<[u8]>::from(Box) would copy pixels.
-    #[cfg(feature = "experimental-owned-copy")]
     pub(crate) fn owned(bytes: Box<[u8]>) -> Self {
         Self(Backing::Owned(Arc::new(bytes)))
     }
@@ -72,7 +67,6 @@ impl Deref for SharedPixels {
         match &self.0 {
             Backing::Bytes(bytes) => bytes,
             Backing::Isb(mapping) => mapping.bytes(),
-            #[cfg(feature = "experimental-owned-copy")]
             Backing::Owned(bytes) => bytes,
         }
     }

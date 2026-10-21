@@ -4,12 +4,10 @@ use std::io;
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 
 mod exec_gate;
-#[cfg(feature = "experimental-ring-producer")]
 mod producer_ring;
 mod rights;
 mod sealed_mapping;
 pub use exec_gate::{ExecGate, ExecGateChild};
-#[cfg(feature = "experimental-ring-producer")]
 pub use producer_ring::ProducerRing;
 pub use rights::{ReceivedRights, receive_rights};
 pub use sealed_mapping::SealedMapping;

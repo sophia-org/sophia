@@ -7,8 +7,6 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
-# Default-off D4 private ring transport; no stable SDK source kind.
-experimental-owned-copy = []
 experimental-draw = ["dep:sophia-draw", "rustix/fs"]
 experimental-shell-capture = ["dep:sophia-renderer-image"]
 # Opt-in shell-file control-turn observation; absent from default builds.
@@ -27,7 +25,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
-sophia-linux-peer = { path = "../sophia-linux-peer", features = ["experimental-ring-producer"] }
+sophia-linux-peer = { path = "../sophia-linux-peer" }
 serde = { version = "1", features = ["derive"] }
 sophia-isb = { workspace = true }
 sophia-launch-client = { workspace = true }
@@ -47,4 +45,3 @@ required-features = ["experimental-draw"]
 
 [[example]]
 name = "shell_timing_peer_ring"
-required-features = ["experimental-owned-copy"]

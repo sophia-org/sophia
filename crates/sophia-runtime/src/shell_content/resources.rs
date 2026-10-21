@@ -140,7 +140,6 @@ impl ContentResourceStore {
     pub fn grant(&self) -> ContentGrant {
         self.limits.grant
     }
-    #[cfg(feature = "experimental-owned-copy")]
     pub(super) fn is_revoked(&self) -> bool {
         self.revoked
     }

@@ -67,6 +67,15 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
             "spec/sophia-image-channel.md",
             "docs/sophia-image-channel.md",
         ),
+        ("spec/sophia-owned-ring.md", "docs/sophia-owned-ring.md"),
+        (
+            "spec/sophia-owned-ring-v1.kdl",
+            "protocol/sophia-owned-ring-v1.kdl",
+        ),
+        (
+            "spec/golden/sophia-owned-ring-v1.tsv",
+            "protocol/golden/sophia-owned-ring-v1.tsv",
+        ),
         (
             "spec/golden/sophia-image-channel-v1.tsv",
             "protocol/golden/sophia-image-channel-v1.tsv",

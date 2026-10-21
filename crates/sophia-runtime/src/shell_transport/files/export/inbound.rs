@@ -45,7 +45,6 @@ impl ShellFiles {
         if self.pending_draw().is_some() {
             return false;
         }
-        #[cfg(feature = "experimental-owned-copy")]
         if self.owned_pending_offer().is_some() {
             return false;
         }
@@ -101,7 +100,6 @@ impl ShellFiles {
                     matches!(record.as_ref(), ShellContentRecord::ResourceCancel(cancel)
                     if cancel.grant == batch.grant && cancel.resource == batch.resource)
                 });
-            #[cfg(feature = "experimental-owned-copy")]
             let blocked = blocked
                 || self.owned_pending_offer().is_some_and(|(offer, _)| {
                     matches!(record.as_ref(), ShellContentRecord::ResourceCancel(cancel)

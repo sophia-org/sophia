@@ -34,7 +34,6 @@ pub(in crate::shell_transport) use image::{
 };
 mod inbound;
 mod objects;
-#[cfg(feature = "experimental-owned-copy")]
 mod owned_ring;
 mod snapshots;
 mod submission;
@@ -83,7 +82,6 @@ pub(in crate::shell_transport) enum Node {
     ImageFormats,
     #[cfg(feature = "experimental-draw")]
     Draw,
-    #[cfg(feature = "experimental-owned-copy")]
     OwnedRing,
 }
 
@@ -110,7 +108,6 @@ impl Node {
             Self::ImageFormats => 21,
             #[cfg(feature = "experimental-draw")]
             Self::Draw => 22,
-            #[cfg(feature = "experimental-owned-copy")]
             Self::OwnedRing => 23,
         }
     }
@@ -246,7 +243,6 @@ pub(in crate::shell_transport) struct ShellFiles {
     inbound: VecDeque<Inbound>,
     #[cfg(feature = "experimental-draw")]
     draw: draw::DrawQueue,
-    #[cfg(feature = "experimental-owned-copy")]
     owned: owned_ring::OwnedRingExport,
     /// The Begin, Chunk and End of the candidate being handed to the owner.
     candidate_parts: VecDeque<(TransactionId, ShellContentRecord)>,
@@ -322,7 +318,6 @@ impl ShellFiles {
             inbound: VecDeque::with_capacity(INBOUND_RECORDS),
             #[cfg(feature = "experimental-draw")]
             draw: draw::DrawQueue::default(),
-            #[cfg(feature = "experimental-owned-copy")]
             owned: owned_ring::OwnedRingExport::new(),
             candidate_parts: VecDeque::with_capacity(3),
             native_candidate_parts: VecDeque::with_capacity(3),
@@ -341,7 +336,6 @@ impl ShellFiles {
 
     pub(in crate::shell_transport) fn revoke(&mut self) {
         self.revoked = true;
-        #[cfg(feature = "experimental-owned-copy")]
         self.reset_owned_ring();
         #[cfg(feature = "experimental-draw")]
         {
@@ -458,7 +452,6 @@ impl ShellFiles {
         if !(2..=4).contains(&status.status) {
             return Err(Errno::EPROTO);
         }
-        #[cfg(feature = "experimental-owned-copy")]
         if let Some(sequence) = self.append_owned_status(transaction, status, body)? {
             return Ok(Some(sequence));
         }
@@ -597,7 +590,6 @@ impl Export for ShellFiles {
                 Node::Submit | Node::Ack => 0o200,
                 #[cfg(feature = "experimental-draw")]
                 Node::Draw => 0o200,
-                #[cfg(feature = "experimental-owned-copy")]
                 Node::OwnedRing => 0o200,
                 _ => 0o400,
             },
@@ -612,7 +604,6 @@ impl Export for ShellFiles {
             Node::Submit | Node::Ack => access == OpenAccess::Write,
             #[cfg(feature = "experimental-draw")]
             Node::Draw => access == OpenAccess::Write,
-            #[cfg(feature = "experimental-owned-copy")]
             Node::OwnedRing => access == OpenAccess::Write,
             _ => access == OpenAccess::Read,
         };
@@ -621,7 +612,6 @@ impl Export for ShellFiles {
         }
         match node {
             Node::Limits if self.limits.is_none() => Err(Errno::EAGAIN),
-            #[cfg(feature = "experimental-owned-copy")]
             Node::OwnedRing if !self.owned_disclosed() => Err(Errno::ENOENT),
             Node::ImageChannel if self.image_disclosed() => Ok(Handle::ImageDiscovery(
                 self.image
@@ -736,7 +726,6 @@ impl Export for ShellFiles {
                 .write(offset, data, Instant::now()),
             #[cfg(feature = "experimental-draw")]
             (Node::Draw, _) if offset == 0 => self.write_draw(data),
-            #[cfg(feature = "experimental-owned-copy")]
             (Node::OwnedRing, _) if offset == 0 => self.write_owned_ring(data),
             (Node::Submit, _) if offset == 0 => {
                 self.submit(data)?;

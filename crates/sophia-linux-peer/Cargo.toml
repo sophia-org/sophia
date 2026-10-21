@@ -6,10 +6,6 @@ license.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 
-[features]
-# Producer-side benchmark backing only; absent from production defaults.
-experimental-ring-producer = []
-
 [dependencies]
 libc = "0.2"
 

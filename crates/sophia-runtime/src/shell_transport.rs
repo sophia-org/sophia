@@ -49,7 +49,6 @@ pub use image_owner::ShellIsbImageOwner;
 mod indicator_responses;
 pub(crate) mod outbound;
 mod outbox;
-#[cfg(feature = "experimental-owned-copy")]
 mod owned_copy;
 mod publication;
 mod reference;
