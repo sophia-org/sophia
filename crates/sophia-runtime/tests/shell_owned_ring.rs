@@ -12,8 +12,7 @@ fn source() -> (File, OwnedRingGeometry, OwnedRing) {
         rustix::fs::memfd_create("owned-ring-test", rustix::fs::MemfdFlags::CLOEXEC).unwrap(),
     );
     file.set_len(geometry.source_bytes() as u64).unwrap();
-    let ring =
-        OwnedRing::admit(file.try_clone().unwrap(), geometry, geometry.source_bytes()).unwrap();
+    let ring = OwnedRing::admit(file.try_clone().unwrap(), reserved(geometry)).unwrap();
     (file, geometry, ring)
 }
 fn publish(file: &File, geometry: OwnedRingGeometry, identity: OwnedSlotIdentity, value: u8) {
@@ -175,22 +174,7 @@ fn admission_checks_geometry_extent_reservation_and_non_wrapping_identity() {
         assert!(OwnedRingGeometry::new(slots, bytes).is_err());
     }
     let (file, geometry, mut ring) = source();
-    assert!(
-        OwnedRing::admit(
-            file.try_clone().unwrap(),
-            geometry,
-            geometry.source_bytes() - 1
-        )
-        .is_err()
-    );
-    assert!(
-        OwnedRing::admit(
-            File::open("/dev/null").unwrap(),
-            geometry,
-            geometry.source_bytes()
-        )
-        .is_err()
-    );
+    assert!(OwnedRing::admit(File::open("/dev/null").unwrap(), reserved(geometry)).is_err());
     for identity in [
         identity(0, 0, 2),
         identity(1, 2, 2),
@@ -204,5 +188,17 @@ fn admission_checks_geometry_extent_reservation_and_non_wrapping_identity() {
     assert!(ring.confirm_release(last));
     assert!(ring.offer(identity(1, 0, 2)).is_err());
     file.set_len(1).unwrap();
-    assert!(OwnedRing::admit(file, geometry, geometry.source_bytes()).is_err());
+    assert!(OwnedRing::admit(file, reserved(geometry)).is_err());
+}
+
+fn reserved(geometry: OwnedRingGeometry) -> OwnedRingSourceReservation {
+    let grant = sophia_protocol::ContentGrant {
+        connection_epoch: 1,
+        content_grant_epoch: 1,
+    };
+    let mut registry = ContentEpochRegistry::new(64 << 20).unwrap();
+    registry
+        .admit(sophia_protocol::ContentLimits::prototype(grant))
+        .unwrap();
+    registry.reserve_owned_ring_source(grant, geometry).unwrap()
 }

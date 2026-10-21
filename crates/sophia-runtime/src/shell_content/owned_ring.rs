@@ -1,5 +1,5 @@
 //! D4 measurement-only source custody. No source mapping, wire or authority.
-use super::IsbValidationFailure;
+use super::{IsbValidationFailure, OwnedRingSourceReservation};
 use std::fs::File;
 use std::io;
 use std::os::unix::fs::FileExt;
@@ -67,40 +67,47 @@ struct Slot {
     pending: Option<PendingSlot>,
 }
 
-/// One bounded source owner. The authenticated export must reserve the complete
-/// source extent separately from every accepted destination before admitting it.
+struct RingSource {
+    // Close the fd before returning its charge (struct fields drop in order).
+    file: File,
+    reservation: OwnedRingSourceReservation,
+}
+
+/// One bounded source owner. Admission consumes a Session reservation for the
+/// complete source extent, separate from every accepted destination.
 /// All offers belong to this object; connection/ring identities are its future
 /// export owner's obligation. Readable regular files can block: this experiment
 /// supplies no syscall-duration bound or portable backing qualification.
 pub struct OwnedRing {
-    source: Arc<File>,
+    source: Arc<RingSource>,
     geometry: OwnedRingGeometry,
     slots: [Slot; MAX_SLOTS],
     greatest_offer: u64,
 }
 
 impl OwnedRing {
-    pub fn admit(
-        source: File,
-        geometry: OwnedRingGeometry,
-        reserved_source_bytes: usize,
-    ) -> io::Result<Self> {
+    pub fn admit(source: File, reservation: OwnedRingSourceReservation) -> io::Result<Self> {
+        let geometry = reservation.geometry();
         let metadata = source.metadata()?;
-        if !metadata.is_file()
-            || metadata.len() != geometry.source_bytes() as u64
-            || geometry.source_bytes() > reserved_source_bytes
-        {
+        if !metadata.is_file() || metadata.len() != geometry.source_bytes() as u64 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "owned ring extent or reservation",
             ));
         }
         Ok(Self {
-            source: Arc::new(source),
+            source: Arc::new(RingSource {
+                file: source,
+                reservation,
+            }),
             geometry,
             slots: std::array::from_fn(|_| Slot::default()),
             greatest_offer: 0,
         })
+    }
+
+    pub fn grant(&self) -> sophia_protocol::ContentGrant {
+        self.source.reservation.grant()
     }
 
     /// The caller must already hold destination, worker and terminal journal
@@ -171,7 +178,7 @@ impl OwnedRing {
 /// ticket, including refused submissions and cancellation before the first read.
 /// An in-flight ticket independently retains the fd if its connection dies.
 pub struct OwnedRingRead {
-    source: Arc<File>,
+    source: Arc<RingSource>,
     geometry: OwnedRingGeometry,
     identity: OwnedSlotIdentity,
     finished: Arc<AtomicBool>,
@@ -194,7 +201,7 @@ impl OwnedRingRead {
         let offset = (self.identity.slot * self.geometry.extent) as u64;
         let generation = || {
             let mut bytes = [0; 8];
-            if self.source.read_at(&mut bytes, offset).ok() != Some(bytes.len()) {
+            if self.source.file.read_at(&mut bytes, offset).ok() != Some(bytes.len()) {
                 return Err(IsbValidationFailure::SizeMismatch);
             }
             if u64::from_le_bytes(bytes) != self.identity.generation {
@@ -212,7 +219,13 @@ impl OwnedRingRead {
         // One payload read: short reads, EINTR and errors reject the offer. Never
         // stitch partial revisions or silently retry a possibly torn snapshot.
         check()?;
-        if self.source.read_at(&mut bytes, offset + HEADER as u64).ok() != Some(bytes.len()) {
+        if self
+            .source
+            .file
+            .read_at(&mut bytes, offset + HEADER as u64)
+            .ok()
+            != Some(bytes.len())
+        {
             return Err(IsbValidationFailure::SizeMismatch);
         }
         check()?;

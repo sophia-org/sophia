@@ -9,9 +9,13 @@ use sophia_protocol::{ContentGrant, ContentLimits};
 #[cfg(feature = "experimental-shell-capture")]
 mod capture;
 mod image;
+#[cfg(feature = "experimental-owned-copy")]
+mod owned_ring;
 #[cfg(feature = "experimental-shell-capture")]
 pub use capture::ContentCaptureAdmissionError;
 pub use image::{IsbImageAdmission, IsbImageAdmissionError};
+#[cfg(feature = "experimental-owned-copy")]
+pub use owned_ring::OwnedRingSourceReservation;
 
 pub struct ContentEpochRegistry {
     active: Vec<ContentEpoch>,
@@ -29,6 +33,8 @@ struct ContentEpoch {
     candidates: ContentCandidateStore,
     reserved_bytes: u64,
     reserved_backing_bytes: u64,
+    #[cfg(feature = "experimental-owned-copy")]
+    source_bytes: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl ContentEpoch {
@@ -45,11 +51,23 @@ impl ContentEpoch {
             resources: ContentResourceStore::new(limits)?,
             reserved_bytes,
             reserved_backing_bytes,
+            #[cfg(feature = "experimental-owned-copy")]
+            source_bytes: Default::default(),
         })
     }
 
+    fn source_bytes(&self) -> u64 {
+        #[cfg(feature = "experimental-owned-copy")]
+        return self.source_bytes.load(std::sync::atomic::Ordering::Acquire);
+        #[cfg(not(feature = "experimental-owned-copy"))]
+        0
+    }
+
     fn quiescent(&self) -> bool {
-        self.allocations.quiescent() && self.resources.quiescent() && self.candidates.quiescent()
+        self.allocations.quiescent()
+            && self.resources.quiescent()
+            && self.candidates.quiescent()
+            && self.source_bytes() == 0
     }
 
     fn discard_peer_responses(&mut self) {
@@ -315,7 +333,7 @@ impl ContentEpochRegistry {
             .iter()
             .map(|epoch| {
                 let usage = epoch.resources.usage();
-                usage.staging + usage.resident + usage.retiring
+                usage.staging + usage.resident + usage.retiring + epoch.source_bytes()
             })
             .sum()
     }
@@ -323,14 +341,14 @@ impl ContentEpochRegistry {
     pub fn retired_backing_bytes(&self) -> u64 {
         self.retired
             .iter()
-            .map(|epoch| epoch.resources.usage().backing)
+            .map(|epoch| epoch.resources.usage().backing + epoch.source_bytes())
             .sum()
     }
 
     pub fn reserved_bytes(&self) -> u64 {
         self.active
             .iter()
-            .map(|epoch| epoch.reserved_bytes)
+            .map(|epoch| epoch.reserved_bytes + epoch.source_bytes())
             .sum::<u64>()
             + self.retired_bytes()
     }
@@ -338,7 +356,7 @@ impl ContentEpochRegistry {
     pub fn reserved_backing_bytes(&self) -> u64 {
         self.active
             .iter()
-            .map(|epoch| epoch.reserved_backing_bytes)
+            .map(|epoch| epoch.reserved_backing_bytes + epoch.source_bytes())
             .sum::<u64>()
             + self.retired_backing_bytes()
     }
@@ -353,6 +371,7 @@ impl ContentEpochRegistry {
             ..Default::default()
         };
         for epoch in self.active.iter().chain(&self.retired) {
+            value.source_bytes += epoch.source_bytes();
             epoch.resources.add_accounting(&mut value);
             epoch.candidates.add_accounting(&mut value);
             epoch.allocations.add_accounting(&mut value);
@@ -375,7 +394,8 @@ impl ContentEpochRegistry {
         };
         for epoch in self.retired.iter().filter(|epoch| epoch.profile == profile) {
             let usage = epoch.resources.usage();
-            budget.own_retired_bytes += usage.staging + usage.resident + usage.retiring;
+            budget.own_retired_bytes +=
+                usage.staging + usage.resident + usage.retiring + epoch.source_bytes();
             budget.own_retired_epochs += 1;
         }
         budget

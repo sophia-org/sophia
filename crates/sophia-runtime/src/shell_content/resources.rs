@@ -140,6 +140,10 @@ impl ContentResourceStore {
     pub fn grant(&self) -> ContentGrant {
         self.limits.grant
     }
+    #[cfg(feature = "experimental-owned-copy")]
+    pub(super) fn is_revoked(&self) -> bool {
+        self.revoked
+    }
     pub fn quiescent(&self) -> bool {
         self.transfers.is_empty() && self.accepted.is_empty()
     }

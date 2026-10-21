@@ -669,8 +669,10 @@ charges and final journal-confirmed release use the existing store.
 `OwnedRing` fixes geometry at admission and lends a non-cloneable read ticket to
 the existing four-credit ISB worker. The experimental layout has 1–4 slots,
 4 bytes–4 MiB of pixels per slot (a multiple of four), a 4096-byte header,
-page-rounded payload, and a little-endian u64 ready generation at offset zero. Total source extent is checked against the caller's separately
-reserved source bytes; only an exact-size regular file is admitted. Session
+page-rounded payload, and a little-endian u64 ready generation at offset zero.
+The first checkpoint checked source extent against a claimed reservation;
+the source-budget amendment below replaces that claim with a registry lease.
+Only an exact-size regular file is admitted. Session
 maps none of it. The worker makes two bounded generation reads around one
 payload pread and rejects short/error reads or changed generations, without a
 retry. It scans only the copied destination. Cancellation/deadline checkpoints
@@ -694,8 +696,8 @@ truncation; exact-release identity and backpressure; refused submission custody;
 and deterministic generation change/cancellation between source reads.
 
 This feature is reachable by isolated tests/harness APIs only. There is no ring
-wire allocation, SDK change, authenticated source admission, connection-wide
-source accounting, journal slot-release record, native recipe, live enablement
+wire allocation, SDK change, authenticated source admission,
+journal slot-release record, native recipe, live enablement
 or performance acceptance yet. The export owner must bind ring/connection epochs,
 reserve source and per-resource budgets plus journal credits, retain source
 charges through disconnected workers, and reconcile every terminal completion.
@@ -704,6 +706,33 @@ path on the existing descriptor channel and journal. Do not silently reuse the
 sealed source kind, bypass export.check, add a reactor, or patch SDK snapshots.
 Native measurements must still pass the regression floor and report external
 references independently before proposing a production path.
+
+### Source-budget custody amendment — October 21
+
+`OwnedRing::admit` now consumes a non-cloneable reservation minted by the
+Session's `ContentEpochRegistry` for the exact active content grant and fixed
+geometry. It cannot accept a caller's claimed byte allowance. The full source
+extent consumes both aggregate byte and backing budgets, independently of
+every destination's staging/resident/retiring reservation. Existing active
+resource ceilings remain reserved; source admission cannot borrow their space.
+Stale or revoked grants and exhausted budgets refuse before admission.
+
+The ring and each worker ticket share one source owner. Its descriptor closes
+before its reservation drops. A disconnected epoch retains the source charge
+and its retirement slot until the last potential reader is gone, and reconnect
+admission counts that charge. Slot release permits reuse but does not refund
+the live ring extent. A malformed descriptor refunds an unused reservation.
+The read-only accounting inventory exposes source bytes separately from owned
+resource bytes; neither is a claim about process RSS or physical page residency.
+
+Four budget regressions cover independent source/destination charges, malformed
+admission refunds, revoked/stale grants, disconnected readers and reconnect
+pressure, and live-ring retention after slot release. The runtime feature suite
+passes 725 tests (41 ignored), and strict all-target Clippy passes with owned
+copy, drawing and capture enabled together. Evidence is retained under
+`t331-d4-owned-copy-20261021/source-budget-01`. This closes the internal source
+accounting gap; authenticated ring admission and its journal obligations remain
+unimplemented. No native or external performance result follows from these tests.
 
 
 ### Joint handback supersedes the earlier IPC-floor decision

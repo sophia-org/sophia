@@ -11,8 +11,7 @@ fn owned_ring_changed_after_payload_read_is_rejected_without_retry() {
     );
     file.set_len(geometry.source_bytes() as u64).unwrap();
     file.write_all_at(&2_u64.to_le_bytes(), 0).unwrap();
-    let mut ring =
-        OwnedRing::admit(file.try_clone().unwrap(), geometry, geometry.source_bytes()).unwrap();
+    let mut ring = OwnedRing::admit(file.try_clone().unwrap(), reserved(geometry)).unwrap();
     let identity = OwnedSlotIdentity {
         offer: 1,
         slot: 0,
@@ -39,7 +38,7 @@ fn owned_ring_cancellation_between_reads_releases_only_the_source_ticket() {
     );
     file.set_len(geometry.source_bytes() as u64).unwrap();
     file.write_all_at(&2_u64.to_le_bytes(), 0).unwrap();
-    let mut ring = OwnedRing::admit(file, geometry, geometry.source_bytes()).unwrap();
+    let mut ring = OwnedRing::admit(file, reserved(geometry)).unwrap();
     let identity = OwnedSlotIdentity {
         offer: 1,
         slot: 0,
@@ -63,4 +62,16 @@ fn owned_ring_cancellation_between_reads_releases_only_the_source_ticket() {
     );
     assert_eq!(ring.pending_release(0), Some(identity));
     assert!(ring.confirm_release(identity));
+}
+
+fn reserved(geometry: OwnedRingGeometry) -> OwnedRingSourceReservation {
+    let grant = sophia_protocol::ContentGrant {
+        connection_epoch: 1,
+        content_grant_epoch: 1,
+    };
+    let mut registry = ContentEpochRegistry::new(64 << 20).unwrap();
+    registry
+        .admit(sophia_protocol::ContentLimits::prototype(grant))
+        .unwrap();
+    registry.reserve_owned_ring_source(grant, geometry).unwrap()
 }

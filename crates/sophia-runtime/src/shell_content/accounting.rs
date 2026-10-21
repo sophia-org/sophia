@@ -11,6 +11,9 @@ pub struct ContentEpochAccounting {
     pub active_epochs: usize,
     pub retired_epochs: usize,
     pub memory: ContentMemoryUsage,
+    /// Mutable producer source extents held independently of accepted resources.
+    /// Included in reserved/retired budgets; not a second destination charge.
+    pub source_bytes: u64,
     pub transfers: usize,
     pub resources: usize,
     pub resource_ids: usize,
