@@ -2067,3 +2067,20 @@ An installed login on the new topology failed after both heads became ready;
 its cause is missing from saved stderr. `igpu-login-exit-20261007` preserves it
 and prepares a bounded diagnostic retry. No cache merge, install or retry has
 occurred as part of that investigation.
+
+
+## October 21: whole-desktop external comparison, separate from t331
+
+Niltempus directs wmbench to compare Sophia with Wayland as well as XLibre.
+Prepare the native three-way campaign here, using the existing t289 native
+retry recipe refreshed against current source, pinned builds, common supported
+rows, both heads, 120 warmup and 300 measured frames, and complete desktop PID
+sets. Prefer a qualified River arm; its precise version and any separate WM
+must be explicit. Unsupported protocol tests stay “not done”, never zero cost.
+Run on crunch and include the slower x13 target for headroom evidence.
+
+Sophia/XLibre use wmbench's X backend; Wayland uses its native backend. Record
+that difference. This campaign does not qualify t331's shell 9P image path,
+which has its own reference clients and acceptance amendment in mvbubiv9.
+No prepared READY file, source review or software-guest comparison constitutes
+a matched native three-way result. Physical runs and capture remain pending.

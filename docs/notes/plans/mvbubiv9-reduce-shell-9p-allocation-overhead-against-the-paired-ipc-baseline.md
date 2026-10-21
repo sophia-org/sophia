@@ -68,6 +68,37 @@ versus offscreen X copy), the Wayland bind needs a second registry roundtrip,
 and the received journal parser cannot parse its spaced clock note. Measurement
 windows and presentation source validation also need hardening before gating.
 
+### Fresh-lifecycle matrix addendum and received-tool review
+
+The subsequent joint handback selects `lifecycle=fresh` on all gated arms;
+reuse is a separate, currently ungated matrix for external practice and B.
+Use two buffers to match the current Sophia peer, identical pixel workloads,
+heads/modes and GPU-backed composition. Compare fill-start to presentation;
+report submit-to-presentation and pacing separately because permit placement
+and producer preparation differ. Keep the missing Wayland WRITE seal explicit.
+The native recipe must attest these axes; a matching journal header is not
+proof that every arm performed the same work.
+
+Twenty rev-4 source hashes were verified and frozen at
+`t331-d4-owned-copy-20261021/external-bar-handback-02`. Integration is in the
+separate niltempus worktree `measurement/t331-external-bar`, under
+`tools/external-bar`; source and headless-smoke findings are filed in its
+`docs/desktop-comparison.md`. Both fresh and reuse Wayland protocol smokes pass
+8/8 feedback rows on device-hidden headless pixman River 0.3.7 after fixing the
+bind roundtrip, feedback destruction and missing fresh-path fallocate. These
+are not native GPU or performance observations. River 0.5 needs a separate
+layer-shell-aware WM, so the delivered empty-init recipe is not sufficient.
+
+Outstanding matching work includes explicit output selection/configured bounds,
+common counted-frame shade generations, bulk visibility (currently visible on
+Wayland but offscreen on X/Sophia), and synchronized post-warmup CPU intervals.
+Composited X requires a final-composition presentation observation: client
+Present completion on a redirected window is not by itself proof of xcompmgr's
+scanout. The current reporter is explicitly diagnostic-only; no numerical gate
+is scored. Its Sophia converter preserves counter bounds as bounds instead of
+substituting an upper bound for client getrusage or inventing major-fault counts.
+The R choice remains pending with niltempus, as requested in conversation.
+
 ## Task details
 
 ### Approved owner-service optimization — October 18
