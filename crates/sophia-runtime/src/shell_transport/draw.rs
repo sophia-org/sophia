@@ -56,6 +56,7 @@ impl DrawJobs {
         worker: &mut IsbValidationWorker,
         now: u64,
         instant: Instant,
+        other_pending: usize,
     ) -> Result<(), ShellTransportError> {
         for slot in &mut self.jobs {
             let Some(pending) = slot else { continue };
@@ -96,7 +97,7 @@ impl DrawJobs {
         // it until an ordinary terminal status and release can be accounted.
         if !transport.control_capacity_available(epochs, 2)
             || worker.pending() >= 4
-            || self.pending() >= 4
+            || self.pending() + other_pending >= 4
         {
             return Ok(());
         }

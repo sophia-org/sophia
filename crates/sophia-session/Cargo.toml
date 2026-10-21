@@ -47,6 +47,7 @@ sophia-shell-client = { workspace = true }
 sophia-renderer-native-egl = { path = "../sophia-renderer-native-egl", features = ["gbm-platform"] }
 
 [features]
+experimental-owned-copy = ["sophia-runtime/experimental-owned-copy"]
 experimental-draw = ["sophia-runtime/experimental-draw"]
 experimental-shell-capture = ["sophia-renderer-live/experimental-shell-capture", "sophia-runtime/experimental-shell-capture", "sophia-backend-live/experimental-shell-capture"]
 experimental-custody-dispatch = ["sophia-runtime/experimental-custody-dispatch"]

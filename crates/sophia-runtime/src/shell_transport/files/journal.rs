@@ -3,6 +3,9 @@
 //! unsolicited records can never consume.
 use std::time::Instant;
 
+#[cfg(feature = "experimental-owned-copy")]
+mod owned;
+
 use sophia_9p::journal::{Journal as Custody, JournalBounds as Limits};
 use sophia_9p::{Errno, ReadOutcome};
 use sophia_protocol::shell_files::{
@@ -265,3 +268,20 @@ impl Journal {
 #[cfg(test)]
 #[path = "../../../tests/support/shell_file_journal.rs"]
 mod tests;
+
+#[cfg(all(test, feature = "experimental-owned-copy"))]
+#[path = "../../../tests/support/shell_file_owned_journal.rs"]
+mod owned_tests;
+
+#[cfg(all(test, feature = "experimental-owned-copy"))]
+impl Journal {
+    pub(in crate::shell_transport) fn prepare_owned_event(
+        &mut self,
+        event: crate::owned_ring_protocol::Event,
+        credited: bool,
+    ) -> Result<sophia_9p::journal::PreparedRecord<'_>, Errno> {
+        let bytes = self.owned_event_bytes(event)?;
+        let limits = self.append_limits(credited);
+        self.custody.prepare(bytes, limits)
+    }
+}

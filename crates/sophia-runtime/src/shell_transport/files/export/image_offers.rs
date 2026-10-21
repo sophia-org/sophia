@@ -28,6 +28,11 @@ pub(super) struct ImageOffers {
 }
 
 impl ImageOffers {
+    #[cfg(feature = "experimental-owned-copy")]
+    pub(super) fn has_work(&self) -> bool {
+        self.submitted_high_water != 0
+    }
+
     pub(super) fn accepts_id(&self, id: u64) -> bool {
         id > self.submitted_high_water
     }
@@ -221,6 +226,10 @@ impl ShellFiles {
         &mut self,
         mut packet: crate::image_channel::ImageDatagram,
     ) -> Result<(), Errno> {
+        #[cfg(feature = "experimental-owned-copy")]
+        if crate::owned_ring_protocol::is_source(packet.bytes()) {
+            return self.receive_owned_source(packet);
+        }
         let state = self.image.as_mut().ok_or(Errno::EPROTO)?;
         let ShellImageReadiness::Ready {
             granted_source_kinds,

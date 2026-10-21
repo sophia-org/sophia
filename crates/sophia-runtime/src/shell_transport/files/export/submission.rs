@@ -135,6 +135,10 @@ impl ShellFiles {
         &self,
         bytes: &[u8],
     ) -> Result<(Option<Inbound>, SubmissionEffect), Errno> {
+        #[cfg(feature = "experimental-owned-copy")]
+        if self.owned_mode() {
+            return Err(Errno::EACCES);
+        }
         if !self.image_disclosed() {
             return Err(Errno::EINVAL);
         }

@@ -16,6 +16,8 @@ pub struct ShellIsbImageOwner {
     jobs: IsbImageJobs,
     #[cfg(feature = "experimental-draw")]
     draw: super::draw::DrawJobs,
+    #[cfg(feature = "experimental-owned-copy")]
+    owned: super::owned_copy::OwnedCopyOwner,
     worker: IsbValidationWorker,
     releases: [Option<IsbImageSettlement>; 4],
     waiting: Option<(ContentGrant, u64, Instant, Option<u16>)>,
@@ -27,6 +29,8 @@ impl ShellIsbImageOwner {
             jobs: IsbImageJobs::default(),
             #[cfg(feature = "experimental-draw")]
             draw: super::draw::DrawJobs::default(),
+            #[cfg(feature = "experimental-owned-copy")]
+            owned: super::owned_copy::OwnedCopyOwner::default(),
             worker: IsbValidationWorker::with_validation_budget(
                 4,
                 max_resource_bytes,
@@ -45,6 +49,8 @@ impl ShellIsbImageOwner {
         let deadlines = self.jobs.deadline().into_iter();
         #[cfg(feature = "experimental-draw")]
         let deadlines = deadlines.chain(self.draw.deadline());
+        #[cfg(feature = "experimental-owned-copy")]
+        let deadlines = deadlines.chain(self.owned.deadline());
         deadlines
             .chain(
                 self.waiting
@@ -57,9 +63,48 @@ impl ShellIsbImageOwner {
     pub fn pending(&self) -> usize {
         let image = self.jobs.pending() + self.releases.iter().flatten().count();
         #[cfg(feature = "experimental-draw")]
-        return image + self.draw.pending();
-        #[cfg(not(feature = "experimental-draw"))]
+        let image = image + self.draw.pending();
+        #[cfg(feature = "experimental-owned-copy")]
+        let image = image + self.owned.pending();
         image
+    }
+
+    #[cfg(feature = "experimental-draw")]
+    fn service_draw(
+        &mut self,
+        transport: &mut ShellComponentTransport,
+        epochs: &mut ContentEpochRegistry,
+        now: u64,
+        instant: Instant,
+    ) -> Result<(), ShellTransportError> {
+        let other_pending = self.pending() - self.draw.pending();
+        self.draw.service(
+            transport,
+            epochs,
+            &mut self.worker,
+            now,
+            instant,
+            other_pending,
+        )
+    }
+
+    #[cfg(feature = "experimental-owned-copy")]
+    fn service_owned(
+        &mut self,
+        transport: &mut ShellComponentTransport,
+        epochs: &mut ContentEpochRegistry,
+        now: u64,
+        instant: Instant,
+    ) -> Result<(), ShellTransportError> {
+        let other_pending = self.pending() - self.owned.pending();
+        self.owned.service(
+            transport,
+            epochs,
+            &mut self.worker,
+            now,
+            instant,
+            other_pending,
+        )
     }
 
     fn reconcile(&mut self, epochs: &mut ContentEpochRegistry, now: u64) {
@@ -80,8 +125,9 @@ impl ShellIsbImageOwner {
         instant: Instant,
     ) -> Result<(), ShellTransportError> {
         #[cfg(feature = "experimental-draw")]
-        self.draw
-            .service(transport, epochs, &mut self.worker, now, instant)?;
+        self.service_draw(transport, epochs, now, instant)?;
+        #[cfg(feature = "experimental-owned-copy")]
+        self.service_owned(transport, epochs, now, instant)?;
         let grant = transport.content_grant();
         let ready = transport.isb_image_channel_ready();
         let mut lost = [None; 4];
@@ -106,6 +152,11 @@ impl ShellIsbImageOwner {
                 Ok(()) => continue,
                 Err(completion) => completion,
             };
+            #[cfg(feature = "experimental-owned-copy")]
+            let completion = match self.owned.receive(completion) {
+                Ok(()) => continue,
+                Err(completion) => completion,
+            };
             // This owner exclusively reserves, submits and receives this worker.
             assert!(
                 self.jobs.receive(completion).is_ok(),
@@ -113,8 +164,9 @@ impl ShellIsbImageOwner {
             );
         }
         #[cfg(feature = "experimental-draw")]
-        self.draw
-            .service(transport, epochs, &mut self.worker, now, instant)?;
+        self.service_draw(transport, epochs, now, instant)?;
+        #[cfg(feature = "experimental-owned-copy")]
+        self.service_owned(transport, epochs, now, instant)?;
         self.reconcile(epochs, now);
         self.jobs.expire(epochs, &mut self.worker, instant, now)?;
         self.reconcile(epochs, now);

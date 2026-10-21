@@ -33,6 +33,7 @@ x11rb = { version = "0.13.1", features = ["shm", "render", "dri3"] }
 sophia-sysv-shm = { path = "../sophia-sysv-shm" }
 
 [features]
+experimental-owned-copy = ["sophia-session/experimental-owned-copy"]
 experimental-draw = ["sophia-session/experimental-draw"]
 default = []
 native-session = ["sophia-session/native-session", "sophia-backend-live/gbm-probe", "sophia-backend-live/libdrm-events", "sophia-backend-live/drm-hotplug", "sophia-backend-live/libinput-events", "sophia-backend-live/seat-control"]

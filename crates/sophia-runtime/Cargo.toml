@@ -7,7 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
-# Isolated D4 measurement foundation; no negotiated source kind or live routing.
+# Default-off D4 private ring transport; no stable SDK source kind.
 experimental-owned-copy = []
 experimental-draw = ["dep:sophia-draw", "rustix/fs"]
 experimental-shell-capture = ["dep:sophia-renderer-image"]

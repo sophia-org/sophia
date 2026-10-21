@@ -127,3 +127,7 @@ inline-tests crates/sophia-runtime/src/supervisor/launch_custody/dispatch.rs
 inline-tests crates/sophia-session/src/shell_capture_owner.rs
 inline-tests crates/sophia-session/src/shell_component_connections/capture.rs
 inline-tests crates/sophia-session/src/shell_component_connections/capture/endpoint.rs
+
+# External D4 private export/owner custody fixtures; no test bodies in src.
+inline-tests crates/sophia-runtime/src/shell_transport/files/export/owned_ring.rs
+inline-tests crates/sophia-runtime/src/shell_transport/owned_copy.rs

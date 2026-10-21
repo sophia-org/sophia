@@ -3,6 +3,9 @@
 //! Libraries emit structured diagnostics through `tracing`; binaries decide
 //! when and how to install a subscriber.
 
+#[cfg(test)]
+extern crate self as sophia_runtime;
+
 pub mod authenticated_files;
 pub mod broker_files;
 #[cfg(target_os = "linux")]
@@ -33,6 +36,8 @@ mod output_file_reads;
 mod output_file_service;
 #[cfg(target_os = "linux")]
 mod output_file_transport;
+#[cfg(all(target_os = "linux", feature = "experimental-owned-copy"))]
+pub mod owned_ring_protocol;
 #[cfg(target_os = "linux")]
 mod policy_capabilities;
 mod policy_profile_handoff;

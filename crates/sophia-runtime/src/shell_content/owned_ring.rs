@@ -94,7 +94,13 @@ pub struct OwnedRing {
 impl OwnedRing {
     pub fn admit(source: File, reservation: OwnedRingSourceReservation) -> io::Result<Self> {
         let geometry = reservation.geometry();
-        let metadata = source.metadata()?;
+        // Establish field drop order before any fallible source inspection.
+        let source = RingSource {
+            file: source,
+            reservation,
+            identity: Arc::new(()),
+        };
+        let metadata = source.file.metadata()?;
         if !metadata.is_file() || metadata.len() != geometry.source_bytes() as u64 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -102,11 +108,7 @@ impl OwnedRing {
             ));
         }
         Ok(Self {
-            source: Arc::new(RingSource {
-                file: source,
-                reservation,
-                identity: Arc::new(()),
-            }),
+            source: Arc::new(source),
             geometry,
             slots: std::array::from_fn(|_| Slot::default()),
             greatest_offer: 0,

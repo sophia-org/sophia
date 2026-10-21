@@ -6,7 +6,7 @@ use sophia_protocol::{ContentAllocationId, ContentOutputId};
 
 /// Internal experiment request, not an allocated public source kind or codec.
 /// Geometry describes the owned destination; the ring fixes all source bounds.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OwnedCopyImageRequest {
     pub slot: OwnedSlotIdentity,
     pub resource: ContentResourceId,

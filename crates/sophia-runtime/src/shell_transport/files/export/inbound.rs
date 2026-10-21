@@ -45,6 +45,10 @@ impl ShellFiles {
         if self.pending_draw().is_some() {
             return false;
         }
+        #[cfg(feature = "experimental-owned-copy")]
+        if self.owned_pending_offer().is_some() {
+            return false;
+        }
         self.inbound.is_empty()
             && self.candidate_parts.is_empty()
             && self.native_candidate_parts.is_empty()
@@ -96,6 +100,12 @@ impl ShellFiles {
                 || self.pending_draw().is_some_and(|(batch, _)| {
                     matches!(record.as_ref(), ShellContentRecord::ResourceCancel(cancel)
                     if cancel.grant == batch.grant && cancel.resource == batch.resource)
+                });
+            #[cfg(feature = "experimental-owned-copy")]
+            let blocked = blocked
+                || self.owned_pending_offer().is_some_and(|(offer, _)| {
+                    matches!(record.as_ref(), ShellContentRecord::ResourceCancel(cancel)
+                    if cancel.grant == offer.identity.grant && cancel.resource == offer.request.resource)
                 });
             (!blocked && select(record)).then_some(at)
         })

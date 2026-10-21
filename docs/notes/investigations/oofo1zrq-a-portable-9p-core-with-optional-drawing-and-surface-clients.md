@@ -799,3 +799,51 @@ requirements. External numerical thresholds remain unset; R=2.0 is a proposal,
 not an approved ceiling. Whole-desktop wmbench belongs to t289 separately.
 The handback's clients are received but require review/correction and protocol
 smoke before native capture. No IPC or external pass is inferred by this change.
+
+### Private ring transport and settlement provenance — October 21
+
+The default-off experiment now has an authenticated private control path,
+existing-image-channel descriptor delivery, held registration/status/slot-release
+journal credits, and a persistent owned-copy owner. The wire and lifetime
+contract is documented in [experimental-owned-ring](../../experimental-owned-ring.md).
+The CLI and Session forward the build feature; the same-binary
+`SOPHIA_DISABLE_OWNED_COPY=1` switch suppresses disclosure and admission. This is
+not a stable SDK extension. The live adapter currently requires Linux GROW and
+SHRINK seals; the seal-free pread exploration remains separately qualified.
+
+Review closed same-grant withdrawal, impossible registration budgets, descriptor
+drop ordering, refusal classification and cancellation settlement gaps. Only an
+authoritative resource-store final event can now spend a transfer's held status
+credit. Failed control replies cannot spend it, even when their transaction equals
+the offer. Cancellation may legitimately report its own transaction. Slot release
+remains separate from accepted-resource release.
+
+The authenticated in-process ring fixture uses the real owner and worker with a
+supplied test authority. Withholding completion delivery until two failed retires
+and cancellation are applied makes the cancellation barrier deterministic. Shared
+raw arrival ordinals prove status 4 precedes the exact cancelled SlotReleased,
+then same-slot reuse succeeds with status 2 before SlotReleased. This does not
+qualify native authentication, a live Session or performance.
+
+The review also reproduced two existing sealed-path defects with default features:
+cancel transaction 999 left one owner slot pending after its terminal status; a
+failed retire under the offer transaction spent the hold and allowed SourceReleased
+before successful settlement. Shared provenance now fixes both independently of
+the owned-copy feature. Original failing traces and passing run-3 are retained in
+`~/.claude/jobs/c55837ea/tmp/sealed-provenance/`.
+
+The combined runtime suite reports 779 passes and 41 ignored tests, with owned-copy,
+drawing and capture enabled. Strict all-target Clippy passes after replacing a
+duplicate test-helper mount with the existing shared alias. Source-layout and
+format checks pass. Evidence: `t331-d4-owned-copy-20261021/wire-owner-01`, including
+failed attempts; these checks precede the new timing-peer example.
+
+Next is the native timing-peer arm and typed runner schema 5. The stable SDK
+correctly rejects the private D4E1 framing, so the experimental peer must own its
+post-authentication 9P/event decoding on the same connection; no SDK snapshot
+patch or second-connection resource shortcut is permitted. The first panel arm
+records registration, copy acceptance and slot release separately, then uses
+the existing kernel-presentation join. A matched sealed arm must use equivalent
+peer sequencing before attributing performance differences to the transport.
+Native measurements, the four-workload external comparison and the x13 run remain
+outstanding; no external threshold or production-default promotion is implied.

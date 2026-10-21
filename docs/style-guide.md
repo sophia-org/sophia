@@ -593,3 +593,10 @@ reuses the runtime sealed-image fixture under `cfg(test)`; it adds no production
 acceptance path. All assertions remain outside `src`, including the native
 capture lifecycle tests. These exceptions authorize private test access only,
 not inline test bodies, production hooks, or larger source files.
+
+The D4 owned-ring export and persistent owner mount external fixtures beside
+their private state. They exercise reservation refunds, exact retry identities,
+status-before-slot-release ordering and retired worker custody without exposing
+production mutation hooks. Test bodies stay in `tests/support/owned_ring_export.rs`
+`tests/support/shell_owned_copy_owner.rs` and `tests/support/owned_ring_transport.rs`; their source-layout exceptions
+cover only those fixture declarations.

@@ -103,6 +103,7 @@ impl Fixture {
                 &mut self.worker,
                 now,
                 instant,
+                0,
             )
             .unwrap();
     }
