@@ -580,3 +580,16 @@ the file journal accepts custody. Connection facts are supplied; requests and
 event reads cross the real 9P server. This is not kernel backpressure or launch
 execution. The Session queue tests use the public native service with actual
 private sockets and need no private production test mount.
+
+### Private custody and capture fixtures
+
+The t331 custody-dispatch and t339 capture tests mount external files from
+`tests/support` inside their owning modules. They inject observer failures,
+supplied GPU completion, epoch invalidation, snapshot-budget exhaustion, and
+endpoint replacement without devices. Public injection APIs would let callers
+fabricate custody or completion, so the mounts and test-only inspection hooks
+are exact-path exceptions in `source-layout-exceptions.txt`. The backend also
+reuses the runtime sealed-image fixture under `cfg(test)`; it adds no production
+acceptance path. All assertions remain outside `src`, including the native
+capture lifecycle tests. These exceptions authorize private test access only,
+not inline test bodies, production hooks, or larger source files.
