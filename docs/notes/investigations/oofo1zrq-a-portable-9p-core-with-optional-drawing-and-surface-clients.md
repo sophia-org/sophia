@@ -310,6 +310,35 @@ pairs as a pooled comparison against older captures. They establish neither
 D3 benefit nor the cost of the proposed draw/GPU paths. C43 receipts and
 findings remain under `t331-isb-cost-20261018/candidate-43-current-panel-pairs-r2`.
 
+### Retained native capture disposition, October 21
+
+`retained-native-01` completed all eight runs in 519.70 seconds: 8000 exact
+presented joins, correct four-resource rotations, no major faults, and clean
+PAM/VT receipts. It **does not qualify a D3 CPU benefit**. The frozen analyzer
+incorrectly expected presentation-work bytes in `presentation_bytes`; the
+runner defines that as non-probe uploaded bytes, which are 184320 here.
+A separate post-capture audit corrects the interpretation without altering the
+frozen analyzer or its manifest.
+
+More seriously, `NativeEvidenceSnapshot::append` dropped cache and composition
+counters before completion logging. All eight records therefore showed zero
+hits/uploads/passes despite 4000 draws and 1006 worker completions per run.
+These zeros cannot establish cache activation or inactivity. The import missed
+this Session aggregation step. Repair `4f5bdd5645f5070f3e9c4ebf8969098c5ec48c60` accumulates the
+lifetime counters and preserves current-owner gauge semantics. Its regression
+fails before repair and passes afterward; all six evidence tests, strict
+Session Clippy with tests, and four corrected analyzer controls pass.
+
+Descriptive candidate combined-CPU means were 3.86% and 2.64% below control in
+the two blocks. Neither meets the frozen savings-beyond-within-arm-spread rule;
+p99 remained 17.142–17.149 ms. The missing mechanism evidence also prevents
+attribution to caching. Findings and original capture hashes are preserved in
+`retained-native-01/FINDINGS.txt` and `audit-SHA256SUMS`; repair receipts are in
+`t331-d3-20261020/evidence-repair-01`. Captured release binaries are unchanged.
+Before another long CPU screen, verify cache hits/uploads and passes through
+the actual Session completion path in a short native capture. No rerun was
+launched. The fresh CPU IPC gate and production defaults remain unqualified.
+
 ### D2: scoped host-proof checklist, with corrected lifetime claims
 
 These are four host-proof groups relevant to this image/identity investigation,
