@@ -260,7 +260,7 @@ fn firefox_physical_slices_are_mutually_exclusive() {
     ] {
         let mut arguments = base.to_vec();
         arguments.push(proof.to_owned());
-        let config = PersistentXtermSessionConfig::from_args(&arguments).unwrap();
+        let config = isolated_session_config(&arguments).unwrap();
         assert!(config.firefox_proof_requested());
         assert!(!config.firefox_full_proof_requested());
     }
@@ -271,7 +271,7 @@ fn firefox_physical_slices_are_mutually_exclusive() {
         "--firefox-m10-selection-proof".to_owned(),
     ]);
     assert!(
-        PersistentXtermSessionConfig::from_args(&conflicting)
+        isolated_session_config(&conflicting)
             .unwrap_err()
             .to_string()
             .contains("select only one Firefox proof mode")
@@ -758,8 +758,8 @@ fn session_authority_preparation_is_deterministic_and_rejection_preserves_active
         "--session-action-app=terminal=terminal".to_owned(),
         isolated_desktop_profile_argument(),
     ];
-    let first = PersistentXtermSessionConfig::from_args(&args).unwrap();
-    let second = PersistentXtermSessionConfig::from_args(&args).unwrap();
+    let first = isolated_session_config(&args).unwrap();
+    let second = isolated_session_config(&args).unwrap();
 
     assert_eq!(first.applications, second.applications);
     assert_eq!(

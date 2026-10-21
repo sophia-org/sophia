@@ -1,10 +1,11 @@
+use super::session_config_tests::isolated_session_config;
 use super::*;
 
 #[test]
 fn mirror_gate_declares_the_terminal_before_extending_its_arguments() {
     let profile = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tools/fixtures/mirror_group_probe.kdl");
-    let config = PersistentXtermSessionConfig::from_args(&[
+    let config = isolated_session_config(&[
         format!("--desktop-profile={}", profile.display()),
         "--session-mode=normal".to_owned(),
         "--session-app=terminal=/usr/bin/xterm".to_owned(),

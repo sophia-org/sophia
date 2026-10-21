@@ -180,14 +180,12 @@ fn component_selection_validates_roles_without_legacy_fallback_or_execution() {
 #[test]
 fn component_catalog_scan_is_outer_owned_and_shutdown_cannot_restart_it() {
     use super::super::{PreparedSessionProfile, component_catalog::ComponentCatalog};
+    use super::session_config_tests::isolated_session_config;
     use crate::session_actions::SessionLaunchQueue;
     let profile = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tools/fixtures/mixed_output_probe.kdl");
-    let mut config = PersistentXtermSessionConfig::from_args(&[format!(
-        "--desktop-profile={}",
-        profile.display()
-    )])
-    .unwrap();
+    let mut config =
+        isolated_session_config(&[format!("--desktop-profile={}", profile.display())]).unwrap();
     // Isolate worker lifetime from profile/catalog parsing covered above.
     let mut candidate = config.session_profile.candidate().clone();
     candidate

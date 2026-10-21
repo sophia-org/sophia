@@ -1,6 +1,7 @@
 //! Actual connected worker, queue and ManagedSessionChild adoption. Supplied
 //! transport protection/presentation; only device-hidden /bin/true executes.
 use super::super::*;
+use super::session_config_tests::isolated_session_config;
 use super::shell_file_peer;
 use crate as sophia_session;
 use crate::shell_native_launcher::{NativeLauncherActionService, NativeLauncherContentService};
@@ -17,11 +18,8 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
         let revoked = mode == 1;
         let profile = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tools/fixtures/mixed_output_probe.kdl");
-        let mut config = PersistentXtermSessionConfig::from_args(&[format!(
-            "--desktop-profile={}",
-            profile.display()
-        )])
-        .unwrap();
+        let mut config =
+            isolated_session_config(&[format!("--desktop-profile={}", profile.display())]).unwrap();
         let mut selected = config.session_profile.candidate().clone();
         selected
             .components

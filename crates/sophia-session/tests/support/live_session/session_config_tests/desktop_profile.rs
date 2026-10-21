@@ -94,13 +94,13 @@ fn production_content_requires_the_complete_explicit_shell_authority() {
     write(
         "schema 1\nshell { enabled #true; content #true; content-input #true; panel 32; gpu \"direct\"; }\n",
     );
-    let config = PersistentXtermSessionConfig::from_args(&arguments(&profile)).unwrap();
+    let config = isolated_session_config(&arguments(&profile)).unwrap();
     assert!(config.shell_content_enabled);
     assert!(config.shell_content_input_enabled);
     assert_eq!(config.shell_gpu_mode, sophia_config::ShellGpuMode::Direct);
 
     write("schema 1\nshell { enabled #true; content #true; panel 32; }\n");
-    let config = PersistentXtermSessionConfig::from_args(&arguments(&profile)).unwrap();
+    let config = isolated_session_config(&arguments(&profile)).unwrap();
     assert!(config.shell_content_enabled);
     assert!(!config.shell_content_input_enabled);
     assert_eq!(config.shell_gpu_mode, sophia_config::ShellGpuMode::Denied);
@@ -111,7 +111,7 @@ fn production_content_requires_the_complete_explicit_shell_authority() {
         "schema 1\nshell { enabled #true; content-input #true; panel 32; }\n",
     ] {
         write(source);
-        assert!(PersistentXtermSessionConfig::from_args(&arguments(&profile)).is_err());
+        assert!(isolated_session_config(&arguments(&profile)).is_err());
     }
     std::fs::remove_file(profile).unwrap();
 }
@@ -214,7 +214,7 @@ session { terminal "kitty"; browser "helium"; startup "kitty"; }
         "--wm-interface=sophia_wm_v1".to_owned(),
         format!("--desktop-profile={}", path.display()),
     ];
-    let config = PersistentXtermSessionConfig::from_args(&base).unwrap();
+    let config = isolated_session_config(&base).unwrap();
     assert_eq!(config.applications.terminal.as_deref(), Some("terminal"));
     assert_eq!(config.applications.browser.as_deref(), Some("browser"));
     assert_eq!(config.applications.startup, ["terminal"]);
@@ -225,7 +225,7 @@ session { terminal "kitty"; browser "helium"; startup "kitty"; }
         "--session-action-app=terminal=alternate".to_owned(),
         "--session-start=alternate".to_owned(),
     ]);
-    let config = PersistentXtermSessionConfig::from_args(&overridden).unwrap();
+    let config = isolated_session_config(&overridden).unwrap();
     assert_eq!(config.applications.terminal.as_deref(), Some("alternate"));
     assert_eq!(config.applications.startup, ["alternate"]);
 
@@ -235,7 +235,7 @@ session { terminal "kitty"; browser "helium"; startup "kitty"; }
         .cloned()
         .collect::<Vec<_>>();
     assert!(
-        PersistentXtermSessionConfig::from_args(&unavailable)
+        isolated_session_config(&unavailable)
             .unwrap_err()
             .to_string()
             .contains("unavailable session capability")

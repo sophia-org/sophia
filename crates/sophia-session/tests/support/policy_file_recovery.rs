@@ -1,6 +1,7 @@
 //! Independent C SDK recovery over the real protected WM file connection.
 //! Layout failure is supplied to the production settlement owner: this proves
 //! cycle rearming and client recovery, not a real resize deadline or scanout.
+use super::session_config_tests::isolated_session_config;
 use super::*;
 use crate::live_session::c_sdk_fixture_process as process;
 use std::os::unix::fs::PermissionsExt;
@@ -17,7 +18,7 @@ fn protected_c_sdk_recovers_after_stale_and_timed_out_projections() {
     let profile = root.join("desktop.kdl");
     std::fs::write(&profile, "schema 1\n").unwrap();
     std::fs::set_permissions(&profile, std::fs::Permissions::from_mode(0o600)).unwrap();
-    let mut config = PersistentXtermSessionConfig::from_args(&[
+    let mut config = isolated_session_config(&[
         format!("--desktop-profile={}", profile.display()),
         format!("--wm-process={}", executable.display()),
         "--wm-interface=sophia_wm_v1".into(),
