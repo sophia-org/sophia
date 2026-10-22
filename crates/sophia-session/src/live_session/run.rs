@@ -744,6 +744,8 @@ pub(crate) fn run_persistent_xterm_session(
     component_lifecycle::stop(
         shell_components.as_mut(),
         render_owners.runtime.as_mut(),
+        #[cfg(feature = "experimental-shell-capture")]
+        native_scanout.as_mut(),
         &mut outer_cleanup_failures,
         &mut authenticated_launches,
         &owner_wake,

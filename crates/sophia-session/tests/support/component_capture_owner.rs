@@ -126,3 +126,39 @@ fn completion_subscription_and_teardown_follow_pending_custody() {
     assert_eq!(count, 0);
     assert_eq!(connections.capture_maintenance_wait(), Duration::MAX);
 }
+
+#[test]
+fn final_shutdown_stays_retained_until_a_revoked_capture_import_is_evicted() {
+    let mut connections = ShellComponentConnections::new().unwrap();
+    let grant = sophia_protocol::ContentGrant {
+        connection_epoch: 1,
+        content_grant_epoch: 1,
+    };
+    connections.epochs = fixture::allocation_registry(grant);
+    let metadata = fixture::metadata(grant);
+    let mut ticket = Some(
+        connections
+            .epochs
+            .reserve_capture_image(grant, &metadata, 0)
+            .unwrap(),
+    );
+    let supplied = fixture::storage(1);
+    connections
+        .epochs
+        .accept_capture_image(&mut ticket, &mut Some(supplied.image.clone()), 0)
+        .unwrap();
+    assert!(connections.epochs.disconnect(grant));
+    assert!(connections.capture_retirement_pending());
+    // Run07: the native owner is gone, so its consumer has dropped, but no
+    // eviction was acknowledged before it went. Collection must not release.
+    drop(supplied.image);
+    assert!(!connections.collect().quiescent());
+    assert!(connections.capture_retirement_pending());
+    connections
+        .retire_capture_imports(&mut 4, &mut |_| Ok::<_, ()>(()))
+        .unwrap();
+    assert!(!connections.capture_retirement_pending());
+    let (_, accounting) = connections.finish_after_backend_drop(()).unwrap();
+    assert!(accounting.quiescent());
+    assert_eq!(supplied.budget.usage(), (0, 0));
+}

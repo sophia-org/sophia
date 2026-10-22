@@ -155,6 +155,9 @@ pub(super) fn prepare(
 pub(super) fn stop(
     components: Option<&mut ShellComponentSession>,
     mut runtime: Option<&mut LiveProductionVisualRuntime>,
+    #[cfg(feature = "experimental-shell-capture")] native: Option<
+        &mut sophia_backend_live::LiveProductionNativeScanout,
+    >,
     failures: &mut Vec<String>,
     launches: &mut crate::launch_authentication::LaunchCoordinator,
     wake: &OwnerWake,
@@ -203,6 +206,26 @@ pub(super) fn stop(
         // A reap may add its exact revoked identity after the initial pass.
         if let Err(error) = components.settle_revocations(runtime) {
             failures.push(format!("component final claims retained: {error}"));
+        }
+        // Revoked captured resources release only after their native imports
+        // are evicted, and native retirement follows: evict while it exists.
+        #[cfg(feature = "experimental-shell-capture")]
+        if let Some(native) = native {
+            let mut last_error = None;
+            // The same absolute deadline as the reap; eviction is batched per call.
+            while components.capture_retirement_pending() && Instant::now() < deadline {
+                if let Err(error) = components.retire_captured_imports(native) {
+                    last_error = Some(error);
+                }
+                if components.capture_retirement_pending() {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            }
+            if components.capture_retirement_pending() {
+                failures.push(format!(
+                    "component capture imports retained after shutdown deadline: {last_error:?}"
+                ));
+            }
         }
         if components.retained_processes() != 0 {
             failures.push("component process custody remains after shutdown deadline".into());

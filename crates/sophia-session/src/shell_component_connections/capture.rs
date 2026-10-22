@@ -156,4 +156,8 @@ impl ShellComponentConnections {
     ) -> Result<(), E> {
         self.epochs.retire_capture_imports(remaining, evict)
     }
+
+    pub(crate) fn capture_retirement_pending(&self) -> bool {
+        self.epochs.capture_retirement_pending()
+    }
 }

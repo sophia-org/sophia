@@ -111,6 +111,11 @@ impl ShellComponentSession {
         })
     }
 
+    #[cfg(feature = "experimental-shell-capture")]
+    pub(crate) fn capture_retirement_pending(&self) -> bool {
+        self.processes.capture_retirement_pending()
+    }
+
     pub fn authenticate(
         &mut self,
         launches: &crate::launch_authentication::LaunchCoordinator,

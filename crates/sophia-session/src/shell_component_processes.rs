@@ -281,6 +281,11 @@ impl ShellComponentProcesses {
     ) -> Result<(), E> {
         self.connections.retire_capture_imports(remaining, evict)
     }
+    #[cfg(feature = "experimental-shell-capture")]
+    #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
+    pub(crate) fn capture_retirement_pending(&self) -> bool {
+        self.connections.capture_retirement_pending()
+    }
 
     #[cfg(feature = "experimental-shell-capture")]
     #[cfg_attr(not(feature = "native-session"), allow(dead_code))]

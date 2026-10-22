@@ -80,11 +80,25 @@ adapter even when its renderer selected DMA; that adapter refuses Ready mask 6.
 The client fix selects `enable_dma_image` for the DMA renderer. The timing G
 peer had the same mistake; niltempus `f7f303e` selects the DMA adapter and allows
 enough discovery space for its format row. Run-06 again restored the console.
-Native Session presentation remains unproven; a corrected Lom release is being
-prepared for run-07.
+Run-07 used Lom `5fb52e9` and Sophia binary `ea989aa04`. Niltempus saw the bar,
+and three Lom candidates join exactly with Session presentation records and
+kernel-timestamped native completions (one head, 2560x24 opaque panel, 60 Hz).
+The pinned client issues Demand only after Accepted and CaptureComplete, so
+this qualifies its DMA presentation route without claiming direct wire logs.
+`session-qualification/run-07/postrun-presentation.json` preserves those joins
+and the raw-log hashes. Protocol accounting and console restoration were clean.
+The run still failed shutdown: `component content owners remain after native
+shutdown`. Captured imports need an eviction turn after revocation and before
+native disposal. Shutdown now drains acknowledged eviction within the existing
+three-second reap deadline while the native owner is alive. The focused revoked
+capture regression passes; all four Session feature combinations compile,
+capture+native clippy is clean, and workspace-aware formatting passes. Native
+shutdown acceptance remains for run-08. The gate's host-log lookup
+also needed correction: Session records are in `events.*.log`, not client stdout
+(niltempus `3336b69`). Run-07 is presentation evidence, not an overall gate pass
+or a performance result.
 Failed attempts and recovery receipts remain under `session-qualification/`; latest parser acceptance is
-under `launch-validation-04/` there. Native Session presentation remains
-unproven. Run-03 recovery reports restored termios but unavailable KD/keyboard
+under `launch-validation-04/` there. Run-03 recovery reports restored termios but unavailable KD/keyboard
 mode readback, so complete console restoration is not claimed for that attempt.
 
 The larger matched workload is a fully presented 1920x512 bar, alone on
