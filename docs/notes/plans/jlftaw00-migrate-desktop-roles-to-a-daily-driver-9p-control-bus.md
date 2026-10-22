@@ -298,15 +298,23 @@ from `~/dev/niltempus-t252-acceptance` (`desktop/t252-owned-ring`), using
 unchanged. The Session comes from the Sophia **flake input**, not the Cargo
 conformance pin in `pins/sophia.toml`.
 
-The acceptance flake pins Sophia `7b13b6cae`, Lom `27b64c5` and Provlita
-`109f5cb`. Bemenu master `2a1a73f` still uses the ISB API and must migrate to
-the r10 C SDK `4222139b` before its new pin can be selected. Muse owns that
-client change in `~/src/bemenu`; no Bemenu acceptance is claimed yet. The older
-`~/src/bemenu-sdk` checkout is not the current launcher and must not be used.
-Preparation evidence is under
-`~/.local/state/t331/t331-crunch-report-01/t252/`. No release build, install or
-attended run has started. Finish t331's single report before the desktop build
-so compilation cannot interfere with its CPU window.
+The signed acceptance source is niltempus `25990ad`. It pins Sophia
+`7b13b6cae`, Lom `27b64c5`, Provlita `109f5cb` and Bemenu `f73a3b8`.
+Bemenu's migration (`f3113e75`, followed by the retry-comment correction)
+imports the signed r10 C SDK `4222139b`, waits for exact slot release before
+adoption, and passes `make check-sophia EXTRA_WARNINGS=-Werror` and the
+executable fixture. These are headless checks, not native acceptance.
+
+Nix evaluation succeeds for `desktop-dock`, naming release
+`niltempus-39348a3d7eae29466369`. The clients' existing Rust SDK pin `ce926b53`
+was published on `sophia-desktop-sdk-rs` branch `shellr10-owned-ring` so the
+recipe can fetch it; SDK master did not move. Preparation requests, evaluation
+results, the preserved Bemenu gate log and attended/replacement instructions are
+under `~/.local/state/t331/t331-crunch-report-01/t252/`. Build the frozen
+candidate after t331's single capture, then install its exact store output and
+perform the attended run. No release build, install or attended acceptance has
+started. The earlier failed evaluations remain as superseded preparation
+history, not accepted evidence.
 
 **Current exit, accepted by niltempus on October 21, 2026:** after t331's
 [reduced exit](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#current-exit--accepted-october-21-2026),
