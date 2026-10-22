@@ -426,6 +426,16 @@ impl LiveProductionNativeScanout {
             output_lifecycles.insert(output, lifecycle);
         }
         let native_frame_owner = crate::NativeFrameOwner::new();
+        // Shell timing also needs the clock domain when no client queries a Present clock.
+        let mut present_clock_monotonic = BTreeMap::new();
+        for (index, group) in groups.iter().enumerate() {
+            let _ = crate::cached_monotonic_capability(&mut present_clock_monotonic, index, || {
+                ::drm::Device::get_driver_capability(
+                    group.session.card(),
+                    ::drm::DriverCapability::MonotonicTimestamp,
+                )
+            });
+        }
         Ok(Self {
             groups,
             heads,
@@ -466,7 +476,7 @@ impl LiveProductionNativeScanout {
             present_clocks: crate::LiveNativePresentClocks::new(
                 std::num::NonZeroU64::new(native_frame_owner.raw()).expect("nonzero native owner"),
             ),
-            present_clock_monotonic: BTreeMap::new(),
+            present_clock_monotonic,
             present_clock_crtc_events: BTreeMap::new(),
             next_frame_id: 1,
             next_head_candidate_id: 1,
