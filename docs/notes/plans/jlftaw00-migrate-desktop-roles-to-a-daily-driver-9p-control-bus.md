@@ -287,6 +287,27 @@ them here.
 
 ### t252 — Join and accept the shell path
 
+### Current resumption — October 21, 2026
+
+The t331 native report is prepared and waiting for sudo authentication; see
+its [current resumption](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#current-resumption).
+The installed desktop predates the r10 owned-ring merge. Prepare the replacement
+from `~/dev/niltempus-t252-acceptance` (`desktop/t252-owned-ring`), using
+`desktop-dock`, which includes Provlita. Its isolated profile selects DP-1 at
+1920×1080, 60 Hz, scale 1 and VRR off. The daily profile in niltempus master is
+unchanged. The Session comes from the Sophia **flake input**, not the Cargo
+conformance pin in `pins/sophia.toml`.
+
+The acceptance flake pins Sophia `7b13b6cae`, Lom `27b64c5` and Provlita
+`109f5cb`. Bemenu master `2a1a73f` still uses the ISB API and must migrate to
+the r10 C SDK `4222139b` before its new pin can be selected. Muse owns that
+client change in `~/src/bemenu`; no Bemenu acceptance is claimed yet. The older
+`~/src/bemenu-sdk` checkout is not the current launcher and must not be used.
+Preparation evidence is under
+`~/.local/state/t331/t331-crunch-report-01/t252/`. No release build, install or
+attended run has started. Finish t331's single report before the desktop build
+so compilation cannot interfere with its CPU window.
+
 **Current exit, accepted by niltempus on October 21, 2026:** after t331's
 [reduced exit](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#current-exit--accepted-october-21-2026),
 complete one attended 60 Hz desktop run on crunch with the selected Lom bar,
