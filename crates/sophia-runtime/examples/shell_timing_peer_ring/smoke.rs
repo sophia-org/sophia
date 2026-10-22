@@ -82,15 +82,53 @@ fn ring_peer_against_real_transport() {
         height: 20,
         hold: 0,
         slots: 2,
+        interval_msec: None,
+        retained: None,
+    });
+}
+
+/// Bursty over the same real transport: the final frame's retained
+/// resource must carry the external pattern — fixed generation-1
+/// background with only the rightmost 96 columns at the frame shade.
+#[test]
+fn bursty_ring_peer_against_real_transport() {
+    run_smoke(Config {
+        output_id: 1,
+        frames: 3,
+        height: 20,
+        hold: 0,
+        slots: 2,
+        interval_msec: Some(20),
+        retained: None,
+    });
+}
+
+/// Retained over the same real transport: eight tiles uploaded once
+/// through two slots must all stay leased, at their tile geometry and
+/// fill shades, after the final frame.
+#[test]
+fn retained_ring_peer_against_real_transport() {
+    run_smoke(Config {
+        output_id: 1,
+        frames: 3,
+        height: 20,
+        hold: 0,
+        slots: 2,
+        interval_msec: None,
+        retained: Some(8),
     });
 }
 
 fn run_smoke(config: Config) {
     let frames = config.frames;
+    let bursty = config.interval_msec.is_some();
+    let retained = config.retained;
     let directory = std::env::temp_dir().join(format!(
-        "shell-owned-ring-smoke-{}-{}",
+        "shell-owned-ring-smoke-{}-{}-{}-{}",
         std::process::id(),
-        config.slots
+        config.slots,
+        config.interval_msec.unwrap_or(0),
+        config.retained.unwrap_or(0)
     ));
     let _ = std::fs::remove_dir_all(&directory);
     let mut transport = ShellComponentTransport::bind_for_supervised_uid(
@@ -298,6 +336,29 @@ fn run_smoke(config: Config) {
     }
     peer_thread.join().unwrap();
     assert_eq!(owner.pending(), 0);
+    if let Some(n) = retained {
+        // Tile width is floor(200/8) rounded down even = 24.
+        for index in 1..=n as u64 {
+            let tile = epochs
+                .resources(GRANT)
+                .unwrap()
+                .lease(
+                    GRANT,
+                    ContentResourceId {
+                        id: index,
+                        generation: 1,
+                    },
+                )
+                .unwrap();
+            let bytes = tile.cpu_bytes().unwrap();
+            assert_eq!(bytes.len(), 24 * 20 * 4);
+            assert_eq!(&bytes[..4], &[index as u8, index as u8, index as u8, 255]);
+        }
+        transport.disconnect(&mut epochs).unwrap();
+        drop(transport);
+        assert!(!directory.exists());
+        return;
+    }
     // The final frame's resource stays leased, as in the fresh workload.
     let lease = epochs
         .resources(GRANT)
@@ -305,6 +366,16 @@ fn run_smoke(config: Config) {
         .lease(GRANT, resource_for_frame(frames))
         .unwrap();
     assert_eq!(lease.cpu_bytes().unwrap().len(), 200 * 20 * 4);
+    if bursty {
+        let bytes = lease.cpu_bytes().unwrap();
+        let pixel = |x: usize, y: usize| &bytes[(y * 200 + x) * 4..(y * 200 + x) * 4 + 4];
+        // Background stays at generation 1; the rightmost 96 columns
+        // (x >= 104 of 200) carry the final frame's shade (3 % 128).
+        assert_eq!(pixel(0, 0), &[1, 1, 1, 255]);
+        assert_eq!(pixel(103, 19), &[1, 1, 1, 255]);
+        assert_eq!(pixel(104, 0), &[3, 3, 3, 255]);
+        assert_eq!(pixel(199, 19), &[3, 3, 3, 255]);
+    }
     transport.disconnect(&mut epochs).unwrap();
     drop(transport);
     assert!(!directory.exists());

@@ -2,8 +2,10 @@
 //!
 //! This measurement peer uses the authenticated launch attach and then speaks raw 9P on that one
 //! connection: the owned-ring codec and shell-file records for
-//! limits, allocation, demand, candidate and retire. Fresh workload only;
-//! no sealed `UploadOffer` is emitted for a ring frame.
+//! limits, allocation, demand, candidate and retire. Fresh pacing by
+//! default; an optional `interval_msec` switches to the external bursty
+//! pattern on an absolute schedule (idle is frames=1 plus the hold).
+//! No sealed `UploadOffer` is emitted for a ring frame.
 //!
 //! Caveats for readers of the journals: one frame is in flight at a
 //! time (no N-slot overlap), warmup covers first-touch slot pages, and
@@ -78,12 +80,29 @@ fn fill_pixels(bytes: &mut [u8], generation: u64) {
     remainder.fill(shade);
 }
 
+/// The external-bar bursty pattern (tools/external-bar/common/fill.c
+/// `fill_bursty_panel`): rewrite the whole buffer with a fixed
+/// generation-1 background; only the rightmost 96 columns change with
+/// the frame generation.
+fn fill_bursty_panel(bytes: &mut [u8], width: u32, generation: u64) {
+    fill_pixels(bytes, 1);
+    let width = width as usize;
+    let rect = 96.min(width);
+    for row in bytes.chunks_mut(width * 4) {
+        fill_pixels(&mut row[(width - rect) * 4..], generation);
+    }
+}
+
 struct Config {
     output_id: u64,
     frames: u64,
     height: u64,
     hold: u64,
     slots: usize,
+    /// Absolute bursty interval; absent is the historical fresh pacing.
+    interval_msec: Option<u64>,
+    /// Retained tile pool size; absent is a per-frame upload workload.
+    retained: Option<usize>,
 }
 
 impl Config {
@@ -115,6 +134,8 @@ fn parse_config() -> Result<Config> {
         "ring_slots",
         "probe_bytes",
         "workload",
+        "interval_msec",
+        "retained_resources",
     ];
     if object.keys().any(|k| !allowed.contains(&k.as_str()))
         || !["wire", "output", "frames", "height", "hold_msec", "source"]
@@ -141,13 +162,41 @@ fn parse_config() -> Result<Config> {
     if !(1..=4).contains(&slots) {
         return Err("ring_slots outside 1..=4".into());
     }
+    let interval_msec = match object.get("interval_msec") {
+        None => None,
+        Some(value) => Some(
+            value
+                .as_u64()
+                .filter(|v| (1..=10_000).contains(v))
+                .ok_or("interval_msec outside 1..=10000")?,
+        ),
+    };
+    let retained = match object.get("workload").and_then(|v| v.as_str()) {
+        None | Some("fresh") => {
+            if object.contains_key("retained_resources") {
+                return Err("retained_resources requires the retained workload".into());
+            }
+            None
+        }
+        Some("retained") => {
+            if interval_msec.is_some() {
+                return Err("retained workload is vsync-paced, not interval-paced".into());
+            }
+            Some(
+                object
+                    .get("retained_resources")
+                    .and_then(|v| v.as_u64())
+                    .filter(|v| (2..=8).contains(v))
+                    .ok_or("retained workload requires retained_resources in 2..=8")?
+                    as usize,
+            )
+        }
+        Some(_) => return Err("workload must be fresh or retained".into()),
+    };
     if config["wire"].as_str() != Some("files")
         || object
             .get("probe_bytes")
             .is_some_and(|v| v.as_u64() != Some(0))
-        || object
-            .get("workload")
-            .is_some_and(|v| v.as_str() != Some("fresh"))
         || output_id == 0
         || !(1..=10000).contains(&frames)
         || !(1..=512).contains(&height)
@@ -161,6 +210,8 @@ fn parse_config() -> Result<Config> {
         height,
         hold,
         slots: slots as usize,
+        interval_msec,
+        retained,
     })
 }
 
@@ -256,7 +307,7 @@ fn serve(client: &mut Client, config: &Config, socket: &std::ffi::OsStr) -> Resu
     if facts.grant != grant || facts.facts_generation == 0 || output.output.generation == 0 {
         return Err("stale or misattributed output facts".into());
     }
-    if limits.max_resource_ids < 2 {
+    if limits.max_resource_ids < config.retained.map_or(2, |n| n as u32) {
         return Err("insufficient resource identities for paced workload".into());
     }
     // Grant the panel allocation before any ring registration: ring pixel
@@ -306,8 +357,14 @@ fn serve(client: &mut Client, config: &Config, socket: &std::ffi::OsStr) -> Resu
             wire: "files",
             probe_bytes: 0,
             source: Some("owned_ring"),
-            workload: Some("fresh"),
+            workload: Some(if config.retained.is_some() {
+                "retained"
+            } else {
+                "fresh"
+            }),
             ring_slots: Some(config.slots as u64),
+            interval_msec: config.interval_msec,
+            retained_resources: config.retained.map(|n| n as u64),
         },
     )?;
     // Image channel: discovery, limits precheck, Hello, ChannelReady.
@@ -467,6 +524,12 @@ struct FrameCtx<'a> {
     resource: ContentResourceId,
     width: u32,
     height: u32,
+    /// Absolute scheduled due time for bursty frames; absent when fresh.
+    due_usec: Option<u64>,
+    /// Retained pool tile fill generation; absent for frame uploads.
+    tile: Option<u64>,
+    /// Journal candidate generation: the frame number, or 0 for pool uploads.
+    candidate_generation: u64,
 }
 
 /// Direct mapped fill and acceptance settlement, separate from visual sequencing.
@@ -484,7 +547,7 @@ impl RingSource {
         let resource = ctx.resource;
         let slot = ((frame - 1) % self.slots as u64) as usize;
         let slot_generation = 2 * frame;
-        let pixels = self.geometry.pixel_bytes();
+        let pixels = ctx.width as usize * ctx.height as usize * 4;
         // Fill the mapped slot directly: generation word at the slot
         // start, the shared canvas routine over the pixels after the
         // fixed per-slot header.
@@ -493,10 +556,14 @@ impl RingSource {
         let slot_bytes =
             &mut self.producer.bytes_mut()[slot_offset..slot_offset + self.geometry.slot_extent()];
         slot_bytes[..8].copy_from_slice(&slot_generation.to_le_bytes());
-        fill_pixels(
-            &mut slot_bytes[SLOT_HEADER_BYTES..SLOT_HEADER_BYTES + pixels],
-            frame,
-        );
+        let slot_pixels = &mut slot_bytes[SLOT_HEADER_BYTES..SLOT_HEADER_BYTES + pixels];
+        if let Some(generation) = ctx.tile {
+            fill_pixels(slot_pixels, generation);
+        } else if ctx.due_usec.is_some() {
+            fill_bursty_panel(slot_pixels, ctx.width, frame);
+        } else {
+            fill_pixels(slot_pixels, frame);
+        }
         let offer = Offer {
             identity: self.identity,
             request: sophia_runtime::OwnedCopyImageRequest {
@@ -523,7 +590,7 @@ impl RingSource {
                     connection_epoch: ctx.grant.connection_epoch,
                     content_grant_epoch: ctx.grant.content_grant_epoch,
                     output: ctx.output.output.id,
-                    candidate_generation: frame,
+                    candidate_generation: ctx.candidate_generation,
                     resource_id: resource.id,
                     resource_generation: resource.generation,
                     width: ctx.width,
@@ -535,6 +602,7 @@ impl RingSource {
                 slot: slot as u64,
                 slot_generation,
                 fill_start_usec,
+                due_usec: ctx.due_usec,
             },
         )?;
         client.write(self.control, &offer.encode())?;
@@ -597,7 +665,48 @@ fn run_frames(
 ) -> Result<()> {
     let epoch = client.epoch();
     let schema = config.schema();
+    // Retained pool: upload each tile once through the ring before the
+    // first candidate; the resources then stay live for every frame.
+    let tile_width = config.retained.map(|n| (width / n as u32) & !1);
+    if let (Some(n), Some(tile_width)) = (config.retained, tile_width) {
+        if tile_width == 0 {
+            return Err("retained tile width rounds to zero".into());
+        }
+        for index in 1..=n as u64 {
+            let ctx = FrameCtx {
+                schema,
+                grant,
+                facts,
+                output,
+                allocation,
+                frame: index,
+                resource: ContentResourceId {
+                    id: index,
+                    generation: 1,
+                },
+                width: tile_width,
+                height,
+                due_usec: None,
+                tile: Some(index),
+                candidate_generation: 0,
+            };
+            source.upload(client, &ctx)?;
+        }
+    }
+    // Absolute bursty schedule: frame 1 is due at the anchor, each
+    // later frame one interval after the previous due time, regardless
+    // of how long earlier frames took to settle.
+    let anchor_usec = clock_usec();
     for frame in 1..=config.frames {
+        let due_usec = config
+            .interval_msec
+            .map(|interval| anchor_usec + (frame - 1) * interval * 1000);
+        if let Some(due) = due_usec {
+            let now = clock_usec();
+            if now < due {
+                std::thread::sleep(Duration::from_micros(due - now));
+            }
+        }
         let resource = resource_for_frame(frame);
         let ctx = FrameCtx {
             schema,
@@ -609,8 +718,13 @@ fn run_frames(
             resource,
             width,
             height,
+            due_usec,
+            tile: None,
+            candidate_generation: frame,
         };
-        source.upload(client, &ctx)?;
+        if config.retained.is_none() {
+            source.upload(client, &ctx)?;
+        }
         let demand_usec = clock_usec();
         submit_record(client, next_submission, |submission| {
             encode_shell_file_transaction(
@@ -648,6 +762,42 @@ fn run_frames(
                 received_usec: clock_usec(),
             },
         )?;
+        let placements: Vec<ContentPlacement> = match (config.retained, tile_width) {
+            (Some(n), Some(tile_width)) => (0..n as u64)
+                .map(|index| ContentPlacement {
+                    resource: ContentResourceId {
+                        id: index + 1,
+                        generation: 1,
+                    },
+                    surface_index: 0,
+                    destination_x_px: (((index + frame - 1) % n as u64) * tile_width as u64) as i32,
+                    destination_y_px: 0,
+                })
+                .collect(),
+            _ => vec![ContentPlacement {
+                resource,
+                surface_index: 0,
+                destination_x_px: 0,
+                destination_y_px: 0,
+            }],
+        };
+        if config.retained.is_some() {
+            emit(
+                schema,
+                JournalEvent::CandidatePlacements {
+                    candidate_generation: frame,
+                    placements: placements
+                        .iter()
+                        .map(|p| journal::Placement {
+                            resource_id: p.resource.id,
+                            resource_generation: p.resource.generation,
+                            destination_x_px: p.destination_x_px,
+                            destination_y_px: p.destination_y_px,
+                        })
+                        .collect(),
+                },
+            )?;
+        }
         let submission = next_submission();
         let candidate = encode_shell_file_candidate(
             header(epoch, ShellFileKind::Candidate, submission),
@@ -670,12 +820,7 @@ fn run_frames(
                         parent_surface_index: u16::MAX,
                         anchor_parent_rect: ContentPixelRect::default(),
                     }],
-                    placements: vec![ContentPlacement {
-                        resource,
-                        surface_index: 0,
-                        destination_x_px: 0,
-                        destination_y_px: 0,
-                    }],
+                    placements,
                     targets: vec![],
                 },
             },
@@ -736,7 +881,8 @@ fn run_frames(
             break;
         }
         // Keep the displayed resource until a successor is shown, as fresh.
-        if frame > 1 {
+        // Retained tiles are never retired during the frame phase.
+        if frame > 1 && config.retained.is_none() {
             let old = resource_for_frame(frame - 1);
             submit_record(client, next_submission, |submission| {
                 encode_shell_file_resource_retire(

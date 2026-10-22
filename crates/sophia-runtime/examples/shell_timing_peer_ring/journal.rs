@@ -17,6 +17,16 @@ pub struct Upload {
     pub begin_usec: u64,
 }
 
+/// One retained-pool reference inside a candidate, with the same field
+/// names as the schema-3 journal's placement records.
+#[derive(Clone, Copy, Serialize)]
+pub struct Placement {
+    pub resource_id: u64,
+    pub resource_generation: u64,
+    pub destination_x_px: i32,
+    pub destination_y_px: i32,
+}
+
 #[derive(Serialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Event<'a> {
@@ -28,6 +38,14 @@ pub enum Event<'a> {
         workload: Option<&'a str>,
         #[serde(skip_serializing_if = "Option::is_none")]
         ring_slots: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        interval_msec: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        retained_resources: Option<u64>,
+    },
+    CandidatePlacements {
+        candidate_generation: u64,
+        placements: Vec<Placement>,
     },
     RingReady {
         connection_epoch: u64,
@@ -46,6 +64,9 @@ pub enum Event<'a> {
         slot: u64,
         slot_generation: u64,
         fill_start_usec: u64,
+        /// Absolute scheduled due time; bursty journals only.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        due_usec: Option<u64>,
     },
     RingAccepted {
         offer: u64,
@@ -137,6 +158,8 @@ mod tests {
                 source: Some("owned_ring"),
                 workload: Some("fresh"),
                 ring_slots: Some(2),
+                interval_msec: None,
+                retained_resources: None,
             },
             Event::RingReady {
                 connection_epoch: 1,
@@ -155,6 +178,7 @@ mod tests {
                 slot: 0,
                 slot_generation: 2,
                 fill_start_usec: 300,
+                due_usec: None,
             },
             Event::RingAccepted {
                 offer: 1,
@@ -200,5 +224,132 @@ mod tests {
             write(&mut out, 5, event).unwrap();
         }
         print!("{}", String::from_utf8(out).unwrap());
+    }
+
+    /// One retained pool offer and one frame's placements, rendered for
+    /// the runner parser cross-check.
+    #[test]
+    fn retained_journal_sample() {
+        let mut out = Vec::new();
+        for event in [
+            Event::Start {
+                frames: 2,
+                wire: "files",
+                probe_bytes: 0,
+                source: Some("owned_ring"),
+                workload: Some("retained"),
+                ring_slots: Some(2),
+                interval_msec: None,
+                retained_resources: Some(8),
+            },
+            Event::RingOffer {
+                upload: Upload {
+                    connection_epoch: 1,
+                    content_grant_epoch: 1,
+                    output: 1,
+                    candidate_generation: 0,
+                    resource_id: 1,
+                    resource_generation: 1,
+                    width: 240,
+                    height: 24,
+                    total_bytes: 23040,
+                    begin_usec: 400,
+                },
+                offer: 1,
+                slot: 0,
+                slot_generation: 2,
+                fill_start_usec: 300,
+                due_usec: None,
+            },
+            Event::CandidatePlacements {
+                candidate_generation: 2,
+                placements: vec![
+                    Placement {
+                        resource_id: 1,
+                        resource_generation: 1,
+                        destination_x_px: 240,
+                        destination_y_px: 0,
+                    },
+                    Placement {
+                        resource_id: 2,
+                        resource_generation: 1,
+                        destination_x_px: 480,
+                        destination_y_px: 0,
+                    },
+                ],
+            },
+        ] {
+            write(&mut out, 5, event).unwrap();
+        }
+        print!("{}", String::from_utf8(out).unwrap());
+    }
+
+    /// Bursty evidence: the interval is declared once at Start and each
+    /// offer carries its absolute due time; fresh records omit both.
+    #[test]
+    fn bursty_journal_declares_interval_and_due_times() {
+        let mut out = Vec::new();
+        write(
+            &mut out,
+            5,
+            Event::Start {
+                frames: 2,
+                wire: "files",
+                probe_bytes: 0,
+                source: Some("owned_ring"),
+                workload: Some("fresh"),
+                ring_slots: Some(2),
+                interval_msec: Some(250),
+                retained_resources: None,
+            },
+        )
+        .unwrap();
+        write(
+            &mut out,
+            5,
+            Event::RingOffer {
+                upload: Upload {
+                    connection_epoch: 1,
+                    content_grant_epoch: 1,
+                    output: 1,
+                    candidate_generation: 2,
+                    resource_id: 2,
+                    resource_generation: 1,
+                    width: 200,
+                    height: 20,
+                    total_bytes: 16000,
+                    begin_usec: 1250400,
+                },
+                offer: 2,
+                slot: 1,
+                slot_generation: 4,
+                fill_start_usec: 1250300,
+                due_usec: Some(1250250),
+            },
+        )
+        .unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("\"interval_msec\":250"), "{text}");
+        assert!(text.contains("\"due_usec\":1250250"), "{text}");
+
+        let mut fresh = Vec::new();
+        write(
+            &mut fresh,
+            5,
+            Event::Start {
+                frames: 1,
+                wire: "files",
+                probe_bytes: 0,
+                source: Some("owned_ring"),
+                workload: Some("fresh"),
+                ring_slots: Some(2),
+                interval_msec: None,
+                retained_resources: None,
+            },
+        )
+        .unwrap();
+        let text = String::from_utf8(fresh).unwrap();
+        assert!(!text.contains("interval_msec"), "{text}");
+        assert!(!text.contains("retained_resources"), "{text}");
     }
 }
