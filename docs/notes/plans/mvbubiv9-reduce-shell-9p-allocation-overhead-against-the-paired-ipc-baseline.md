@@ -49,6 +49,23 @@ native result or t331 completion is claimed yet. t252 then needs an updated
 selected-desktop release and its single attended 60 Hz and rollback run; the
 currently installed release predates the owned-ring merge.
 
+### October 22 — startup permissions repaired
+
+Attempt `~/.local/state/t331/t331-crunch-report-01/fresh/run` failed before
+Session/sampler startup with `Io(UnsafeMode)`: the prepared desktop profile was
+mode `0664`. The VT/PAM receipts prove normal cleanup and tty4 restoration; this
+is not a rendering or CPU measurement result. The failed evidence is retained.
+
+The replacement is `~/.local/state/t331/t331-crunch-report-02/`. Its inputs were
+created under umask `077`, with desktop profile and peer configuration `0600`.
+Sophia's exact prepared argument vector with `--validate-session-args` and the
+runner's environment-readback variables returns
+`sophia_live_session_args schema=1 status=accepted arguments=13`. Diagnostic and
+launcher pin checks also pass. All binary/source pins are unchanged; there was
+no rebuild. The next command is
+`bash ~/.local/state/t331/t331-crunch-report-02/run-report-remote.sh`.
+No successful native report is claimed yet.
+
 ## Current exit — accepted October 21, 2026
 
 Niltempus approved replacing the earlier exit gates to keep t331 and t252 on
