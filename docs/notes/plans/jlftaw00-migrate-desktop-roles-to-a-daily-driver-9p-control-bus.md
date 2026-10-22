@@ -287,7 +287,7 @@ them here.
 
 ### t252 — Join and accept the shell path
 
-### Current resumption — October 21, 2026
+### Current resumption — October 22, 2026
 
 t331 completed its reduced exit on October 22; see
 its [report and current resumption](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#current-resumption).
@@ -318,9 +318,24 @@ profile includes all three shell components at 60 Hz. Run
 install that exact output. The observed current release is
 `niltempus-9cceca44630d8a69d64f`; installation retains it as the compatible
 whole-release rollback target. `install-preparation.json` records the prior
-selection and profile/manifest hashes. Installation needs sudo authentication;
-installation and the attended run remain pending. The earlier failed evaluations remain as superseded preparation
-history, not accepted evidence.
+selection and profile/manifest hashes. The candidate is now installed and its attended desktop checks passed. The live
+session is `00000001792666527505-4d0e8856-cec5-4bbd-8070-3e8916ae3140`:
+all three clients negotiated r10 and native bindings report 60000 millihertz.
+The user confirmed Bemenu opens and launches applications. One exact Provlita
+process was terminated; slot 2 retired with `endpoint_released=true`, then
+renegotiated with connection/content epochs 4/4 instead of 3/3. Bar and launcher
+PID/starttime identities were unchanged; bar and new dock kept presenting. The
+user confirmed the dock returned and both a bar workspace click and Super+Space
+still worked. `attended-observations.json` and `replacement-{request,result}.json`
+retain this evidence.
+
+Only whole-release rollback remains. Run
+`bash ~/.local/state/t331/t331-crunch-report-01/t252/rollback-desktop.sh`, then
+log out and back into Sophia niltempus Desktop. The script checks the expected
+current/previous identities and invokes the existing whole-release rollback;
+it does not terminate the running desktop. Verify the previous release actually
+runs and the user can use it before closing t252. The earlier failed evaluations
+remain superseded preparation history, not accepted evidence.
 
 **Current exit, accepted by niltempus on October 21, 2026:** after t331's
 [reduced exit](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#current-exit--accepted-october-21-2026),
