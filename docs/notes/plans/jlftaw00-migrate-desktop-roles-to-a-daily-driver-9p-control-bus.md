@@ -289,8 +289,8 @@ them here.
 
 ### Current resumption — October 21, 2026
 
-The t331 native report is prepared and waiting for sudo authentication; see
-its [current resumption](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#current-resumption).
+t331 completed its reduced exit on October 22; see
+its [report and current resumption](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#current-resumption).
 The installed desktop predates the r10 owned-ring merge. Prepare the replacement
 from `~/dev/niltempus-t252-acceptance` (`desktop/t252-owned-ring`), using
 `desktop-dock`, which includes Provlita. Its isolated profile selects DP-1 at
@@ -310,10 +310,10 @@ Nix evaluation succeeds for `desktop-dock`, naming release
 was published on `sophia-desktop-sdk-rs` branch `shellr10-owned-ring` so the
 recipe can fetch it; SDK master did not move. Preparation requests, evaluation
 results, the preserved Bemenu gate log and attended/replacement instructions are
-under `~/.local/state/t331/t331-crunch-report-01/t252/`. Build the frozen
-candidate after t331's single capture, then install its exact store output and
-perform the attended run. No release build, install or attended acceptance has
-started. The earlier failed evaluations remain as superseded preparation
+under `~/.local/state/t331/t331-crunch-report-01/t252/`. The frozen
+candidate is building now that t331's capture is complete. The next steps are
+to install its exact store output and perform the attended run. Installation
+and attended acceptance have not started. The earlier failed evaluations remain as superseded preparation
 history, not accepted evidence.
 
 **Current exit, accepted by niltempus on October 21, 2026:** after t331's

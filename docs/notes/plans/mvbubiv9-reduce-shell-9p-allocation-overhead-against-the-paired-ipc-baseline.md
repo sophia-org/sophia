@@ -17,37 +17,51 @@ engine optimization programme. Requested by niltempus on October 15.
 
 ## Current resumption
 
-Niltempus accepted the reduced exits below on October 21. Vello work is parked;
-only t331 and then t252 are on this execution path. Sophia `0c2f7c096` adds
-absolute bursty pacing with due-time evidence and the matching static-background
-pixel pattern, plus a retained tile pool copied once through reusable slots.
-The peer's six focused checks pass, including production transport/owner/worker
-exchanges for fresh, bursty and retained content. Idle uses one presented frame
-and the existing connection/resource hold.
+t331's reduced exit is complete on October 22, 2026. Sophia `0c2f7c096`
+implements idle/hold, absolute bursty pacing and its static-background pixel
+pattern, retained tiles copied once through reusable slots, and fresh frames.
+Six focused peer checks cover the production transport/owner/worker path.
+Integration `1db4861` supplies the matching native plans and typed ring joins;
+47 focused ring/native/sealed checks, strict xtask Clippy and converter checks
+passed. Integration `3c48d82` is now fast-forwarded into niltempus master.
+These reuse existing custody/isolation/bounds/resource-release evidence; no
+protocol or security requirement was waived.
 
-The matching runner and converter changes are in
-`~/dev/niltempus-external-bar` (`measurement/t331-external-bar`). Focused runner
-checks cover the native plan, fresh/paced/retained ring journals and preserved
-sealed history; converter checks cover all four workloads and reject changed
-slot, schedule and placement evidence. Integration `1db4861` contains those
-changes; `3c48d82` lets the existing CPU planner read the schema-1 diagnostic
-with a schema-5 fresh owned-ring journal (32 focused planner checks pass).
+The successful report is
+`~/.local/state/t331/t331-crunch-report-02/{report.json,FINDINGS.txt}`.
+Its report SHA256 is
+`036cf227038be93a0842915d510275f81cce6b3e868e618a42798055b5098455`.
+The capture presented and joined all 2120 fresh frames, including 120 warmup
+and 2000 counted updates, with all 2120 source-copy releases recorded. Session
+and peer use Sophia `7b13b6cae`; the runner was built at integration `1db4861`
+and the pinned integration source is `3c48d82` (its successor changes only the
+Python planner). Exact executables, hashes, configuration, process identities,
+source commits and build records are retained in attempts 01 and 02.
 
-One fresh owned-ring crunch run is prepared at
-`~/.local/state/t331/t331-crunch-report-01/`. Its clean Session/peer build is
-Sophia `7b13b6cae` in `~/dev/sophia-t331-acceptance`; the runner build is
-integration `1db4861`, followed only by the Python planner change above.
-Build logs, Cargo artifact paths, source revisions and hashes are recorded
-there. `fresh/plan.json`, `fresh/diagnostic.json` and `remote/ready.json` pass
-read-only validation. The run uses tty4, DP-1 at 60 Hz, 120 warmup and 2000
-counted frames; it reports CPU/latency without a comparison threshold.
-`bash ~/.local/state/t331/t331-crunch-report-01/run-report-remote.sh` starts
-the existing bounded PAM/VT launcher. Sudo authentication is required; no
-capture has started. Keep its pinned artifacts unchanged until it completes.
-Analyze the joined native latency and existing CPU window afterward. No new
-native result or t331 completion is claimed yet. t252 then needs an updated
-selected-desktop release and its single attended 60 Hz and rollback run; the
-currently installed release predates the owned-ring merge.
+| Metric, counted frames | Report |
+| --- | --- |
+| Session CPU | 1350–1370 µs/frame |
+| Peer CPU | 260–280 µs/frame |
+| Combined CPU | 1610–1650 µs/frame |
+| Joined native latency median / p95 / p99 / maximum | 16462 / 16596 / 16627 / 16697 µs |
+
+CPU covers 33.366822 seconds between the peer's recorded CLOCK_MONOTONIC
+observations of presented generations 120 and 2120. Those observations match
+the typed journal; independent monitor and sampler process identities agree
+in a shared zero-offset time namespace. Bounds express CPU tick/read
+attribution uncertainty, not confidence intervals; sampler CPU is excluded.
+The stricter draw-era planner rejected absent `drm_timestamp_monotonic` log
+metadata, so this report explicitly uses peer-observed completion boundaries,
+not kernel page-flip anchors. Latency is the existing typed native collector's
+submission-to-completion result, not a separate clock-calibration claim.
+
+The selected output was DP-1, 1920×1080, requested 60 Hz (timing 59.940 Hz),
+scale 1, VRR off, with a 1920×24 fresh panel and two source slots. Cleanup
+receipts confirm success despite openvt's console deallocation warning.
+There is no numerical pass/fail threshold or external comparison. Allocation
+and broader matrix qualification remain t343; Vello stays parked. t252 is
+now the critical path: its signed three-client desktop candidate is building,
+then needs installation and the single attended input/replacement/rollback run.
 
 ### October 22 — startup permissions repaired
 
