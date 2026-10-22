@@ -92,8 +92,12 @@ shutdown`. Captured imports need an eviction turn after revocation and before
 native disposal. Shutdown now drains acknowledged eviction within the existing
 three-second reap deadline while the native owner is alive. The focused revoked
 capture regression passes; all four Session feature combinations compile,
-capture+native clippy is clean, and workspace-aware formatting passes. Native
-shutdown acceptance remains for run-08. The gate's host-log lookup
+capture+native clippy is clean, and workspace-aware formatting passes. Run-08 verifies the fix on hardware: native exit 0, component owners quiescent,
+zero live imports and frame leases, clean protocol tally, and restored TTY/keyd.
+The remote PAM session also closed with no residual processes. Three candidate
+joins match on DP-1 (2560x24, 60 Hz). This is host presentation evidence; DMA
+routing is inferred from the pinned client, and no unattended visual claim is
+made. Receipts are in `session-qualification/run-08/` and `ssh-run-08/`. The gate's host-log lookup
 also needed correction: Session records are in `events.*.log`, not client stdout
 (niltempus `3336b69`). Run-07 is presentation evidence, not an overall gate pass
 or a performance result.
@@ -106,7 +110,7 @@ HDMI-A-1 at 1920x1080@60, scale 1; the panel workload remains 1920x24. This uses
 the admitted-target clause: existing coverage, panel extent and resource limits
 exclude a 1920x1080 shell surface. `tools/gpu-bar/LARGE-SURFACE.txt` records the
 limits without changing shell policy. I/S use comparator `4f5bdd564` with its
-CPU texture cache enabled and profiling counters off; G uses master `f9fd5f1a5`
+CPU texture cache enabled and profiling counters off; G uses `bfa477e93`
 with capture enabled. That host-revision difference must remain explicit.
 Niltempus commits `dcebdb2` (peers) and `1a2d616` (runner and CPU measurement
 admission) are signed and pushed. The existing CPU sampler is unchanged;
@@ -115,24 +119,44 @@ at heights 24 and 512. The full xtask suite passed (455 tests), the CPU-plan
 tests passed (36), and strict clippy passed. Source/wire/producer mismatches
 are refused rather than relabeled as GPU runs.
 
-Six plans and diagnostic descriptors are frozen under
-`~/.local/state/t331/t339-gpu-arms-01/`; all 32 manifest entries verify.
-`PLAN.md` records the predeclared order, thresholds, exact artifacts and
-measurement limits. The attended launcher is prepared; no matched GPU runs
-have occurred. Session and peer CPU/frame, latency and kernel joins are
-configured; GPU execution timing is unavailable, and allocation/retention
-and readback accounting still need explicit treatment in the final report.
-`integration/CONFIG-AND-PEERS.txt` and `integration/COMPARATOR-BUILD.txt` retain
-current source identities, artifact hashes and build receipts.
+Package `t339-gpu-arms-02` retained ten successful captures, each joining all
+2,120 offered frames. Its second large sealed run failed observer finalization
+at clean Session teardown; the last large IPC run did not start. All attempted
+VT/PAM sessions recovered. HDMI-A-1 was observed as output 1, 1920x1080@60.
+The CPU analyzer refuses all ten captures because completion records lack the
+queried DRM clock capability. Those records are not amended, and no CPU benefit
+verdict is claimed. `analysis-01/` records the refusal and capture inventory.
+
+Niltempus `8aa0c19` fixes the observer race: a broken parent link counts as ended
+only after rechecking that the recorded parent exited; a live-parent change
+still fails. Focused binding tests (29), environment-monitor and diagnostic
+checks, formatting and strict clippy pass. The between-read race itself is not
+reproduced by the static fixture. Both Sophia hosts now query each opened card's
+DRM clock capability even when no client requests a Present clock, and retain
+that answer on native completion records. Unknown or unsupported capability is
+reported as unproved. The focused capability-cache and diagnostic-field checks
+pass; both release builds complete.
+
+Six replacement plans and descriptors are frozen under
+`~/.local/state/t331/t339-gpu-arms-03/`, with main `bfa477e93`, comparator
+`25840757f`, integration `8aa0c19`, and unchanged GPU peers. `PLAN.md` preserves
+the workloads, mirror order and thresholds. Each arm has a fresh PAM/VT4
+session, 60-second runtime, 80-second Session watchdog, 180-second VT bound and
+240-second supervisor bound. The remote launcher preserves the inactive herdr
+login and checks CPU-plan construction and CPU-window analysis after each
+capture, stopping on failure. All six descriptors and assembled launch vectors,
+pins and wrapper syntax pass offline checks; arms03 has not launched. GPU
+execution timing remains unavailable, and allocation/retention and readback
+accounting require explicit limits in the final report.
 
 Provlita has transparent padding, so the user's requested dock use needs an
 explicit scope decision: validated alpha capture or retaining its owned-ring
 path for this opaque-only phase. That question is pending; no dock appearance
 changes are authorized. Kleis uses the separate lock protocol and is outside
-this shell change. Full Session DMA presentation remains unproven.
+this shell change. Run-07 confirms visible native Session DMA presentation; run-08 verifies clean
+shutdown and console/PAM recovery remotely.
 
-Completion still requires the remaining native lifecycle/presentation controls
-and matched GPU-producer comparisons below. Export, import and offline custody
+Completion still requires the matched GPU-producer comparisons below. Export, import and offline custody
 checks do not establish measured end-to-end benefit. Wider t343 qualification
 is separate; t339's own comparison and correctness requirements remain in force.
 
@@ -313,24 +337,21 @@ this GPU-producing shell experiment.
 
 ## Current next deliverable
 
-The native exact-copy adapter, private mailbox, resource-lease binding, native
-snapshot lowering, completion-retention hooks and retirement service hooks are
-implemented behind `experimental-shell-capture`. The existing renderer worker
-now has bounded capture installation, command/request wakes, fence follow-ups
-and close-before-context-drop. The backend supplies its shared snapshot budget
-and a capture epoch tied to an explicit output, device generation and store.
-Session now coordinates that endpoint with its single retained capture owner,
-whose jobs route by connection slot and grant. Installation is demand-driven by
-a current logical reservation, with no production ingress caller while admission
-is disabled. Next is negotiated DMA-BUF source intake and destination reservation,
-then the complete device-backed settlement/journal qualification. No admitted
-source reaches the executor yet.
-Real-device controls must follow before GPU admission. Tests use supplied
-storage/backends and real mailbox pre-use rollback, not an EGL device. Production
-GPU capability remains disabled; no native experiment or performance result
-exists for this path.
-C42 remains independent: at this audit its stages and launcher receipts were
-absent, with no capture process running.
+The negotiated DMA intake, SDK adapters, destination reservation before
+admission, and native owned capture path are implemented behind
+`experimental-shell-capture`. Run-07 presented Lom's opaque panel through that
+path, with three exact client/Session/kernel-completion joins. Its shutdown
+failure is fixed in `73aaedd06`: Session obtains capture-import eviction
+acknowledgment while the native renderer still exists. Run-08 verifies clean
+shutdown, zero retained imports, and console/PAM restoration with that fix.
+
+The remaining measurement is the matched GPU-producer I/S/G comparison at
+1920x24 and the admitted 1920x512 surface. Arms02 reached native presentation
+but cannot establish CPU benefit: clock-capability evidence is missing. The
+corrected `t339-gpu-arms-03` package preserves the frozen workloads and thresholds
+and checks analysis before proceeding between arms. It is prepared, not run.
+Owned-ring remains the default; dock alpha and the separate lock protocol are
+outside this opaque shell slice.
 
 ### Completion handoff and accounting requirements
 
