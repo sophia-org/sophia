@@ -548,13 +548,14 @@ limits_generation=1
 ```
 
 These values preserve the legacy r9 sealed fixture, not a production r10 grant.
-For shell r10, source_kinds is exactly 4; the other field names and discovery
-version remain unchanged.
+For shell r10, source_kinds is 4 for CPU-only admission or 6 when the optional
+DMA-BUF capability and its complete limits and format rows are granted. The
+other field names and discovery version remain unchanged.
 Lock changes role to 2 and uses its own limits. Integers are canonical unsigned
 decimal (no signs or leading zeros except `0`), checked in their destination
 width. `role` is the channel contract-family code (1 shell, 2 lock), not the
 profile-name value in the adjacent `api` file. Role is u16; epochs and generations are nonzero u64; all other integers
-are u32. `source_kinds` is exactly 4 for shell r10; lock retains a nonzero subset of
+are u32. `source_kinds` is 4 or 6 for shell r10; lock retains a nonzero subset of
 bits 0 and 1. Legacy r9 fixtures retain their historical mask. Endpoint is 1–64
 bytes from ASCII letters, digits, `_`, `-` and `.`, excluding `.` and `..`.
 It is resolved beneath the component endpoint directory containing the role's
@@ -695,3 +696,30 @@ now denotes ring source plus immutable owned resource backing for this role.
 Renderer/DMA capacity is not implied. Lock codecs and their sealed APIs remain
 unchanged. A source whose kind was not granted is refused; there is no byte
 or sealed fallback for an r10 shell producer.
+
+### Optional shell r10 DMA-BUF capture
+
+t339 extends r10 through the existing, separately negotiated DMA-BUF capability
+(bit 14). It does not change the CPU protocol or grant GPU execution. A role
+must already hold an independent grant for the advertised render device.
+CPU-only connections retain source mask 4. Mask 6 requires the complete DMA
+source, renderer allocation, renderer entry and capture-job limits, plus exact
+per-output format rows. Kind 1 remains forbidden for shell r10.
+
+For this optional path, ImageBegin, ImageAdmitted and SourceReleased carry only
+kind 2. The first implementation admits one-plane LINEAR XRGB8888 on one
+output/device; the producer completes its rendering before sending Source.
+The receiver reserves logical resource capacity, source custody, a capture job,
+terminal journal credits and actual renderer destination capacity before
+ImageAdmitted. Unsupported layouts or unknown allocation bounds are refused.
+No source is submitted to the GPU without the exact reservation and epoch.
+
+Capture uses the existing renderer owner without cross-device fallback. It
+forces alpha one and publishes only immutable owned storage. SourceReleased
+requires exact source-read completion or proven pre-use rollback, independently
+of presentation. Cancellation stops publication; it never proves completion.
+Uncertain GPU work retains its descriptors and charges. These requirements also
+apply through timeout, disconnection and renderer replacement.
+
+Implementation remains behind `experimental-shell-capture` until lifecycle,
+C/Rust interoperability and device-backed qualification in the t339 plan pass.

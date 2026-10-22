@@ -6,13 +6,43 @@ tags: [plan, rendering, gpu, 9p, performance, t339]
 ---
 # Qualify GPU native shell images through owned capture
 
+## Current resumption — October 22, 2026
+
+niltempus requested completion of t339 with Claude and Muse working in parallel
+through the local herdr session. The starting Sophia revision is `944e10902`.
+t331 and t252 are complete. Shell r10 now uses owned rings for CPU images;
+the historical ISB comparisons below remain evidence baselines, not a request
+to restore the retired shell CPU protocol. Preserve current owned-ring clients
+and the lock plane's ISB support.
+
+The existing experimental capture executor, completion receipts, leases and
+native lowering are present. The missing critical connection is negotiated
+DMA-BUF admission: no production Source reaches that executor. Claude owns
+runtime admission and source custody; Muse owns renderer capability discovery
+and physical destination reservation; Codex owns Session integration, SDK parity,
+contract updates and native qualification. All three share this checkout with
+disjoint file ownership. No native run has been launched for this resumption.
+
+Use the existing optional DMA-BUF capability at r10, with source mask 6 only
+when complete capture limits and format rows are published. Initial admission
+is one-plane LINEAR XRGB8888 on one independently granted render device and
+output. Reserve the actual renderer destination before ImageAdmitted; match
+Source to that admission, then settle through the existing exact-job completion
+owner. The normative image-channel contract records this additive opt-in.
+
+Completion still requires the lifecycle and device controls below, both SDKs,
+and matched GPU-producer evidence. Neither supplied-descriptor tests nor a
+successful import establish immutable capture, safe source release or measured
+end-to-end benefit. Wider t343 performance qualification is separate; t339's
+own comparison and correctness requirements remain in force.
+
 ## Scope and exit
 
 Deliver one bounded GPU-native shell-image path under the existing
 [image-channel contract](../../sophia-image-channel.md): producer-completed
 DMA-BUF, same-device capture into Sophia-owned storage, immutable acceptance,
-and source release only after proven safe completion. Keep current ISB clients
-working. This is t339's source audit and comparison design, following
+and source release only after proven safe completion. Keep current owned-ring
+shell clients and ISB lock clients working. This is t339's source audit and comparison design, following
 niltempus's October 20 instruction to proceed.
 
 The first scope is opaque XRGB content on one admitted output/device. Reuse the
