@@ -17,6 +17,22 @@ KDSKBMODE = 0x4B45
 K_OFF = 4
 
 
+def open_tty(tty_path: str):
+    """Reuse standard input only when it is exactly the target terminal.
+
+    Releasing a logind session controller resets the VT node to root:tty 0620,
+    but the login's open descriptor keeps its access. Any other target,
+    including the default /dev/tty, is opened by path.
+    """
+    try:
+        inherited = os.isatty(0) and os.ttyname(0) == tty_path
+    except OSError:
+        inherited = False
+    if inherited:
+        return os.fdopen(os.dup(0), "rb+", buffering=0)
+    return open(tty_path, "rb+", buffering=0)
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit(
@@ -25,7 +41,7 @@ def main() -> int:
         )
     action = sys.argv[1]
     tty_path = os.environ.get("SOPHIA_SESSION_TTY", "/dev/tty")
-    with open(tty_path, "rb+", buffering=0) as tty:
+    with open_tty(tty_path) as tty:
         tty_fd = tty.fileno()
         if action == "get-keyboard":
             value = array.array("i", [0])
