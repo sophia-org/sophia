@@ -135,9 +135,13 @@ impl LiveProductionNativeScanout {
             return;
         };
         let identity = self.native_frame_identity(indices[0], output, frame);
+        // A kernel timestamp alone does not establish its clock domain.
+        let monotonic = indices.iter().all(|index| {
+            self.present_clock_monotonic.get(&self.heads[*index].group) == Some(&true)
+        });
         tracing::info!(
                     target: "sophia_scanout_evidence",
-            "sophia_shell_native_completion schema=1 output={} native_owner={} native_frame={} heads={} monotonic_usec={} timestamp_source={} missing_kernel_timestamp={}",
+            "sophia_shell_native_completion schema=1 output={} native_owner={} native_frame={} heads={} monotonic_usec={} timestamp_source={} missing_kernel_timestamp={} drm_timestamp_monotonic={}",
             output.raw(),
             identity.owner(),
             frame.raw(),
@@ -145,6 +149,7 @@ impl LiveProductionNativeScanout {
             completed,
             if all_kernel { "kernel" } else { "observation_fallback" },
             u8::from(missing_kernel),
+            u8::from(monotonic),
         );
     }
 }

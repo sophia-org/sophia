@@ -70,7 +70,10 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
             | "input_records"
             | "input_bytes",
         ) => number,
-        ("sophia_shell_native_completion", "missing_kernel_timestamp") => {
+        (
+            "sophia_shell_native_completion",
+            "missing_kernel_timestamp" | "drm_timestamp_monotonic",
+        ) => {
             matches!(value, "0" | "1")
         }
         ("sophia_shell_native_completion", "timestamp_source") => {
