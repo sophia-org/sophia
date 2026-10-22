@@ -11,28 +11,67 @@ pub(crate) struct Destination {
     pub output: OutputId,
     pub budget: Arc<LiveRendererSnapshotBudget>,
     pub epoch: Arc<LiveRendererSnapshotEpoch>,
+    pub facts: Facts,
 }
 
-struct Endpoint {
+/// The endpoint's installation snapshot, reduced to what the first phase
+/// advertises. Destination bounds still come from a per-size prepare.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct Facts {
+    /// DRM device number of the renderer that owns this endpoint.
+    pub device: u64,
+    /// XRGB8888 with the LINEAR modifier is importable.
+    pub linear_xrgb: bool,
+    pub max_width: u32,
+    pub max_height: u32,
+}
+
+pub(super) struct Endpoint {
     inbox: LiveShellCaptureInbox,
     destination: Destination,
 }
 
 // Private seam supplies mailboxes, never completion receipts or authorization.
-trait Backend {
+pub(super) trait Backend {
+    /// The single enabled output driven by render device `device`, if any.
+    fn capture_output(&self, device: u64) -> Option<OutputId>;
     fn request(&mut self, output: OutputId) -> io::Result<()>;
     fn poll(&mut self) -> io::Result<Option<Endpoint>>;
     fn close(&mut self) -> io::Result<()>;
+    /// One outstanding request on the active endpoint for `output`.
+    fn prepare(&mut self, output: OutputId, width: u32, height: u32) -> io::Result<()>;
+    /// The proven destination byte bound for the prepared size.
+    fn poll_prepare(&mut self) -> io::Result<Option<u64>>;
 }
 
 #[cfg(feature = "native-session")]
 impl Backend for sophia_backend_live::LiveProductionNativeScanout {
+    fn capture_output(&self, device: u64) -> Option<OutputId> {
+        // Existing backend identity: the render node matched to each head's card.
+        let mut outputs = self
+            .output_allocation_preferences()
+            .into_iter()
+            .filter(|preference| preference.device_number == device)
+            .map(|preference| preference.output);
+        let output = outputs.next()?;
+        outputs.next().is_none().then_some(output)
+    }
     fn request(&mut self, output: OutputId) -> io::Result<()> {
         self.request_shell_capture(output)
     }
     fn poll(&mut self) -> io::Result<Option<Endpoint>> {
         Ok(self.poll_shell_capture()?.map(|endpoint| {
             let output = endpoint.output();
+            let facts = endpoint.facts();
+            let facts = Facts {
+                device: facts.device,
+                linear_xrgb: facts.formats.iter().any(|format| {
+                    format.format == sophia_protocol::DRM_FORMAT_XRGB8888
+                        && format.modifiers.contains(&0)
+                }),
+                max_width: facts.max_width,
+                max_height: facts.max_height,
+            };
             let (inbox, budget, epoch) = endpoint.into_parts();
             Endpoint {
                 inbox,
@@ -40,12 +79,19 @@ impl Backend for sophia_backend_live::LiveProductionNativeScanout {
                     output,
                     budget,
                     epoch,
+                    facts,
                 },
             }
         }))
     }
     fn close(&mut self) -> io::Result<()> {
         self.close_shell_capture()
+    }
+    fn prepare(&mut self, output: OutputId, width: u32, height: u32) -> io::Result<()> {
+        self.request_prepare_shell_capture_destination(output, width, height)
+    }
+    fn poll_prepare(&mut self) -> io::Result<Option<u64>> {
+        self.poll_prepare_shell_capture_destination()
     }
 }
 
@@ -59,6 +105,16 @@ pub(crate) struct Link {
 }
 
 impl Link {
+    pub(super) fn destination(&self) -> Option<&Destination> {
+        self.destination.as_ref()
+    }
+
+    /// Policy demand for a capture-authorized slot, before any admission.
+    /// Idempotent; another output stays refused while this one is held.
+    pub(super) fn demand_output(&mut self, output: OutputId, owner: &Option<Owner>) {
+        let _ = self.demand(output, owner);
+    }
+
     pub(super) fn needs_turn(&self) -> bool {
         self.closing
             || (self.desired.is_some() && self.destination.is_none())
@@ -271,8 +327,16 @@ impl ShellComponentConnections {
     ) -> io::Result<()> {
         self.capture_link
             .observe_requester(&self.connections, &mut self.capture);
-        self.capture_link
-            .service(native, &mut self.capture, available)
+        let installed = self
+            .capture_link
+            .service(native, &mut self.capture, available);
+        for (key, error) in
+            self.service_capture_intake(native, content_now_msec(), std::time::Instant::now())
+        {
+            tracing::warn!(slot = key.slot, grant = ?key.grant, %error,
+                "shell capture offer intake retained for exact owner");
+        }
+        installed
     }
 }
 

@@ -59,6 +59,9 @@ pub(super) struct ImageChannelState {
     pub offers: super::image_offers::ImageOffers,
 }
 
+/// Shell r9 capability bit 14, reused at r10 for the additive DMA-BUF opt-in.
+const SHELL_CAPABILITY_DMA_BUF: u64 = 1 << 14;
+
 /// Total bytes of one journalled `ChannelClosed` record (header + body).
 const CHANNEL_CLOSED_RECORD_BYTES: usize = SHELL_FILE_HEADER_BYTES + 16;
 
@@ -201,6 +204,22 @@ impl ShellFiles {
             && self.capabilities & crate::owned_ring_protocol::CAPABILITY != 0
     }
 
+    /// Source kinds the negotiated capabilities name: always the ring, plus
+    /// DMA-BUF only when capture was configured and its bit 14 was granted.
+    pub(super) fn negotiated_source_kinds(&self) -> u32 {
+        let owned = if self.capabilities & crate::owned_ring_protocol::CAPABILITY != 0 {
+            crate::owned_ring_protocol::SOURCE_KIND
+        } else {
+            0
+        };
+        let dma = if owned != 0 && self.capabilities & SHELL_CAPABILITY_DMA_BUF != 0 {
+            SHELL_IMAGE_SOURCE_DMA_BUF
+        } else {
+            0
+        };
+        owned | dma
+    }
+
     pub(in crate::shell_transport) fn image_readiness(&self) -> ShellImageReadiness {
         match &self.image {
             Some(state) if self.image_disclosed() => state.readiness,
@@ -227,14 +246,7 @@ impl ShellFiles {
                 ShellImageReadiness::Ready {
                     granted_source_kinds,
                 } => granted_source_kinds,
-                _ => {
-                    state.config.discovery.source_kinds
-                        & if self.capabilities & crate::owned_ring_protocol::CAPABILITY != 0 {
-                            crate::owned_ring_protocol::SOURCE_KIND
-                        } else {
-                            0
-                        }
-                }
+                _ => state.config.discovery.source_kinds & self.negotiated_source_kinds(),
             },
             readiness: state.readiness,
         })
@@ -260,11 +272,7 @@ impl ShellFiles {
             return Err(Errno::ESTALE);
         }
         let configured = state.config.discovery.source_kinds;
-        let negotiated = if self.capabilities & crate::owned_ring_protocol::CAPABILITY != 0 {
-            crate::owned_ring_protocol::SOURCE_KIND
-        } else {
-            0
-        };
+        let negotiated = self.negotiated_source_kinds();
         if granted_source_kinds == 0 || granted_source_kinds & !(configured & negotiated) != 0 {
             return Err(Errno::EINVAL);
         }

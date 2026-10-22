@@ -6,6 +6,10 @@ use std::time::{Duration, Instant};
 /// failure keeps the base interval, because a single transient loss should
 /// recover at once rather than be punished.
 const BACKOFF_BEGINS_AFTER: u32 = 2;
+/// How long a capture slot waits for its endpoint before negotiating
+/// without DMA-BUF. Endpoint installation is one bounded native round trip.
+#[cfg(feature = "experimental-shell-capture")]
+const CAPTURE_LAUNCH_WAIT: Duration = Duration::from_secs(2);
 /// The base retry interval, and the ceiling the spacing grows to.
 const RETRY_BASE: Duration = Duration::from_secs(1);
 const RETRY_CEILING: Duration = Duration::from_secs(60);
@@ -72,6 +76,15 @@ impl ShellComponentSession {
             if !role_ready(self.plans[slot].selection().role)
                 || self.retry_at[slot].is_some_and(|deadline| now < deadline)
             {
+                continue;
+            }
+            // Bounded launch wait: a capture slot negotiates once its endpoint
+            // is live, or after the wait without DMA-BUF (a client requiring
+            // it is then refused at negotiation, never silently downgraded).
+            #[cfg(feature = "experimental-shell-capture")]
+            if self.processes.capture_launch_ready(slot) {
+                self.capture_wait[slot] = None;
+            } else if now < *self.capture_wait[slot].get_or_insert(now) + CAPTURE_LAUNCH_WAIT {
                 continue;
             }
             if let Some(key) = self.processes.attempt(slot)

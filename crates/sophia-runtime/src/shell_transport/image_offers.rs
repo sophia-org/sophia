@@ -20,6 +20,94 @@ fn wire_error(error: sophia_9p::Errno) -> ShellTransportError {
     }
 }
 
+/// An admitted DMA-BUF offer. ImageAdmitted is journaled and the logical
+/// capture credit is held; the caller must settle it exactly once, through
+/// the capture owner or `fail_capture`, before SourceReleased.
+#[cfg(feature = "experimental-shell-capture")]
+#[derive(Debug)]
+#[must_use = "Settle the capture reservation; dropping it strands its credit"]
+pub struct ShellCaptureAdmission {
+    pub metadata: ShellImageMetadata,
+    pub reservation: crate::ContentCaptureReservation,
+    /// Fixed when ImageBegin was accepted; Source wait cannot extend it.
+    pub deadline: Instant,
+}
+
+/// One received DMA-BUF source with every fact its capture binding needs.
+#[cfg(feature = "experimental-shell-capture")]
+#[derive(Debug)]
+pub struct ShellCaptureImageSource {
+    pub metadata: ShellImageMetadata,
+    pub plane: sophia_protocol::shell_files::ShellImagePlane,
+    /// The descriptor's `lseek(SEEK_END)` size at receipt. The plane's LINEAR
+    /// read span fits inside it and it is charged to `max_dma_source_bytes`.
+    pub source_bytes: u64,
+    pub fd: OwnedFd,
+}
+
+#[cfg(feature = "experimental-shell-capture")]
+impl ShellComponentTransport {
+    /// False after channel closure or epoch loss, or when DMA-BUF was not
+    /// granted. The owner must then withdraw this grant's admissions.
+    pub fn capture_image_channel_ready(&self) -> bool {
+        self.wire.as_ref().is_some_and(|files| {
+            matches!(
+                files.export().image_readiness(),
+                super::files::ImageReadiness::Ready { granted_source_kinds }
+                    if granted_source_kinds
+                        & sophia_protocol::shell_files::SHELL_IMAGE_SOURCE_DMA_BUF
+                        != 0
+            )
+        })
+    }
+
+    /// Explicit owner opt-in after ChannelReady granted DMA-BUF. Until then a
+    /// DMA-BUF ImageBegin waits with its custody preserved.
+    pub fn enable_capture_image_admission(&mut self) -> Result<(), ShellTransportError> {
+        self.files_mut()
+            .ok_or(ShellTransportError::NotConnected)?
+            .export_mut()
+            .enable_capture_image_offers()
+            .map_err(wire_error)
+    }
+
+    /// The oldest queued offer when it is DMA-BUF. The deadline was fixed at
+    /// ImageBegin custody; refuse the offer once it passes.
+    pub fn pending_capture_image_offer(&self) -> Option<(ShellImageMetadata, Instant)> {
+        self.wire.as_ref()?.export().pending_capture_image_offer()
+    }
+
+    /// Hold the physical renderer ticket first and pass its byte bound. This
+    /// checks the format row and DMA-BUF limits, holds both terminal journal
+    /// credits and reserves logical capture credit before ImageAdmitted.
+    /// ContentQueueSaturated leaves the offer queued for a bounded retry.
+    pub fn admit_capture_image_offer(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+        renderer_allocation_bound: u64,
+        now_msec: u64,
+    ) -> Result<ShellCaptureAdmission, ShellTransportError> {
+        let grant = self.store_grant;
+        let files = self.files_mut().ok_or(ShellTransportError::NotConnected)?;
+        let (metadata, reservation, deadline) = files
+            .export_mut()
+            .admit_capture_image_offer(grant, epochs, renderer_allocation_bound, now_msec)
+            .map_err(wire_error)?;
+        files.image_publication_pending();
+        Ok(ShellCaptureAdmission {
+            metadata,
+            reservation,
+            deadline,
+        })
+    }
+
+    /// Shape, LINEAR span and exact descriptor size are checked; pixels and
+    /// device are not. The caller binds it to its admission before use.
+    pub fn take_capture_image_source(&mut self) -> Option<ShellCaptureImageSource> {
+        self.files_mut()?.export_mut().take_capture_image_source()
+    }
+}
+
 impl ShellComponentTransport {
     /// Trusted capture-owner publication AFTER exact-job completion and resource
     /// settlement. This is journal accounting, not a GPU completion verifier.
@@ -72,8 +160,9 @@ impl ShellComponentTransport {
             .map_err(wire_error)
     }
 
+    /// Never a DMA-BUF offer; those belong to the capture owner.
     pub fn pending_isb_image_offer(&self) -> Option<ShellImageMetadata> {
-        self.wire.as_ref()?.export().pending_image_offer()
+        self.wire.as_ref()?.export().pending_cpu_image_offer()
     }
 
     /// The exact oldest ImageBegin already has Submitted custody. Reserve its
@@ -108,6 +197,14 @@ impl ShellComponentTransport {
     }
 
     pub fn refuse_pending_isb_image(
+        &mut self,
+        reason: ContentReason,
+    ) -> Result<(), ShellTransportError> {
+        self.refuse_pending_image(reason)
+    }
+
+    /// Refuses the oldest queued offer of either source kind.
+    pub fn refuse_pending_image(
         &mut self,
         reason: ContentReason,
     ) -> Result<(), ShellTransportError> {

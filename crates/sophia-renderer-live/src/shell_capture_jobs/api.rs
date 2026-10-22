@@ -8,6 +8,21 @@ pub use sophia_renderer_native_egl::{
     NativeShellCaptureSource as LiveShellCaptureSource,
 };
 
+/// Immutable capabilities snapshot for one installed capture endpoint.
+/// Session advertises only what this snapshot supports, for its exact
+/// epoch; it is not an admission or completion proof.
+#[derive(Clone, Debug)]
+pub struct LiveShellCaptureFacts {
+    pub epoch: Arc<LiveRendererSnapshotEpoch>,
+    pub budget: Arc<crate::LiveRendererSnapshotBudget>,
+    /// DRM device number, in the same domain as the epoch's card.
+    pub device: u64,
+    /// Importable source formats for capture; slice one is XRGB8888 only.
+    pub formats: Vec<sophia_renderer_native_egl::NativeDmaBufImportFormat>,
+    pub max_width: u32,
+    pub max_height: u32,
+}
+
 /// Destination reservation is acquired before enqueue, against this exact
 /// renderer budget/epoch. This request carries no shell authorization.
 #[derive(Debug)]

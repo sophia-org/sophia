@@ -7,6 +7,8 @@ use sophia_renderer_live::{
 };
 use std::os::{fd::AsRawFd, unix::net::UnixStream};
 
+#[path = "capture_intake_wire.rs"]
+mod intake_wire;
 #[path = "capture_source.rs"]
 mod source_tests;
 
@@ -19,13 +21,28 @@ struct Native {
     busy_close: bool,
     reply: Option<Endpoint>,
     executor: Option<LiveShellCaptureExecutor>,
+    /// Single enabled output driven by `(device, output)`.
+    drives: Option<(u64, u64)>,
+    prepares: Vec<(OutputId, u32, u32)>,
+    /// Next prepare poll reply; `None` keeps the request in flight.
+    prepared: Option<io::Result<u64>>,
+    prepare_replies: usize,
 }
 impl Native {
     fn offer(&mut self, output: u64) -> Destination {
+        self.offer_with(output, 256)
+    }
+    fn offer_with(&mut self, output: u64, bytes: u64) -> Destination {
         let destination = Destination {
             output: OutputId::from_raw(output),
-            budget: LiveRendererSnapshotBudget::new(4, 256),
+            budget: LiveRendererSnapshotBudget::new(4, bytes),
             epoch: LiveRendererSnapshotEpoch::new(1, 2, 3),
+            facts: Facts {
+                device: 1,
+                linear_xrgb: true,
+                max_width: 4096,
+                max_height: 4096,
+            },
         };
         let (inbox, executor) = LiveShellCaptureCustody::default()
             .channel(destination.epoch.clone(), destination.budget.clone())
@@ -39,6 +56,29 @@ impl Native {
     }
 }
 impl Backend for Native {
+    fn capture_output(&self, device: u64) -> Option<OutputId> {
+        self.drives
+            .filter(|(drives, _)| *drives == device)
+            .map(|(_, output)| OutputId::from_raw(output))
+    }
+    fn prepare(&mut self, output: OutputId, width: u32, height: u32) -> io::Result<()> {
+        // The backend allows one outstanding request until its reply is polled.
+        if self.prepares.len() > self.prepare_replies {
+            return Err(io::ErrorKind::WouldBlock.into());
+        }
+        self.prepares.push((output, width, height));
+        Ok(())
+    }
+    fn poll_prepare(&mut self) -> io::Result<Option<u64>> {
+        if self.prepares.len() == self.prepare_replies {
+            return Ok(None);
+        }
+        let reply = self.prepared.take().transpose();
+        if !matches!(reply, Ok(None)) {
+            self.prepare_replies += 1;
+        }
+        reply
+    }
     fn request(&mut self, output: OutputId) -> io::Result<()> {
         if self.busy_request {
             return Err(io::ErrorKind::WouldBlock.into());
@@ -427,4 +467,98 @@ fn disconnected_requester_cannot_install_pending_reply_into_successor() {
     assert!(!destination.epoch.is_valid());
     assert_eq!(native.closes, 1);
     assert!(!f.inner.capture_link.needs_turn());
+}
+
+#[test]
+fn granted_render_node_demands_its_output_and_configures_only_a_matching_endpoint() {
+    let mut f = Connections::new();
+    let mut native = Native {
+        drives: Some((1, 7)),
+        ..Native::default()
+    };
+    let now = std::time::Instant::now();
+    // No grant: no demand, no DMA-BUF, no launch wait.
+    assert!(
+        f.inner
+            .service_capture_intake(&mut native, 0, now)
+            .is_empty()
+    );
+    assert!(f.inner.capture_link.desired.is_none());
+    assert!(f.inner.capture_launch_ready(0));
+    f.inner.grant_capture_device(0, Some(1)).unwrap();
+    assert!(!f.inner.capture_launch_ready(0), "waits for its endpoint");
+    f.inner.service_capture_intake(&mut native, 0, now);
+    assert_eq!(f.inner.capture_link.desired, Some(OutputId::from_raw(7)));
+    native.offer(7);
+    f.inner
+        .capture_link
+        .service(&mut native, &mut f.inner.capture, true)
+        .unwrap();
+    let config = f.inner.capture_config(0).expect("matching endpoint");
+    assert_eq!((config.output, config.device), (7, 1));
+    assert!(f.inner.capture_launch_ready(0));
+    // The endpoint's device must be the slot's own granted render node.
+    f.inner.grant_capture_device(0, Some(2)).unwrap();
+    assert!(f.inner.capture_config(0).is_none());
+    assert!(!f.inner.capture_launch_ready(0));
+    f.inner.grant_capture_device(0, Some(1)).unwrap();
+    f.inner
+        .capture_link
+        .destination
+        .as_mut()
+        .unwrap()
+        .facts
+        .linear_xrgb = false;
+    assert!(
+        f.inner.capture_config(0).is_none(),
+        "LINEAR XRGB import is required"
+    );
+}
+
+#[test]
+fn capture_configuration_publishes_one_linear_row_and_checked_ceilings() {
+    let limits = sophia_protocol::ContentLimits::prototype(sophia_protocol::ContentGrant {
+        connection_epoch: 1,
+        content_grant_epoch: 1,
+    });
+    let mut seen = None;
+    super::super::super::images::configure_with(
+        &limits,
+        Some(super::super::super::images::CaptureConfig {
+            output: 7,
+            device: rustix::fs::makedev(226, 128),
+            max_width: 8192,
+            max_height: 8192,
+        }),
+        |d, l, f, b| {
+            d.coherent(&l, &f, d.connection_epoch, d.connection_epoch, &b)
+                .unwrap();
+            seen = Some((d, l, f));
+            Ok(())
+        },
+    )
+    .unwrap();
+    let (d, l, f) = seen.unwrap();
+    assert_eq!(d.source_kinds, 6);
+    assert_eq!(l.max_capture_jobs, l.max_offers);
+    assert_eq!(l.max_renderer_entries, l.max_offers);
+    assert_eq!(
+        l.max_renderer_allocation_bytes,
+        u64::from(l.max_offers) * l.max_resource_bytes
+    );
+    let [row] = f.rows.as_slice() else {
+        panic!("one row")
+    };
+    assert_eq!(
+        (row.output, row.device_major, row.device_minor),
+        (7, 226, 128)
+    );
+    assert_eq!(
+        (row.fourcc, row.modifier),
+        (sophia_protocol::DRM_FORMAT_XRGB8888, 0)
+    );
+    assert_eq!(
+        row.max_width, limits.max_width_px,
+        "role maximum still bounds the row"
+    );
 }

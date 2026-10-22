@@ -161,6 +161,9 @@ struct NativeCaptureReuse {
     uncertain: Vec<std::rc::Rc<NativeCaptureAllocation>>,
     accounting: std::rc::Rc<NativeCaptureAllocationAccounting>,
     source_budget: std::rc::Rc<NativeCaptureSourceBudget>,
+    // Admission-prepared destinations: excluded from trim_to and clear(),
+    // preferred by acquire_destination, dropped only with the pool.
+    prepared: Vec<std::rc::Rc<NativeCaptureAllocation>>,
     known_sizes: Vec<(NativeCaptureAllocationKey, u64)>,
     next_allocation_id: u64,
     enabled: bool,
@@ -177,6 +180,7 @@ impl Default for NativeCaptureReuse {
             uncertain: Vec::new(),
             accounting: Default::default(),
             source_budget: Default::default(),
+            prepared: Vec::new(),
             known_sizes: Vec::new(),
             next_allocation_id: 1,
             enabled: true,
@@ -187,6 +191,34 @@ impl Default for NativeCaptureReuse {
 }
 
 impl NativeCaptureReuse {
+    /// Provable destination byte bound for one (width, height, XRGB8888)
+    /// capture on this pool: the largest recorded allocation size over
+    /// every candidate key for that layout. GBM does not expose padding
+    /// before allocation, so a layout with no recorded allocation has
+    /// no provable bound and this returns None; callers must not admit
+    /// a capture for it on a byte estimate.
+    #[cfg(feature = "experimental-shell-capture")]
+    fn destination_bound(&self, width: u32, height: u32) -> Option<u64> {
+        let candidates = rendered_scanout_candidates(&[], Some(0x3432_5258));
+        let mut bound: Option<u64> = None;
+        for candidate in &candidates {
+            let key = NativeCaptureAllocationKey::new(width, height, candidate);
+            for (known, bytes) in &self.known_sizes {
+                if known == &key {
+                    bound = Some(bound.map_or(*bytes, |b: u64| b.max(*bytes)));
+                }
+            }
+            // Live allocations are proof even if their recorded size was
+            // evicted from the bounded known-size history.
+            for allocation in self.prepared.iter().chain(self.idle.iter()) {
+                if allocation.key == key {
+                    bound = Some(bound.map_or(allocation.bytes, |b: u64| b.max(allocation.bytes)));
+                }
+            }
+        }
+        bound
+    }
+
     fn set_render_timing_enabled(&mut self, enabled: bool) {
         self.accounting.timing_enabled.set(enabled);
     }
@@ -358,71 +390,75 @@ impl NativeCaptureReuse {
         allocation_limit: usize,
     ) -> Result<Option<NativePooledCapture>, NativeGbmScanoutBufferExportDetail> {
         self.capture_bounded(
-            egl, display, gbm_device, frame, available_bytes, allocation_limit, u64::MAX,
+            egl,
+            display,
+            gbm_device,
+            frame,
+            available_bytes,
+            allocation_limit,
+            u64::MAX,
         )
     }
 
+    /// Reuse an idle destination for this layout, or allocate one
+    /// candidate. This is the only destination-acquisition path for both
+    /// capture and admission preparation, so a prepared layout is the
+    /// allocation a later capture reuses.
     #[allow(clippy::too_many_arguments)]
-    fn capture_bounded<T: AsFd>(
+    fn acquire_destination<T: AsFd>(
         &mut self,
         egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
         display: khronos_egl::Display,
         gbm_device: &gbm::Device<T>,
-        frame: NativeMultiPlaneDmaBufFrame<'_>,
+        width: u32,
+        height: u32,
+        format: gbm::Format,
         available_bytes: u64,
         allocation_limit: usize,
-        destination_bound: u64,
-    ) -> Result<Option<NativePooledCapture>, NativeGbmScanoutBufferExportDetail> {
+    ) -> Result<Option<std::rc::Rc<NativeCaptureAllocation>>, NativeGbmScanoutBufferExportDetail>
+    {
         use NativeGbmScanoutBufferExportDetail as E;
-        let _whole =
-            NativeCaptureTimingSpan::start(&self.accounting, NativeCaptureTimingKind::Capture);
-        let setup =
-            NativeCaptureTimingSpan::start(&self.accounting, NativeCaptureTimingKind::Setup);
-        if self.source_cleanup_failed() {
-            return Err(E::EglImageDestroyFailed);
-        }
-        if !self.enabled {
-            return Ok(None);
-        }
-        if !frame.is_valid()
-            || i32::try_from(frame.width).is_err()
-            || i32::try_from(frame.height).is_err()
-        {
-            return Err(E::InvalidTarget);
-        }
-        self.reap();
-        if self.source_cleanup_failed() {
-            return Err(E::EglImageDestroyFailed);
-        }
-        let format = match frame.format {
-            0x3432_5258 => gbm::Format::Xrgb8888,
-            0x3432_5241 => gbm::Format::Argb8888,
-            _ => return Err(E::InvalidTarget),
-        };
         let slot = usize::from(format == gbm::Format::Argb8888);
-        let candidates: Vec<_> = rendered_scanout_candidates(&[], Some(frame.format));
-        let minimum_bytes = u64::from(frame.width)
-            .checked_mul(u64::from(frame.height))
+        let candidates: Vec<_> = rendered_scanout_candidates(
+            &[],
+            Some(if format == gbm::Format::Argb8888 {
+                0x3432_5241
+            } else {
+                0x3432_5258
+            }),
+        );
+        let minimum_bytes = u64::from(width)
+            .checked_mul(u64::from(height))
             .and_then(|pixels| pixels.checked_mul(4))
             .ok_or(E::InvalidTarget)?;
-        let mut allocation = None;
         // A prior successful candidate is already verified for this exact
         // layout. Look through every compatible idle slot before retrying any
         // allocation candidate that the driver may have rejected while cold.
+        // A prepared admission allocation is consumed before any general
+        // idle slot, so the bound Session reserved against stays the
+        // allocation its capture actually uses.
+        let prepared = candidates.iter().find_map(|candidate| {
+            let key = NativeCaptureAllocationKey::new(width, height, candidate);
+            self.prepared.iter().position(|entry| entry.key == key)
+        });
+        if let Some(index) = prepared {
+            let allocation = self.prepared.swap_remove(index);
+            self.stats.context_reuses = self.stats.context_reuses.saturating_add(1);
+            self.stats.reuses = self.stats.reuses.saturating_add(1);
+            return Ok(Some(allocation));
+        }
         let reusable = candidates.iter().find_map(|candidate| {
-            let key = NativeCaptureAllocationKey::new(frame.width, frame.height, candidate);
+            let key = NativeCaptureAllocationKey::new(width, height, candidate);
             self.idle.iter().position(|entry| entry.key == key)
         });
         if let Some(index) = reusable {
-            allocation = Some(self.idle.swap_remove(index));
+            let allocation = self.idle.swap_remove(index);
             self.stats.context_reuses = self.stats.context_reuses.saturating_add(1);
             self.stats.reuses = self.stats.reuses.saturating_add(1);
+            return Ok(Some(allocation));
         }
         for candidate in candidates {
-            if allocation.is_some() {
-                break;
-            }
-            let key = NativeCaptureAllocationKey::new(frame.width, frame.height, &candidate);
+            let key = NativeCaptureAllocationKey::new(width, height, &candidate);
             // GBM does not expose allocation padding before allocation. Reuse
             // the actual prior size when known, then validate the new BO's
             // actual size before admission. A cold speculative allocation can
@@ -500,13 +536,116 @@ impl NativeCaptureReuse {
                         }
                         self.known_sizes.push((created.key.clone(), created.bytes));
                     }
-                    allocation = Some(std::rc::Rc::new(created));
-                    break;
+                    return Ok(Some(std::rc::Rc::new(created)));
                 }
                 Err(E::RendererImageStoreFull) => return Err(E::RendererImageStoreFull),
                 Err(_) => continue,
             }
         }
+        Ok(None)
+    }
+
+    /// Admission preparation for one XRGB layout: ensure a destination
+    /// allocation exists in the idle pool and return its actual bytes.
+    /// This is the only way a first, previously unseen size obtains a
+    /// proven bound; no source is imported or drawn. The allocation
+    /// stays idle for the later capture, which reuses it through
+    /// acquire_destination. If the pool is cleared before that capture,
+    /// the retention check still fails closed rather than accepting on
+    /// this bound.
+    #[cfg(feature = "experimental-shell-capture")]
+    fn prepare_destination<T: AsFd>(
+        &mut self,
+        egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
+        display: khronos_egl::Display,
+        gbm_device: &gbm::Device<T>,
+        width: u32,
+        height: u32,
+        available_bytes: u64,
+        allocation_limit: usize,
+    ) -> Result<Option<u64>, NativeGbmScanoutBufferExportDetail> {
+        use NativeGbmScanoutBufferExportDetail as E;
+        if self.source_cleanup_failed() {
+            return Err(E::EglImageDestroyFailed);
+        }
+        if !self.enabled {
+            return Ok(None);
+        }
+        if i32::try_from(width).is_err()
+            || i32::try_from(height).is_err()
+            || width == 0
+            || height == 0
+        {
+            return Err(E::InvalidTarget);
+        }
+        self.reap();
+        let Some(allocation) = self.acquire_destination(
+            egl,
+            display,
+            gbm_device,
+            width,
+            height,
+            gbm::Format::Xrgb8888,
+            available_bytes,
+            allocation_limit,
+        )?
+        else {
+            return Ok(None);
+        };
+        self.prepared.push(allocation);
+        // The bound Session reserves is the per-layout maximum over all
+        // recorded candidate sizes (including this allocation), never
+        // just this allocation's bytes and never width * height * 4.
+        Ok(self.destination_bound(width, height))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn capture_bounded<T: AsFd>(
+        &mut self,
+        egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
+        display: khronos_egl::Display,
+        gbm_device: &gbm::Device<T>,
+        frame: NativeMultiPlaneDmaBufFrame<'_>,
+        available_bytes: u64,
+        allocation_limit: usize,
+        destination_bound: u64,
+    ) -> Result<Option<NativePooledCapture>, NativeGbmScanoutBufferExportDetail> {
+        use NativeGbmScanoutBufferExportDetail as E;
+        let _whole =
+            NativeCaptureTimingSpan::start(&self.accounting, NativeCaptureTimingKind::Capture);
+        let setup =
+            NativeCaptureTimingSpan::start(&self.accounting, NativeCaptureTimingKind::Setup);
+        if self.source_cleanup_failed() {
+            return Err(E::EglImageDestroyFailed);
+        }
+        if !self.enabled {
+            return Ok(None);
+        }
+        if !frame.is_valid()
+            || i32::try_from(frame.width).is_err()
+            || i32::try_from(frame.height).is_err()
+        {
+            return Err(E::InvalidTarget);
+        }
+        self.reap();
+        if self.source_cleanup_failed() {
+            return Err(E::EglImageDestroyFailed);
+        }
+        let format = match frame.format {
+            0x3432_5258 => gbm::Format::Xrgb8888,
+            0x3432_5241 => gbm::Format::Argb8888,
+            _ => return Err(E::InvalidTarget),
+        };
+        let allocation = self.acquire_destination(
+            egl,
+            display,
+            gbm_device,
+            frame.width,
+            frame.height,
+            format,
+            available_bytes,
+            allocation_limit,
+        )?;
         let Some(allocation) = allocation else {
             self.stats.fallbacks += 1;
             return Ok(None);
@@ -564,6 +703,8 @@ impl NativeCaptureReuse {
         }
         self.retired.clear();
         self.idle.clear();
+        // Prepared admission allocations survive an ordinary store
+        // clear: Session may already hold a bound proven against them.
         self.execution = [None, None];
     }
 

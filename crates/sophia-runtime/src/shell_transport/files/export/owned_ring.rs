@@ -79,9 +79,8 @@ impl ShellFiles {
             && self.image_disclosed()
             && matches!(
                 self.image_readiness(),
-                ShellImageReadiness::Ready {
-                    granted_source_kinds: crate::owned_ring_protocol::SOURCE_KIND
-                }
+                ShellImageReadiness::Ready { granted_source_kinds }
+                    if granted_source_kinds & crate::owned_ring_protocol::SOURCE_KIND != 0
             )
     }
     pub(super) fn owned_mode(&self) -> bool {
@@ -164,7 +163,7 @@ impl ShellFiles {
             .ok_or(Errno::EINVAL)?;
         match control {
             Control::Register(request) => {
-                if self.owned_mode() || image.offers.has_work() {
+                if self.owned_mode() {
                     return Err(EALREADY);
                 }
                 #[cfg(feature = "experimental-draw")]

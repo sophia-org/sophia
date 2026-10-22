@@ -128,6 +128,8 @@ fn dropping_a_full_queue_facade_and_core_does_not_wait_for_a_stalled_worker() {
         inventory_replacement: std::sync::Mutex::new(None),
         #[cfg(feature = "experimental-shell-capture")]
         capture_install: std::sync::Mutex::new(None),
+        #[cfg(feature = "experimental-shell-capture")]
+        capture_prepare: std::sync::Mutex::new(None),
         release_enqueue_failures: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     });
     let output = LiveRendererWorkerOutputKey::from_raw(405);
@@ -187,6 +189,8 @@ fn inventory_test_core(
         inventory_replacement: std::sync::Mutex::new(None),
         #[cfg(feature = "experimental-shell-capture")]
         capture_install: std::sync::Mutex::new(None),
+        #[cfg(feature = "experimental-shell-capture")]
+        capture_prepare: std::sync::Mutex::new(None),
         release_enqueue_failures: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     });
     (core, receive, resume)
@@ -391,6 +395,8 @@ fn missing_device_exporter()
         inventory_replacement: std::sync::Mutex::new(None),
         #[cfg(feature = "experimental-shell-capture")]
         capture_install: std::sync::Mutex::new(None),
+        #[cfg(feature = "experimental-shell-capture")]
+        capture_prepare: std::sync::Mutex::new(None),
         release_enqueue_failures: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     });
     let mut exporter =

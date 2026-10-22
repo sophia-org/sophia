@@ -77,6 +77,10 @@ struct Connection {
     >,
     limits: Option<ContentLimits>,
     images: Option<sophia_runtime::ShellIsbImageOwner>,
+    /// DRM device number of this slot's independently granted render node.
+    /// Only such a slot may be offered DMA-BUF capture.
+    #[cfg(feature = "experimental-shell-capture")]
+    capture_device: Option<u64>,
 }
 
 /// Bounded registration for one component in the owner's combined poll set.
@@ -120,6 +124,8 @@ pub struct ShellComponentConnections {
     capture_link: capture::endpoint::Link,
     #[cfg(feature = "experimental-shell-capture")]
     capture_sources: capture::source::Sources,
+    #[cfg(feature = "experimental-shell-capture")]
+    capture_intake: capture::intake::Intake,
 }
 
 pub type ComponentNegotiationEvent = (
@@ -148,6 +154,8 @@ impl ShellComponentConnections {
             capture_link: capture::endpoint::Link::default(),
             #[cfg(feature = "experimental-shell-capture")]
             capture_sources: capture::source::Sources::default(),
+            #[cfg(feature = "experimental-shell-capture")]
+            capture_intake: capture::intake::Intake::default(),
         })
     }
 
@@ -200,6 +208,8 @@ impl ShellComponentConnections {
             readiness: Cell::new(None),
             limits: None,
             images: None,
+            #[cfg(feature = "experimental-shell-capture")]
+            capture_device: None,
         });
         Ok(slot)
     }
@@ -353,9 +363,14 @@ impl ShellComponentConnections {
                 .authorize_authenticated_peer(evidence, factory),
             None => connection.transport.authorize_protected_peer(evidence),
         };
+        #[cfg(feature = "experimental-shell-capture")]
+        let capture = self.capture_config(key.slot);
+        #[cfg(not(feature = "experimental-shell-capture"))]
+        let capture = None;
+        let connection = &mut self.connections[key.slot];
         let result = admission.and_then(|()| {
             if authenticated && matches!(policy, ShellContentAdmissionPolicy::Granted { .. }) {
-                images::configure(connection)?;
+                images::configure(connection, capture)?;
             }
             connection.transport.begin_file_negotiation(
                 &self.epochs,

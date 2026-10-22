@@ -44,6 +44,8 @@ pub use files::{ShellReadinessObservation, ShellReadinessSubscription};
 mod draw;
 mod image_configuration;
 mod image_offers;
+#[cfg(feature = "experimental-shell-capture")]
+pub use image_offers::{ShellCaptureAdmission, ShellCaptureImageSource};
 mod image_owner;
 pub use image_owner::ShellIsbImageOwner;
 mod indicator_responses;

@@ -23,6 +23,8 @@ use super::journal::{Journal, JournalBounds};
 use sophia_9p::journal::{Staging, StagingBounds};
 
 mod authentication;
+#[cfg(feature = "experimental-shell-capture")]
+mod capture_offers;
 #[cfg(feature = "experimental-draw")]
 mod draw;
 mod image;

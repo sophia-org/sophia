@@ -5,6 +5,8 @@ use crate::shell_capture_owner::{Binding, Owner, Publication};
 // for supplied mailbox controls without constructing a native owner.
 #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
 pub(super) mod endpoint;
+#[cfg_attr(not(feature = "native-session"), allow(dead_code))]
+pub(super) mod intake;
 pub(super) mod source;
 
 #[cfg(test)]
@@ -26,8 +28,58 @@ fn publish_current(
 }
 
 impl ShellComponentConnections {
+    /// Every admission, from a prepared destination through settlement,
+    /// shares the one four-job bound.
     pub(super) fn capture_pending(&self) -> usize {
-        self.capture_sources.pending() + self.capture.as_ref().map_or(0, Owner::pending)
+        self.capture_sources.pending()
+            + self.capture.as_ref().map_or(0, Owner::pending)
+            + usize::from(self.capture_intake.preparing())
+    }
+
+    /// Records the slot's granted render node (or its absence). This alone
+    /// authorizes nothing: DMA-BUF also needs a matching live endpoint.
+    #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
+    pub(crate) fn grant_capture_device(
+        &mut self,
+        slot: usize,
+        device: Option<u64>,
+    ) -> Result<(), ComponentConnectionError> {
+        self.connections
+            .get_mut(slot)
+            .ok_or(ComponentConnectionError::UnknownComponent)?
+            .capture_device = device;
+        Ok(())
+    }
+
+    /// DMA-BUF facts for a negotiation, only when this slot's granted device
+    /// is the live endpoint's device and that endpoint imports LINEAR XRGB.
+    pub(super) fn capture_config(&self, slot: usize) -> Option<images::CaptureConfig> {
+        let device = self.connections.get(slot)?.capture_device?;
+        let destination = self.capture_link.destination()?;
+        (destination.epoch.is_valid()
+            && destination.facts.device == device
+            && destination.facts.linear_xrgb
+            && self
+                .capture
+                .as_ref()
+                .is_some_and(|owner| !owner.is_closed()))
+        .then_some(images::CaptureConfig {
+            output: destination.output.raw(),
+            device,
+            max_width: destination.facts.max_width,
+            max_height: destination.facts.max_height,
+        })
+    }
+
+    /// The bounded launch wait for a capture slot: start once its endpoint
+    /// is live, or once the caller's wait has elapsed (then negotiation
+    /// refuses a required DMA-BUF capability rather than hiding it).
+    #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
+    pub(crate) fn capture_launch_ready(&self, slot: usize) -> bool {
+        self.connections
+            .get(slot)
+            .is_none_or(|c| c.capture_device.is_none())
+            || self.capture_config(slot).is_some()
     }
     pub(super) fn capture_maintenance_wait(&self) -> Duration {
         if self.epochs.capture_retirement_active()

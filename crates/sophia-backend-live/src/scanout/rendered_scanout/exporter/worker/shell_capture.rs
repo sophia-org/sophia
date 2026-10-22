@@ -2,7 +2,7 @@
 use super::*;
 use sophia_renderer_live::{
     LiveRendererSnapshotBudget, LiveRendererSnapshotEpoch, LiveShellCaptureCustody,
-    LiveShellCaptureExecutor, LiveShellCaptureInbox,
+    LiveShellCaptureExecutor, LiveShellCaptureFacts, LiveShellCaptureInbox,
 };
 use std::os::fd::BorrowedFd;
 
@@ -36,9 +36,59 @@ impl NativeGbmRendererWorkerCore {
         Ok(())
     }
 
-    pub(crate) fn poll_shell_capture(&self) -> io::Result<Option<LiveShellCaptureInbox>> {
+    pub(crate) fn poll_shell_capture(
+        &self,
+    ) -> io::Result<Option<(LiveShellCaptureInbox, LiveShellCaptureFacts)>> {
         let mut pending = self
             .capture_install
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let Some(receive) = pending.as_ref() else {
+            return Ok(None);
+        };
+        match receive.try_recv() {
+            Ok(result) => {
+                *pending = None;
+                result.map(Some)
+            }
+            Err(TryRecvError::Empty) => Ok(None),
+            Err(TryRecvError::Disconnected) => {
+                *pending = None;
+                Err(io::ErrorKind::BrokenPipe.into())
+            }
+        }
+    }
+
+    pub(crate) fn request_prepare_shell_capture_destination(
+        &self,
+        width: u32,
+        height: u32,
+    ) -> io::Result<()> {
+        let mut pending = self
+            .capture_prepare
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if pending.is_some() || self.control.is_shutdown() {
+            return Err(io::ErrorKind::WouldBlock.into());
+        }
+        let (completion_sender, receive) = sync_channel(1);
+        self.command_sender
+            .try_send(WorkerCommand::PrepareShellCaptureDestination {
+                width,
+                height,
+                completion_sender,
+            })
+            .map_err(|e| match e {
+                TrySendError::Full(_) => io::Error::from(io::ErrorKind::WouldBlock),
+                TrySendError::Disconnected(_) => io::Error::from(io::ErrorKind::BrokenPipe),
+            })?;
+        *pending = Some(receive);
+        Ok(())
+    }
+
+    pub(crate) fn poll_prepare_shell_capture_destination(&self) -> io::Result<Option<u64>> {
+        let mut pending = self
+            .capture_prepare
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let Some(receive) = pending.as_ref() else {
@@ -76,8 +126,26 @@ impl NativeGbmRendererWorker {
     ) -> io::Result<()> {
         self.core.request_shell_capture(epoch, budget, custody)
     }
-    pub(crate) fn poll_shell_capture(&self) -> io::Result<Option<LiveShellCaptureInbox>> {
+    pub(crate) fn poll_shell_capture(
+        &self,
+    ) -> io::Result<
+        Option<(
+            LiveShellCaptureInbox,
+            sophia_renderer_live::LiveShellCaptureFacts,
+        )>,
+    > {
         self.core.poll_shell_capture()
+    }
+    pub(crate) fn request_prepare_shell_capture_destination(
+        &self,
+        width: u32,
+        height: u32,
+    ) -> io::Result<()> {
+        self.core
+            .request_prepare_shell_capture_destination(width, height)
+    }
+    pub(crate) fn poll_prepare_shell_capture_destination(&self) -> io::Result<Option<u64>> {
+        self.core.poll_prepare_shell_capture_destination()
     }
     pub(crate) fn close_shell_capture(&self) -> io::Result<()> {
         self.core.close_shell_capture()

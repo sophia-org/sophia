@@ -32,6 +32,13 @@ mod maintenance;
 mod shell_capture;
 
 #[cfg(feature = "experimental-shell-capture")]
+type CaptureInstallReceiver = Receiver<
+    io::Result<(
+        sophia_renderer_live::LiveShellCaptureInbox,
+        sophia_renderer_live::LiveShellCaptureFacts,
+    )>,
+>;
+#[cfg(feature = "experimental-shell-capture")]
 type CommandSender = sophia_wake::SignalSender<WorkerCommand>;
 #[cfg(not(feature = "experimental-shell-capture"))]
 type CommandSender = SyncSender<WorkerCommand>;
@@ -206,8 +213,9 @@ pub struct NativeGbmRendererWorkerCore {
     control: Arc<WorkerControl>,
     inventory_replacement: std::sync::Mutex<Option<Receiver<io::Result<u64>>>>,
     #[cfg(feature = "experimental-shell-capture")]
-    capture_install:
-        std::sync::Mutex<Option<Receiver<io::Result<sophia_renderer_live::LiveShellCaptureInbox>>>>,
+    capture_install: std::sync::Mutex<Option<CaptureInstallReceiver>>,
+    #[cfg(feature = "experimental-shell-capture")]
+    capture_prepare: std::sync::Mutex<Option<Receiver<io::Result<u64>>>>,
     release_enqueue_failures: Arc<AtomicUsize>,
 }
 
@@ -264,6 +272,8 @@ impl NativeGbmRendererWorkerCore {
             inventory_replacement: std::sync::Mutex::new(None),
             #[cfg(feature = "experimental-shell-capture")]
             capture_install: std::sync::Mutex::new(None),
+            #[cfg(feature = "experimental-shell-capture")]
+            capture_prepare: std::sync::Mutex::new(None),
             release_enqueue_failures: Arc::new(AtomicUsize::new(0)),
         }))
     }
@@ -838,10 +848,21 @@ enum WorkerCommand {
         epoch: Arc<sophia_renderer_live::LiveRendererSnapshotEpoch>,
         budget: Arc<sophia_renderer_live::LiveRendererSnapshotBudget>,
         custody: sophia_renderer_live::LiveShellCaptureCustody,
-        completion_sender: SyncSender<io::Result<sophia_renderer_live::LiveShellCaptureInbox>>,
+        completion_sender: SyncSender<
+            io::Result<(
+                sophia_renderer_live::LiveShellCaptureInbox,
+                sophia_renderer_live::LiveShellCaptureFacts,
+            )>,
+        >,
     },
     #[cfg(feature = "experimental-shell-capture")]
     CloseShellCapture,
+    #[cfg(feature = "experimental-shell-capture")]
+    PrepareShellCaptureDestination {
+        width: u32,
+        height: u32,
+        completion_sender: SyncSender<io::Result<u64>>,
+    },
     /// Attach an output, giving the worker the channel its results go home on
     /// and the metrics handle its own slot pool publishes to.
     Register {

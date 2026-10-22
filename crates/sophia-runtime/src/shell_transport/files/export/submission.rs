@@ -135,7 +135,10 @@ impl ShellFiles {
         &self,
         bytes: &[u8],
     ) -> Result<(Option<Inbound>, SubmissionEffect), Errno> {
-        if self.image_revision == crate::owned_ring_protocol::REVISION {
+        // At r10 only the additive DMA-BUF opt-in uses offers; the CPU path
+        // is the owned ring and sealed sources stay retired.
+        let r10 = self.image_revision == crate::owned_ring_protocol::REVISION;
+        if r10 && self.negotiated_source_kinds() & SHELL_IMAGE_SOURCE_DMA_BUF == 0 {
             return Err(Errno::EACCES);
         }
         if !self.image_disclosed() {
@@ -149,6 +152,9 @@ impl ShellFiles {
         }
         let body = bytes.get(SHELL_FILE_HEADER_BYTES..).ok_or(Errno::EINVAL)?;
         let metadata = ShellImageMetadata::decode(body).map_err(|_| Errno::EINVAL)?;
+        if r10 && metadata.source_kind != SHELL_IMAGE_SOURCE_DMA_BUF {
+            return Err(Errno::EACCES);
+        }
         if !self
             .image
             .as_ref()
@@ -204,7 +210,7 @@ impl ShellFiles {
                     .as_mut()
                     .expect("disclosed image state")
                     .offers
-                    .note_submitted(refusal.offer_id);
+                    .note_refused(refusal.offer_id);
                 // Custody has already moved: publication failure is never
                 // a submit error. The refusal stays export-pending and
                 // retries from journal progress until it is emitted.
@@ -268,6 +274,16 @@ impl ShellFiles {
         }
         let kind = record.header.kind;
         let (inbound, effect) = self.decode(&staging.bytes, kind)?;
+        // An offer's admission deadline starts at accepted custody and is
+        // computed before it, so this failure cannot strand a Submitted record.
+        let offer_deadline = match inbound {
+            Some(Inbound::ImageBegin(_)) => Some(
+                self.image_validation_timeout()
+                    .and_then(|timeout| Instant::now().checked_add(timeout))
+                    .ok_or(Errno::EINVAL)?,
+            ),
+            _ => None,
+        };
         let body = encode_shell_file_submitted_body_at_revision(
             ShellFileSubmitted {
                 submission_id: submit.submission_id,
@@ -298,7 +314,7 @@ impl ShellFiles {
                     .as_mut()
                     .expect("disclosed image state")
                     .offers
-                    .note_submitted(metadata.offer_id);
+                    .note_submitted(metadata.offer_id, offer_deadline.expect("offer deadline"));
             }
             self.inbound.push_back(inbound);
         }

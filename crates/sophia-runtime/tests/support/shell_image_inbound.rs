@@ -109,7 +109,9 @@ fn undisclosed_image_snapshots_follow_facts_before_negotiation() {
 fn submitted_offer_ids_cannot_be_reused() {
     let mut offers = image_offers::ImageOffers::default();
     assert!(offers.accepts_id(7));
-    offers.note_submitted(7);
+    let deadline = std::time::Instant::now();
+    offers.note_submitted(7, deadline);
+    assert_eq!(offers.queued_deadline(7), Some(deadline));
     assert!(!offers.accepts_id(7));
     assert!(!offers.accepts_id(6));
     assert!(offers.accepts_id(8));

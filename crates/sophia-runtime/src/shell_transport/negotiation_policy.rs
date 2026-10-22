@@ -20,7 +20,19 @@ impl ShellComponentTransport {
             {
                 return Err(ShellTransportError::UnsupportedRevision);
             }
-            let retired_or_unavailable = hello.required_capabilities & (SEALED | DMA);
+            // DMA-BUF is an additive r10 opt-in only where the owner configured
+            // capture; sealed sources stay retired at r10.
+            let dma = if cfg!(feature = "experimental-shell-capture")
+                && self.image_config.as_ref().is_some_and(|config| {
+                    config.discovery.source_kinds
+                        & sophia_protocol::shell_files::SHELL_IMAGE_SOURCE_DMA_BUF
+                        != 0
+                }) {
+                hello.required_capabilities & DMA
+            } else {
+                0
+            };
+            let retired_or_unavailable = hello.required_capabilities & (SEALED | DMA) & !dma;
             if retired_or_unavailable != 0 {
                 return Err(ShellTransportError::ContentAdmissionRefused(
                     ContentAdmissionRefused {
@@ -46,7 +58,7 @@ impl ShellComponentTransport {
             let base = ShellV1ClientHello {
                 minimum_revision: 1,
                 maximum_revision: 8,
-                required_capabilities: hello.required_capabilities & !OWNED,
+                required_capabilities: hello.required_capabilities & !(OWNED | DMA),
             };
             let (mut welcome, limits) =
                 self.select_legacy_negotiation(epochs, connection_epoch, content_policy, base)?;
@@ -54,7 +66,7 @@ impl ShellComponentTransport {
                 return Err(ShellTransportError::MissingCapability);
             }
             welcome.selected_revision = crate::owned_ring_protocol::REVISION;
-            welcome.capabilities |= OWNED;
+            welcome.capabilities |= OWNED | dma;
             return Ok((welcome, limits));
         }
         self.select_legacy_negotiation(epochs, connection_epoch, content_policy, hello)

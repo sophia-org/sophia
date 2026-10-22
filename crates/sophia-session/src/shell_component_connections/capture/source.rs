@@ -4,8 +4,12 @@
 //! by a renderer until submission moves it out of this table.
 use super::*;
 use crate::shell_capture_owner::MAX_JOBS;
-use sophia_protocol::shell_files::ShellSourceDisposition;
-use sophia_renderer_live::{LiveRendererImageId, LiveShellCaptureRequest, LiveShellCaptureSource};
+use sophia_protocol::ContentGrant;
+use sophia_protocol::shell_files::{ShellImagePlane, ShellSourceDisposition};
+use sophia_renderer_live::{
+    LiveRendererImageId, LiveRendererSnapshotReservation, LiveShellCaptureRequest,
+    LiveShellCaptureSource,
+};
 use sophia_runtime::{ContentCaptureFailure, ContentCaptureReservation};
 use std::time::Instant;
 
@@ -21,7 +25,10 @@ pub(crate) struct Source {
 
 struct Held {
     binding: Binding,
-    source: LiveShellCaptureSource,
+    /// `None` while an admitted offer waits for its Source.
+    source: Option<LiveShellCaptureSource>,
+    /// Physical destination credit reserved before ImageAdmitted, if any.
+    ticket: Option<LiveRendererSnapshotReservation>,
     reservation: Option<ContentCaptureReservation>,
     deadline: Instant,
     failure: Option<ContentCaptureFailure>,
@@ -33,6 +40,15 @@ pub(crate) struct Sources {
 }
 
 impl Sources {
+    /// Received, unfailed sources still awaiting renderer submission.
+    pub(super) fn submittable(&self) -> Vec<Binding> {
+        self.held
+            .iter()
+            .flatten()
+            .filter(|h| h.source.is_some() && h.failure.is_none())
+            .map(|h| h.binding)
+            .collect()
+    }
     pub(super) fn pending(&self) -> usize {
         self.held.iter().flatten().count()
     }
@@ -88,12 +104,82 @@ impl ShellComponentConnections {
             .expect("bounded sources");
         *slot = Some(Held {
             binding: b,
-            source: source.source,
+            source: Some(source.source),
+            ticket: None,
             reservation: Some(source.reservation),
             deadline: source.deadline,
             failure: None,
         });
         Ok(())
+    }
+
+    /// An admitted offer and its pre-reserved destination wait here for their
+    /// Source. Every admission already counts against the shared job bound.
+    pub(super) fn hold_capture_admission(
+        &mut self,
+        slot: usize,
+        grant: ContentGrant,
+        admission: sophia_runtime::ShellCaptureAdmission,
+        ticket: LiveRendererSnapshotReservation,
+    ) {
+        let index = self
+            .capture_sources
+            .held
+            .iter()
+            .position(Option::is_none)
+            .expect("intake checked the shared job bound");
+        self.capture_sources.held[index] = Some(Held {
+            binding: Binding {
+                slot,
+                grant,
+                metadata: admission.metadata,
+                // Supplied by the Source packet; nothing reads it before then.
+                plane: ShellImagePlane {
+                    offset: 0,
+                    stride: 0,
+                    fd_index: 0,
+                },
+            },
+            source: None,
+            ticket: Some(ticket),
+            reservation: Some(admission.reservation),
+            deadline: admission.deadline,
+            failure: None,
+        });
+    }
+
+    /// Binds a received descriptor to its exact waiting admission. The
+    /// runtime matched the offer; a renderer-incompatible layout fails it.
+    pub(super) fn receive_capture_source(
+        &mut self,
+        slot: usize,
+        grant: ContentGrant,
+        source: sophia_runtime::ShellCaptureImageSource,
+    ) {
+        let Some(held) = self.capture_sources.held.iter_mut().flatten().find(|h| {
+            h.binding.slot == slot
+                && h.binding.grant == grant
+                && h.binding.metadata == source.metadata
+                && h.source.is_none()
+        }) else {
+            // The admission already failed and settles without this fd.
+            return;
+        };
+        let m = source.metadata;
+        held.binding.plane = source.plane;
+        match u32::try_from(source.plane.offset) {
+            Ok(offset) if held.failure.is_none() => {
+                held.source = Some(LiveShellCaptureSource {
+                    fd: source.fd,
+                    width: m.width,
+                    height: m.height,
+                    modifier: m.modifier,
+                    offset,
+                    stride: source.plane.stride,
+                });
+            }
+            _ => held.failure = held.failure.or(Some(ContentCaptureFailure::Renderer)),
+        }
     }
 
     /// Destination byte bound must come from the renderer allocation policy,
@@ -117,6 +203,12 @@ impl ShellComponentConnections {
         let held = self.capture_sources.held[index]
             .take()
             .expect("held source");
+        if held.source.is_none() {
+            self.capture_sources.held[index] = Some(held);
+            return Err(ContentStoreError::Incomplete);
+        }
+        let mut held = held;
+        let ticket = held.ticket.take();
         let prepared = (|| {
             if held.failure.is_some() || instant >= held.deadline {
                 return Err(ContentStoreError::Revoked);
@@ -131,21 +223,35 @@ impl ShellComponentConnections {
                     now,
                 )?
                 .ok_or(ContentStoreError::Incomplete)?;
-            let reservation = destination
-                .budget
-                .reserve_capture(allocation_bound)
-                .map_err(|_| ContentStoreError::Budget)?;
-            Ok((destination, reservation))
+            Ok(destination)
         })();
-        let (destination, reservation) = match prepared {
-            Ok(value) => value,
+        let destination = match prepared {
+            Ok(destination) => destination,
             Err(error) => {
+                held.ticket = ticket;
                 self.capture_sources.held[index] = Some(held);
                 return Err(error);
             }
         };
+        // Intake holds its ticket from before ImageAdmitted; only the supplied
+        // descriptor seam reserves here. Either way the bound is renderer-proven.
+        let reservation = match ticket {
+            Some(ticket) if ticket.belongs_to(&destination.budget) => ticket,
+            Some(ticket) => {
+                held.ticket = Some(ticket);
+                self.capture_sources.held[index] = Some(held);
+                return Err(ContentStoreError::Stale);
+            }
+            None => match destination.budget.reserve_capture(allocation_bound) {
+                Ok(reservation) => reservation,
+                Err(_) => {
+                    self.capture_sources.held[index] = Some(held);
+                    return Err(ContentStoreError::Budget);
+                }
+            },
+        };
         let request = LiveShellCaptureRequest {
-            source: held.source,
+            source: held.source.take().expect("checked source"),
             image_id,
             budget: destination.budget,
             reservation,
@@ -164,7 +270,8 @@ impl ShellComponentConnections {
                 // same slot and release only the unused physical reservation.
                 self.capture_sources.held[index] = Some(Held {
                     binding,
-                    source: rejected.request.source,
+                    source: Some(rejected.request.source),
+                    ticket: None,
                     reservation: Some(rejected.reservation),
                     deadline: held.deadline,
                     failure: Some(ContentCaptureFailure::Renderer),

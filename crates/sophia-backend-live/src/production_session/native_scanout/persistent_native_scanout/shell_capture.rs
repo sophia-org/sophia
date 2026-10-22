@@ -53,11 +53,19 @@ pub struct LiveNativeShellCaptureEndpoint {
     budget: Arc<LiveRendererSnapshotBudget>,
     epoch: Arc<LiveRendererSnapshotEpoch>,
     output: OutputId,
+    facts: sophia_renderer_live::LiveShellCaptureFacts,
 }
 
 impl LiveNativeShellCaptureEndpoint {
     pub fn output(&self) -> OutputId {
         self.output
+    }
+    /// Immutable capabilities snapshot taken on the renderer owner at
+    /// installation, bound to this endpoint's exact epoch and budget.
+    /// Session advertises only what this supports; destination bounds
+    /// for a concrete size come from the prepare request, not from here.
+    pub fn facts(&self) -> &sophia_renderer_live::LiveShellCaptureFacts {
+        &self.facts
     }
     pub fn into_parts(
         self,
@@ -176,8 +184,9 @@ impl LiveProductionNativeScanout {
             .take()
             .expect("pending installation");
         match result {
-            Ok(Some(inbox))
-                if install.generation == self.render_devices.generation
+            Ok(Some((inbox, facts)))
+                if facts.device == install.epoch.card
+                    && install.generation == self.render_devices.generation
                     && install.epoch.is_valid()
                     && self
                         .heads
@@ -194,6 +203,7 @@ impl LiveProductionNativeScanout {
                     budget: self.preview_images.budget.clone(),
                     epoch: install.epoch.clone(),
                     output: install.output,
+                    facts,
                 };
                 self.preview_images.capture.active = Some(install);
                 Ok(Some(endpoint))
@@ -210,6 +220,50 @@ impl LiveProductionNativeScanout {
                 Err(error)
             }
         }
+    }
+
+    /// Bounded destination preparation for one XRGB size on the active
+    /// endpoint for `output`: ask the renderer owner to ensure a
+    /// destination allocation exists, then poll for its exact bytes.
+    /// One outstanding request; WouldBlock while one is in flight or no
+    /// endpoint is active for the output. The returned bound is the
+    /// only proven destination bound for a first unseen size; Session
+    /// reserves it against the endpoint budget before submitting.
+    pub fn request_prepare_shell_capture_destination(
+        &mut self,
+        output: OutputId,
+        width: u32,
+        height: u32,
+    ) -> io::Result<()> {
+        let active = self.preview_images.capture.active.as_ref();
+        if active.is_none_or(|install| install.output != output) {
+            return Err(io::ErrorKind::NotConnected.into());
+        }
+        let store = active.expect("active endpoint checked").store;
+        let index = self
+            .exporters
+            .iter()
+            .position(|e| e.image_store_identity() == Some(store))
+            .ok_or(io::ErrorKind::NotConnected)?;
+        self.exporters[index].request_prepare_shell_capture_destination(width, height)
+    }
+
+    pub fn poll_prepare_shell_capture_destination(&mut self) -> io::Result<Option<u64>> {
+        let Some(store) = self
+            .preview_images
+            .capture
+            .active
+            .as_ref()
+            .map(|install| install.store)
+        else {
+            return Ok(None);
+        };
+        let index = self
+            .exporters
+            .iter()
+            .position(|e| e.image_store_identity() == Some(store))
+            .ok_or(io::ErrorKind::NotConnected)?;
+        self.exporters[index].poll_prepare_shell_capture_destination()
     }
 
     /// Queue close, never claim GPU completion. Session must still drain every

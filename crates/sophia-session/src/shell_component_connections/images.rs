@@ -1,7 +1,8 @@
 //! Session policy for CPU images and content accounting clocks.
 use super::Connection;
 use sophia_protocol::shell_files::{
-    ShellImageDiscovery, ShellImageFormats, ShellImageLimits, ShellImageRoleBounds,
+    SHELL_IMAGE_FORMAT_FLAG_OPAQUE, SHELL_IMAGE_SOURCE_DMA_BUF, ShellImageDiscovery,
+    ShellImageFormatRow, ShellImageFormats, ShellImageLimits, ShellImageRoleBounds,
 };
 use sophia_runtime::{ShellIsbImageOwner, ShellTransportError};
 use std::sync::OnceLock;
@@ -14,7 +15,21 @@ pub(crate) fn content_now_msec() -> u64 {
     u64::try_from(STARTED.get_or_init(Instant::now).elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
-pub(super) fn configure(connection: &mut Connection) -> Result<(), ShellTransportError> {
+/// DMA-BUF facts for one GPU-authorized connection: its granted render
+/// device matched the active capture endpoint for this one output.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CaptureConfig {
+    pub output: u64,
+    /// DRM device number of the independently granted render device.
+    pub device: u64,
+    pub max_width: u32,
+    pub max_height: u32,
+}
+
+pub(super) fn configure(
+    connection: &mut Connection,
+    capture: Option<CaptureConfig>,
+) -> Result<(), ShellTransportError> {
     let limits = connection
         .limits
         .as_ref()
@@ -29,14 +44,16 @@ pub(super) fn configure(connection: &mut Connection) -> Result<(), ShellTranspor
                 .map_err(|error| ShellTransportError::Io(error.to_string()))?,
         );
     }
-    configure_transport(&mut connection.transport, limits)
+    configure_with(limits, capture, |d, l, f, b| {
+        connection.transport.configure_image_channel(d, l, f, b)
+    })
 }
 
 pub(crate) fn configure_transport(
     transport: &mut sophia_runtime::ShellComponentTransport,
     limits: &sophia_protocol::ContentLimits,
 ) -> Result<(), ShellTransportError> {
-    configure_with(limits, |d, l, f, b| {
+    configure_with(limits, None, |d, l, f, b| {
         transport.configure_image_channel(d, l, f, b)
     })
 }
@@ -46,13 +63,14 @@ pub(crate) fn configure_legacy(
     transport: &mut sophia_runtime::ShellSessionTransport,
     limits: &sophia_protocol::ContentLimits,
 ) -> Result<(), ShellTransportError> {
-    configure_with(limits, |d, l, f, b| {
+    configure_with(limits, None, |d, l, f, b| {
         transport.configure_image_channel(d, l, f, b)
     })
 }
 
-fn configure_with(
+pub(super) fn configure_with(
     limits: &sophia_protocol::ContentLimits,
+    capture: Option<CaptureConfig>,
     configure: impl FnOnce(
         ShellImageDiscovery,
         ShellImageLimits,
@@ -72,12 +90,37 @@ fn configure_with(
     .map_err(|error| ShellTransportError::Io(error.to_string()))?
     .source_bytes() as u64;
     const VALIDATION_BYTES: u32 = 65_536;
+    // One LINEAR XRGB row for the endpoint's output. Every capture also needs
+    // a destination reserved against the endpoint budget before ImageAdmitted;
+    // these logical ceilings never stand in for that physical reservation.
+    let dma_bytes = match capture {
+        Some(_) => u64::from(offers)
+            .checked_mul(limits.max_resource_bytes)
+            .ok_or(ShellTransportError::MissingCapability)?,
+        None => 0,
+    };
+    let rows = capture
+        .map(|capture| ShellImageFormatRow {
+            output: capture.output,
+            device_major: rustix::fs::major(capture.device),
+            device_minor: rustix::fs::minor(capture.device),
+            fourcc: sophia_protocol::DRM_FORMAT_XRGB8888,
+            flags: SHELL_IMAGE_FORMAT_FLAG_OPAQUE,
+            modifier: 0,
+            max_width: capture.max_width.min(limits.max_width_px),
+            max_height: capture.max_height.min(limits.max_height_px),
+        })
+        .into_iter()
+        .collect();
+    let capture_jobs = capture.map_or(0, |_| offers);
+    let source_kinds = sophia_runtime::owned_ring_protocol::SOURCE_KIND
+        | capture.map_or(0, |_| SHELL_IMAGE_SOURCE_DMA_BUF);
     configure(
         ShellImageDiscovery {
             connection_epoch: generation,
             channel_generation: generation,
             endpoint: sophia_runtime::image_channel::IMAGE_ENDPOINT_BASENAME.into(),
-            source_kinds: sophia_runtime::owned_ring_protocol::SOURCE_KIND,
+            source_kinds,
             max_offers: offers,
             max_packets_per_turn: 1,
             hello_timeout_ms: 250,
@@ -94,12 +137,12 @@ fn configure_with(
             max_sealed_backing_bytes: limits.max_resident_bytes
                 + limits.max_retiring_bytes
                 + ring_bytes,
-            max_dma_source_bytes: 0,
-            max_renderer_allocation_bytes: 0,
-            max_renderer_entries: 0,
+            max_dma_source_bytes: dma_bytes,
+            max_renderer_allocation_bytes: dma_bytes,
+            max_renderer_entries: capture_jobs,
             max_offers: offers,
             max_validation_jobs: offers,
-            max_capture_jobs: 0,
+            max_capture_jobs: capture_jobs,
             max_admitted_outputs: limits.max_outputs,
             max_format_rows_per_output: 256,
             max_width: limits.max_width_px,
@@ -113,7 +156,7 @@ fn configure_with(
             channel_generation: generation,
             formats_generation: 1,
             limits_generation: limits.limits_generation,
-            rows: Vec::new(),
+            rows,
         },
         ShellImageRoleBounds {
             max_resource_bytes: limits.max_resource_bytes,

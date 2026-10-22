@@ -4,6 +4,8 @@
 //! its shell job, grant and connection epoch, and recheck before publication.
 //! Uncertain work is retained for process lifetime; EGL teardown is not proof.
 use super::*;
+#[cfg(feature = "experimental-shell-capture")]
+use crate::{NativeDmaBufImportFormat, query_native_dmabuf_import_formats};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -150,7 +152,107 @@ impl NativeShellCaptureCompletion {
     }
 }
 
+/// Device/format facts for shell capture admission, from this context's
+/// own device. This is not an admission or completion proof: the backend
+/// binds it to one output and capture epoch, and Session advertises only
+/// what these facts support.
+#[cfg(feature = "experimental-shell-capture")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeShellCaptureFacts {
+    /// DRM device number, in the same domain as the capture epoch's card.
+    pub device: u64,
+    /// Importable source formats for capture; slice one is XRGB8888 only.
+    pub formats: Vec<NativeDmaBufImportFormat>,
+    pub max_width: u32,
+    pub max_height: u32,
+}
+
+/// Slice one captures opaque XRGB only; every other importable format is
+/// withheld from the facts so admission cannot select it.
+#[cfg(feature = "experimental-shell-capture")]
+fn xrgb_capture_formats(formats: Vec<NativeDmaBufImportFormat>) -> Vec<NativeDmaBufImportFormat> {
+    formats
+        .into_iter()
+        .filter(|f| f.format == 0x3432_5258)
+        .collect()
+}
+
 impl<T: AsFd> NativeGbmRenderedScanoutContext<T> {
+    /// Facts for admission, or None when capture is disabled, the owner
+    /// is retired, or the device query fails. Querying creates a
+    /// short-lived GBM/EGL query display on a duplicate of this context's
+    /// device fd; it creates no GL context and changes no capture state,
+    /// but it is not free: call on owner turns at endpoint discovery,
+    /// not per frame.
+    #[cfg(feature = "experimental-shell-capture")]
+    pub fn shell_capture_facts(&self) -> Option<NativeShellCaptureFacts> {
+        if !self.snapshot_reuse_enabled || self.shell_capture_owner.0.get() {
+            return None;
+        }
+        let device = rustix::fs::fstat(self.gbm_device.as_fd()).ok()?.st_rdev;
+        let fd = self.gbm_device.as_fd().try_clone_to_owned().ok()?;
+        let formats = xrgb_capture_formats(query_native_dmabuf_import_formats(fd).ok()?);
+        if formats.is_empty() {
+            return None;
+        }
+        Some(NativeShellCaptureFacts {
+            device,
+            formats,
+            max_width: i32::MAX as u32,
+            max_height: i32::MAX as u32,
+        })
+    }
+
+    /// Provable destination byte bound for one XRGB capture of this
+    /// size on this context's pool, or None when no allocation of that
+    /// layout has been recorded yet. Session must reserve at least this
+    /// bound against the endpoint budget before submitting; with that
+    /// rule the in-capture bound check cannot fail for admitted work.
+    #[cfg(feature = "experimental-shell-capture")]
+    pub fn shell_capture_destination_bound(&self, width: u32, height: u32) -> Option<u64> {
+        if !self.snapshot_reuse_enabled || self.shell_capture_owner.0.get() {
+            return None;
+        }
+        self.capture_reuse.destination_bound(width, height)
+    }
+
+    /// Bounded admission preparation: ensure one destination allocation
+    /// for this XRGB size exists in the capture pool and return its
+    /// actual bytes, the only proven bound for a first unseen size. No
+    /// source is imported or drawn. Ok(None) means capture is disabled
+    /// on this context; admission must stay off for the size.
+    #[cfg(feature = "experimental-shell-capture")]
+    pub fn prepare_shell_capture_destination(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<u64>, NativeGbmScanoutBufferExportDetail> {
+        if !self.snapshot_reuse_enabled || self.shell_capture_owner.0.get() {
+            return Ok(None);
+        }
+        let other_bytes = self
+            .renderer_images
+            .values()
+            .filter(|image| image.pooled.is_none())
+            .fold(self.image_bridge_bytes(), |sum, image| {
+                sum.saturating_add(image.bytes)
+            });
+        let other_count = self
+            .renderer_images
+            .values()
+            .filter(|image| image.pooled.is_none())
+            .count();
+        self.capture_reuse.prepare_destination(
+            &self.egl,
+            self.display,
+            &self.gbm_device,
+            width,
+            height,
+            DEFAULT_NATIVE_RENDERER_IMAGE_BYTE_BUDGET.saturating_sub(other_bytes),
+            DEFAULT_NATIVE_RENDERER_IMAGE_CAPACITY.saturating_sub(other_count),
+        )
+    }
+
     /// Standalone capture on the existing owner and capture pool. No second
     /// renderer/device/thread, frame assembly, promotion or CPU fallback.
     pub fn begin_shell_capture(
@@ -163,6 +265,20 @@ impl<T: AsFd> NativeGbmRenderedScanoutContext<T> {
             return NativeShellCaptureStart::Refused {
                 request,
                 detail: E::InvalidTarget,
+            };
+        }
+        // A proven bound that exceeds the reservation is an admission
+        // error, refused before any source use. Entering capture for it
+        // would fail the same check after allocation and quarantine the
+        // request as Uncertain, poisoning the lane for a caller mistake.
+        if self
+            .capture_reuse
+            .destination_bound(request.source.width, request.source.height)
+            .is_some_and(|bound| bound > request.reservation.byte_bound())
+        {
+            return NativeShellCaptureStart::Refused {
+                request,
+                detail: E::RendererImageStoreFull,
             };
         }
         let Some(slot) = Capacity::process().reserve() else {

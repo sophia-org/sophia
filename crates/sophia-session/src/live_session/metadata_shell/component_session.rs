@@ -75,6 +75,9 @@ pub struct ShellComponentSession {
     /// Set on the visit where a slot's retry first spaces beyond the base
     /// interval, so the transition is recorded once rather than per attempt.
     entered_backoff: Option<usize>,
+    /// When each capture slot began waiting for its endpoint before launch.
+    #[cfg(feature = "experimental-shell-capture")]
+    capture_wait: [Option<std::time::Instant>; MAX_SHELL_COMPONENTS],
 }
 impl ShellComponentSession {
     #[cfg(feature = "experimental-shell-capture")]
@@ -173,13 +176,27 @@ impl ShellComponentSession {
         let mut processes = ShellComponentProcesses::new()?;
         for plan in &plans {
             let selected = plan.selection();
-            processes.add_with_transport(
+            let slot = processes.add_with_transport(
                 &selected.id,
                 selected.role,
                 &directory.join(&selected.id),
                 rustix::process::geteuid().as_raw(),
                 selected.transport,
             )?;
+            // Only a role granted the render node may be offered DMA-BUF.
+            #[cfg(feature = "experimental-shell-capture")]
+            processes
+                .grant_capture_device(
+                    slot,
+                    (selected.gpu == ShellGpuMode::Direct)
+                        .then_some(device.as_ref())
+                        .flatten()
+                        .filter(|device| device.is_render_node())
+                        .map(|device| device.device_number),
+                )
+                .map_err(|error| format!("{error:?}"))?;
+            #[cfg(not(feature = "experimental-shell-capture"))]
+            let _ = slot;
         }
         Ok(Self {
             processes,
@@ -199,6 +216,8 @@ impl ShellComponentSession {
             failures: [0; MAX_SHELL_COMPONENTS],
             started_at: std::array::from_fn(|_| None),
             entered_backoff: None,
+            #[cfg(feature = "experimental-shell-capture")]
+            capture_wait: [None; MAX_SHELL_COMPONENTS],
         })
     }
 

@@ -282,6 +282,21 @@ impl ShellComponentProcesses {
         self.connections.retire_capture_imports(remaining, evict)
     }
 
+    #[cfg(feature = "experimental-shell-capture")]
+    #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
+    pub(crate) fn grant_capture_device(
+        &mut self,
+        slot: usize,
+        device: Option<u64>,
+    ) -> Result<(), ComponentConnectionError> {
+        self.connections.grant_capture_device(slot, device)
+    }
+    #[cfg(feature = "experimental-shell-capture")]
+    #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
+    pub(crate) fn capture_launch_ready(&self, slot: usize) -> bool {
+        self.connections.capture_launch_ready(slot)
+    }
+
     #[cfg(all(feature = "experimental-shell-capture", feature = "native-session"))]
     pub(crate) fn service_capture_maintenance(
         &mut self,

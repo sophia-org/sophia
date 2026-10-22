@@ -8,35 +8,59 @@ pub(in crate::shell_transport) const MAX_IMAGE_OFFERS: usize = 4;
 const STATUS_BYTES: usize = SHELL_FILE_HEADER_BYTES + 56;
 const RELEASE_BYTES: usize = SHELL_FILE_HEADER_BYTES + 32;
 
-struct Offer {
-    metadata: ShellImageMetadata,
-    job: u64,
-    status: Option<JournalReservation>,
-    release: Option<JournalReservation>,
-    received: bool,
-    source: Option<OwnedFd>,
+pub(super) struct Offer {
+    pub(super) metadata: ShellImageMetadata,
+    /// The CPU validation job; `None` for a DMA-BUF capture offer, whose
+    /// reservation the capture owner holds instead.
+    pub(super) job: Option<u64>,
+    #[cfg(feature = "experimental-shell-capture")]
+    pub(super) capture: Option<super::capture_offers::CaptureCharge>,
+    pub(super) status: Option<JournalReservation>,
+    pub(super) release: Option<JournalReservation>,
+    pub(super) received: bool,
+    pub(super) source: Option<OwnedFd>,
 }
 
 #[derive(Default)]
 pub(super) struct ImageOffers {
     pub enabled: bool,
-    high_water: u64,
+    pub(super) high_water: u64,
     // Submitted custody consumes an offer identity even if admission is later
     // refused. Only admission advances the separate Source-classification mark.
     submitted_high_water: u64,
-    live: [Option<Offer>; MAX_IMAGE_OFFERS],
+    pub(super) live: [Option<Offer>; MAX_IMAGE_OFFERS],
+    /// Fixed when ImageBegin is accepted, so owner retries cannot renew it.
+    queued: [Option<(u64, Instant)>; MAX_IMAGE_OFFERS],
 }
 
 impl ImageOffers {
-    pub(super) fn has_work(&self) -> bool {
-        self.submitted_high_water != 0
-    }
-
     pub(super) fn accepts_id(&self, id: u64) -> bool {
         id > self.submitted_high_water
     }
-    pub(super) fn note_submitted(&mut self, id: u64) {
+    /// Submission queues at most `max_offers` ImageBegins, so a queued slot
+    /// is always free here.
+    pub(super) fn note_submitted(&mut self, id: u64, deadline: Instant) {
         self.submitted_high_water = id;
+        if let Some(slot) = self.queued.iter_mut().find(|slot| slot.is_none()) {
+            *slot = Some((id, deadline));
+        }
+    }
+    pub(super) fn note_refused(&mut self, id: u64) {
+        self.submitted_high_water = id;
+    }
+    #[cfg(any(test, feature = "experimental-shell-capture"))]
+    pub(super) fn queued_deadline(&self, id: u64) -> Option<Instant> {
+        self.queued
+            .iter()
+            .flatten()
+            .find_map(|(queued, deadline)| (*queued == id).then_some(*deadline))
+    }
+    pub(super) fn dequeue(&mut self, id: u64) {
+        for slot in &mut self.queued {
+            if slot.is_some_and(|(queued, _)| queued == id) {
+                *slot = None;
+            }
+        }
     }
     pub(super) fn close_sources(&mut self) {
         for offer in self.live.iter_mut().flatten() {
@@ -69,11 +93,18 @@ impl ShellFiles {
         Ok(())
     }
 
+    /// The oldest queued offer of any source kind. CPU owners must use
+    /// [`Self::pending_cpu_image_offer`] so they never consume a DMA-BUF offer.
     pub(in crate::shell_transport) fn pending_image_offer(&self) -> Option<ShellImageMetadata> {
         match self.inbound.front()? {
             Inbound::ImageBegin(metadata) => Some(*metadata),
             _ => None,
         }
+    }
+
+    pub(in crate::shell_transport) fn pending_cpu_image_offer(&self) -> Option<ShellImageMetadata> {
+        self.pending_image_offer()
+            .filter(|metadata| metadata.source_kind != SHELL_IMAGE_SOURCE_DMA_BUF)
     }
 
     pub(in crate::shell_transport) fn image_validation_timeout(&self) -> Option<Duration> {
@@ -113,6 +144,11 @@ impl ShellFiles {
             return Err(Errno::EAGAIN);
         }
         self.inbound.pop_front();
+        self.image
+            .as_mut()
+            .expect("pending image offer")
+            .offers
+            .dequeue(metadata.offer_id);
         Ok(())
     }
 
@@ -135,7 +171,7 @@ impl ShellFiles {
         ) {
             return Err(Errno::EACCES);
         }
-        let metadata = self.pending_image_offer().ok_or(Errno::EAGAIN)?;
+        let metadata = self.pending_cpu_image_offer().ok_or(Errno::EAGAIN)?;
         let state = self.image.as_mut().ok_or(Errno::EACCES)?;
         if grant.connection_epoch != self.epoch
             || metadata.admission_epoch != grant.content_grant_epoch
@@ -208,13 +244,16 @@ impl ShellFiles {
         };
         *slot = Some(Offer {
             metadata,
-            job,
+            job: Some(job),
+            #[cfg(feature = "experimental-shell-capture")]
+            capture: None,
             status: Some(status),
             release: Some(release),
             received: false,
             source: None,
         });
         state.offers.high_water = metadata.offer_id;
+        state.offers.dequeue(metadata.offer_id);
         self.inbound.pop_front();
         Ok(job)
     }
@@ -244,7 +283,9 @@ impl ShellFiles {
             max_height: state.config.limits.max_height,
             max_resource_bytes: state.config.limits.max_resource_bytes,
         };
-        let ShellImagePacket::Source { metadata, .. } = ShellImagePacket::decode_with_context(
+        let ShellImagePacket::Source {
+            metadata, planes, ..
+        } = ShellImagePacket::decode_with_context(
             packet.bytes(),
             packet.descriptor_count() as u16,
             &expected,
@@ -271,7 +312,33 @@ impl ShellFiles {
         if metadata != offer.metadata || offer.received {
             return Err(Errno::EPROTO);
         }
-        offer.source = Some(packet.take_descriptor(0).ok_or(Errno::EPROTO)?);
+        let source = packet.take_descriptor(0).ok_or(Errno::EPROTO)?;
+        #[cfg(feature = "experimental-shell-capture")]
+        if offer.job.is_none() {
+            let limit = state.config.limits.max_dma_source_bytes;
+            let others = state
+                .offers
+                .live
+                .iter()
+                .flatten()
+                .filter(|other| other.metadata.offer_id != metadata.offer_id)
+                .filter_map(|other| other.capture.map(|charge| charge.source_bytes))
+                .sum::<u64>();
+            let offer = state
+                .offers
+                .live
+                .iter_mut()
+                .flatten()
+                .find(|offer| offer.metadata.offer_id == metadata.offer_id)
+                .expect("matched offer");
+            let charge = offer.capture.as_mut().ok_or(Errno::EPROTO)?;
+            charge.receive(&metadata, planes[0], &source, limit.saturating_sub(others))?;
+            offer.source = Some(source);
+            offer.received = true;
+            return Ok(());
+        }
+        let _ = planes;
+        offer.source = Some(source);
         offer.received = true;
         Ok(())
     }
@@ -283,7 +350,8 @@ impl ShellFiles {
             .live
             .iter_mut()
             .flatten()
-            .find_map(|offer| offer.source.take().map(|source| (offer.job, source)))
+            .filter_map(|offer| offer.job.map(|job| (job, offer)))
+            .find_map(|(job, offer)| offer.source.take().map(|source| (job, source)))
     }
 
     pub(super) fn append_image_status(

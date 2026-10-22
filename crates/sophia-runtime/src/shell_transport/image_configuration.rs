@@ -1,7 +1,8 @@
 //! Explicit owner admission of the authenticated image transport.
 use super::{ShellComponentTransport, ShellTransportError, files};
 use sophia_protocol::shell_files::{
-    ShellImageDiscovery, ShellImageFormats, ShellImageLimits, ShellImageRoleBounds,
+    SHELL_IMAGE_SOURCE_DMA_BUF, ShellImageDiscovery, ShellImageFormats, ShellImageLimits,
+    ShellImageRoleBounds,
 };
 
 impl ShellComponentTransport {
@@ -18,9 +19,16 @@ impl ShellComponentTransport {
         if self.wire.is_some() || self.negotiation.is_some() || !self.authentication_required {
             return Err(ShellTransportError::WrongContentGrant);
         }
-        // DMA-BUF needs the later capture owner. A refuse-only channel still
-        // publishes coherent owned-copy budgets, never a zero-budget fake grant.
-        if discovery.source_kinds != crate::owned_ring_protocol::SOURCE_KIND {
+        // A refuse-only channel still publishes coherent owned-copy budgets,
+        // never a zero-budget fake grant. DMA-BUF is additive to the ring and
+        // needs the capture owner's complete limits group and format rows.
+        let owned = crate::owned_ring_protocol::SOURCE_KIND;
+        if discovery.source_kinds != owned
+            && !(cfg!(feature = "experimental-shell-capture")
+                && discovery.source_kinds == owned | SHELL_IMAGE_SOURCE_DMA_BUF
+                && limits.max_capture_jobs != 0
+                && !formats.rows.is_empty())
+        {
             return Err(ShellTransportError::MissingCapability);
         }
         discovery

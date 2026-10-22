@@ -121,7 +121,26 @@ pub(super) fn run_worker<D>(
                 custody,
                 completion_sender,
             } => {
-                let result = captures.install(context.is_some(), epoch, budget, custody);
+                // Facts come from the context this executor will service,
+                // computed before installation so a facts failure never
+                // leaves a usable inbox behind.
+                let facts = context
+                    .as_ref()
+                    .and_then(|context| context.shell_capture_facts())
+                    .map(|native| sophia_renderer_live::LiveShellCaptureFacts {
+                        epoch: epoch.clone(),
+                        budget: budget.clone(),
+                        device: native.device,
+                        formats: native.formats,
+                        max_width: native.max_width,
+                        max_height: native.max_height,
+                    })
+                    .ok_or_else(|| io::Error::from(io::ErrorKind::Unsupported));
+                let result = facts.and_then(|facts| {
+                    captures
+                        .install(context.is_some(), epoch, budget, custody)
+                        .map(|inbox| (inbox, facts))
+                });
                 let installed = result.is_ok();
                 if completion_sender.try_send(result).is_err() && installed {
                     captures.close();
@@ -129,6 +148,23 @@ pub(super) fn run_worker<D>(
             }
             #[cfg(feature = "experimental-shell-capture")]
             WorkerCommand::CloseShellCapture => captures.close(),
+            #[cfg(feature = "experimental-shell-capture")]
+            WorkerCommand::PrepareShellCaptureDestination {
+                width,
+                height,
+                completion_sender,
+            } => {
+                let result = match context.as_mut() {
+                    Some(context) => context
+                        .prepare_shell_capture_destination(width, height)
+                        .map_err(|detail| io::Error::other(format!("{detail:?}")))
+                        .and_then(|bound| {
+                            bound.ok_or_else(|| io::Error::from(io::ErrorKind::Unsupported))
+                        }),
+                    None => Err(io::ErrorKind::NotConnected.into()),
+                };
+                let _ = completion_sender.try_send(result);
+            }
             WorkerCommand::Register {
                 output,
                 reply,

@@ -113,3 +113,28 @@ fn a_failed_submitted_draw_keeps_storage_charged_until_teardown() {
     uncertain.clear();
     assert_eq!((accounting.count.get(), accounting.bytes.get()), (0, 0));
 }
+
+#[cfg(feature = "experimental-shell-capture")]
+#[test]
+fn destination_bound_uses_only_recorded_sizes_for_the_layout() {
+    let mut reuse = NativeCaptureReuse::default();
+    assert_eq!(reuse.destination_bound(64, 32), None);
+    let candidates = rendered_scanout_candidates(&[], Some(0x3432_5258));
+    reuse.known_sizes.push((
+        NativeCaptureAllocationKey::new(64, 32, &candidates[0]),
+        9000,
+    ));
+    reuse.known_sizes.push((
+        NativeCaptureAllocationKey::new(64, 32, &candidates[1]),
+        12000,
+    ));
+    reuse.known_sizes.push((
+        NativeCaptureAllocationKey::new(32, 32, &candidates[0]),
+        99999,
+    ));
+    // The bound covers whichever candidate the capture may pick, and
+    // never leaks a different layout's size into the proof.
+    assert_eq!(reuse.destination_bound(64, 32), Some(12000));
+    assert_eq!(reuse.destination_bound(32, 32), Some(99999));
+    assert_eq!(reuse.destination_bound(16, 16), None);
+}

@@ -71,3 +71,26 @@ fn context_replacement_or_retirement_never_enters_fence_polling() {
     owner.retire();
     assert!(!Owner::matches(&owner, &owner));
 }
+
+#[test]
+fn capture_facts_withhold_every_non_xrgb_format() {
+    let formats = vec![
+        NativeDmaBufImportFormat {
+            format: 0x3432_5258,
+            modifiers: vec![0, 7],
+        },
+        NativeDmaBufImportFormat {
+            format: 0x3432_5241,
+            modifiers: vec![0],
+        },
+        NativeDmaBufImportFormat {
+            format: 0x3231_324e,
+            modifiers: vec![3],
+        },
+    ];
+    let kept = xrgb_capture_formats(formats);
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].format, 0x3432_5258);
+    assert_eq!(kept[0].modifiers, vec![0, 7]);
+    assert!(xrgb_capture_formats(Vec::new()).is_empty());
+}
