@@ -896,3 +896,7 @@ End ordering and fences. Known successful bytes survive terminal failure.
 The independent C candidate is described in API-PARITY.md. Old/current export
 compatibility, signed snapshot adoption, fairness diagnostics and native cost
 qualification remain separate gates; no B3 performance result is claimed.
+
+## t339 optional r10 DMA-BUF record vocabulary
+
+The image-channel contract comes from signed Sophia `b47a6a094b3cc5a4da0c1a720d32040dbe05dd8d`. Revision 10 admits the existing image lifecycle envelopes and exact ImageBegin receipt for optional DMA-BUF capture. CPU upload remains owned-ring only; source admission belongs to the server. This codec checkpoint does not enable the shell GPU producer or establish C/Rust producer parity, native capture, or performance qualification.

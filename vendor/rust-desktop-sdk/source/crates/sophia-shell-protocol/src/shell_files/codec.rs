@@ -271,24 +271,13 @@ pub(super) fn kind_at_revision(
 ) -> Result<ShellFileKind, ShellFileCodecError> {
     // Keep `kind` itself legacy-only: embedded kinds in Submitted and
     // ObjectPublished must not acquire new vocabulary through this addition.
-    if revision == 9 {
+    // The same image lifecycle records serve r9 ISB and optional r10 DMA-BUF.
+    // Negotiated source-kind admission belongs to the role owner, not the codec.
+    if matches!(revision, 9 | 10) {
         match value {
             0x7000 => return Ok(ShellFileKind::ImageBegin),
             0x7001 => return Ok(ShellFileKind::ImageAdmitted),
             0x7002 => return Ok(ShellFileKind::SourceReleased),
-            0x7003 => return Ok(ShellFileKind::ChannelReady),
-            0x7004 => return Ok(ShellFileKind::ChannelClosed),
-            0x7005 => return Ok(ShellFileKind::ImageLimits),
-            0x7006 => return Ok(ShellFileKind::ImageFormats),
-            _ => {}
-        }
-    }
-    if revision == 10 {
-        // Shell r10 retains the channel and companion-object kinds but
-        // retires the sealed-plane kinds: ImageBegin, ImageAdmitted and
-        // SourceReleased fall through to the legacy table, which has no
-        // entry for them and refuses them.
-        match value {
             0x7003 => return Ok(ShellFileKind::ChannelReady),
             0x7004 => return Ok(ShellFileKind::ChannelClosed),
             0x7005 => return Ok(ShellFileKind::ImageLimits),

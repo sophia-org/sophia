@@ -1220,8 +1220,20 @@ Rows marked as product gaps belong to their own tasks, not to this transport.
 
 ## Budgets
 
-These are the accepted acceptance budgets, not measurements. They are stated
-before measurement and cannot be relaxed after a result.
+**Current task acceptance (October 21, 2026):** niltempus replaced t331/t252's
+numerical performance gates with four functional owned-ring workloads, one
+report-only native performance run on crunch (t331), and one attended 60 Hz
+desktop run with input, component replacement and rollback (t252). Reuse existing
+correctness/security evidence. See the
+[accepted exit and deferred t343 qualification](notes/plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#current-exit--accepted-october-21-2026)
+and [t252 exit](notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t252--join-and-accept-the-shell-path).
+Custody, isolation, queue bounds, release correctness and protocol deadlines are
+unchanged. Vello promotion and the broader performance matrix do not block these
+tasks.
+
+The table below preserves the historical numerical targets for t343, not active
+t331/t252 performance gates. Earlier failures remain failures under their original
+method; none becomes a pass through this amendment.
 
 | Measure | Budget |
 | --- | --- |
@@ -1237,7 +1249,7 @@ with the same client, workload and output on both transports.
 
 ### Cost accounting scope (accepted October 15, 2026)
 
-For the B9 cost gate, measure steady-state Session plus client: CPU across all
+For the historical B9 cost method, measure steady-state Session plus client: CPU across all
 their threads, including foreign-library CPU, and Rust global allocation and
 reallocation calls. Divide CPU by exact uploaded MiB (1,048,576 bytes) and
 allocation operations by offered frames. Include preparation, encoding,
@@ -1251,7 +1263,8 @@ and ordinary latency runs. A cost pass requires the 9P upper bound to be at
 most 1.10 times the paired IPC lower bound; overlapping uncertainty is not a
 pass. The optimization objective is to beat IPC on both measures, established
 only when the 9P upper bound is below the IPC lower bound. The +10% acceptance
-ceiling and all latency and correctness requirements remain unchanged.
+ceiling describes the original numerical qualification, now deferred to t343;
+it is not an active t331/t252 exit. Correctness and protocol limits remain unchanged.
 
 ## Amendment 1 (2026-09-26): native bodies, IPC-independent records
 

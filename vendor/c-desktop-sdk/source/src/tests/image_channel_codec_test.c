@@ -327,11 +327,11 @@ static void record_controls(void)
         assert(sophia_ic_record_encode(b, sizeof b, &r, &n) ==
                (i >= 1 && i <= 4 ? SOPHIA_IC_OK : SOPHIA_IC_VALUE));
     }
-    /* Shell r10 grants exactly 4; role exactness is the producer's check. */
+    /* Source masks are policy-free here; negotiated admission checks role grants. */
     r.header.kind = SOPHIA_IC_CHANNEL_READY;
     r.value.channel.value = 4;
     assert(sophia_ic_record_encode(b, sizeof b, &r, &n) == SOPHIA_IC_OK);
-    r.value.channel.value = 5;
+    r.value.channel.value = 8;
     assert(sophia_ic_record_encode(b, sizeof b, &r, &n) == SOPHIA_IC_VALUE);
     v = named("image-begin");
     memcpy(b, v->bytes, v->count);
@@ -590,8 +590,27 @@ static void role_codecs(void)
     assert(sophia_sf_decode_revision(b, n, 9, &back) != 0);
 }
 
+static void ring_and_dma_channel_ready(void)
+{
+    struct sophia_ic_record r = {0}, back;
+    uint8_t bytes[48];
+    size_t n;
+    r.header.kind = SOPHIA_IC_CHANNEL_READY;
+    r.header.epoch = 1;
+    r.header.sequence = 1;
+    r.value.channel.channel_generation = 1;
+    r.value.channel.value = 6;
+    assert(sophia_ic_record_encode(bytes, sizeof bytes, &r, &n) == SOPHIA_IC_OK);
+    assert(n == sizeof bytes);
+    assert(sophia_ic_record_decode(bytes, n, &back) == SOPHIA_IC_OK);
+    assert(back.value.channel.value == 6);
+    r.value.channel.value = 8;
+    assert(sophia_ic_record_encode(bytes, sizeof bytes, &r, &n) == SOPHIA_IC_VALUE);
+}
+
 int main(void)
 {
+    ring_and_dma_channel_ready();
     load();
     fixture(&shell, "shell");
     fixture(&lock, "lock");

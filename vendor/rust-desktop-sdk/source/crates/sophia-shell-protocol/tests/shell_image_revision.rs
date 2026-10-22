@@ -71,7 +71,7 @@ fn image_envelopes_require_explicit_r9() {
 }
 
 #[test]
-fn r10_envelopes_retain_channel_and_companions_and_refuse_sealed_kinds() {
+fn r10_envelopes_and_receipts_support_optional_dma_capture() {
     // Retained at r10: the channel events and companion objects keep
     // their r9 layouts and round-trip unchanged.
     for kind in [
@@ -90,8 +90,7 @@ fn r10_envelopes_retain_channel_and_companions_and_refuse_sealed_kinds() {
             h
         );
     }
-    // Retired at r10: the sealed-plane kinds refuse in both
-    // directions, while the same bytes remain valid at r9.
+    // DMA-BUF reuses these records; the owner still refuses sealed r10 sources.
     for kind in [
         ShellFileKind::ImageBegin,
         ShellFileKind::ImageAdmitted,
@@ -101,12 +100,14 @@ fn r10_envelopes_retain_channel_and_companions_and_refuse_sealed_kinds() {
         let class = shell_file_class(kind);
         let bytes = encode_shell_file_record_at_revision(h, &[], 9).unwrap();
         assert_eq!(
-            encode_shell_file_record_at_revision(h, &[], 10),
-            Err(ShellFileCodecError::Kind)
+            encode_shell_file_record_at_revision(h, &[], 10).unwrap(),
+            bytes
         );
         assert_eq!(
-            decode_shell_file_record_at_revision(&bytes, class, 10),
-            Err(ShellFileCodecError::Kind)
+            decode_shell_file_record_at_revision(&bytes, class, 10)
+                .unwrap()
+                .header,
+            h
         );
     }
     // Ordinary envelope kinds are revision-10 vocabulary too.
@@ -125,14 +126,17 @@ fn r10_envelopes_retain_channel_and_companions_and_refuse_sealed_kinds() {
             h
         );
     }
-    // A Submitted receipt naming ImageBegin is refused at r10; an
-    // ordinary candidate kind is not.
+    // Both DMA ImageBegin and ordinary candidates retain their receipt kind.
     let h = header(ShellFileKind::Submitted);
     let sealed = ShellFileSubmitted {
         submission_id: 17,
         candidate_kind: ShellFileKind::ImageBegin,
     };
-    assert!(encode_shell_file_submitted_at_revision(h, sealed, 10).is_err());
+    let bytes = encode_shell_file_submitted_at_revision(h, sealed, 10).unwrap();
+    assert_eq!(
+        decode_shell_file_submitted_at_revision(&bytes, 10).unwrap(),
+        sealed
+    );
     let ordinary = ShellFileSubmitted {
         submission_id: 17,
         candidate_kind: ShellFileKind::ResourceBegin,
@@ -277,7 +281,7 @@ fn image_begin_receipt_requires_explicit_r9() {
     );
     assert!(encode_shell_file_submitted(h, value).is_err());
     assert!(decode_shell_file_submitted(&bytes).is_err());
-    for revision in [0, 1, 8, 10, u16::MAX] {
+    for revision in [0, 1, 8, u16::MAX] {
         assert!(encode_shell_file_submitted_at_revision(h, value, revision).is_err());
         assert!(decode_shell_file_submitted_at_revision(&bytes, revision).is_err());
     }

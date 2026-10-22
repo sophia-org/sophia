@@ -1,16 +1,14 @@
-tree 909bfa01f15d88c405eba76e17a07a99e3314d78
-parent 252beb63cf4db2cdf0eaf09790e346b256674ef4
-author Mason Green <mason@greenm01.net> 1792601645 -0400
-committer Mason Green <mason@greenm01.net> 1792601645 -0400
+tree 63a450720eff0dc7920a7f9f2d4ab3cf86b8d431
+parent 4241c55fc70c653c7a7f7304173397d35a4a2ea9
+author Mason Green <mason@greenm01.net> 1792668367 -0400
+committer Mason Green <mason@greenm01.net> 1792668367 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatjuLhsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIxgwEAyWBv1HJ48A3db2CUbMb+
- FGqo5QgMd52+gMfCKdG/X4kA/iY5LLkTalTeGRsKF3ENlJ5J6B5BZ2POcIqq+jlD
- WpoL
- =q2q9
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatnyzxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK//gEAwyz85EyZ2UVOH1ew8x96
+ Cdp5RHkeTC3spwDTcl/6SEAA/1XeUd5t2wGdaKbvPXTzOwSmeEMnB9JCq7Z1SFyT
+ V9YA
+ =yX/V
  -----END PGP SIGNATURE-----
 
-Scope ring status precedence to pending offers and accept changed cancellations
-
-Accepted precedence in offer info now applies only while an offer is pending; terminal info always reports the evidence the release selected. A cancellation release (reason 11) requires Cancelled evidence regardless of changed_generation, which the runtime sets from its read check independently of the stopped reason; such a release refuses, reports Cancelled, and frees the slot.
+Synchronize the shell contract snapshot with r10 production

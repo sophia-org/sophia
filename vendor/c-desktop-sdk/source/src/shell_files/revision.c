@@ -7,7 +7,7 @@
  *   Submitted naming ImageBegin (0x7000), the receipt for an accepted
  *   ImageBegin candidate; the kind is carried, never relabeled.
  * Only these explicit entry points, given negotiated revision 9, accept
- * either value; r10 refuses both. Each one is validated by the legacy codec with one
+ * either value; r10 also admits ImageBegin receipts for optional DMA-BUF. Each one is validated by the legacy codec with one
  * legal stand-in value, then the r9 value is restored. */
 #define STATUS_AT (SOPHIA_SF_HEADER_BYTES + 40)
 #define REASON_AT (SOPHIA_SF_HEADER_BYTES + 42)
@@ -25,7 +25,8 @@ static int r9_rejection(uint16_t revision, uint16_t kind, uint16_t status, uint1
 
 static int r9_receipt(uint16_t revision, uint16_t kind, uint16_t candidate_kind)
 {
-    return revision == SOPHIA_SF_REVISION_IMAGE_CHANNEL && kind == SOPHIA_SF_SUBMITTED &&
+    return (revision == SOPHIA_SF_REVISION_IMAGE_CHANNEL ||
+            revision == SOPHIA_SF_REVISION_OWNED_RING) && kind == SOPHIA_SF_SUBMITTED &&
            candidate_kind == SOPHIA_SF_KIND_IMAGE_BEGIN;
 }
 
