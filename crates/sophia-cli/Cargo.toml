@@ -34,6 +34,7 @@ sophia-sysv-shm = { path = "../sophia-sysv-shm" }
 
 [features]
 experimental-draw = ["sophia-session/experimental-draw"]
+experimental-shell-capture = ["sophia-session/experimental-shell-capture"]
 default = []
 native-session = ["sophia-session/native-session", "sophia-backend-live/gbm-probe", "sophia-backend-live/libdrm-events", "sophia-backend-live/drm-hotplug", "sophia-backend-live/libinput-events", "sophia-backend-live/seat-control"]
 atomic-scanout-live = ["native-session"]
