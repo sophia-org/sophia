@@ -8,33 +8,59 @@ tags: [plan, rendering, gpu, 9p, performance, t339]
 
 ## Current resumption — October 22, 2026
 
-niltempus requested completion of t339 with Claude and Muse working in parallel
-through the local herdr session. The starting Sophia revision is `944e10902`.
-t331 and t252 are complete. Shell r10 now uses owned rings for CPU images;
-the historical ISB comparisons below remain evidence baselines, not a request
-to restore the retired shell CPU protocol. Preserve current owned-ring clients
-and the lock plane's ISB support.
+niltempus requested completion of t339 with Claude and Muse working through
+local herdr sockets. Preserve shell r10 owned-ring CPU clients and the lock
+plane's ISB support. The first phase remains opaque LINEAR XRGB8888 on one
+independently granted output/device, with explicit client opt-in.
 
-The existing experimental capture executor, completion receipts, leases and
-native lowering are present. The missing critical connection is negotiated
-DMA-BUF admission: no production Source reaches that executor. Claude owns
-runtime admission and source custody; Muse owns renderer capability discovery
-and physical destination reservation; Codex owns Session integration, SDK parity,
-contract updates and native qualification. All three share this checkout with
-disjoint file ownership. No native run has been launched for this resumption.
+Runtime and Session intake are committed in `73e667854`: configured/negotiated DMA grants,
+physical destination reservation before ImageAdmitted, exact Source binding,
+and submission to the existing completion owner. Session wire controls cover
+custody, no publication before completion, invalidation, pre-use rollback and
+status-before-source-release order. The stale-prepare regression proves a
+second offer drains the timed-out first preparation and obtains its own bound.
+Runtime default/feature suites and focused Session native-feature checks passed.
 
-Use the existing optional DMA-BUF capability at r10, with source mask 6 only
-when complete capture limits and format rows are published. Initial admission
-is one-plane LINEAR XRGB8888 on one independently granted render device and
-output. Reserve the actual renderer destination before ImageAdmitted; match
-Source to that admission, then settle through the existing exact-job completion
-owner. The normative image-channel contract records this additive opt-in.
+Sophia pin commit `c20fa0029` records the signed SDK pins: Rust `0706ea2c78cd16ba59ed209620354f30a2c78906` and C
+`3ccc7d04c28309ebed6fd53f399af7c7a5682d80`, imported through Sophia's snapshot
+checks. Both expose an explicit DMA producer/adapter lifecycle and preserve the
+CPU ring default. Controls cover padded FD spans, no Source before admission,
+CaptureComplete before native adoption, and discovery mask 6 with CPU grant 4.
 
-Completion still requires the lifecycle and device controls below, both SDKs,
-and matched GPU-producer evidence. Neither supplied-descriptor tests nor a
-successful import establish immutable capture, safe source release or measured
-end-to-end benefit. Wider t343 performance qualification is separate; t339's
-own comparison and correctness requirements remain in force.
+Lom's shared GPU producer exports real modifier-0 XRGB DMA-BUFs on both crunch
+AMD render nodes. RADV requires Vulkan DRM-format-modifier tiling with modifier
+0; plain Vulkan LINEAR tiling cannot export the tested images. Each frame is
+fenced and released to FOREIGN before its descriptor is exported. A stalled
+export blocks new work and retains the device and resources through owner drop
+until process exit. Validation layers are absent; barrier legality remains an
+explicit residual risk, not a claim implied by successful pixel checks.
+
+Muse's native EGL oracle consumed two Lom Vulkan frames on renderD128 and
+verified their color patterns after exact capture completion. The first capture
+remained unchanged after a later frame in a new allocation. This proves foreign
+producer import and separate-frame independence, not source-storage reuse or
+full Session presentation. Evidence lives under
+`~/.local/state/sophia/development-evidence/t339-20261022/`: `FOREIGN-MANIFEST.txt`,
+`foreign-oracle.log`, and `producer/MANIFEST-producer.txt` retain commands, hashes
+and outcomes without binary copies.
+
+Lom commit `ae28569a4ed6b4fbb6382e2cdfd1637bcdb21575` adds `--serve --image-source dma-buf`; the default stays
+owned-ring. It requests DMA explicitly, retains the GPU frame through
+CaptureComplete, and emits no CPU checksum for DMA content. The complete Lom
+repository check passed with the final SDK pin. Claude reviewed application custody with no blockers and is preparing the
+matched-producer comparison design. Muse owns remaining native lifetime controls
+and runner preparation; Codex owns integration, pins and coordinated qualification.
+
+Provlita has transparent padding, so the user's requested dock use needs an
+explicit scope decision: validated alpha capture or retaining its owned-ring
+path for this opaque-only phase. That question is pending; no dock appearance
+changes are authorized. Kleis uses the separate lock protocol and is outside
+this shell change. No live desktop or full Session run has been launched here.
+
+Completion still requires the remaining native lifecycle/presentation controls
+and matched GPU-producer comparisons below. Export, import and offline custody
+checks do not establish measured end-to-end benefit. Wider t343 qualification
+is separate; t339's own comparison and correctness requirements remain in force.
 
 ## Scope and exit
 
