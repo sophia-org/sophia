@@ -287,55 +287,49 @@ them here.
 
 ### t252 — Join and accept the shell path
 
-### Current resumption — October 22, 2026
+### Current resumption — completed October 22, 2026
 
-t331 completed its reduced exit on October 22; see
-its [report and current resumption](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#current-resumption).
-The installed desktop predates the r10 owned-ring merge. Prepare the replacement
-from `~/dev/niltempus-t252-acceptance` (`desktop/t252-owned-ring`), using
-`desktop-dock`, which includes Provlita. Its isolated profile selects DP-1 at
-1920×1080, 60 Hz, scale 1 and VRR off. The daily profile in niltempus master is
-unchanged. The Session comes from the Sophia **flake input**, not the Cargo
-conformance pin in `pins/sophia.toml`.
+t252's reduced exit is complete, following t331's
+[successful native report](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#current-resumption).
+The selected three-client release is `niltempus-39348a3d7eae29466369`, built
+from signed niltempus `25990addd82218fcb8e8cb4802ee11d65290cf8d`
+(branch `desktop/t252-owned-ring`). It pins Sophia `7b13b6cae`, Lom
+`27b64c5`, Provlita `109f5cb` and Bemenu `f73a3b8`. Bemenu's r10 migration
+`f3113e75` imports C SDK `4222139b` and passed its focused backend and executable
+fixture checks; the Rust clients use signed SDK `ce926b53`, published on
+`sophia-desktop-sdk-rs` branch `shellr10-owned-ring`. Nix built the exact
+`desktop-dock` package and checked its rendered three-component profile.
 
-The signed acceptance source is niltempus `25990ad`. It pins Sophia
-`7b13b6cae`, Lom `27b64c5`, Provlita `109f5cb` and Bemenu `f73a3b8`.
-Bemenu's migration (`f3113e75`, followed by the retry-comment correction)
-imports the signed r10 C SDK `4222139b`, waits for exact slot release before
-adoption, and passes `make check-sophia EXTRA_WARNINGS=-Werror` and the
-executable fixture. These are headless checks, not native acceptance.
+The attended candidate session was
+`00000001792666527505-4d0e8856-cec5-4bbd-8070-3e8916ae3140` on crunch.
+All three clients negotiated r10, and native bindings reported 60000 millihertz.
+The user confirmed Super+Space opened Bemenu and launched an application.
+One exact Provlita PID was terminated: slot 2 retired with
+`endpoint_released=true`, then renegotiated from connection/content epochs 3/3
+to 4/4. Lom and Bemenu retained their PID/starttime identities. Bar and new dock
+continued presenting; the user confirmed the dock returned and a bar workspace
+click and Super+Space still worked. This supplies the attended input,
+replacement and isolation observations; existing generic custody, bounds and
+resource-release evidence and the focused r10 checks remain applicable.
 
-Nix evaluation succeeds for `desktop-dock`, naming release
-`niltempus-39348a3d7eae29466369`. The clients' existing Rust SDK pin `ce926b53`
-was published on `sophia-desktop-sdk-rs` branch `shellr10-owned-ring` so the
-recipe can fetch it; SDK master did not move. Preparation requests, evaluation
-results, the preserved Bemenu gate log and attended/replacement instructions are
-under `~/.local/state/t331/t331-crunch-report-01/t252/`. The frozen candidate built successfully on October 22. Its output is
-`/nix/store/rj4dbgbkf9x1kic6yczw94nm3s3svdpk-niltempus-desktop-niltempus-39348a3d7eae29466369`.
-The manifest confirms integration `25990ad` and Sophia `7b13b6cae`; the rendered
-profile includes all three shell components at 60 Hz. Run
-`bash ~/.local/state/t331/t331-crunch-report-01/t252/install-desktop.sh` to
-install that exact output. The observed current release is
-`niltempus-9cceca44630d8a69d64f`; installation retains it as the compatible
-whole-release rollback target. `install-preparation.json` records the prior
-selection and profile/manifest hashes. The candidate is now installed and its attended desktop checks passed. The live
-session is `00000001792666527505-4d0e8856-cec5-4bbd-8070-3e8916ae3140`:
-all three clients negotiated r10 and native bindings report 60000 millihertz.
-The user confirmed Bemenu opens and launches applications. One exact Provlita
-process was terminated; slot 2 retired with `endpoint_released=true`, then
-renegotiated with connection/content epochs 4/4 instead of 3/3. Bar and launcher
-PID/starttime identities were unchanged; bar and new dock kept presenting. The
-user confirmed the dock returned and both a bar workspace click and Super+Space
-still worked. `attended-observations.json` and `replacement-{request,result}.json`
-retain this evidence.
+Whole-release rollback then selected `niltempus-9cceca44630d8a69d64f`.
+The candidate session exited with status 0 and restored console/keyboard modes.
+The user returned in session
+`00000001792666893934-4c2092ab-500e-4b16-bbbf-6113c8271570`; its Sophia binary
+hash matches the previous release, its clients negotiated the compatible r9
+contract, and native presentations resumed. The user confirmed being back after
+the request to return when the previous desktop worked. This satisfies the
+whole-release rollback alternative; no Narthex-selection claim is made.
 
-Only whole-release rollback remains. Run
-`bash ~/.local/state/t331/t331-crunch-report-01/t252/rollback-desktop.sh`, then
-log out and back into Sophia niltempus Desktop. The script checks the expected
-current/previous identities and invokes the existing whole-release rollback;
-it does not terminate the running desktop. Verify the previous release actually
-runs and the user can use it before closing t252. The earlier failed evaluations
-remain superseded preparation history, not accepted evidence.
+Evidence is under `~/.local/state/t331/t331-crunch-report-01/t252/`:
+`candidate-request.json`, `desktop-build-result.json`, `attended-session.json`,
+`attended-observations.json`, `replacement-{request,result}.json`,
+`rollback-result.json`, and `accepted-session/`. `acceptance-SHA256SUMS` binds
+the retained artifacts. The exact built package remains installed as `previous`
+and rooted in the Nix store; the rollback release remains `current`. The
+finished preparation worktrees can be removed while retaining the source
+commits and candidate branch. No numerical threshold or broader matrix was
+required; those remain t343, and Vello qualification remains separate.
 
 **Current exit, accepted by niltempus on October 21, 2026:** after t331's
 [reduced exit](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#current-exit--accepted-october-21-2026),

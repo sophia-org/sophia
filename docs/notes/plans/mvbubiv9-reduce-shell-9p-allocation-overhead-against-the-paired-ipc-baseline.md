@@ -59,9 +59,8 @@ The selected output was DP-1, 1920×1080, requested 60 Hz (timing 59.940 Hz),
 scale 1, VRR off, with a 1920×24 fresh panel and two source slots. Cleanup
 receipts confirm success despite openvt's console deallocation warning.
 There is no numerical pass/fail threshold or external comparison. Allocation
-and broader matrix qualification remain t343; Vello stays parked. t252 is
-now the critical path: its signed three-client desktop candidate has built
-and needs installation and the single attended input/replacement/rollback run.
+and broader matrix qualification remain t343; Vello stays parked. t252 also completed its attended input/replacement/rollback exit on October 22;
+see its [completion record](jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t252--join-and-accept-the-shell-path).
 
 ### October 22 — startup permissions repaired
 
