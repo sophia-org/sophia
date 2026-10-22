@@ -12,10 +12,72 @@ tags: [plan, shell, performance]
 
 Reduce measured shell 9P allocation overhead without weakening admission,
 resource custody, queue bounds or presentation semantics. This is a targeted
-prerequisite for t252's existing cost gate, not a promotion of t289's broader
+prerequisite for t252's shell-path acceptance, not a promotion of t289's broader
 engine optimization programme. Requested by niltempus on October 15.
 
-## Accepted performance-direction amendment — October 21, 2026
+## Current resumption
+
+Niltempus accepted the reduced exits below on October 21. Vello work is parked;
+only t331 and then t252 are on this execution path. Sophia `0c2f7c096` adds
+absolute bursty pacing with due-time evidence and the matching static-background
+pixel pattern, plus a retained tile pool copied once through reusable slots.
+The peer's six focused checks pass, including production transport/owner/worker
+exchanges for fresh, bursty and retained content. Idle uses one presented frame
+and the existing connection/resource hold.
+
+The matching runner and converter changes are in
+`~/dev/niltempus-external-bar` (`measurement/t331-external-bar`). Focused runner
+checks cover the native plan, fresh/paced/retained ring journals and preserved
+sealed history; converter checks cover all four workloads and reject changed
+slot, schedule and placement evidence. The next step is to pin these changes
+and prepare one fresh owned-ring crunch run using the existing panel diagnostic
+and CPU sampler. It reports CPU/latency, with no comparison threshold. No new
+native result or t331 completion is claimed yet. t252 then needs its single
+attended 60 Hz selected-desktop and rollback run.
+
+## Current exit — accepted October 21, 2026
+
+Niltempus approved replacing the earlier exit gates to keep t331 and t252 on
+the critical path. This section supersedes the numerical and matrix requirements
+below; old failures remain evidence and do not become passes.
+
+t331 closes when:
+
+1. The production owned-ring path and typed measurement runner support all four
+   workloads: idle, bursty, retained and fresh, with the pixel and pacing shapes
+   defined below. Preserve exact resource, candidate and completion identities.
+2. One native performance run on crunch reports CPU and latency, with its source,
+   executable, configuration, workload, process scope and measurement interval
+   recorded. This is report-only: no numerical performance pass/fail gate and no
+   repeated campaign to obtain a better result. State missing measurements and
+   uncertainty honestly; do not label an invalid join a successful run.
+3. The changed paths retain custody, isolation, bounded queues and resource-release
+   correctness. Reuse applicable existing evidence and run focused checks for
+   changed behavior rather than repeating unrelated suites.
+4. Integrate the changes and record the result and remaining limits here before
+   completing the task. Closing t331 does not close t252's desktop acceptance.
+
+The x13/120 Hz matrix, full Wayland/XLibre comparison and numerical performance
+qualification move to [t343](#t343--deferred-performance-qualification).
+They do not block t331 or t252. Vello promotion is not a prerequisite for either.
+Protocol deadlines, admission and security limits are unchanged; task acceptance
+changes do not require rewriting historical SDK snapshots.
+
+### t343 — Deferred performance qualification
+
+After t252, qualify the broader shell-image performance envelope: x13, 120 Hz,
+matched Wayland and composited XLibre references, and explicit numerical CPU,
+allocation and latency limits. Freeze the method and limits with niltempus before
+scoring. Reuse retained evidence only where source and workload identities match;
+retain earlier failures and distinguish fresh observations from historical data.
+This follow-up owns the numerical and matrix qualification formerly required for
+t331/t252, including the historical B9 targets. It does not retroactively turn
+the report-only crunch run into a performance pass.
+
+## Earlier performance-direction amendment — October 21, 2026
+
+The current exit above supersedes this amendment's acceptance matrix and
+numerical-gate requirements; its comparison methodology remains context for t343.
 
 Niltempus explicitly replaces t331's four IPC +10% acceptance gates with
 Wayland/XLibre external reference rows. This supersedes the unchanged-IPC-gate

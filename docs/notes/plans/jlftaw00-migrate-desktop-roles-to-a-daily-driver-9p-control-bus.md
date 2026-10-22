@@ -287,6 +287,23 @@ them here.
 
 ### t252 — Join and accept the shell path
 
+**Current exit, accepted by niltempus on October 21, 2026:** after t331's
+[reduced exit](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#current-exit--accepted-october-21-2026),
+complete one attended 60 Hz desktop run on crunch with the selected Lom bar,
+Bemenu launcher and Provlita dock. Verify visible operation, presented-target
+input, component replacement without disturbing the others, and Narthex selection
+or compatible whole-release rollback. Record exact source/release/configuration
+identities and the observations. Reuse applicable existing wire, negative-control,
+independent-client, custody, isolation and resource-release evidence; verify only
+changed behavior or an actual evidence gap. This does not waive correctness or
+security failures.
+
+There is no numerical performance pass/fail gate for this exit. The x13/120 Hz
+matrix, full Wayland/XLibre comparison and numerical performance qualification
+are deferred to [t343](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#t343--deferred-performance-qualification).
+Vello default-on qualification is separate. The historical B9 and broader matrix
+requirements below no longer block t252; retain their failed results as evidence.
+
 The measured allocation excess is now tracked as
 [t331](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#t331--reduce-shell-allocation-overhead),
 a targeted prerequisite for the unchanged B9 cost gate. Broader engine CPU
