@@ -187,7 +187,8 @@ pub(super) fn connect_role_image(
     let origin = Instant::now();
     let mut config = image_config(dir.clone());
     config.formats_capacity = formats_capacity;
-    let connection = if deferred {
+    let dma = profile.capabilities & IMAGE_CAPABILITY_DMA_BUF != 0;
+    let connection = if deferred || dma {
         ShellConnection::connect_files(&socket_path, offered)
     } else {
         ShellConnection::connect_files_with_image(
@@ -215,12 +216,17 @@ pub(super) fn connect_role_image(
         };
         config.transfer_timeout_ms = limits.transfer_timeout_ms;
         assert!(connection.image_adapter().is_none());
-        connection.enable_image(config, origin, 1_000).unwrap();
+        connection
+            .enable_image(config.clone(), origin, 1_000)
+            .unwrap();
         assert!(
             connection
                 .enable_image(image_config(dir.clone()), origin, 1_000)
                 .is_err()
         );
+    }
+    if dma {
+        connection.enable_dma_image(config, origin, 1_000).unwrap();
     }
     peer.objects.insert(
         "image-channel".to_owned(),

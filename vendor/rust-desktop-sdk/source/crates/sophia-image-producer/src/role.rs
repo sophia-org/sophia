@@ -11,26 +11,32 @@ use crate::{ImageRole, ProducerError, ProducerMetadata, ProducerRoleBounds};
 
 /// The role codec's packet expectation after discovery coherence.
 pub(crate) enum Expect {
-    Shell(ShellImageExpect),
+    Shell(ShellImageExpect, ShellImageLimits, ShellImageFormats),
     Lock(LockImageExpect),
 }
 
 impl Expect {
+    pub(crate) fn dma_source_limit(&self) -> u64 {
+        match self {
+            Self::Shell(_, limits, _) => limits.max_dma_source_bytes,
+            Self::Lock(_) => 0,
+        }
+    }
     pub(crate) fn channel_generation(&self) -> u64 {
         match self {
-            Self::Shell(expect) => expect.channel_generation,
+            Self::Shell(expect, _, _) => expect.channel_generation,
             Self::Lock(expect) => expect.channel_generation,
         }
     }
     pub(crate) fn source_kinds(&self) -> u32 {
         match self {
-            Self::Shell(expect) => expect.granted_source_kinds,
+            Self::Shell(expect, _, _) => expect.granted_source_kinds,
             Self::Lock(expect) => expect.granted_source_kinds,
         }
     }
     pub(crate) fn set_source_kinds(&mut self, kinds: u32) {
         match self {
-            Self::Shell(expect) => expect.granted_source_kinds = kinds,
+            Self::Shell(expect, _, _) => expect.granted_source_kinds = kinds,
             Self::Lock(expect) => expect.granted_source_kinds = kinds,
         }
     }
@@ -99,7 +105,7 @@ pub(crate) fn decode_discovery(
                 )
                 .map(|expect| {
                     (
-                        Expect::Shell(expect),
+                        Expect::Shell(expect, limits, formats),
                         discovery.hello_timeout_ms,
                         discovery.max_offers,
                     )
@@ -152,7 +158,7 @@ pub(crate) fn decode_discovery(
 
 pub(crate) fn hello_bytes(expect: &Expect) -> Result<Vec<u8>, ()> {
     match expect {
-        Expect::Shell(expect) => ShellImagePacket::Hello {
+        Expect::Shell(expect, _, _) => ShellImagePacket::Hello {
             connection_epoch: expect.connection_epoch,
             channel_generation: expect.channel_generation,
         }
@@ -167,9 +173,14 @@ pub(crate) fn hello_bytes(expect: &Expect) -> Result<Vec<u8>, ()> {
     }
 }
 
-pub(crate) fn source_bytes(expect: &Expect, metadata: ProducerMetadata) -> Result<Vec<u8>, ()> {
+pub(crate) fn source_bytes(
+    expect: &Expect,
+    metadata: ProducerMetadata,
+    offset: u32,
+    stride: u32,
+) -> Result<Vec<u8>, ()> {
     match expect {
-        Expect::Shell(expect) => {
+        Expect::Shell(expect, _, _) => {
             let zero = ShellImagePlane {
                 offset: 0,
                 stride: 0,
@@ -181,8 +192,8 @@ pub(crate) fn source_bytes(expect: &Expect, metadata: ProducerMetadata) -> Resul
                 metadata: to_shell(metadata),
                 planes: [
                     ShellImagePlane {
-                        offset: 0,
-                        stride: metadata.stride,
+                        offset: u64::from(offset),
+                        stride,
                         fd_index: 0,
                     },
                     zero,
@@ -205,8 +216,8 @@ pub(crate) fn source_bytes(expect: &Expect, metadata: ProducerMetadata) -> Resul
                 metadata: to_lock(metadata),
                 planes: [
                     LockImagePlane {
-                        offset: 0,
-                        stride: metadata.stride,
+                        offset: u64::from(offset),
+                        stride,
                         fd_index: 0,
                     },
                     zero,
@@ -223,7 +234,17 @@ pub(crate) fn source_bytes(expect: &Expect, metadata: ProducerMetadata) -> Resul
 /// Admissibility under the discovered limits and the grant.
 pub(crate) fn admissible(expect: &Expect, metadata: ProducerMetadata) -> bool {
     match expect {
-        Expect::Shell(expect) => to_shell(metadata).admissible(expect).is_ok(),
+        Expect::Shell(expect, _, formats) => {
+            to_shell(metadata).admissible(expect).is_ok()
+                && (metadata.source_kind != 2
+                    || formats.rows.iter().any(|row| {
+                        row.output == metadata.output_id
+                            && row.fourcc == metadata.source_format
+                            && row.modifier == metadata.modifier
+                            && metadata.width <= row.max_width
+                            && metadata.height <= row.max_height
+                    }))
+        }
         Expect::Lock(expect) => to_lock(metadata).admissible(expect).is_ok(),
     }
 }

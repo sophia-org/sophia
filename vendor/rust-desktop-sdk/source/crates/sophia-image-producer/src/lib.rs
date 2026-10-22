@@ -1,9 +1,9 @@
-//! Clockless ISB (Immutable Shared Buffers) image producer for one Sophia image channel.
+//! Clockless source custody for one Sophia image channel.
 //!
 //! The producer serves one role connection: it consumes one discovery
 //! set, owns the SEQPACKET side socket after attach, sends `Hello`,
 //! waits for `ChannelReady`, begins up to four offers, and sends an
-//! admitted offer's sealed source exactly once. It never uses 9P: the
+//! admitted offer's descriptor exactly once. It never uses 9P: the
 //! role client reads the discovery objects, submits the `ImageBegin`
 //! body this crate returns under its own header, and forwards image
 //! records and `ResourceStatus` outcomes back in.
@@ -13,8 +13,11 @@
 //! never replays a send and never invents a release: only
 //! `SourceReleased`, a definitive refusal before admission, or journal
 //! loss ends an offer's custody. After admission, only release or journal loss
-//! settles custody. DMA-BUF sources are refused
-//! at `begin` even when granted; this crate is the sealed CPU plane.
+//! settles custody. `begin` serves sealed r9/lock sources; `begin_dma_buf`
+//! serves explicitly granted r10 DMA sources. The caller must complete GPU
+//! production before offering and keep the backing allocation immutable until
+//! SourceReleased. Journal loss reports Unknown, never safe GPU completion.
+//! Shell r10 CPU images use the separate owned-ring producer.
 
 mod io;
 mod isb;

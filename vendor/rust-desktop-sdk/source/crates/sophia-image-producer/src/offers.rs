@@ -12,6 +12,8 @@ use crate::{
 pub(crate) struct Slot {
     pub(crate) metadata: ProducerMetadata,
     pub(crate) fd: Option<OwnedFd>,
+    pub(crate) plane_offset: u32,
+    pub(crate) plane_stride: u32,
     pub(crate) state: Option<OfferState>,
     pub(crate) deadline_ms: u64,
     pub(crate) deadline_passed: bool,
@@ -125,6 +127,40 @@ impl ImageProducer {
         source: OwnedFd,
         now_ms: u64,
     ) -> Result<(u64, [u8; 96], ProducerMetadata), (ProducerError, OwnedFd)> {
+        if metadata.source_kind != SOURCE_KIND_SEALED {
+            return Err((ProducerError::Refused, source));
+        }
+        self.begin_source(metadata, source, 0, metadata.stride, now_ms)
+    }
+
+    /// Offer one producer-completed LINEAR XRGB8888 DMA-BUF. The caller must
+    /// retain its GPU allocation and must not write it until SourceReleased.
+    /// Disconnection leaves completion unknown. Refusal returns the descriptor.
+    pub fn begin_dma_buf(
+        &mut self,
+        metadata: ProducerMetadata,
+        source: OwnedFd,
+        offset: u32,
+        stride: u32,
+        now_ms: u64,
+    ) -> Result<(u64, [u8; 96], ProducerMetadata), (ProducerError, OwnedFd)> {
+        if self.config.role != crate::ImageRole::Shell
+            || self.config.revision != 10
+            || metadata.source_kind != 2
+        {
+            return Err((ProducerError::Refused, source));
+        }
+        self.begin_source(metadata, source, offset, stride, now_ms)
+    }
+
+    fn begin_source(
+        &mut self,
+        metadata: ProducerMetadata,
+        source: OwnedFd,
+        offset: u32,
+        stride: u32,
+        now_ms: u64,
+    ) -> Result<(u64, [u8; 96], ProducerMetadata), (ProducerError, OwnedFd)> {
         if let Err(error) = self.clock(now_ms) {
             return Err((error, source));
         }
@@ -169,10 +205,42 @@ impl ImageProducer {
             Some(expect) => role::admissible(expect, assigned),
             None => false,
         };
-        if assigned.source_kind != SOURCE_KIND_SEALED
-            || !admissible
-            || !io::sealed_source(source.as_fd(), assigned.declared_bytes)
-        {
+        let source_valid = match assigned.source_kind {
+            SOURCE_KIND_SEALED if self.config.revision != 10 => {
+                io::sealed_source(source.as_fd(), assigned.declared_bytes)
+            }
+            2 if self.config.role == crate::ImageRole::Shell && self.config.revision == 10 => {
+                assigned.source_format == u32::from_le_bytes(*b"XR24")
+                    && assigned.modifier == 0
+                    && assigned.plane_count == 1
+                    && assigned.descriptor_count == 1
+                    && assigned.stride == 0
+                    && assigned
+                        .width
+                        .checked_mul(4)
+                        .is_some_and(|row| stride >= row)
+                    && rustix::fs::seek(source.as_fd(), rustix::fs::SeekFrom::End(0)).is_ok_and(
+                        |bytes| {
+                            bytes
+                                <= self
+                                    .expect
+                                    .as_ref()
+                                    .map_or(0, role::Expect::dma_source_limit)
+                                && assigned
+                                    .height
+                                    .checked_sub(1)
+                                    .and_then(|rows| u64::from(stride).checked_mul(u64::from(rows)))
+                                    .and_then(|span| span.checked_add(u64::from(offset)))
+                                    .and_then(|span| {
+                                        span.checked_add(u64::from(assigned.width) * 4)
+                                    })
+                                    .is_some_and(|span| span <= bytes)
+                        },
+                    )
+            }
+            _ => false,
+        };
+        if !admissible || !source_valid {
             return Err((ProducerError::Refused, source));
         }
         let body = role::metadata_body(self.config.role, assigned);
@@ -182,6 +250,8 @@ impl ImageProducer {
         let slot = &mut self.slots[index];
         *slot = Slot {
             metadata: assigned,
+            plane_offset: offset,
+            plane_stride: stride,
             fd: Some(source),
             state: Some(OfferState::Begun),
             deadline_ms: now_ms.saturating_add(u64::from(self.config.transfer_timeout_ms)),

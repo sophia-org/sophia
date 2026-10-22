@@ -18,6 +18,36 @@ impl NativeLauncherSession {
         self.connection.enable_image(config, origin, origin_ms)
     }
 
+    /// Enable the explicitly negotiated DMA source path.
+    pub fn enable_dma_image(
+        &mut self,
+        config: crate::ShellImageConfig,
+        origin: std::time::Instant,
+        origin_ms: u64,
+    ) -> Result<(), ShellClientError> {
+        self.lifecycle.service(&self.connection)?;
+        self.connection.enable_dma_image(config, origin, origin_ms)
+    }
+
+    /// Offer a producer-completed DMA-BUF; retain backing until SourceReleased.
+    pub fn image_begin_dma_buf(
+        &mut self,
+        metadata: crate::ProducerMetadata,
+        source: std::os::fd::OwnedFd,
+        offset: u32,
+        stride: u32,
+        now: std::time::Instant,
+    ) -> Result<crate::ImageBeginAdmission, crate::ImageBeginError> {
+        if self.lifecycle.service(&self.connection).is_err() {
+            return Err(crate::ImageBeginError {
+                error: crate::ImageAdapterError::Refused,
+                source: Some(source),
+            });
+        }
+        self.connection
+            .image_begin_dma_buf(metadata, source, offset, stride, now)
+    }
+
     pub fn image_readiness(&self) -> Result<Option<crate::ImageReadiness<'_>>, ShellClientError> {
         self.connection.image_readiness()
     }
@@ -96,27 +126,53 @@ impl ShellConnection {
         lifecycle.service(self)?;
         let invalid = || ShellClientError::InvalidArgument("native image not adoptable");
         let adapter = self.image.as_ref().ok_or_else(invalid)?;
-        let info = adapter.ring_offer(offer).ok_or_else(invalid)?;
-        let identity = adapter.ring_identity().ok_or_else(invalid)?;
         let limits = &lifecycle.limits;
-        let declared = u64::from(info.width)
-            .checked_mul(u64::from(info.height))
-            .and_then(|bytes| bytes.checked_mul(4));
-        if info.state != crate::RingOfferState::Settled
-            || identity.content_grant_epoch != limits.grant.content_grant_epoch
-            || info.width > limits.max_width_px
-            || info.height > limits.max_height_px
+        let (resource, width, height, declared, grant_epoch) = if let Some(dma) = &adapter.dma {
+            let info = dma.offer(offer).ok_or_else(invalid)?;
+            let metadata = dma.ticket_metadata(offer).ok_or_else(invalid)?;
+            if info.state != sophia_image_producer::OfferState::Settled
+                || info.status != Some(sophia_image_producer::ResourceStatusKind::Accepted)
+                || info.disposition != 2
+            {
+                return Err(invalid());
+            }
+            (
+                ContentResourceId {
+                    id: info.resource,
+                    generation: info.resource_generation,
+                },
+                metadata.width,
+                metadata.height,
+                Some(metadata.declared_bytes),
+                metadata.admission_epoch,
+            )
+        } else {
+            let info = adapter.ring_offer(offer).ok_or_else(invalid)?;
+            let identity = adapter.ring_identity().ok_or_else(invalid)?;
+            if info.state != crate::RingOfferState::Settled {
+                return Err(invalid());
+            }
+            let declared = u64::from(info.width)
+                .checked_mul(u64::from(info.height))
+                .and_then(|bytes| bytes.checked_mul(4));
+            (
+                ContentResourceId {
+                    id: info.resource,
+                    generation: info.resource_generation,
+                },
+                info.width,
+                info.height,
+                declared,
+                identity.content_grant_epoch,
+            )
+        };
+        if grant_epoch != limits.grant.content_grant_epoch
+            || width > limits.max_width_px
+            || height > limits.max_height_px
             || declared.is_none_or(|bytes| bytes > limits.max_resource_bytes)
         {
             return Err(invalid());
         }
-        // Settled already proves the successful status followed by
-        // the exact successful SlotReleased. Recheck the
-        // lifecycle's own bounds here.
-        let resource = ContentResourceId {
-            id: info.resource,
-            generation: info.resource_generation,
-        };
         if lifecycle.resource_index(resource).is_some() {
             return Err(ShellClientError::InvalidArgument(
                 "native resource already tracked",

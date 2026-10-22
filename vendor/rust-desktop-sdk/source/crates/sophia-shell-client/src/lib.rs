@@ -758,7 +758,15 @@ impl ShellConnection {
     /// still needs.
     pub fn image_forget(&mut self, offer: u64) -> Result<(), ImageAdapterError> {
         let adapter = self.image.as_mut().ok_or(ImageAdapterError::NotEnabled)?;
-        adapter.ring_forget(offer)
+        if let Some(dma) = &mut adapter.dma {
+            dma.producer_mut()
+                .ok_or(ImageAdapterError::Closed)?
+                .forget(offer)?;
+            dma.forget_offer(offer);
+            Ok(())
+        } else {
+            adapter.ring_forget(offer)
+        }
     }
 
     /// Queue one owned-ring upload: `pixels` (exactly
@@ -839,6 +847,10 @@ impl ShellConnection {
         offer: u64,
         now: std::time::Instant,
     ) -> Result<Ticket, ShellClientError> {
+        if self.image.as_ref().is_some_and(|a| a.dma.is_some()) {
+            return self.image_cancel_dma_buf(offer, now);
+        }
+
         if self.image.is_none() {
             return Err(ShellClientError::InvalidArgument(
                 "image adapter not enabled",
@@ -1092,7 +1104,6 @@ fn validate_image_options(
     if options.minimum_revision > sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
         || options.maximum_revision < sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
         || options.required_capabilities & IMAGE_CAPABILITY_OWNED_RING == 0
-        || options.required_capabilities & IMAGE_CAPABILITY_DMA_BUF != 0
         || image.transfer_timeout_ms == 0
         || image.formats_capacity < 64
     {
@@ -1109,3 +1120,6 @@ pub struct ImageReadiness<'a> {
     pub image_fd: Option<BorrowedFd<'a>>,
     pub image_events: sophia_image_producer::ReadyEvents,
 }
+
+#[path = "files/image_dma_api.rs"]
+mod image_dma_api;

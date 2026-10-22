@@ -27,19 +27,31 @@ pub struct ImageProducer {
 }
 
 impl ImageProducer {
+    fn required_kind(&self) -> u32 {
+        if self.config.role == ImageRole::Shell && self.config.revision == 10 {
+            6
+        } else {
+            KIND_BIT_SEALED
+        }
+    }
+
     pub fn new(config: ImageProducerConfig, now_ms: u64) -> Result<Self, ProducerError> {
         if config.connection_epoch == 0
             || config.transfer_timeout_ms == 0
             || now_ms >= config.startup_deadline_ms
             || config.granted_kinds == 0
-            || config.granted_kinds & !0b11 != 0
+            || config.granted_kinds & !0b111 != 0
         {
             return Err(ProducerError::Argument);
         }
         // Exactly the known negotiated revisions; nothing is inferred.
         let known = match config.role {
-            ImageRole::Shell => config.revision == 9,
-            ImageRole::Lock => config.revision == 2,
+            ImageRole::Shell => match config.revision {
+                9 => config.granted_kinds & !0b11 == 0,
+                10 => config.granted_kinds == 0b110,
+                _ => false,
+            },
+            ImageRole::Lock => config.revision == 2 && config.granted_kinds & !0b11 == 0,
         };
         if !known {
             return Err(ProducerError::Argument);
@@ -157,7 +169,7 @@ impl ImageProducer {
             self.fail(CloseCause::Discovery);
             return Err(ProducerError::Closed);
         }
-        if expect.source_kinds() & KIND_BIT_SEALED == 0 {
+        if expect.source_kinds() & self.required_kind() != self.required_kind() {
             self.fail(CloseCause::Unavailable);
             return Err(ProducerError::Closed);
         }
@@ -368,7 +380,12 @@ impl ImageProducer {
             let Some(index) = next else { return changed };
             let metadata = self.slots[index].metadata;
             let bytes = match &self.expect {
-                Some(expect) => role::source_bytes(expect, metadata),
+                Some(expect) => role::source_bytes(
+                    expect,
+                    metadata,
+                    self.slots[index].plane_offset,
+                    self.slots[index].plane_stride,
+                ),
                 None => Err(()),
             };
             let Ok(bytes) = bytes else {
@@ -522,7 +539,7 @@ impl ImageProducer {
         if let Some(expect) = &mut self.expect {
             expect.set_source_kinds(granted);
         }
-        if granted & KIND_BIT_SEALED == 0 {
+        if granted & self.required_kind() != self.required_kind() {
             self.fail(CloseCause::Unavailable);
             return Err(ProducerError::Closed);
         }

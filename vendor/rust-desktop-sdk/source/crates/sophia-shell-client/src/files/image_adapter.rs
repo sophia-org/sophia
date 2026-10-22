@@ -1,14 +1,8 @@
-//! The ISB image adapter for a content-granted r9 shell session.
+//! Shell r10 image adapters: owned-ring CPU uploads by default, or explicit DMA capture.
 //!
-//! The adapter owns one [`ImageProducer`]: it reads the
-//! `image-channel`, `image-limits` and `image-formats` objects through
-//! the session's own 9P wire with a dedicated bounded staged reader
-//! (one complete set per pass, exact read errno, immutable EOF by a
-//! zero-length read, clunk after every file), connects the discovered
-//! endpoint, and routes image journal records and offer
-//! `ResourceStatus` outcomes to the producer. Image records are
-//! consumed by the session and never delivered as content;
-//! `ResourceStatus` is routed and still delivered.
+//! Both modes share bounded staged discovery over the session's 9P connection.
+//! DMA mode submits ordinary ImageBegin tickets and sends a source only after
+//! ImageAdmitted. Exact SourceReleased governs custody independently of status.
 //!
 //! Time has one explicit origin: image-enabled construction takes
 //! `(Instant, origin_ms)`, the caller's monotonic instant and the
@@ -18,6 +12,9 @@
 //! deadline in that same caller millisecond domain. A drive instant
 //! before the origin, or a millisecond value that overflows, is an
 //! argument error and changes nothing.
+
+#[path = "image_dma.rs"]
+mod dma;
 
 use std::os::fd::OwnedFd;
 use std::path::PathBuf;
@@ -34,8 +31,7 @@ pub const IMAGE_CAPABILITY_SEALED: u64 = 1 << 13;
 /// Negotiated capability bit 15: owned-ring image channel, shell
 /// revision 10's sole CPU image source.
 pub const IMAGE_CAPABILITY_OWNED_RING: u64 = 1 << 15;
-/// Negotiated capability bit 14: DMA-BUF image channel. The adapter
-/// never requests it and image opt-in refuses it as required.
+/// Negotiated capability bit 14: optional producer-completed DMA-BUF capture.
 pub const IMAGE_CAPABILITY_DMA_BUF: u64 = 1 << 14;
 
 /// Caller configuration for the opt-in image adapter.
@@ -202,7 +198,7 @@ use crate::ShellClientError;
 impl crate::ShellConnection {
     /// Enable ISB discovery on this already negotiated content connection.
     /// Callers may first consume `ContentLimits` and use those bounds and the
-    /// transfer timeout to construct `image`. The role's r9 and sealed grant
+    /// transfer timeout to construct `image`. Content and owned-ring capabilities
     /// must already be negotiated; this method grants no capability.
     ///
     /// `origin` and `origin_ms` name the same CLOCK_MONOTONIC instant. Startup
@@ -226,12 +222,12 @@ impl crate::ShellConnection {
         // Shell revision 10's sole CPU image source is the owned ring:
         // revision 10 with the owned-ring capability and content
         // surface. Sealed bit 13 is the lock plane and is not a shell
-        // fallback; DMA opt-in remains refused as required.
+        // fallback. DMA capture is selected explicitly by enable_dma_image.
         let required = IMAGE_CAPABILITY_OWNED_RING
             | sophia_shell_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
         if self.welcome.selected_revision != sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
             || self.welcome.capabilities & required != required
-            || self.welcome.capabilities & IMAGE_CAPABILITY_DMA_BUF != 0
+            || self.welcome.capabilities & IMAGE_CAPABILITY_SEALED != 0
         {
             return Err(ShellClientError::MissingCapability);
         }
@@ -247,6 +243,32 @@ impl crate::ShellConnection {
         )?;
         self.wire.image_enabled = true;
         self.image = Some(adapter);
+        Ok(())
+    }
+    /// Enable producer-completed DMA-BUF capture on an r10 connection that granted bit 14.
+    /// Owned-ring remains the default selected by `enable_image`.
+    pub fn enable_dma_image(
+        &mut self,
+        image: ShellImageConfig,
+        origin: Instant,
+        origin_ms: u64,
+    ) -> Result<(), ShellClientError> {
+        let required = IMAGE_CAPABILITY_DMA_BUF
+            | IMAGE_CAPABILITY_OWNED_RING
+            | sophia_shell_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
+        if self.welcome.selected_revision != 10 || self.welcome.capabilities & required != required
+        {
+            return Err(ShellClientError::MissingCapability);
+        }
+        let dma = dma::DmaAdapter::new(
+            image.clone(),
+            self.welcome.connection_epoch,
+            self.welcome.capabilities,
+            origin,
+            origin_ms,
+        )?;
+        self.enable_image(image, origin, origin_ms)?;
+        self.image.as_mut().expect("adapter enabled").dma = Some(dma);
         Ok(())
     }
 }
@@ -607,6 +629,7 @@ struct PendingControl {
 /// 10's owned ring, the shell's sole CPU image source. Queries are on
 /// this type; the connection drives it from its session drives.
 pub struct ImageAdapter {
+    pub(crate) dma: Option<dma::DmaAdapter>,
     config: ShellImageConfig,
     epoch: u64,
     ring: Option<RingProducer>,
@@ -644,6 +667,7 @@ impl ImageAdapter {
             return Err(ShellClientError::InvalidArgument("image ring config"));
         }
         Ok(Self {
+            dma: None,
             config,
             epoch: connection_epoch,
             ring: None,
@@ -670,6 +694,9 @@ impl ImageAdapter {
     /// and advance the watermark. Called before any drive or queue
     /// mutation that would act on this time.
     pub(crate) fn advance_clock(&mut self, now: Instant) -> Result<u64, ImageAdapterError> {
+        if let Some(dma) = &mut self.dma {
+            return dma.advance_clock(now);
+        }
         let now_ms = self.now_ms(now)?;
         if now_ms < self.last_ms {
             return Err(ImageAdapterError::Argument);
@@ -680,6 +707,9 @@ impl ImageAdapter {
 
     /// Convert a session instant to the caller's millisecond domain.
     pub(crate) fn now_ms(&self, now: Instant) -> Result<u64, ImageAdapterError> {
+        if let Some(dma) = &self.dma {
+            return dma.now_ms(now);
+        }
         let elapsed = now
             .checked_duration_since(self.origin)
             .ok_or(ImageAdapterError::Argument)?;
@@ -706,9 +736,12 @@ impl ImageAdapter {
     pub(crate) fn tick(
         &mut self,
         wire: &mut FileWire,
-        _ledger: &crate::custody::Ledger,
+        ledger: &crate::custody::Ledger,
         now: Instant,
     ) -> Result<(), ShellClientError> {
+        if let Some(dma) = &mut self.dma {
+            return dma.tick(wire, ledger, now);
+        }
         let now_ms = self
             .advance_clock(now)
             .map_err(|_| ShellClientError::InvalidArgument("image clock"))?;
@@ -893,8 +926,7 @@ impl ImageAdapter {
                     return;
                 }
                 if discovery.connection_epoch != self.epoch
-                    || discovery.source_kinds
-                        != sophia_shell_protocol::shell_files::SHELL_IMAGE_SOURCE_OWNED_RING
+                    || !matches!(discovery.source_kinds, 4 | 6)
                     || limits.limits_generation != discovery.limits_generation
                     || limits.max_resource_bytes == 0
                     || (self.config.bounds.max_resource_bytes != 0
@@ -1119,6 +1151,9 @@ impl ImageAdapter {
 
     /// The session ended: unsettled offers become Unknown, once.
     pub(crate) fn on_session_final(&mut self) {
+        if let Some(dma) = &mut self.dma {
+            return dma.on_session_final();
+        }
         if self.final_notified {
             return;
         }
@@ -1131,6 +1166,9 @@ impl ImageAdapter {
     /// The next instant the caller should drive the connection for
     /// the adapter's sake, if any.
     pub(crate) fn next_deadline(&self, now: Instant) -> Option<Instant> {
+        if let Some(dma) = &self.dma {
+            return dma.next_deadline(now);
+        }
         self.now_ms(now).ok()?;
         let mut due: Option<u64> = None;
         if matches!(self.stage, Stage::Discovering | Stage::Connecting) {
@@ -1142,6 +1180,9 @@ impl ImageAdapter {
     }
 
     pub fn channel(&self) -> Option<ChannelState> {
+        if let Some(dma) = &self.dma {
+            return dma.channel();
+        }
         if self.failure.is_some() {
             return Some(ChannelState::Closed);
         }
@@ -1157,10 +1198,16 @@ impl ImageAdapter {
     }
 
     pub fn cause(&self) -> Option<CloseCause> {
+        if let Some(dma) = &self.dma {
+            return dma.cause();
+        }
         self.ring.as_ref().map(RingProducer::cause).or(self.failure)
     }
 
     pub fn path(&self) -> Option<ImagePath> {
+        if let Some(dma) = &self.dma {
+            return dma.path();
+        }
         Some(if self.failure.is_some() {
             ImagePath::Error
         } else if self.ring.as_ref().is_some_and(RingProducer::ready) {
@@ -1173,6 +1220,15 @@ impl ImageAdapter {
     }
 
     /// One ring offer, including adoptability (`RingOfferState::Settled`).
+    /// DMA custody is settled only after its exact SourceReleased record.
+    pub fn dma_offer(&self, offer: u64) -> Option<sophia_image_producer::OfferInfo> {
+        self.dma.as_ref().and_then(|dma| dma.offer(offer))
+    }
+
+    pub fn dma_offers(&self) -> Vec<sophia_image_producer::OfferInfo> {
+        self.dma.as_ref().map_or_else(Vec::new, |dma| dma.offers())
+    }
+
     pub fn ring_offer(&self, offer: u64) -> Option<sophia_image_producer::RingOfferInfo> {
         self.ring.as_ref().and_then(|ring| ring.offer(offer))
     }
@@ -1191,11 +1247,17 @@ impl ImageAdapter {
     }
 
     pub fn poll_fd(&self) -> Option<std::os::fd::BorrowedFd<'_>> {
+        if let Some(dma) = &self.dma {
+            return dma.poll_fd();
+        }
         use std::os::fd::AsFd;
         self.socket.as_ref().map(|socket| socket.as_fd())
     }
 
     pub fn poll_events(&self) -> ReadyEvents {
+        if let Some(dma) = &self.dma {
+            return dma.poll_events();
+        }
         ReadyEvents::NONE
     }
 

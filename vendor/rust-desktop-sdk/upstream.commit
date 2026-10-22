@@ -1,14 +1,14 @@
-tree 63a450720eff0dc7920a7f9f2d4ab3cf86b8d431
-parent 4241c55fc70c653c7a7f7304173397d35a4a2ea9
-author Mason Green <mason@greenm01.net> 1792668367 -0400
-committer Mason Green <mason@greenm01.net> 1792668367 -0400
+tree 36fa6f1c29d9e5b7addb281888d0e3d54ea52a72
+parent 57286856687a5e9d032896f2ae81ce75b50abec5
+author Mason Green <mason@greenm01.net> 1792669812 -0400
+committer Mason Green <mason@greenm01.net> 1792669812 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatnyzxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK//gEAwyz85EyZ2UVOH1ew8x96
- Cdp5RHkeTC3spwDTcl/6SEAA/1XeUd5t2wGdaKbvPXTzOwSmeEMnB9JCq7Z1SFyT
- V9YA
- =yX/V
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatn4dBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKB9wD+M3tol4pyNLGctqXCRJHz
+ mrxvnyqRMKIntfq8ChsMLYgA/1GQpjhzlJ+HZr81AL2pmay89vfFeptfKYNOoUGS
+ ZOoP
+ =xbyF
  -----END PGP SIGNATURE-----
 
-Synchronize the shell contract snapshot with r10 production
+Add explicit r10 DMA source custody and shell adapters

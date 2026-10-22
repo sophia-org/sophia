@@ -1520,3 +1520,31 @@ layouts and default request storage grow, requiring consumer rebuilds.
 Independent window/recovery tests pass locally; exact signed B3 revisions, export
 adoption and native performance remain pending. Counts come from scripted peers
 and instrumented captures, not a new production metrics API.
+
+
+## Optional shell r10 DMA capture, 2026-10-22
+
+Rust `ShellConnection::enable_dma_image` / `NativeLauncherSession::enable_dma_image`
+select a DMA adapter only after content, owned-ring and DMA capability bit 14
+are granted. The ordinary `enable_image` stays owned-ring. Both accept mask 6
+in discovery; a ring-only connection receives ChannelReady mask 4.
+`image_begin_dma_buf(metadata, fd, offset, stride, now)` offers one completed
+LINEAR XRGB8888 plane. `ImageProducer::begin_dma_buf` is the lower-level API.
+The producer validates the format row and actual FD span and size independently
+of logical `width * height * 4` bytes; it sends no Source before ImageAdmitted.
+
+The descriptor is returned on refusal before custody. After transfer the caller
+must retain the backing allocation and must not write it until exact
+SourceReleased. Accepted alone does not settle custody. Cancellation reserves its
+control queue entry before marking the offer; disconnect is Unknown, not proof
+of GPU completion. Native adoption requires Accepted and CaptureComplete and
+rechecks the current grant and bounds. Lock and sealed r9 behavior is unchanged.
+
+C counterparts are `sophia_ip_begin_dma_buf` and
+`sophia_ss_image_begin_dma_buf` with the `dma_buf` adapter setting. Initial C
+commit `b26f7c2d3509a58a19f16a168fb67083e8e5710a` still needs the positive adapter
+flow and size/plane validation corrections identified during paired review;
+that revision is not a parity claim. Final paired revisions belong in Sophia's
+verified snapshot manifests. Supplied-memfd tests prove packet shape and custody
+only. Real GPU completion, device identity, immutable capture and performance
+remain t339 native qualification gates.

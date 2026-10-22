@@ -900,3 +900,12 @@ qualification remain separate gates; no B3 performance result is claimed.
 ## t339 optional r10 DMA-BUF record vocabulary
 
 The image-channel contract comes from signed Sophia `b47a6a094b3cc5a4da0c1a720d32040dbe05dd8d`. Revision 10 admits the existing image lifecycle envelopes and exact ImageBegin receipt for optional DMA-BUF capture. CPU upload remains owned-ring only; source admission belongs to the server. This codec checkpoint does not enable the shell GPU producer or establish C/Rust producer parity, native capture, or performance qualification.
+
+
+## Optional r10 DMA producer and adapter, 2026-10-22
+
+Extends codec snapshot `57286856687a5e9d032896f2ae81ce75b50abec5` with explicit
+producer-completed LINEAR XRGB8888 DMA source custody and shell adapter APIs.
+The optional r10 contract comes from Sophia `b47a6a094b3cc5a4da0c1a720d32040dbe05dd8d`.
+See API-PARITY.md for descriptor ownership, paired C work and unclosed native
+evidence gates. Current owned-ring CPU uploads and the lock ISB plane remain.
