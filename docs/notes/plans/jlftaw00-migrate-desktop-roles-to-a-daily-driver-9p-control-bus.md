@@ -310,10 +310,16 @@ Nix evaluation succeeds for `desktop-dock`, naming release
 was published on `sophia-desktop-sdk-rs` branch `shellr10-owned-ring` so the
 recipe can fetch it; SDK master did not move. Preparation requests, evaluation
 results, the preserved Bemenu gate log and attended/replacement instructions are
-under `~/.local/state/t331/t331-crunch-report-01/t252/`. The frozen
-candidate is building now that t331's capture is complete. The next steps are
-to install its exact store output and perform the attended run. Installation
-and attended acceptance have not started. The earlier failed evaluations remain as superseded preparation
+under `~/.local/state/t331/t331-crunch-report-01/t252/`. The frozen candidate built successfully on October 22. Its output is
+`/nix/store/rj4dbgbkf9x1kic6yczw94nm3s3svdpk-niltempus-desktop-niltempus-39348a3d7eae29466369`.
+The manifest confirms integration `25990ad` and Sophia `7b13b6cae`; the rendered
+profile includes all three shell components at 60 Hz. Run
+`bash ~/.local/state/t331/t331-crunch-report-01/t252/install-desktop.sh` to
+install that exact output. The observed current release is
+`niltempus-9cceca44630d8a69d64f`; installation retains it as the compatible
+whole-release rollback target. `install-preparation.json` records the prior
+selection and profile/manifest hashes. Installation needs sudo authentication;
+installation and the attended run remain pending. The earlier failed evaluations remain as superseded preparation
 history, not accepted evidence.
 
 **Current exit, accepted by niltempus on October 21, 2026:** after t331's

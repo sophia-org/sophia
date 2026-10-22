@@ -60,8 +60,8 @@ scale 1, VRR off, with a 1920×24 fresh panel and two source slots. Cleanup
 receipts confirm success despite openvt's console deallocation warning.
 There is no numerical pass/fail threshold or external comparison. Allocation
 and broader matrix qualification remain t343; Vello stays parked. t252 is
-now the critical path: its signed three-client desktop candidate is building,
-then needs installation and the single attended input/replacement/rollback run.
+now the critical path: its signed three-client desktop candidate has built
+and needs installation and the single attended input/replacement/rollback run.
 
 ### October 22 — startup permissions repaired
 
