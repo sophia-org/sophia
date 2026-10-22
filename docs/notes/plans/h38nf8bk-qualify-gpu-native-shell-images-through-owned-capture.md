@@ -73,9 +73,15 @@ epoch, output and store validation remain unchanged. All four endpoint lifecycle
 tests pass, including the device-binding regression; backend clippy is clean.
 A broader filter exposed an unchanged worker test expecting NotConnected where
 an absent context now returns Unsupported; this fix does not change that path.
-Run-05 restored display, keyboard and terminal modes. The corrected release is
-being prepared for run-06; native presentation and the later Unsupported errors
-remain to be checked there.
+Run-05 restored display, keyboard and terminal modes. Run-06 used Sophia
+`ea989aa04`: the endpoint opened and Lom negotiated r10 on renderD128, then
+reported `image channel closed before Ready`. Lom enabled the SDK's owned-ring
+adapter even when its renderer selected DMA; that adapter refuses Ready mask 6.
+The client fix selects `enable_dma_image` for the DMA renderer. The timing G
+peer had the same mistake; niltempus `f7f303e` selects the DMA adapter and allows
+enough discovery space for its format row. Run-06 again restored the console.
+Native Session presentation remains unproven; a corrected Lom release is being
+prepared for run-07.
 Failed attempts and recovery receipts remain under `session-qualification/`; latest parser acceptance is
 under `launch-validation-04/` there. Native Session presentation remains
 unproven. Run-03 recovery reports restored termios but unavailable KD/keyboard
