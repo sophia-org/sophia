@@ -29,11 +29,25 @@ The matching runner and converter changes are in
 `~/dev/niltempus-external-bar` (`measurement/t331-external-bar`). Focused runner
 checks cover the native plan, fresh/paced/retained ring journals and preserved
 sealed history; converter checks cover all four workloads and reject changed
-slot, schedule and placement evidence. The next step is to pin these changes
-and prepare one fresh owned-ring crunch run using the existing panel diagnostic
-and CPU sampler. It reports CPU/latency, with no comparison threshold. No new
-native result or t331 completion is claimed yet. t252 then needs its single
-attended 60 Hz selected-desktop and rollback run.
+slot, schedule and placement evidence. Integration `1db4861` contains those
+changes; `3c48d82` lets the existing CPU planner read the schema-1 diagnostic
+with a schema-5 fresh owned-ring journal (32 focused planner checks pass).
+
+One fresh owned-ring crunch run is prepared at
+`~/.local/state/t331/t331-crunch-report-01/`. Its clean Session/peer build is
+Sophia `7b13b6cae` in `~/dev/sophia-t331-acceptance`; the runner build is
+integration `1db4861`, followed only by the Python planner change above.
+Build logs, Cargo artifact paths, source revisions and hashes are recorded
+there. `fresh/plan.json`, `fresh/diagnostic.json` and `remote/ready.json` pass
+read-only validation. The run uses tty4, DP-1 at 60 Hz, 120 warmup and 2000
+counted frames; it reports CPU/latency without a comparison threshold.
+`bash ~/.local/state/t331/t331-crunch-report-01/run-report-remote.sh` starts
+the existing bounded PAM/VT launcher. Sudo authentication is required; no
+capture has started. Keep its pinned artifacts unchanged until it completes.
+Analyze the joined native latency and existing CPU window afterward. No new
+native result or t331 completion is claimed yet. t252 then needs an updated
+selected-desktop release and its single attended 60 Hz and rollback run; the
+currently installed release predates the owned-ring merge.
 
 ## Current exit — accepted October 21, 2026
 
