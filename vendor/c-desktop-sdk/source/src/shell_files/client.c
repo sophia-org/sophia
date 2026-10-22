@@ -67,6 +67,10 @@ static int initialize(struct sophia_sf_client *c, struct sophia_9p_client *wire,
         } else if (offer.required_capabilities & SOPHIA_SF_CAP_OWNED_RING) {
             revision = 10;
             mask |= SOPHIA_SF_CAP_OWNED_RING;
+            /* The r10 DMA-BUF opt-in is part of the exact native mask
+             * only when the caller requested it. */
+            if (offer.required_capabilities & SOPHIA_SF_CAP_DMABUF_IMAGE)
+                mask |= SOPHIA_SF_CAP_DMABUF_IMAGE;
         }
         if (offer.minimum_revision > revision || offer.maximum_revision < revision ||
             offer.required_capabilities != mask)
@@ -531,7 +535,11 @@ int sophia_sf_client_submit_bytes(struct sophia_sf_client *c, const void *record
     if (sf_get(b + 8, 8) != c->epoch || c->next_submission == UINT64_MAX)
         return SOPHIA_9P_ARGUMENT;
     if (kind == SOPHIA_SF_KIND_IMAGE_BEGIN) {
-        if (!sf_session_image_r9(c))
+        /* Sealed ingress at r9; at r10 only the DMA-BUF opt-in beside
+         * the owned ring still submits ImageBegin. */
+        if (!sf_session_image_r9(c) &&
+            !(sf_session_image_r10(c) &&
+              (c->welcome.capabilities & SOPHIA_SF_CAP_DMABUF_IMAGE)))
             return SOPHIA_9P_ARGUMENT;
     } else if (!sf_session_candidate_allowed(c, (uint16_t)kind))
         return SOPHIA_9P_ARGUMENT;

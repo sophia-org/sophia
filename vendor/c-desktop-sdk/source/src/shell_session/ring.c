@@ -36,6 +36,15 @@ int ss_ring_mode(const struct sophia_ss_image *img)
     return img && img->session && sf_session_image_r10(&img->session->files);
 }
 
+/* The DMA-BUF opt-in selects the DMA producer lifecycle on this
+ * connection: no ring is registered, driven or routed then, so ring
+ * and DMA offer ids are never live in two producers at once. Both
+ * protocol bits are still negotiated either way. */
+int ss_ring_active(const struct sophia_ss_image *img)
+{
+    return ss_ring_mode(img) && !img->config.dma_buf;
+}
+
 static void back_off(struct sophia_ss_image_ring *r, uint64_t now)
 {
     r->retry_delay = !r->retry_delay ? 4u : r->retry_delay < 256u ? 2u * r->retry_delay : 256u;
@@ -257,14 +266,17 @@ void ss_ring_event(struct sophia_ss_image *img, const uint8_t *b, size_t n)
  * cancellation may carry its own transaction. Failed ResourceRetire/Cancel
  * replies share the record, so every one is kept as evidence and none is a
  * contradiction; the exact SlotReleased decides. */
-void ss_ring_status(struct sophia_ss_image *img, const struct sophia_sf_record *e)
+/* Returns 1 when the status names a live ring slot. Anything else is
+ * not ring evidence: in mixed mode it may belong to a DMA-BUF producer
+ * offer, and the caller routes it there instead. */
+int ss_ring_status(struct sophia_ss_image *img, const struct sophia_sf_record *e)
 {
     struct sophia_ss_image_ring *r = &img->ring;
     const struct sophia_sf_resource_status *v = &e->value.resource_status;
     unsigned i;
     if (final(r) || v->status < 2 || v->status > 4 ||
         !same_grant(img, v->grant_connection_epoch, v->grant_content_epoch))
-        return;
+        return 0;
     for (i = 0; i < SOPHIA_OR_MAX_SLOTS; i++) {
         struct sophia_ss_ring_slot *s = &r->slots[i];
         if (live(s) && s->offer.resource_id == v->resource_id &&
@@ -278,9 +290,10 @@ void ss_ring_status(struct sophia_ss_image *img, const struct sophia_sf_record *
             s->status = (uint8_t)(v->status == 2 ? SOPHIA_IPS_ACCEPTED
                                   : v->status == 3 ? SOPHIA_IPS_REJECTED
                                                    : SOPHIA_IPS_CANCELLED);
-            return;
+            return 1;
         }
     }
+    return 0;
 }
 
 int ss_ring_poll_out(const struct sophia_ss_image *img)
@@ -323,7 +336,7 @@ uint64_t sophia_ss_image_ring_capacity(const struct sophia_ss_image *img, uint32
 void *sophia_ss_image_ring_pixels(struct sophia_ss_image *img, uint32_t slot)
 {
     struct sophia_ss_image_ring *r;
-    if (!ss_ring_mode(img))
+    if (!ss_ring_active(img))
         return NULL;
     r = &img->ring;
     if (r->state != SOPHIA_SS_RING_READY || !r->memory.base || slot >= r->memory.slots ||
@@ -341,7 +354,7 @@ int sophia_ss_image_ring_offer(struct sophia_ss_image *img, uint32_t slot,
     struct sophia_or_offer o;
     uint8_t *word;
     unsigned i;
-    if (!ss_ring_mode(img) || !m || !offer)
+    if (!ss_ring_active(img) || !m || !offer)
         return SOPHIA_IPR_ARGUMENT;
     r = &img->ring;
     if (ss_final(img->session) || final(r))
@@ -429,7 +442,7 @@ int sophia_ss_image_ring_info(const struct sophia_ss_image *img, uint64_t offer,
                               struct sophia_ss_ring_offer_info *out)
 {
     const struct sophia_ss_ring_slot *s;
-    if (!img || !out)
+    if (!img || !out || !ss_ring_active(img))
         return SOPHIA_IPR_ARGUMENT;
     s = by_offer(img, offer);
     if (!s)
@@ -462,7 +475,7 @@ int sophia_ss_image_ring_cancel(struct sophia_ss_image *img, uint64_t offer, uin
     uint8_t bytes[SOPHIA_SS_IMAGE_BEGIN_BYTES];
     size_t n;
     (void)now_ms;
-    if (!ss_ring_mode(img) || !ticket)
+    if (!ss_ring_active(img) || !ticket)
         return SOPHIA_IPR_ARGUMENT;
     s = img->session;
     if (ss_final(s))
@@ -498,7 +511,7 @@ int sophia_ss_image_ring_cancel(struct sophia_ss_image *img, uint64_t offer, uin
 int sophia_ss_image_ring_forget(struct sophia_ss_image *img, uint64_t offer)
 {
     struct sophia_ss_ring_slot *s;
-    if (!ss_ring_mode(img))
+    if (!ss_ring_active(img))
         return SOPHIA_IPR_ARGUMENT;
     s = by_offer(img, offer);
     if (!s)

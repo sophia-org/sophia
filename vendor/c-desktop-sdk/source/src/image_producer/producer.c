@@ -51,9 +51,11 @@ int sophia_ip_init(struct sophia_ip *p, const struct sophia_ip_config *c, uint64
     if (!p || !c || !c->connection_epoch || !c->transfer_timeout_ms || now_ms >= c->startup_deadline_ms ||
         !c->granted_kinds)
         return SOPHIA_IPR_ARGUMENT;
-    /* Shell r10 is exactly the owned ring; r9 and lock r2 subsets of 1|2. */
+    /* Shell r10 is the owned ring, optionally with DMA-BUF (mask 6);
+     * r9 and lock r2 subsets of 1|2. */
     if (c->role == SOPHIA_IC_ROLE_SHELL && c->revision == 10
-            ? c->granted_kinds != SOPHIA_IC_KIND_BIT_OWNED_RING
+            ? c->granted_kinds != SOPHIA_IC_KIND_BIT_OWNED_RING &&
+                  c->granted_kinds != (SOPHIA_IC_KIND_BIT_OWNED_RING | SOPHIA_IC_KIND_BIT_DMABUF)
             : (c->granted_kinds & ~3u) != 0)
         return SOPHIA_IPR_ARGUMENT;
     if (c->role == SOPHIA_IC_ROLE_SHELL ? c->revision != 9 && c->revision != 10
@@ -137,6 +139,7 @@ int sophia_ip_discover(struct sophia_ip *p, const void *text, size_t text_bytes,
     }
     p->hello_timeout_ms = d.hello_timeout_ms;
     p->max_offers = d.max_offers;
+    p->max_dmabuf_source_bytes = l.value.limits.max_dmabuf_source_bytes;
     p->channel = SOPHIA_IPC_DISCOVERED;
     return SOPHIA_IPR_OK;
 }

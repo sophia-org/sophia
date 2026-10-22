@@ -1,14 +1,14 @@
-tree 36fa6f1c29d9e5b7addb281888d0e3d54ea52a72
-parent 57286856687a5e9d032896f2ae81ce75b50abec5
-author Mason Green <mason@greenm01.net> 1792669812 -0400
-committer Mason Green <mason@greenm01.net> 1792669812 -0400
+tree f75156f68fa08b25bb7be3626f24b82670876469
+parent f587d5d7412fbb38363ea649548ff5e9a69bec27
+author Mason Green <mason@greenm01.net> 1792671206 -0400
+committer Mason Green <mason@greenm01.net> 1792671206 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatn4dBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKB9wD+M3tol4pyNLGctqXCRJHz
- mrxvnyqRMKIntfq8ChsMLYgA/1GQpjhzlJ+HZr81AL2pmay89vfFeptfKYNOoUGS
- ZOoP
- =xbyF
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatn95hsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJQggD+K5GsXdq8EUGygyLX/XZq
+ LjhLv3SI7kaFrSmK7eWlZ+EBAIiwlbOcsHYlTzP+eAwRg1CPmZzrZkTDbcto4cFE
+ fMkP
+ =HzA5
  -----END PGP SIGNATURE-----
 
-Add explicit r10 DMA source custody and shell adapters
+Align opaque DMA format checks and paired SDK evidence

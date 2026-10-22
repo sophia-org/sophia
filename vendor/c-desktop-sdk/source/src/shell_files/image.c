@@ -45,10 +45,15 @@ int sf_session_event_decode(const struct sophia_sf_client *c, const uint8_t *b, 
     }
     if (sf_session_image_r9(c) || sf_session_image_r10(c)) {
         uint16_t kind = (uint16_t)sf_get(b + 6, 2);
-        /* r10 keeps only the channel state records. */
+        /* r10 keeps the channel state records, plus ImageAdmitted and
+         * SourceReleased when the DMA-BUF opt-in is granted beside the
+         * ring; sealed image events stay r9-only. */
         if (sf_session_image_kind(kind) &&
             (sf_session_image_r9(c) || kind == SOPHIA_IC_CHANNEL_READY ||
-             kind == SOPHIA_IC_CHANNEL_CLOSED)) {
+             kind == SOPHIA_IC_CHANNEL_CLOSED ||
+             (sf_session_image_r10(c) &&
+              (c->welcome.capabilities & SOPHIA_SF_CAP_DMABUF_IMAGE) &&
+              (kind == SOPHIA_IC_IMAGE_ADMITTED || kind == SOPHIA_IC_SOURCE_RELEASED)))) {
             struct sophia_ic_record v;
             if (sophia_ic_record_decode(b, n, &v) != SOPHIA_IC_OK || v.header.kind != kind ||
                 v.header.epoch != c->epoch)

@@ -111,6 +111,9 @@ struct sophia_ip_offer_info {
 
 struct sophia_ip_slot {
     struct sophia_ic_metadata metadata;
+    /* The one plane row sent with the source; sealed sources use offset 0
+     * and the metadata stride, DMA-BUF sources their declared row. */
+    struct sophia_ic_plane plane;
     uint64_t deadline_ms;
     int fd;
     uint8_t state, deadline_passed, unavailable, status, cancelled;
@@ -122,6 +125,8 @@ struct sophia_ip {
     struct sophia_ic_expect expect;
     struct sophia_ip_slot slots[SOPHIA_IP_MAX_OFFERS];
     uint64_t last_now, last_pass, next_offer, hello_deadline_ms;
+    /* Discovered DMA source byte limit; 0 admits no DMA-BUF source. */
+    uint64_t max_dmabuf_source_bytes;
     uint32_t hello_timeout_ms, max_offers, ignored;
     int fd, have_pass;
     uint8_t channel, cause;
@@ -194,6 +199,21 @@ void sophia_ip_close(struct sophia_ip *);
  * and body are filled; on any other result the caller still owns it. */
 int sophia_ip_begin(struct sophia_ip *, struct sophia_ic_metadata *metadata, int source_fd,
                     uint64_t now_ms, uint8_t body[SOPHIA_IC_METADATA_BYTES], uint64_t *offer);
+
+/* Starts one DMA-BUF offer: metadata must name SOPHIA_IC_SOURCE_DMABUF,
+ * one plane, one descriptor, opaque XRGB (SOPHIA_IC_FORMAT_XRGB8888) with
+ * the LINEAR modifier, and a zero metadata stride; *plane carries the
+ * plane's fd_index 0, offset and stride. The fd must be a dma-buf whose
+ * size covers offset + stride * (height - 1) + width * 4. With take_fd
+ * the producer owns source_fd on OK; without it the producer duplicates
+ * the descriptor and the caller keeps theirs. On any other result the
+ * caller still owns source_fd. Settlement is the ordinary producer
+ * custody: Accepted/Refused statuses, then exact SourceReleased before
+ * the offer may be forgotten; journal loss leaves it UNKNOWN. */
+int sophia_ip_begin_dma_buf(struct sophia_ip *, struct sophia_ic_metadata *metadata,
+                            const struct sophia_ic_plane *plane, int source_fd, int take_fd,
+                            uint64_t now_ms, uint8_t body[SOPHIA_IC_METADATA_BYTES],
+                            uint64_t *offer);
 
 int sophia_ip_offer(const struct sophia_ip *, uint64_t offer, struct sophia_ip_offer_info *);
 /* Live slots in slot order; *cursor starts at 0. Returns 0 when done. */

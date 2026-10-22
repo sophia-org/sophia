@@ -4,6 +4,7 @@
 #ifdef __linux__
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 #define REQUIRED_SEALS (F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL)
@@ -62,7 +63,98 @@ int sophia_ip_begin(struct sophia_ip *p, struct sophia_ic_metadata *metadata, in
         return SOPHIA_IPR_REFUSED;
     memset(free_slot, 0, sizeof *free_slot);
     free_slot->metadata = m;
+    free_slot->plane.stride = m.stride;
     free_slot->fd = source_fd;
+    free_slot->state = SOPHIA_IPO_BEGUN;
+    free_slot->deadline_ms = now_ms + p->config.transfer_timeout_ms;
+    if (free_slot->deadline_ms < now_ms)
+        free_slot->deadline_ms = UINT64_MAX;
+    p->next_offer++;
+    ic_put_metadata(body, &m);
+    *metadata = m;
+    *offer = m.offer;
+    return SOPHIA_IPR_OK;
+}
+
+/* The fd's actual size comes from lseek SEEK_END, the same evidence the
+ * runtime and the Rust producer use; no ioctl can prove a dma-buf or a
+ * device here. The declared plane must lie inside that size, and the
+ * size must fit the discovered DMA source byte limit. All arithmetic
+ * is overflow-checked. */
+static int dma_buf_source(const struct sophia_ip *p, int fd,
+                          const struct sophia_ic_metadata *m,
+                          const struct sophia_ic_plane *plane)
+{
+#ifdef __linux__
+    off_t end = lseek(fd, 0, SEEK_END);
+    uint64_t size, span, plane_end;
+    if (end < 0 || m->height == 0)
+        return 0;
+    size = (uint64_t)end;
+    if (size > p->max_dmabuf_source_bytes)
+        return 0;
+    if (__builtin_mul_overflow((uint64_t)plane->stride, (uint64_t)(m->height - 1), &span) ||
+        __builtin_add_overflow(span, (uint64_t)m->width * 4, &span) ||
+        __builtin_add_overflow(plane->offset, span, &plane_end))
+        return 0;
+    return plane_end <= size;
+#else
+    (void)p;
+    (void)fd;
+    (void)m;
+    (void)plane;
+    return 0;
+#endif
+}
+
+int sophia_ip_begin_dma_buf(struct sophia_ip *p, struct sophia_ic_metadata *metadata,
+                            const struct sophia_ic_plane *plane, int source_fd, int take_fd,
+                            uint64_t now_ms, uint8_t body[SOPHIA_IC_METADATA_BYTES],
+                            uint64_t *offer)
+{
+    struct sophia_ic_metadata m;
+    struct sophia_ip_slot *free_slot = NULL;
+    unsigned i, live = 0;
+    int owned_fd;
+    if (!p || !metadata || !plane || !body || !offer || source_fd < 0 || !ip_clock(p, now_ms))
+        return SOPHIA_IPR_ARGUMENT;
+    if (p->channel != SOPHIA_IPC_READY)
+        return p->channel == SOPHIA_IPC_CLOSED ? SOPHIA_IPR_CLOSED : SOPHIA_IPR_AGAIN;
+    if (!p->next_offer) {
+        ip_fail(p, SOPHIA_IPX_EXHAUSTED);
+        return SOPHIA_IPR_EXHAUSTED;
+    }
+    for (i = 0; i < SOPHIA_IP_MAX_OFFERS; i++) {
+        struct sophia_ip_slot *s = &p->slots[i];
+        if (s->state == SOPHIA_IPO_FREE) {
+            if (!free_slot)
+                free_slot = s;
+            continue;
+        }
+        live++;
+        if (s->state != SOPHIA_IPO_REFUSED && s->state != SOPHIA_IPO_SETTLED &&
+            s->state != SOPHIA_IPO_UNKNOWN && s->metadata.resource_id == metadata->resource_id &&
+            s->metadata.resource_generation == metadata->resource_generation)
+            return SOPHIA_IPR_REFUSED;
+    }
+    if (!free_slot || live >= p->max_offers)
+        return SOPHIA_IPR_BUSY;
+    m = *metadata;
+    m.offer = p->next_offer;
+    /* Slice one: one-plane LINEAR opaque XRGB only (contract). */
+    if (m.source_kind != SOPHIA_IC_SOURCE_DMABUF || m.source_format != 0x34325258u ||
+        m.modifier != 0 || m.plane_count != 1 || m.descriptor_count != 1 || m.stride != 0 ||
+        plane->fd_index != 0 || plane->stride < (uint64_t)m.width * 4 ||
+        sophia_ic_metadata_admissible(&m, &p->expect) != SOPHIA_IC_OK ||
+        !dma_buf_source(p, source_fd, &m, plane))
+        return SOPHIA_IPR_REFUSED;
+    owned_fd = take_fd ? source_fd : fcntl(source_fd, F_DUPFD_CLOEXEC, 0);
+    if (owned_fd < 0)
+        return SOPHIA_IPR_REFUSED;
+    memset(free_slot, 0, sizeof *free_slot);
+    free_slot->metadata = m;
+    free_slot->plane = *plane;
+    free_slot->fd = owned_fd;
     free_slot->state = SOPHIA_IPO_BEGUN;
     free_slot->deadline_ms = now_ms + p->config.transfer_timeout_ms;
     if (free_slot->deadline_ms < now_ms)

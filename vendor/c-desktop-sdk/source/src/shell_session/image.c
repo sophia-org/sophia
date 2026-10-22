@@ -34,11 +34,15 @@ static uint64_t image_bit(uint16_t revision)
     return revision == SOPHIA_SF_REVISION_OWNED_RING ? RING_BIT : SEALED_BIT;
 }
 
-static int image_mask(uint64_t capabilities, uint16_t revision)
+static int image_mask(uint64_t capabilities, uint16_t revision, int dma_buf)
 {
-    uint64_t want = image_bit(revision) | CONTENT_BIT;
+    uint64_t image = image_bit(revision) |
+                     (dma_buf && revision == SOPHIA_SF_REVISION_OWNED_RING ? DMA_BIT : 0);
+    uint64_t want = image | CONTENT_BIT;
+    if (dma_buf && revision != SOPHIA_SF_REVISION_OWNED_RING)
+        return 0;
     return (capabilities & want) == want &&
-           !(capabilities & (SEALED_BIT | DMA_BIT | RING_BIT) & ~image_bit(revision));
+           !(capabilities & (SEALED_BIT | DMA_BIT | RING_BIT) & ~image);
 }
 
 int sophia_ss_image_attach(struct sophia_ss *s, struct sophia_ss_image *img)
@@ -51,12 +55,13 @@ int sophia_ss_image_attach(struct sophia_ss *s, struct sophia_ss_image *img)
     revision = o->required_capabilities & RING_BIT ? SOPHIA_SF_REVISION_OWNED_RING
                                                    : SOPHIA_SF_REVISION_IMAGE_CHANNEL;
     if (o->minimum_revision > revision || o->maximum_revision < revision ||
-        !image_mask(o->required_capabilities, revision))
+        !image_mask(o->required_capabilities, revision, img->config.dma_buf))
         return SOPHIA_IPR_ARGUMENT;
     if ((s->state != SOPHIA_SS_NEGOTIATING && s->state != SOPHIA_SS_READY) || s->image)
         return SOPHIA_IPR_BUSY;
     if (s->files.negotiated && (s->files.welcome.selected_revision != revision ||
-                                !image_mask(s->files.welcome.capabilities, revision)))
+                                !image_mask(s->files.welcome.capabilities, revision,
+                                            img->config.dma_buf)))
         return SOPHIA_IPR_ARGUMENT;
     img->session = s;
     s->image = img;
@@ -91,7 +96,7 @@ int64_t sophia_ss_image_timeout(const struct sophia_ss_image *img, uint64_t now_
     if (!img || !img->started)
         return -1;
     t = sophia_ip_timeout(&img->producer, now_ms);
-    if (ss_ring_mode(img)) {
+    if (ss_ring_active(img)) {
         int64_t ring = ss_ring_timeout(img, now_ms);
         if (ring >= 0 && (t < 0 || ring < t))
             t = ring;
@@ -124,6 +129,14 @@ static int start_producer(struct sophia_ss_image *img, uint64_t now)
     c.granted_kinds = ((w->capabilities & SEALED_BIT) ? SOPHIA_IC_KIND_BIT_SEALED : 0u) |
                       ((w->capabilities & DMA_BIT) ? SOPHIA_IC_KIND_BIT_DMABUF : 0u) |
                       ((w->capabilities & RING_BIT) ? SOPHIA_IC_KIND_BIT_OWNED_RING : 0u);
+    /* At r10 discovery may advertise DMA-BUF to every client while
+     * ChannelReady grants it only to some: the producer tolerates the
+     * advertised superset, ChannelReady narrows expect to the grant,
+     * and config.dma_buf alone selects the DMA lifecycle. A ring-only
+     * client granted 4 can therefore never begin a DMA source. */
+    if (c.revision == SOPHIA_SF_REVISION_OWNED_RING &&
+        (w->capabilities & RING_BIT))
+        c.granted_kinds |= SOPHIA_IC_KIND_BIT_DMABUF;
     if (sophia_ip_init(&img->producer, &c, now) != SOPHIA_IPR_OK) {
         /* A configuration that cannot serve this epoch: close as the caller. */
         memset(&img->producer, 0, sizeof(img->producer));
@@ -290,11 +303,12 @@ void ss_image_drive(struct sophia_ss *s, uint64_t now)
         else
             connecting(img, now);
     }
-    if (ss_ring_mode(img) && img->stage == STAGE_RUNNING && !ss_final(s))
+    if (ss_ring_active(img) && img->stage == STAGE_RUNNING && !ss_final(s))
         ss_ring_drive(img, now);
     if ((ss_final(s) || img->lost) && img->started) {
         sophia_ip_journal_lost(&img->producer);
-        ss_ring_lost(img);
+        if (ss_ring_active(img))
+            ss_ring_lost(img);
     }
 }
 
@@ -308,7 +322,9 @@ int ss_image_event(struct sophia_ss *s, const struct sophia_sf_record *e)
     if (!img || !sf_session_image_kind(e->header.kind))
         return 0;
     if (e->header.kind == SOPHIA_SS_RING_EVENT) {
-        if (img->started)
+        /* In DMA mode no ring exists to route to; the record is still
+         * consumed as an image record, never reinterpreted. */
+        if (img->started && ss_ring_active(img))
             ss_ring_event(img, s->files.event_bytes, (size_t)sf_get(s->files.event_bytes, 4));
         return 1;
     }
@@ -332,10 +348,11 @@ void ss_image_status(struct sophia_ss *s)
         e->header.kind != SOPHIA_SF_RESOURCE_STATUS || e->header.sequence <= img->status_seen)
         return;
     img->status_seen = e->header.sequence;
-    if (ss_ring_mode(img)) {
-        ss_ring_status(img, e);
+    /* Ring slots claim their own statuses. A DMA-BUF producer offer in
+     * the same mixed connection is not a ring slot: its status belongs
+     * to the producer, never to the RingProducer. */
+    if (ss_ring_active(img) && ss_ring_status(img, e))
         return;
-    }
     v = &e->value.resource_status;
     if (v->status < 2 || v->status > 4 ||
         sophia_ip_offer(&img->producer, v->transaction, &info) != SOPHIA_IPR_OK ||
@@ -390,6 +407,86 @@ int sophia_ss_image_begin(struct sophia_ss_image *img, struct sophia_ic_metadata
     if (free_ticket == SOPHIA_IP_MAX_OFFERS || !ss_room(s, SOPHIA_SS_IMAGE_BEGIN_BYTES))
         return SOPHIA_IPR_BUSY;
     r = sophia_ip_begin(&img->producer, metadata, source_fd, now_ms, body, offer);
+    if (r != SOPHIA_IPR_OK)
+        return r;
+    memset(&record, 0, sizeof(record));
+    record.header.kind = SOPHIA_IC_IMAGE_BEGIN;
+    record.header.epoch = s->files.epoch;
+    record.header.submission = 1;
+    record.value.image = *metadata;
+    if (sophia_ic_record_encode(bytes, sizeof(bytes), &record, &n) != SOPHIA_IC_OK ||
+        n != sizeof(bytes) || memcmp(bytes + 32, body, sizeof(body)) ||
+        ss_admit_encoded(s, bytes, n, ticket)) {
+        /* Unreachable after the checks above; keep custody honest anyway. */
+        (void)sophia_ip_begin_refused(&img->producer, *offer, now_ms);
+        return SOPHIA_IPR_REFUSED;
+    }
+    img->tickets[free_ticket].ticket = *ticket;
+    img->tickets[free_ticket].offer = *offer;
+    (void)ss_pump(s, 0);
+    return SOPHIA_IPR_OK;
+}
+
+/* The published formats object the adapter retained at discovery must
+ * carry one exact row for this source: same output, fourcc and
+ * modifier, opaque, and dimensions inside the row bounds. Anything
+ * else is refused before the producer takes the fd. */
+static int dma_format_row(const struct sophia_ss_image *img,
+                          const struct sophia_ic_metadata *m)
+{
+    struct sophia_ic_record record;
+    uint32_t i;
+    if (!img->formats_used ||
+        sophia_ic_record_decode(img->config.formats, img->formats_used, &record) !=
+            SOPHIA_IC_OK ||
+        record.header.kind != SOPHIA_IC_IMAGE_FORMATS)
+        return 0;
+    for (i = 0; i < record.value.formats.row_count; i++) {
+        struct sophia_ic_format_row row;
+        if (sophia_ic_format_row_at(&record.value.formats, i, &row) != SOPHIA_IC_OK)
+            return 0;
+        if (row.output == m->output && row.fourcc == m->source_format &&
+            row.modifier == m->modifier && row.flags == SOPHIA_IC_FORMAT_OPAQUE &&
+            m->width <= row.max_width && m->height <= row.max_height)
+            return 1;
+    }
+    return 0;
+}
+
+int sophia_ss_image_begin_dma_buf(struct sophia_ss_image *img, struct sophia_ic_metadata *metadata,
+                                  const struct sophia_ic_plane *plane, int source_fd, int take_fd,
+                                  uint64_t now_ms, uint64_t *offer, uint64_t *ticket)
+{
+    struct sophia_ss *s;
+    struct sophia_ic_record record;
+    uint8_t bytes[SOPHIA_SS_IMAGE_BEGIN_BYTES];
+    uint8_t body[SOPHIA_IC_METADATA_BYTES];
+    size_t n;
+    unsigned i, free_ticket = SOPHIA_IP_MAX_OFFERS;
+    int r;
+    if (!img || !img->session || !metadata || !plane || !offer || !ticket || source_fd < 0)
+        return SOPHIA_IPR_ARGUMENT;
+    s = img->session;
+    if (!img->started || ss_final(s))
+        return SOPHIA_IPR_CLOSED;
+    /* DMA-BUF exists only as the r10 opt-in; it selects the DMA
+     * producer lifecycle instead of the ring on this connection. */
+    if (!sf_session_image_r10(&s->files) || !img->config.dma_buf)
+        return SOPHIA_IPR_REFUSED;
+    if (s->state != SOPHIA_SS_READY)
+        return SOPHIA_IPR_AGAIN;
+    for (i = 0; i < SOPHIA_IP_MAX_OFFERS; i++)
+        if (!img->tickets[i].ticket) {
+            free_ticket = i;
+            break;
+        }
+    /* Room first: once the producer owns the fd, admission cannot fail. */
+    if (free_ticket == SOPHIA_IP_MAX_OFFERS || !ss_room(s, SOPHIA_SS_IMAGE_BEGIN_BYTES))
+        return SOPHIA_IPR_BUSY;
+    if (!dma_format_row(img, metadata))
+        return SOPHIA_IPR_REFUSED;
+    r = sophia_ip_begin_dma_buf(&img->producer, metadata, plane, source_fd, take_fd, now_ms,
+                                body, offer);
     if (r != SOPHIA_IPR_OK)
         return r;
     memset(&record, 0, sizeof(record));

@@ -22,11 +22,16 @@ int sf_session_event_parse(struct sophia_sf_client *c)
             v->selected_revision > c->offer.maximum_revision ||
             (v->capabilities & c->offer.required_capabilities) != c->offer.required_capabilities)
             return SOPHIA_9P_INVALID;
-        /* Sealed and DMA bits exist only at r9, the owned ring only at r10;
-         * the revision is never inferred. */
+        /* Sealed exists only at r9 and the owned ring only at r10; DMA-BUF
+         * is r9 legacy or the r10 opt-in beside the ring. The revision is
+         * never inferred. */
         if (c->image_mode &&
-            (((v->capabilities & (SOPHIA_SF_CAP_SEALED_IMAGE | SOPHIA_SF_CAP_DMABUF_IMAGE)) &&
+            (((v->capabilities & SOPHIA_SF_CAP_SEALED_IMAGE) &&
               v->selected_revision != SOPHIA_SF_REVISION_IMAGE_CHANNEL) ||
+             ((v->capabilities & SOPHIA_SF_CAP_DMABUF_IMAGE) &&
+              v->selected_revision != SOPHIA_SF_REVISION_IMAGE_CHANNEL &&
+              !(v->selected_revision == SOPHIA_SF_REVISION_OWNED_RING &&
+                (v->capabilities & SOPHIA_SF_CAP_OWNED_RING))) ||
              ((v->capabilities & SOPHIA_SF_CAP_OWNED_RING) &&
               v->selected_revision != SOPHIA_SF_REVISION_OWNED_RING)))
             return SOPHIA_9P_INVALID;

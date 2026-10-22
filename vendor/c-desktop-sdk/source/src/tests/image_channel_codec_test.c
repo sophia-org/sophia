@@ -495,7 +495,11 @@ static void discovery_controls(void)
            d.source_kinds == SOPHIA_IC_KIND_BIT_OWNED_RING);
     at[13] = '5';
     assert(sophia_ic_discovery_decode(b, v->count, &d) == SOPHIA_IC_SOURCE_KIND);
+    /* Mask 6 (owned ring plus DMA-BUF) is the r10 opt-in discovery. */
     at[13] = '6';
+    assert(sophia_ic_discovery_decode(b, v->count, &d) == SOPHIA_IC_OK &&
+           d.source_kinds == (SOPHIA_IC_KIND_BIT_OWNED_RING | SOPHIA_IC_KIND_BIT_DMABUF));
+    at[13] = '7';
     assert(sophia_ic_discovery_decode(b, v->count, &d) == SOPHIA_IC_SOURCE_KIND);
     at[13] = '4';
     at = strstr((char *)b, "role=1");

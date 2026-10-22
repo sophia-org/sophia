@@ -138,9 +138,12 @@ enum sophia_ic_refusal sophia_ic_discovery_decode(const void *src, size_t n,
         return SOPHIA_IC_EPOCH;
     if (!d.channel_generation || !d.formats_generation || !d.limits_generation)
         return SOPHIA_IC_GENERATION;
-    /* Shell r10 is exactly the owned ring; lock never names it. */
+    /* Shell r10 is the owned ring, optionally with DMA-BUF (mask 6);
+     * lock never names either. */
     if (!d.source_kinds || (d.source_kinds & ~3u && (d.role != SOPHIA_IC_ROLE_SHELL ||
-                                                   d.source_kinds != SOPHIA_IC_KIND_BIT_OWNED_RING)))
+                                                   (d.source_kinds != SOPHIA_IC_KIND_BIT_OWNED_RING &&
+                                                    d.source_kinds != (SOPHIA_IC_KIND_BIT_OWNED_RING |
+                                                                        SOPHIA_IC_KIND_BIT_DMABUF)))))
         return SOPHIA_IC_SOURCE_KIND;
     if (d.max_packet_bytes != SOPHIA_IC_SOURCE_BYTES || d.max_fds != SOPHIA_IC_MAX_FDS)
         return SOPHIA_IC_CONSTANTS;

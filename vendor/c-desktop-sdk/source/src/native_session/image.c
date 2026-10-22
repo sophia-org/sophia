@@ -75,12 +75,21 @@ int sophia_ns_adopt_image(struct sophia_ns *n, struct sophia_ss_image *image, ui
     limits = sophia_ss_limits(n->ss);
     if (!limits || !ns_grant(n, limits->grant_connection_epoch, limits->grant_content_epoch))
         return SOPHIA_9P_INVALID;
-    if (ss_ring_mode(image))
-        return adopt_ring(n, image, offer);
+    if (ss_ring_active(image)) {
+        struct sophia_ss_ring_offer_info info;
+        if (sophia_ss_image_ring_info(image, offer, &info) == SOPHIA_IPR_OK)
+            return adopt_ring(n, image, offer);
+        /* Not a ring offer: falls through to the producer rule below. */
+    }
     source = ip_slot(&image->producer, offer);
+    /* A settled DMA capture requires Accepted plus SourceReleased with
+     * disposition Captured (2); Retained (1) is the sealed/ISB rule and
+     * never adopts a DMA source. */
     if (image->producer.config.connection_epoch != n->limits.grant_connection_epoch ||
         !source || source->state != SOPHIA_IPO_SETTLED || source->status != SOPHIA_IPS_ACCEPTED ||
-        source->disposition != SOPHIA_IC_RETAINED ||
+        source->disposition != (source->metadata.source_kind == SOPHIA_IC_SOURCE_DMABUF
+                                     ? SOPHIA_IC_CAPTURED
+                                     : SOPHIA_IC_RETAINED) ||
         source->metadata.admission_epoch != n->limits.grant_content_epoch)
         return SOPHIA_9P_INVALID;
     metadata = source->metadata;

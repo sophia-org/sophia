@@ -1541,10 +1541,17 @@ of GPU completion. Native adoption requires Accepted and CaptureComplete and
 rechecks the current grant and bounds. Lock and sealed r9 behavior is unchanged.
 
 C counterparts are `sophia_ip_begin_dma_buf` and
-`sophia_ss_image_begin_dma_buf` with the `dma_buf` adapter setting. Initial C
-commit `b26f7c2d3509a58a19f16a168fb67083e8e5710a` still needs the positive adapter
-flow and size/plane validation corrections identified during paired review;
-that revision is not a parity claim. Final paired revisions belong in Sophia's
-verified snapshot manifests. Supplied-memfd tests prove packet shape and custody
-only. Real GPU completion, device identity, immutable capture and performance
-remain t339 native qualification gates.
+`sophia_ss_image_begin_dma_buf` with the `dma_buf` adapter setting. Signed C
+`3ccc7d04c28309ebed6fd53f399af7c7a5682d80` includes the positive adapter flow,
+checked actual FD size and plane span, exact opaque format row, and native
+adoption controls. Both adapters select one producer lifecycle per connection:
+DMA mode does not register an owned ring; the default mode stays owned-ring.
+Both require CaptureComplete for native DMA adoption and accept a ring-only
+ChannelReady mask 4 from a server advertising mask 6.
+
+The C full check and Rust producer/client suites pass. Independent supplied-memfd
+checks cover admission-before-send, status-before-release, exact release custody,
+native adoption and CPU compatibility. Final paired revisions belong in Sophia's
+verified snapshot manifests. These checks prove packet shape and custody only.
+Real GPU completion, device identity, immutable capture and performance remain
+t339 native qualification gates.

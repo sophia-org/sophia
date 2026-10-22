@@ -1,14 +1,14 @@
-tree 8991afcac3d772a3baf15fcfe57a267ce7c449c2
-parent 5fe847c9c056e05948afea4db74cdbb3b8edec5c
-author Mason Green <mason@greenm01.net> 1792668368 -0400
-committer Mason Green <mason@greenm01.net> 1792668368 -0400
+tree f82ef6b86ed449ae93d0c41a6c3e622a6937240f
+parent 7581de969ace5cd048cdd5c97cbc3b609d6bdedf
+author Mason Green <mason@greenm01.net> 1792670523 -0400
+committer Mason Green <mason@greenm01.net> 1792670523 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatny0BsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJZ1QD/SKOBNFXiETsvT4fVTVZq
- 9/VMwYDeCTBSg6720k26fVwA/1czhQtGUIWZkeubaNLTFtx7qvKIqTDcI5lnCTz2
- SCMF
- =OcDN
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatn7OxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKXiQD/SQnml3PsuRZmaL/ajUT6
+ M8x0Qn7UYRsqn33uwy7WVtQA/0uxrIvmtG6SmYVPQhQxwKK3TVvRwWZf2grEdhKd
+ i6wC
+ =5Oy5
  -----END PGP SIGNATURE-----
 
-Synchronize the shell contract snapshot with r10 production
+Make r10 DMA-BUF an exclusive producer lifecycle (t339)

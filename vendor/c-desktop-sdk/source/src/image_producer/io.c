@@ -206,7 +206,7 @@ static int send_sources(struct sophia_ip *p)
         if (!next)
             return changed;
         memset(planes, 0, sizeof planes);
-        planes[0].stride = next->metadata.stride;
+        planes[0] = next->plane;
         if (sophia_ic_source_encode(b, &p->expect, &next->metadata, planes) != SOPHIA_IC_OK) {
             ip_fail(p, SOPHIA_IPX_FAULT);
             return 1;

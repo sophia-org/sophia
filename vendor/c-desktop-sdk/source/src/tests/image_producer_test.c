@@ -44,12 +44,13 @@ static unsigned fd_count(void)
 struct set {
     char text[1024];
     size_t text_bytes, limits_bytes, formats_bytes;
-    uint8_t limits[SOPHIA_IC_LIMITS_BYTES], formats[SOPHIA_IC_FORMATS_HEADER_BYTES];
+    uint8_t limits[SOPHIA_IC_LIMITS_BYTES], formats[SOPHIA_IC_FORMATS_HEADER_BYTES + SOPHIA_IC_FORMAT_ROW_BYTES];
 };
 
 /* Offer bound and channel kinds for ready(); tests restore the defaults. */
 static unsigned offers_bound = 4;
 static uint32_t channel_kinds = SOPHIA_IC_KIND_BIT_SEALED;
+static uint16_t shell_revision = 9;
 
 static void make_set(struct set *s, uint16_t role, uint64_t limits_generation, uint32_t kinds)
 {
@@ -88,7 +89,8 @@ static void make_set(struct set *s, uint16_t role, uint64_t limits_generation, u
         r.value.limits.max_renderer_entries = 2;
         r.value.limits.max_capture_jobs = 1;
     }
-    if (!(kinds & SOPHIA_IC_KIND_BIT_SEALED))
+    /* CPU validation capacity (jobs and bytes) backs sealed and ring. */
+    if (!(kinds & (SOPHIA_IC_KIND_BIT_SEALED | SOPHIA_IC_KIND_BIT_OWNED_RING)))
         r.value.limits.max_validation_jobs = 0, r.value.limits.max_sealed_bytes = 0;
     assert(sophia_ic_record_encode(s->limits, sizeof s->limits, &r, &s->limits_bytes) ==
            SOPHIA_IC_OK);
@@ -96,8 +98,17 @@ static void make_set(struct set *s, uint16_t role, uint64_t limits_generation, u
     f.channel_generation = GEN;
     f.formats_generation = FORMATS_GEN;
     f.limits_generation = LIMITS_GEN;
-    assert(sophia_ic_formats_encode(s->formats, sizeof s->formats, &h, &f, NULL,
-                                    &s->formats_bytes) == SOPHIA_IC_OK);
+    if (kinds & SOPHIA_IC_KIND_BIT_DMABUF) {
+        /* One exact LINEAR XRGB row: DMA discovery is incoherent without it. */
+        static const struct sophia_ic_format_row row = {1, 226, 0, 0x34325258u,
+                                                          SOPHIA_IC_FORMAT_OPAQUE, 0, 512, 512};
+        f.row_count = 1;
+        assert(sophia_ic_formats_encode(s->formats, sizeof s->formats, &h, &f, &row,
+                                        &s->formats_bytes) == SOPHIA_IC_OK);
+    } else {
+        assert(sophia_ic_formats_encode(s->formats, sizeof s->formats, &h, &f, NULL,
+                                        &s->formats_bytes) == SOPHIA_IC_OK);
+    }
 }
 
 static struct sophia_ip_config config(uint16_t role)
@@ -105,7 +116,7 @@ static struct sophia_ip_config config(uint16_t role)
     struct sophia_ip_config c;
     memset(&c, 0, sizeof c);
     c.role = role;
-    c.revision = role == SOPHIA_IC_ROLE_SHELL ? 9 : 2;
+    c.revision = role == SOPHIA_IC_ROLE_SHELL ? shell_revision : 2;
     c.connection_epoch = EPOCH;
     c.granted_kinds = channel_kinds;
     c.bounds.max_resource_bytes = 1u << 20;
@@ -1169,6 +1180,74 @@ static void cancellation(void)
     assert(fd_count() == base - 2);
 }
 
+/* DMA-BUF begin (r10 mask 6): slice-one shape is enforced before fd
+ * custody moves, and a malformed descriptor is refused with the caller
+ * keeping it. The fd check is lseek size plus the discovered byte
+ * limit, so a plain memfd of the right size is accepted here; device
+ * proof comes from the published format row and Session's device
+ * match, never from the fd. Positive same-device evidence needs a
+ * real dma-buf and lives in the native fixture, not here. */
+static void dma_buf_refusals(void)
+{
+    struct sophia_ip p;
+    struct owner o;
+    struct sophia_ic_metadata m;
+    struct sophia_ic_plane plane;
+    uint8_t body[SOPHIA_IC_METADATA_BYTES];
+    uint64_t offer = 0;
+    int fd;
+    struct sophia_ip_config c = config(SOPHIA_IC_ROLE_SHELL);
+    c.revision = 10;
+    c.granted_kinds = SOPHIA_IC_KIND_BIT_DMABUF;
+    assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_ARGUMENT); /* no ring bit */
+    channel_kinds = SOPHIA_IC_KIND_BIT_OWNED_RING | SOPHIA_IC_KIND_BIT_DMABUF;
+    shell_revision = 10;
+    {
+        struct sophia_ip_config c10 = config(SOPHIA_IC_ROLE_SHELL);
+        assert(sophia_ip_init(&p, &c10, START) == SOPHIA_IPR_OK);
+    }
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL);
+    memset(&m, 0, sizeof m);
+    m.resource_id = 5;
+    m.resource_generation = 1;
+    m.admission_epoch = 3;
+    m.output = 7;
+    m.allocation = 8;
+    m.topology_generation = 9;
+    m.source_kind = SOPHIA_IC_SOURCE_DMABUF;
+    m.source_format = 0x34325258u;
+    m.width = 4;
+    m.height = 2;
+    m.plane_count = m.descriptor_count = 1;
+    m.logical_bytes = 4 * 2 * 4;
+    memset(&plane, 0, sizeof plane);
+    plane.stride = 16;
+    fd = memfd_create("dma-shape-only", MFD_CLOEXEC);
+    assert(fd >= 0 && ftruncate(fd, 4096) == 0);
+    m.modifier = 1;
+    assert(sophia_ip_begin_dma_buf(&p, &m, &plane, fd, 1, ++now, body, &offer) ==
+           SOPHIA_IPR_REFUSED);
+    m.modifier = 0;
+    m.source_format = 0x34325241u; /* ARGB is outside slice one */
+    assert(sophia_ip_begin_dma_buf(&p, &m, &plane, fd, 1, ++now, body, &offer) ==
+           SOPHIA_IPR_REFUSED);
+    m.source_format = 0x34325258u;
+    plane.stride = 8; /* below width * 4 */
+    assert(sophia_ip_begin_dma_buf(&p, &m, &plane, fd, 1, ++now, body, &offer) ==
+           SOPHIA_IPR_REFUSED);
+    plane.stride = 16;
+    /* Right size and shape: accepted, and take_fd moves custody. */
+    assert(sophia_ip_begin_dma_buf(&p, &m, &plane, fd, 1, ++now, body, &offer) ==
+           SOPHIA_IPR_OK);
+    assert(offer != 0 && m.offer == offer); /* producer owns fd now */
+    sophia_ip_journal_lost(&p);
+    assert(sophia_ip_forget(&p, offer) == SOPHIA_IPR_OK);
+    sophia_ip_close(&p);
+    close(o.sock);
+    channel_kinds = SOPHIA_IC_KIND_BIT_SEALED;
+    shell_revision = 9;
+}
+
 int main(void)
 {
     unsigned base = fd_count();
@@ -1186,6 +1265,7 @@ int main(void)
     sealed_helpers();
     bounds_and_order();
     cancellation();
+    dma_buf_refusals();
     assert(fd_count() == base);
     puts("image_producer_test: ok");
     return 0;

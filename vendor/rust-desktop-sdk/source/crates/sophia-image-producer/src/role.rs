@@ -236,14 +236,15 @@ pub(crate) fn admissible(expect: &Expect, metadata: ProducerMetadata) -> bool {
     match expect {
         Expect::Shell(expect, _, formats) => {
             to_shell(metadata).admissible(expect).is_ok()
-                && (metadata.source_kind != 2
-                    || formats.rows.iter().any(|row| {
-                        row.output == metadata.output_id
-                            && row.fourcc == metadata.source_format
-                            && row.modifier == metadata.modifier
-                            && metadata.width <= row.max_width
-                            && metadata.height <= row.max_height
-                    }))
+                && (metadata.source_kind != 2 || formats.rows.iter().any(|row| {
+                    row.output == metadata.output_id
+                        && row.flags
+                            == sophia_shell_protocol::shell_files::SHELL_IMAGE_FORMAT_FLAG_OPAQUE
+                        && row.fourcc == metadata.source_format
+                        && row.modifier == metadata.modifier
+                        && metadata.width <= row.max_width
+                        && metadata.height <= row.max_height
+                }))
         }
         Expect::Lock(expect) => to_lock(metadata).admissible(expect).is_ok(),
     }

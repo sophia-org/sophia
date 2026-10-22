@@ -46,6 +46,11 @@ struct sophia_ss_image_config {
      * rounded down to a multiple of four. Ignored at r9. */
     uint32_t ring_slots;
     uint64_t ring_capacity;
+    /* Opt-in DMA-BUF uploads at r10 (bit 14): the offer must require it
+     * and negotiation must grant it, or attach refuses. CPU-only clients
+     * leave this 0 and keep the owned ring only; the GPU capability is
+     * never silently dropped. */
+    uint8_t dma_buf;
 };
 
 /* Pseudo record kind under which D4E1 journal events are consumed inside
@@ -150,7 +155,8 @@ int sophia_ss_image_init(struct sophia_ss_image *, const struct sophia_ss_image_
  * but not bit 14; a completed negotiation must grant r9, content and bit 13
  * without bit 14. Owned-ring mode: the offer must span revision 10 and
  * require content and bit 15 but neither 13 nor 14; negotiation must grant
- * r10, content and bit 15 without 13 or 14.
+ * r10, content and bit 15 without 13 or 14. With the config's dma_buf
+ * opt-in, bit 14 is additionally required and must be granted at r10.
  * Role/grant checks remain with the
  * session. One adapter per session, never replaced after closure. ARGUMENT or
  * BUSY changes nothing. ChannelReady still gates every image offer. */
@@ -171,6 +177,14 @@ int sophia_ss_image_dispatch(struct sophia_ss_image *, short revents, uint64_t n
  * (owned ring) refuses every call. */
 int sophia_ss_image_begin(struct sophia_ss_image *, struct sophia_ic_metadata *, int source_fd,
                           uint64_t now_ms, uint64_t *offer, uint64_t *ticket);
+/* DMA-BUF at r10 with the config's dma_buf opt-in: like image_begin, but
+ * the producer offer is sophia_ip_begin_dma_buf (one-plane LINEAR opaque
+ * XRGB, plane offset/stride, owned or borrowed fd custody). Settlement,
+ * cancel and forget are the ordinary image_info/image_next custody; a
+ * disconnect leaves live offers UNKNOWN, with no reuse. */
+int sophia_ss_image_begin_dma_buf(struct sophia_ss_image *, struct sophia_ic_metadata *,
+                                  const struct sophia_ic_plane *, int source_fd, int take_fd,
+                                  uint64_t now_ms, uint64_t *offer, uint64_t *ticket);
 /* Queues ResourceCancel naming offer: transaction is the offer ID, the
  * grant's content epoch is the metadata's admission epoch. READY sessions
  * only. Queue room is checked first; then the producer marks the offer

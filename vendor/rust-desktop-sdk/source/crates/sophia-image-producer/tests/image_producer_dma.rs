@@ -6,6 +6,10 @@ use std::os::fd::{AsFd, OwnedFd};
 use support::*;
 
 fn ready() -> (ImageProducer, OwnedFd) {
+    ready_with_flags(SHELL_IMAGE_FORMAT_FLAG_OPAQUE)
+}
+
+fn ready_with_flags(flags: u32) -> (ImageProducer, OwnedFd) {
     let mut config = config(ImageRole::Shell);
     config.revision = 10;
     config.granted_kinds = 6;
@@ -26,7 +30,7 @@ fn ready() -> (ImageProducer, OwnedFd) {
         device_major: 226,
         device_minor: 128,
         fourcc: u32::from_le_bytes(*b"XR24"),
-        flags: SHELL_IMAGE_FORMAT_FLAG_OPAQUE,
+        flags,
         modifier: 0,
         max_width: 64,
         max_height: 64,
@@ -148,4 +152,14 @@ fn padded_dma_allocation_is_distinct_from_logical_pixel_bytes() {
             .begin_dma_buf(dma_metadata(21), fd, 4, 16, 4)
             .is_ok()
     );
+}
+
+#[test]
+fn first_phase_refuses_a_row_that_does_not_promise_opaque_capture() {
+    let (mut producer, _) = ready_with_flags(SHELL_IMAGE_FORMAT_FLAG_VALIDATED);
+    let (error, fd) = producer
+        .begin_dma_buf(dma_metadata(21), sealed_fd(), 0, 8, 4)
+        .unwrap_err();
+    assert_eq!(error, ProducerError::Refused);
+    assert!(rustix::io::fcntl_getfd(fd.as_fd()).is_ok());
 }

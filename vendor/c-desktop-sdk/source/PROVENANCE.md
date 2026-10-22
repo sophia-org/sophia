@@ -1,5 +1,43 @@
 # Extraction and contract provenance
 
+## Shell r10 DMA-BUF GPU source (t339), 2026-10-22
+
+Adds the opt-in DMA-BUF producer and shell adapter on the r10 owned-ring
+base: image-channel source kind 4 (discovery/init mask 6), capability
+bit 14 required and granted, and an explicit
+`sophia_ip_begin_dma_buf` / `sophia_ss_image_begin_dma_buf` source API
+for one-plane LINEAR XRGB with plane offset and stride, owned or
+borrowed fd custody. ImageBegin admission precedes Source; the exact
+SourceReleased is required before slot reuse, and disconnect leaves
+slot custody UNKNOWN. Owned-ring CPU methods are unchanged and remain
+the default; DMA-BUF stays opt-in and off unless configured.
+
+`make -j4 check` is green, including the extended image producer and
+image channel codec tests. Native GPU evidence is still pending: no
+native GPU producer has been run against a live Sophia Session, and
+nothing here claims same-device capture qualification. Enablement
+waits on that comparison.
+
+Follow-up: the DMA fd check is lseek SEEK_END size plus the discovered
+DMA source byte limit with overflow-checked plane arithmetic (no
+ioctl probe; a memfd fixture proves wire shape and custody only). The
+adapter validates the exact published format row, r10 welcome and
+ImageBegin gates admit bit 14 beside the ring, DMA statuses route to
+the producer (never the RingProducer), and native adoption of a DMA
+offer requires Accepted plus SourceReleased with disposition
+Captured (2), not Retained (1).
+
+Final parity alignment: `config.dma_buf` selects the DMA producer
+lifecycle exclusively — no ring registration, drive, event or status
+routing in that mode — while a normal config keeps the ring; both
+protocol bits are still negotiated either way, so no combined-producer
+offer-id allocation exists. Discovery advertising mask 6 with
+ChannelReady granting only 4 leaves a default ring client fully
+working and DMA unavailable. Tests cover the DMA end-to-end flow,
+the granted-4 ring client, and native adoption blocked before
+SourceReleased, refused after a Retained release, and consumed after
+a Captured release.
+
 ## Shell r10 owned ring, 2026-10-21
 
 Pins the shell owned-ring contract from Sophia's signed commit
