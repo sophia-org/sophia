@@ -15,7 +15,7 @@ pub use sophia_renderer_native_egl::{
 pub struct LiveShellCaptureFacts {
     pub epoch: Arc<LiveRendererSnapshotEpoch>,
     pub budget: Arc<crate::LiveRendererSnapshotBudget>,
-    /// DRM device number, in the same domain as the epoch's card.
+    /// Renderer DRM node; the backend binds this to the epoch's render node before publication.
     pub device: u64,
     /// Importable source formats for capture; slice one is XRGB8888 only.
     pub formats: Vec<sophia_renderer_native_egl::NativeDmaBufImportFormat>,

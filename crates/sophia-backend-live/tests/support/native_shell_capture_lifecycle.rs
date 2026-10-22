@@ -11,6 +11,7 @@ fn generation_output_and_store_withdrawal_preserve_custody_and_close_intent() {
         owner.active = Some(Install {
             output: OutputId::from_raw(1),
             store: 3,
+            card_device: 1,
             generation: 2,
             epoch: epoch.clone(),
         });
@@ -71,4 +72,39 @@ fn failed_store_keeps_acknowledgment_pending_and_retry_revisits_every_store() {
     })
     .unwrap();
     assert_eq!(seen, [0, 1, 2]);
+}
+
+#[test]
+fn capture_reply_binds_the_held_card_to_its_granted_render_node() {
+    let card = rustix::fs::makedev(226, 0);
+    let render_node = rustix::fs::makedev(226, 128);
+    let epoch = LiveRendererSnapshotEpoch::new(render_node, 2, 3);
+    let budget = LiveRendererSnapshotBudget::new(4, 256);
+    let install = Install {
+        output: OutputId::from_raw(1),
+        store: 3,
+        card_device: card,
+        generation: 2,
+        epoch: epoch.clone(),
+    };
+    let facts = LiveShellCaptureFacts {
+        epoch: epoch.clone(),
+        budget: budget.clone(),
+        device: card,
+        formats: Vec::new(),
+        max_width: 1920,
+        max_height: 1080,
+    };
+
+    let bound = install.bind_facts(facts.clone()).unwrap();
+    assert_eq!(bound.device, render_node);
+    assert!(Arc::ptr_eq(&bound.epoch, &epoch));
+    assert!(Arc::ptr_eq(&bound.budget, &budget));
+    assert_eq!((bound.max_width, bound.max_height), (1920, 1080));
+
+    for wrong_device in [rustix::fs::makedev(226, 1), render_node] {
+        let mut wrong = facts.clone();
+        wrong.device = wrong_device;
+        assert!(install.bind_facts(wrong).is_none());
+    }
 }

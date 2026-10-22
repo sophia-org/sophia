@@ -2,15 +2,27 @@
 use super::*;
 use sophia_renderer_live::{
     LiveRendererSnapshotBudget, LiveRendererSnapshotEpoch, LiveShellCaptureCustody,
-    LiveShellCaptureInbox,
+    LiveShellCaptureFacts, LiveShellCaptureInbox,
 };
 use std::{io, sync::Arc};
 
 struct Install {
     output: OutputId,
     store: u64,
+    card_device: u64,
     generation: u64,
     epoch: Arc<LiveRendererSnapshotEpoch>,
+}
+
+impl Install {
+    fn bind_facts(&self, mut facts: LiveShellCaptureFacts) -> Option<LiveShellCaptureFacts> {
+        if facts.device != self.card_device {
+            return None;
+        }
+        // GBM uses the held card fd; Session grants use its matched render node.
+        facts.device = self.epoch.card;
+        Some(facts)
+    }
 }
 
 #[derive(Default)]
@@ -142,6 +154,7 @@ impl LiveProductionNativeScanout {
             .group_identity(group)
             .ok_or(io::ErrorKind::NotConnected)?
             .device_number;
+        let card_device = rustix::fs::fstat(self.groups[group].session.card())?.st_rdev;
         let generation = self.render_devices.generation;
         // Capture close invalidates only this epoch, not existing preview images.
         let epoch = LiveRendererSnapshotEpoch::new(device, generation, store);
@@ -153,6 +166,7 @@ impl LiveProductionNativeScanout {
         self.preview_images.capture.pending = Some(Install {
             output,
             store,
+            card_device,
             generation,
             epoch,
         });
@@ -185,8 +199,7 @@ impl LiveProductionNativeScanout {
             .expect("pending installation");
         match result {
             Ok(Some((inbox, facts)))
-                if facts.device == install.epoch.card
-                    && install.generation == self.render_devices.generation
+                if install.generation == self.render_devices.generation
                     && install.epoch.is_valid()
                     && self
                         .heads
@@ -198,28 +211,29 @@ impl LiveProductionNativeScanout {
                                 && exporter.image_store_identity() == Some(install.store)
                         }) =>
             {
-                let endpoint = LiveNativeShellCaptureEndpoint {
-                    inbox,
-                    budget: self.preview_images.budget.clone(),
-                    epoch: install.epoch.clone(),
-                    output: install.output,
-                    facts,
-                };
-                self.preview_images.capture.active = Some(install);
-                Ok(Some(endpoint))
+                if let Some(facts) = install.bind_facts(facts) {
+                    let endpoint = LiveNativeShellCaptureEndpoint {
+                        inbox,
+                        budget: self.preview_images.budget.clone(),
+                        epoch: install.epoch.clone(),
+                        output: install.output,
+                        facts,
+                    };
+                    self.preview_images.capture.active = Some(install);
+                    return Ok(Some(endpoint));
+                }
             }
-            Ok(_) => {
-                install.epoch.invalidate();
-                // Keep the close obligation on queue pressure; caller retries close.
-                self.preview_images.capture.active = Some(install);
-                let _ = self.close_shell_capture();
-                Err(io::ErrorKind::Interrupted.into())
-            }
+            Ok(_) => {}
             Err(error) => {
                 install.epoch.invalidate();
-                Err(error)
+                return Err(error);
             }
         }
+        install.epoch.invalidate();
+        // Keep the close obligation on queue pressure; the caller retries close.
+        self.preview_images.capture.active = Some(install);
+        let _ = self.close_shell_capture();
+        Err(io::ErrorKind::Interrupted.into())
     }
 
     /// Bounded destination preparation for one XRGB size on the active

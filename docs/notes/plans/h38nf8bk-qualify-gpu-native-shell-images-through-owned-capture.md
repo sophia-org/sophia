@@ -44,18 +44,72 @@ full Session presentation. Evidence lives under
 `foreign-oracle.log`, and `producer/MANIFEST-producer.txt` retain commands, hashes
 and outcomes without binary copies.
 
-Lom commit `ae28569a4ed6b4fbb6382e2cdfd1637bcdb21575` adds `--serve --image-source dma-buf`; the default stays
-owned-ring. It requests DMA explicitly, retains the GPU frame through
-CaptureComplete, and emits no CPU checksum for DMA content. The complete Lom
-repository check passed with the final SDK pin. Claude reviewed application custody with no blockers and is preparing the
-matched-producer comparison design. Muse owns remaining native lifetime controls
-and runner preparation; Codex owns integration, pins and coordinated qualification.
+Lom commit `acf1e32b1bc0c103a19972ffb3cfde39c1d4b074` supports protected panel
+configuration `image-source "dma-buf"` as well as the CLI override; the default
+stays owned-ring. It retains the GPU frame through CaptureComplete and emits
+no CPU checksum for DMA content. The complete Lom repository check passed.
+Claude's frozen `niltempus/tools/gpu-bar` peers share one GPU producer for I/S/G;
+all 13 source files and both release binaries match the handed-over hashes.
+Muse owns runner descriptors; Codex owns integration and qualification.
+
+Run-01 stopped before graphics because the recovery chord was not armed.
+Run-02 armed correctly but launch validation rejected a duplicate global GPU
+grant alongside the component grant. Niltempus `333a3d1` removes the global
+grant; the exact recipe-generated command now passes `session check-launch`.
+Run-03 reached graphics startup but failed because public WM authentication
+requires Factotum. Niltempus `1e6830d` supplies the agent and PAM helper
+explicitly; the parser accepts the corrected command. The command
+Run-04 then failed opening tty4: the prior seat-controller release reset the
+device node to root:tty 0620 while the user's login remained active. Sophia
+`94f8adcb3` makes the mode helper reuse stdin only when its tty name exactly
+matches the requested target. Two real-PTY permission regressions pass; removing
+the reuse makes the matching-target case fail. Server binaries are unchanged.
+Run-05 reached Session and Hagia, but capture endpoint replies compared the
+worker's held card number (226:0) with the grant's render-node number (226:128).
+DMA negotiation was refused and no Lom frame appeared. The backend now records
+the held card identity before requesting an endpoint, validates the reply
+against it, and publishes the group's matched render-node identity. Generation,
+epoch, output and store validation remain unchanged. All four endpoint lifecycle
+tests pass, including the device-binding regression; backend clippy is clean.
+A broader filter exposed an unchanged worker test expecting NotConnected where
+an absent context now returns Unsupported; this fix does not change that path.
+Run-05 restored display, keyboard and terminal modes. The corrected release is
+being prepared for run-06; native presentation and the later Unsupported errors
+remain to be checked there.
+Failed attempts and recovery receipts remain under `session-qualification/`; latest parser acceptance is
+under `launch-validation-04/` there. Native Session presentation remains
+unproven. Run-03 recovery reports restored termios but unavailable KD/keyboard
+mode readback, so complete console restoration is not claimed for that attempt.
+
+The larger matched workload is a fully presented 1920x512 bar, alone on
+HDMI-A-1 at 1920x1080@60, scale 1; the panel workload remains 1920x24. This uses
+the admitted-target clause: existing coverage, panel extent and resource limits
+exclude a 1920x1080 shell surface. `tools/gpu-bar/LARGE-SURFACE.txt` records the
+limits without changing shell policy. I/S use comparator `4f5bdd564` with its
+CPU texture cache enabled and profiling counters off; G uses master `f9fd5f1a5`
+with capture enabled. That host-revision difference must remain explicit.
+Niltempus commits `dcebdb2` (peers) and `1a2d616` (runner and CPU measurement
+admission) are signed and pushed. The existing CPU sampler is unchanged;
+its observer and analysis-plan builder now admit explicitly bound GPU I/S/G
+at heights 24 and 512. The full xtask suite passed (455 tests), the CPU-plan
+tests passed (36), and strict clippy passed. Source/wire/producer mismatches
+are refused rather than relabeled as GPU runs.
+
+Six plans and diagnostic descriptors are frozen under
+`~/.local/state/t331/t339-gpu-arms-01/`; all 32 manifest entries verify.
+`PLAN.md` records the predeclared order, thresholds, exact artifacts and
+measurement limits. The attended launcher is prepared; no matched GPU runs
+have occurred. Session and peer CPU/frame, latency and kernel joins are
+configured; GPU execution timing is unavailable, and allocation/retention
+and readback accounting still need explicit treatment in the final report.
+`integration/CONFIG-AND-PEERS.txt` and `integration/COMPARATOR-BUILD.txt` retain
+current source identities, artifact hashes and build receipts.
 
 Provlita has transparent padding, so the user's requested dock use needs an
 explicit scope decision: validated alpha capture or retaining its owned-ring
 path for this opaque-only phase. That question is pending; no dock appearance
 changes are authorized. Kleis uses the separate lock protocol and is outside
-this shell change. No live desktop or full Session run has been launched here.
+this shell change. Full Session DMA presentation remains unproven.
 
 Completion still requires the remaining native lifecycle/presentation controls
 and matched GPU-producer comparisons below. Export, import and offline custody
