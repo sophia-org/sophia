@@ -235,6 +235,18 @@ work after the final render. Focused GPU-free timer/accumulator and diagnostic
 reducer tests pass, as do renderer Clippy and strict backend/Session Clippy.
 The diagnostic-only telemetry change does not alter either SDK contract.
 
+The measurement change is signed and pushed as Sophia `d5cf3c09e`; its release
+binary is `5ec033c35902fe033602c5376e41bcb8c7349f0b7d9332816bba1e4a3e41ac9c`.
+Profile12 is prepared at `~/.local/state/t331/t339-gpu-profile-12`: one reused
+DMA capture with profile11's peer, runner, display and workload, and no perf
+sampling. The clean evidence checkout pins `d5cf3c09e`. Native-plan and
+diagnostic validation, package hashes and idle-tty4 check-only pass; no native
+capture has started. Run from crunch over SSH, keeping the connection alive:
+`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-12/ssh/run.py`.
+Use paired steady-state destination/allocation and composition-import timings
+to decide whether a destination-lifetime change is worth pursuing. This is
+attribution only; it does not repeat profile11's performance comparison.
+
 Upload-begin to kernel completion medians are 16.299/16.329/16.287 ms for
 R/fresh/reused G; no delivery gain is established. Evidence, reductions and
 limits are in `~/.local/state/t331/t339-gpu-profile-11/analysis/REPORT.txt`
