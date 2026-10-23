@@ -23,23 +23,63 @@ is about four fd-ready waits plus one prepare notification per offer.
 Signed Sophia `26f4c583d` adds per-role component readiness counters without
 changing polls, subscriptions or scheduling. It separates the 9P internal wake
 reader from peer sockets, image traffic, CPU image-worker and capture completion.
-The next bounded diagnostic is profile06: one R and one G capture, 60 seconds
-each, with the same host and peer binaries. Its purpose is to locate the extra
-passes before changing their scheduling; counts alone do not attribute CPU.
-Evidence and launch instructions are in
-`~/.local/state/t331/t339-gpu-profile-06/PLAN.md`.
+Profile06 completed both captures cleanly with the same host and peer binaries.
+R takes 12.082 owner passes per frame and G 16.988. G has two internal 9P wake
+observations per frame, absent in R, and about three more wire-socket readiness
+observations. CPU-worker completion in R swaps one-for-one with capture
+completion in G. Roles overlap; these are not exclusive pass or CPU costs.
+Evidence: `~/.local/state/t331/t339-gpu-profile-06/analysis/REPORT.txt`,
+`audit.json` and the independent `claude/` review.
 
-Profile06 is ready: all 26 package hashes and both idle-tty4 preflights pass;
-neither run directory has been used. Sophia release `8703a736…` and peer
-`d6e50a53…` are identical across arms. Run from crunch over SSH:
-`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-06/ssh/run.py`.
+Signed candidate `6a2a774bf` flushes already-journaled capture publications at the end
+of maintenance, instead of deferring their delivery until another owner pass.
+It keeps custody checks and consumes no new 9P request or image packet.
+The ordinary ResourceStatus drain still precedes SourceReleased. The saving
+is unmeasured and may be less than two passes because readiness overlaps.
 
-No source reuse, cached prepare bounds, flush deletion or further producer
+The focused runtime socket regression passes all five capture-intake cases.
+It holds event reads across admission and release and proves delivery through
+the publication flush alone, while a Source already queued on the image socket
+stays unread. Removing the flush calls makes the test fail. Strict all-target
+clippy passes for runtime and Session with native-session and capture enabled.
+No new SDK contract, protocol record or dependency is introduced.
+
+The release build passes. Profile07 is frozen for one 60-second G capture
+against profile06 G, with the same peer and diagnostic settings. All 14 package
+hashes and idle-tty4 preflight pass; nothing has launched. Run from crunch over
+SSH: `sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-07/ssh/run.py`.
+
+No source reuse, cached prepare bounds, GL flush deletion or further producer
 synchronization change is planned. The small-bar CPU regression remains
 unresolved. GPU execution, physical allocation peaks, input latency and full
 render-start delivery latency remain unmeasured.
 
 ## Prepare notification result and readiness diagnostic — October 23, 2026
+
+Profile06's 1,800-offer windows have wire sockets R 9.082 / G 11.986,
+internal wire wake 0 / 2.000, image socket 0 / 0.891, image-worker completion
+1 / 0 and capture completion 0 / 1 per offer. Authentication, negotiation and
+listeners are quiet. Every fd-ready wait includes a component descriptor;
+metadata-shell or relays can still overlap. G's role sum exceeds component_any
+by 1.888 observations per frame, which does not count distinct overlapping
+waits. The prepare notification adds one ring wake; deadlines are one in both.
+
+Profile06 Session CPU/frame is R 950–970 us / G 1225–1245 us; peer is
+490–510 / 660–680 us. Total is 1440–1480 / 1885–1925 us. Upload-begin-to-kernel
+medians are 16289 / 16313 us. Each run has 2,120 exact joins, 2,123 monotonic
+completions, clean protocol accounting, zero retained native resources,
+quiescent shutdown and clean PAM/VT. Perf records no lost or throttled events.
+These are single diagnostic runs, not new acceptance intervals.
+
+Code review identifies a bounded scheduling opportunity: component input
+service precedes capture maintenance, whose admission and release calls mark
+the journal pending and ring its internal reader. A publication-only flush
+at maintenance end drains that reader and retries waiting journal reads,
+without accepting sockets or receiving Source packets. Channel publication
+retries remain in ordinary service. ResourceStatus is still journaled by the
+ordinary outbox drain; the flush does not skip that ordering or manufacture
+native completion. Transport errors remain subject to the existing connection
+owner's next turn. Peer protocol batching remains unexamined.
 
 Profile05 uses signed Sophia `b69fe94e3`, integration `7aa233d` and the unchanged
 peer `d6e50a53…`. All 2,120 generations join exactly, all 2,123 completions use
