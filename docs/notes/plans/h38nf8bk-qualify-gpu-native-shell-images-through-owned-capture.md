@@ -6,7 +6,7 @@ tags: [plan, rendering, gpu, 9p, performance, t339]
 ---
 # Qualify GPU native shell images through owned capture
 
-## Current resumption — October 22, 2026
+## Current resumption — October 23, 2026
 
 The requested same-host, same-peer owned-ring/DMA comparison is complete.
 Ring-01 passed all eight remote captures: 16,960 offered generations accepted
@@ -24,10 +24,37 @@ Evidence is `~/.local/state/t331/t339-gpu-ring-01/analysis-01/REPORT.txt`,
 `summary.json`, per-height CPU plans/results and the verified 281-file analysis
 manifest. Pins are integration `1c862d0`, Sophia `bfa477e93` (`fd3efa25…`),
 and one peer binary `1af1e78b…` for both arms. The frozen SSH package is now
-consumed; no further native run is scheduled. Keep owned-ring as the default
+consumed. Keep owned-ring as the default
 and DMA experimental and explicitly opt-in. The existing promotion gate remains
 unmet, and t339 stays open under its current scope. Allocation/VRAM peaks,
 full render-start and input latency remain unmeasured.
+
+niltempus requested root-cause profiling and optimization of the small-bar
+regression, and approved bounded producer-buffer reuse if allocation/import
+churn dominates. The measured excess is about 339 us/frame in Session and
+193 us/frame in the peer; per-function attribution is not yet established.
+The first implementation adds default-off producer stage CPU/wall counters
+and an explicit GPU R/G `capture-profile` mode in integration tooling. Normal
+CPU comparison plans reject this instrumented mode. A two-run h24 profile
+package is prepared at `~/.local/state/t331/t339-gpu-profile-01`: R then G,
+60 seconds each, with user-space perf call stacks and unchanged fresh-buffer
+allocation. Signed pins are Lom `f7e36c72` and integration `7b7fe06`; the peer's
+locked build, seven tests and strict Clippy pass. Both package check-only
+passes verified pins and idle tty4, and all 26 package manifest entries verify.
+No profiling or optimization hardware run has occurred. The next step is its
+existing SSH/PAM/VT launcher, then separate Session/peer attribution before any
+reuse implementation. The signing cache was unlocked without key configuration
+changes or an agent reset.
+
+The reuse design preserves the fresh API and adds a consuming unsafe reuse
+operation, with same-preview identity and the original four-frame bound.
+The sequential peer needs one reusable frame. Native code confirms that
+CaptureComplete requires observation of the exact EGL copy fence signalling;
+the peer must also observe Accepted and forget the offer before reuse.
+FOREIGN acquire must restore the layout expected by wgpu before drawing;
+release remains fenced. Unknown completion retains the allocation and command
+objects. Rewriting the same source BO must leave its earlier captured
+destination unchanged in the native oracle before any timed reuse comparison.
 
 ## Current owned-ring comparison result — October 22, 2026
 
