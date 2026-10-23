@@ -34,8 +34,10 @@ Evidence: `~/.local/state/t331/t339-gpu-profile-06/analysis/REPORT.txt`,
 Signed candidate `6a2a774bf` flushes already-journaled capture publications at the end
 of maintenance, instead of deferring their delivery until another owner pass.
 It keeps custody checks and consumes no new 9P request or image packet.
-The ordinary ResourceStatus drain still precedes SourceReleased. The saving
-is unmeasured and may be less than two passes because readiness overlaps.
+The ordinary ResourceStatus drain still precedes SourceReleased. Profile07
+confirms both internal wake observations disappear, but overlapping readiness
+means only one owner pass is saved: 16.988 to 16.004 per frame. CPU intervals
+overlap and delivery latency is unchanged; this is not a small-bar CPU fix.
 
 The focused runtime socket regression passes all five capture-intake cases.
 It holds event reads across admission and release and proves delivery through
@@ -44,10 +46,35 @@ stays unread. Removing the flush calls makes the test fail. Strict all-target
 clippy passes for runtime and Session with native-session and capture enabled.
 No new SDK contract, protocol record or dependency is introduced.
 
-The release build passes. Profile07 is frozen for one 60-second G capture
-against profile06 G, with the same peer and diagnostic settings. All 14 package
-hashes and idle-tty4 preflight pass; nothing has launched. Run from crunch over
-SSH: `sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-07/ssh/run.py`.
+Profile07 completed cleanly: 2,120 exact joins, 2,123 monotonic completions,
+zero protocol errors and retained native resources, quiescent shutdown and
+clean PAM/VT. Evidence is `~/.local/state/t331/t339-gpu-profile-07/analysis`.
+Session CPU is 1230–1250 us/frame and peer 670–690 us, versus profile06 G's
+1225–1245 and 660–680 us. Upload-begin-to-kernel median is 16,316 us versus
+16,313 us. Remaining excess over R is the prepare notification plus roughly
+three peer-wire readiness observations; completion is a one-for-one swap.
+
+Signed candidate `58443cd06` journals completed ResourceStatus and SourceReleased in
+order before one flush. It retries only an exact offer whose release is held
+for its status, moves store events and the whole existing outbox in FIFO order,
+updates output pressure, and preserves journal credits and retry on saturation.
+No new input, completion claim, wire format or SDK batching layer is involved.
+The SDK already supports bulk journal reads and cumulative ACK batching.
+
+The gated runtime regression now holds one read before settlement, then takes
+Source, fails the capture, releases and flushes without an ordinary service turn.
+That single read must deliver exactly ResourceStatus then SourceReleased. Wrong
+grant and unknown-offer refusals leave the store status pending. Admission still
+flushes without consuming a waiting Source. All five runtime intake cases pass;
+Session capture tests and strict all-target runtime/Session clippy pass with
+native-session and experimental-shell-capture. Full-journal retry is reviewed
+and retains existing custody tests; no new full-journal wire fixture was added.
+
+Profile08 is the bounded G-only diagnostic against profile07, with the same peer,
+fresh producer allocations and instrumentation. Package and command:
+`~/.local/state/t331/t339-gpu-profile-08/PLAN.md` and
+`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-08/ssh/run.py`.
+The native CPU, pass-count and delivery effect of coalescing is not yet measured.
 
 No source reuse, cached prepare bounds, GL flush deletion or further producer
 synchronization change is planned. The small-bar CPU regression remains
