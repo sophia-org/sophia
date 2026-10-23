@@ -184,14 +184,23 @@ impl ShellFileWire {
 
     /// One nonblocking turn: whatever requests are ready, no waiting.
     pub(super) fn turn(&mut self) -> Result<(), ShellTransportError> {
-        self.service(false)
+        self.service(false, true)
     }
 
     pub(super) fn flush(&mut self) -> Result<(), ShellTransportError> {
-        self.service(true)
+        self.service(true, true)
     }
 
-    fn service(&mut self, flush_only: bool) -> Result<(), ShellTransportError> {
+    #[cfg(feature = "experimental-shell-capture")]
+    pub(super) fn flush_publications(&mut self) -> Result<(), ShellTransportError> {
+        self.service(true, false)
+    }
+
+    fn service(
+        &mut self,
+        flush_only: bool,
+        service_images: bool,
+    ) -> Result<(), ShellTransportError> {
         let readiness = self.readiness.take();
         let listener_idle = readiness
             .as_ref()
@@ -214,7 +223,9 @@ impl ShellFileWire {
             .poll(Instant::now())
             .map_err(|_| ShellTransportError::NotConnected)?;
         self.export_mut().expire();
-        self.service_image_channel(Instant::now(), listener_idle);
+        if service_images {
+            self.service_image_channel(Instant::now(), listener_idle);
+        }
         Ok(())
     }
 

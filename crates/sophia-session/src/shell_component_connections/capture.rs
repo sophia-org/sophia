@@ -28,6 +28,20 @@ fn publish_current(
 }
 
 impl ShellComponentConnections {
+    #[cfg(feature = "native-session")]
+    pub(crate) fn flush_capture_publications(&mut self) {
+        for (slot, connection) in self.connections.iter_mut().enumerate() {
+            let Some((grant, ComponentConnectionPhase::Connected)) = connection.attempt else {
+                continue;
+            };
+            if connection.capture_device.is_some()
+                && let Err(error) = connection.transport.flush_capture_publications()
+            {
+                tracing::warn!(slot, ?grant, %error, "shell capture publication flush deferred");
+            }
+        }
+    }
+
     /// Every admission, from a prepared destination through settlement,
     /// shares the one four-job bound.
     pub(super) fn capture_pending(&self) -> usize {

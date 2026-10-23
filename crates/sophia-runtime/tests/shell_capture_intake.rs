@@ -26,6 +26,10 @@ enum Case {
     ShortSource,
     /// A CPU-only client on a DMA-capable export is granted the ring alone.
     CpuOnly,
+    /// As Settled, but ImageAdmitted and SourceReleased reach a read the
+    /// owner already holds through the narrow flush alone, with no ordinary
+    /// service in between, and that flush leaves a waiting Source unread.
+    Flushed,
 }
 
 #[test]
@@ -36,6 +40,11 @@ fn linear_offer_is_admitted_received_and_released_in_journal_order() {
 #[test]
 fn short_dma_source_closes_the_channel_and_retains_settlement() {
     run(Case::ShortSource);
+}
+
+#[test]
+fn capture_publications_flush_without_serving_input() {
+    run(Case::Flushed);
 }
 
 #[test]
@@ -245,6 +254,51 @@ fn send_source(socket: &impl AsFd, metadata: ShellImageMetadata, bytes: u64) {
     .unwrap();
 }
 
+/// One event read whose request is fully written before `written` runs, so
+/// the owner can take it in one ordinary turn and then stop serving input.
+fn read_after(peer: &mut raw::Peer, written: impl FnOnce()) -> (ShellFileKind, Vec<u8>) {
+    let request = [
+        2u32.to_le_bytes().as_slice(),
+        &peer.event_offset().to_le_bytes(),
+        &65500u32.to_le_bytes(),
+    ]
+    .concat();
+    let (kind, body) = peer
+        .rpc_with_prefix(116, &request, 7 + request.len(), written)
+        .unwrap();
+    assert_eq!(kind, 117);
+    let record =
+        decode_shell_file_record_at_revision(&body[4..], ShellFileClass::Event, 10).unwrap();
+    (record.header.kind, record.body.to_vec())
+}
+
+/// Peer and owner steps of `Case::Flushed`, strictly alternating.
+struct Gate {
+    to: std::sync::mpsc::Sender<()>,
+    from: std::sync::mpsc::Receiver<()>,
+}
+
+impl Gate {
+    fn pair() -> (Self, Self) {
+        let (a, b) = (std::sync::mpsc::channel(), std::sync::mpsc::channel());
+        (Self { to: a.0, from: b.1 }, Self { to: b.0, from: a.1 })
+    }
+
+    fn signal(&self) {
+        self.to.send(()).unwrap();
+    }
+
+    fn wait(&self, step: &str) {
+        self.from
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap_or_else(|_| panic!("{step}"));
+    }
+
+    fn arrived(&self) -> bool {
+        self.from.try_recv().is_ok()
+    }
+}
+
 /// Version, authenticated attach through afid 10, then the event fids.
 fn setup(peer: &mut raw::Peer) {
     let version = [
@@ -274,7 +328,7 @@ fn setup(peer: &mut raw::Peer) {
     peer.open(4, b"ack", 1);
 }
 
-fn peer_script(peer: &mut raw::Peer, image_path: &std::path::Path, case: Case) {
+fn peer_script(peer: &mut raw::Peer, image_path: &std::path::Path, case: Case, gate: Option<Gate>) {
     setup(peer);
     let required = SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
         | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
@@ -329,10 +383,34 @@ fn peer_script(peer: &mut raw::Peer, image_path: &std::path::Path, case: Case) {
     assert_eq!(kind, ShellFileKind::ResourceStatus, "{body:?}");
     let admitted = metadata(2, 0);
     begin(peer, 3, admitted);
+    let span = u64::from(STRIDE) * u64::from(HEIGHT - 1) + u64::from(WIDTH * 4);
+    if let Some(gate) = &gate {
+        let (kind, body) = read_after(peer, || {
+            gate.signal();
+            gate.wait("owner admission");
+            send_source(&socket, admitted, span);
+            gate.signal();
+        });
+        assert_eq!(kind, ShellFileKind::ImageAdmitted);
+        assert_eq!(ShellImageMetadata::decode(&body).unwrap(), admitted);
+        gate.signal();
+        // The same retained record again through the ordinary read and ack.
+        let (kind, _) = event_kind(peer);
+        assert_eq!(kind, ShellFileKind::ImageAdmitted);
+        let (kind, _) = event_kind(peer);
+        assert_eq!(kind, ShellFileKind::ResourceStatus);
+        let (kind, body) = read_after(peer, || gate.signal());
+        assert_eq!(kind, ShellFileKind::SourceReleased);
+        let released = ShellSourceReleased::decode(&body).unwrap();
+        assert_eq!(released.offer_id, 2);
+        gate.signal();
+        let (kind, _) = event_kind(peer);
+        assert_eq!(kind, ShellFileKind::SourceReleased);
+        return;
+    }
     let (kind, body) = event_kind(peer);
     assert_eq!(kind, ShellFileKind::ImageAdmitted);
     assert_eq!(ShellImageMetadata::decode(&body).unwrap(), admitted);
-    let span = u64::from(STRIDE) * u64::from(HEIGHT - 1) + u64::from(WIDTH * 4);
     if case == Case::ShortSource {
         send_source(&socket, admitted, span - 1);
         let (kind, body) = event_kind(peer);
@@ -387,10 +465,21 @@ fn run(case: Case) {
     let baseline = epochs.accounting();
     let path = transport.socket_path().to_owned();
     let image_path = directory.join("image.sock");
+    let (gate, peer_gate) = match case {
+        Case::Flushed => {
+            let (owner, peer) = Gate::pair();
+            (Some(owner), Some(peer))
+        }
+        _ => (None, None),
+    };
     let peer = std::thread::spawn(move || {
         let mut peer = raw::Peer::connect(&path);
-        peer_script(&mut peer, &image_path, case);
+        peer_script(&mut peer, &image_path, case, peer_gate);
     });
+    // Flushed: 0 until the peer's admission read is written, 1 once one
+    // ordinary turn took it, 2 after admission, 3 once the release read is
+    // written, 4 after release.
+    let mut flow = 0;
     let mut owner = ShellIsbImageOwner::new(4 << 20, 65536).unwrap();
     let mut negotiated = false;
     let mut admission: Option<ShellCaptureAdmission> = None;
@@ -418,7 +507,13 @@ fn run(case: Case) {
         if transport.capture_image_channel_ready() {
             transport.enable_capture_image_admission().unwrap();
         }
-        if let Some((offer, expires)) = transport.pending_capture_image_offer() {
+        let hold = |flow: i32, step: i32, offer_modifier: u64| {
+            gate.is_some() && offer_modifier == 0 && flow < step
+        };
+        if let Some((offer, expires)) = transport
+            .pending_capture_image_offer()
+            .filter(|(offer, _)| !hold(flow, 1, offer.modifier))
+        {
             assert!(transport.pending_isb_image_offer().is_none());
             assert!(expires > Instant::now());
             match transport.admit_capture_image_offer(&mut epochs, BOUND, 0) {
@@ -426,6 +521,18 @@ fn run(case: Case) {
                     assert_eq!(admitted.metadata, offer);
                     assert_eq!(admitted.deadline, expires, "admission cannot renew it");
                     admission = Some(admitted);
+                    if let Some(gate) = &gate {
+                        // No ordinary service from here until delivery.
+                        gate.signal();
+                        gate.wait("peer Source");
+                        transport.flush_capture_publications().unwrap();
+                        assert!(
+                            transport.take_capture_image_source().is_none(),
+                            "the narrow flush must leave the Source unread"
+                        );
+                        gate.wait("ImageAdmitted delivered by the flush alone");
+                        flow = 2;
+                    }
                 }
                 Err(ShellTransportError::WrongContentRecord) => {
                     assert_eq!(offer.modifier, 1);
@@ -462,17 +569,32 @@ fn run(case: Case) {
             assert!(reservation.is_none());
             settled = Some(metadata);
         }
-        if let Some(metadata) = settled {
+        if let Some(metadata) = settled.filter(|_| gate.is_none() || flow >= 3) {
             match transport.release_capture_image_source(
                 grant,
                 metadata,
                 ShellSourceDisposition::RefusedBeforeUse,
             ) {
-                Ok(_) => settled = None,
+                Ok(_) => {
+                    settled = None;
+                    if let Some(gate) = &gate {
+                        transport.flush_capture_publications().unwrap();
+                        gate.wait("SourceReleased delivered by the flush alone");
+                        flow = 4;
+                    }
+                }
                 // The resource drain journals the terminal status first.
                 Err(ShellTransportError::ContentQueueSaturated) => {}
                 Err(error) => panic!("source release: {error}"),
             }
+        }
+        // Each written read is taken by the next iteration's ordinary turn
+        // before the step it guards runs.
+        if let Some(gate) = &gate
+            && (flow == 0 || flow == 2)
+            && gate.arrived()
+        {
+            flow += 1;
         }
         std::thread::yield_now();
     }

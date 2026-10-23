@@ -319,6 +319,9 @@ impl ShellComponentProcesses {
             .service_capture_endpoint(native, available, wake);
         // Even a failed/closing installation must reconcile old receipts.
         let errors = self.connections.service_capture_completions();
+        // Maintenance publishes after the component input turn; deliver those
+        // records now without consuming another peer request or Source packet.
+        self.connections.flush_capture_publications();
         (installation, errors)
     }
     pub fn finish_after_backend_drop<B>(

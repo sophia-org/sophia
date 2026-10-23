@@ -47,6 +47,17 @@ pub struct ShellCaptureImageSource {
 
 #[cfg(feature = "experimental-shell-capture")]
 impl ShellComponentTransport {
+    /// Deliver capture journal publications without accepting wire requests or
+    /// image packets. Deferred channel publications wait for ordinary service.
+    /// Quiet calls do no transport work; all flushes retain custody checks.
+    pub fn flush_capture_publications(&mut self) -> Result<(), ShellTransportError> {
+        let files = self.files_mut().ok_or(ShellTransportError::NotConnected)?;
+        if files.publication_pending() {
+            files.flush_publications()?;
+        }
+        Ok(())
+    }
+
     /// False after channel closure or epoch loss, or when DMA-BUF was not
     /// granted. The owner must then withdraw this grant's admissions.
     pub fn capture_image_channel_ready(&self) -> bool {
