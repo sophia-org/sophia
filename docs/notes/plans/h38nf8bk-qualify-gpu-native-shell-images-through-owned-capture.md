@@ -8,57 +8,75 @@ tags: [plan, rendering, gpu, 9p, performance, t339]
 
 ## Current resumption — October 23, 2026
 
-The requested same-host, same-peer owned-ring/DMA comparison is complete.
-Ring-01 passed all eight remote captures: 16,960 offered generations accepted
-and joined, clean protocol accounting, quiescent shutdown, zero retained native
-resources and restored VT/PAM state. Its R arm uses today's owned-ring path;
-arms03's sealed ISB results remain historical.
+The same-host, same-peer ring-01 comparison remains authoritative: DMA uses
+38.6% more Session-plus-peer CPU at 1920x24 and 33.0% less at 1920x512.
+Upload-begin-to-kernel latency has no resolved difference. Keep owned-ring
+default and DMA experimental and explicitly opt-in; t339's promotion gate
+remains unmet. All eight captures had exact joins and clean shutdown.
 
-DMA uses 38.6% more Session-plus-peer CPU at 1920x24 and 33.0% less at
-1920x512. Both differences pass the frozen rule. Upload-begin-to-kernel latency
-has no resolved difference at either size; this excludes producer preparation
-and is not equivalence. The small submit-to-kernel number for DMA reflects its
-later submission, not an earlier delivery claim.
+Profile05 confirms that notifying Session of the physical destination-prepare
+reply removes the roughly 10 ms settlement stall. It replaces a deadline wake
+with a ring wake; owner passes stay near 17 per offer versus R's 12. There is
+no resolved CPU or upload-to-kernel latency improvement. The remaining excess
+is about four fd-ready waits plus one prepare notification per offer.
 
-Evidence is `~/.local/state/t331/t339-gpu-ring-01/analysis-01/REPORT.txt`,
-`summary.json`, per-height CPU plans/results and the verified 281-file analysis
-manifest. Pins are integration `1c862d0`, Sophia `bfa477e93` (`fd3efa25…`),
-and one peer binary `1af1e78b…` for both arms. The frozen SSH package is now
-consumed. Keep owned-ring as the default
-and DMA experimental and explicitly opt-in. The existing promotion gate remains
-unmet, and t339 stays open under its current scope. Allocation/VRAM peaks,
-full render-start and input latency remain unmeasured.
+Signed Sophia `26f4c583d` adds per-role component readiness counters without
+changing polls, subscriptions or scheduling. It separates the 9P internal wake
+reader from peer sockets, image traffic, CPU image-worker and capture completion.
+The next bounded diagnostic is profile06: one R and one G capture, 60 seconds
+each, with the same host and peer binaries. Its purpose is to locate the extra
+passes before changing their scheduling; counts alone do not attribute CPU.
+Evidence and launch instructions are in
+`~/.local/state/t331/t339-gpu-profile-06/PLAN.md`.
 
-Three subsequent profiles reproduce the fixed small-bar overhead. The producer
-wait removal in Lom `b8ec26a` (integration `7aa233d`) reduces combined
-draw/release wall time by 85.9 us/frame, but total CPU intervals overlap:
-1940–1980 us/frame before and 1935–1975 after. Keep the simpler synchronization
-without claiming a CPU fix. All profile-03 joins and cleanup checks pass.
-Evidence and limits are recorded below and in
-`~/.local/state/t331/t339-gpu-profile-03/analysis`.
+Profile06 is ready: all 26 package hashes and both idle-tty4 preflights pass;
+neither run directory has been used. Sophia release `8703a736…` and peer
+`d6e50a53…` are identical across arms. Run from crunch over SSH:
+`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-06/ssh/run.py`.
 
-Profile04 completes host import attribution with signed Sophia `23426521e`
-(`2e05dc23…`), integration `7aa233d` and unchanged peer `d6e50a53…`. All
-2,120 joins and cleanup checks pass. Import plus eviction costs 31.5 us/offer
-inside 91.9 us of copy CPU in the paired window; the entire capture partition
-is about 97 us. Most of the roughly 330 us Session excess over R is outside
-those brackets. Total CPU 1945–1985 us/frame overlaps profile03. Evidence:
-`~/.local/state/t331/t339-gpu-profile-04/analysis/REPORT.txt` and `host-review/`.
+No source reuse, cached prepare bounds, flush deletion or further producer
+synchronization change is planned. The small-bar CPU regression remains
+unresolved. GPU execution, physical allocation peaks, input latency and full
+render-start delivery latency remain unmeasured.
 
-The control path takes about 17 owner passes per G frame versus 12 for R.
-G also expires one extra maintenance deadline per frame. The physical
-destination-prepare reply uses an unnotified channel; Session commonly waits
-for its 10 ms maintenance tick. Signed Sophia `b69fe94e3` now wakes the existing
-Session owner on prepare reply or disconnect, retaining per-offer physical
-preparation and the pre-admission ticket. Caching only the byte bound is unsafe because it
-does not retain a prepared allocation. Measure latency and CPU separately:
-the notification addresses a concrete delay, but its CPU benefit is unknown.
-No producer reuse, flush deletion or further producer synchronization change
-is planned in this step. The small-bar CPU regression remains unresolved.
-The release build passes and profile05 is prepared with the same peer and
-instrumentation as profile04. All 14 package hashes and idle-tty4 preflight
-verify; nothing has launched. Run one 60-second G capture from SSH with
-`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-05/ssh/run.py`.
+## Prepare notification result and readiness diagnostic — October 23, 2026
+
+Profile05 uses signed Sophia `b69fe94e3`, integration `7aa233d` and the unchanged
+peer `d6e50a53…`. All 2,120 generations join exactly, all 2,123 completions use
+the monotonic kernel clock, protocol tally is zero, and shutdown is quiescent
+with zero retained native resources. PAM/VT cleanup succeeds without residual
+processes. Evidence: `~/.local/state/t331/t339-gpu-profile-05/analysis/REPORT.txt`,
+`custody-audit.json`, `control-comparison.json` and `control-review/`.
+
+DMA upload begin to UploadAccepted falls from 11,535 to 1,453 us median.
+That event is emitted after Accepted, SourceReleased(CaptureComplete), local
+image_forget and frame destruction: it observes settlement, not isolated
+admission. R's RingAccepted is emitted immediately on ResourceStatus, so the
+two boundaries are not interchangeable. image_forget is local bookkeeping,
+not a wire turn. Upload begin to kernel completion stays 16,369 to 16,340.5 us:
+the same vblank is reached; no delivery improvement is established.
+
+Paired 1,800-offer windows give owner passes 17.032 to 16.993, fd-ready waits
+14.035 to 14.001, deadline wakes 1.996 to 1.000 and ring wakes 0 to 1 per offer.
+R profile01 had 12.076 passes and 10.076 fd-ready waits. Profile05 CPU/frame is
+Session 1,230–1,250 us and peer 635–655 us, total 1,865–1,905 us versus profile04's
+1,945–1,985 us. The midpoint change is about 4.1%, below the frozen 6.2% variation
+floor, with one diagnostic run per candidate. Untouched copy/import code also
+became faster; do not credit that variation to the notification change.
+
+Profile06 emits cumulative saturating component counters in sophia_owner_wait.
+Each role counts at most once per wait, roles can overlap, and waits count only
+when component descriptors were registered. owner_fd_ready minus component_any
+counts waits ready only outside components, not all metadata-shell or relay
+readiness. WireWake is the existing first 9P descriptor; Wire is listener and
+streams. No descriptor identities are logged. Compare paired cumulative windows
+without interpolation, reject resets, and retain the existing custody/cleanup
+checks. No performance qualification follows from this diagnostic alone.
+
+Validation: the 9P wake-reader position test, component counter tests, combined
+wait fixture and diagnostic numeric allowlist tests pass. Strict all-target
+clippy passes for 9P, runtime and Session with native-session and capture enabled.
+The public SDK wire contract and client APIs are unchanged.
 
 ## Small-bar profiling and optimization — October 23, 2026
 
