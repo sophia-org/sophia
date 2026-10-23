@@ -201,6 +201,19 @@ separately measured. A destination reuse design needs a release proof from
 every consumer; removing the exclusion or caching a physical prepare bound
 would break custody. Do not reuse a displayed destination.
 
+The composition cache is also distinct from the existing pooled renderer-image
+cache. `mixed_export.rs` maps a shell snapshot to `DmaBuf`, which calls
+`import_cache.texture()`, not `snapshot_texture()`. Each offer has a fresh
+image ID and custody Arc; a hit requires the existing identity and matching
+descriptor fingerprint. Changing the fingerprint key cannot help while every
+destination is new. Existing generation-use guards and composition fences
+cover `RendererImage` layers only; the detached shell snapshot does not enter
+that path. Last-Arc drop or import eviction alone must not authorize overwrite,
+and escaped descriptor duplicates cannot be inferred from an Arc count.
+Measure destination preparation and composition-import CPU before widening
+the custody machinery. These findings establish neither a safe destination
+reuse implementation nor its potential saving.
+
 Upload-begin to kernel completion medians are 16.299/16.329/16.287 ms for
 R/fresh/reused G; no delivery gain is established. Evidence, reductions and
 limits are in `~/.local/state/t331/t339-gpu-profile-11/analysis/REPORT.txt`
