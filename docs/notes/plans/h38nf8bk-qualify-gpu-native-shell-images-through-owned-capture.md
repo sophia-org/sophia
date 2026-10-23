@@ -37,20 +37,28 @@ without claiming a CPU fix. All profile-03 joins and cleanup checks pass.
 Evidence and limits are recorded below and in
 `~/.local/state/t331/t339-gpu-profile-03/analysis`.
 
-Next, run the prepared G-only `t339-gpu-profile-04` package to measure host
-source import/binding inside the existing copy timer before
-changing buffer reuse or submission. Copy currently averages about 95 us/frame;
-its import share is unknown. The diagnostic adds a nested Import interval plus
-source eviction/transient counts under the existing timing flag, with no
-rendering or custody change. Defer the safe but unmeasured redundant-glFlush
-cleanup. Producer allocation reuse remains conditional on demonstrated import
-cost; unknown-completion paths remain retained, not assumed finished. No further
-producer synchronization change is planned. Signed Sophia `23426521e` adds
-the counters; its release binary is `2e05dc23…`. The clean evidence worktree
-pins that commit, with integration `7aa233d` and the unchanged `d6e50a53…`
-peer. All 14 package hashes and idle-tty4 preflight verify; nothing has launched.
-Run from the user's SSH terminal with
-`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-04/ssh/run.py`.
+Profile04 completes host import attribution with signed Sophia `23426521e`
+(`2e05dc23…`), integration `7aa233d` and unchanged peer `d6e50a53…`. All
+2,120 joins and cleanup checks pass. Import plus eviction costs 31.5 us/offer
+inside 91.9 us of copy CPU in the paired window; the entire capture partition
+is about 97 us. Most of the roughly 330 us Session excess over R is outside
+those brackets. Total CPU 1945–1985 us/frame overlaps profile03. Evidence:
+`~/.local/state/t331/t339-gpu-profile-04/analysis/REPORT.txt` and `host-review/`.
+
+The control path takes about 17 owner passes per G frame versus 12 for R.
+G also expires one extra maintenance deadline per frame. The physical
+destination-prepare reply uses an unnotified channel; Session commonly waits
+for its 10 ms maintenance tick. Signed Sophia `b69fe94e3` now wakes the existing
+Session owner on prepare reply or disconnect, retaining per-offer physical
+preparation and the pre-admission ticket. Caching only the byte bound is unsafe because it
+does not retain a prepared allocation. Measure latency and CPU separately:
+the notification addresses a concrete delay, but its CPU benefit is unknown.
+No producer reuse, flush deletion or further producer synchronization change
+is planned in this step. The small-bar CPU regression remains unresolved.
+The release build passes and profile05 is prepared with the same peer and
+instrumentation as profile04. All 14 package hashes and idle-tty4 preflight
+verify; nothing has launched. Run one 60-second G capture from SSH with
+`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-05/ssh/run.py`.
 
 ## Small-bar profiling and optimization — October 23, 2026
 
@@ -130,7 +138,33 @@ records.rs. The prepared profile04 freezes the same peer and profiling recipe
 as profile03, with this instrumented host. Import includes any cache eviction
 inside lookup, but not driver validation deferred until draw/flush. Compare
 paired cumulative observations, check for resets, and keep whole-run averages
-separate from the kernel-anchored CPU window. No new hardware result yet.
+separate from the kernel-anchored CPU window.
+
+Profile04 subsequently passed all 2,120 joins, 2,123 monotonic completions,
+protocol and shutdown checks, with PAM/VT restored and no retained resources.
+The paired 1,800-offer observation measures setup/copy/cleanup at
+1.31/91.88/3.35 us CPU per offer. Import is 31.49 us inside Copy, including
+about one eviction per offer; there are no cache hits or transient imports.
+Sixteen source imports remain cached during steady state and all are retired
+at shutdown. Whole-run Import averages 31.81 us. Session CPU is 1270–1290 us
+and peer 675–695 us per frame, overlapping profile03. User-only perf retains
+727 samples without reported loss or throttling; it does not independently
+attribute kernel syscall cost. See `analysis/REPORT.txt`, `custody-audit.json`,
+`cpu-diagnostic-results.json` and `control-comparison.json` under profile04.
+
+Sophia `b69fe94e3` forwards the existing Session owner notifier to destination
+preparation and uses the existing SignalSender for publication and disconnect.
+The worker retains one wake attachment for its Session lifetime. OwnerWake is
+cleared before queue inspection at the start of a pass. No cached bound,
+prepared-ahead allocation or new polling loop replaces physical preparation.
+The first attachment rings once, and a refused command enqueue can ring
+spuriously; notifications are only hints to inspect state. Capture installation
+itself still uses the old unnotified reply and is outside this change.
+Backend worker tests pass 43 with one ignored; Session capture tests pass 77
+with nine ignored, plus the subprocess target. Strict all-target Clippy passes
+for backend and Session with native capture. One old shutdown fixture needed
+its feature-gated native argument; no shutdown implementation changed.
+The preparation-delay and CPU effects still require a native measurement.
 
 The reuse design preserves the fresh API and adds a consuming unsafe reuse
 operation, with same-preview identity and the original four-frame bound.
