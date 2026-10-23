@@ -41,10 +41,18 @@ package is prepared at `~/.local/state/t331/t339-gpu-profile-01`: R then G,
 allocation. Signed pins are Lom `f7e36c72` and integration `7b7fe06`; the peer's
 locked build, seven tests and strict Clippy pass. Both package check-only
 passes verified pins and idle tty4, and all 26 package manifest entries verify.
-No profiling or optimization hardware run has occurred. The next step is its
-existing SSH/PAM/VT launcher, then separate Session/peer attribution before any
-reuse implementation. The signing cache was unlocked without key configuration
-changes or an agent reset.
+The R profile completed with clean native shutdown, protocol tally and PAM/VT
+cleanup. All 2,120 frames joined exactly, but post-run cost dispatch rejected
+`capture-profile`, so G never launched. The existing offline collect/metrics/join
+commands recovered the joins under `t339-gpu-profile-01/analysis/r-recovery`,
+with input hashes and the original evidence unchanged. Perf covers both processes;
+its limited samples and truncated stacks support coarse attribution only.
+Signed integration `2fcee54` fixes that dispatcher, with a focused regression
+test and strict Clippy passing. `t339-gpu-profile-02` is a verified G-only
+continuation with unchanged host, peer and profiling recipe. Run it through its
+existing SSH/PAM/VT launcher, then attribute Session/peer costs before reuse
+implementation. No optimization has been measured. The signing cache was
+unlocked without key configuration changes or an agent reset.
 
 The reuse design preserves the fresh API and adds a consuming unsafe reuse
 operation, with same-preview identity and the original four-frame bound.
