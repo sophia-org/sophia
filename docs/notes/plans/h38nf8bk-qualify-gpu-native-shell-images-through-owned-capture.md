@@ -48,10 +48,46 @@ commands recovered the joins under `t339-gpu-profile-01/analysis/r-recovery`,
 with input hashes and the original evidence unchanged. Perf covers both processes;
 its limited samples and truncated stacks support coarse attribution only.
 Signed integration `2fcee54` fixes that dispatcher, with a focused regression
-test and strict Clippy passing. `t339-gpu-profile-02` is a verified G-only
-continuation with unchanged host, peer and profiling recipe. Run it through its
-existing SSH/PAM/VT launcher, then attribute Session/peer costs before reuse
-implementation. No optimization has been measured. The signing cache was
+test and strict Clippy passing. The G-only continuation `t339-gpu-profile-02`
+completed cleanly with unchanged host, peer and profiling recipe. Both profiles
+have 2,120 exact joins, 2,123 monotonic completions, zero retained imports and
+quiescent native shutdown. R's outer exit remains 1 from the recorded parser
+failure; recovery does not rewrite it as a successful launcher exit.
+
+Diagnostic process CPU/frame reproduces the excess: R Session 935–955 us and
+peer 485–505 us; G Session 1265–1285 us and peer 675–695 us. G producer stage
+thread CPU/frame is setup 29.6 us, draw 296.3 us, release 99.4 us, export 7.5 us
+and texture destruction 11.7 us, each with exactly 2,000 observations. These
+brackets include the calling thread's syscall CPU. User-space perf estimates
+peer CPU at about 337 us for R and 352 us for G; their small difference suggests
+much of the excess is syscall/kernel work, but does not independently measure
+individual syscalls. Samples and truncated stacks support coarse attribution.
+
+The host's whole-run capture setup/copy/cleanup partition averages about
+1.4/94.7/3.6 us per offered frame. It imports 2,120 sources with no cache hits;
+the Session owner also takes about five extra turns per frame. These costs
+explain why a small copied bar can beat the DMA path, but the per-turn CPU and
+the import/copy split are not independently measured. Raw counters, process
+windows, perf reports and custody audit are under `t339-gpu-profile-02/analysis`;
+producer attribution is in its `producer/summary.md`. These diagnostic runs
+do not replace the frozen uninstrumented comparison.
+
+Lom `b8ec26a`, pinned by integration `7aa233d`, removes the producer's redundant CPU wait between drawing
+and submitting the foreign release on the same queue. The final release fence
+must still prove both completed before descriptor export, followed by bounded
+wgpu cleanup. Every failure after drawing is submitted retains the source and
+target; uncertain release additionally retains its pool and fence. Re-profile
+the combined draw-plus-release cost, because the wait moves between brackets.
+Do not add persistent command objects or source reuse yet: setup/export/drop
+account for only about 49 us/frame, and the release's internal syscall split
+is unmeasured. Lom's full offline gate and the pinned peer's seven tests pass.
+The existing renderD128 smoke and two-process Vulkan/EGL pixel oracle pass,
+including earlier-capture independence, frame cap and readback after export;
+receipts are in `development-evidence/t339-20261023/release-wait-01`. Unknown
+completion errors were reviewed, not fault-injected. The G-only re-profile is
+prepared at `~/.local/state/t331/t339-gpu-profile-03`, with all 14 manifest
+entries and idle-tty4 launch checks verified. No optimization benefit has been
+measured yet. The signing cache was
 unlocked without key configuration changes or an agent reset.
 
 The reuse design preserves the fresh API and adds a consuming unsafe reuse
