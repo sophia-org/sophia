@@ -711,6 +711,18 @@ impl LiveProductionNativeScanout {
                 metrics.capture_copy_cpu = metrics
                     .capture_copy_cpu
                     .saturating_add(stats.capture_copy_cpu);
+                metrics.capture_import_cpu = metrics
+                    .capture_import_cpu
+                    .saturating_add(stats.capture_import_cpu);
+                metrics.capture_import_elapsed = metrics
+                    .capture_import_elapsed
+                    .saturating_add(stats.capture_import_elapsed);
+                metrics.capture_source_evictions = metrics
+                    .capture_source_evictions
+                    .saturating_add(stats.capture_source_evictions);
+                metrics.capture_source_transient_imports = metrics
+                    .capture_source_transient_imports
+                    .saturating_add(stats.capture_source_transient_imports);
                 metrics.capture_cleanup_cpu = metrics
                     .capture_cleanup_cpu
                     .saturating_add(stats.capture_cleanup_cpu);

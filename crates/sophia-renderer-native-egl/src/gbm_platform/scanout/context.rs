@@ -331,6 +331,16 @@ where
         stats.capture_setup_elapsed = stats.capture_setup_elapsed.saturating_add(reuse.setup_elapsed);
         stats.capture_copy_elapsed = stats.capture_copy_elapsed.saturating_add(reuse.copy_elapsed);
         stats.capture_cleanup_elapsed = stats.capture_cleanup_elapsed.saturating_add(reuse.cleanup_elapsed);
+        stats.capture_import_cpu = stats.capture_import_cpu.saturating_add(reuse.import_cpu);
+        stats.capture_import_elapsed = stats
+            .capture_import_elapsed
+            .saturating_add(reuse.import_elapsed);
+        stats.capture_source_evictions = stats
+            .capture_source_evictions
+            .saturating_add(reuse.source_evictions);
+        stats.capture_source_transient_imports = stats
+            .capture_source_transient_imports
+            .saturating_add(reuse.source_transient_imports);
         stats.transfer_captures = self.transfer_stats.captures;
         stats.transfer_attempts = self.transfer_stats.attempts;
         stats.transfer_failures = self.transfer_stats.failures;

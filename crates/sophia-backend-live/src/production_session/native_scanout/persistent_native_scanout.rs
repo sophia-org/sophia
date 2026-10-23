@@ -598,6 +598,10 @@ pub struct LivePersistentRenderMetrics {
     pub transfer_failures: u64,
     pub capture_setup_cpu: std::time::Duration,
     pub capture_copy_cpu: std::time::Duration,
+    /// Source import/binding, contained in capture_copy_cpu.
+    pub capture_import_cpu: std::time::Duration,
+    pub capture_source_evictions: usize,
+    pub capture_source_transient_imports: usize,
     pub capture_cleanup_cpu: std::time::Duration,
     pub composition_cpu: std::time::Duration,
 
@@ -612,6 +616,7 @@ pub struct LivePersistentRenderMetrics {
     pub composition_damage: sophia_renderer_live::NativeCompositionDamageStats,
     pub capture_setup_elapsed: std::time::Duration,
     pub capture_copy_elapsed: std::time::Duration,
+    pub capture_import_elapsed: std::time::Duration,
     pub capture_cleanup_elapsed: std::time::Duration,
     pub composition_elapsed: std::time::Duration,
 

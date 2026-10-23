@@ -1,7 +1,7 @@
 #[derive(Default)]
 struct NativeCaptureTimingTotals {
-    cpu: [std::cell::Cell<std::time::Duration>; 5],
-    wall: [std::cell::Cell<std::time::Duration>; 5],
+    cpu: [std::cell::Cell<std::time::Duration>; 6],
+    wall: [std::cell::Cell<std::time::Duration>; 6],
 }
 
 #[derive(Clone, Copy)]
@@ -11,6 +11,9 @@ enum NativeCaptureTimingKind {
     Copy = 2,
     Cleanup = 3,
     Reclaim = 4,
+    /// Source lookup, eviction and EGL/GL import; nested in and still counted
+    /// by Copy, so it is never added to the capture partition.
+    Import = 5,
 }
 
 struct NativeCaptureTimingSpan {
@@ -45,7 +48,8 @@ impl Drop for NativeCaptureTimingSpan {
             // Cleanup is nested in draw, so remove its measured interval from
             // copy. Setup + copy + cleanup form the capture partition. Reclaim
             // may run inside setup under pressure; it is a separate attribution
-            // bracket and must never be added to that partition.
+            // bracket and must never be added to that partition. Import is a
+            // nested subset of copy and deliberately stays included in it.
             cpu = cpu.saturating_sub(totals.cpu[3].get().saturating_sub(self.cleanup_cpu));
             wall = wall.saturating_sub(totals.wall[3].get().saturating_sub(self.cleanup_wall));
         }

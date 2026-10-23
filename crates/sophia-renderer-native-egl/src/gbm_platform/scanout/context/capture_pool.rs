@@ -57,6 +57,10 @@ pub struct NativeCaptureReuseStats {
     pub source_imports: usize,
     pub source_hits: usize,
     pub source_rebinds: usize,
+    /// Source imports destroyed, by eviction or after a transient use.
+    pub source_evictions: usize,
+    /// Imports too large to retain, destroyed after their one use.
+    pub source_transient_imports: usize,
     pub source_bytes: u64,
     pub source_entries: usize,
     pub sampling: crate::NativeCompositionSamplingStats,
@@ -66,6 +70,9 @@ pub struct NativeCaptureReuseStats {
     pub setup_elapsed: std::time::Duration,
     pub copy_cpu: std::time::Duration,
     pub copy_elapsed: std::time::Duration,
+    /// Source import inside copy; already included in `copy_*`, never additive.
+    pub import_cpu: std::time::Duration,
+    pub import_elapsed: std::time::Duration,
     pub cleanup_cpu: std::time::Duration,
     pub cleanup_elapsed: std::time::Duration,
     pub reclaim_cpu: std::time::Duration,
@@ -267,6 +274,8 @@ impl NativeCaptureReuse {
             cleanup_elapsed: self.accounting.timing.wall[3].get(),
             reclaim_cpu: self.accounting.timing.cpu[4].get(),
             reclaim_elapsed: self.accounting.timing.wall[4].get(),
+            import_cpu: self.accounting.timing.cpu[5].get(),
+            import_elapsed: self.accounting.timing.wall[5].get(),
             ..self.stats
         };
         for execution in self.execution.iter().flatten() {
@@ -277,6 +286,10 @@ impl NativeCaptureReuse {
             stats.source_imports = stats.source_imports.saturating_add(source.imports);
             stats.source_hits = stats.source_hits.saturating_add(source.hits);
             stats.source_rebinds = stats.source_rebinds.saturating_add(source.rebinds);
+            stats.source_evictions = stats.source_evictions.saturating_add(source.evictions);
+            stats.source_transient_imports = stats
+                .source_transient_imports
+                .saturating_add(source.transient_imports);
         }
         stats
     }
@@ -692,6 +705,12 @@ impl NativeCaptureReuse {
             self.stats.source_imports = self.stats.source_imports.saturating_add(source.imports);
             self.stats.source_hits = self.stats.source_hits.saturating_add(source.hits);
             self.stats.source_rebinds = self.stats.source_rebinds.saturating_add(source.rebinds);
+            self.stats.source_evictions =
+                self.stats.source_evictions.saturating_add(source.evictions);
+            self.stats.source_transient_imports = self
+                .stats
+                .source_transient_imports
+                .saturating_add(source.transient_imports);
         }
         for captured in &self.retired {
             captured.generation.abandon_reuse();

@@ -589,6 +589,14 @@ pub struct LiveNativePersistentRenderStats {
     pub capture_setup_elapsed: std::time::Duration,
     pub capture_copy_elapsed: std::time::Duration,
     pub capture_cleanup_elapsed: std::time::Duration,
+    /// Pooled-capture source import, nested in and already counted by
+    /// `capture_copy_*`; never add it to the setup/copy/cleanup partition.
+    pub capture_import_cpu: std::time::Duration,
+    pub capture_import_elapsed: std::time::Duration,
+    /// Pooled-capture source imports destroyed, by eviction or after a
+    /// transient use, and the subset of imports that were transient.
+    pub capture_source_evictions: usize,
+    pub capture_source_transient_imports: usize,
     pub composition_elapsed: std::time::Duration,
 
     pub target_creations: usize,

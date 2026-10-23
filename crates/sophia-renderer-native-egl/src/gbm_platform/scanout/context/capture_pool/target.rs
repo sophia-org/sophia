@@ -376,13 +376,19 @@ impl NativeCaptureAllocation {
             let mut pipeline = execution.pipeline.borrow_mut();
             let pipeline = pipeline.as_mut().expect("live capture pipeline");
             pipeline.set_extent(frame.width, frame.height);
-            let source = execution.sources.borrow_mut().texture(
-                &execution.egl,
-                execution.display,
-                pipeline,
-                frame,
-                source_budget,
-            )?;
+            let source = {
+                let _import = NativeCaptureTimingSpan::start(
+                    &self.accounting,
+                    NativeCaptureTimingKind::Import,
+                );
+                execution.sources.borrow_mut().texture(
+                    &execution.egl,
+                    execution.display,
+                    pipeline,
+                    frame,
+                    source_budget,
+                )
+            }?;
             unsafe {
                 execution
                     .gl

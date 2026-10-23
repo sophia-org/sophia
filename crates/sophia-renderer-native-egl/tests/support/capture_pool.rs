@@ -138,3 +138,41 @@ fn destination_bound_uses_only_recorded_sizes_for_the_layout() {
     assert_eq!(reuse.destination_bound(32, 32), Some(99999));
     assert_eq!(reuse.destination_bound(16, 16), None);
 }
+
+#[test]
+fn import_time_stays_inside_copy_while_cleanup_is_removed() {
+    let mut reuse = NativeCaptureReuse::default();
+    assert!(
+        NativeCaptureTimingSpan::start(&reuse.accounting, NativeCaptureTimingKind::Import)
+            .is_none(),
+        "timing starts disabled"
+    );
+    reuse.set_render_timing_enabled(true);
+    let pause = std::time::Duration::from_millis(5);
+    let span = |kind| NativeCaptureTimingSpan::start(&reuse.accounting, kind);
+    {
+        let _capture = span(NativeCaptureTimingKind::Capture);
+        let _copy = span(NativeCaptureTimingKind::Copy);
+        {
+            let _import = span(NativeCaptureTimingKind::Import);
+            std::thread::sleep(pause);
+        }
+        {
+            let _cleanup = span(NativeCaptureTimingKind::Cleanup);
+            std::thread::sleep(pause);
+        }
+    }
+    let stats = reuse.stats();
+    assert!(
+        stats.import_elapsed >= pause && stats.cleanup_elapsed >= pause,
+        "{stats:?}"
+    );
+    // Import is a nested subset of copy; only the measured cleanup leaves it,
+    // so copy and cleanup together still fit inside the enclosing capture.
+    assert!(stats.copy_elapsed >= stats.import_elapsed, "{stats:?}");
+    assert!(
+        stats.copy_elapsed + stats.cleanup_elapsed <= stats.capture_elapsed,
+        "{stats:?}"
+    );
+    assert_eq!(stats.reclaim_elapsed, std::time::Duration::ZERO);
+}

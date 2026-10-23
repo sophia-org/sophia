@@ -186,6 +186,14 @@ driver helper threads, and the root context's stage timings exclude work in a
 separate transfer context. Transfer counters identify that limitation. These
 measurements contain no client text, handles, paths or pixel data.
 
+Capture import CPU/elapsed time is a nested part of copy, not an additional
+stage to add to it. It covers source identity checks, cache trimming, descriptor
+duplication, EGL image creation and GL binding (or rebinding on a cache hit).
+Evictions within that lookup are included. Capture source eviction and transient
+import counts distinguish cached-entry replacement from per-use cleanup. Driver
+work deferred until draw or flush lies outside this import bracket; it is not a
+complete measure of every cost caused by importing a source.
+
 The render-node tests compare partial and full pixels through buffer age and
 rejected preparations, and check exported snapshots after local eviction and
 context destruction. The fixed-cadence capture and CPU-scene benchmarks measure
