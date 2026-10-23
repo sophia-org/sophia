@@ -127,23 +127,62 @@ kernel-inclusive control is still missing. Separate driver kworkers, off-CPU
 waits, GPU timing and allocation peaks are outside scope. No production change
 is justified by this total-cost profile alone.
 
-Niltempus approved the matched ring kernel control and subsequent optimization
-of the largest confirmed excess. Profile10 is prepared as one R capture against
-profile09 G: identical Sophia, peer and runner binaries, source pins, display,
-scene, frame count and kernel instrumentation. R's configuration matches the
-previous ring control (two configured slots, GPU readback Vec then slot copy).
-The exercised root collector differs only in three arm/path strings; PAM/VT
-helpers are byte-identical. All sixteen package hashes, collector device-free
-checks and idle-tty preflight pass. No native capture was launched here.
-Run `sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-10/kernel-profile.py`
-from crunch over SSH, keeping the connection alive. Compare broad process,
-thread, syscall and driver buckets before choosing a source edit; one profile
-per arm is attribution evidence, not the repeated optimization acceptance gate.
+The approved matched ring kernel control, profile10 R, completed cleanly.
+Executable pins, display, workload and instrumentation match profile09 G;
+both have 2120 exact accepted/presented joins, zero retained native resources,
+clean PAM/VT cleanup and no lost or throttled samples. CPUwin midpoints are
+Session/peer 950/500 us for R versus 1197.5/650 us for G: 397.5 us more per
+frame for G. Scaling broad perf shares to each process midpoint puts about
+315 us of that excess in kernel time, including about 215 us in identified
+ioctl stacks. GPU submission and address mapping are prominent. Session's
+renderer worker accounts for about 180 us of extra CPU; its owner thread
+accounts for about 58 us. These partitions overlap and must not be added.
+Evidence and limits are in
+`~/.local/state/t331/t339-gpu-profile-10/analysis/REPORT.txt` and
+`cpu-comparison.json`, alongside the independent audit. One capture per arm
+supports attribution, not a repeated performance acceptance claim.
 
-No source reuse, cached prepare bounds, GL flush deletion or further producer
-synchronization change is planned. The small-bar CPU regression remains
-unresolved. GPU execution, physical allocation peaks, input latency and full
-render-start delivery latency remain unmeasured.
+The next candidate is bounded producer-buffer reuse, already authorized if
+allocation/import churn proved material. Signed Lom `dcb1eb8` is pushed; it
+preserves fresh export and adds a consuming unsafe reuse call. Separate raw
+acquire and release encoders surround the blit in one wgpu submission; the
+existing frame, descriptor and retention slot survive. Returned errors after
+rendering retain the frame; wgpu's default error-handler panics bypass this
+retention, as on the fresh path. Offline checks pass. The native reuse control
+passed on RX 7900 GRE/RADV: both 256x64 frames had descriptor identity
+`dev=11 ino=85497`, both capture-complete pixel checks passed, and re-reading
+the first owned destination after overwriting the source preserved pattern 1.
+Producer and oracle exited zero. This proves the bounded Vulkan-to-EGL reuse
+case, not Session integration or a CPU benefit. Results and log hashes are in
+`~/.local/state/t331/t339-reuse-control-01/result.json` and `RESULT.sha256`. The
+existing external driver now has an explicit reuse mode and measured descriptor
+identity. Its shared-log overwrite race was fixed and mutation-checked with
+device-free stub processes. The source/binary-pinned, one-shot control is
+`~/.local/state/t331/t339-reuse-control-01/run.sh`; `--check-only` verifies pins
+without opening a GPU. It uses the render node and no display or VT session.
+The exact pre-commit candidate patches and hashes remain in the package and
+match the signed library commit. Signed integration `b1ca8c1` is pushed with
+an explicit, diagnostic-only peer reuse mode. It retains one frame only after
+Accepted, CaptureComplete and successful SDK forget. Peer tests (10), strict
+Clippy, the historical peer's shared-source check, runner validation tests and
+runner Clippy pass. Fresh timing remains schema 1; reuse timing is schema 2
+with 2000 reuses and zero fresh/destroy stages in the counted window.
+
+Profile11 is prepared at `~/.local/state/t331/t339-gpu-profile-11`, in order R,
+fresh G, reused G: three 60-second captures using the same Sophia `58443cd06`,
+peer `e730fef6` and runner `1b1c776a` binaries. All use capture-profile counters
+without perf sampling. Native-plan and diagnostic checks pass; all package
+pins and idle-tty4 preflights pass without launching a session. This is one
+capture per arm to measure CPU and capture import/hit/rebind counters, not
+repeatability or promotion acceptance. Run from crunch over SSH, keeping the
+connection alive:
+`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-11/ssh/run.py`.
+No profile11 native capture has started. Audit mode and timing schema as well
+as the existing exact joins, monotonic completion, custody and cleanup gates.
+
+Do not cache physical prepare bounds or weaken custody to save passes. The
+small-bar CPU regression remains unresolved. GPU execution, physical allocation
+peaks, input latency and full render-start delivery latency remain unmeasured.
 
 ## Prepare notification result and readiness diagnostic — October 23, 2026
 
