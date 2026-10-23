@@ -391,7 +391,7 @@ fn drive(stale: bool) {
     };
     let destination = native.offer_with(1, 4 * LOGICAL);
     let now = Instant::now();
-    owner.service_capture_intake(&mut native, 0, now);
+    owner.service_capture_intake(&mut native, 0, now, &unwatched());
     owner
         .capture_link
         .service(&mut native, &mut owner.capture, true)
@@ -462,8 +462,12 @@ fn drive(stale: bool) {
         if stale && !refused && native.prepares == [first] {
             // Past the offer's deadline with its prepare still in flight.
             let late = Instant::now() + Duration::from_secs(3600);
-            let errors =
-                owner.service_capture_intake(&mut native, owner.content_clock_msec(), late);
+            let errors = owner.service_capture_intake(
+                &mut native,
+                owner.content_clock_msec(),
+                late,
+                &unwatched(),
+            );
             assert!(errors.is_empty(), "{:?}", errors.len());
             assert_eq!(
                 destination.budget.usage(),
@@ -483,8 +487,12 @@ fn drive(stale: bool) {
             );
             native.prepared = Some(Ok(LOGICAL));
         }
-        let errors =
-            owner.service_capture_intake(&mut native, owner.content_clock_msec(), Instant::now());
+        let errors = owner.service_capture_intake(
+            &mut native,
+            owner.content_clock_msec(),
+            Instant::now(),
+            &unwatched(),
+        );
         assert!(errors.is_empty(), "{:?}", errors.len());
         if phase == 0 && owner.capture.as_ref().is_some_and(|o| o.pending() == 1) {
             assert_eq!(owner.capture_sources.pending(), 0);

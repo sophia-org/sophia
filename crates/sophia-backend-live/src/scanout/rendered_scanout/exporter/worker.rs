@@ -861,7 +861,8 @@ enum WorkerCommand {
     PrepareShellCaptureDestination {
         width: u32,
         height: u32,
-        completion_sender: SyncSender<io::Result<u64>>,
+        /// Rings the Session owner on reply and on disconnect.
+        completion_sender: sophia_wake::SignalSender<io::Result<u64>>,
     },
     /// Attach an output, giving the worker the channel its results go home on
     /// and the metrics handle its own slot pool publishes to.

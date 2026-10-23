@@ -354,6 +354,8 @@ fn component_outer_cleanup_retains_owner_until_native_disposition_and_prior_erro
     component_lifecycle::stop(
         owner.as_mut(),
         Some(&mut runtime),
+        #[cfg(feature = "experimental-shell-capture")]
+        None,
         &mut failures,
         &mut crate::launch_authentication::LaunchCoordinator::new(
             Default::default(),

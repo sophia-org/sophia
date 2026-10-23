@@ -74,6 +74,7 @@ impl ShellComponentConnections {
         backend: &mut impl Backend,
         now: u64,
         instant: Instant,
+        wake: &sophia_wake::Notifier,
     ) -> Vec<(ComponentConnectionKey, ShellTransportError)> {
         self.demand_capture_output(backend);
         let mut errors = Vec::new();
@@ -95,7 +96,7 @@ impl ShellComponentConnections {
                 self.receive_capture_source(slot, grant, source);
             }
         }
-        if let Err(error) = self.service_capture_offer(backend, now, instant) {
+        if let Err(error) = self.service_capture_offer(backend, now, instant, wake) {
             errors.push(error);
         }
         self.submit_received_captures(now, instant);
@@ -121,6 +122,7 @@ impl ShellComponentConnections {
         backend: &mut impl Backend,
         now: u64,
         instant: Instant,
+        wake: &sophia_wake::Notifier,
     ) -> Result<(), (ComponentConnectionKey, ShellTransportError)> {
         if self.capture_intake.preparing.is_none() {
             let Some(next) = self.next_capture_offer() else {
@@ -140,7 +142,7 @@ impl ShellComponentConnections {
             self.capture_intake.preparing = None;
             return Ok(());
         };
-        let step = self.prepare_capture_offer(backend, metadata, instant);
+        let step = self.prepare_capture_offer(backend, metadata, instant, wake);
         let result = match step {
             Step::Wait => return Ok(()),
             Step::Refuse(reason) => self.connections[key.slot]
@@ -222,6 +224,7 @@ impl ShellComponentConnections {
         backend: &mut impl Backend,
         metadata: sophia_protocol::shell_files::ShellImageMetadata,
         instant: Instant,
+        wake: &sophia_wake::Notifier,
     ) -> Step {
         let destination = self.capture_link.destination().cloned();
         let preparing = self.capture_intake.preparing.as_mut().expect("preparing");
@@ -240,7 +243,7 @@ impl ShellComponentConnections {
             // A refused or withdrawn offer can leave its prepare in flight, and
             // the backend allows one; drain it, since its bound fits another size.
             let _ = backend.poll_prepare();
-            match backend.prepare(destination.output, metadata.width, metadata.height) {
+            match backend.prepare(destination.output, metadata.width, metadata.height, wake) {
                 Ok(()) => preparing.requested = true,
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Step::Wait,
                 Err(_) => return Step::Refuse(ContentReason::RendererFailed),

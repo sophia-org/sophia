@@ -38,8 +38,15 @@ pub(super) trait Backend {
     fn request(&mut self, output: OutputId) -> io::Result<()>;
     fn poll(&mut self) -> io::Result<Option<Endpoint>>;
     fn close(&mut self) -> io::Result<()>;
-    /// One outstanding request on the active endpoint for `output`.
-    fn prepare(&mut self, output: OutputId, width: u32, height: u32) -> io::Result<()>;
+    /// One outstanding request on the active endpoint for `output`. `wake`
+    /// is rung when its reply, or a disconnect, can be polled.
+    fn prepare(
+        &mut self,
+        output: OutputId,
+        width: u32,
+        height: u32,
+        wake: &sophia_wake::Notifier,
+    ) -> io::Result<()>;
     /// The proven destination byte bound for the prepared size.
     fn poll_prepare(&mut self) -> io::Result<Option<u64>>;
 }
@@ -87,8 +94,14 @@ impl Backend for sophia_backend_live::LiveProductionNativeScanout {
     fn close(&mut self) -> io::Result<()> {
         self.close_shell_capture()
     }
-    fn prepare(&mut self, output: OutputId, width: u32, height: u32) -> io::Result<()> {
-        self.request_prepare_shell_capture_destination(output, width, height)
+    fn prepare(
+        &mut self,
+        output: OutputId,
+        width: u32,
+        height: u32,
+        wake: &sophia_wake::Notifier,
+    ) -> io::Result<()> {
+        self.request_prepare_shell_capture_destination(output, width, height, wake)
     }
     fn poll_prepare(&mut self) -> io::Result<Option<u64>> {
         self.poll_prepare_shell_capture_destination()
@@ -324,6 +337,7 @@ impl ShellComponentConnections {
         &mut self,
         native: &mut sophia_backend_live::LiveProductionNativeScanout,
         available: bool,
+        wake: &sophia_wake::Notifier,
     ) -> io::Result<()> {
         self.capture_link
             .observe_requester(&self.connections, &mut self.capture);
@@ -331,7 +345,7 @@ impl ShellComponentConnections {
             .capture_link
             .service(native, &mut self.capture, available);
         for (key, error) in
-            self.service_capture_intake(native, content_now_msec(), std::time::Instant::now())
+            self.service_capture_intake(native, content_now_msec(), std::time::Instant::now(), wake)
         {
             tracing::warn!(slot = key.slot, grant = ?key.grant, %error,
                 "shell capture offer intake retained for exact owner");

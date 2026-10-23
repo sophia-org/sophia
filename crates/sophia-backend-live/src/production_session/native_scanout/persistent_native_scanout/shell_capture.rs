@@ -242,12 +242,14 @@ impl LiveProductionNativeScanout {
     /// One outstanding request; WouldBlock while one is in flight or no
     /// endpoint is active for the output. The returned bound is the
     /// only proven destination bound for a first unseen size; Session
-    /// reserves it against the endpoint budget before submitting.
+    /// reserves it against the endpoint budget before submitting. `wake` is
+    /// rung when the reply, or a disconnect, becomes readable.
     pub fn request_prepare_shell_capture_destination(
         &mut self,
         output: OutputId,
         width: u32,
         height: u32,
+        wake: &sophia_wake::Notifier,
     ) -> io::Result<()> {
         let active = self.preview_images.capture.active.as_ref();
         if active.is_none_or(|install| install.output != output) {
@@ -259,7 +261,7 @@ impl LiveProductionNativeScanout {
             .iter()
             .position(|e| e.image_store_identity() == Some(store))
             .ok_or(io::ErrorKind::NotConnected)?;
-        self.exporters[index].request_prepare_shell_capture_destination(width, height)
+        self.exporters[index].request_prepare_shell_capture_destination(width, height, wake)
     }
 
     pub fn poll_prepare_shell_capture_destination(&mut self) -> io::Result<Option<u64>> {

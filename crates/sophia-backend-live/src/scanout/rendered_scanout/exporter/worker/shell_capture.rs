@@ -63,6 +63,7 @@ impl NativeGbmRendererWorkerCore {
         &self,
         width: u32,
         height: u32,
+        wake: &sophia_wake::Notifier,
     ) -> io::Result<()> {
         let mut pending = self
             .capture_prepare
@@ -71,12 +72,17 @@ impl NativeGbmRendererWorkerCore {
         if pending.is_some() || self.control.is_shutdown() {
             return Err(io::ErrorKind::WouldBlock.into());
         }
+        let slot = &self.control.capture_prepare_wake;
+        if !slot.attached() {
+            // Attaching rings once; see WorkerControl for why once suffices.
+            slot.set(wake.clone());
+        }
         let (completion_sender, receive) = sync_channel(1);
         self.command_sender
             .try_send(WorkerCommand::PrepareShellCaptureDestination {
                 width,
                 height,
-                completion_sender,
+                completion_sender: sophia_wake::SignalSender::new(completion_sender, slot.clone()),
             })
             .map_err(|e| match e {
                 TrySendError::Full(_) => io::Error::from(io::ErrorKind::WouldBlock),
@@ -140,9 +146,10 @@ impl NativeGbmRendererWorker {
         &self,
         width: u32,
         height: u32,
+        wake: &sophia_wake::Notifier,
     ) -> io::Result<()> {
         self.core
-            .request_prepare_shell_capture_destination(width, height)
+            .request_prepare_shell_capture_destination(width, height, wake)
     }
     pub(crate) fn poll_prepare_shell_capture_destination(&self) -> io::Result<Option<u64>> {
         self.core.poll_prepare_shell_capture_destination()

@@ -153,6 +153,15 @@ pub(super) struct WorkerControl {
     shutdown: AtomicBool,
     #[cfg(feature = "experimental-shell-capture")]
     pub(super) command_wake: sophia_wake::WakeSlot,
+    /// The Session owner wake rung by every capture-preparation reply and
+    /// disconnect. Attached once: this control lives inside one exporter of
+    /// one LiveProductionNativeScanout, which exists only within the single
+    /// run whose OwnerWake predates it, so no other owner can request here.
+    // Read by worker/shell_capture.rs; renderer_worker_shutdown mounts this
+    // file alone, where nothing requests a preparation.
+    #[cfg(feature = "experimental-shell-capture")]
+    #[allow(dead_code)]
+    pub(super) capture_prepare_wake: sophia_wake::WakeSlot,
 }
 
 impl WorkerControl {

@@ -61,7 +61,13 @@ impl Backend for Native {
             .filter(|(drives, _)| *drives == device)
             .map(|(_, output)| OutputId::from_raw(output))
     }
-    fn prepare(&mut self, output: OutputId, width: u32, height: u32) -> io::Result<()> {
+    fn prepare(
+        &mut self,
+        output: OutputId,
+        width: u32,
+        height: u32,
+        _wake: &sophia_wake::Notifier,
+    ) -> io::Result<()> {
         // The backend allows one outstanding request until its reply is polled.
         if self.prepares.len() > self.prepare_replies {
             return Err(io::ErrorKind::WouldBlock.into());
@@ -480,14 +486,15 @@ fn granted_render_node_demands_its_output_and_configures_only_a_matching_endpoin
     // No grant: no demand, no DMA-BUF, no launch wait.
     assert!(
         f.inner
-            .service_capture_intake(&mut native, 0, now)
+            .service_capture_intake(&mut native, 0, now, &unwatched())
             .is_empty()
     );
     assert!(f.inner.capture_link.desired.is_none());
     assert!(f.inner.capture_launch_ready(0));
     f.inner.grant_capture_device(0, Some(1)).unwrap();
     assert!(!f.inner.capture_launch_ready(0), "waits for its endpoint");
-    f.inner.service_capture_intake(&mut native, 0, now);
+    f.inner
+        .service_capture_intake(&mut native, 0, now, &unwatched());
     assert_eq!(f.inner.capture_link.desired, Some(OutputId::from_raw(7)));
     native.offer(7);
     f.inner
@@ -561,4 +568,9 @@ fn capture_configuration_publishes_one_linear_row_and_checked_ceilings() {
         row.max_width, limits.max_width_px,
         "role maximum still bounds the row"
     );
+}
+
+/// Fake backends never ring; production waking is covered with the worker.
+fn unwatched() -> sophia_wake::Notifier {
+    sophia_wake::Wake::new().unwrap().notifier()
 }

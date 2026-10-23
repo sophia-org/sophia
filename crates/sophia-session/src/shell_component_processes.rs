@@ -307,11 +307,14 @@ impl ShellComponentProcesses {
         &mut self,
         native: &mut sophia_backend_live::LiveProductionNativeScanout,
         available: bool,
+        wake: &sophia_wake::Notifier,
     ) -> (
         std::io::Result<()>,
         Vec<(crate::shell_capture_owner::Binding, ShellTransportError)>,
     ) {
-        let installation = self.connections.service_capture_endpoint(native, available);
+        let installation = self
+            .connections
+            .service_capture_endpoint(native, available, wake);
         // Even a failed/closing installation must reconcile old receipts.
         let errors = self.connections.service_capture_completions();
         (installation, errors)

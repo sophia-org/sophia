@@ -505,3 +505,54 @@ fn renderer_image_handoff_settles_an_unsubmitted_worker_frame() {
     assert_eq!(metrics.requests, 1);
     assert_eq!(metrics.failures, 1);
 }
+
+#[cfg(feature = "experimental-shell-capture")]
+#[test]
+fn capture_preparation_reply_and_disconnect_wake_the_owner() {
+    let (core, receive, resume) = inventory_test_core(1);
+    let owner = sophia_wake::Wake::new().unwrap();
+    let now = || Some(Instant::now());
+    core.request_prepare_shell_capture_destination(1920, 24, &owner.notifier())
+        .unwrap();
+    // Attachment rings once, like any producer published before the wait.
+    assert!(owner.wait(now()).unwrap());
+    owner.clear().unwrap();
+    let WorkerCommand::PrepareShellCaptureDestination {
+        completion_sender, ..
+    } = receive.recv().unwrap()
+    else {
+        panic!("preparation was not queued");
+    };
+    assert!(!owner.wait(now()).unwrap(), "no ring before the reply");
+    completion_sender.try_send(Ok(4096)).unwrap();
+    assert!(owner.wait(now()).unwrap(), "the reply rings the owner");
+    owner.clear().unwrap();
+    assert_eq!(
+        core.poll_prepare_shell_capture_destination().unwrap(),
+        Some(4096)
+    );
+    drop(completion_sender);
+    owner.clear().unwrap();
+
+    core.request_prepare_shell_capture_destination(1920, 24, &owner.notifier())
+        .unwrap();
+    assert!(
+        !owner.wait(now()).unwrap(),
+        "already attached: no second ring"
+    );
+    let unserved = receive.recv().unwrap();
+    assert!(
+        core.poll_prepare_shell_capture_destination()
+            .unwrap()
+            .is_none()
+    );
+    drop(unserved);
+    assert!(owner.wait(now()).unwrap(), "a disconnect rings the owner");
+    assert_eq!(
+        core.poll_prepare_shell_capture_destination()
+            .unwrap_err()
+            .kind(),
+        std::io::ErrorKind::BrokenPipe
+    );
+    resume.send(()).unwrap();
+}

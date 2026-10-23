@@ -36,11 +36,12 @@ impl<R: RenderDeviceDiscoveryBackend> NativeGbmRenderedScanoutBufferDiscoveryExp
         &self,
         width: u32,
         height: u32,
+        wake: &sophia_wake::Notifier,
     ) -> io::Result<()> {
         self.worker
             .as_ref()
             .ok_or(io::ErrorKind::Unsupported)?
-            .request_prepare_shell_capture_destination(width, height)
+            .request_prepare_shell_capture_destination(width, height, wake)
     }
     pub(crate) fn poll_prepare_shell_capture_destination(&self) -> io::Result<Option<u64>> {
         self.worker

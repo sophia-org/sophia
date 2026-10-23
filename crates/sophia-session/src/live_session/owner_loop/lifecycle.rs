@@ -97,7 +97,7 @@
     if let (Some(components), Some(native)) = (shell_components.as_mut(), native_scanout.as_mut()) {
         // Install only on reserved demand, then drain old receipts even when
         // runtime/frame service is paused. Admission still cannot create demand.
-        components.service_capture_maintenance(native);
+        components.service_capture_maintenance(native, &owner_notifier);
         // Maintenance runs even without a new frame or during topology changes.
         // Busy/error keeps the eviction obligation and both budgets. The component
         // owner's maintenance deadline schedules a bounded retry, not permission.

@@ -84,10 +84,11 @@ impl ShellComponentSession {
     pub(crate) fn service_capture_maintenance(
         &mut self,
         native: &mut sophia_backend_live::LiveProductionNativeScanout,
+        wake: &sophia_wake::Notifier,
     ) {
-        let (installation, errors) = self
-            .processes
-            .service_capture_maintenance(native, !self.stopping);
+        let (installation, errors) =
+            self.processes
+                .service_capture_maintenance(native, !self.stopping, wake);
         if let Err(error) = installation {
             tracing::warn!(%error, "shell capture endpoint maintenance retained for retry");
         }
