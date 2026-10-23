@@ -13,7 +13,7 @@ fn observation_error_names_its_exact_connection_not_the_first_pending_job() {
     f.submit(second);
     // This registry knows only the first custody. Missing second owner must
     // never report a failure against the valid first connection.
-    let errors = f.owner.service(&mut f.registries[0], 0, f.now, |_, _| {
+    let errors = f.owner.service(&mut f.registries[0], 0, f.now, |_, _, _| {
         panic!("executor has not serviced requests")
     });
     assert_eq!(errors.len(), 1);
@@ -32,7 +32,7 @@ fn journal_pressure_retains_source_and_slot_without_repeating_settlement() {
     for _ in 0..3 {
         let errors = f
             .owner
-            .service(&mut f.registries[0], 0, f.now, |got, disposition| {
+            .service(&mut f.registries[0], 0, f.now, |_, got, disposition| {
                 assert_eq!(got, b);
                 assert_eq!(disposition, ShellSourceDisposition::CancelledBeforeImport);
                 Err(ShellTransportError::ContentQueueSaturated)
@@ -63,7 +63,7 @@ fn journal_pressure_retains_source_and_slot_without_repeating_settlement() {
     );
     assert!(
         f.owner
-            .service(&mut f.registries[0], 0, f.now, |_, _| Ok(
+            .service(&mut f.registries[0], 0, f.now, |_, _, _| Ok(
                 Publication::Journaled
             ))
             .is_empty()
@@ -78,7 +78,7 @@ fn publication_error_is_not_disconnection_proof() {
     let mut f = Fixture::new();
     f.submit(binding(1, 1));
     drop(f.executor.take());
-    let errors = f.owner.service(&mut f.registries[0], 0, f.now, |_, _| {
+    let errors = f.owner.service(&mut f.registries[0], 0, f.now, |_, _, _| {
         Err(ShellTransportError::NotConnected)
     });
     assert_eq!(errors.len(), 1);
@@ -86,7 +86,7 @@ fn publication_error_is_not_disconnection_proof() {
     assert_eq!(f.budget.usage(), (1, 64));
     assert!(
         f.owner
-            .service(&mut f.registries[0], 0, f.now, |_, _| Ok(
+            .service(&mut f.registries[0], 0, f.now, |_, _, _| Ok(
                 Publication::Disconnected
             ))
             .is_empty()
@@ -108,7 +108,7 @@ fn clock_refusal_preserves_receipt_and_ticket_before_any_publication() {
     drop(f.executor.take());
     assert!(
         !f.owner
-            .service(&mut f.registries[0], 9, f.now, |_, _| panic!(
+            .service(&mut f.registries[0], 9, f.now, |_, _, _| panic!(
                 "no publication before settlement"
             ))
             .is_empty()
@@ -127,7 +127,7 @@ fn clock_refusal_preserves_receipt_and_ticket_before_any_publication() {
     assert_eq!(f.budget.usage(), (1, 64));
     assert!(
         f.owner
-            .service(&mut f.registries[0], 10, f.now, |_, _| Ok(
+            .service(&mut f.registries[0], 10, f.now, |_, _, _| Ok(
                 Publication::Journaled
             ))
             .is_empty()
@@ -151,7 +151,7 @@ fn journal_waiters_still_consume_all_four_capture_slots() {
     drop(f.executor.take());
     assert!(
         f.owner
-            .service(&mut registry, 0, f.now, |_, _| Err(
+            .service(&mut registry, 0, f.now, |_, _, _| Err(
                 ShellTransportError::ContentQueueSaturated
             ))
             .is_empty()

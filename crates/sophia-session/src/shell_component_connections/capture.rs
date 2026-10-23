@@ -151,11 +151,16 @@ impl ShellComponentConnections {
             &mut self.epochs,
             content_now_msec(),
             std::time::Instant::now(),
-            |binding, disposition| {
+            |epochs, binding, disposition| {
                 publish_current(connections, binding, |connection| {
                     connection
                         .transport
-                        .release_capture_image_source(binding.grant, binding.metadata, disposition)
+                        .release_capture_image_source(
+                            epochs,
+                            binding.grant,
+                            binding.metadata,
+                            disposition,
+                        )
                         .map(|_| ())
                 })
             },

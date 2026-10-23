@@ -87,6 +87,7 @@ impl Owner {
         now: u64,
         instant: Instant,
         mut publish: impl FnMut(
+            &mut ContentEpochRegistry,
             Binding,
             ShellSourceDisposition,
         ) -> Result<Publication, ShellTransportError>,
@@ -127,7 +128,7 @@ impl Owner {
                     continue;
                 }
             };
-            match publish(settlement.binding, disposition) {
+            match publish(registry, settlement.binding, disposition) {
                 Ok(Publication::Journaled | Publication::Disconnected) => *slot = None,
                 Err(ShellTransportError::ContentQueueSaturated) => (),
                 Err(error) => errors.push((settlement.binding, error)),

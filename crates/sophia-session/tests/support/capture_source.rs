@@ -80,7 +80,7 @@ fn pending_endpoint_keeps_source_and_credit_then_timeout_keeps_journal_custody()
     assert!(f.inner.capture_maintenance_wait() <= Duration::from_millis(10));
     assert!(
         f.inner
-            .service_capture_sources_with(0, now, |_, _, _| panic!("unsettled source"))
+            .service_capture_sources_with(0, now, |_, _, _, _| panic!("unsettled source"))
             .is_empty()
     );
     alive(&mut peer);
@@ -100,7 +100,7 @@ fn pending_endpoint_keeps_source_and_credit_then_timeout_keeps_journal_custody()
     let mut attempts = 0;
     let errors =
         f.inner
-            .service_capture_sources_with(1, now + Duration::from_secs(2), |_, b, d| {
+            .service_capture_sources_with(1, now + Duration::from_secs(2), |_, _, b, d| {
                 assert_eq!(b, binding);
                 assert_eq!(
                     d,
@@ -128,7 +128,7 @@ fn pending_endpoint_keeps_source_and_credit_then_timeout_keeps_journal_custody()
     // not drop the descriptor. Only the next successful journal append does.
     assert!(
         f.inner
-            .service_capture_sources_with(2, now + Duration::from_secs(3), |_, _, _| Ok(
+            .service_capture_sources_with(2, now + Duration::from_secs(3), |_, _, _, _| Ok(
                 Publication::Journaled
             ))
             .is_empty()
@@ -152,7 +152,7 @@ fn disconnected_source_reconciles_old_ticket_without_publishing_to_successor() {
     ));
     let errors = f
         .inner
-        .service_capture_sources_with(0, now, |connections, binding, _| {
+        .service_capture_sources_with(0, now, |connections, _, binding, _| {
             publish_current(connections, binding, |_| {
                 panic!("old source reached successor")
             })
@@ -310,13 +310,13 @@ fn clock_failure_retains_source_without_publication_and_retry_settles_once() {
     assert!(f.inner.retain_capture_source(s, 10).is_ok());
     let errors = f
         .inner
-        .service_capture_sources_with(9, now, |_, _, _| panic!("regressed clock"));
+        .service_capture_sources_with(9, now, |_, _, _, _| panic!("regressed clock"));
     assert_eq!(errors.len(), 1);
     assert_eq!(f.inner.capture_pending(), 1);
     alive(&mut peer);
     assert!(
         f.inner
-            .service_capture_sources_with(10, now + Duration::from_secs(2), |_, _, _| Ok(
+            .service_capture_sources_with(10, now + Duration::from_secs(2), |_, _, _, _| Ok(
                 Publication::Journaled
             ))
             .is_empty()
@@ -376,7 +376,7 @@ fn failed_enqueue_restores_source_and_releases_only_unused_physical_credit() {
     alive(&mut peer);
     assert!(
         f.inner
-            .service_capture_sources_with(0, now, |_, _, _| Ok(Publication::Journaled))
+            .service_capture_sources_with(0, now, |_, _, _, _| Ok(Publication::Journaled))
             .is_empty()
     );
     gone(&mut peer);
@@ -397,7 +397,7 @@ fn shutdown_retains_waiting_source_after_all_grants_retire() {
     alive(&mut peer);
     assert!(
         f.inner
-            .service_capture_sources_with(0, now, |_, _, _| Ok(Publication::Disconnected))
+            .service_capture_sources_with(0, now, |_, _, _, _| Ok(Publication::Disconnected))
             .is_empty()
     );
     assert_eq!(f.inner.capture_pending(), 0);
@@ -488,7 +488,7 @@ fn admission_without_source_settles_and_releases_its_ticket_at_the_deadline() {
     let mut released = Vec::new();
     assert!(
         f.inner
-            .service_capture_sources_with(0, now, |_, binding, disposition| {
+            .service_capture_sources_with(0, now, |_, _, binding, disposition| {
                 released.push((binding.metadata, disposition));
                 Ok(crate::shell_capture_owner::Publication::Journaled)
             })

@@ -256,7 +256,8 @@ fn send_source(socket: &impl AsFd, metadata: ShellImageMetadata, bytes: u64) {
 
 /// One event read whose request is fully written before `written` runs, so
 /// the owner can take it in one ordinary turn and then stop serving input.
-fn read_after(peer: &mut raw::Peer, written: impl FnOnce()) -> (ShellFileKind, Vec<u8>) {
+/// Returns every record that single read delivered.
+fn read_after(peer: &mut raw::Peer, written: impl FnOnce()) -> Vec<(ShellFileKind, Vec<u8>)> {
     let request = [
         2u32.to_le_bytes().as_slice(),
         &peer.event_offset().to_le_bytes(),
@@ -267,9 +268,16 @@ fn read_after(peer: &mut raw::Peer, written: impl FnOnce()) -> (ShellFileKind, V
         .rpc_with_prefix(116, &request, 7 + request.len(), written)
         .unwrap();
     assert_eq!(kind, 117);
-    let record =
-        decode_shell_file_record_at_revision(&body[4..], ShellFileClass::Event, 10).unwrap();
-    (record.header.kind, record.body.to_vec())
+    let mut rest = &body[4..];
+    let mut records = Vec::new();
+    while !rest.is_empty() {
+        let size = u32::from_le_bytes(rest[..4].try_into().unwrap()) as usize;
+        let record =
+            decode_shell_file_record_at_revision(&rest[..size], ShellFileClass::Event, 10).unwrap();
+        records.push((record.header.kind, record.body.to_vec()));
+        rest = &rest[size..];
+    }
+    records
 }
 
 /// Peer and owner steps of `Case::Flushed`, strictly alternating.
@@ -385,27 +393,35 @@ fn peer_script(peer: &mut raw::Peer, image_path: &std::path::Path, case: Case, g
     begin(peer, 3, admitted);
     let span = u64::from(STRIDE) * u64::from(HEIGHT - 1) + u64::from(WIDTH * 4);
     if let Some(gate) = &gate {
-        let (kind, body) = read_after(peer, || {
+        let records = read_after(peer, || {
             gate.signal();
             gate.wait("owner admission");
             send_source(&socket, admitted, span);
             gate.signal();
         });
-        assert_eq!(kind, ShellFileKind::ImageAdmitted);
-        assert_eq!(ShellImageMetadata::decode(&body).unwrap(), admitted);
+        let [(kind, body)] = records.as_slice() else {
+            panic!("{records:?}");
+        };
+        assert_eq!(*kind, ShellFileKind::ImageAdmitted);
+        assert_eq!(ShellImageMetadata::decode(body).unwrap(), admitted);
         gate.signal();
         // The same retained record again through the ordinary read and ack.
         let (kind, _) = event_kind(peer);
         assert_eq!(kind, ShellFileKind::ImageAdmitted);
-        let (kind, _) = event_kind(peer);
-        assert_eq!(kind, ShellFileKind::ResourceStatus);
-        let (kind, body) = read_after(peer, || gate.signal());
-        assert_eq!(kind, ShellFileKind::SourceReleased);
-        let released = ShellSourceReleased::decode(&body).unwrap();
+        // Held before the owner settles: both terminal records arrive together.
+        let records = read_after(peer, || gate.signal());
+        let kinds: Vec<_> = records.iter().map(|(kind, _)| *kind).collect();
+        assert_eq!(
+            kinds,
+            [ShellFileKind::ResourceStatus, ShellFileKind::SourceReleased],
+            "status and release must share one read"
+        );
+        let released = ShellSourceReleased::decode(&records[1].1).unwrap();
         assert_eq!(released.offer_id, 2);
         gate.signal();
-        let (kind, _) = event_kind(peer);
-        assert_eq!(kind, ShellFileKind::SourceReleased);
+        for expected in [ShellFileKind::ResourceStatus, ShellFileKind::SourceReleased] {
+            assert_eq!(event_kind(peer).0, expected);
+        }
         return;
     }
     let (kind, body) = event_kind(peer);
@@ -477,8 +493,8 @@ fn run(case: Case) {
         peer_script(&mut peer, &image_path, case, peer_gate);
     });
     // Flushed: 0 until the peer's admission read is written, 1 once one
-    // ordinary turn took it, 2 after admission, 3 once the release read is
-    // written, 4 after release.
+    // ordinary turn took it, 2 after admission (the Source is then left in
+    // the export), 3 once the terminal read is written, 4 after release.
     let mut flow = 0;
     let mut owner = ShellIsbImageOwner::new(4 << 20, 65536).unwrap();
     let mut negotiated = false;
@@ -545,7 +561,11 @@ fn run(case: Case) {
             }
         }
         let closed = admission.is_some() && !transport.capture_image_channel_ready();
-        let source = transport.take_capture_image_source();
+        let source = if gate.is_some() && flow == 2 {
+            None
+        } else {
+            transport.take_capture_image_source()
+        };
         if let Some(source) = &source {
             let admitted = admission.as_ref().expect("source follows admission");
             assert_eq!(source.metadata, admitted.metadata);
@@ -569,8 +589,46 @@ fn run(case: Case) {
             assert!(reservation.is_none());
             settled = Some(metadata);
         }
-        if let Some(metadata) = settled.filter(|_| gate.is_none() || flow >= 3) {
+        if let (Some(metadata), Some(_)) = (settled, &gate) {
+            // No ordinary service since fail_capture: its status is queued.
+            let status_queued = |epochs: &ContentEpochRegistry| {
+                epochs
+                    .resources(grant)
+                    .and_then(ContentResourceStore::pending_event)
+                    .is_some_and(|event| {
+                        matches!(event.record, ShellContentRecord::ResourceStatus(_))
+                    })
+            };
+            assert!(status_queued(&epochs));
+            // Refusals before the exact offer's status hold drain nothing.
+            let other_grant = ContentGrant {
+                content_grant_epoch: 2,
+                ..grant
+            };
+            let unknown = ShellImageMetadata {
+                offer_id: 99,
+                ..metadata
+            };
+            for (grant, metadata) in [(other_grant, metadata), (grant, unknown)] {
+                assert!(
+                    transport
+                        .release_capture_image_source(
+                            &mut epochs,
+                            grant,
+                            metadata,
+                            ShellSourceDisposition::RefusedBeforeUse,
+                        )
+                        .is_err()
+                );
+                assert!(
+                    status_queued(&epochs),
+                    "a refused release drained the status"
+                );
+            }
+        }
+        if let Some(metadata) = settled {
             match transport.release_capture_image_source(
+                &mut epochs,
                 grant,
                 metadata,
                 ShellSourceDisposition::RefusedBeforeUse,
@@ -579,11 +637,14 @@ fn run(case: Case) {
                     settled = None;
                     if let Some(gate) = &gate {
                         transport.flush_capture_publications().unwrap();
-                        gate.wait("SourceReleased delivered by the flush alone");
+                        gate.wait("both terminal records delivered by one flush");
                         flow = 4;
                     }
                 }
-                // The resource drain journals the terminal status first.
+                Err(ShellTransportError::ContentQueueSaturated) if gate.is_some() => {
+                    panic!("the release must journal its own queued status first")
+                }
+                // A full journal keeps the settlement for a later retry.
                 Err(ShellTransportError::ContentQueueSaturated) => {}
                 Err(error) => panic!("source release: {error}"),
             }

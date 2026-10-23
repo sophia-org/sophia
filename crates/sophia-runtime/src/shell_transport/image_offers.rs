@@ -127,6 +127,7 @@ impl ShellComponentTransport {
     #[cfg(feature = "experimental-shell-capture")]
     pub fn release_capture_image_source(
         &mut self,
+        epochs: &mut ContentEpochRegistry,
         grant: sophia_protocol::ContentGrant,
         metadata: ShellImageMetadata,
         disposition: ShellSourceDisposition,
@@ -139,12 +140,35 @@ impl ShellComponentTransport {
         {
             return Err(ShellTransportError::WrongContentRecord);
         }
-        let files = self.files_mut().ok_or(ShellTransportError::NotConnected)?;
-        let sequence = files
+        let released = self
+            .files_mut()
+            .ok_or(ShellTransportError::NotConnected)?
             .export_mut()
-            .release_image_source(metadata, disposition)
-            .map_err(wire_error)?;
-        files.image_publication_pending();
+            .release_image_source(metadata, disposition);
+        let sequence = if released == Err(sophia_9p::Errno::EAGAIN) {
+            // The exact offer still owes status. Move the grant's store events
+            // and whole outbox in FIFO order, without wire service, before retry.
+            self.flush_content_resource_events(epochs)?;
+            let files = self
+                .wire
+                .as_mut()
+                .ok_or(ShellTransportError::NotConnected)?;
+            self.output_blocked = !Self::drain_file_output(
+                files,
+                &mut self.output,
+                epochs.resources_mut(self.store_grant),
+            )?;
+            files
+                .export_mut()
+                .release_image_source(metadata, disposition)
+                .map_err(wire_error)?
+        } else {
+            released.map_err(wire_error)?
+        };
+        self.wire
+            .as_mut()
+            .expect("release requires connected wire")
+            .image_publication_pending();
         Ok(sequence)
     }
 

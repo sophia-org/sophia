@@ -286,14 +286,23 @@ impl ShellComponentConnections {
         now: u64,
         instant: Instant,
     ) -> Vec<(Binding, ShellTransportError)> {
-        self.service_capture_sources_with(now, instant, |connections, binding, disposition| {
-            publish_current(connections, binding, |connection| {
-                connection
-                    .transport
-                    .release_capture_image_source(binding.grant, binding.metadata, disposition)
-                    .map(|_| ())
-            })
-        })
+        self.service_capture_sources_with(
+            now,
+            instant,
+            |connections, epochs, binding, disposition| {
+                publish_current(connections, binding, |connection| {
+                    connection
+                        .transport
+                        .release_capture_image_source(
+                            epochs,
+                            binding.grant,
+                            binding.metadata,
+                            disposition,
+                        )
+                        .map(|_| ())
+                })
+            },
+        )
     }
 
     pub(super) fn service_capture_sources_with(
@@ -302,6 +311,7 @@ impl ShellComponentConnections {
         instant: Instant,
         mut publish: impl FnMut(
             &mut [Connection],
+            &mut ContentEpochRegistry,
             Binding,
             ShellSourceDisposition,
         ) -> Result<Publication, ShellTransportError>,
@@ -349,6 +359,7 @@ impl ShellComponentConnections {
                     Err(error) => Err(error.into()),
                     Ok(()) => publish(
                         &mut self.connections,
+                        &mut self.epochs,
                         b,
                         ShellSourceDisposition::RefusedBeforeUse,
                     )
