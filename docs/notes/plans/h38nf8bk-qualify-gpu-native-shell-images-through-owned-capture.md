@@ -11,8 +11,16 @@ tags: [plan, rendering, gpu, 9p, performance, t339]
 Arms03 completed all twelve remote captures and CPU analyses. The bounded
 opaque single-output, same-device path passes correctness, custody and cleanup:
 25,440 offered generations joined, clean protocol accounting, zero retained
-imports and frame leases, and restored VT/PAM state on every run. The GPU
-comparison is finished; no further launch is scheduled.
+imports and frame leases, and restored VT/PAM state on every run. Its ISB arm
+uses historical sealed buffers, not the current owned-ring default.
+
+niltempus requested a matched owned-ring comparison next. The integration peer
+will select R (GPU render/readback into the SDK owned ring) or G (GPU DMA export)
+in one executable on the same Sophia binary. Prepare R/G/G/R at each of 1920x24
+and 1920x512, with the same HDMI target and bounded remote launcher. SDK ring
+observations use a separate schema: private admission times and slot generations
+remain absent, and actual first-free slot reuse is accepted. Historical raw-ring
+checks remain unchanged. No new hardware run has started.
 
 The result is mixed. DMA reduces Session-plus-peer CPU at 1920x512, but raises
 it at 1920x24. Its shorter post-submission latency is not an end-to-end
@@ -355,14 +363,15 @@ SourceReleased. A successful import alone does not prove these properties.
 
 ## Matched comparison
 
-Use three arms with the **same GPU producer**, pixel pattern, target, dimensions,
+Use matched arms with the **same GPU producer**, pixel pattern, target, dimensions,
 cadence, update count and presentation semantics:
 
 | Arm | Path | Purpose |
 | --- | --- | --- |
 | I | GPU render, completion, readback, old comparator IPC bytes | Product baseline; not restoration of a production byte protocol. |
-| S | Same GPU render, completion, readback, ISB over files | Current files data path with the new producer. |
-| G | Same GPU render and completion, DMA-BUF over files, owned GPU capture | Candidate. G/S tests data-path change; G/I tests the product goal. |
+| S | Same GPU render, completion, readback, sealed ISB over files | Historical files baseline; requires the comparator host. |
+| R | Same GPU render, completion, readback, owned-ring ISB over files | Current default; compare on the same host and peer executable as G. |
+| G | Same GPU render and completion, DMA-BUF over files, owned GPU capture | Candidate. G/R tests the current data-path choice; G/I tests the historical product goal. |
 
 Use an opaque 1920x24 panel and a separately reported larger fully presented
 surface, initially 1920x1080 if supported by the admitted target. Every
@@ -406,12 +415,15 @@ failure is fixed in `73aaedd06`: Session obtains capture-import eviction
 acknowledgment while the native renderer still exists. Run-08 verifies clean
 shutdown, zero retained imports, and console/PAM restoration with that fix.
 
-Arms03 completes the matched comparison at 1920x24 and 1920x512. Correctness,
+Arms03 completes the historical I/S/G comparison at 1920x24 and 1920x512. Correctness,
 custody and cleanup pass; large-surface CPU benefit is resolved. Small-surface
 CPU regression, the upload-to-presentation tradeoff and missing physical-memory
-peaks prevent an unqualified promotion claim. The next decision is whether to
-retain t339's existing promotion scope or close the experimental implementation
-with promotion explicitly pending. No exit criterion is silently waived.
+peaks prevent an unqualified promotion claim. The next deliverable is the
+same-host, same-peer R/G comparison at those sizes, requested by niltempus after
+clarifying that S used sealed buffers. The eight-run R/G/G/R preparation retains
+the existing thresholds and reports upload-begin-to-kernel-completion latency
+explicitly, excluding producer rendering/readback/export before upload begins.
+No exit criterion is silently waived.
 Owned-ring remains the default; dock alpha and the separate lock protocol are
 outside this opaque shell slice.
 
