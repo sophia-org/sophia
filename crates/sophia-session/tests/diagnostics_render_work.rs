@@ -1,6 +1,34 @@
 use sophia_session::diagnostics::reduced_record;
 
 #[test]
+fn component_readiness_keeps_only_named_numeric_counters() {
+    for key in [
+        "component_waits",
+        "component_ready_any",
+        "component_ready_wire",
+        "component_ready_wire_wake",
+        "component_ready_image_listener",
+        "component_ready_image_socket",
+        "component_ready_authentication",
+        "component_ready_negotiation",
+        "component_ready_image_worker",
+        "component_ready_capture_completion",
+    ] {
+        let valid = format!("sophia_owner_wait schema=1 {key}=23");
+        assert_eq!(
+            reduced_record(&format!("{valid} component_ready_fd=secret")),
+            Some(valid)
+        );
+        for value in ["-1", "secret", "18446744073709551616"] {
+            assert_eq!(
+                reduced_record(&format!("sophia_owner_wait schema=1 {key}={value}")),
+                Some("sophia_owner_wait schema=1".to_owned())
+            );
+        }
+    }
+}
+
+#[test]
 fn capture_import_timing_keeps_only_numeric_fields() {
     for key in [
         "capture_import_cpu_nsec",

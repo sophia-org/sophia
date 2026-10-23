@@ -205,10 +205,16 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             crate::session_println!("sophia_present_clock_service schema=1 queries={} completions={} observations={} observation_runtime_locks={} completion_runtime_locks={} completion_historical_samples={} admission_errors={} admission_fake_retries={} admission_settled={} idle_signal_failures={} scrap_sample_fallbacks={} service_runtime_locks={} deadline_runtime_locks={} wire_prepared={} wire_published={} wire_owner_notifications={} wire_bound={} wire_hardware_bound={} unclocked_bound={} unclocked_notify_settled={} wire_executions={} wire_execution_wait_usec={} wire_execution_wait_max_usec={} owner_passes={} owner_waits={} owner_ring_ready={} owner_fd_ready={} owner_wait_deadlines={} owner_immediate_items={} native_ready={} native_ready_consumed={} native_ready_idle={} native_errors={} native_event_waits={} native_short_waits={} native_service_waits={} observed_monotonic_usec={} owner_tid={}",
                 present_clocks.queries(), present_clock_router.completed_count(), observations, observation_runtime_locks, completion_runtime_locks, completion_historical_samples, timing.admission_errors, timing.admission_fake_retries, timing.admission_settled, timing.idle_signal_failures, timing.scrap_sample_fallbacks,
                 timing.service_runtime_locks, timing.deadline_runtime_locks, timing.wire_prepared, timing.wire_published, timing.wire_owner_notifications, timing.wire_bound, timing.wire_hardware_bound, timing.unclocked_bound, timing.unclocked_notify_settled, timing.wire_executions, timing.wire_execution_wait_usec, timing.wire_execution_wait_max_usec, owner_work.passes, owner_work.waits, owner_work.ring_ready, owner_work.fd_ready, owner_work.wait_deadlines, owner_work.immediate_items, owner_work.native_ready, owner_work.native_ready_consumed, owner_work.native_ready_idle, owner_work.native_errors, owner_work.native_event_waits, owner_work.native_short_waits, owner_work.service_waits, observed_monotonic_usec, rustix::thread::gettid().as_raw_nonzero());
+            let component_ready = shell_components.as_ref()
+                .map(|components| components.fd_readiness()).unwrap_or_default();
             crate::session_println!(
-                "sophia_owner_wait schema=1 owner_tid={} observed_monotonic_usec={}{}",
+                "sophia_owner_wait schema=1 owner_tid={} observed_monotonic_usec={}{} component_waits={} component_ready_any={} component_ready_wire={} component_ready_wire_wake={} component_ready_image_listener={} component_ready_image_socket={} component_ready_authentication={} component_ready_negotiation={} component_ready_image_worker={} component_ready_capture_completion={}",
                 rustix::thread::gettid().as_raw_nonzero(), observed_monotonic_usec,
                 owner_wake.wait_attribution(),
+                component_ready.waits, component_ready.any, component_ready.wire, component_ready.wire_wake,
+                component_ready.image_listener, component_ready.image_socket,
+                component_ready.authentication, component_ready.negotiation,
+                component_ready.image_worker, component_ready.capture_completion,
             );
             present_evidence.flush();
             sophia_x_authority::flush_present_evidence();

@@ -44,6 +44,17 @@ fn observed_turn_avoids_poll_and_late_input_stays_ready() {
 }
 
 #[test]
+fn the_wake_reader_is_visited_first_and_once() {
+    let (server, _peer) = server();
+    let reader = server.reader.as_raw_fd();
+    let mut visited = Vec::new();
+    server.visit_poll_fds(|fd| visited.push(fd.as_fd().as_raw_fd()));
+    assert!(visited.len() > 1, "{visited:?}");
+    assert_eq!(visited[0], reader);
+    assert_eq!(visited.iter().filter(|&&fd| fd == reader).count(), 1);
+}
+
+#[test]
 fn intervening_flush_or_turn_forces_real_poll() {
     let (mut server, _peer) = server();
     let stale = observe(&server);

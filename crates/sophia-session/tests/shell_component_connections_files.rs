@@ -889,9 +889,7 @@ fn combined_wait_keeps_components_independent_across_replacement() {
         assert_eq!(waits.len(), 2);
         assert_eq!(fds.len(), 6); // Each r9 connection also owns an image listener.
         rustix::event::poll(&mut fds, Some(&rustix::event::Timespec::default())).unwrap();
-        for wait in waits {
-            wait.observe(&fds);
-        }
+        waits.observe(&fds);
     }
     h.owner.close(first).unwrap();
     let replacement = h.owner.reserve_attempt(0).unwrap();

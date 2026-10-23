@@ -20,7 +20,7 @@ mod custody_dispatch;
 mod export;
 mod image;
 mod readiness;
-pub use readiness::{ShellReadinessObservation, ShellReadinessSubscription};
+pub use readiness::{ShellPollRole, ShellReadinessObservation, ShellReadinessSubscription};
 mod journal;
 
 pub(super) use export::{CandidateFamily, Inbound, NativeCandidatePart, ShellFiles};
@@ -149,13 +149,23 @@ impl ShellFileWire {
 
     /// The server's readiness, borrowed for the owner's wait. The next
     /// [`Self::turn`] consumes it.
-    pub(super) fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(rustix::event::PollFd<'a>)) {
-        self.server.visit_poll_fds(&mut visit);
+    pub(super) fn visit_poll_roles<'a>(
+        &'a self,
+        mut visit: impl FnMut(ShellPollRole, rustix::event::PollFd<'a>),
+    ) {
+        // The server visits its wake reader first (sophia-9p contract).
+        let mut role = ShellPollRole::WireWake;
+        self.server.visit_poll_fds(|fd| {
+            visit(role, fd);
+            role = ShellPollRole::Wire;
+        });
         if let Some(image) = &self.image {
-            image.visit_poll_fds(&mut visit);
+            image.visit_poll_roles(&mut visit);
         }
         // Append after wire/image descriptors; their subscription positions stay fixed.
-        self.server.export().visit_authentication_fds(visit);
+        self.server
+            .export()
+            .visit_authentication_fds(|fd| visit(ShellPollRole::Authentication, fd));
     }
 
     pub(super) fn subscription(&self) -> Option<ShellReadinessSubscription> {

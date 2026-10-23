@@ -342,6 +342,8 @@ impl<E: Export> Server<E> {
     }
 
     /// Visit the same borrowed interests without allocating an intermediate list.
+    /// The wake reader is always visited first, exactly once; owners that
+    /// label descriptors and [`Subscription`] rely on that position.
     pub fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(PollFd<'a>)) {
         let listening = self.slots.len() < self.limits.max_connections();
         visit(PollFd::new(&self.reader, PollFlags::IN));

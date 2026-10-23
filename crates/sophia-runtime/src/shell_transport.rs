@@ -39,7 +39,7 @@ mod descriptor;
 mod descriptor_files;
 mod descriptor_state;
 mod files;
-pub use files::{ShellReadinessObservation, ShellReadinessSubscription};
+pub use files::{ShellPollRole, ShellReadinessObservation, ShellReadinessSubscription};
 #[cfg(feature = "experimental-draw")]
 mod draw;
 mod image_configuration;
@@ -447,20 +447,34 @@ impl ShellComponentTransport {
 
     /// Borrow readiness directly into the owner's wait storage.
     pub fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(rustix::event::PollFd<'a>)) {
+        self.visit_poll_roles(|_, fd| visit(fd));
+    }
+
+    /// [`Self::visit_poll_fds`]'s exact sequence, each labelled with its role.
+    pub fn visit_poll_roles<'a>(
+        &'a self,
+        mut visit: impl FnMut(ShellPollRole, rustix::event::PollFd<'a>),
+    ) {
         use negotiation_service::Stage;
         use rustix::event::{PollFd, PollFlags};
         if let Some(files) = self.wire.as_ref() {
-            return files.visit_poll_fds(visit);
+            return files.visit_poll_roles(visit);
         }
         match self.negotiation.as_ref().map(|pending| &pending.stage) {
             None => {}
             Some(Stage::Waiting) => {
                 if let Some(listener) = self.endpoint.accept_readiness() {
-                    visit(PollFd::from_borrowed_fd(listener, PollFlags::IN));
+                    visit(
+                        ShellPollRole::Negotiation,
+                        PollFd::from_borrowed_fd(listener, PollFlags::IN),
+                    );
                 }
             }
-            Some(Stage::Accepted(stream)) => visit(PollFd::new(stream, PollFlags::IN)),
-            Some(Stage::Files(files)) => files.visit_poll_fds(visit),
+            Some(Stage::Accepted(stream)) => visit(
+                ShellPollRole::Negotiation,
+                PollFd::new(stream, PollFlags::IN),
+            ),
+            Some(Stage::Files(files)) => files.visit_poll_roles(visit),
         }
     }
 

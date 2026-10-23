@@ -5,6 +5,23 @@ use rustix::event::PollFd;
 
 use super::image::ListenerSubscription;
 
+/// Which part of a component transport a borrowed descriptor serves; a
+/// diagnostic label only, never a descriptor number or identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShellPollRole {
+    /// The 9P server's internal wake reader: journal self-notification.
+    WireWake,
+    /// The 9P listener and connection streams.
+    Wire,
+    ImageListener,
+    /// The image channel's hello or peer socket.
+    ImageSocket,
+    /// The export's file-authentication custody descriptors.
+    Authentication,
+    /// A pending negotiation's listener or accepted stream.
+    Negotiation,
+}
+
 /// Registration for the wire and, when stable, its image listener.
 pub struct ShellReadinessSubscription {
     pub(super) wire: sophia_9p::unix::Subscription,

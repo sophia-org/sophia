@@ -58,17 +58,27 @@ impl ImageService {
         )
     }
 
-    pub(super) fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(rustix::event::PollFd<'a>)) {
+    pub(super) fn visit_poll_roles<'a>(
+        &'a self,
+        mut visit: impl FnMut(super::ShellPollRole, rustix::event::PollFd<'a>),
+    ) {
+        use super::ShellPollRole::{ImageListener, ImageSocket};
         use rustix::event::{PollFd, PollFlags};
         if self.accept_not_before.is_none_or(|at| Instant::now() >= at) {
-            visit(PollFd::from_borrowed_fd(
-                self.listener.readiness(),
-                PollFlags::IN,
-            ));
+            visit(
+                ImageListener,
+                PollFd::from_borrowed_fd(self.listener.readiness(), PollFlags::IN),
+            );
         }
         match &self.state {
-            State::Hello(hello) => visit(PollFd::from_borrowed_fd(hello.socket(), PollFlags::IN)),
-            State::Ready(peer) => visit(PollFd::from_borrowed_fd(peer.socket(), PollFlags::IN)),
+            State::Hello(hello) => visit(
+                ImageSocket,
+                PollFd::from_borrowed_fd(hello.socket(), PollFlags::IN),
+            ),
+            State::Ready(peer) => visit(
+                ImageSocket,
+                PollFd::from_borrowed_fd(peer.socket(), PollFlags::IN),
+            ),
             _ => {}
         }
     }

@@ -492,11 +492,12 @@ impl ShellComponentSession {
     pub fn subscribe_wait<'a>(
         &'a self,
         fds: &mut smallvec::SmallVec<[rustix::event::PollFd<'a>; 64]>,
-    ) -> smallvec::SmallVec<
-        [crate::shell_component_connections::ComponentWait<'a>;
-            sophia_config::MAX_SHELL_COMPONENTS],
-    > {
+    ) -> crate::shell_component_connections::ComponentWaits<'a> {
         self.processes.subscribe_wait(fds)
+    }
+
+    pub(crate) fn fd_readiness(&self) -> crate::shell_component_connections::ComponentFdReadiness {
+        self.processes.fd_readiness()
     }
 
     pub fn discard_readiness(&self) {

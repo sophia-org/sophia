@@ -16,6 +16,9 @@ use sophia_runtime::{
 const MIB: u64 = 1024 * 1024;
 #[cfg(feature = "experimental-shell-capture")]
 mod capture;
+mod fd_readiness;
+pub(crate) use fd_readiness::ComponentFdReadiness;
+use fd_readiness::FdRole;
 pub(crate) mod images;
 pub(crate) use images::content_now_msec;
 #[cfg(test)]
@@ -84,7 +87,7 @@ struct Connection {
 }
 
 /// Bounded registration for one component in the owner's combined poll set.
-pub struct ComponentWait<'a> {
+struct ComponentWait<'a> {
     key: ComponentConnectionKey,
     start: usize,
     end: usize,
@@ -97,8 +100,43 @@ pub struct ComponentWait<'a> {
     >,
 }
 
-impl ComponentWait<'_> {
+/// One wait's component registrations and the role of each component
+/// descriptor, in the order [`ShellComponentConnections::subscribe_wait`]
+/// appended them.
+pub struct ComponentWaits<'a> {
+    connections: smallvec::SmallVec<[ComponentWait<'a>; MAX_SHELL_COMPONENTS]>,
+    start: usize,
+    roles: smallvec::SmallVec<[FdRole; 64]>,
+    readiness: &'a Cell<ComponentFdReadiness>,
+}
+
+impl ComponentWaits<'_> {
+    /// Subscribed connections, excluding unsubscribed descriptors.
+    pub fn len(&self) -> usize {
+        self.connections.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.connections.is_empty()
+    }
+
+    /// Call once after the wait that polled the subscribed slice.
     pub fn observe(self, fds: &[rustix::event::PollFd<'_>]) {
+        let ready = self.roles.iter().enumerate().map(|(index, &role)| {
+            let fired = fds
+                .get(self.start + index)
+                .is_some_and(|fd| !fd.revents().is_empty());
+            (role, fired)
+        });
+        self.readiness.set(self.readiness.get().add_wait(ready));
+        for wait in self.connections {
+            wait.observe(fds);
+        }
+    }
+}
+
+impl ComponentWait<'_> {
+    fn observe(self, fds: &[rustix::event::PollFd<'_>]) {
         let observation = fds
             .get(self.start..self.end)
             .and_then(|fds| self.subscription.observe(fds));
@@ -126,6 +164,7 @@ pub struct ShellComponentConnections {
     capture_sources: capture::source::Sources,
     #[cfg(feature = "experimental-shell-capture")]
     capture_intake: capture::intake::Intake,
+    fd_readiness: Cell<ComponentFdReadiness>,
 }
 
 pub type ComponentNegotiationEvent = (
@@ -156,6 +195,7 @@ impl ShellComponentConnections {
             capture_sources: capture::source::Sources::default(),
             #[cfg(feature = "experimental-shell-capture")]
             capture_intake: capture::intake::Intake::default(),
+            fd_readiness: Cell::default(),
         })
     }
 
@@ -454,13 +494,21 @@ impl ShellComponentConnections {
     pub fn subscribe_wait<'a>(
         &'a self,
         fds: &mut smallvec::SmallVec<[rustix::event::PollFd<'a>; 64]>,
-    ) -> smallvec::SmallVec<[ComponentWait<'a>; MAX_SHELL_COMPONENTS]> {
+    ) -> ComponentWaits<'a> {
         let mut registrations = smallvec::SmallVec::new();
+        let start = fds.len();
+        let mut roles = smallvec::SmallVec::new();
         #[cfg(feature = "experimental-shell-capture")]
-        self.visit_capture_completion(&mut |fd| fds.push(fd));
+        self.visit_capture_completion(&mut |fd| {
+            roles.push(FdRole::CaptureCompletion);
+            fds.push(fd);
+        });
         for (slot, connection) in self.connections.iter().enumerate() {
             connection.readiness.take();
-            images::visit_worker(connection, &mut |fd| fds.push(fd));
+            images::visit_worker(connection, &mut |fd| {
+                roles.push(FdRole::ImageWorker);
+                fds.push(fd);
+            });
             let Some((grant, phase)) = connection.attempt else {
                 continue;
             };
@@ -471,7 +519,10 @@ impl ShellComponentConnections {
                 continue;
             }
             let start = fds.len();
-            connection.transport.visit_poll_fds(|fd| fds.push(fd));
+            connection.transport.visit_poll_roles(|role, fd| {
+                roles.push(FdRole::Transport(role));
+                fds.push(fd);
+            });
             if phase == ComponentConnectionPhase::Connected
                 && let Some(subscription) = connection.transport.readiness_subscription()
             {
@@ -484,7 +535,18 @@ impl ShellComponentConnections {
                 });
             }
         }
-        registrations
+        ComponentWaits {
+            connections: registrations,
+            start,
+            roles,
+            readiness: &self.fd_readiness,
+        }
+    }
+
+    /// Cumulative diagnostic readiness of component descriptors.
+    #[cfg(feature = "native-session")]
+    pub(crate) fn fd_readiness(&self) -> ComponentFdReadiness {
+        self.fd_readiness.get()
     }
 
     pub fn discard_readiness(&self) {
