@@ -94,25 +94,38 @@ The remaining kernel CPU is not attributed by user-only perf, and pass
 reductions are not CPU attribution. Niltempus requested kernel-inclusive
 profiling to locate the remaining cost before further optimization.
 
-Profile09 is prepared with the same source and executable pins as profile08.
-A root perf collector wraps the existing bounded PAM/tty4 process tree using
-cpu-clock (user plus kernel), 199 Hz and DWARF8192; Session, peer and xtask
-still run as uid1000. It changes no sysctl or permanent executable capability.
-A 0.5-second syscall preflight must resolve kernel samples before tty4 is
-touched. Raw data stays in a root-owned private directory; published stacks
-contain only the bound Session/peer process IDs (including their threads),
-with printed addresses removed. Separate driver kworkers are outside scope.
+Profile09 completed kernel-inclusive profiling with the same source and binaries
+as profile08. Kernel preflight, collector, exact joins, protocol, quiescence and
+PAM/VT cleanup all pass. Root raw stack data remain private; published symbol
+stacks contain only the bound Session and peer, including their threads.
+The global sysctls and production code are unchanged. Evidence:
+`~/.local/state/t331/t339-gpu-profile-09/analysis/REPORT.txt`,
+`kernel-attribution.json`, CPU results and independent `claude/` review.
+Seventeen analysis files and 41 published input hashes are frozen; the raw
+root-only data hash is in `kernel-result.json`.
 
-Package: `~/.local/state/t331/t339-gpu-profile-09/PLAN.md`; command:
-`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-09/kernel-profile.py`.
-Sixteen package files are hashed. Device-free checks cover exclusive output
-publication, symbol redaction preserving periods, missing receipts and child
-signal dispositions; pin and idle-tty checks pass. No native run occurred.
-The collector ignores interruptions while the existing native cleanup bounds
-run; emergency cleanup applies only after its 300-second outer timeout.
-Kernel decoding and inherited sample coverage remain unverified until launch.
-Treat CPUwin as attribution context, not an optimization acceptance result:
-kernel sampling changes overhead relative to previous user-only profiles.
+The exact 33.334-second CPU window has 714 samples: Session 289 user/172 kernel,
+peer 123 user/130 kernel, with no loss or throttle. Sample-period coverage is
+96.7%/97.8% of measured process CPU, consistent with sampling noise. CPUwin
+midpoints are Session 1197.5 and peer 650 us/frame. Scaling within-process sample
+shares estimates Session user/kernel at 751/447 us and peer at 316/334 us.
+These are statistical allocations, not per-function timers or a new speedup.
+
+The largest consumer is Session's owner thread (312/461 samples, about 811 us),
+followed by its renderer worker (291 us) and Mesa submission thread (52 us).
+Identified GPU/DRM ioctl stacks account for about 315 us across Session and peer;
+command submission and GPU virtual-address mapping are prominent. Identified
+ppoll work accounts for about 101 us of CPU, and socket send/receive about 83 us.
+About 220 us of kernel estimate lacks a named syscall entry frame. These views
+overlap with the process/thread totals and must not be added again. Custody
+checks are visible but do not dominate; no authority check was relaxed.
+
+Delivery median remains 16,316 us; pass variation (14.345 to 14.162) is not an
+optimization result because code is unchanged. The profile establishes major
+CPU consumers but not which costs are incremental to DMA: a matched ring
+kernel-inclusive control is still missing. Separate driver kworkers, off-CPU
+waits, GPU timing and allocation peaks are outside scope. No next production
+change or native package is scheduled on this total-cost profile alone.
 
 No source reuse, cached prepare bounds, GL flush deletion or further producer
 synchronization change is planned. The small-bar CPU regression remains
