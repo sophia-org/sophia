@@ -8,6 +8,68 @@ tags: [plan, rendering, gpu, 9p, performance, t339]
 
 ## Current resumption — October 22, 2026
 
+Arms03 completed all twelve remote captures and CPU analyses. The bounded
+opaque single-output, same-device path passes correctness, custody and cleanup:
+25,440 offered generations joined, clean protocol accounting, zero retained
+imports and frame leases, and restored VT/PAM state on every run. The GPU
+comparison is finished; no further launch is scheduled.
+
+The result is mixed. DMA reduces Session-plus-peer CPU at 1920x512, but raises
+it at 1920x24. Its shorter post-submission latency is not an end-to-end
+improvement: admission delays submission. Allocation/VRAM peaks and full
+render-start latency remain unmeasured. Keep DMA experimental and explicitly
+opt-in, with owned-ring as the default. The existing promotion gate is not met;
+t339 stays open unless niltempus explicitly narrows closure to the implemented
+path and leaves performance promotion pending.
+
+## Matched GPU comparison result — October 22, 2026
+
+Evidence: `~/.local/state/t331/t339-gpu-arms-03/analysis-01/REPORT.txt`,
+`summary.json`, per-height CPU plans/results, per-run latency distributions,
+and `MANIFEST.sha256`. The report retains the failed earlier attempts and all
+measurement limits. The signed inputs are Sophia `bfa477e93`, comparator
+`25840757f`, integration `8aa0c19`, and the unchanged frozen GPU peers.
+
+The frozen order was I/S/G/G/S/I at each height on HDMI-A-1, output 1,
+1920x1080@60, scale 1, VRR off, RX 7900 GRE. CPU covers 2,000 kernel-anchored
+intervals after 120 warmup frames; latency distributions include all 2,120
+frames. All repeat intervals stay inside the frozen 6.2% band; the maximum is
+4.4%. Cross-arm CPU differences below pass the disjoint-interval and greater
+than 10% slower-normalized rule. Two repeats are not a broad noise estimate.
+
+| Surface | IPC CPU/frame | Sealed ISB CPU/frame | DMA CPU/frame | DMA versus ISB |
+| --- | ---: | ---: | ---: | --- |
+| 1920x24 | 1.140 ms | 1.603 ms | 1.883 ms | 17.5% more CPU |
+| 1920x512 | 4.246 ms | 5.566 ms | 1.860 ms | 66.6% less CPU |
+
+These are midpoints of mirrored-repeat CPU attribution intervals, not exact
+per-frame execution times. At the large size DMA also uses 56.2% less CPU than
+IPC; at the small size it uses 65.1% more. All G contrasts retain the master
+versus comparator host-revision confound.
+
+The predeclared submit-to-kernel latency median is about 4.74 ms for DMA,
+versus 15.85/11.93 ms for sealed ISB at the small/large sizes. DMA's
+upload-begin-to-Accepted median is about 11.51 ms, so it submits later in the
+frame. A post-hoc upload-begin-to-kernel check gives medians of about 16.34 ms at the
+small size and 16.33 ms at the large size; sealed ISB is about 16.14 ms
+and 12.91 ms respectively. The large DMA interval is about 3.42 ms, or 26.5%,
+longer than ISB. This is descriptive, not a newly predeclared metric, and still
+excludes producer rendering/readback before upload begins. No full render-start
+latency improvement is established.
+
+Every run accepted and joined 2,120 generations with queried DRM monotonic
+proof, clean protocol accounting, quiescent shutdown and empty native import
+and frame-slot ownership. Each G run recorded 2,120 imports and evictions.
+Frame-slot high-water was three and maximum in-flight per output was one.
+Sampled Session RSS and logical upload-byte totals are retained; they do not
+measure peer memory, GPU/VRAM peaks, capture allocation peaks or bus traffic.
+Timing-disabled zero counters are not evidence that no work occurred. GPU
+execution time, isolated source hold/capture queueing and input latency are
+unmeasured. Native immutability controls, SDK/runtime tests, run-07 visual
+confirmation and run-08 shutdown remain separate supporting evidence.
+
+## Implementation and qualification history — October 22, 2026
+
 niltempus requested completion of t339 with Claude and Muse working through
 local herdr sockets. Preserve shell r10 owned-ring CPU clients and the lock
 plane's ISB support. The first phase remains opaque LINEAR XRGB8888 on one
@@ -145,9 +207,8 @@ session, 60-second runtime, 80-second Session watchdog, 180-second VT bound and
 240-second supervisor bound. The remote launcher preserves the inactive herdr
 login and checks CPU-plan construction and CPU-window analysis after each
 capture, stopping on failure. All six descriptors and assembled launch vectors,
-pins and wrapper syntax pass offline checks; arms03 has not launched. GPU
-execution timing remains unavailable, and allocation/retention and readback
-accounting require explicit limits in the final report.
+pins and wrapper syntax passed offline checks. Arms03 subsequently completed;
+the result and measurement limits are recorded above.
 
 Provlita has transparent padding, so the user's requested dock use needs an
 explicit scope decision: validated alpha capture or retaining its owned-ring
@@ -156,8 +217,8 @@ changes are authorized. Kleis uses the separate lock protocol and is outside
 this shell change. Run-07 confirms visible native Session DMA presentation; run-08 verifies clean
 shutdown and console/PAM recovery remotely.
 
-Completion still requires the matched GPU-producer comparisons below. Export, import and offline custody
-checks do not establish measured end-to-end benefit. Wider t343 qualification
+The matched comparison is complete, with the mixed result above. Export, import
+and offline custody checks alone do not establish measured end-to-end benefit. Wider t343 qualification
 is separate; t339's own comparison and correctness requirements remain in force.
 
 ## Scope and exit
@@ -345,11 +406,12 @@ failure is fixed in `73aaedd06`: Session obtains capture-import eviction
 acknowledgment while the native renderer still exists. Run-08 verifies clean
 shutdown, zero retained imports, and console/PAM restoration with that fix.
 
-The remaining measurement is the matched GPU-producer I/S/G comparison at
-1920x24 and the admitted 1920x512 surface. Arms02 reached native presentation
-but cannot establish CPU benefit: clock-capability evidence is missing. The
-corrected `t339-gpu-arms-03` package preserves the frozen workloads and thresholds
-and checks analysis before proceeding between arms. It is prepared, not run.
+Arms03 completes the matched comparison at 1920x24 and 1920x512. Correctness,
+custody and cleanup pass; large-surface CPU benefit is resolved. Small-surface
+CPU regression, the upload-to-presentation tradeoff and missing physical-memory
+peaks prevent an unqualified promotion claim. The next decision is whether to
+retain t339's existing promotion scope or close the experimental implementation
+with promotion explicitly pending. No exit criterion is silently waived.
 Owned-ring remains the default; dock alpha and the separate lock protocol are
 outside this opaque shell slice.
 
