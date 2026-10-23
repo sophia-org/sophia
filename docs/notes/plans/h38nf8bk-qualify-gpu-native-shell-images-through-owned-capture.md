@@ -29,6 +29,31 @@ and DMA experimental and explicitly opt-in. The existing promotion gate remains
 unmet, and t339 stays open under its current scope. Allocation/VRAM peaks,
 full render-start and input latency remain unmeasured.
 
+Three subsequent profiles reproduce the fixed small-bar overhead. The producer
+wait removal in Lom `b8ec26a` (integration `7aa233d`) reduces combined
+draw/release wall time by 85.9 us/frame, but total CPU intervals overlap:
+1940–1980 us/frame before and 1935–1975 after. Keep the simpler synchronization
+without claiming a CPU fix. All profile-03 joins and cleanup checks pass.
+Evidence and limits are recorded below and in
+`~/.local/state/t331/t339-gpu-profile-03/analysis`.
+
+Next, run the prepared G-only `t339-gpu-profile-04` package to measure host
+source import/binding inside the existing copy timer before
+changing buffer reuse or submission. Copy currently averages about 95 us/frame;
+its import share is unknown. The diagnostic adds a nested Import interval plus
+source eviction/transient counts under the existing timing flag, with no
+rendering or custody change. Defer the safe but unmeasured redundant-glFlush
+cleanup. Producer allocation reuse remains conditional on demonstrated import
+cost; unknown-completion paths remain retained, not assumed finished. No further
+producer synchronization change is planned. Signed Sophia `23426521e` adds
+the counters; its release binary is `2e05dc23…`. The clean evidence worktree
+pins that commit, with integration `7aa233d` and the unchanged `d6e50a53…`
+peer. All 14 package hashes and idle-tty4 preflight verify; nothing has launched.
+Run from the user's SSH terminal with
+`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-04/ssh/run.py`.
+
+## Small-bar profiling and optimization — October 23, 2026
+
 niltempus requested root-cause profiling and optimization of the small-bar
 regression, and approved bounded producer-buffer reuse if allocation/import
 churn dominates. The measured excess is about 339 us/frame in Session and
@@ -84,11 +109,28 @@ is unmeasured. Lom's full offline gate and the pinned peer's seven tests pass.
 The existing renderD128 smoke and two-process Vulkan/EGL pixel oracle pass,
 including earlier-capture independence, frame cap and readback after export;
 receipts are in `development-evidence/t339-20261023/release-wait-01`. Unknown
-completion errors were reviewed, not fault-injected. The G-only re-profile is
-prepared at `~/.local/state/t331/t339-gpu-profile-03`, with all 14 manifest
-entries and idle-tty4 launch checks verified. No optimization benefit has been
-measured yet. The signing cache was
-unlocked without key configuration changes or an agent reset.
+completion errors were reviewed, not fault-injected. The G-only re-profile
+`~/.local/state/t331/t339-gpu-profile-03` completed with all 2,120 exact joins,
+2,123 monotonic completions, clean protocol tally, zero retained resources and
+restored PAM/VT state. Combined draw/release CPU was 395.72 -> 390.93 us/frame
+and wall time 676.41 -> 590.56 us/frame. Whole-peer CPU intervals 675–695 and
+670–690 us/frame overlap; Session stays 1265–1285 us/frame. One profile each
+supports a wall-time improvement, not a resolved CPU improvement or acceptance
+verdict. Keep the simpler wait sequence and investigate host costs next.
+
+Sophia `23426521e` adds opt-in source-import CPU/wall timing nested inside Copy,
+plus source eviction and transient-import counts, carried through renderer,
+backend and reduced Session diagnostics. Copy still subtracts only measured
+Cleanup; the first glFlush and all source/capture lifetimes are unchanged.
+Renderer checks report 302 passed, 26 ignored; six diagnostics tests pass.
+Strict Clippy passes for the renderer crates and native capture backend/Session,
+and the release build passes. Changed-line formatting and diff checks pass;
+pre-existing formatting differences remain in scanout/context.rs and diagnostic
+records.rs. The prepared profile04 freezes the same peer and profiling recipe
+as profile03, with this instrumented host. Import includes any cache eviction
+inside lookup, but not driver validation deferred until draw/flush. Compare
+paired cumulative observations, check for resets, and keep whole-run averages
+separate from the kernel-anchored CPU window. No new hardware result yet.
 
 The reuse design preserves the fresh API and adds a consuming unsafe reuse
 operation, with same-preview identity and the original four-frame bound.
@@ -531,7 +573,8 @@ CPU regression, the upload-to-presentation tradeoff and missing physical-memory
 peaks prevent an unqualified promotion claim. Ring-01 now completes the requested
 same-host, same-peer R/G comparison at those sizes: all eight captures pass,
 large-surface CPU improves, small-surface CPU regresses, and neither height has
-a resolved upload-to-kernel latency difference. No further run is scheduled.
+a resolved upload-to-kernel latency difference. Further attribution work is
+recorded in Current resumption; no new qualification comparison is scheduled.
 The existing promotion scope remains open; closing only the implemented path
 would require an explicit scope decision. No exit criterion is silently waived.
 Owned-ring remains the default; dock alpha and the separate lock protocol are
