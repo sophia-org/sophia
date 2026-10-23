@@ -70,11 +70,28 @@ Session capture tests and strict all-target runtime/Session clippy pass with
 native-session and experimental-shell-capture. Full-journal retry is reviewed
 and retains existing custody tests; no new full-journal wire fixture was added.
 
-Profile08 is the bounded G-only diagnostic against profile07, with the same peer,
-fresh producer allocations and instrumentation. Package and command:
-`~/.local/state/t331/t339-gpu-profile-08/PLAN.md` and
-`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-08/ssh/run.py`.
-The native CPU, pass-count and delivery effect of coalescing is not yet measured.
+Profile08 completed cleanly with the same peer, fresh producer allocations and
+instrumentation: 2,120 exact joins, 2,123 monotonic completions, zero protocol
+errors or retained resources, quiescent shutdown and clean PAM/VT. Its 1,800-offer
+window reduces owner passes from 16.004 to 14.345 and wire readiness from 12.010
+to 10.350 per offer. Internal wake remains zero; prepare and completion remain
+one each. This is consistent with the coalesced terminal exchange, without
+assuming exclusive roles or per-message counts.
+
+Combined CPU falls from 1900–1940 to 1845–1885 us/frame (midpoint −2.86%).
+Session is 1200–1220 and peer 645–665 us/frame. Although the tick-bracket
+intervals are disjoint, the change is below the frozen 6.2% resolution floor;
+one run each establishes no resolved CPU benefit. Upload-begin-to-kernel median
+stays 16,316 us. UploadAccepted settlement is 27.5 us earlier, reaching the same
+vblank. Compared with profile06 R's 1440–1480 us/frame, the small-bar CPU
+regression persists. Keep the coalescing change for fewer wire exchanges and
+owner passes; do not claim it fixes that regression.
+
+Evidence: `~/.local/state/t331/t339-gpu-profile-08/analysis/REPORT.txt`,
+`audit.json`, CPU results and independent `claude/` review. Thirteen analysis
+files are hashed, with 31 raw input hashes; raw evidence is unchanged.
+No further native package is scheduled. The remaining kernel CPU is not
+attributed by user-only perf, and pass reductions are not CPU attribution.
 
 No source reuse, cached prepare bounds, GL flush deletion or further producer
 synchronization change is planned. The small-bar CPU regression remains
