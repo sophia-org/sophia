@@ -124,8 +124,21 @@ Delivery median remains 16,316 us; pass variation (14.345 to 14.162) is not an
 optimization result because code is unchanged. The profile establishes major
 CPU consumers but not which costs are incremental to DMA: a matched ring
 kernel-inclusive control is still missing. Separate driver kworkers, off-CPU
-waits, GPU timing and allocation peaks are outside scope. No next production
-change or native package is scheduled on this total-cost profile alone.
+waits, GPU timing and allocation peaks are outside scope. No production change
+is justified by this total-cost profile alone.
+
+Niltempus approved the matched ring kernel control and subsequent optimization
+of the largest confirmed excess. Profile10 is prepared as one R capture against
+profile09 G: identical Sophia, peer and runner binaries, source pins, display,
+scene, frame count and kernel instrumentation. R's configuration matches the
+previous ring control (two configured slots, GPU readback Vec then slot copy).
+The exercised root collector differs only in three arm/path strings; PAM/VT
+helpers are byte-identical. All sixteen package hashes, collector device-free
+checks and idle-tty preflight pass. No native capture was launched here.
+Run `sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-10/kernel-profile.py`
+from crunch over SSH, keeping the connection alive. Compare broad process,
+thread, syscall and driver buckets before choosing a source edit; one profile
+per arm is attribution evidence, not the repeated optimization acceptance gate.
 
 No source reuse, cached prepare bounds, GL flush deletion or further producer
 synchronization change is planned. The small-bar CPU regression remains
