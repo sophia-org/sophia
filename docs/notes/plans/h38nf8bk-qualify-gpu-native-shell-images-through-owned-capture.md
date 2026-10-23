@@ -191,8 +191,15 @@ reductions do not establish a net host saving. Source evictions and transient
 imports remain zero with reuse, consistent with the native same-inode oracle
 and cache code; this build emits no direct source import/hit/rebind counters.
 Destination-side imports remain one per offer with zero hits in both DMA
-arms. Review that separate cache's lifetime before proposing another change.
-Do not cache physical prepare bounds or reuse a displayed destination.
+arms. The subsequent code review identifies why destination storage does not
+recycle: `context/shell_capture.rs::export_copy` marks its generation exported
+before duplicating plane descriptors into a detached snapshot, and
+`context/capture_pool.rs::reap` excludes exported generations from the idle
+pool. Those descriptors may outlive the allocation wrapper. Source reuse
+does not change this lifetime. The CPU share of destination churn is not
+separately measured. A destination reuse design needs a release proof from
+every consumer; removing the exclusion or caching a physical prepare bound
+would break custody. Do not reuse a displayed destination.
 
 Upload-begin to kernel completion medians are 16.299/16.329/16.287 ms for
 R/fresh/reused G; no delivery gain is established. Evidence, reductions and
