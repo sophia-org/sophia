@@ -90,8 +90,29 @@ owner passes; do not claim it fixes that regression.
 Evidence: `~/.local/state/t331/t339-gpu-profile-08/analysis/REPORT.txt`,
 `audit.json`, CPU results and independent `claude/` review. Thirteen analysis
 files are hashed, with 31 raw input hashes; raw evidence is unchanged.
-No further native package is scheduled. The remaining kernel CPU is not
-attributed by user-only perf, and pass reductions are not CPU attribution.
+The remaining kernel CPU is not attributed by user-only perf, and pass
+reductions are not CPU attribution. Niltempus requested kernel-inclusive
+profiling to locate the remaining cost before further optimization.
+
+Profile09 is prepared with the same source and executable pins as profile08.
+A root perf collector wraps the existing bounded PAM/tty4 process tree using
+cpu-clock (user plus kernel), 199 Hz and DWARF8192; Session, peer and xtask
+still run as uid1000. It changes no sysctl or permanent executable capability.
+A 0.5-second syscall preflight must resolve kernel samples before tty4 is
+touched. Raw data stays in a root-owned private directory; published stacks
+contain only the bound Session/peer process IDs (including their threads),
+with printed addresses removed. Separate driver kworkers are outside scope.
+
+Package: `~/.local/state/t331/t339-gpu-profile-09/PLAN.md`; command:
+`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-09/kernel-profile.py`.
+Sixteen package files are hashed. Device-free checks cover exclusive output
+publication, symbol redaction preserving periods, missing receipts and child
+signal dispositions; pin and idle-tty checks pass. No native run occurred.
+The collector ignores interruptions while the existing native cleanup bounds
+run; emergency cleanup applies only after its 300-second outer timeout.
+Kernel decoding and inherited sample coverage remain unverified until launch.
+Treat CPUwin as attribution context, not an optimization acceptance result:
+kernel sampling changes overhead relative to previous user-only profiles.
 
 No source reuse, cached prepare bounds, GL flush deletion or further producer
 synchronization change is planned. The small-bar CPU regression remains
