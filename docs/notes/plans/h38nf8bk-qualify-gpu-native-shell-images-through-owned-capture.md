@@ -8,36 +8,66 @@ tags: [plan, rendering, gpu, 9p, performance, t339]
 
 ## Current resumption — October 22, 2026
 
-Arms03 completed all twelve remote captures and CPU analyses. The bounded
-opaque single-output, same-device path passes correctness, custody and cleanup:
-25,440 offered generations joined, clean protocol accounting, zero retained
-imports and frame leases, and restored VT/PAM state on every run. Its ISB arm
-uses historical sealed buffers, not the current owned-ring default.
+The requested same-host, same-peer owned-ring/DMA comparison is complete.
+Ring-01 passed all eight remote captures: 16,960 offered generations accepted
+and joined, clean protocol accounting, quiescent shutdown, zero retained native
+resources and restored VT/PAM state. Its R arm uses today's owned-ring path;
+arms03's sealed ISB results remain historical.
 
-niltempus requested a matched owned-ring comparison next. The integration peer
-will select R (GPU render/readback into the SDK owned ring) or G (GPU DMA export)
-in one executable on the same Sophia binary. Prepare R/G/G/R at each of 1920x24
-and 1920x512, with the same HDMI target and bounded remote launcher. SDK ring
-observations use a separate schema: private admission times and slot generations
-remain absent, and actual first-free slot reuse is accepted. Historical raw-ring
-checks remain unchanged. No new hardware run has started.
+DMA uses 38.6% more Session-plus-peer CPU at 1920x24 and 33.0% less at
+1920x512. Both differences pass the frozen rule. Upload-begin-to-kernel latency
+has no resolved difference at either size; this excludes producer preparation
+and is not equivalence. The small submit-to-kernel number for DMA reflects its
+later submission, not an earlier delivery claim.
 
-The R/G package is ready at `~/.local/state/t331/t339-gpu-ring-01`, using signed
-integration `1c862d0`, Sophia `bfa477e93` (binary `fd3efa25…`) and the shared
-peer binary `1af1e78b…`. Four plans passed preparation, descriptor checks and
-assembled-argv launch validation; all eight SSH wrappers passed read-only pin
-and idle-VT checks. Focused parser/native/diagnostic tests, CPU-plan tests,
-peer tests, strict clippy and formatting passed. `~/t339-compare-ssh.sh` now
-selects this fresh package. Its `PLAN.md` freezes order, metrics, limits and
-unchanged thresholds; `MANIFEST.sha256` and per-run SSH pins bind the inputs.
+Evidence is `~/.local/state/t331/t339-gpu-ring-01/analysis-01/REPORT.txt`,
+`summary.json`, per-height CPU plans/results and the verified 281-file analysis
+manifest. Pins are integration `1c862d0`, Sophia `bfa477e93` (`fd3efa25…`),
+and one peer binary `1af1e78b…` for both arms. The frozen SSH package is now
+consumed; no further native run is scheduled. Keep owned-ring as the default
+and DMA experimental and explicitly opt-in. The existing promotion gate remains
+unmet, and t339 stays open under its current scope. Allocation/VRAM peaks,
+full render-start and input latency remain unmeasured.
 
-The result is mixed. DMA reduces Session-plus-peer CPU at 1920x512, but raises
-it at 1920x24. Its shorter post-submission latency is not an end-to-end
-improvement: admission delays submission. Allocation/VRAM peaks and full
-render-start latency remain unmeasured. Keep DMA experimental and explicitly
-opt-in, with owned-ring as the default. The existing promotion gate is not met;
-t339 stays open unless niltempus explicitly narrows closure to the implemented
-path and leaves performance promotion pending.
+## Current owned-ring comparison result — October 22, 2026
+
+Ring-01 ran R/G/G/R at each height on HDMI-A-1, output 1, 1920x1080@60,
+scale 1, VRR off, RX 7900 GRE. Both arms use the same GPU scene, SDK, peer
+executable and Sophia executable. R pays GPU readback into a Vec followed by
+the CPU copy into one persistent SDK ring; G exports a fresh producer-completed
+DMA-BUF for owned capture. This removes arms03's host-revision confound.
+
+| Surface | Owned-ring CPU/frame | DMA CPU/frame | DMA versus owned-ring |
+| --- | ---: | ---: | --- |
+| 1920x24 | 1.376 ms | 1.908 ms | 38.6% more CPU |
+| 1920x512 | 2.789 ms | 1.868 ms | 33.0% less CPU |
+
+CPU covers 2,000 kernel-anchored intervals after 120 warmup frames. The table
+uses arm midpoints; repeat ranges are R [1372.5,1380] and G [1905,1910] us at
+h24, R [2780,2797.5] and G [1865,1870] us at h512. Repeat widths are below
+0.63%, within the frozen 6.2% veto. Both CPU differences are disjoint and
+exceed 10% of the slower midpoint. The small regression is 27.9% when expressed
+relative to the slower DMA result; 38.6% above uses owned-ring as the baseline.
+
+Primary latency uses upload begin to first exact kernel completion for
+generations 121–2120. Run medians are R 16.306/16.313 ms and G 16.318/16.297 ms
+at h24; R 15.887/15.888 ms and G 16.325/16.315 ms at h512. Small ranges overlap.
+The large difference is 0.4325 ms (2.72% relative to ring), below the frozen
+10% slower-normalized threshold: neither height has a resolved latency change.
+DMA still spends about 11.5 ms from upload begin to Accepted before submitting.
+Producer rendering/readback/export before upload begin is outside this metric.
+
+Each run has 2,120 unique workload joins and 2,123 native completions carrying
+queried DRM monotonic proof, with no observation fallback. R's schema-7 records
+observe slot 0 throughout, two configured slots, exact frame capacity and null
+unexposed admission times/slot generations. G retains schema 2. Cleanup and
+custody checks pass independently of the performance result.
+
+Two repeats on one machine/output do not establish a general crossover size.
+No GPU timing, peer/GPU allocation peaks, readback-byte counter, full render-start
+or input-latency workload was captured. These remote runs add no visual claim.
+The scoped conclusion is a large-surface CPU saving, not uniform promotion or
+an automatic transport-selection policy. No exit criterion is waived.
 
 ## Matched GPU comparison result — October 22, 2026
 
@@ -427,12 +457,12 @@ shutdown, zero retained imports, and console/PAM restoration with that fix.
 Arms03 completes the historical I/S/G comparison at 1920x24 and 1920x512. Correctness,
 custody and cleanup pass; large-surface CPU benefit is resolved. Small-surface
 CPU regression, the upload-to-presentation tradeoff and missing physical-memory
-peaks prevent an unqualified promotion claim. The next deliverable is the
-same-host, same-peer R/G comparison at those sizes, requested by niltempus after
-clarifying that S used sealed buffers. The eight-run R/G/G/R preparation retains
-the existing thresholds and reports upload-begin-to-kernel-completion latency
-explicitly, excluding producer rendering/readback/export before upload begins.
-No exit criterion is silently waived.
+peaks prevent an unqualified promotion claim. Ring-01 now completes the requested
+same-host, same-peer R/G comparison at those sizes: all eight captures pass,
+large-surface CPU improves, small-surface CPU regresses, and neither height has
+a resolved upload-to-kernel latency difference. No further run is scheduled.
+The existing promotion scope remains open; closing only the implemented path
+would require an explicit scope decision. No exit criterion is silently waived.
 Owned-ring remains the default; dock alpha and the separate lock protocol are
 outside this opaque shell slice.
 
