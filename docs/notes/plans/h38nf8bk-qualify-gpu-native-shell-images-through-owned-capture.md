@@ -22,6 +22,15 @@ observations use a separate schema: private admission times and slot generations
 remain absent, and actual first-free slot reuse is accepted. Historical raw-ring
 checks remain unchanged. No new hardware run has started.
 
+The R/G package is ready at `~/.local/state/t331/t339-gpu-ring-01`, using signed
+integration `1c862d0`, Sophia `bfa477e93` (binary `fd3efa25…`) and the shared
+peer binary `1af1e78b…`. Four plans passed preparation, descriptor checks and
+assembled-argv launch validation; all eight SSH wrappers passed read-only pin
+and idle-VT checks. Focused parser/native/diagnostic tests, CPU-plan tests,
+peer tests, strict clippy and formatting passed. `~/t339-compare-ssh.sh` now
+selects this fresh package. Its `PLAN.md` freezes order, metrics, limits and
+unchanged thresholds; `MANIFEST.sha256` and per-run SSH pins bind the inputs.
+
 The result is mixed. DMA reduces Session-plus-peer CPU at 1920x512, but raises
 it at 1920x24. Its shorter post-submission latency is not an end-to-end
 improvement: admission delays submission. Allocation/VRAM peaks and full
