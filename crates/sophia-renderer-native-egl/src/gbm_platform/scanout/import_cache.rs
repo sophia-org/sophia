@@ -44,6 +44,11 @@ pub struct NativeDmaBufImportCacheStats {
     pub live_entries: usize,
     pub descriptor_mismatches: usize,
     pub capacity_rejections: usize,
+    /// Timed texture lookups, including fingerprinting, replacement eviction
+    /// and EGL/GL import, but excluding draw. Nested in composition timing.
+    pub texture_calls: usize,
+    pub texture_cpu: std::time::Duration,
+    pub texture_elapsed: std::time::Duration,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -130,6 +135,29 @@ impl NativeDmaBufImportCache {
     }
 
     pub(crate) fn texture(
+        &mut self,
+        egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
+        display: khronos_egl::Display,
+        pipeline: &PersistentXrgb8888GlPipeline,
+        layer: NativeDmaBufCompositionLayer<'_>,
+        timing_enabled: bool,
+    ) -> Result<glow::NativeTexture, NativeGbmScanoutBufferExportDetail> {
+        let started = timing_enabled.then(super::RenderStageTimer::start);
+        let result = self.texture_inner(egl, display, pipeline, layer);
+        self.record_texture_timing(started);
+        result
+    }
+
+    fn record_texture_timing(&mut self, started: Option<super::RenderStageTimer>) {
+        if let Some(started) = started {
+            self.stats.texture_calls = self.stats.texture_calls.saturating_add(1);
+            self.stats.texture_cpu = self.stats.texture_cpu.saturating_add(started.cpu_elapsed());
+            self.stats.texture_elapsed =
+                self.stats.texture_elapsed.saturating_add(started.elapsed());
+        }
+    }
+
+    fn texture_inner(
         &mut self,
         egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
         display: khronos_egl::Display,
@@ -289,6 +317,10 @@ impl NativeDmaBufImportCache {
         self.stats.live_entries = 0;
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/support/composition_import_timing.rs"]
+mod timing_tests;
 
 include!("import_cache/snapshots.rs");
 

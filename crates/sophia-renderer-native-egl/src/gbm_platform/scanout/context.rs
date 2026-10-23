@@ -338,6 +338,15 @@ where
         stats.capture_source_evictions = stats
             .capture_source_evictions
             .saturating_add(reuse.source_evictions);
+        stats.capture_destination_allocations = stats
+            .capture_destination_allocations
+            .saturating_add(reuse.destination_allocation_calls);
+        stats.capture_destination_allocation_cpu = stats
+            .capture_destination_allocation_cpu
+            .saturating_add(reuse.destination_allocation_cpu);
+        stats.capture_destination_allocation_elapsed = stats
+            .capture_destination_allocation_elapsed
+            .saturating_add(reuse.destination_allocation_elapsed);
         stats.capture_source_transient_imports = stats
             .capture_source_transient_imports
             .saturating_add(reuse.source_transient_imports);
@@ -995,4 +1004,7 @@ fn accumulate_import_cache_stats(
     total.capacity_rejections = total
         .capacity_rejections
         .saturating_add(additional.capacity_rejections);
+    total.texture_calls = total.texture_calls.saturating_add(additional.texture_calls);
+    total.texture_cpu = total.texture_cpu.saturating_add(additional.texture_cpu);
+    total.texture_elapsed = total.texture_elapsed.saturating_add(additional.texture_elapsed);
 }

@@ -73,6 +73,7 @@ where
                     fences: &mut self.snapshot_fences,
                     quarantine: &mut self.snapshot_quarantine,
                     import_reuse: self.snapshot_import_reuse_enabled,
+                    import_timing_enabled: self.render_timing_enabled,
                 },
                 frame,
                 NativeCompositionReadback {
@@ -203,6 +204,7 @@ where
                     fences: &mut self.snapshot_fences,
                     quarantine: &mut self.snapshot_quarantine,
                     import_reuse: self.snapshot_import_reuse_enabled,
+                    import_timing_enabled: self.render_timing_enabled,
                 },
                 frame,
                 NativeCompositionReadback {

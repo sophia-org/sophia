@@ -597,6 +597,19 @@ pub struct LiveNativePersistentRenderStats {
     /// transient use, and the subset of imports that were transient.
     pub capture_source_evictions: usize,
     pub capture_source_transient_imports: usize,
+    /// Capture destination allocation attempts, counted whether or not
+    /// timing is enabled (unlike import-cache `texture_calls`, which counts
+    /// timed calls only), and their time when enabled. Nested in
+    /// `capture_setup_*` for captures; admission preparation is outside every
+    /// capture span. Never add to the setup/copy/cleanup partition.
+    pub capture_destination_allocations: usize,
+    pub capture_destination_allocation_cpu: std::time::Duration,
+    pub capture_destination_allocation_elapsed: std::time::Duration,
+    /// Composition import-cache texture lookups (timed calls only), nested
+    /// in `composition_*`; see `NativeDmaBufImportCacheStats::texture_*`.
+    pub composition_import_calls: usize,
+    pub composition_import_cpu: std::time::Duration,
+    pub composition_import_elapsed: std::time::Duration,
     pub composition_elapsed: std::time::Duration,
 
     pub target_creations: usize,

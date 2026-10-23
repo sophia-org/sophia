@@ -73,6 +73,11 @@ pub struct NativeCaptureReuseStats {
     /// Source import inside copy; already included in `copy_*`, never additive.
     pub import_cpu: std::time::Duration,
     pub import_elapsed: std::time::Duration,
+    /// Destination allocation attempts (counted always) and their time
+    /// (timing only); see `NativeCaptureTimingKind::Allocation`.
+    pub destination_allocation_calls: usize,
+    pub destination_allocation_cpu: std::time::Duration,
+    pub destination_allocation_elapsed: std::time::Duration,
     pub cleanup_cpu: std::time::Duration,
     pub cleanup_elapsed: std::time::Duration,
     pub reclaim_cpu: std::time::Duration,
@@ -276,6 +281,8 @@ impl NativeCaptureReuse {
             reclaim_elapsed: self.accounting.timing.wall[4].get(),
             import_cpu: self.accounting.timing.cpu[5].get(),
             import_elapsed: self.accounting.timing.wall[5].get(),
+            destination_allocation_cpu: self.accounting.timing.cpu[6].get(),
+            destination_allocation_elapsed: self.accounting.timing.wall[6].get(),
             ..self.stats
         };
         for execution in self.execution.iter().flatten() {
@@ -527,14 +534,20 @@ impl NativeCaptureReuse {
             };
             let id = self.next_allocation_id;
             self.next_allocation_id = id.checked_add(1).ok_or(E::InvalidTarget)?;
-            match NativeCaptureAllocation::new(
+            self.stats.destination_allocation_calls =
+                self.stats.destination_allocation_calls.saturating_add(1);
+            let allocation_timing =
+                NativeCaptureTimingSpan::start(&self.accounting, NativeCaptureTimingKind::Allocation);
+            let created = NativeCaptureAllocation::new(
                 gbm_device,
                 key,
                 id,
                 execution,
                 self.accounting.clone(),
                 available_bytes.saturating_sub(self.source_bytes()),
-            ) {
+            );
+            drop(allocation_timing);
+            match created {
                 Ok(created) => {
                     self.stats.allocations += 1;
                     if let Some((_, size)) = self

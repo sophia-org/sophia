@@ -32,6 +32,12 @@ fn component_readiness_keeps_only_named_numeric_counters() {
 fn capture_import_timing_keeps_only_numeric_fields() {
     for key in [
         "capture_import_cpu_nsec",
+        "capture_destination_allocations_count",
+        "capture_destination_allocation_cpu_nsec",
+        "capture_destination_allocation_elapsed_nsec",
+        "composition_import_calls_count",
+        "composition_import_cpu_nsec",
+        "composition_import_elapsed_nsec",
         "capture_import_elapsed_nsec",
         "capture_source_evictions_count",
         "capture_source_transient_imports_count",

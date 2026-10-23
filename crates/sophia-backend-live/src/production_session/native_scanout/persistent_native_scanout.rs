@@ -600,6 +600,14 @@ pub struct LivePersistentRenderMetrics {
     pub capture_copy_cpu: std::time::Duration,
     /// Source import/binding, contained in capture_copy_cpu.
     pub capture_import_cpu: std::time::Duration,
+    /// Allocation and target setup, including attempts made before admission.
+    pub capture_destination_allocations: usize,
+    pub capture_destination_allocation_cpu: std::time::Duration,
+    pub capture_destination_allocation_elapsed: std::time::Duration,
+    /// Timed ordinary composition import lookups; included in composition.
+    pub composition_import_calls: usize,
+    pub composition_import_cpu: std::time::Duration,
+    pub composition_import_elapsed: std::time::Duration,
     pub capture_source_evictions: usize,
     pub capture_source_transient_imports: usize,
     pub capture_cleanup_cpu: std::time::Duration,

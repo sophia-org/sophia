@@ -3,6 +3,7 @@ struct NativeSnapshotCompositionResources<'a> {
     fences: &'a mut Vec<NativeSnapshotFence>,
     quarantine: &'a mut Vec<std::rc::Rc<NativeCaptureAllocation>>,
     import_reuse: bool,
+    import_timing_enabled: bool,
 }
 
 fn collect_snapshot_uses(

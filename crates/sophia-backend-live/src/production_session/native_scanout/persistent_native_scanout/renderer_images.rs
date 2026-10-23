@@ -717,6 +717,24 @@ impl LiveProductionNativeScanout {
                 metrics.capture_import_elapsed = metrics
                     .capture_import_elapsed
                     .saturating_add(stats.capture_import_elapsed);
+                metrics.capture_destination_allocations = metrics
+                    .capture_destination_allocations
+                    .saturating_add(stats.capture_destination_allocations);
+                metrics.capture_destination_allocation_cpu = metrics
+                    .capture_destination_allocation_cpu
+                    .saturating_add(stats.capture_destination_allocation_cpu);
+                metrics.capture_destination_allocation_elapsed = metrics
+                    .capture_destination_allocation_elapsed
+                    .saturating_add(stats.capture_destination_allocation_elapsed);
+                metrics.composition_import_calls = metrics
+                    .composition_import_calls
+                    .saturating_add(stats.composition_import_calls);
+                metrics.composition_import_cpu = metrics
+                    .composition_import_cpu
+                    .saturating_add(stats.composition_import_cpu);
+                metrics.composition_import_elapsed = metrics
+                    .composition_import_elapsed
+                    .saturating_add(stats.composition_import_elapsed);
                 metrics.capture_source_evictions = metrics
                     .capture_source_evictions
                     .saturating_add(stats.capture_source_evictions);

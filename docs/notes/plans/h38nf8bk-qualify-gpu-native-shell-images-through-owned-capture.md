@@ -214,6 +214,27 @@ Measure destination preparation and composition-import CPU before widening
 the custody machinery. These findings establish neither a safe destination
 reuse implementation nor its potential saving.
 
+The next diagnostic adds two opt-in timing brackets without changing capture
+or snapshot custody. Destination allocation covers each attempted
+`NativeCaptureAllocation::new`: GBM storage, descriptor sizing/charge, and
+EGL/GL target setup, including failed attempts. It excludes pool lookup,
+reclaim, execution-context creation and subsequent destruction. It is inside
+Setup for an ordinary capture, but outside Capture when preparing admission.
+The ordinary composition `texture()` lookup covers fingerprinting, replacement
+or make-room eviction and EGL/GL import; it excludes draw and later eviction.
+It is contained in composition timing, not additive. It does not time the
+separate pooled `snapshot_texture()` path or legacy capture's temporary cache.
+For shell snapshots it covers the actual DmaBuf composition import path.
+
+Both brackets use the existing worker thread CPU and wall clocks and retain
+saturating cumulative totals across cache retirement. Allocation attempts are
+always counted; composition lookup calls are counted only with timing enabled.
+Prepare work becomes visible in the next published render-stat snapshot, so
+use paired steady-state samples rather than assuming the last record covers
+work after the final render. Focused GPU-free timer/accumulator and diagnostic
+reducer tests pass, as do renderer Clippy and strict backend/Session Clippy.
+The diagnostic-only telemetry change does not alter either SDK contract.
+
 Upload-begin to kernel completion medians are 16.299/16.329/16.287 ms for
 R/fresh/reused G; no delivery gain is established. Evidence, reductions and
 limits are in `~/.local/state/t331/t339-gpu-profile-11/analysis/REPORT.txt`

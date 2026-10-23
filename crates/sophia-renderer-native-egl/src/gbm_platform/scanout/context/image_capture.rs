@@ -157,6 +157,7 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
                     fences: &mut self.snapshot_fences,
                     quarantine: &mut self.snapshot_quarantine,
                     import_reuse: false,
+                    import_timing_enabled: false,
                 },
                 frame,
                 NativeCompositionReadback { proof: false, snapshot: None, reservation: None },

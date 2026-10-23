@@ -176,3 +176,66 @@ fn import_time_stays_inside_copy_while_cleanup_is_removed() {
     );
     assert_eq!(stats.reclaim_elapsed, std::time::Duration::ZERO);
 }
+
+#[test]
+fn destination_allocation_time_is_its_own_nested_bracket() {
+    let mut reuse = NativeCaptureReuse::default();
+    assert!(
+        NativeCaptureTimingSpan::start(&reuse.accounting, NativeCaptureTimingKind::Allocation)
+            .is_none(),
+        "timing starts disabled"
+    );
+    reuse.set_render_timing_enabled(true);
+    let pause = std::time::Duration::from_millis(5);
+    let span = |kind| NativeCaptureTimingSpan::start(&reuse.accounting, kind);
+    {
+        // Capture path: allocation runs inside setup.
+        let _setup = span(NativeCaptureTimingKind::Setup);
+        let _allocation = span(NativeCaptureTimingKind::Allocation);
+        std::thread::sleep(pause);
+    }
+    let nested = reuse.stats();
+    assert!(nested.destination_allocation_elapsed >= pause, "{nested:?}");
+    assert!(nested.setup_elapsed >= nested.destination_allocation_elapsed, "{nested:?}");
+    {
+        // Admission preparation: allocation outside every capture span.
+        let _allocation = span(NativeCaptureTimingKind::Allocation);
+        std::thread::sleep(pause);
+    }
+    let stats = reuse.stats();
+    assert!(stats.destination_allocation_elapsed >= nested.destination_allocation_elapsed + pause);
+    assert_eq!(stats.setup_elapsed, nested.setup_elapsed, "{stats:?}");
+    assert_eq!(stats.capture_elapsed, std::time::Duration::ZERO, "{stats:?}");
+    assert_eq!(stats.copy_elapsed, std::time::Duration::ZERO, "{stats:?}");
+}
+
+#[test]
+fn composition_texture_time_survives_import_cache_accumulation() {
+    let second = std::time::Duration::from_secs(1);
+    let cache = NativeDmaBufImportCacheStats {
+        imports: 1,
+        texture_calls: 2,
+        texture_cpu: second,
+        texture_elapsed: 2 * second,
+        ..Default::default()
+    };
+    // A destroyed target's cache, then a live one, as persistent_render_stats merges them.
+    let mut total = NativeDmaBufImportCacheStats::default();
+    accumulate_import_cache_stats(&mut total, cache);
+    accumulate_import_cache_stats(&mut total, cache);
+    assert_eq!(
+        (total.imports, total.texture_calls, total.texture_cpu, total.texture_elapsed),
+        (2, 4, 2 * second, 4 * second)
+    );
+    let full = NativeDmaBufImportCacheStats {
+        texture_calls: usize::MAX,
+        texture_cpu: std::time::Duration::MAX,
+        texture_elapsed: std::time::Duration::MAX,
+        ..Default::default()
+    };
+    accumulate_import_cache_stats(&mut total, full);
+    assert_eq!(
+        (total.texture_calls, total.texture_cpu, total.texture_elapsed),
+        (usize::MAX, std::time::Duration::MAX, std::time::Duration::MAX)
+    );
+}

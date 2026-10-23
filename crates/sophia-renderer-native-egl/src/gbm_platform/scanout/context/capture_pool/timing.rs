@@ -1,7 +1,7 @@
 #[derive(Default)]
 struct NativeCaptureTimingTotals {
-    cpu: [std::cell::Cell<std::time::Duration>; 6],
-    wall: [std::cell::Cell<std::time::Duration>; 6],
+    cpu: [std::cell::Cell<std::time::Duration>; 7],
+    wall: [std::cell::Cell<std::time::Duration>; 7],
 }
 
 #[derive(Clone, Copy)]
@@ -14,6 +14,10 @@ enum NativeCaptureTimingKind {
     /// Source lookup, eviction and EGL/GL import; nested in and still counted
     /// by Copy, so it is never added to the capture partition.
     Import = 5,
+    /// One destination allocation attempt: GBM BO, sizing, EGLImage and GL
+    /// target setup. Nested in Setup when capturing, outside Capture when
+    /// preparing admission; never part of the capture partition.
+    Allocation = 6,
 }
 
 struct NativeCaptureTimingSpan {

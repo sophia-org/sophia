@@ -614,7 +614,7 @@ fn render_native_target_composition(
                 NativeCompositionLayer::DmaBuf(layer) => {
                     trace_native_lifecycle("composition_dmabuf_layer_started");
                     let result = import_cache
-                        .texture(egl, display, &target.pipeline, *layer)
+                        .texture(egl, display, &target.pipeline, *layer, snapshots.import_timing_enabled)
                         .and_then(|texture| {
                             target
                                 .pipeline
@@ -691,7 +691,7 @@ fn render_native_target_composition(
                         let texture = if let Some(captured) = &image.pooled {
                             import_cache.snapshot_texture(egl, display, &target.pipeline, captured, imported, snapshots.import_reuse)?
                         } else {
-                            import_cache.texture(egl, display, &target.pipeline, imported)?
+                            import_cache.texture(egl, display, &target.pipeline, imported, snapshots.import_timing_enabled)?
                         };
                         target
                             .pipeline
