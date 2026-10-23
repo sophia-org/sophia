@@ -168,21 +168,40 @@ Clippy, the historical peer's shared-source check, runner validation tests and
 runner Clippy pass. Fresh timing remains schema 1; reuse timing is schema 2
 with 2000 reuses and zero fresh/destroy stages in the counted window.
 
-Profile11 is prepared at `~/.local/state/t331/t339-gpu-profile-11`, in order R,
+Profile11 completed at `~/.local/state/t331/t339-gpu-profile-11`, in order R,
 fresh G, reused G: three 60-second captures using the same Sophia `58443cd06`,
-peer `e730fef6` and runner `1b1c776a` binaries. All use capture-profile counters
-without perf sampling. Native-plan and diagnostic checks pass; all package
-pins and idle-tty4 preflights pass without launching a session. This is one
-capture per arm to measure CPU and capture import/hit/rebind counters, not
-repeatability or promotion acceptance. Run from crunch over SSH, keeping the
-connection alive:
-`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-11/ssh/run.py`.
-No profile11 native capture has started. Audit mode and timing schema as well
-as the existing exact joins, monotonic completion, custody and cleanup gates.
+peer `e730fef6` and runner `1b1c776a` binaries, with capture-profile counters
+and no perf sampling. All three have 2120 exact accepted/presented joins,
+monotonic kernel completion, quiescent shutdown, zero retained native
+resources and clean PAM/VT cleanup. Mode and timing schemas match the configs.
+CPUwin refuses none and retains 2000 intervals per arm without late slots.
 
-Do not cache physical prepare bounds or weaken custody to save passes. The
-small-bar CPU regression remains unresolved. GPU execution, physical allocation
-peaks, input latency and full render-start delivery latency remain unmeasured.
+Session/peer CPU midpoints in us/frame are R 925/487.5, fresh G 1155/645 and
+reused G 1150/515. Reuse reduces total CPU from 1800 to 1665 us/frame (7.5%),
+almost entirely in the peer; it remains 17.9% above R's 1412.5. The producer's
+calling-thread stages fall from 428 to 306 us/frame, consistent with the
+130 us peer reduction. The candidate combines allocation/export reuse with
+one submission, so this run does not separate their contributions. This is
+one capture per arm, not repeatability or promotion acceptance.
+
+In matched 1800-offer windows, host import CPU falls from 24.14 to 2.87 us
+per offer and capture copy from 76.82 to 38.92; import is included in copy.
+Session's total is unchanged within accounting uncertainty, so those local
+reductions do not establish a net host saving. Source evictions and transient
+imports remain zero with reuse, consistent with the native same-inode oracle
+and cache code; this build emits no direct source import/hit/rebind counters.
+Destination-side imports remain one per offer with zero hits in both DMA
+arms. Review that separate cache's lifetime before proposing another change.
+Do not cache physical prepare bounds or reuse a displayed destination.
+
+Upload-begin to kernel completion medians are 16.299/16.329/16.287 ms for
+R/fresh/reused G; no delivery gain is established. Evidence, reductions and
+limits are in `~/.local/state/t331/t339-gpu-profile-11/analysis/REPORT.txt`
+and `comparison.json`, with the independent audit under `analysis/claude`.
+Keep reuse diagnostic and opt-in. The small-bar regression is reduced, not
+resolved; 225 of the remaining 252.5 us/frame excess is in Session. GPU
+execution, physical allocation peaks, input latency and full render-start
+delivery latency remain unmeasured.
 
 ## Prepare notification result and readiness diagnostic — October 23, 2026
 
