@@ -2,7 +2,7 @@
 use super::*;
 
 #[cfg(feature = "experimental-shell-capture")]
-pub use sophia_renderer_image::RendererImageSnapshot as ContentCapturedImage;
+pub use sophia_renderer_image::CapturedImage as ContentCapturedImage;
 
 struct CpuPixels {
     description: ContentResourceBegin,
@@ -97,7 +97,8 @@ impl ContentResourceLease {
             Backing::Cpu(pixels) => Arc::strong_count(pixels) == 1,
             #[cfg(feature = "experimental-shell-capture")]
             Backing::Captured(pixels) => {
-                Arc::strong_count(pixels) == 1 && pixels.image.custody_is_exclusive()
+                Arc::strong_count(pixels) == 1
+                    && ContentCapturedImage::custody_is_exclusive(&pixels.image)
             }
         }
     }

@@ -601,6 +601,19 @@ pub struct LivePersistentRenderMetrics {
     /// Source import/binding, contained in capture_copy_cpu.
     pub capture_import_cpu: std::time::Duration,
     /// Allocation and target setup, including attempts made before admission.
+    /// Physical pool gauges; peak includes all pooled capture paths in this context.
+    pub capture_pool_live_count: usize,
+    pub capture_pool_live_bytes: u64,
+    pub capture_pool_peak_bytes: u64,
+    pub capture_pool_idle_count: usize,
+    pub capture_pool_idle_bytes: u64,
+    pub capture_managed_images: usize,
+    pub capture_pending_fences: usize,
+    pub capture_prepared_destinations: usize,
+    pub snapshot_budget_count: usize,
+    pub snapshot_budget_bytes: u64,
+    pub snapshot_budget_peak_count: usize,
+    pub snapshot_budget_peak_bytes: u64,
     pub capture_destination_allocations: usize,
     pub capture_destination_allocation_cpu: std::time::Duration,
     pub capture_destination_allocation_elapsed: std::time::Duration,

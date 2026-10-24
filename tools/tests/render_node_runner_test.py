@@ -83,13 +83,14 @@ class DeviceSelection(unittest.TestCase):
 class NamespaceCommand(unittest.TestCase):
     def test_only_one_device_and_no_ambient_state(self):
         command = runner.command("/bwrap", Path("/runner"), Path("/receipt"),
-                                 {"node": "/dev/dri/renderD129"})
+                                 {"node": "/dev/dri/renderD129"}, Path("/slot/test"))
         mounts = [(command[i + 1], command[i + 2]) for i, x in enumerate(command)
                   if x == "--dev-bind"]
         self.assertEqual(mounts, [("/dev/dri/renderD129", "/dev/dri/renderD129")])
         readonly = [(command[i + 1], command[i + 2]) for i, x in enumerate(command)
                     if x == "--ro-bind"]
         self.assertNotIn(("/", "/"), readonly)
+        self.assertIn(("/slot/test", "/work/test"), readonly)
         writable = [(command[i + 1], command[i + 2]) for i, x in enumerate(command) if x == "--bind"]
         self.assertEqual(writable, [("/receipt/artifacts", "/results")])
         for item in ["--clearenv", "--unshare-all", "--unshare-user", "--die-with-parent", "--new-session",
@@ -191,11 +192,13 @@ class Supervision(unittest.TestCase):
             code = runner.run(self.args)
         return code, json.loads((receipt / "result.json").read_text()), kill
 
-    def test_success_requires_admission_and_freezes_exact_bytes(self):
+    def test_success_requires_admission_and_pins_without_copying_binary(self):
         code, result, kill = self.invoke()
         self.assertEqual(code, 0)
         self.assertEqual(result["status"], "completed")
-        self.assertEqual((self.args.output / "test").read_bytes(), self.binary.read_bytes())
+        self.assertFalse((self.args.output / "test").exists())
+        self.assertEqual(result["test_path"], str(self.binary.resolve()))
+        self.assertEqual(result["test_sha256"], runner.digest(self.binary))
         config = json.loads((self.args.output / "config.json").read_text())
         self.assertEqual(config["arguments"], ["--ignored"])
         kill.assert_not_called()

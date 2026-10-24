@@ -21,9 +21,7 @@ pub(crate) use fd_readiness::ComponentFdReadiness;
 use fd_readiness::FdRole;
 pub(crate) mod images;
 pub(crate) use images::content_now_msec;
-#[cfg(test)]
-#[path = "../tests/support/component_ring_budget.rs"]
-mod ring_budget_tests;
+mod tests;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ComponentConnectionKey {

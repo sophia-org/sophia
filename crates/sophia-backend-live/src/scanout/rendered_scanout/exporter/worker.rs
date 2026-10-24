@@ -215,7 +215,9 @@ pub struct NativeGbmRendererWorkerCore {
     #[cfg(feature = "experimental-shell-capture")]
     capture_install: std::sync::Mutex<Option<CaptureInstallReceiver>>,
     #[cfg(feature = "experimental-shell-capture")]
-    capture_prepare: std::sync::Mutex<Option<Receiver<io::Result<u64>>>>,
+    capture_prepare: std::sync::Mutex<
+        Option<Receiver<io::Result<sophia_renderer_live::LiveShellCaptureDestination>>>,
+    >,
     release_enqueue_failures: Arc<AtomicUsize>,
 }
 
@@ -848,6 +850,7 @@ enum WorkerCommand {
         epoch: Arc<sophia_renderer_live::LiveRendererSnapshotEpoch>,
         budget: Arc<sophia_renderer_live::LiveRendererSnapshotBudget>,
         custody: sophia_renderer_live::LiveShellCaptureCustody,
+        managed: bool,
         completion_sender: SyncSender<
             io::Result<(
                 sophia_renderer_live::LiveShellCaptureInbox,
@@ -862,7 +865,9 @@ enum WorkerCommand {
         width: u32,
         height: u32,
         /// Rings the Session owner on reply and on disconnect.
-        completion_sender: sophia_wake::SignalSender<io::Result<u64>>,
+        completion_sender: sophia_wake::SignalSender<
+            io::Result<sophia_renderer_live::LiveShellCaptureDestination>,
+        >,
     },
     /// Attach an output, giving the worker the channel its results go home on
     /// and the metrics handle its own slot pool publishes to.

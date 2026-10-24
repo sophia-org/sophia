@@ -2,8 +2,6 @@
 //! Roles only: no descriptor number, slot or component identity is retained.
 use sophia_runtime::ShellPollRole;
 
-#[cfg(test)]
-#[path = "../../tests/support/component_fd_readiness.rs"]
 mod tests;
 
 /// What one borrowed component descriptor serves.

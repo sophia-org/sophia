@@ -14,6 +14,8 @@ use std::sync::Arc;
 mod escrow;
 use escrow::{Capacity, Escrow};
 
+pub(super) fn poison_managed_capture() { Capacity::process().poison(); }
+
 #[derive(Default)]
 pub(super) struct Owner(Cell<bool>);
 
@@ -21,6 +23,8 @@ impl Owner {
     pub(super) fn retire(&self) {
         self.0.set(true);
     }
+
+    pub(super) fn is_retired(&self) -> bool { self.0.get() }
 
     fn matches(owner: &Rc<Self>, current: &Rc<Self>) -> bool {
         !owner.0.get() && Rc::ptr_eq(owner, current)
@@ -77,6 +81,12 @@ impl NativeShellCaptureRequest {
         self.image_id.is_valid()
             && self.epoch.is_valid()
             && self.reservation.belongs_to(&self.budget)
+            && self.reservation.prepared().is_none_or(|token| {
+                token.is_current() && Arc::ptr_eq(token.epoch(), &self.epoch)
+                    && Arc::ptr_eq(token.budget(), &self.budget)
+                    && token.info().width == self.source.width
+                    && token.info().height == self.source.height
+            })
             && self.source.frame().is_valid()
             && (self.source.modifier != 0
                 || self
@@ -130,7 +140,7 @@ pub enum NativeShellCapturePoll {
 #[must_use]
 pub struct NativeShellCaptureCompletion {
     source: NativeShellCaptureSource,
-    result: Result<Arc<NativeRendererImageSnapshot>, NativeShellCaptureOutputFailure>,
+    result: Result<Arc<NativeCapturedImage>, NativeShellCaptureOutputFailure>,
 }
 
 #[derive(Debug)]
@@ -146,7 +156,7 @@ impl NativeShellCaptureCompletion {
         self,
     ) -> (
         NativeShellCaptureSource,
-        Result<Arc<NativeRendererImageSnapshot>, NativeShellCaptureOutputFailure>,
+        Result<Arc<NativeCapturedImage>, NativeShellCaptureOutputFailure>,
     ) {
         (self.source, self.result)
     }
@@ -257,7 +267,7 @@ impl<T: AsFd> NativeGbmRenderedScanoutContext<T> {
     /// renderer/device/thread, frame assembly, promotion or CPU fallback.
     pub fn begin_shell_capture(
         &mut self,
-        request: NativeShellCaptureRequest,
+        mut request: NativeShellCaptureRequest,
     ) -> NativeShellCaptureStart {
         use NativeGbmScanoutBufferExportDetail as E;
         if !request.preflight() || !self.snapshot_reuse_enabled || self.shell_capture_owner.0.get()
@@ -271,7 +281,7 @@ impl<T: AsFd> NativeGbmRenderedScanoutContext<T> {
         // error, refused before any source use. Entering capture for it
         // would fail the same check after allocation and quarantine the
         // request as Uncertain, poisoning the lane for a caller mistake.
-        if self
+        if request.reservation.prepared().is_none() && self
             .capture_reuse
             .destination_bound(request.source.width, request.source.height)
             .is_some_and(|bound| bound > request.reservation.byte_bound())
@@ -281,12 +291,30 @@ impl<T: AsFd> NativeGbmRenderedScanoutContext<T> {
                 detail: E::RendererImageStoreFull,
             };
         }
+        if request.reservation.prepared().is_some_and(|token| {
+            !self.capture_reuse.managed_preparation_matches(token)
+                || self.renderer_images.contains_key(&request.image_id)
+                || self.renderer_images.len() >= DEFAULT_NATIVE_RENDERER_IMAGE_CAPACITY
+        }) {
+            return NativeShellCaptureStart::Refused { request, detail: E::InvalidTarget };
+        }
         let Some(slot) = Capacity::process().reserve() else {
             return NativeShellCaptureStart::Refused {
                 request,
                 detail: E::RendererImageStoreFull,
             };
         };
+        let prepared = if let Some(token) = request.reservation.prepared() {
+            let Some(allocation) = self.capture_reuse.take_managed_preparation(token) else {
+                return NativeShellCaptureStart::Refused { request, detail: E::InvalidTarget };
+            };
+            let charge = match request.reservation.bind_managed(&request.budget, &request.epoch, allocation.bytes) {
+                Ok(charge) => charge,
+                Err(detail) => return NativeShellCaptureStart::Refused { request, detail: detail.into() },
+            };
+            *allocation.managed.borrow_mut() = Some(ManagedAllocationBacking { charge, epoch: request.epoch.clone() });
+            Some(allocation)
+        } else { None };
         let other_bytes = self
             .renderer_images
             .values()
@@ -317,6 +345,7 @@ impl<T: AsFd> NativeGbmRenderedScanoutContext<T> {
             DEFAULT_NATIVE_RENDERER_IMAGE_BYTE_BUDGET.saturating_sub(other_bytes),
             DEFAULT_NATIVE_RENDERER_IMAGE_CAPACITY.saturating_sub(other_count),
             request.reservation.byte_bound(),
+            prepared,
         );
         match result {
             Ok(Some(capture)) => {
@@ -361,7 +390,7 @@ impl<T: AsFd> NativeGbmRenderedScanoutContext<T> {
         // No custody can escape above this point without the native proof.
         let Submitted { request, capture } = pending.custody.finish();
         let mut captured = capture.expect("completed capture");
-        let snapshot = export_copy(&request, &captured);
+        let snapshot = request.reservation.prepared().is_none().then(|| export_copy(&request, &captured));
         if let Some((sync, use_guard)) = captured.take_copy_completion() {
             let execution = &captured.allocation.execution;
             if unsafe { execution.egl.destroy_sync(execution.display, sync) }.is_err() {
@@ -370,17 +399,20 @@ impl<T: AsFd> NativeGbmRenderedScanoutContext<T> {
             drop(use_guard);
         }
         let result = match snapshot {
-            Ok(snapshot) => request
+            Some(Ok(snapshot)) => request
                 .budget
                 .retain_reserved(snapshot, request.epoch, request.reservation)
+                .map(|snapshot| Arc::new(NativeCapturedImage::Exported(snapshot)))
                 .map_err(|failure| NativeShellCaptureOutputFailure {
                     detail: failure.detail.into(),
                     reservation: failure.reservation,
                 }),
-            Err(detail) => Err(NativeShellCaptureOutputFailure {
+            Some(Err(detail)) => Err(NativeShellCaptureOutputFailure {
                 detail,
                 reservation: request.reservation,
             }),
+            None => self.retain_managed_shell_capture(request.image_id, &request.budget,
+                request.epoch, request.reservation, captured),
         };
         NativeShellCapturePoll::Completed(NativeShellCaptureCompletion {
             source: request.source,

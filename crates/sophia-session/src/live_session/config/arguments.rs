@@ -249,6 +249,8 @@ impl PersistentXtermSessionConfig {
         let secondary_terminal = args.iter().any(|arg| arg == "--secondary-terminal");
         let exit_after_input_proof = args.iter().any(|arg| arg == "--exit-after-input-proof");
         let native_scanout = args.iter().any(|arg| arg == "--native-scanout");
+        let shell_capture_destination_reuse =
+            output_proof::parse_capture_destination_reuse(args, native_scanout)?;
         let namespace_profile_name = arg_value(args, "--namespace-profile")
             .unwrap_or_else(|| core_snapshot.namespace_profile.clone());
         let namespace_profile = x_groups::namespace_profile(&namespace_profile_name)?;
@@ -931,6 +933,7 @@ impl PersistentXtermSessionConfig {
             shell_panel_thickness,
             shell_content_enabled,
             shell_content_input_enabled,
+            shell_capture_destination_reuse,
             shell_gpu_mode,
             shell_proof_restart_after_visible,
             wm_interface,

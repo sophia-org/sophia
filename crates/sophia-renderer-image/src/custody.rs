@@ -2,7 +2,7 @@
 //! lease releases it. Invalidating a generation does not release its budget.
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
 };
 
 use crate::{RendererImageSnapshot, SnapshotError as Detail};
@@ -37,13 +37,15 @@ impl SnapshotEpoch {
 pub struct SnapshotBudget {
     limit_count: usize,
     limit_bytes: u64,
-    usage: Mutex<(usize, u64)>,
+    pub(crate) usage: Mutex<(usize, u64)>,
+    peak_count: AtomicUsize,
+    peak_bytes: AtomicU64,
 }
 
 #[derive(Debug)]
 pub(crate) struct SnapshotCharge {
-    budget: Arc<SnapshotBudget>,
-    bytes: u64,
+    pub(crate) budget: Arc<SnapshotBudget>,
+    pub(crate) bytes: u64,
     cacheable: AtomicBool,
 }
 
@@ -61,11 +63,16 @@ pub(crate) struct SnapshotCharge {
 #[derive(Debug)]
 #[must_use]
 pub struct SnapshotReservation {
-    charge: Arc<SnapshotCharge>,
+    pub(crate) charge: Arc<SnapshotCharge>,
+    pub(crate) prepared: Option<crate::PreparedCaptureDestination>,
+    pub(crate) managed_bound: bool,
 }
 
 #[cfg(feature = "experimental-shell-capture")]
 impl SnapshotReservation {
+    pub fn prepared(&self) -> Option<&crate::PreparedCaptureDestination> {
+        self.prepared.as_ref()
+    }
     pub fn byte_bound(&self) -> u64 {
         self.charge.bytes
     }
@@ -102,11 +109,21 @@ impl SnapshotBudget {
             limit_count,
             limit_bytes,
             usage: Mutex::new((0, 0)),
+            peak_count: AtomicUsize::new(0),
+            peak_bytes: AtomicU64::new(0),
         })
     }
 
     pub fn usage(&self) -> (usize, u64) {
         *self.usage.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Independent lifetime maxima, including outstanding reservations.
+    pub fn peak_usage(&self) -> (usize, u64) {
+        (
+            self.peak_count.load(Ordering::Relaxed),
+            self.peak_bytes.load(Ordering::Relaxed),
+        )
     }
 
     /// Reserve a proven upper bound on the destination allocation, not just
@@ -116,8 +133,11 @@ impl SnapshotBudget {
         self: &Arc<Self>,
         byte_bound: u64,
     ) -> Result<SnapshotReservation, Detail> {
-        self.reserve(byte_bound)
-            .map(|charge| SnapshotReservation { charge })
+        self.reserve(byte_bound).map(|charge| SnapshotReservation {
+            charge,
+            prepared: None,
+            managed_bound: false,
+        })
     }
 
     /// Transfer pre-capture capacity into an immutable snapshot without a
@@ -131,6 +151,7 @@ impl SnapshotBudget {
     ) -> Result<Arc<RendererImageSnapshot>, SnapshotRetentionFailure> {
         let checked = (|| {
             if !epoch.is_valid()
+                || reservation.prepared.is_some()
                 || snapshot.charge.is_some()
                 || !Arc::ptr_eq(self, &reservation.charge.budget)
             {
@@ -170,7 +191,7 @@ impl SnapshotBudget {
         Ok(Arc::new(snapshot))
     }
 
-    fn reserve(self: &Arc<Self>, bytes: u64) -> Result<Arc<SnapshotCharge>, Detail> {
+    pub(crate) fn reserve(self: &Arc<Self>, bytes: u64) -> Result<Arc<SnapshotCharge>, Detail> {
         let mut usage = self.usage.lock().unwrap_or_else(|e| e.into_inner());
         if bytes == 0
             || usage.0 >= self.limit_count
@@ -180,6 +201,8 @@ impl SnapshotBudget {
         }
         usage.0 += 1;
         usage.1 += bytes;
+        self.peak_count.fetch_max(usage.0, Ordering::Relaxed);
+        self.peak_bytes.fetch_max(usage.1, Ordering::Relaxed);
         Ok(Arc::new(SnapshotCharge {
             budget: self.clone(),
             bytes,

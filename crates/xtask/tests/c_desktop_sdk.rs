@@ -132,6 +132,9 @@ fn pinned_source_and_contract_are_both_required() {
 
     let contracts = [
         "docs/sophia-image-channel.md".to_owned(),
+        "docs/sophia-owned-ring.md".to_owned(),
+        "protocol/sophia-owned-ring-v1.kdl".to_owned(),
+        "protocol/golden/sophia-owned-ring-v1.tsv".to_owned(),
         "protocol/golden/sophia-image-channel-v1.tsv".to_owned(),
         "docs/namespace-discovery.md".to_owned(),
         "docs/sophia-shell-descriptors.md".to_owned(),

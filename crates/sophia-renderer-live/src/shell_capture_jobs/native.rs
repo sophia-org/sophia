@@ -6,12 +6,12 @@
 use super::executor::{BeginFailure, NextJob};
 use super::*;
 use sophia_renderer_native_egl::{
-    NativeGbmRenderedScanoutContext, NativePendingShellCapture, NativeRendererImageSnapshot,
+    NativeCapturedImage, NativeGbmRenderedScanoutContext, NativePendingShellCapture,
     NativeShellCaptureOutputFailure, NativeShellCapturePoll, NativeShellCaptureRequest,
     NativeShellCaptureSource, NativeShellCaptureStart,
 };
 
-type Output = Result<Arc<NativeRendererImageSnapshot>, NativeShellCaptureOutputFailure>;
+type Output = Result<Arc<NativeCapturedImage>, NativeShellCaptureOutputFailure>;
 
 /// Before begin, the whole request is returnable. After native submission the
 /// native escrow owns it. Only a completion supplies a releasable source again.

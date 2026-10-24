@@ -237,3 +237,26 @@ pub(super) fn validate_environment_readback(
     }
     Ok(())
 }
+
+/// Managed capture destinations are an explicit, default-off storage mode of
+/// the native capture pool: no environment or profile default enables them.
+pub(super) fn parse_capture_destination_reuse(
+    args: &[String],
+    native: bool,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let enabled = args
+        .iter()
+        .any(|arg| arg == "--experimental-shell-capture-destination-reuse");
+    if enabled
+        && (!native
+            || !cfg!(all(
+                feature = "native-session",
+                feature = "experimental-shell-capture"
+            )))
+    {
+        return Err("--experimental-shell-capture-destination-reuse requires --native-scanout \
+                    and a build with native-session and experimental-shell-capture"
+            .into());
+    }
+    Ok(enabled)
+}

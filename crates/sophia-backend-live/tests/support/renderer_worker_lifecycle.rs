@@ -524,13 +524,11 @@ fn capture_preparation_reply_and_disconnect_wake_the_owner() {
         panic!("preparation was not queued");
     };
     assert!(!owner.wait(now()).unwrap(), "no ring before the reply");
-    completion_sender.try_send(Ok(4096)).unwrap();
+    completion_sender.try_send(Ok(sophia_renderer_live::LiveShellCaptureDestination::Exported(4096))).unwrap();
     assert!(owner.wait(now()).unwrap(), "the reply rings the owner");
     owner.clear().unwrap();
-    assert_eq!(
-        core.poll_prepare_shell_capture_destination().unwrap(),
-        Some(4096)
-    );
+    assert!(matches!(core.poll_prepare_shell_capture_destination().unwrap(),
+        Some(sophia_renderer_live::LiveShellCaptureDestination::Exported(4096))));
     drop(completion_sender);
     owner.clear().unwrap();
 

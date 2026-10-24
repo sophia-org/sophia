@@ -325,13 +325,38 @@ pub fn lower_head_composition_plan_with_caches(
                         Err(_source) => {
                             #[cfg(feature = "experimental-shell-capture")]
                             {
-                                let snapshot = _source.shell()
-                                    .and_then(crate::LiveRetainedRendererImageSnapshot::from_content_lease)
-                                    .filter(|image| image.size() == content.image.size_px)
-                                    .ok_or(LiveHeadCompositionLoweringError::UnavailableContentImage)?;
-                                layers.push(LiveOwnedMixedCompositionLayer::Snapshot {
-                                    snapshot,
-                                    placement,
+                                let resource = _source.shell().ok_or(
+                                    LiveHeadCompositionLoweringError::UnavailableContentImage,
+                                )?;
+                                let image = resource
+                                    .captured_image()
+                                    .filter(|image| {
+                                        image.is_current()
+                                            && image.is_retained()
+                                            && image.is_valid()
+                                    })
+                                    .ok_or(
+                                        LiveHeadCompositionLoweringError::UnavailableContentImage,
+                                    )?;
+                                let metadata = image.metadata();
+                                if i32::try_from(metadata.width).ok()
+                                    != Some(content.image.size_px.width)
+                                    || i32::try_from(metadata.height).ok()
+                                        != Some(content.image.size_px.height)
+                                {
+                                    return Err(
+                                        LiveHeadCompositionLoweringError::UnavailableContentImage,
+                                    );
+                                }
+                                layers.push(match image.as_ref() {
+                                    sophia_runtime::ContentCapturedImage::Managed(lease) =>
+                                        LiveOwnedMixedCompositionLayer::ManagedCapture { lease: lease.clone(), placement },
+                                    sophia_runtime::ContentCapturedImage::Exported(_) =>
+                                        LiveOwnedMixedCompositionLayer::Snapshot {
+                                            snapshot: crate::LiveRetainedRendererImageSnapshot::from_content_lease(resource)
+                                                .ok_or(LiveHeadCompositionLoweringError::UnavailableContentImage)?,
+                                            placement,
+                                        },
                                 });
                             }
                             #[cfg(not(feature = "experimental-shell-capture"))]

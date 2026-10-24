@@ -1582,6 +1582,7 @@ name = "sophia-renderer-image"
 version = "0.1.0"
 dependencies = [
  "rustix",
+ "sophia-wake",
 ]
 
 [[package]]
@@ -1612,6 +1613,7 @@ dependencies = [
  "khronos-egl",
  "rustix",
  "sophia-renderer-image",
+ "sophia-wake",
  "sophia-x-authority",
  "tracing",
 ]

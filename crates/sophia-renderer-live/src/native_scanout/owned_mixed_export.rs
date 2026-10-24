@@ -141,7 +141,7 @@ where
         let layers = frame
             .layers
             .iter()
-            .map(|layer| match layer {
+            .filter_map(|layer| Some(match layer {
                 LiveOwnedMixedCompositionLayer::Cpu { buffer, placement } => {
                     LiveMixedCompositionLayer::Cpu {
                         buffer: LiveCpuBufferSourceRef {
@@ -178,13 +178,21 @@ where
                     snapshot,
                     placement: *placement,
                 },
+                #[cfg(feature = "experimental-shell-capture")]
+                LiveOwnedMixedCompositionLayer::ManagedCapture { lease, placement } => {
+                    let image_id = self.inner.managed_shell_capture_image(lease)?;
+                    LiveMixedCompositionLayer::RendererImage {
+                        image_id: LiveRendererImageId::from_raw(image_id.raw()),
+                        placement: *placement,
+                    }
+                }
                 LiveOwnedMixedCompositionLayer::Solid { geometry, color } => {
                     LiveMixedCompositionLayer::Solid {
                         geometry: *geometry,
                         color: *color,
                     }
                 }
-            })
+            }))
             .collect::<Vec<_>>();
         self.export_mixed_owned_scanout_buffer_with_modifiers_and_trace(
             target,

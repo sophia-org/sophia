@@ -119,6 +119,7 @@ pub(super) fn run_worker<D>(
                 epoch,
                 budget,
                 custody,
+                managed,
                 completion_sender,
             } => {
                 // Facts come from the context this executor will service,
@@ -135,13 +136,22 @@ pub(super) fn run_worker<D>(
                         max_width: native.max_width,
                         max_height: native.max_height,
                     })
-                    .ok_or_else(|| io::Error::from(io::ErrorKind::Unsupported));
+                    .ok_or_else(|| {
+                        io::Error::from(if context.is_none() {
+                            io::ErrorKind::NotConnected
+                        } else {
+                            io::ErrorKind::Unsupported
+                        })
+                    });
                 let result = facts.and_then(|facts| {
                     captures
                         .install(context.is_some(), epoch, budget, custody)
                         .map(|inbox| (inbox, facts))
                 });
                 let installed = result.is_ok();
+                if installed {
+                    captures.managed = managed;
+                }
                 if completion_sender.try_send(result).is_err() && installed {
                     captures.close();
                 }
@@ -155,12 +165,7 @@ pub(super) fn run_worker<D>(
                 completion_sender,
             } => {
                 let result = match context.as_mut() {
-                    Some(context) => context
-                        .prepare_shell_capture_destination(width, height)
-                        .map_err(|detail| io::Error::other(format!("{detail:?}")))
-                        .and_then(|bound| {
-                            bound.ok_or_else(|| io::Error::from(io::ErrorKind::Unsupported))
-                        }),
+                    Some(context) => captures.prepare(context, width, height),
                     None => Err(io::ErrorKind::NotConnected.into()),
                 };
                 let _ = completion_sender.try_send(result);

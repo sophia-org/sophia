@@ -105,16 +105,29 @@ impl ShellComponentSession {
     ) -> std::result::Result<(), sophia_backend_live::LiveRendererScanoutBufferExportDetail> {
         // At most four resource evictions per turn. No acknowledgment can be
         // manufactured without the native owner that visits the actual stores.
-        self.processes.retire_capture_imports(&mut 4, &mut |image| {
-            native.evict_shell_capture_imports(sophia_renderer_live::LiveRendererImageId::from_raw(
-                image.image_id().raw(),
-            ))
-        })
+        // A managed lease only records retirement intent; its allocation stays
+        // charged to the renderer until the pool itself recycles it.
+        self.processes
+            .retire_capture_imports(&mut 4, &mut |image| match &**image {
+                sophia_runtime::ContentCapturedImage::Exported(_) => native
+                    .evict_shell_capture_imports(
+                        sophia_renderer_live::LiveRendererImageId::from_raw(image.image_id().raw()),
+                    ),
+                sophia_runtime::ContentCapturedImage::Managed(_) => Ok(()),
+            })
     }
 
     #[cfg(feature = "experimental-shell-capture")]
     pub(crate) fn capture_retirement_pending(&self) -> bool {
         self.processes.capture_retirement_pending()
+    }
+
+    /// Storage mode for capture endpoints this session installs later.
+    pub(crate) fn set_capture_destination_reuse(&mut self, enabled: bool) {
+        #[cfg(feature = "experimental-shell-capture")]
+        self.processes.set_capture_destination_reuse(enabled);
+        #[cfg(not(feature = "experimental-shell-capture"))]
+        let _ = enabled;
     }
 
     pub fn authenticate(

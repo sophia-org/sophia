@@ -194,7 +194,7 @@ fn duplicate_offer_or_resource_and_capacity_return_original_custody() {
             reason: error,
             request: r,
             reservation,
-        } = f
+        } = *f
             .owner
             .submit(duplicate, r, reservation, f.now)
             .unwrap_err();
@@ -214,7 +214,7 @@ fn duplicate_offer_or_resource_and_capacity_return_original_custody() {
         reason: error,
         request: r,
         reservation: _,
-    } = f
+    } = *f
         .owner
         .submit(binding(1, 5), r, reservation, f.now)
         .unwrap_err();
@@ -255,7 +255,7 @@ fn mismatched_source_metadata_or_admission_never_enters_mailbox() {
             reason: error,
             request: r,
             reservation: _,
-        } = f.owner.submit(b, r, reservation, f.now).unwrap_err();
+        } = *f.owner.submit(b, r, reservation, f.now).unwrap_err();
         assert_eq!(error, SubmitFailure::Binding);
         assert_eq!(r.source.fd.as_raw_fd(), fd);
         assert!(f.owner.pending.iter().all(Option::is_none));
@@ -273,7 +273,7 @@ fn closed_executor_returns_reservation_without_creating_binding() {
         reason: error,
         request: r,
         reservation: _,
-    } = f
+    } = *f
         .owner
         .submit(binding(1, 1), r, reservation, f.now)
         .unwrap_err();

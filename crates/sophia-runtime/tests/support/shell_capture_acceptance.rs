@@ -1,7 +1,8 @@
 //! Supplied retained storage tests accounting, not DMA-BUF capture or GPU reads.
 use super::*;
 use sophia_renderer_image::{
-    OwnedDmaBufPlane, OwnedSnapshotData, RendererImageId, SnapshotBudget, SnapshotEpoch,
+    ManagedCaptureInfo, ManagedCaptureLease, OwnedDmaBufPlane, OwnedSnapshotData, RendererImageId,
+    RendererImageSnapshot, SnapshotBudget, SnapshotEpoch,
 };
 
 fn image(
@@ -9,14 +10,26 @@ fn image(
     epoch: &Arc<SnapshotEpoch>,
     width: u32,
 ) -> Arc<ContentCapturedImage> {
-    budget.retain(uncharged(width), epoch.clone()).unwrap()
+    Arc::new(
+        budget
+            .retain(uncharged(width), epoch.clone())
+            .unwrap()
+            .into(),
+    )
 }
 
-fn uncharged(width: u32) -> ContentCapturedImage {
+fn exported(image: &Arc<ContentCapturedImage>) -> &Arc<RendererImageSnapshot> {
+    match &**image {
+        ContentCapturedImage::Exported(image) => image,
+        ContentCapturedImage::Managed(_) => panic!("fixture storage is exported"),
+    }
+}
+
+fn uncharged(width: u32) -> RendererImageSnapshot {
     let fd =
         rustix::fs::memfd_create(c"capture-accounting", rustix::fs::MemfdFlags::CLOEXEC).unwrap();
     rustix::fs::ftruncate(&fd, 64).unwrap();
-    ContentCapturedImage::uncharged(
+    RendererImageSnapshot::uncharged(
         RendererImageId::from_raw(7),
         OwnedSnapshotData {
             width,
@@ -42,7 +55,7 @@ fn uncharged(width: u32) -> ContentCapturedImage {
 fn unretained_storage_cannot_be_accepted_as_a_captured_resource() {
     let mut store = owner();
     let mut ticket = reserve(&mut store, 10);
-    let mut snapshot = Some(Arc::new(uncharged(4)));
+    let mut snapshot = Some(Arc::new(Arc::new(uncharged(4)).into()));
     assert!(
         store
             .accept_capture(&mut ticket, &mut snapshot, 10)
@@ -103,7 +116,7 @@ fn accepted_capture_has_no_cpu_view_and_release_waits_for_eviction_and_every_sto
     assert!(lease.cpu_bytes().is_none());
     assert!(lease.clone().into_cpu().is_err());
     let imported = lease.captured_image().unwrap().clone();
-    let duplicate = Arc::new(imported.try_clone().unwrap());
+    let duplicate = exported(&imported).try_clone().unwrap();
     retire(&mut store);
     drop(lease);
     assert!(store.capture_retirement_pending());
@@ -114,7 +127,7 @@ fn accepted_capture_has_no_cpu_view_and_release_waits_for_eviction_and_every_sto
         Ok::<_, ()>(())
     };
     store.retire_capture_imports(&mut 0, &mut evict).unwrap();
-    assert!(!imported.import_cacheable());
+    assert!(!exported(&imported).import_cacheable());
     assert!(epoch.is_valid());
     store.retire_capture_imports(&mut 1, &mut evict).unwrap();
     assert_eq!(calls, 1);
@@ -143,6 +156,57 @@ fn accepted_capture_has_no_cpu_view_and_release_waits_for_eviction_and_every_sto
     assert_eq!(store.usage(), ContentMemoryUsage::default());
     assert_eq!(budget.usage(), (0, 0));
     assert!(store.take_event().is_none());
+}
+
+#[test]
+fn managed_storage_retires_by_intent_and_releases_only_with_its_last_lease() {
+    let mut store = owner();
+    let epoch = SnapshotEpoch::new(1, 2, 3);
+    let wake = sophia_wake::Wake::new().unwrap();
+    let lease = ManagedCaptureLease::new(
+        ManagedCaptureInfo {
+            image_id: RendererImageId::from_raw(7),
+            allocation_id: 1,
+            generation: 1,
+            width: 4,
+            height: 4,
+            bytes: 64,
+        },
+        epoch,
+        wake.notifier(),
+    )
+    .unwrap();
+    let mut ticket = reserve(&mut store, 0);
+    let mut snapshot = Some(Arc::new(ContentCapturedImage::Managed(lease.clone())));
+    store.accept_capture(&mut ticket, &mut snapshot, 0).unwrap();
+    assert!(ticket.is_none() && snapshot.is_none());
+    assert_eq!(store.usage().resident, 64);
+    while store.take_event().is_some() {}
+    retire(&mut store);
+    // Retirement is intent only: the renderer keeps the allocation charged.
+    let mut managed = 0;
+    store
+        .retire_capture_imports(&mut 1, &mut |image| {
+            managed += usize::from(matches!(&**image, ContentCapturedImage::Managed(_)));
+            Ok::<_, ()>(())
+        })
+        .unwrap();
+    assert_eq!(managed, 1);
+    assert!(lease.is_retired());
+    assert!(!store.capture_retirement_pending());
+    store.collect();
+    assert!(
+        store.take_event().is_none(),
+        "a queued lease still reads the storage"
+    );
+    drop(lease);
+    store.collect();
+    assert!(matches!(
+        store.take_event().unwrap().record,
+        ShellContentRecord::ResourceReleased(_)
+    ));
+    store.confirm_isb_release(description(1).resource).unwrap();
+    assert_eq!(store.usage(), ContentMemoryUsage::default());
 }
 
 #[test]

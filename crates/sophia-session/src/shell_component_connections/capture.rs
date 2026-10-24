@@ -179,4 +179,9 @@ impl ShellComponentConnections {
     pub(crate) fn capture_retirement_pending(&self) -> bool {
         self.epochs.capture_retirement_pending()
     }
+
+    #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
+    pub(crate) fn set_capture_destination_reuse(&mut self, enabled: bool) {
+        self.capture_link.set_destination_reuse(enabled);
+    }
 }

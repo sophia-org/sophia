@@ -181,6 +181,10 @@ fn prepared_capture_copies_same_device_xrgb_and_abort_retains_reservation() {
     assert!(snapshot.is_retained());
 
     let read_snapshot = |context_path: &Path| {
+        let sophia_renderer_native_egl::NativeCapturedImage::Exported(snapshot) = snapshot.as_ref()
+        else {
+            panic!("exported control returned managed storage");
+        };
         let frame = snapshot.as_frame();
         NativePixmapImportProbe::new(
             open(context_path),

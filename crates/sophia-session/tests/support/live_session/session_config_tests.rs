@@ -1358,6 +1358,15 @@ fn the_cursor_flags_need_native_scanout() {
 }
 
 #[test]
+fn the_capture_destination_reuse_flag_needs_native_scanout() {
+    let mut arguments = cursor_flag_arguments();
+    arguments.push("--experimental-shell-capture-destination-reuse".to_owned());
+    let error = PersistentXtermSessionConfig::from_args(&arguments)
+        .expect_err("destination reuse is a native capture storage mode");
+    assert!(error.to_string().contains("--native-scanout"), "{error}");
+}
+
+#[test]
 fn the_font_path_defaults_to_the_host_directories_and_can_be_emptied() {
     // A live session should find the host's core fonts without being told
     // where they are, which is what lets a terminal in UTF-8 mode render real

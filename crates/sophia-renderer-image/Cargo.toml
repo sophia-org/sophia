@@ -8,10 +8,11 @@ rust-version.workspace = true
 
 [dependencies]
 rustix = { workspace = true, features = ["fs", "std"] }
+sophia-wake = { path = "../sophia-wake", optional = true }
 
 [features]
 default = []
-experimental-shell-capture = []
+experimental-shell-capture = ["dep:sophia-wake"]
 
 [lints]
 workspace = true

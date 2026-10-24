@@ -258,6 +258,11 @@ pub enum LiveOwnedMixedCompositionLayer {
         snapshot: LiveRetainedRendererImageSnapshot,
         placement: LiveCompositionPlacement,
     },
+    #[cfg(feature = "experimental-shell-capture")]
+    ManagedCapture {
+        lease: std::sync::Arc<sophia_renderer_native_egl::NativeManagedCaptureLease>,
+        placement: LiveCompositionPlacement,
+    },
     Solid {
         geometry: Rect,
         color: CompositorRgb8,
@@ -602,6 +607,15 @@ pub struct LiveNativePersistentRenderStats {
     /// timed calls only), and their time when enabled. Nested in
     /// `capture_setup_*` for captures; admission preparation is outside every
     /// capture span. Never add to the setup/copy/cleanup partition.
+    /// Physical pool gauges; peak includes all pooled capture paths in this context.
+    pub capture_pool_live_count: usize,
+    pub capture_pool_live_bytes: u64,
+    pub capture_pool_peak_bytes: u64,
+    pub capture_pool_idle_count: usize,
+    pub capture_pool_idle_bytes: u64,
+    pub capture_managed_images: usize,
+    pub capture_pending_fences: usize,
+    pub capture_prepared_destinations: usize,
     pub capture_destination_allocations: usize,
     pub capture_destination_allocation_cpu: std::time::Duration,
     pub capture_destination_allocation_elapsed: std::time::Duration,

@@ -72,7 +72,7 @@ def verify_namespaces(host, observed):
         raise ValueError("all required namespaces must be private")
 
 
-def command(bwrap, runner, run, device):
+def command(bwrap, runner, run, device, binary):
     # Start empty. In particular, never bind the host root, home, /run or /tmp.
     result = [str(bwrap), "--unshare-all", "--unshare-user", "--die-with-parent", "--new-session",
               "--disable-userns", "--assert-userns-disabled",
@@ -89,7 +89,7 @@ def command(bwrap, runner, run, device):
                "--tmpfs", "/tmp", "--tmpfs", "/run", "--dir", "/run/test",
                "--tmpfs", "/home", "--dir", "/home/test", "--dir", "/work",
                "--ro-bind", str(runner), "/work/runner.py",
-               "--ro-bind", str(run / "test"), "/work/test",
+               "--ro-bind", str(binary), "/work/test",
                "--ro-bind", str(run / "config.json"), "/work/config.json",
                "--bind", str(run / "artifacts"), "/results", "--chdir", "/tmp"]
     environment = {"PATH": "/usr/bin:/bin", "HOME": "/home/test", "LANG": "C.UTF-8",
@@ -186,7 +186,7 @@ def run(args):
     output.mkdir(mode=0o700)  # An existing receipt must never be overwritten.
     (output / "artifacts").mkdir(mode=0o700)
     result = {"status": "refused", "device": device, "test_sha256": args.sha256,
-              "runner_sha256": digest(runner), "command": argv, "timeout_seconds": args.timeout}
+              "runner_sha256": digest(runner), "test_path": str(binary), "command": argv, "timeout_seconds": args.timeout}
     lock_fd = None
     child = None
     started = time.monotonic()
@@ -196,14 +196,10 @@ def run(args):
         (output / "runner.py").chmod(0o400)
         if digest(output / "runner.py") != result["runner_sha256"]:
             raise ValueError("runner changed while freezing it")
-        shutil.copyfile(binary, output / "test")
-        (output / "test").chmod(0o500)
-        if digest(output / "test") != args.sha256:
-            raise ValueError("test changed while freezing it")
         config = {"device": device, "sha256": args.sha256, "arguments": argv[1:],
                   "host_namespaces": namespace_ids()}
         write_json(output / "config.json", config)
-        launch = command(bwrap, output / "runner.py", output, device)
+        launch = command(bwrap, output / "runner.py", output, device, binary)
         write_json(output / "launch.json", launch)
         with (output / "stdout.log").open("xb") as stdout, (output / "stderr.log").open("xb") as stderr:
             child = subprocess.Popen(launch, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
@@ -228,6 +224,8 @@ def run(args):
                 raise ValueError("zero exit without device admission")
             if select_device(args.pci) != device:
                 raise ValueError("device identity changed during test")
+            if digest(binary) != args.sha256:
+                raise ValueError("test bytes changed during execution")
             result["status"] = "completed"
     except (OSError, ValueError, KeyboardInterrupt) as error:
         result.update(status="refused", reason=str(error), exit=2)

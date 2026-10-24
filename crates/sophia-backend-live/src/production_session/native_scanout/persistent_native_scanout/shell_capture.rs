@@ -27,6 +27,7 @@ impl Install {
 
 #[derive(Default)]
 pub(super) struct CaptureOwner {
+    managed: bool,
     // One persistent bound for this native owner, including worker replacement.
     // Never reset when closing a mailbox or changing the topology.
     custody: LiveShellCaptureCustody,
@@ -91,6 +92,17 @@ impl LiveNativeShellCaptureEndpoint {
 }
 
 impl LiveProductionNativeScanout {
+    /// Opt-in before installing an endpoint. Existing mailbox generations never
+    /// change storage mode while they hold requests or prepared allocations.
+    pub fn set_shell_capture_destination_reuse(&mut self, enabled: bool) -> io::Result<()> {
+        let capture = &mut self.preview_images.capture;
+        if capture.pending.is_some() || capture.active.is_some() || capture.closing {
+            return Err(io::ErrorKind::WouldBlock.into());
+        }
+        capture.managed = enabled;
+        Ok(())
+    }
+
     /// Existing native owner turn, independent of frames and admission. A lost
     /// output/store or generation withdraws immediately; full queues retry.
     pub fn service_shell_capture_lifecycle(&mut self) -> io::Result<()> {
@@ -162,6 +174,7 @@ impl LiveProductionNativeScanout {
             epoch.clone(),
             self.preview_images.budget.clone(),
             self.preview_images.capture.custody.clone(),
+            self.preview_images.capture.managed,
         )?;
         self.preview_images.capture.pending = Some(Install {
             output,
@@ -264,7 +277,9 @@ impl LiveProductionNativeScanout {
         self.exporters[index].request_prepare_shell_capture_destination(width, height, wake)
     }
 
-    pub fn poll_prepare_shell_capture_destination(&mut self) -> io::Result<Option<u64>> {
+    pub fn poll_prepare_shell_capture_destination(
+        &mut self,
+    ) -> io::Result<Option<sophia_renderer_live::LiveShellCaptureDestination>> {
         let Some(store) = self
             .preview_images
             .capture

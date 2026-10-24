@@ -17,6 +17,9 @@ struct State {
 pub(super) struct Capacity(Mutex<State>);
 
 impl Capacity {
+    pub(super) fn poison(&self) {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).quarantined = true;
+    }
     pub(super) fn process() -> Arc<Self> {
         static CAPACITY: OnceLock<Arc<Capacity>> = OnceLock::new();
         CAPACITY.get_or_init(|| Arc::new(Self::default())).clone()

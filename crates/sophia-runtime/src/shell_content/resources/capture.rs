@@ -79,15 +79,15 @@ impl ContentResourceStore {
             return Err(ContentStoreError::Revoked);
         }
         let snapshot = image.as_ref().ok_or(ContentStoreError::Incomplete)?;
-        let frame = snapshot.as_frame();
+        let metadata = snapshot.metadata();
         if !snapshot.is_retained() || !snapshot.is_current() || !snapshot.image_id().is_valid() {
             return Err(ContentStoreError::Stale);
         }
-        if !frame.is_valid()
-            || frame.width != held.metadata.width
-            || frame.height != held.metadata.height
-            || frame.format != DRM_FORMAT_XRGB8888
-            || frame.plane_count != 1
+        if !snapshot.is_valid()
+            || metadata.width != held.metadata.width
+            || metadata.height != held.metadata.height
+            || metadata.format != DRM_FORMAT_XRGB8888
+            || metadata.plane_count != 1
             || usize::try_from(transfer.layout.total_bytes).is_err()
         {
             return Err(ContentStoreError::Malformed);

@@ -39,6 +39,8 @@ struct NativeCaptureExecution {
 struct NativeCaptureAbandonedAllocation {
     _buffer: std::rc::Rc<NativeGbmOwnedScanoutBuffer>,
     _charge: std::rc::Rc<NativeCaptureAllocationCharge>,
+    #[cfg(feature = "experimental-shell-capture")]
+    _managed: Option<ManagedAllocationBacking>,
     framebuffer: Option<glow::Framebuffer>,
     texture: Option<glow::Texture>,
     image: Option<khronos_egl::Image>,
@@ -202,9 +204,18 @@ struct NativeCaptureAllocation {
     image: Option<khronos_egl::Image>,
     execution: std::rc::Rc<NativeCaptureExecution>,
     accounting: std::rc::Rc<NativeCaptureAllocationAccounting>,
+    #[cfg(feature = "experimental-shell-capture")]
+    managed: std::cell::RefCell<Option<ManagedAllocationBacking>>,
 }
 
 impl NativeCaptureAllocation {
+    fn general_capture_eligible(&self) -> bool {
+        #[cfg(feature = "experimental-shell-capture")]
+        { self.managed.borrow().is_none() }
+        #[cfg(not(feature = "experimental-shell-capture"))]
+        { true }
+    }
+
     fn new<T: AsFd>(
         gbm_device: &gbm::Device<T>,
         key: NativeCaptureAllocationKey,
@@ -257,6 +268,8 @@ impl NativeCaptureAllocation {
         }
         let charge = NativeCaptureAllocationCharge::new(&accounting, bytes);
         let mut allocation = Self {
+            #[cfg(feature = "experimental-shell-capture")]
+            managed: Default::default(),
             id,
             key,
             buffer: std::rc::Rc::new(buffer),
@@ -344,6 +357,8 @@ impl NativeCaptureAllocation {
             .graveyard
             .borrow_mut()
             .push(NativeCaptureAbandonedAllocation {
+                #[cfg(feature = "experimental-shell-capture")]
+                _managed: self.managed.borrow().clone(),
                 _buffer: self.buffer.clone(),
                 _charge: self.charge.clone(),
                 framebuffer: None,
@@ -525,6 +540,8 @@ impl Drop for NativeCaptureAllocation {
                 .abandoned
                 .borrow_mut()
                 .push(NativeCaptureAbandonedAllocation {
+                    #[cfg(feature = "experimental-shell-capture")]
+                    _managed: self.managed.get_mut().take(),
                     _buffer: self.buffer.clone(),
                     _charge: self.charge.clone(),
                     framebuffer: self.framebuffer.take(),

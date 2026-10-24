@@ -39,6 +39,8 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     capture_reuse: NativeCaptureReuse,
     #[cfg(feature = "experimental-shell-capture")]
     shell_capture_owner: std::rc::Rc<shell_capture::Owner>,
+    #[cfg(feature = "experimental-shell-capture")]
+    managed_captures: ManagedCaptures,
     snapshot_fences: Vec<NativeSnapshotFence>,
     snapshot_quarantine: Vec<std::rc::Rc<NativeCaptureAllocation>>,
     snapshot_reuse_enabled: bool,
@@ -247,6 +249,8 @@ where
             capture_reuse: NativeCaptureReuse::default(),
             #[cfg(feature = "experimental-shell-capture")]
             shell_capture_owner: std::rc::Rc::new(shell_capture::Owner::default()),
+            #[cfg(feature = "experimental-shell-capture")]
+            managed_captures: Default::default(),
             snapshot_fences: Vec::new(),
             snapshot_quarantine: Vec::new(),
             snapshot_reuse_enabled: true,
@@ -311,70 +315,6 @@ where
     /// The GL implementation strings this context's render targets reported.
     pub fn gl_identity(&self) -> &crate::NativeGlIdentityState {
         &self.gl_identity
-    }
-
-    pub fn persistent_render_stats(&self) -> NativeGbmPersistentRenderStats {
-        let mut stats = self.stats;
-        let reuse = self.capture_reuse.stats();
-        stats.sampling = stats.sampling.saturating_add(reuse.sampling);
-        stats.capture_context_creations = stats
-            .capture_context_creations
-            .saturating_add(reuse.context_creations as u64);
-        stats.capture_config_selections = stats.capture_config_selections.saturating_add(reuse.config_selections as u64);
-        stats.capture_context_reuses = stats.capture_context_reuses.saturating_add(reuse.context_reuses as u64);
-        stats.gl_pipeline_creations = stats
-            .gl_pipeline_creations
-            .saturating_add(reuse.context_creations);
-        stats.capture_setup_cpu = stats.capture_setup_cpu.saturating_add(reuse.setup_cpu);
-        stats.capture_copy_cpu = stats.capture_copy_cpu.saturating_add(reuse.copy_cpu);
-        stats.capture_cleanup_cpu = stats.capture_cleanup_cpu.saturating_add(reuse.cleanup_cpu);
-        stats.capture_setup_elapsed = stats.capture_setup_elapsed.saturating_add(reuse.setup_elapsed);
-        stats.capture_copy_elapsed = stats.capture_copy_elapsed.saturating_add(reuse.copy_elapsed);
-        stats.capture_cleanup_elapsed = stats.capture_cleanup_elapsed.saturating_add(reuse.cleanup_elapsed);
-        stats.capture_import_cpu = stats.capture_import_cpu.saturating_add(reuse.import_cpu);
-        stats.capture_import_elapsed = stats
-            .capture_import_elapsed
-            .saturating_add(reuse.import_elapsed);
-        stats.capture_source_evictions = stats
-            .capture_source_evictions
-            .saturating_add(reuse.source_evictions);
-        stats.capture_destination_allocations = stats
-            .capture_destination_allocations
-            .saturating_add(reuse.destination_allocation_calls);
-        stats.capture_destination_allocation_cpu = stats
-            .capture_destination_allocation_cpu
-            .saturating_add(reuse.destination_allocation_cpu);
-        stats.capture_destination_allocation_elapsed = stats
-            .capture_destination_allocation_elapsed
-            .saturating_add(reuse.destination_allocation_elapsed);
-        stats.capture_source_transient_imports = stats
-            .capture_source_transient_imports
-            .saturating_add(reuse.source_transient_imports);
-        stats.transfer_captures = self.transfer_stats.captures;
-        stats.transfer_attempts = self.transfer_stats.attempts;
-        stats.transfer_failures = self.transfer_stats.failures;
-        if let Some(persistent) = self.composition_target.as_ref() {
-            accumulate_import_cache_stats(&mut stats.import_cache, persistent.import_cache.stats());
-            stats.sampling = stats
-                .sampling
-                .saturating_add(persistent.target.pipeline.sampling_stats());
-        }
-        for persistent in self
-            .target_sets
-            .values()
-            .flat_map(|set| set.targets.iter().flatten())
-        {
-            accumulate_import_cache_stats(&mut stats.import_cache, persistent.import_cache.stats());
-            stats.sampling = stats
-                .sampling
-                .saturating_add(persistent.target.pipeline.sampling_stats());
-        }
-        for cached in self.capture_targets.iter().flatten() {
-            stats.sampling = stats
-                .sampling
-                .saturating_add(cached.target.pipeline.sampling_stats());
-        }
-        stats
     }
 
     pub fn composition_pixel_metrics(
@@ -875,6 +815,9 @@ include!("context/snapshot_lifetime.rs");
 include!("context/snapshot_fences.rs");
 include!("context/source_imports.rs");
 include!("context/capture_pool.rs");
+include!("context/render_stats.rs");
+#[cfg(feature = "experimental-shell-capture")]
+include!("context/managed_capture.rs");
 
 // Only the native shell-copy adapter may consume this exact-copy proof.
 #[cfg(feature = "experimental-shell-capture")]
@@ -945,6 +888,8 @@ where
     fn drop(&mut self) {
         #[cfg(feature = "experimental-shell-capture")]
         self.shell_capture_owner.retire();
+        #[cfg(feature = "experimental-shell-capture")]
+        self.invalidate_managed_shell_captures();
         if let Some(persistent) = self.composition_target.take() {
             self.destroy_persistent_composition_target(persistent);
         }
@@ -964,6 +909,8 @@ where
         // Target imports are gone; release retained buffer surfaces while their
         // EGL display and its dynamically loaded entry points still exist.
         self.abandon_snapshot_fences();
+        #[cfg(feature = "experimental-shell-capture")]
+        preserve_uncertain_managed(&mut self.snapshot_quarantine);
         self.renderer_images.clear();
         // Final teardown admits no more work; release quarantine while EGL
         // cleanup is still possible. Runtime clears retain these allocations.
@@ -988,23 +935,4 @@ fn invalid_frame_slot_report() -> NativeGbmOwnedScanoutBufferExportReport {
         target_generation: None,
         repaint: NativeCompositionRepaintOutcome::Full,
     }
-}
-
-fn accumulate_import_cache_stats(
-    total: &mut NativeDmaBufImportCacheStats,
-    additional: NativeDmaBufImportCacheStats,
-) {
-    total.imports = total.imports.saturating_add(additional.imports);
-    total.hits = total.hits.saturating_add(additional.hits);
-    total.evictions = total.evictions.saturating_add(additional.evictions);
-    total.live_entries = total.live_entries.saturating_add(additional.live_entries);
-    total.descriptor_mismatches = total
-        .descriptor_mismatches
-        .saturating_add(additional.descriptor_mismatches);
-    total.capacity_rejections = total
-        .capacity_rejections
-        .saturating_add(additional.capacity_rejections);
-    total.texture_calls = total.texture_calls.saturating_add(additional.texture_calls);
-    total.texture_cpu = total.texture_cpu.saturating_add(additional.texture_cpu);
-    total.texture_elapsed = total.texture_elapsed.saturating_add(additional.texture_elapsed);
 }

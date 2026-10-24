@@ -170,6 +170,13 @@ pub fn try_clone_mixed_frame(
                 snapshot: snapshot.clone(),
                 placement: *placement,
             }),
+            #[cfg(feature = "experimental-shell-capture")]
+            LiveOwnedMixedCompositionLayer::ManagedCapture { lease, placement } => {
+                Ok(LiveOwnedMixedCompositionLayer::ManagedCapture {
+                    lease: lease.clone(),
+                    placement: *placement,
+                })
+            }
             LiveOwnedMixedCompositionLayer::Solid { geometry, color } => {
                 Ok(LiveOwnedMixedCompositionLayer::Solid {
                     geometry: *geometry,

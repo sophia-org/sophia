@@ -14,6 +14,11 @@ where
         &mut self,
         image_id: NativeRendererImageId,
     ) -> Result<bool, NativeGbmScanoutBufferExportDetail> {
+        #[cfg(feature = "experimental-shell-capture")]
+        if self.managed_captures.images.get(&image_id).and_then(std::sync::Weak::upgrade)
+            .is_some_and(|lease| lease.is_current()) {
+            return Ok(false);
+        }
         self.poll_snapshot_fences();
         let pooled = self.renderer_images.get(&image_id).is_some_and(|image| image.pooled.is_some());
         let evicted_import = if pooled && self.snapshot_import_reuse_enabled {
@@ -92,6 +97,11 @@ where
         Ok(evicted_import)
     }
     pub fn clear_renderer_images(&mut self) -> Result<usize, NativeGbmScanoutBufferExportDetail> {
+        #[cfg(feature = "experimental-shell-capture")]
+        {
+            self.invalidate_managed_shell_captures();
+            self.capture_reuse.maintain_managed_preparations();
+        }
         let mut cleared_imports = self.clear_current_target_imports()?;
         for set in self.target_sets.keys().copied().collect::<Vec<_>>() {
             for frame_slot in 0..NATIVE_FRAME_TARGET_SLOT_CAPACITY {
@@ -166,6 +176,10 @@ where
         &self,
         image_id: NativeRendererImageId,
     ) -> Result<Option<NativeRendererImageSnapshot>, NativeGbmScanoutBufferExportDetail> {
+        #[cfg(feature = "experimental-shell-capture")]
+        if self.managed_captures.images.contains_key(&image_id) {
+            return Err(NativeGbmScanoutBufferExportDetail::InvalidRendererImageId);
+        }
         let Some(image) = self.renderer_images.get(&image_id) else {
             return Ok(None);
         };

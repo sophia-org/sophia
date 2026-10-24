@@ -291,6 +291,12 @@ impl ShellComponentProcesses {
 
     #[cfg(feature = "experimental-shell-capture")]
     #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
+    pub(crate) fn set_capture_destination_reuse(&mut self, enabled: bool) {
+        self.connections.set_capture_destination_reuse(enabled);
+    }
+
+    #[cfg(feature = "experimental-shell-capture")]
+    #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
     pub(crate) fn grant_capture_device(
         &mut self,
         slot: usize,

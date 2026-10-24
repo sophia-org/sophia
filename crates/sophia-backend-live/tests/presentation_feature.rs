@@ -239,6 +239,8 @@ fn full_state_composition_keeps_retained_surface_before_current_damage() {
             | LiveOwnedMixedCompositionLayer::RendererImage { placement, .. }
             | LiveOwnedMixedCompositionLayer::Snapshot { placement, .. }
             | LiveOwnedMixedCompositionLayer::Cpu { placement, .. } => placement.target.x,
+            #[cfg(feature = "experimental-shell-capture")]
+            LiveOwnedMixedCompositionLayer::ManagedCapture { placement, .. } => placement.target.x,
             LiveOwnedMixedCompositionLayer::Solid { geometry, .. } => geometry.x,
         })
         .collect::<Vec<_>>();

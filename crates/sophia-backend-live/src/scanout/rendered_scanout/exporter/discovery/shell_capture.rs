@@ -13,11 +13,12 @@ impl<R: RenderDeviceDiscoveryBackend> NativeGbmRenderedScanoutBufferDiscoveryExp
         epoch: Arc<LiveRendererSnapshotEpoch>,
         budget: Arc<LiveRendererSnapshotBudget>,
         custody: LiveShellCaptureCustody,
+        managed: bool,
     ) -> io::Result<()> {
         self.worker
             .as_ref()
             .ok_or(io::ErrorKind::Unsupported)?
-            .request_shell_capture(epoch, budget, custody)
+            .request_shell_capture(epoch, budget, custody, managed)
     }
     pub(crate) fn poll_shell_capture(
         &self,
@@ -43,7 +44,9 @@ impl<R: RenderDeviceDiscoveryBackend> NativeGbmRenderedScanoutBufferDiscoveryExp
             .ok_or(io::ErrorKind::Unsupported)?
             .request_prepare_shell_capture_destination(width, height, wake)
     }
-    pub(crate) fn poll_prepare_shell_capture_destination(&self) -> io::Result<Option<u64>> {
+    pub(crate) fn poll_prepare_shell_capture_destination(
+        &self,
+    ) -> io::Result<Option<sophia_renderer_live::LiveShellCaptureDestination>> {
         self.worker
             .as_ref()
             .ok_or(io::ErrorKind::Unsupported)?

@@ -8,7 +8,7 @@ rust-version.workspace = true
 
 [features]
 experimental-draw = ["dep:sophia-draw", "rustix/fs"]
-experimental-shell-capture = ["dep:sophia-renderer-image", "rustix/fs"]
+experimental-shell-capture = ["dep:sophia-renderer-image", "sophia-renderer-image/experimental-shell-capture", "rustix/fs"]
 # Opt-in shell-file control-turn observation; absent from default builds.
 experimental-custody-dispatch = []
 

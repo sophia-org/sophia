@@ -125,7 +125,7 @@ impl Settlement {
             self.image_id,
             self.withdrawn,
             &mut self.reservation,
-            snapshot.storage(),
+            snapshot,
             registry,
             now,
         )
@@ -213,6 +213,7 @@ fn failure_for_stop(reason: LiveShellCaptureStop) -> ContentCaptureFailure {
     }
 }
 
+/// Boxed on the error path: it returns the whole request and reservation.
 #[derive(Debug)]
 pub(crate) struct Rejected {
     pub reason: SubmitFailure,
@@ -282,23 +283,23 @@ impl Owner {
         request: LiveShellCaptureRequest,
         reservation: ContentCaptureReservation,
         deadline: Instant,
-    ) -> Result<LiveShellCaptureJob, Rejected> {
+    ) -> Result<LiveShellCaptureJob, Box<Rejected>> {
         if self.closed {
-            return Err(Rejected {
+            return Err(Box::new(Rejected {
                 reason: SubmitFailure::Closed,
                 request,
                 reservation,
-            });
+            }));
         }
         if !binding.matches(&request)
             || reservation.description().grant != binding.grant
             || *reservation.metadata() != binding.metadata
         {
-            return Err(Rejected {
+            return Err(Box::new(Rejected {
                 reason: SubmitFailure::Binding,
                 request,
                 reservation,
-            });
+            }));
         }
         // Both offer and resource identity are connection-scoped. A replacement
         // connection may use the same numbers while the old copy still settles.
@@ -315,11 +316,11 @@ impl Owner {
                         || held.resource() == binding.resource())
             })
         {
-            return Err(Rejected {
+            return Err(Box::new(Rejected {
                 reason: SubmitFailure::Duplicate,
                 request,
                 reservation,
-            });
+            }));
         }
         let Some(slot) = self
             .pending
@@ -327,21 +328,21 @@ impl Owner {
             .position(Option::is_none)
             .filter(|_| self.pending() < MAX_JOBS)
         else {
-            return Err(Rejected {
+            return Err(Box::new(Rejected {
                 reason: SubmitFailure::Capacity,
                 request,
                 reservation,
-            });
+            }));
         };
         let image_id = request.image_id;
         let job = match self.inbox.submit(request, deadline) {
             Ok(job) => job,
             Err((error, request)) => {
-                return Err(Rejected {
+                return Err(Box::new(Rejected {
                     reason: SubmitFailure::Renderer(error),
                     request,
                     reservation,
-                });
+                }));
             }
         };
         self.pending[slot] = Some(Pending {

@@ -717,6 +717,30 @@ impl LiveProductionNativeScanout {
                 metrics.capture_import_elapsed = metrics
                     .capture_import_elapsed
                     .saturating_add(stats.capture_import_elapsed);
+                metrics.capture_pool_live_count = metrics
+                    .capture_pool_live_count
+                    .saturating_add(stats.capture_pool_live_count);
+                metrics.capture_pool_live_bytes = metrics
+                    .capture_pool_live_bytes
+                    .saturating_add(stats.capture_pool_live_bytes);
+                metrics.capture_pool_peak_bytes = metrics
+                    .capture_pool_peak_bytes
+                    .saturating_add(stats.capture_pool_peak_bytes);
+                metrics.capture_pool_idle_count = metrics
+                    .capture_pool_idle_count
+                    .saturating_add(stats.capture_pool_idle_count);
+                metrics.capture_pool_idle_bytes = metrics
+                    .capture_pool_idle_bytes
+                    .saturating_add(stats.capture_pool_idle_bytes);
+                metrics.capture_managed_images = metrics
+                    .capture_managed_images
+                    .saturating_add(stats.capture_managed_images);
+                metrics.capture_pending_fences = metrics
+                    .capture_pending_fences
+                    .saturating_add(stats.capture_pending_fences);
+                metrics.capture_prepared_destinations = metrics
+                    .capture_prepared_destinations
+                    .saturating_add(stats.capture_prepared_destinations);
                 metrics.capture_destination_allocations = metrics
                     .capture_destination_allocations
                     .saturating_add(stats.capture_destination_allocations);
@@ -936,7 +960,14 @@ impl LiveProductionNativeScanout {
                 metrics
             },
         );
+        let (snapshot_budget_count, snapshot_budget_bytes) = self.preview_images.budget.usage();
+        let (snapshot_budget_peak_count, snapshot_budget_peak_bytes) =
+            self.preview_images.budget.peak_usage();
         LivePersistentRenderMetrics {
+            snapshot_budget_count,
+            snapshot_budget_bytes,
+            snapshot_budget_peak_count,
+            snapshot_budget_peak_bytes,
             renderer_workers,
             ..folded
         }

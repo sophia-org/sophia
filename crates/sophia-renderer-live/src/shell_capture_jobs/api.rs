@@ -1,9 +1,10 @@
 //! Proof-preserving handoff to Session. A receipt permits custody settlement,
 //! not resource publication: Session must still revalidate its grant and lease.
 use super::*;
-use crate::{LiveRetainedRendererImageSnapshot, NativeGbmRenderedScanoutContext};
+use crate::NativeGbmRenderedScanoutContext;
 
 pub use sophia_renderer_native_egl::{
+    NativeCaptureDestination as LiveShellCaptureDestination,
     NativeShellCaptureOutputFailure as LiveShellCaptureOutputFailure,
     NativeShellCaptureSource as LiveShellCaptureSource,
 };
@@ -79,7 +80,7 @@ pub enum LiveShellCaptureStop {
 }
 
 pub type LiveShellCaptureOutput =
-    Result<LiveRetainedRendererImageSnapshot, LiveShellCaptureOutputFailure>;
+    Result<Arc<sophia_renderer_native_egl::NativeCapturedImage>, LiveShellCaptureOutputFailure>;
 
 /// Only Completed proves reads ended after GPU submission. Returned proves
 /// pre-use rollback. Uncertain never supplies source descriptors or credits.
@@ -302,15 +303,12 @@ fn stop(reason: StopReason) -> LiveShellCaptureStop {
 fn convert(
     completion: Completion<
         native::Payload,
-        Result<
-            Arc<sophia_renderer_native_egl::NativeRendererImageSnapshot>,
-            LiveShellCaptureOutputFailure,
-        >,
+        Result<Arc<sophia_renderer_native_egl::NativeCapturedImage>, LiveShellCaptureOutputFailure>,
     >,
 ) -> LiveShellCaptureCompletion {
     let completed = |payload: native::Payload,
                      output: Result<
-        Arc<sophia_renderer_native_egl::NativeRendererImageSnapshot>,
+        Arc<sophia_renderer_native_egl::NativeCapturedImage>,
         LiveShellCaptureOutputFailure,
     >,
                      stopped| {
@@ -322,7 +320,7 @@ fn convert(
             source: payload
                 .completed_source
                 .expect("native receipt retains completed source"),
-            output: output.map(LiveRetainedRendererImageSnapshot::from_shell_capture),
+            output,
             stopped,
         }
     };

@@ -1,6 +1,7 @@
 //! One demand-driven native mailbox for all connection bindings. No admission.
 use super::*;
 use sophia_protocol::OutputId;
+use sophia_renderer_live::LiveShellCaptureDestination as CaptureDestination;
 use sophia_renderer_live::{
     LiveRendererSnapshotBudget, LiveRendererSnapshotEpoch, LiveShellCaptureInbox,
 };
@@ -47,8 +48,11 @@ pub(super) trait Backend {
         height: u32,
         wake: &sophia_wake::Notifier,
     ) -> io::Result<()>;
-    /// The proven destination byte bound for the prepared size.
-    fn poll_prepare(&mut self) -> io::Result<Option<u64>>;
+    /// The prepared destination: a proven byte bound, or a managed allocation
+    /// whose charge it already carries.
+    fn poll_prepare(&mut self) -> io::Result<Option<CaptureDestination>>;
+    /// Storage mode for the next endpoint; refused while one is installed.
+    fn set_destination_reuse(&mut self, enabled: bool) -> io::Result<()>;
 }
 
 #[cfg(feature = "native-session")]
@@ -103,8 +107,11 @@ impl Backend for sophia_backend_live::LiveProductionNativeScanout {
     ) -> io::Result<()> {
         self.request_prepare_shell_capture_destination(output, width, height, wake)
     }
-    fn poll_prepare(&mut self) -> io::Result<Option<u64>> {
+    fn poll_prepare(&mut self) -> io::Result<Option<CaptureDestination>> {
         self.poll_prepare_shell_capture_destination()
+    }
+    fn set_destination_reuse(&mut self, enabled: bool) -> io::Result<()> {
+        self.set_shell_capture_destination_reuse(enabled)
     }
 }
 
@@ -115,9 +122,15 @@ pub(crate) struct Link {
     requested: bool,
     destination: Option<Destination>,
     closing: bool,
+    /// Session configuration, applied to the backend before each request.
+    destination_reuse: bool,
 }
 
 impl Link {
+    pub(crate) fn set_destination_reuse(&mut self, enabled: bool) {
+        self.destination_reuse = enabled;
+    }
+
     pub(super) fn destination(&self) -> Option<&Destination> {
         self.destination.as_ref()
     }
@@ -217,6 +230,8 @@ impl Link {
             return Ok(());
         };
         if !self.requested {
+            // Only WouldBlock: a closing endpoint still owns the storage mode.
+            backend.set_destination_reuse(self.destination_reuse)?;
             if let Err(error) = backend.request(output) {
                 // A rejected request owns no backend endpoint to close. Retry
                 // queue pressure only; permanent refusal requires new demand.
@@ -295,16 +310,16 @@ impl ShellComponentConnections {
         reservation: sophia_runtime::ContentCaptureReservation,
         deadline: std::time::Instant,
         now: u64,
-    ) -> Result<sophia_renderer_live::LiveShellCaptureJob, crate::shell_capture_owner::Rejected>
+    ) -> Result<sophia_renderer_live::LiveShellCaptureJob, Box<crate::shell_capture_owner::Rejected>>
     {
         if self.capture_pending() >= crate::shell_capture_owner::MAX_JOBS
             || self.capture_sources.contains(binding)
         {
-            return Err(crate::shell_capture_owner::Rejected {
+            return Err(Box::new(crate::shell_capture_owner::Rejected {
                 reason: crate::shell_capture_owner::SubmitFailure::Capacity,
                 request,
                 reservation,
-            });
+            }));
         }
         let key = ComponentConnectionKey {
             slot: binding.slot,
@@ -318,11 +333,11 @@ impl ShellComponentConnections {
                 Arc::ptr_eq(&d.budget, &request.budget) && Arc::ptr_eq(&d.epoch, &request.epoch)
             });
         if !valid {
-            return Err(crate::shell_capture_owner::Rejected {
+            return Err(Box::new(crate::shell_capture_owner::Rejected {
                 reason: crate::shell_capture_owner::SubmitFailure::Binding,
                 request,
                 reservation,
-            });
+            }));
         }
         self.capture.as_mut().expect("prepared owner").submit(
             binding,

@@ -137,7 +137,10 @@ pub(super) fn prepare(
                 &config.bubblewrap,
             );
             let owner = match prepared {
-                Ok(owner) => owner,
+                Ok(mut owner) => {
+                    owner.set_capture_destination_reuse(config.shell_capture_destination_reuse);
+                    owner
+                }
                 Err(error) => {
                     let _ = std::fs::remove_dir(&directory);
                     return Err(error);

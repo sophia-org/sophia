@@ -249,13 +249,15 @@ impl ShellComponentConnections {
                 Err(_) => return Step::Refuse(ContentReason::RendererFailed),
             }
         }
-        let bound = match backend.poll_prepare() {
-            Ok(Some(bound)) => bound,
+        let prepared = match backend.poll_prepare() {
+            Ok(Some(prepared)) => prepared,
             Ok(None) => return Step::Wait,
             Err(_) => return Step::Refuse(ContentReason::RendererFailed),
         };
-        // A full renderer budget is transient until the offer's deadline.
-        match destination.budget.reserve_capture(bound) {
+        let bound = prepared.byte_bound();
+        // A full renderer budget is transient until the offer's deadline. A
+        // refused managed destination is dropped here, which wakes its pool.
+        match prepared.reserve(&destination.budget) {
             Ok(ticket) => {
                 preparing.ticket = Some((bound, ticket));
                 Step::Admit(bound)

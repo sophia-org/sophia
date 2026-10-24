@@ -1,4 +1,4 @@
-//! Real connection reservations and registry charges; no client or display launch.
+// Real connection reservations and registry charges; no client or display launch.
 use super::*;
 use sophia_runtime::OwnedRingGeometry;
 

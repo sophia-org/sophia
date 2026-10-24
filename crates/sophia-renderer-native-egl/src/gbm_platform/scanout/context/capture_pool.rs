@@ -176,6 +176,8 @@ struct NativeCaptureReuse {
     // Admission-prepared destinations: excluded from trim_to and clear(),
     // preferred by acquire_destination, dropped only with the pool.
     prepared: Vec<std::rc::Rc<NativeCaptureAllocation>>,
+    #[cfg(feature = "experimental-shell-capture")]
+    managed_prepared: std::collections::BTreeMap<u64, ManagedPreparation>,
     known_sizes: Vec<(NativeCaptureAllocationKey, u64)>,
     next_allocation_id: u64,
     enabled: bool,
@@ -193,6 +195,8 @@ impl Default for NativeCaptureReuse {
             accounting: Default::default(),
             source_budget: Default::default(),
             prepared: Vec::new(),
+            #[cfg(feature = "experimental-shell-capture")]
+            managed_prepared: Default::default(),
             known_sizes: Vec::new(),
             next_allocation_id: 1,
             enabled: true,
@@ -417,6 +421,7 @@ impl NativeCaptureReuse {
             available_bytes,
             allocation_limit,
             u64::MAX,
+            None,
         )
     }
 
@@ -435,6 +440,7 @@ impl NativeCaptureReuse {
         format: gbm::Format,
         available_bytes: u64,
         allocation_limit: usize,
+        use_prepared: bool,
     ) -> Result<Option<std::rc::Rc<NativeCaptureAllocation>>, NativeGbmScanoutBufferExportDetail>
     {
         use NativeGbmScanoutBufferExportDetail as E;
@@ -461,7 +467,7 @@ impl NativeCaptureReuse {
             let key = NativeCaptureAllocationKey::new(width, height, candidate);
             self.prepared.iter().position(|entry| entry.key == key)
         });
-        if let Some(index) = prepared {
+        if let Some(index) = prepared.filter(|_| use_prepared) {
             let allocation = self.prepared.swap_remove(index);
             self.stats.context_reuses = self.stats.context_reuses.saturating_add(1);
             self.stats.reuses = self.stats.reuses.saturating_add(1);
@@ -469,7 +475,7 @@ impl NativeCaptureReuse {
         }
         let reusable = candidates.iter().find_map(|candidate| {
             let key = NativeCaptureAllocationKey::new(width, height, candidate);
-            self.idle.iter().position(|entry| entry.key == key)
+            self.idle.iter().position(|entry| entry.key == key && entry.general_capture_eligible())
         });
         if let Some(index) = reusable {
             let allocation = self.idle.swap_remove(index);
@@ -614,6 +620,7 @@ impl NativeCaptureReuse {
             gbm::Format::Xrgb8888,
             available_bytes,
             allocation_limit,
+            true,
         )?
         else {
             return Ok(None);
@@ -635,6 +642,7 @@ impl NativeCaptureReuse {
         available_bytes: u64,
         allocation_limit: usize,
         destination_bound: u64,
+        prepared: Option<std::rc::Rc<NativeCaptureAllocation>>,
     ) -> Result<Option<NativePooledCapture>, NativeGbmScanoutBufferExportDetail> {
         use NativeGbmScanoutBufferExportDetail as E;
         let _whole =
@@ -662,7 +670,9 @@ impl NativeCaptureReuse {
             0x3432_5241 => gbm::Format::Argb8888,
             _ => return Err(E::InvalidTarget),
         };
-        let allocation = self.acquire_destination(
+        let allocation = if let Some(allocation) = prepared {
+            Some(allocation)
+        } else { self.acquire_destination(
             egl,
             display,
             gbm_device,
@@ -671,7 +681,8 @@ impl NativeCaptureReuse {
             format,
             available_bytes,
             allocation_limit,
-        )?;
+            true,
+        )? };
         let Some(allocation) = allocation else {
             self.stats.fallbacks += 1;
             return Ok(None);
@@ -743,6 +754,8 @@ impl NativeCaptureReuse {
     /// Final renderer teardown only, before EGL termination. Ordinary clear()
     /// must keep unknown GPU work charged and may not reuse its storage.
     fn destroy_quarantine(&mut self) {
+        #[cfg(feature = "experimental-shell-capture")]
+        preserve_uncertain_managed(&mut self.uncertain);
         self.uncertain.clear();
     }
 
@@ -764,6 +777,8 @@ impl Drop for NativeCaptureReuse {
 
 include!("capture_pool/target.rs");
 include!("capture_pool/timing.rs");
+#[cfg(feature = "experimental-shell-capture")]
+include!("capture_pool/managed.rs");
 
 #[cfg(test)]
 mod capture_pool_tests {

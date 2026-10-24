@@ -56,14 +56,20 @@ impl LiveRendererSnapshotWeak {
 impl LiveRetainedRendererImageSnapshot {
     /// Storage carried by the opaque completion, not a completion proof itself.
     #[cfg(feature = "experimental-shell-capture")]
-    pub fn storage(&self) -> &std::sync::Arc<sophia_runtime::ContentCapturedImage> {
+    pub fn storage(
+        &self,
+    ) -> &std::sync::Arc<sophia_renderer_native_egl::NativeRendererImageSnapshot> {
         &self.inner
     }
 
     /// Lower an already accepted lease without another registry, copy or charge.
     #[cfg(feature = "experimental-shell-capture")]
     pub(crate) fn from_content_lease(lease: &sophia_runtime::ContentResourceLease) -> Option<Self> {
-        let inner = lease.captured_image()?;
+        let sophia_runtime::ContentCapturedImage::Exported(inner) =
+            lease.captured_image()?.as_ref()
+        else {
+            return None;
+        };
         let frame = inner.as_frame();
         if !inner.is_retained() || !inner.is_current() || !frame.is_valid() {
             return None;
@@ -78,18 +84,6 @@ impl LiveRetainedRendererImageSnapshot {
         })
     }
 
-    /// The native adapter has already retained and charged this exact copy.
-    #[cfg(feature = "experimental-shell-capture")]
-    pub(crate) fn from_shell_capture(
-        inner: std::sync::Arc<sophia_renderer_native_egl::NativeRendererImageSnapshot>,
-    ) -> Self {
-        let frame = inner.as_frame();
-        let size = sophia_protocol::Size {
-            width: i32::try_from(frame.width).expect("capture preflight bounded width"),
-            height: i32::try_from(frame.height).expect("capture preflight bounded height"),
-        };
-        Self { size, inner }
-    }
     pub fn downgrade(&self) -> LiveRendererSnapshotWeak {
         LiveRendererSnapshotWeak(std::sync::Arc::downgrade(&self.inner))
     }

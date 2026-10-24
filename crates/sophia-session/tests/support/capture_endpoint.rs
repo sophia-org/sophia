@@ -27,6 +27,8 @@ struct Native {
     /// Next prepare poll reply; `None` keeps the request in flight.
     prepared: Option<io::Result<u64>>,
     prepare_replies: usize,
+    /// Last storage mode set, with how many requests had been made by then.
+    destination_reuse: Option<(bool, usize)>,
 }
 impl Native {
     fn offer(&mut self, output: u64) -> Destination {
@@ -75,7 +77,7 @@ impl Backend for Native {
         self.prepares.push((output, width, height));
         Ok(())
     }
-    fn poll_prepare(&mut self) -> io::Result<Option<u64>> {
+    fn poll_prepare(&mut self) -> io::Result<Option<CaptureDestination>> {
         if self.prepares.len() == self.prepare_replies {
             return Ok(None);
         }
@@ -83,7 +85,11 @@ impl Backend for Native {
         if !matches!(reply, Ok(None)) {
             self.prepare_replies += 1;
         }
-        reply
+        reply.map(|bound| bound.map(CaptureDestination::Exported))
+    }
+    fn set_destination_reuse(&mut self, enabled: bool) -> io::Result<()> {
+        self.destination_reuse = Some((enabled, self.requests.len()));
+        Ok(())
     }
     fn request(&mut self, output: OutputId) -> io::Result<()> {
         if self.busy_request {
@@ -140,6 +146,25 @@ fn demand_installs_once_and_never_steals_another_output() {
         native.polls, 2,
         "installed owner is not repeatedly polled for installation"
     );
+}
+
+#[test]
+fn the_storage_mode_reaches_the_backend_before_each_request() {
+    let mut link = Link::default();
+    let mut owner = None;
+    let mut native = Native::default();
+    link.demand(OutputId::from_raw(1), &owner).unwrap();
+    let first = native.offer(1);
+    link.service(&mut native, &mut owner, true).unwrap();
+    assert_eq!(native.destination_reuse, Some((false, 0)));
+    link.set_destination_reuse(true);
+    first.epoch.invalidate();
+    // The withdrawn endpoint closes; the next request carries the new mode.
+    link.service(&mut native, &mut owner, true).unwrap();
+    link.demand(OutputId::from_raw(1), &owner).unwrap();
+    link.service(&mut native, &mut owner, true).unwrap();
+    assert_eq!(native.destination_reuse, Some((true, 1)));
+    assert_eq!(native.requests.len(), 2);
 }
 
 #[test]

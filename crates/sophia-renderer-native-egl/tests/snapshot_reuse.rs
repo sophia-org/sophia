@@ -547,3 +547,7 @@ fn explicit_import_eviction_reimports_the_same_snapshot_pixels() {
         before + 1
     );
 }
+
+#[cfg(feature = "experimental-shell-capture")]
+#[path = "support/managed_capture_reuse.rs"]
+mod managed_capture_reuse;

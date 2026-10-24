@@ -401,7 +401,12 @@ fn vulkan_foreign_frames_capture_exactly_and_stay_independent() {
             }
         };
         let (_source, result) = completion.into_parts();
-        (frame.seq, result.expect("snapshot retained"))
+        let captured = result.expect("snapshot retained");
+        let sophia_renderer_native_egl::NativeCapturedImage::Exported(snapshot) = captured.as_ref()
+        else {
+            panic!("exported control returned managed storage");
+        };
+        (frame.seq, snapshot.clone())
     };
 
     let read = |snapshot: &sophia_renderer_native_egl::NativeRendererImageSnapshot| {

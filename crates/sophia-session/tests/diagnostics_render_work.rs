@@ -32,6 +32,18 @@ fn component_readiness_keeps_only_named_numeric_counters() {
 fn capture_import_timing_keeps_only_numeric_fields() {
     for key in [
         "capture_import_cpu_nsec",
+        "capture_pool_live_count",
+        "capture_pool_live_bytes",
+        "capture_pool_peak_bytes",
+        "capture_pool_idle_count",
+        "capture_pool_idle_bytes",
+        "capture_managed_images",
+        "capture_pending_fences",
+        "capture_prepared_destinations",
+        "snapshot_budget_count",
+        "snapshot_budget_bytes",
+        "snapshot_budget_peak_count",
+        "snapshot_budget_peak_bytes",
         "capture_destination_allocations_count",
         "capture_destination_allocation_cpu_nsec",
         "capture_destination_allocation_elapsed_nsec",

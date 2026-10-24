@@ -193,6 +193,8 @@ impl LiveProductionVisualRuntime {
                     format: frame.format,
                     placement: *placement,
                 }),
+                #[cfg(feature = "experimental-shell-capture")]
+                LiveOwnedMixedCompositionLayer::ManagedCapture { .. } => None,
                 LiveOwnedMixedCompositionLayer::Cpu { .. }
                 | LiveOwnedMixedCompositionLayer::RendererImage { .. }
                 | LiveOwnedMixedCompositionLayer::Snapshot { .. }

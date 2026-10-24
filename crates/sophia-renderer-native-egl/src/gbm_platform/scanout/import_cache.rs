@@ -318,9 +318,7 @@ impl NativeDmaBufImportCache {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/support/composition_import_timing.rs"]
-mod timing_tests;
+mod tests;
 
 include!("import_cache/snapshots.rs");
 

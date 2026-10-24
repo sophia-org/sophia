@@ -8,6 +8,103 @@ tags: [plan, rendering, gpu, 9p, performance, t339]
 
 ## Current resumption — October 23, 2026
 
+Managed destination reuse is implemented in the uncommitted tree as an explicit, default-off
+`--experimental-shell-capture-destination-reuse` native-session experiment.
+The exported capture path remains the default. This follows the profile14
+revert; it does not reinstate candidate preference or predict a CPU saving.
+
+The managed path retains the existing renderer-owned allocation and generation
+instead of exporting its destination FDs. An opaque lease crosses the frame
+queue, and only the owning context lowers it to a promoted renderer image.
+The existing generation-use guards and composition fences protect reuse.
+Retirement marks intent; a last-lease wake lets the existing worker retire
+storage without waiting for another frame, including after endpoint close.
+
+Admission still prepares one physical allocation per offer. A cancellable,
+non-cloneable token identifies that exact allocation, budget and epoch. Its
+persistent snapshot charge belongs to the allocation, survives cached imports,
+GPU readers and idle residency, and is reused without a second reservation.
+A logical lease holds metadata only. Managed allocations are ineligible for
+other endpoint budgets or presentation acquisitions; endpoint close clears
+cached imports and drains or destroys its idle backing. Uncertain GPU work
+keeps allocation and charge under the existing quarantine rules; teardown
+preserves uncertain managed backing for process lifetime rather than refunding it.
+
+Validation is staged: device-free ownership, cancellation, queue and shutdown
+tests first; then the ignored `snapshot_reuse::managed_capture_reuse` native
+control in a bounded single-render-node namespace. That control checks exact
+pixels, independence from source rewrites, a queued lease preventing reuse,
+reuse of the exact allocation only after retirement and completion, refusal
+of destination FD export, and zero budget after endpoint closure even when
+stale logical metadata remains. Native and performance results must be recorded
+separately; compilation alone does not qualify this path.
+
+The render-node control passed on the RX 7900 GRE at PCI `0000:03:00.0`:
+one exact ignored test, zero failures, 0.15 seconds. Evidence is
+`~/.local/state/t331/t339-managed-destination-control-01/`, including the
+uncommitted source hashes, binary path/hash, namespace admission and result.
+The sandbox exposed only `renderD128`; no VT, card node, input or display
+socket was available. This proves the oracle's offscreen pixel and custody
+assertions on this driver, not display presentation or a CPU improvement.
+The same pinned test binary also passed the existing exported-snapshot control,
+`independently_duplicated_snapshot_fds_survive_pool_churn_and_donor_destruction`;
+its receipt is in the package's `exported-control` directory. The package
+contains source and executable hashes, not a copy of the executable.
+
+A subsequent matched package should run R/E/M/M/E/R at 1920x24 on the same host
+and peer binaries: owned-ring, source-reusing DMA with exported destinations,
+and source-reusing DMA with managed destinations. Keep 2120 generations,
+120 warmup and 2000 counted frames, 60 seconds, the established HDMI geometry
+and capture-profile instrumentation, without perf. Preserve the 6.2% repeat
+width and disjoint-interval plus 10%-of-slower CPU benefit rule. Stop on failed
+joins, retained custody, descriptor mismatch, uncertain completion, growing
+allocation gauges or delivery regression. Snapshot-budget peaks include
+reservations; native pool peaks include destination allocations from all pooled paths in
+each context, excluding source-import cache bytes. Neither is a measurement
+of peer memory or total GPU/VRAM. No promotion or
+performance claim follows until the native control and repeated comparison
+pass; owned-ring remains the default.
+
+## Managed destination implementation validation
+
+The uncommitted implementation is based on `82418ea29`. Software receipts,
+source hashes and the review diff are in
+`~/.local/state/t331/t339-managed-integration-01/`. Native receipts remain
+separately frozen in `t339-managed-destination-control-01`.
+
+- Strict offline workspace Clippy with all features and targets passed.
+  The later fixture-only xtask corrections also passed strict Clippy.
+- Renderer/image/backend tests passed: 1,427 reported passes, zero failures,
+  36 ignored. The six shared managed-custody tests passed separately.
+- All-features Session unit, integration and doc targets passed serially:
+  1,664 reported passes, zero failures, 95 ignored.
+- The remaining workspace run reached xtask before finding stale SDK fixtures.
+  The C fixture omitted the three already-required owned-ring contract files;
+  the Rust fixture still expected 13 contract pairs instead of 16. Both are
+  corrected, with no SDK source or pin changes. The xtask follow-up covered
+  every target; its corrected SDK fixtures passed all ten tests. Workspace
+  doc tests passed. These overlapping run counts must not be added together.
+- Source layout and diff checks passed. The render-node runner's 17 tests and
+  schema reader's 14 tests passed.
+
+This is not a clean canonical gate receipt. The parallel workspace run failed
+the unchanged Session test
+`only_a_genuinely_stale_group_socket_is_cleared`: a connection succeeded just
+after its listener was dropped. A concurrent spawn briefly inheriting that
+listener is consistent with the code and result, but no descriptor trace was
+captured. The same test passed in the serial Session run. Claude also reported
+one earlier parallel WM-authentication failure without retained error detail;
+its subsequent full Session run passed.
+
+`cargo xtask check` stops at formatting in the unchanged, pinned SDK file
+`vendor/rust-desktop-sdk/source/crates/sophia-image-producer/src/role.rs`.
+Its bytes match HEAD. The later gate stages were not all run through that
+command; the individual checks above are the evidence. Fault injection,
+attended Session presentation and the matched CPU comparison remain undone.
+No release build, commit, push or performance claim is part of this receipt.
+
+## Earlier controls and measurements
+
 The same-host, same-peer ring-01 comparison remains authoritative: DMA uses
 38.6% more Session-plus-peer CPU at 1920x24 and 33.0% less at 1920x512.
 Upload-begin-to-kernel latency has no resolved difference. Keep owned-ring
@@ -327,8 +424,8 @@ avoiding successful per-capture allocation/import with proven GPU completion
 and descriptor lifetimes. That requires its own custody design; no buffer
 recycling follows from an Arc count or cache eviction alone. These approximately
 58+19 us brackets do not account for all remaining Session overhead, and are
-not a predicted saving. Destination recycling remains unimplemented; keep
-owned-ring default and source reuse diagnostic.
+not a predicted saving. At that checkpoint destination recycling was unimplemented. The default-off
+managed implementation described above remains a separate qualification lane.
 
 Upload-begin to kernel completion medians are 16.299/16.329/16.287 ms for
 R/fresh/reused G; no delivery gain is established. Evidence, reductions and

@@ -10,10 +10,7 @@ struct Fixture {
     inbox: LiveShellCaptureInbox,
     executor: CaptureExecutor<
         native::Payload,
-        Result<
-            Arc<sophia_renderer_native_egl::NativeRendererImageSnapshot>,
-            LiveShellCaptureOutputFailure,
-        >,
+        Result<Arc<sophia_renderer_native_egl::NativeCapturedImage>, LiveShellCaptureOutputFailure>,
     >,
     epoch: Arc<LiveRendererSnapshotEpoch>,
     budget: Arc<LiveRendererSnapshotBudget>,

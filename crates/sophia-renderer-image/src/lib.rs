@@ -4,9 +4,19 @@
 //! receipts. An owned or retained snapshot is storage, not proof of immutability or
 //! ended source reads. Admission must still consume the renderer's opaque receipt.
 
+mod captured;
 mod custody;
+#[cfg(feature = "experimental-shell-capture")]
+mod managed;
+#[cfg(feature = "experimental-shell-capture")]
+mod prepared;
 mod snapshot;
+pub use captured::*;
 pub use custody::*;
+#[cfg(feature = "experimental-shell-capture")]
+pub use managed::*;
+#[cfg(feature = "experimental-shell-capture")]
+pub use prepared::*;
 pub use snapshot::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

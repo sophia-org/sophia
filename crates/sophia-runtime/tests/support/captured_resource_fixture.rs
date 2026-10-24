@@ -4,11 +4,11 @@ use sophia_renderer_image::{
     OwnedDmaBufPlane, OwnedSnapshotData, RendererImageId, RendererImageSnapshot, SnapshotBudget,
     SnapshotEpoch,
 };
-use sophia_runtime::{ContentAllocationSnapshot, ContentEpochRegistry};
+use sophia_runtime::{ContentAllocationSnapshot, ContentCapturedImage, ContentEpochRegistry};
 use std::sync::Arc;
 
 pub(crate) struct Storage {
-    pub image: Arc<RendererImageSnapshot>,
+    pub image: Arc<ContentCapturedImage>,
     pub budget: Arc<SnapshotBudget>,
     pub epoch: Arc<SnapshotEpoch>,
 }
@@ -47,7 +47,7 @@ pub(crate) fn storage(id: u64) -> Storage {
         )
         .unwrap();
     Storage {
-        image,
+        image: Arc::new(image.into()),
         budget,
         epoch,
     }

@@ -107,7 +107,7 @@ fn request_readiness_wakes_without_a_render_command_or_idle_timer() {
     let (done, observed) = sync_channel(1);
     // Only move the wait fds, never the !Send capture executor.
     let thread = std::thread::spawn(move || {
-        let result = next_ready_command(&receive, &commands, requests.as_fd(), None);
+        let result = next_ready_command(&receive, &commands, Some(requests.as_fd()), None);
         done.send(result.map(|r| r.is_none())).unwrap();
     });
     notify.notify();
@@ -129,7 +129,7 @@ fn fence_only_follow_up_and_budget_yield_do_not_need_new_commands() {
     let (send, receive) = sync_channel(1);
     let (done, observed) = sync_channel(1);
     let thread = std::thread::spawn(move || {
-        let result = next_ready_command(&receive, &commands, requests.as_fd(), timeout);
+        let result = next_ready_command(&receive, &commands, Some(requests.as_fd()), timeout);
         done.send(result.map(|r| r.is_none())).unwrap();
     });
     let result = observed.recv_timeout(Duration::from_secs(2));
@@ -179,6 +179,7 @@ fn real_worker_refuses_install_without_context_and_shuts_down() {
         epoch: LiveRendererSnapshotEpoch::new(1, 2, 3),
         budget: LiveRendererSnapshotBudget::new(4, 256),
         custody: LiveShellCaptureCustody::default(),
+        managed: false,
         completion_sender: reply,
     })
     .unwrap();
@@ -187,4 +188,25 @@ fn real_worker_refuses_install_without_context_and_shuts_down() {
     control.shutdown();
     let _ = send.try_send(WorkerCommand::Shutdown);
     thread.join().unwrap();
+}
+
+#[test]
+fn last_managed_lease_wakes_without_an_executor_or_new_command() {
+    let control = WorkerControl::default();
+    let mut captures = Captures::new(&control).unwrap();
+    captures.managed_pending = true;
+    captures.commands.clear().unwrap();
+    let (send, receive) = sync_channel(1);
+    let notifier = captures.commands.notifier();
+    let (done, observed) = sync_channel(1);
+    let thread = std::thread::spawn(move || {
+        notifier.notify();
+        let completed = observed.recv_timeout(Duration::from_secs(2));
+        drop(send); // Unblocks a regressed recv-only wait without stranding it.
+        completed
+    });
+    let result = captures.next(&receive);
+    let _ = done.send(());
+    assert!(thread.join().unwrap().is_ok());
+    assert!(result.unwrap().is_none());
 }

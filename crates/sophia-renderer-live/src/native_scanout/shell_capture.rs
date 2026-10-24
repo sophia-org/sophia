@@ -20,6 +20,27 @@ impl<T: AsFd> NativeGbmRenderedScanoutContext<T> {
         self.inner.prepare_shell_capture_destination(width, height)
     }
 
+    pub fn prepare_managed_shell_capture_destination(
+        &mut self,
+        width: u32,
+        height: u32,
+        budget: std::sync::Arc<LiveRendererSnapshotBudget>,
+        epoch: std::sync::Arc<LiveRendererSnapshotEpoch>,
+        wake: sophia_wake::Notifier,
+    ) -> std::io::Result<Option<crate::LiveShellCaptureDestination>> {
+        self.inner
+            .prepare_managed_shell_capture_destination(width, height, budget, epoch, wake)
+            .map(|token| token.map(crate::LiveShellCaptureDestination::Managed))
+            .map_err(|detail| std::io::Error::other(format!("{detail:?}")))
+    }
+
+    pub fn maintain_managed_shell_captures(&mut self) -> std::io::Result<(bool, usize)> {
+        self.inner
+            .maintain_managed_shell_captures()
+            .map(|progress| (progress.needs_wake, progress.pending_fences))
+            .map_err(|detail| std::io::Error::other(format!("{detail:?}")))
+    }
+
     pub(crate) fn service_shell_captures(
         &mut self,
         executor: &mut crate::LiveShellCaptureExecutor,

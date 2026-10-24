@@ -1,11 +1,13 @@
 //! Native error vocabulary around the shared descriptor/budget owner.
-pub use sophia_renderer_image::{
-    SnapshotBudget as NativeRendererSnapshotBudget, SnapshotEpoch as NativeRendererSnapshotEpoch,
-};
 #[cfg(feature = "experimental-shell-capture")]
 pub use sophia_renderer_image::{
+    CaptureDestination as NativeCaptureDestination, CapturedImage as NativeCapturedImage,
+    ManagedCaptureLease as NativeManagedCaptureLease,
     SnapshotReservation as NativeRendererSnapshotReservation,
     SnapshotRetentionFailure as NativeRendererSnapshotRetentionFailure,
+};
+pub use sophia_renderer_image::{
+    SnapshotBudget as NativeRendererSnapshotBudget, SnapshotEpoch as NativeRendererSnapshotEpoch,
 };
 impl From<sophia_renderer_image::SnapshotError> for super::NativeGbmScanoutBufferExportDetail {
     fn from(error: sophia_renderer_image::SnapshotError) -> Self {
