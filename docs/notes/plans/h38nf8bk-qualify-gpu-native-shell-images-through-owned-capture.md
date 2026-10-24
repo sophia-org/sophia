@@ -31,16 +31,31 @@ latest-owner gauges and maximum peaks, with a device-free regression test.
 Even after that fix, final gauges describe post-clear, pre-teardown state;
 they are not a zero-retention gate. Profile15 raw evidence stays unchanged.
 
-Next is a managed-DMA 60/120/120/60 comparison on DP-1 at 1920x1080,
-using the same 1920x24 workload and one host/peer binary pair for all four
-runs. The HDMI P2319H does not advertise 120 Hz; DP-1's S3222DGM does.
-Both rates must therefore use DP-1, rather than compare a new monitor with
-the old HDMI baseline. Verify observed output geometry/refresh, exact joins,
-cleanup and bounded periodic storage. Keep 120 warmup / 2000 counted frames;
-the 120 Hz CPU window is shorter, so timer reductions must use observed
-in-window offers, not the previous fixed 30-second timer window. Report
-medians and tails without assuming that halving refresh period halves latency.
-No 120 Hz capture has run yet.
+The follow-up profile16 completed managed-DMA 60/120/120/60 on DP-1 at
+1920x1080 with the same 1920x24 workload and one host/peer binary pair.
+The source was `22f960b6d`, including the evidence merge fix. The HDMI P2319H
+cannot do 120 Hz, so both rates used the DP-1 S3222DGM. Observed timings were
+59.94 and 119.88 Hz, not the rounded mode labels. All four runs have exact
+2120 joins and clean established native/protocol and VT/PAM receipts.
+
+Upload-begin to exact kernel presentation medians are 16.348 / 16.3655 ms
+at 60 Hz and 7.747 / 7.744 ms at 120 Hz: a resolved 52.65% reduction under
+the frozen rule. Both 120 Hz p99 values are 7.862 ms, maxima 7.905 / 7.916 ms.
+Including preparation, medians are 16.999 / 17.001 ms and 8.390 / 8.388 ms.
+Every counted adjacent kernel-completion gap is near one actual period;
+none exceeds 1.5 periods. This measures a paced workload's presentation,
+not arbitrary input-to-photon latency.
+
+Combined CPU arm midpoints are 1536.25 us/frame at 60 Hz and 1467.5 at
+120 Hz; the 4.48% difference is below the 10% gate. Average process CPU per
+second rises from 92.08 to 175.92 ms (9.21% to 17.59% of one CPU core).
+The two destinations / 368640 bytes stay bounded. Final evidence now keeps
+pool peak 368640 bytes and budget peak 2 / 368640; all nine final live gauges
+are zero in these captures, subject to the post-clear sampling limit above.
+Timer reductions use records inside the actual counted windows: 1800 offers
+at 60 Hz and 1199 at 120 Hz, rather than a fixed 30-second window.
+Evidence: `~/.local/state/t331/t339-gpu-profile-16/analysis/REPORT.txt`.
+No default change or new native experiment follows from this refresh result.
 
 ## Managed implementation record — October 23, 2026
 
