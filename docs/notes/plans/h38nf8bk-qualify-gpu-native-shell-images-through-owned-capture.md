@@ -237,12 +237,32 @@ The diagnostic-only telemetry change does not alter either SDK contract.
 
 The measurement change is signed and pushed as Sophia `d5cf3c09e`; its release
 binary is `5ec033c35902fe033602c5376e41bcb8c7349f0b7d9332816bba1e4a3e41ac9c`.
-Profile12 is prepared at `~/.local/state/t331/t339-gpu-profile-12`: one reused
-DMA capture with profile11's peer, runner, display and workload, and no perf
-sampling. The clean evidence checkout pins `d5cf3c09e`. Native-plan and
-diagnostic validation, package hashes and idle-tty4 check-only pass; no native
-capture has started. Run from crunch over SSH, keeping the connection alive:
-`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-12/ssh/run.py`.
+Profile12 failed before Session startup: package preparation inherited umask
+002 and wrote `desktop.kdl` as group-writable 0664. Sophia correctly refused
+it with `UnsafeMode`. Hash-only preflight missed the permission change. PAM,
+TTY, keyboard and keyd cleanup completed with no residual processes; no CPU
+sampler or peer workload started. Keep this failed package unchanged. Its
+`analysis/REPORT.txt` and device-free argument negative control preserve the
+cause and cleanup evidence; it supplies no performance result.
+
+Replacement profile13 at `~/.local/state/t331/t339-gpu-profile-13` uses umask
+077, directories 0700 and files 0600. Integration `a3dc5e0` rejects writable
+core/profile/peer configs in the shared native validator; the focused 32-test
+target, fmt and strict Clippy pass. The outer launcher runs this diagnostic
+check as the session user before taking tty4, including when invoked with
+sudo. Its identity-drop and stop-before-launch behavior are checked without
+devices using mocked subprocesses. Actual root-mode check-only was not run
+because sudo required a password; ordinary check-only and the actual Sophia
+argument validator both pass. The latter uses the prepared argv and the
+runner's native/environment/timing variables and opens no devices.
+
+The clean evidence checkout and unchanged measurement binary still pin
+`d5cf3c09e`; the peer remains `e730fef6` built from integration `b1ca8c1`, whose
+peer sources are unchanged in `a3dc5e0`. Only the runner guard and package
+paths change. Pins, file modes, unused run path and the independent package
+review pass. No profile13 capture has started. Run from crunch over SSH,
+keeping the connection alive:
+`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-13/ssh/run.py`.
 Use paired steady-state destination/allocation and composition-import timings
 to decide whether a destination-lifetime change is worth pursuing. This is
 attribution only; it does not repeat profile11's performance comparison.
