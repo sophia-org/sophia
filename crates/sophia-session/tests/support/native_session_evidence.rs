@@ -97,6 +97,45 @@ fn duplicate_close_is_not_silently_counted() {
 }
 
 #[test]
+fn managed_resource_gauges_follow_the_owner_and_peaks_survive_its_absence() {
+    let sample = |n: usize| NativeEvidenceSnapshot {
+        resources: LivePersistentRenderMetrics {
+            capture_pool_live_count: n,
+            capture_pool_live_bytes: 2 * n as u64,
+            capture_pool_idle_count: 3 * n,
+            capture_pool_idle_bytes: 4 * n as u64,
+            capture_managed_images: 5 * n,
+            capture_pending_fences: 6 * n,
+            capture_prepared_destinations: 7 * n,
+            snapshot_budget_count: 8 * n,
+            snapshot_budget_bytes: 9 * n as u64,
+            capture_pool_peak_bytes: 10 * n as u64,
+            snapshot_budget_peak_count: 11 * n,
+            snapshot_budget_peak_bytes: 12 * n as u64,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut totals = NativeEvidenceSnapshot::default();
+    for (current, peak) in [(4, 4), (2, 4), (0, 4), (6, 6)] {
+        totals.append(&sample(current));
+        let r = totals.resources;
+        assert_eq!(r.capture_pool_live_count, current);
+        assert_eq!(r.capture_pool_live_bytes, 2 * current as u64);
+        assert_eq!(r.capture_pool_idle_count, 3 * current);
+        assert_eq!(r.capture_pool_idle_bytes, 4 * current as u64);
+        assert_eq!(r.capture_managed_images, 5 * current);
+        assert_eq!(r.capture_pending_fences, 6 * current);
+        assert_eq!(r.capture_prepared_destinations, 7 * current);
+        assert_eq!(r.snapshot_budget_count, 8 * current);
+        assert_eq!(r.snapshot_budget_bytes, 9 * current as u64);
+        assert_eq!(r.capture_pool_peak_bytes, 10 * peak as u64);
+        assert_eq!(r.snapshot_budget_peak_count, 11 * peak);
+        assert_eq!(r.snapshot_budget_peak_bytes, 12 * peak as u64);
+    }
+}
+
+#[test]
 fn an_abandoned_replacement_is_opened_and_closed_like_any_other_owner() {
     // The topology phase opens each adopted replacement before resuming onto
     // it; a refused resume then closes that owner with no submissions.

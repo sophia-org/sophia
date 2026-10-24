@@ -6,7 +6,43 @@ tags: [plan, rendering, gpu, 9p, performance, t339]
 ---
 # Qualify GPU native shell images through owned capture
 
-## Current resumption — October 23, 2026
+## Current resumption — October 24, 2026
+
+The managed implementation is signed at `27c06c19c`; the matched profile15
+R/E/M/M/E/R package completed all six captures with exact joins and clean
+established custody, shutdown and VT/PAM receipts. Its frozen report is
+`~/.local/state/t331/t339-gpu-profile-15/analysis/REPORT.txt`.
+
+Combined Session+peer CPU arm midpoints are R 1387.5, E 1653.75 and
+M 1527.5 us/frame. Repeat widths are 1.08%, 3.48% and 2.29%, within 6.2%.
+Managed destinations use 126.25 us/frame less than exported destinations
+(7.63% of E), below the frozen 10%-of-slower benefit threshold. Session alone
+drops 140 us/frame; that does not qualify the combined result. Keep owned
+ring as default and managed destinations experimental. Upload-begin to exact
+kernel presentation remains about 16.3 ms in every arm, with no resolved
+latency difference; producer preparation is outside that primary interval.
+
+Reuse is demonstrated by counters: each managed run has four destination
+allocation attempts in warmup, six composition imports and 2114 hits, and
+all eleven periodic samples hold two destinations / 368640 bytes. The final
+pool/budget fields are unusable in profile15: the evidence merge omitted all
+twelve new gauges and peaks. The follow-up fixes the shared merge to keep
+latest-owner gauges and maximum peaks, with a device-free regression test.
+Even after that fix, final gauges describe post-clear, pre-teardown state;
+they are not a zero-retention gate. Profile15 raw evidence stays unchanged.
+
+Next is a managed-DMA 60/120/120/60 comparison on DP-1 at 1920x1080,
+using the same 1920x24 workload and one host/peer binary pair for all four
+runs. The HDMI P2319H does not advertise 120 Hz; DP-1's S3222DGM does.
+Both rates must therefore use DP-1, rather than compare a new monitor with
+the old HDMI baseline. Verify observed output geometry/refresh, exact joins,
+cleanup and bounded periodic storage. Keep 120 warmup / 2000 counted frames;
+the 120 Hz CPU window is shorter, so timer reductions must use observed
+in-window offers, not the previous fixed 30-second timer window. Report
+medians and tails without assuming that halving refresh period halves latency.
+No 120 Hz capture has run yet.
+
+## Managed implementation record — October 23, 2026
 
 Managed destination reuse is implemented in the uncommitted tree as an explicit, default-off
 `--experimental-shell-capture-destination-reuse` native-session experiment.
@@ -51,7 +87,7 @@ The same pinned test binary also passed the existing exported-snapshot control,
 its receipt is in the package's `exported-control` directory. The package
 contains source and executable hashes, not a copy of the executable.
 
-A subsequent matched package should run R/E/M/M/E/R at 1920x24 on the same host
+The planned matched package (now completed as profile15 above) was R/E/M/M/E/R at 1920x24 on the same host
 and peer binaries: owned-ring, source-reusing DMA with exported destinations,
 and source-reusing DMA with managed destinations. Keep 2120 generations,
 120 warmup and 2000 counted frames, 60 seconds, the established HDMI geometry

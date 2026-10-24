@@ -228,6 +228,27 @@ impl NativeEvidenceSnapshot {
             .resources
             .recovery_replacements
             .saturating_add(next.resources.recovery_replacements);
+        self.resources.capture_pool_live_count = next.resources.capture_pool_live_count;
+        self.resources.capture_pool_live_bytes = next.resources.capture_pool_live_bytes;
+        self.resources.capture_pool_idle_count = next.resources.capture_pool_idle_count;
+        self.resources.capture_pool_idle_bytes = next.resources.capture_pool_idle_bytes;
+        self.resources.capture_managed_images = next.resources.capture_managed_images;
+        self.resources.capture_pending_fences = next.resources.capture_pending_fences;
+        self.resources.capture_prepared_destinations = next.resources.capture_prepared_destinations;
+        self.resources.snapshot_budget_count = next.resources.snapshot_budget_count;
+        self.resources.snapshot_budget_bytes = next.resources.snapshot_budget_bytes;
+        self.resources.capture_pool_peak_bytes = self
+            .resources
+            .capture_pool_peak_bytes
+            .max(next.resources.capture_pool_peak_bytes);
+        self.resources.snapshot_budget_peak_count = self
+            .resources
+            .snapshot_budget_peak_count
+            .max(next.resources.snapshot_budget_peak_count);
+        self.resources.snapshot_budget_peak_bytes = self
+            .resources
+            .snapshot_budget_peak_bytes
+            .max(next.resources.snapshot_budget_peak_bytes);
         self.resources.uploads = self
             .resources
             .uploads
