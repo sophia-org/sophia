@@ -11,6 +11,10 @@ use std::path::{Path, PathBuf};
 
 type LaunchResult<T> = Result<T, Box<dyn std::error::Error>>;
 
+const WORK_STATS_ENV: &str = "SOPHIA_SHELL_WORK_STATS";
+
+mod tests;
+
 /// Operator-selected launch policy, never negotiated from a client request.
 /// Preparation opens no device or display. Per-attempt GPU preparation still
 /// performs the existing exact identity revalidation before process launch.
@@ -121,5 +125,20 @@ pub(super) fn base_launch_spec(
     if let Some(path) = private_config {
         spec = spec.env("SOPHIA_SHELL_CONFIG", path);
     }
-    Ok(spec)
+    Ok(with_work_statistics(
+        spec,
+        std::env::var_os(WORK_STATS_ENV).as_deref(),
+    ))
+}
+
+fn with_work_statistics(
+    spec: ProcessLaunchSpec,
+    selected: Option<&std::ffi::OsStr>,
+) -> ProcessLaunchSpec {
+    // Protected launches clear the environment; forward only this exact opt-in.
+    if selected == Some(std::ffi::OsStr::new("1")) {
+        spec.env(WORK_STATS_ENV, "1")
+    } else {
+        spec
+    }
 }

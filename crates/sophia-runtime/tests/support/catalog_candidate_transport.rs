@@ -100,6 +100,23 @@ fn enqueue_candidate(f: &mut Fixture, value: CatalogCandidateBegin) {
         },
     );
 }
+/// The same submission under a caller-chosen transaction.
+fn enqueue_candidate_at(f: &mut Fixture, value: CatalogCandidateBegin, transaction: TransactionId) {
+    f.peer.submit(
+        &mut f.transport,
+        ShellFileKind::CatalogCandidate,
+        |header| {
+            encode_shell_file_catalog_candidate(
+                header,
+                &ShellFileCatalogCandidate {
+                    transaction,
+                    candidate: candidate(value),
+                },
+            )
+            .unwrap()
+        },
+    );
+}
 fn front(f: &mut Fixture) -> CatalogCandidatePart {
     let (transaction, part) = f.transport.peek_catalog_candidate().unwrap().unwrap();
     assert_eq!(transaction, tx(2));
@@ -264,6 +281,142 @@ fn catalog_wire_assembly_reaches_real_submission_and_exact_response_fifo() {
     f.epochs.collect();
     assert_eq!(f.epochs.accounting().memory.resident, 4);
     drop(bundle);
+    f.epochs.collect();
+    assert_eq!(f.epochs.reserved_bytes(), 0);
+}
+
+/// Exactly the Prepared (kind 1) and Presented (kind 2, `epoch`) outcomes of
+/// `candidate` under `transaction` are queued; the peer receives both.
+fn expect_outcomes(f: &mut Fixture, transaction: TransactionId, candidate: u64, epoch: u64) {
+    assert_eq!(f.transport.output.records(), 2);
+    let prepared = f.transport.output.front().unwrap().record.clone();
+    let OutboundRecord::Content(queued, ShellContentRecord::CandidateOutcome(value)) = &prepared
+    else {
+        panic!("prepared outcome is typed");
+    };
+    assert_eq!(*queued, transaction);
+    assert_eq!((value.kind, value.candidate_generation), (1, candidate));
+    let mut presented = value.clone();
+    presented.kind = 2;
+    presented.presentation_epoch = epoch;
+    f.send();
+    f.peer.expect(&mut f.transport, &prepared);
+    f.peer.expect(
+        &mut f.transport,
+        &OutboundRecord::Content(transaction, ShellContentRecord::CandidateOutcome(presented)),
+    );
+    f.peer.quiet(&mut f.transport);
+    assert!(f.transport.output.front().is_none());
+}
+/// A catalog change that leaves the dock's pixels unchanged needs no new
+/// upload: a second candidate under a fresh permit, catalog generation and
+/// interaction generation places the already-resident resource, is submitted
+/// with the same bytes, and reaches Presented while nothing retires.
+#[test]
+fn a_presented_catalog_resource_accepts_a_second_candidate_without_re_upload() {
+    let mut f = fixture();
+    let resources = f.epochs.resources_mut(GRANT).unwrap();
+    isb::accept(
+        resources,
+        tx(10),
+        ContentResourceBegin {
+            grant: GRANT,
+            resource: RESOURCE,
+            width_px: 1,
+            height_px: 1,
+            rendered_scale_numerator: 1,
+            rendered_scale_denominator: 1,
+            pixel_format: 1,
+            chunk_count: 1,
+            total_bytes: 4,
+        },
+        &[0, 0, 0, 255],
+        0,
+    );
+    while resources.take_event().is_some() {}
+    let allocations = [allocation()];
+    enqueue_candidate(&mut f, begin());
+    // Begin, Chunk and End are consumed in one tick into one pending candidate.
+    f.transport
+        .service_catalog_candidates(&mut f.epochs, &[context(&allocations)], &catalog(), 0)
+        .unwrap();
+    assert_eq!(
+        f.epochs
+            .active_candidates(GRANT)
+            .unwrap()
+            .pending_candidate_count(),
+        1
+    );
+    let first = f
+        .transport
+        .connection(&mut f.epochs)
+        .begin_catalog_submission(1, context(&allocations), &catalog(), 0)
+        .unwrap();
+    f.transport
+        .content_prepared(&mut f.epochs, GRANT, OUTPUT, 1, 1, 1, 0)
+        .unwrap();
+    f.transport
+        .content_presented(&mut f.epochs, GRANT, OUTPUT, 1, 8, 1, 1)
+        .unwrap();
+    drop(first);
+    f.epochs.collect();
+    expect_outcomes(&mut f, tx(2), 1, 8);
+    assert_eq!(f.epochs.accounting().memory.resident, 4);
+
+    // Fresh demand/permit, then the reuse candidate under catalog generation 5.
+    let candidates = f.epochs.active_candidates_mut(GRANT).unwrap();
+    candidates.grant_permit(tx(3), OUTPUT, 2, 2, 0).unwrap();
+    candidates.take_event().unwrap();
+    let mut reuse = begin();
+    reuse.catalog_generation = 5;
+    reuse.content.candidate_generation = 2;
+    reuse.content.pacing_permit = 2;
+    reuse.content.interaction_generation = 2;
+    let mut current = catalog();
+    current.generation = 5;
+    let mut context = context(&allocations);
+    context.interaction_generation = 2;
+    enqueue_candidate_at(&mut f, reuse, tx(4));
+    f.transport
+        .service_catalog_candidates(&mut f.epochs, &[context], &current, 0)
+        .unwrap();
+    assert_eq!(
+        f.epochs
+            .active_candidates(GRANT)
+            .unwrap()
+            .pending_candidate_count(),
+        1
+    );
+    let bundle = f
+        .transport
+        .connection(&mut f.epochs)
+        .begin_catalog_submission(2, context, &current, 0)
+        .unwrap();
+    assert_eq!(
+        bundle.resource(RESOURCE).unwrap().cpu_bytes().unwrap(),
+        &[0, 0, 0, 255],
+        "the resident bytes are placed again without a new upload"
+    );
+    assert_eq!(bundle.persistent_catalog.unwrap().catalog_generation, 5);
+    f.transport
+        .content_prepared(&mut f.epochs, GRANT, OUTPUT, 2, 1, 1, 0)
+        .unwrap();
+    f.transport
+        .content_presented(&mut f.epochs, GRANT, OUTPUT, 2, 9, 1, 1)
+        .unwrap();
+    expect_outcomes(&mut f, tx(4), 2, 9);
+    drop(bundle);
+    f.epochs.collect();
+    assert_eq!(f.epochs.accounting().memory.resident, 4, "nothing retired");
+    assert_eq!(f.epochs.accounting().memory.retiring, 0);
+    assert!(
+        f.epochs
+            .resources_mut(GRANT)
+            .unwrap()
+            .take_event()
+            .is_none()
+    );
+    f.transport.disconnect(&mut f.epochs).unwrap();
     f.epochs.collect();
     assert_eq!(f.epochs.reserved_bytes(), 0);
 }
