@@ -301,11 +301,34 @@ reused-G capture with the same peer, runner, display, workload and timers as
 profile13. Private file modes, pinned actual argument validation, mocked
 root-identity/stop-before-launch checks and ordinary check-only pass. The
 build receipt records the gate failures and selection-policy limitation.
-No native run has tested this preference or established its saving. Run from
-crunch over SSH, keeping the connection alive:
-`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-14/ssh/run.py`.
-Measure attempts and allocation CPU before claiming a benefit; destination
-recycling remains out of scope.
+
+Profile14 completed cleanly with 2120 exact accepted/presented joins, 2123
+monotonic completions, quiescent shutdown, zero retained resources/protocol
+errors and clean PAM/VT recovery. Steady allocation attempts fall from two
+to one per offer (2121 total, including the first cold fallback), but allocation
+CPU is unchanged: 58.0176 to 57.9823 us/offer. Allocation wall changes from
+60.65 to 59.51 us; one run each establishes no improvement. Composition import
+is 18.67 us CPU, nested in 66.80 us composition. CPUwin Session stays at
+1170 us/frame; peer is 517.5 and total 1687.5 (1665–1710), overlapping
+profile13's 1665–1705. Upload-begin-to-kernel medians are 16.270/16.272 ms.
+The failed attempt was not timed separately; do not describe its cost as zero.
+
+Candidate preference is reverted by signed `6505d850c`: no measured CPU
+benefit justifies the admission-availability tradeoff. Only its two source/test
+files are reverted, exactly to the `d5cf3c09` bytes; nine capture-pool tests
+pass. Measurement code, historical evidence and docs remain. The release-slot
+binary is still the frozen profile14 candidate, not a build of the revert.
+Evidence is `~/.local/state/t331/t339-gpu-profile-14/analysis/REPORT.txt`,
+`comparison.json` and the independent `claude/` audit. No new native run or
+performance acceptance is claimed.
+
+For the destination allocation/import subset, the remaining direction is
+avoiding successful per-capture allocation/import with proven GPU completion
+and descriptor lifetimes. That requires its own custody design; no buffer
+recycling follows from an Arc count or cache eviction alone. These approximately
+58+19 us brackets do not account for all remaining Session overhead, and are
+not a predicted saving. Destination recycling remains unimplemented; keep
+owned-ring default and source reuse diagnostic.
 
 Upload-begin to kernel completion medians are 16.299/16.329/16.287 ms for
 R/fresh/reused G; no delivery gain is established. Evidence, reductions and
