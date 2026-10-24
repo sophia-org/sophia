@@ -288,10 +288,24 @@ larger known candidate can refuse before a cold earlier candidate that might
 now succeed. Admission availability is not claimed identical across drivers.
 The focused capture-pool tests and strict all-target renderer Clippy pass;
 independent review finds no blocker. The new helper is formatted; standalone
-rustfmt still flags pre-existing allocation-timer/test formatting. No native
-run has tested this preference or established its saving. The next bounded
-capture must check attempts and allocation CPU; destination recycling remains
-out of scope.
+rustfmt still flags formatting left by the earlier allocation-timer change.
+The full layout audit fails: measurement commit `d5cf3c09` grew `context.rs`
+to 1010 lines and added an unledgered path-test hook in `import_cache.rs`.
+Two Session test hooks also fail that audit. These failures are not introduced
+by candidate preference, but the full gate is not clean.
+
+Candidate preference is signed and pushed as `84bca3b60`. Its release binary
+is `4cd863a75beccb6be94a28138fc313d4c52deb394f25d99461cdb4f2db6bbea7`.
+Profile14 at `~/.local/state/t331/t339-gpu-profile-14` prepares one bounded
+reused-G capture with the same peer, runner, display, workload and timers as
+profile13. Private file modes, pinned actual argument validation, mocked
+root-identity/stop-before-launch checks and ordinary check-only pass. The
+build receipt records the gate failures and selection-policy limitation.
+No native run has tested this preference or established its saving. Run from
+crunch over SSH, keeping the connection alive:
+`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-14/ssh/run.py`.
+Measure attempts and allocation CPU before claiming a benefit; destination
+recycling remains out of scope.
 
 Upload-begin to kernel completion medians are 16.299/16.329/16.287 ms for
 R/fresh/reused G; no delivery gain is established. Evidence, reductions and
