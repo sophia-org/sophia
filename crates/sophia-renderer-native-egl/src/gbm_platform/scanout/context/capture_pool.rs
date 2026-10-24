@@ -420,6 +420,20 @@ impl NativeCaptureReuse {
         )
     }
 
+    fn prefer_known_candidates(
+        &self,
+        width: u32,
+        height: u32,
+        candidates: &mut [RenderedScanoutCandidate],
+    ) {
+        // Try layouts this pool has already allocated first; keep every
+        // other candidate, in order, as a fallback.
+        candidates.sort_by_key(|candidate| {
+            let key = NativeCaptureAllocationKey::new(width, height, candidate);
+            !self.known_sizes.iter().any(|(known, _)| known == &key)
+        });
+    }
+
     /// Reuse an idle destination for this layout, or allocate one
     /// candidate. This is the only destination-acquisition path for both
     /// capture and admission preparation, so a prepared layout is the
@@ -439,7 +453,7 @@ impl NativeCaptureReuse {
     {
         use NativeGbmScanoutBufferExportDetail as E;
         let slot = usize::from(format == gbm::Format::Argb8888);
-        let candidates: Vec<_> = rendered_scanout_candidates(
+        let mut candidates = rendered_scanout_candidates(
             &[],
             Some(if format == gbm::Format::Argb8888 {
                 0x3432_5241
@@ -477,6 +491,7 @@ impl NativeCaptureReuse {
             self.stats.reuses = self.stats.reuses.saturating_add(1);
             return Ok(Some(allocation));
         }
+        self.prefer_known_candidates(width, height, &mut candidates);
         for candidate in candidates {
             let key = NativeCaptureAllocationKey::new(width, height, &candidate);
             // GBM does not expose allocation padding before allocation. Reuse

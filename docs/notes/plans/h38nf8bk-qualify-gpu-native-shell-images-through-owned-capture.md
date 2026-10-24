@@ -259,13 +259,39 @@ runner's native/environment/timing variables and opens no devices.
 The clean evidence checkout and unchanged measurement binary still pin
 `d5cf3c09e`; the peer remains `e730fef6` built from integration `b1ca8c1`, whose
 peer sources are unchanged in `a3dc5e0`. Only the runner guard and package
-paths change. Pins, file modes, unused run path and the independent package
-review pass. No profile13 capture has started. Run from crunch over SSH,
-keeping the connection alive:
-`sudo /usr/bin/python3 ~/.local/state/t331/t339-gpu-profile-13/ssh/run.py`.
-Use paired steady-state destination/allocation and composition-import timings
-to decide whether a destination-lifetime change is worth pursuing. This is
-attribution only; it does not repeat profile11's performance comparison.
+paths change. Profile13 completed with 2120 exact accepted/presented joins,
+2123 monotonic completions, zero retained resources or protocol errors,
+quiescent shutdown and clean PAM/VT restoration. CPUwin midpoints are Session
+1170 and peer 515 us/frame, total 1685 (interval 1665–1705). This is one
+instrumented attribution run, not a new comparison or improvement claim.
+
+Paired records spanning 1800 offers (generations 258–2057) measure destination
+allocation/target setup at 58.02 us CPU and 60.65 us wall per offer, outside
+Capture during admission preparation. Composition import is 18.98/19.83 us,
+contained in composition's 67.89/110.68 us. Capture setup/copy/cleanup CPU is
+1.04/38.66/2.63 us; source import is 2.82 us inside copy. The two new brackets
+explain about 77 us of work, not the whole Session excess. Deferred destruction
+remains unmeasured. Evidence and independent audit are in
+`~/.local/state/t331/t339-gpu-profile-13/analysis/REPORT.txt` and `claude/`.
+
+Every steady sample has two allocation attempts per offer. Together with one
+context creation and three context uses per offer, this identifies repeated
+candidate fallback: prepare tries twice, then capture consumes its prepared
+allocation without allocating. The failed candidate, failing step and split
+of time between attempts are unlogged; 29 us per attempt is only an average.
+
+The next candidate stably prefers exact layout keys already recorded in
+`known_sizes`, after preserving prepared and idle precedence. Every fallback
+and the complete physical allocation/validation loop remain. This changes
+selection policy, not destination custody or reservation: under pressure a
+larger known candidate can refuse before a cold earlier candidate that might
+now succeed. Admission availability is not claimed identical across drivers.
+The focused capture-pool tests and strict all-target renderer Clippy pass;
+independent review finds no blocker. The new helper is formatted; standalone
+rustfmt still flags pre-existing allocation-timer/test formatting. No native
+run has tested this preference or established its saving. The next bounded
+capture must check attempts and allocation CPU; destination recycling remains
+out of scope.
 
 Upload-begin to kernel completion medians are 16.299/16.329/16.287 ms for
 R/fresh/reused G; no delivery gain is established. Evidence, reductions and

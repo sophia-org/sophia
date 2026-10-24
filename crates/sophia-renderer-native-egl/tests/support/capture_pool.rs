@@ -140,6 +140,52 @@ fn destination_bound_uses_only_recorded_sizes_for_the_layout() {
 }
 
 #[test]
+fn known_destination_candidates_keep_exact_keys_and_every_fallback() {
+    let mut reuse = NativeCaptureReuse::default();
+    for format in [gbm::Format::Xrgb8888, gbm::Format::Argb8888] {
+        let original = rendered_scanout_candidates(&[], Some(format as u32));
+        let keys = |candidates: &[RenderedScanoutCandidate]| {
+            candidates
+                .iter()
+                .map(|candidate| NativeCaptureAllocationKey::new(64, 32, candidate))
+                .collect::<Vec<_>>()
+        };
+        let expected = keys(&original);
+        let mut candidates = original.clone();
+        reuse.known_sizes.clear();
+        reuse.prefer_known_candidates(64, 32, &mut candidates);
+        assert_eq!(keys(&candidates), expected, "cold order stays unchanged");
+
+        reuse.known_sizes.push((expected[1].clone(), 12000));
+        reuse.prefer_known_candidates(64, 32, &mut candidates);
+        let mut preferred = expected.clone();
+        preferred.swap(0, 1);
+        assert_eq!(keys(&candidates), preferred, "failed keys remain fallbacks");
+
+        for (width, height) in [(65, 32), (64, 33)] {
+            let mut candidates = original.clone();
+            reuse.prefer_known_candidates(width, height, &mut candidates);
+            assert_eq!(keys(&candidates), expected, "size must match exactly");
+        }
+
+        // Insertion order must not reorder multiple successful candidates.
+        reuse.known_sizes.push((expected[0].clone(), 9000));
+        let mut candidates = original.clone();
+        reuse.prefer_known_candidates(64, 32, &mut candidates);
+        assert_eq!(keys(&candidates), expected);
+        let other_format = if format == gbm::Format::Xrgb8888 {
+            gbm::Format::Argb8888
+        } else {
+            gbm::Format::Xrgb8888
+        };
+        let mut other = rendered_scanout_candidates(&[], Some(other_format as u32));
+        let other_keys = keys(&other);
+        reuse.prefer_known_candidates(64, 32, &mut other);
+        assert_eq!(keys(&other), other_keys, "format must match exactly");
+    }
+}
+
+#[test]
 fn import_time_stays_inside_copy_while_cleanup_is_removed() {
     let mut reuse = NativeCaptureReuse::default();
     assert!(
