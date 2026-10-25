@@ -206,8 +206,12 @@ struct Work {
     revision: u64,
     completion: SyncSender<Result<(), PortalTransferFailure>>,
 }
+enum Command {
+    Transfer(Work),
+    Stop,
+}
 pub struct PortalTransferCoordinator {
-    sender: SyncSender<Work>,
+    sender: SyncSender<Command>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
     recipient: Arc<dyn PortalRecipient>,
@@ -234,10 +238,15 @@ impl PortalTransferCoordinator {
         let stop = Arc::new(AtomicBool::new(false));
         let lease_stop = stop.clone();
         let lease_source = source.clone();
+        let (sender, requests) = mpsc::sync_channel::<Command>(1);
+        let exit_sender = sender.clone();
         let service = SessionPortalFileService::spawn_with_stop(
             authority,
             limits,
             stop.clone(),
+            move || {
+                let _ = exit_sender.try_send(Command::Stop);
+            },
             move |work| {
                 let accepted = Arc::new(AtomicBool::new(false));
                 let lease = PortalAccessLease {
@@ -262,19 +271,27 @@ impl PortalTransferCoordinator {
                     .unwrap_or(false)
             },
         )?;
-        let (sender, requests) = mpsc::sync_channel::<Work>(1);
         let stopping = stop.clone();
         let worker_fence = fence.clone();
         let worker_recipient = recipient.clone();
+        crate::file_service::tests::capture_probe!(probe);
         let thread = std::thread::Builder::new()
             .name("portal-transfer".into())
             .spawn(move || {
                 while !stopping.load(Ordering::Acquire) {
-                    let work = match requests.recv_timeout(Duration::from_millis(10)) {
-                        Ok(work) => work,
-                        Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                        Err(_) => break,
+                    crate::file_service::tests::before_wait!(probe, "portal-transfer", None);
+                    let work = match requests.recv() {
+                        Ok(Command::Transfer(work)) => work,
+                        Ok(Command::Stop) | Err(_) => break,
                     };
+                    if stopping.load(Ordering::Acquire) {
+                        worker_recipient
+                            .failed(work.transfer.transfer, PortalTransferFailure::Cancelled);
+                        let _ = work
+                            .completion
+                            .try_send(Err(PortalTransferFailure::Cancelled));
+                        break;
+                    }
                     let transfer = work.transfer.transfer;
                     let result = (|| {
                         let wait = PortalCollection {
@@ -326,7 +343,10 @@ impl PortalTransferCoordinator {
                     }
                     let _ = work.completion.try_send(result);
                 }
-                while let Ok(work) = requests.try_recv() {
+                while let Ok(command) = requests.try_recv() {
+                    let Command::Transfer(work) = command else {
+                        continue;
+                    };
                     worker_recipient
                         .failed(work.transfer.transfer, PortalTransferFailure::Cancelled);
                     let _ = work
@@ -358,13 +378,15 @@ impl PortalTransferCoordinator {
         revision: u64,
     ) -> mpsc::Receiver<Result<(), PortalTransferFailure>> {
         let (completion, result) = mpsc::sync_channel(1);
-        if let Err(error) = self.sender.try_send(Work {
+        if let Err(error) = self.sender.try_send(Command::Transfer(Work {
             transfer,
             revision,
             completion,
-        }) {
+        })) {
             let work = match error {
-                mpsc::TrySendError::Full(w) | mpsc::TrySendError::Disconnected(w) => w,
+                mpsc::TrySendError::Full(Command::Transfer(work))
+                | mpsc::TrySendError::Disconnected(Command::Transfer(work)) => work,
+                _ => unreachable!("only transfers are enqueued here"),
             };
             self.recipient
                 .failed(work.transfer.transfer, PortalTransferFailure::Pressure);
@@ -378,8 +400,11 @@ impl PortalTransferCoordinator {
 impl Drop for PortalTransferCoordinator {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
+        let _ = self.sender.try_send(Command::Stop);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
     }
 }
+
+mod tests;

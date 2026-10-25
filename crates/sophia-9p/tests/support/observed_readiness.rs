@@ -140,3 +140,80 @@ fn descriptor_numbers_cannot_substitute_for_server_identity() {
     replacement.turn_observed(stale).unwrap();
     assert_eq!(replacement.polls.get(), 1);
 }
+
+fn tversion() -> Vec<u8> {
+    support::frame(
+        100,
+        support::NOTAG,
+        support::Body::default().u32(65536).string(b"9P2000.L"),
+    )
+}
+
+/// The wake pipe holds nothing: every wakeup written so far was drained.
+fn wake_pipe_is_empty(server: &Server<StaticExport>) -> bool {
+    rustix::io::read(&server.reader, &mut [0; 8]) == Err(rustix::io::Errno::AGAIN)
+}
+
+/// An interrupted wait returns at once with nothing ready and nothing closed;
+/// the socket and the wake pipe then make ordinary progress.
+fn interrupted_wait_then_progress(mut server: Server<StaticExport>, mut peer: UnixStream) {
+    let connections = server.connection_count();
+    server.interrupts.set(1);
+    let started = std::time::Instant::now();
+    assert!(server.turn(None).unwrap());
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert_eq!(server.interrupts.get(), 0);
+    assert_eq!(server.polls.get(), 1);
+    assert_eq!(server.connection_count(), connections);
+    peer.write_all(&tversion()).unwrap();
+    assert!(server.turn(Some(Duration::from_secs(2))).unwrap());
+    let mut reply = [0; 7];
+    peer.read_exact(&mut reply).unwrap();
+    assert_eq!(reply[4], 101);
+    server.wake().wake();
+    let mut pending = [PollFd::new(&server.reader, PollFlags::IN)];
+    poll(&mut pending, Some(&Timespec::default())).unwrap();
+    assert!(pending[0].revents().contains(PollFlags::IN));
+    assert!(server.turn(Some(Duration::ZERO)).unwrap());
+    assert!(wake_pipe_is_empty(&server));
+    assert_eq!(server.polls.get(), 3);
+}
+
+#[test]
+fn an_interrupted_single_socket_wait_yields_nothing_and_progress_follows() {
+    let (server, peer) = server();
+    interrupted_wait_then_progress(server, peer);
+}
+
+#[test]
+fn an_interrupted_multi_socket_wait_yields_nothing_and_progress_follows() {
+    let (mut server, peer) = server();
+    let (local, mut other) = UnixStream::pair().unwrap();
+    other
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    server.adopt(local).map_err(|e| e.error).unwrap();
+    assert_eq!(server.connection_count(), 2);
+    other.write_all(&tversion()).unwrap();
+    interrupted_wait_then_progress(server, peer);
+    let mut reply = [0; 7];
+    other.read_exact(&mut reply).unwrap();
+    assert_eq!(reply[4], 101);
+}
+
+#[test]
+fn a_wake_retries_interrupted_writes_and_still_coalesces_when_full() {
+    let (server, _peer) = server();
+    let wake = server.wake();
+    wake.inner.interrupts.store(2, Ordering::SeqCst);
+    wake.wake();
+    assert_eq!(wake.inner.interrupts.load(Ordering::SeqCst), 0);
+    assert_eq!(rustix::io::read(&server.reader, &mut [0; 8]), Ok(1));
+    assert!(wake_pipe_is_empty(&server));
+    while rustix::io::write(&wake.inner.writer, &[1; 4096]).is_ok() {}
+    wake.inner.interrupts.store(1, Ordering::SeqCst);
+    wake.wake();
+    assert_eq!(wake.inner.interrupts.load(Ordering::SeqCst), 0);
+    server.drain_wake().unwrap();
+    assert!(wake_pipe_is_empty(&server));
+}

@@ -35,13 +35,29 @@ pub struct Wake {
 struct WakeInner {
     writer: OwnedFd,
     stop: AtomicBool,
+    #[cfg(test)]
+    interrupts: AtomicU64,
 }
 
 impl Wake {
     /// Retry every waiting read.
     pub fn wake(&self) {
         // A full pipe already holds a wakeup; nothing is lost by dropping this.
-        let _ = rustix::io::write(&self.inner.writer, &[1]);
+        // Only a signal landing mid-write is retried.
+        while self.write_wakeup() == Err(rustix::io::Errno::INTR) {}
+    }
+
+    fn write_wakeup(&self) -> rustix::io::Result<usize> {
+        #[cfg(test)]
+        if self
+            .inner
+            .interrupts
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .is_ok()
+        {
+            return Err(rustix::io::Errno::INTR);
+        }
+        rustix::io::write(&self.inner.writer, &[1])
     }
 
     /// End [`Server::run`], closing every connection.
@@ -122,6 +138,9 @@ pub struct Server<E: Export> {
     generation: Option<u64>,
     #[cfg(test)]
     polls: std::cell::Cell<u64>,
+    /// Pending polls to report as interrupted instead of calling `poll`.
+    #[cfg(test)]
+    interrupts: std::cell::Cell<u64>,
 }
 
 impl<E: Export> Server<E> {
@@ -140,6 +159,8 @@ impl<E: Export> Server<E> {
                 inner: Arc::new(WakeInner {
                     writer,
                     stop: AtomicBool::new(false),
+                    #[cfg(test)]
+                    interrupts: AtomicU64::new(0),
                 }),
             },
             next_id: 1,
@@ -148,6 +169,8 @@ impl<E: Export> Server<E> {
             generation: Some(0),
             #[cfg(test)]
             polls: std::cell::Cell::new(0),
+            #[cfg(test)]
+            interrupts: std::cell::Cell::new(0),
         })
     }
 
@@ -393,7 +416,7 @@ impl<E: Export> Server<E> {
                 PollFd::new(&self.reader, PollFlags::IN),
                 Self::slot_poll_fd(slot),
             ];
-            poll(&mut fds, timeout.as_ref())?;
+            self.poll_once(&mut fds, timeout.as_ref())?;
             return Ok(Readiness {
                 wake: fds[0].revents(),
                 listener: PollFlags::empty(),
@@ -402,7 +425,7 @@ impl<E: Export> Server<E> {
         }
         let mut fds = self.poll_set();
         let offset = fds.len() - self.slots.len();
-        poll(&mut fds, timeout.as_ref())?;
+        self.poll_once(&mut fds, timeout.as_ref())?;
         Ok(Readiness {
             wake: fds[0].revents(),
             listener: if offset == 2 {
@@ -412,6 +435,28 @@ impl<E: Export> Server<E> {
             },
             slots: SlotReadiness::Many(fds[offset..].iter().map(PollFd::revents).collect()),
         })
+    }
+
+    /// A poll cut short by a signal found nothing ready: it returns at once
+    /// with every revents cleared, and the caller's next wait catches up.
+    fn poll_once(&self, fds: &mut [PollFd<'_>], timeout: Option<&Timespec>) -> io::Result<()> {
+        #[cfg(test)]
+        let result = if self.interrupts.get() > 0 {
+            self.interrupts.set(self.interrupts.get() - 1);
+            Err(rustix::io::Errno::INTR)
+        } else {
+            poll(fds, timeout)
+        };
+        #[cfg(not(test))]
+        let result = poll(fds, timeout);
+        match result {
+            Ok(_) => Ok(()),
+            Err(rustix::io::Errno::INTR) => {
+                fds.iter_mut().for_each(PollFd::clear_revents);
+                Ok(())
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 
     fn drain_wake(&self) -> io::Result<()> {

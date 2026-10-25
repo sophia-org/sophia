@@ -24,6 +24,7 @@ use crate::{PortalPolicyDecision, PortalRequestGrantLifecycle};
 
 mod filesystem;
 mod submission;
+mod tests;
 pub use filesystem::{PortalFileHandle, PortalFileNode};
 
 const EBUSY: Errno = Errno(16);
@@ -152,6 +153,13 @@ impl<A: PortalFileAuthority> PortalFileExport<A> {
             issued: None,
             faulted: false,
         })
+    }
+
+    pub(crate) fn idle(&self) -> bool {
+        self.connection.is_none()
+            && self.execution.is_none()
+            && self.issued.is_none()
+            && self.upload.is_none()
     }
 
     pub fn authority(&self) -> &A {

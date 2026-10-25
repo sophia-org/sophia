@@ -1,7 +1,10 @@
 //! Session's private in-process requester transport. The bounded owner queue
 //! creates socketpairs; there is no listener or peer-selected admission record.
 use crate::files::*;
-use sophia_9p::{Errno, Limits, unix::Server};
+use sophia_9p::{
+    Errno, Limits,
+    unix::{Server, Wake},
+};
 use sophia_protocol::{NamespaceId, portal_files::PortalFileLimits};
 use std::os::unix::net::UnixStream;
 use std::sync::{
@@ -28,11 +31,18 @@ pub struct SessionPortalFileService {
     connect: SyncSender<Connect>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
+    wake: Wake,
 }
-struct StopOnExit(Arc<AtomicBool>);
-impl Drop for StopOnExit {
+struct StopOnExit<S: FnOnce()> {
+    stop: Arc<AtomicBool>,
+    notify: Option<S>,
+}
+impl<S: FnOnce()> Drop for StopOnExit<S> {
     fn drop(&mut self) {
-        self.0.store(true, Ordering::Release);
+        self.stop.store(true, Ordering::Release);
+        if let Some(notify) = self.notify.take() {
+            notify();
+        }
     }
 }
 impl SessionPortalFileService {
@@ -43,20 +53,28 @@ impl SessionPortalFileService {
         A: PortalFileAuthority + Send + 'static,
         F: FnMut(PortalFileExecution) -> bool + Send + 'static,
     {
-        Self::spawn_with_stop(authority, limits, Arc::new(AtomicBool::new(false)), execute)
+        Self::spawn_with_stop(
+            authority,
+            limits,
+            Arc::new(AtomicBool::new(false)),
+            || {},
+            execute,
+        )
     }
 
     /// The coordinator and service share lifetime, including unexpected
     /// transport-owner termination. Retained leases cannot outlive that owner.
-    pub(crate) fn spawn_with_stop<A, F>(
+    pub(crate) fn spawn_with_stop<A, F, S>(
         authority: A,
         limits: PortalFileLimits,
         stop: Arc<AtomicBool>,
+        on_stop: S,
         mut execute: F,
     ) -> std::io::Result<Self>
     where
         A: PortalFileAuthority + Send + 'static,
         F: FnMut(PortalFileExecution) -> bool + Send + 'static,
+        S: FnOnce() + Send + 'static,
     {
         let registration = NEXT_REGISTRATION
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |id| id.checked_add(1))
@@ -66,19 +84,21 @@ impl SessionPortalFileService {
         let export = PortalFileExport::new(authority, limits)
             .map_err(|e| std::io::Error::from_raw_os_error(e.0 as i32))?;
         let mut server = Server::new(export, Limits::default())?;
+        let wake = server.wake();
+        tests::capture_probe!(probe);
         let (connect, requests) = mpsc::sync_channel::<Connect>(1);
         let stopping = stop.clone();
         let thread = std::thread::Builder::new()
             .name("portal-files".into())
             .spawn(move || {
-                let _lifetime = StopOnExit(stopping.clone());
+                let _lifetime = StopOnExit {
+                    stop: stopping.clone(),
+                    notify: Some(on_stop),
+                };
                 let mut active = None;
                 let mut epoch = 0_u64;
                 while !stopping.load(Ordering::Acquire) {
                     server.export_mut().expire(Instant::now());
-                    if server.turn(Some(Duration::from_millis(5))).is_err() {
-                        break;
-                    }
                     if server.connection_count() == 0
                         && let Some(connection) = active.take()
                     {
@@ -88,9 +108,20 @@ impl SessionPortalFileService {
                     // this turn's socket read. Keep that successor in the
                     // bounded queue until a later turn observes EOF; rejecting
                     // it here makes serial transfers depend on scheduling.
-                    if active.is_none()
-                        && let Ok(request) = requests.try_recv()
-                    {
+                    let mut queue_empty = false;
+                    let request = if active.is_none() {
+                        match requests.try_recv() {
+                            Ok(request) => Some(request),
+                            Err(mpsc::TryRecvError::Empty) => {
+                                queue_empty = true;
+                                None
+                            }
+                            Err(mpsc::TryRecvError::Disconnected) => break,
+                        }
+                    } else {
+                        None
+                    };
+                    if let Some(request) = request {
                         let result = (|| {
                             if Instant::now() >= request.deadline {
                                 return Err(Errno::EIO);
@@ -133,6 +164,22 @@ impl SessionPortalFileService {
                             break;
                         }
                     }
+                    if stopping.load(Ordering::Acquire) {
+                        break;
+                    }
+                    // With no connection or owned work, only enqueue and stop can need a turn.
+                    let timeout = if queue_empty
+                        && server.connection_count() == 0
+                        && server.export().idle()
+                    {
+                        None
+                    } else {
+                        Some(Duration::from_millis(5))
+                    };
+                    tests::before_wait!(probe, "portal-files", timeout);
+                    if !matches!(server.turn(timeout), Ok(true)) {
+                        break;
+                    }
                 }
                 server.export_mut().revoke();
             })?;
@@ -140,6 +187,7 @@ impl SessionPortalFileService {
             connect,
             stop,
             thread: Some(thread),
+            wake,
         })
     }
     /// Called only by an off-owner transfer worker. Queue pressure refuses
@@ -160,6 +208,7 @@ impl SessionPortalFileService {
                 reply,
             })
             .map_err(|_| Errno::EAGAIN)?;
+        self.wake.wake();
         answer
             .recv_timeout(Duration::from_secs(2))
             .map_err(|_| Errno::EIO)?
@@ -168,8 +217,11 @@ impl SessionPortalFileService {
 impl Drop for SessionPortalFileService {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
+        self.wake.wake();
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
     }
 }
+
+pub(crate) mod tests;
