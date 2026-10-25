@@ -62,6 +62,41 @@ There is no numerical pass/fail threshold or external comparison. Allocation
 and broader matrix qualification remain t343; Vello stays parked. t252 also completed its attended input/replacement/rollback exit on October 22;
 see its [completion record](jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t252--join-and-accept-the-shell-path).
 
+### October 25 — quiescent portal workers qualified
+
+Keep `d9116ff09`: idle portal file and transfer workers now wait for work or
+shutdown, with EINTR-safe 9P waits. Active connections retain their 5 ms service
+cadence and existing transfer deadlines. No protocol or authority change.
+
+`~/.local/state/t331/portal-idle-01/` compares baseline `560b0aa` with that
+candidate in four static ABBA runs. Both use Lom `32e0bab`, Provlita `01035e62`,
+DP-1 at nominal 60 Hz, no input, no perf and no client work counters. Each CPU
+window lasts approximately 60 seconds after warmup. All four passed lifecycle,
+identity, workload and VT/PAM cleanup checks; Claude's independent audit found
+no custody or control discrepancy.
+
+| Idle Session CPU, mean of two runs | Baseline | Candidate |
+| --- | --- | --- |
+| CPU attribution interval, ms/s | 8.0827–8.7493 | 5.5824–6.2489 |
+| Midpoint, percent of one core | 0.8416% | 0.5916% |
+
+The midpoint reduction is 29.71%, saving about 0.25 percentage points of one
+core. The saving interval is 1.8337–3.1669 ms/s. These are tick/read attribution
+bounds, not confidence intervals. Both candidate repetitions improve; this
+does not establish an active-rendering or portal-transfer latency benefit.
+Lom, Provlita and WM each gained zero observed CPU ticks in all four windows,
+with nonzero conservative upper bounds. Render counters stayed flat, while
+the owner still selected the shell-authentication deadline about 49.63 times
+per second. That remaining wake source and its CPU cost are separate work.
+
+Evidence: `analysis/root/report.txt`, `results.json`, `analysis-hashes.sha256`
+and `raw-hashes.sha256`; independent audit: `analysis/claude/audit.txt`.
+The original 91-entry manifest and 287 input pins still verified after capture.
+Offline validation passed workspace tests, the all-features Session library
+suite, strict Clippy for both changed crates, formatting and the source-layout
+audit. Real signal delivery was not exercised; EINTR tests inject syscall
+results. Native interaction and active-transfer qualification remain separate.
+
 ### October 22 — startup permissions repaired
 
 Attempt `~/.local/state/t331/t331-crunch-report-01/fresh/run` failed before
