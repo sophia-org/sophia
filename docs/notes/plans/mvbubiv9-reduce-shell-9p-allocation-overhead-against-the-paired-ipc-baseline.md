@@ -62,6 +62,56 @@ There is no numerical pass/fail threshold or external comparison. Allocation
 and broader matrix qualification remain t343; Vello stays parked. t252 also completed its attended input/replacement/rollback exit on October 22;
 see its [completion record](jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t252--join-and-accept-the-shell-path).
 
+### October 26 — continuous-update attribution, no production change
+
+Retain the current implementation. The default owned-ring profile identifies
+substantial owner/control work but no specific safely removable cost supported
+well enough to select a patch for the 10% combined CPU/frame target. This is a
+diagnostic result, not performance acceptance or a default-transport change.
+
+`~/.local/state/t331/continuous-frame-cpu-01/` captured owned-ring and managed
+DMA controls at nominal 120 Hz with task-clock stacks and syscall tracepoints.
+Both completed cleanly, but syscall recording itself appeared prominently in
+the stacks. Package `continuous-frame-cpu-02/` therefore retained the exact
+Sophia `d9116ff09` binary, peer and owned-ring workload while removing syscall
+tracing. The output was DP-1 at actual 119.88 Hz, with a changing 1920×24 panel,
+120 warmup and 2000 counted presentations. Capture-profile instrumentation and
+task-clock/DWARF sampling remained enabled.
+
+Package 02 remains **failed**: its postflight required zero late CPU sampler
+slots across the whole run. The sole late slot was a 10.003351 ms sample gap
+starting 16.627 seconds after the counted window ended, during the hold period.
+Capture, identities, all 2120 frame joins and native/VT/PAM cleanup passed.
+Canonical CPUwin accepted the counted window and its brackets; maximum sample
+spacing there was 5.040294 ms. Neither the failed receipt nor its gate changed.
+
+Separate `continuous-frame-cpu-02-recovery/` postprocessed the existing private
+recording without another native run. It rechecked loss and exact TGID/time
+filtering, retained the late-slot qualification, and reported zero lost samples.
+Its 16.683434-second window uses kernel completions of generations 120 and 2120.
+
+| Profiled CPU attribution bounds | Session | Producer | Combined |
+| --- | --- | --- | --- |
+| µs per counted frame | 885–905 | 485–510 | 1370–1415 |
+
+Task-clock sample periods cover about 99.6% of each CPUwin midpoint; bracketed
+schedstat agrees. These are accounting bounds, not confidence intervals. A
+lower total than package 01 is not a production saving: instrumentation changed.
+The owner thread holds 79.35% of Session sample weight. Custody liveness is
+6.13% inclusive; producer readback is 16.70%, including required GPU work,
+with buffer-creation symbol matches only 1.21%. Inclusive scopes overlap and
+inlining/unresolved driver symbols limit attribution; none is a saving estimate.
+No shell-authentication or maintenance deadline expired in the timer window.
+Earlier custody-dispatch and publication-batching screens also did not establish
+a native benefit, so those changes are not reselected from call frequency alone.
+
+Evidence is the recovery's `analysis/root/{report.txt,findings.json,freeze.json}`
+and `analysis/claude/{outputs-audit.txt,read-hashes.sha256}`. Report SHA256:
+`80f289a6240b3ae60f54cc14162643c16f1c0b6fc63cf949d1cdfc131cc7995b`.
+The independent audit found no blocker. Perf's Session report event count differs
+from filtered-script weight by about 1.6%; analysis uses the validated script
+weights. No visual qualification or production performance improvement is claimed.
+
 ### October 25 — quiescent portal workers qualified
 
 Keep `d9116ff09`: idle portal file and transfer workers now wait for work or
