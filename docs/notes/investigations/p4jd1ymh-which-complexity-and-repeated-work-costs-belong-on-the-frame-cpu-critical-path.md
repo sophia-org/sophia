@@ -48,9 +48,10 @@ CPU difference by attempts does not measure probe cost. S1 remains parked.
 
 ## Critical-path disposition
 
-1. Finish the already-reviewed W2 same-binary off/on ABBA first. No extra patch
-   enters it. Its predecessor screen passed the predeclared regression margins,
-   which is not equivalence or a gain.
+1. W2's experimental performance gate is closed after independent effect blocks
+   02 and 03 reproduced combined and Session CPU reductions. Keep their latency
+   increase visible and their results separate in the linked critical-path plan.
+   Production integration remains gated; sources, releases and seals stay frozen.
 2. Next bounded implementation investigation: trace the callers of empty
    settlement and collection sweeps. Propose an exact ready/pending-state gate
    that avoids an empty scan without caching positive authority. Determine all
@@ -73,6 +74,52 @@ CPU difference by attempts does not measure probe cost. S1 remains parked.
 The empty-work investigation is on the immediate plan after W2, not permission
 to alter frozen sources, weaken freshness or start another native lane now.
 No production code, builds or device runs were performed for this review.
+
+## Source closure: empty reconciliation and collection (2026-10-28)
+
+Read-only review against baseline `d9116ff0` closes the positive-byte question.
+The vendored Rust SDK's `shell/content/validation.rs:392-426` requires both
+dimensions to be positive, checks width times four, and requires the exact
+total byte count. `ContentResourceStore::begin_isb` calls this `layout` before
+reservation. Capture admission also calls `begin_isb` (`resources/capture.rs`),
+so both accepted-resource insertion paths inherit strictly positive bytes.
+Explicit retirement adds that resource's bytes to `usage.retiring`; removal
+subtracts them. A live, non-revoked store with `usage.retiring == 0` therefore
+has no retiring resource.
+
+The smallest collection candidate is a per-store early return when
+`!self.revoked && self.usage.retiring == 0`. Baseline `collect` selects only
+retiring or revoked resources; its second removal loop is revoked-only.
+This guard needs neither a new counter nor a lease-drop notification. It never
+skips a revoked epoch or a store with a retiring resource, including one whose
+last lease drops silently. General dirty-bit suppression while retiring resources
+exist remains unsound without a drop-visible mechanism.
+
+Placement matters on the frozen W2 source: `collect` first calls
+`forget_released_intents`. Any future combined implementation must preserve that
+cleanup before the guard. This is not permission to modify the measured W2 lane.
+Collection uses already-reserved response credits; journal capacity constrains
+later publication. `confirm_isb_release` removes the accepted resource directly
+after journal confirmation, rather than clearing a flag for a later collection.
+
+For settlement, `CpuImageJobs::reconcile` tests `pending.result.is_some()` before
+checking allocation currency. An allocation-version cache adds no necessary
+invalidation for skipping the no-result case. Worker receive is not the only
+producer: unsent `withdraw` synthesizes `Some(Err(Incomplete))`, including when
+driven by `observe_store_stops`. A result can remain pending after a failed
+settlement; `None` from reconcile is not proof that no result remains. Any
+maintained ready state must cover both producers and retain retries. Scanning
+the four slots first just to decide whether to scan them again is not a useful
+candidate.
+
+Next gate is a separate device-free proof proposal: reject zero dimensions on
+both admission paths; preserve explicit retirement, silent last-lease release,
+revoked non-retiring resources, publication blockage and confirmation; preserve
+W2 intent cleanup if combined later. For ready-state changes also cover synthetic
+withdrawal, retained errors and consumption. No implementation or build is
+approved by this source closure. Measure actual scans separately from calls;
+the diagnostic Settle timer surrounds every reconcile call, so its inclusive
+67-68 us/completion cannot price a four-slot scan or its removal.
 
 ## Connections
 
