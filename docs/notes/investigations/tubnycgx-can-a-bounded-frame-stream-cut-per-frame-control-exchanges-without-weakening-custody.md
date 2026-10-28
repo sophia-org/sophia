@@ -101,21 +101,37 @@ grant epoch, allocation, output, topology generation) tuple.
   stays spent while that candidate is still live. The replenishment
   rides on the terminal outcome record as an additive, versioned
   field (see wire compatibility); it is not a new event.
-- Rate and expiry are per-credit, not stream-global. Each credit
-  carries the instant it became spendable. A returned credit is
-  spendable under the same bounds a `FramePermit` is today: it
-  expires 250 ms after it becomes spendable, and candidate
-  admission still enforces the role's existing rate bound
-  (120 Hz candidate rate in the prototype limits) per admission,
-  independently of how many credits are held. Consequence: a fast
+- Rate and expiry are per-credit, not stream-global, and both run
+  on the server's existing permit clock. **Initial credits become
+  spendable at the stream-open/grant instant** — the moment the
+  server commits the open — not at any later client observation.
+  First-candidate anchoring is rejected: it would leave permission
+  unexpired while idle, unlike an issued permit. A **replenished
+  credit becomes spendable at the server's terminal-outcome
+  credit-commit point** for that candidate (the server-side instant
+  the terminal outcome and its replenishment are committed together),
+  never at client receipt, acknowledgement, or wake. Every credit
+  expires 250 ms after it becomes spendable, under the same bounds
+  as a `FramePermit` today.
+- Admission still enforces the role's **existing configured/
+  negotiated rate gate** per candidate admission, independently of
+  credits held. That gate keeps its own value per role/profile; it
+  is not a hardcoded universal 120 Hz. Consequence: a fast
   reject/supersede cycle returns credits but cannot admit
-  successors faster than today's permit-and-rate path admits them,
-  and an idle producer's credits lapse exactly as unused permits
-  lapse today (re-open or re-grant, no wake renews any clock).
-  Whether per-credit expiry of *unspent initial* credits must use
-  the stream-open instant or the first-candidate instant is left as
-  the one named open decision below; everything else above is
-  specified to preserve today's bounds rather than approximate them.
+  successors faster than today's permit-and-rate path admits them.
+- Spend order is **oldest-expiring credit first**. With per-credit
+  expiry anchored above, this serial workload cannot strand an
+  initial credit behind replenished ones. An expired credit is
+  dead: later traffic, late outcomes, or wakes never revive it.
+- **Expiry closes the stream (recommended, adopted for the
+  prototype).** The first credit expiry observed at an admission
+  boundary closes the stream: no further candidate is admitted
+  against it, candidates already admitted settle exactly as today,
+  and the producer must explicitly re-open to present again. This
+  is the simplest fail-closed rule and avoids a second state
+  (partially-expired window) whose interactions would each need
+  their own proof. Silently dropping single credits and continuing
+  is not part of this design.
 - Journal and response capacity are rechecked per generation,
   exactly as today. Terminal outcomes, statuses, and releases still
   consume journal sequence and held-status reservations; stream
@@ -188,15 +204,65 @@ change and must be negotiated, never assumed:
   key, with mismatch refused before launch. That is a policy-wiring
   decision for review, not part of this design's core.
 
+### Stream state machine (written, complete for the prototype)
+
+States per (connection epoch, content grant epoch, allocation,
+output, topology generation) tuple. All instants are on the server's
+existing permit clock.
+
+```
+Closed
+  |  stream-open submitted, tuple + revision admitted,
+  |  journal/response capacity for the open reply reserved as today
+  v
+Open(credits[Credit], outstanding set)
+  |  candidate admitted: stream Open, tuple current, fresh authority
+  |  checks pass, role rate gate passes, journal/response capacity
+  |  reserved for this generation as today, oldest-expiring
+  |  unexpired credit exists -> consume it, candidate joins
+  |  outstanding; state stays Open
+  |  terminal outcome for an outstanding candidate commits:
+  |  candidate leaves outstanding; if stream still Open, append
+  |  one credit spendable from this commit instant (Prepared:
+  |  no transition, no credit)
+  |  expiry observed at an admission boundary, tuple change,
+  |  revocation, partner exit, or journal loss:
+  v
+Closing (admissions refused; outstanding candidates settle exactly
+  once with today's terminal reasons and ordering; replenishments
+  for them are committed to a closed stream and discarded)
+  |  outstanding empty and all settlements published
+  v
+Closed (explicit re-open is the only way back; no credit, lease, or
+  identity carries into a successor stream or connection)
+```
+
+Refused stream-open is `Closed -> Closed` with the existing refusal
+record and no state. A second open on the same tuple while `Open`
+or `Closing` is refused. Admission capacity is never taken from the
+window size alone: `min(slots, max in-flight candidates)` bounds
+pacing credits only, while every generation still reserves its
+response/journal obligations through the same per-generation checks
+that exist today, and `EAGAIN` under that pressure spends the
+identity exactly as today. The state machine grants no permission
+to reserve unbounded responses at open or admission.
+
 ### Predicted logical counts (arithmetic, not a saving)
 
 For the frozen 2120-frame, two-slot continuous workload, counting
 logical submitted records and events per side (not syscalls, not
 Twrites, not measured CPU):
 
-Only one prediction is made: the design removes 2120 `FrameDemand`
-submissions and the 2120 `FramePermit` events they produce, replaced
-by one stream-open submitted record and one reply. Nothing else is
+Only one prediction is made, and it is conditional on no credit
+expiry and no re-open during the run: the design removes 2120
+`FrameDemand` submissions and the 2120 `FramePermit` events they
+produce, replaced by one stream-open submitted record and one
+reply. Every expiry-driven close ends that stream's credit
+window; a run with `k` additional explicit re-opens still removes
+2120 demands and 2120 permits but adds `k + 1` open pairs in total.
+For the continuous 60 Hz workload, where replenished
+credits are spent ~16.7 ms after commit, `k = 0` is the prediction
+to be falsified, not an assumption to bake into results. Nothing else is
 counted. In particular, `CandidateOutcome` counts are **not**
 predicted: a candidate can produce a non-terminal `Prepared`
 outcome before its terminal one, so outcome records per run are at
@@ -269,7 +335,10 @@ Device-free proof matrix for the prototype, before any package:
 | Credit exhaustion at window edge | Candidate waits/refused with existing backpressure; no over-issue |
 | `Prepared` outcome for a credited candidate | No replenishment; credit stays spent until that candidate's terminal outcome |
 | Fast reject/supersede cycling | Successor admissions bounded by exactly today's rate gate; credits return but cannot be spent early |
-| Credit held past its 250 ms spendable window | Credit lapsed; candidate refused until re-grant/re-open; no wake renewed it |
+| Credit held past its 250 ms spendable window | Expiry closes the stream at the admission boundary; later traffic/outcomes cannot revive it; explicit re-open required |
+| Initial credits idle from stream-open | Same 250 ms expiry from the grant instant (no first-candidate anchoring); stream closes identically |
+| Replenishment observed late by the client | Spendable instant is the server's credit-commit point, unaffected by client receipt/ACK/wake timing |
+| Two credits held, one expiring sooner | Oldest-expiring credit is spent first; the later credit is never consumed out of order |
 | Replenishment replay / duplicate outcome | Second replenishment refused; credit unchanged |
 | Outcome for foreign grant or stale generation | Settles nothing, replenishes nothing |
 | Topology or allocation change mid-stream | Stream expired; later candidates refused until re-open |
