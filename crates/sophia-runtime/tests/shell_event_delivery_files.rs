@@ -137,6 +137,8 @@ struct Delivery {
     /// Small-count reads only: the reads taken and the bytes they rebuilt.
     small_reads: usize,
     small_bytes: Vec<u8>,
+    /// The same journal range taken again in one large read.
+    control_bytes: Vec<u8>,
 }
 
 /// Negotiates, parks one event read, submits a FrameDemand and collects its
@@ -221,6 +223,7 @@ fn deliver(grant: bool, small: Option<u32>) -> Delivery {
         if let Some(count) = small {
             assert_eq!(raw.reply().0, 119, "submit reply");
             // Two whole records: Submitted and the permit granted after it.
+            let start = offset;
             let mut tag = 2000;
             while records_complete(&delivery.small_bytes) < 2 {
                 raw.read_events_counted(tag, offset, count);
@@ -232,6 +235,11 @@ fn deliver(grant: bool, small: Option<u32>) -> Delivery {
                 delivery.small_reads += 1;
                 tag += 1;
             }
+            // Nothing is acknowledged, so the range is still retained.
+            raw.read_events_counted(tag, start, delivery.small_bytes.len() as u32);
+            let (kind, reply, body) = raw.reply();
+            assert_eq!((kind, reply), (117, tag));
+            delivery.control_bytes = body[4..].to_vec();
             done_tx.send(()).unwrap();
             release_rx.recv().unwrap();
             return delivery;
@@ -358,6 +366,10 @@ fn small_event_reads_rebuild_both_events_exactly() {
     for count in [1, 7, 29] {
         let delivery = deliver(true, Some(count));
         assert_eq!(records_complete(&delivery.small_bytes), 2);
+        assert_eq!(
+            delivery.small_bytes, delivery.control_bytes,
+            "small reads differ from one read of the same range"
+        );
         let events = records(&delivery.small_bytes);
         let [
             (ShellFileKind::Submitted, first),
