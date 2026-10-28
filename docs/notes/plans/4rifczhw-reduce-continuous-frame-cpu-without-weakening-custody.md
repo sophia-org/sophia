@@ -73,7 +73,7 @@ serial backlog. A blocked lane does not stop an independent ready candidate.
 
 | Lane | Owner | Immediate implementation and exit |
 | --- | --- | --- |
-| W2 effect | Producer / Codex | Same-binary off/on ABBA staged as `continuous-retire-on-present-01`; final review, exact-artifact preflight and seal before Mason launch. Source and releases frozen. |
+| W2 effect | Producer / Codex | Enabled attempt01 stopped on an explicit-path-only accounting gate; phase-specific qualification and fresh package02 review next. Source and releases frozen. |
 | W2 side effects | Complete | `continuous-retire-on-present-screen-01` passed the predeclared upper margins; not equivalence or a gain. |
 | Single-submit | Parked | Completed combined interval [-55,+25] us/frame; inconclusive, no promotion. |
 | S1 | Parked | Completed Session regression [+25,+65] us/frame and rare quiet conversion; no promotion or wider-predicate work. |
@@ -189,6 +189,37 @@ Durable root receipts under `continuous-cpu-optimization-01/` are
 `turn-proof/post-run-root-review.json` (7b819266), and
 `w2-screen/post-run-root-review.json` (d2dce4e3). Bounds are tick-accounting
 intervals, not confidence intervals. No completed candidate above is promoted.
+
+### W2 enabled attempt qualification correction
+
+`continuous-retire-on-present-01` stopped after baseline b1 and enabled c1.
+The enabled capture completed all 2120 joins, r12/0x28183, zero explicit retires
+and 2119 validated predecessor releases, with clean PAM/outer cleanup. Its
+postflight nevertheless failed; the package stays failed and is never edited
+or rerun. Root's failure receipt is `w2-effect/failure-review-01.json` under
+`continuous-cpu-optimization-01/`, SHA-256
+`d26b14e2c14e736aeaf4cee7092b96bc7eaeef7929b6aff41f62494418cdc993`.
+
+The old resource check required zero retiring bytes and 368640 final presented
+resident bytes. That encodes explicit retirement after Presented. With W2, the
+Presented event transfer commits the predecessor intent before the Session logs
+usage; resource-service journal confirmation happens later. All 2119 successor
+presented rows therefore show resident184320, retiring184320, backing368640,
+staging0. Successor prepared rows remain resident368640, retiring0. This is
+retained accounting at a different phase, not evidence of a leaked extra buffer.
+Root's package review missed this semantic difference; synthetic receipt fixtures
+had not represented the changed accounting phase.
+
+A fresh `continuous-retire-on-present-02` is being prepared with no source or
+binary change. Preserve off/legacy acceptance. For declared-on mode require exact
+prepared/presented generation coverage and phase tuples: first generation both
+184320 resident/0 retiring/184320 backing; successors prepared368640/0/368640,
+presented184320/184320/368640; staging0 throughout. Keep exact release counters,
+joins and cleanup checks. There is no final drain accounting row: the last
+predecessor's release is qualified by the peer counter, not a nonexistent next
+prepare. Saved failing data and wrong-phase/count/bytes mutations must discriminate
+the new gate before independent review and seal. No CPU verdict is drawn from
+this incomplete ABBA and no acceptance is retroactively granted to attempt01.
 
 ### Test-environment disposition, October 28
 
