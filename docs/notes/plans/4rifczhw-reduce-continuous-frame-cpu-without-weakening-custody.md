@@ -73,7 +73,7 @@ serial backlog. A blocked lane does not stop an independent ready candidate.
 
 | Lane | Owner | Immediate implementation and exit |
 | --- | --- | --- |
-| W2 effect | Producer / Codex | Enabled attempt01 stopped on an explicit-path-only accounting gate; phase-specific qualification and fresh package02 review next. Source and releases frozen. |
+| W2 effect | Producer / Codex | Attempt01 remains failed on an explicit-path-only accounting gate. Fresh package02 is reviewed, sealed and preflighted with exact enabled phase accounting; Mason launch next. Sources and releases frozen. |
 | W2 side effects | Complete | `continuous-retire-on-present-screen-01` passed the predeclared upper margins; not equivalence or a gain. |
 | Single-submit | Parked | Completed combined interval [-55,+25] us/frame; inconclusive, no promotion. |
 | S1 | Parked | Completed Session regression [+25,+65] us/frame and rare quiet conversion; no promotion or wider-predicate work. |
@@ -220,6 +220,19 @@ predecessor's release is qualified by the peer counter, not a nonexistent next
 prepare. Saved failing data and wrong-phase/count/bytes mutations must discriminate
 the new gate before independent review and seal. No CPU verdict is drawn from
 this incomplete ABBA and no acceptance is retroactively granted to attempt01.
+
+Package02 is now sealed after root, Claude and Muse review. Its exact enabled
+gate also requires alternating prepared/presented rows for each generation.
+Saved01c1 reproduces both old failures and passes only the revised accounting;
+saved01b1 has identical old/new results. Phase/charge/order/declaration/release
+mutations refuse. All four exact-artifact argument checks and sealed SSH/panel
+check-only gates passed without a Session launch. Sources and binaries did not
+change. Manifest SHA-256 is
+`b7fc9b00345fe9f71a40e59ab349e1496ba80cba7288a77276078a96a24cb0c6`
+(109 files, 534 external pins). Root's receipt is
+`~/.local/state/t331/continuous-cpu-optimization-01/w2-effect/package02-seal-review.json`,
+SHA-256 `0bd375ff66a16a1115d5b27adcbff7da259620658d4b94d5f20e67609bbb7729`.
+The saved01 sibling is an offline test fixture, not a launch-time test.
 
 ### Test-environment disposition, October 28
 
