@@ -274,6 +274,17 @@ desired result appears. No production changes or additional mechanisms enter
 this comparison. Public protocol allocation, C parity and upstream SDK pin
 remain separate integration gates. Attempt01 stays failed and untouched.
 
+Confirmation03 is sealed after root, Claude and Muse read-only review; all four
+sealed SSH/panel check-only gates passed without native execution. Verifier,
+analysis, runner, recipe and binaries are unchanged from02; only paths and prior
+evidence differ. Manifest SHA-256 is
+`1409625822a51769f0c4b279e4a910ab848755daa18ec5211d4212b423d2ccc3`
+(116 files, 534 pins). Root receipt
+`~/.local/state/t331/continuous-cpu-optimization-01/w2-effect/package03-seal-review.json`
+has SHA-256 `e8e37dc998438de1151d17cdf483d87ddbd92c8a3ca583915f54da288401f3aa`.
+Launch remains Mason's through `continuous-retire-on-present-03/run.sh`; the
+build/test/mutation hold lasts through the attempt and saved-data audit.
+
 ### Test-environment disposition, October 28
 
 The reported native-session run failed 61 tests. Using the same retained test
