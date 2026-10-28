@@ -62,6 +62,23 @@ There is no numerical pass/fail threshold or external comparison. Allocation
 and broader matrix qualification remain t343; Vello stays parked. t252 also completed its attended input/replacement/rollback exit on October 22;
 see its [completion record](jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t252--join-and-accept-the-shell-path).
 
+### October 28 — continuous-frame architecture review and next gates
+
+The [continuous-frame CPU plan](4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
+records the matched `desktop-cpu-04` comparison, the diagnostic pass/stage costs,
+and the inconclusive A1 and release-overlap screens. It separates admission
+exchanges, repeated owner-pass work, immutable storage/lifecycle cost and fresh
+authority checks. There is no established Session CPU floor or aggregate savings
+estimate. Existing contracts and the completed t331 exit remain unchanged.
+
+W2's device-free lifecycle proof is closed at signed local `7cc36ebde` and its
+policy design corrections at `951ec54df`. Mason subsequently directed execution
+of the follow-up plan: t344 puts W2 wiring, S1 proof/wiring, single-submit peer
+qualification, cost attribution and the frame-stream design on the immediate
+parallel path. Native launches remain serial and Mason-owned; no candidate is
+promoted by that authorization. Release-overlap completed all four arms with
+combined bounds [-55, +25] µs/frame and no promotion.
+
 ### October 26 — continuous-update attribution, no production change
 
 Retain the current implementation. The default owned-ring profile identifies
