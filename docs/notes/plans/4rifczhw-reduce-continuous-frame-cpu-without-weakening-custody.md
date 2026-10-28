@@ -73,7 +73,7 @@ serial backlog. A blocked lane does not stop an independent ready candidate.
 
 | Lane | Owner | Immediate implementation and exit |
 | --- | --- | --- |
-| W2 effect | Producer / Codex | Attempt01 remains failed on an explicit-path-only accounting gate. Fresh package02 is reviewed, sealed and preflighted with exact enabled phase accounting; Mason launch next. Sources and releases frozen. |
+| W2 effect | Producer / Codex | Package02 completed: combined [-132.5,-52.5] µs/frame, predicted counter moved. Positive experimental effect, no promotion. Fresh identical-artifact confirmation03 is next; sources and releases frozen. |
 | W2 side effects | Complete | `continuous-retire-on-present-screen-01` passed the predeclared upper margins; not equivalence or a gain. |
 | Single-submit | Parked | Completed combined interval [-55,+25] us/frame; inconclusive, no promotion. |
 | S1 | Parked | Completed Session regression [+25,+65] us/frame and rare quiet conversion; no promotion or wider-predicate work. |
@@ -82,7 +82,7 @@ serial backlog. A blocked lane does not stop an independent ready candidate.
 | Frame stream | Muse / authority review | Written bounded-credit design complete; dependency evidence and device-free proof still gate production wiring. |
 | Integration gates | Codex | Preserve exact provenance, independent review, serialized capture and no-promotion rules. |
 
-Current native priority is W2 off/on effect. Single-submit, attribution, S1 and
+Current native priority is W2 off/on confirmation. Single-submit, attribution, S1 and
 the W2 side-effect screen have completed. After W2, select the bounded empty-work
 investigation and frame-stream proof using the measured result; do not bundle
 mechanisms. Each new candidate has fresh inputs and one exclusive attempt.
@@ -233,6 +233,46 @@ change. Manifest SHA-256 is
 `~/.local/state/t331/continuous-cpu-optimization-01/w2-effect/package02-seal-review.json`,
 SHA-256 `0bd375ff66a16a1115d5b27adcbff7da259620658d4b94d5f20e67609bbb7729`.
 The saved01 sibling is an offline test fixture, not a launch-time test.
+
+### W2 effect result and confirmation, October 28
+
+Package02 completed all four arms. Root verified the unchanged manifest and
+external pins, every retained analysis input hash, exact postflight reduction,
+bound process identities through the CPU brackets, kernel generation joins,
+phase accounting, release counters and clean PAM/VT/outer recovery. Claude and
+Muse independently reproduced the arithmetic and mechanism from saved data.
+
+| Scope | Disabled mean bounds, µs/frame | Enabled mean bounds | Enabled minus disabled |
+| --- | --- | --- | --- |
+| Combined | [1300,1340] | [1207.5,1247.5] | **[-132.5,-52.5]** |
+| Session | [835,855] | [765,785] | **[-90,-50]** |
+| Peer | [465,485] | [442.5,462.5] | **[-42.5,-2.5]** |
+
+Combined midpoint reduction is 92.5 µs/frame (7.01%); pair midpoints are -100
+and -85. Raw Session ticks are 170/154/156/168; peer ticks 95/91/90/95 in ABBA
+order, with inner and outer deltas equal. Explicit retire requests fall from
+2119 to zero while all arms retain 2119 validated predecessor releases and all
+2120 presented generations. Disabled receipts are r10/0x8183; enabled are
+r12/0x28183. This proves the exchange path, not syscall or owner-wake reduction.
+
+Submission-to-kernel-completion medians are 7503/7589/7598/7503 µs: enabled
+pair increases are **86 and 95 µs**. P99 also rises. Completion gaps retain an
+8342 µs median and 8347–8348 µs maximum; all sampler late-slot counts are zero.
+Earlier submission relative to fixed scanout is a possible explanation, not
+an observed cause. There is no end-to-end or visual-latency measurement.
+
+Verdict: positive W2 effect in this experiment; all three CPU accounting
+intervals exclude zero. **No promotion.** One ABBA is not a confidence interval
+or a general result. Root's audit is
+`~/.local/state/t331/continuous-cpu-optimization-01/w2-effect/post-run-root-review-02.json`,
+SHA-256 `01aaecb38f047b8e432af80fb885325ed7b0c00b9ac235ba562e1855b3282b66`.
+
+Prepare one fresh `continuous-retire-on-present-03` confirmation ABBA with
+identical frozen artifacts, workload, gates and analysis. Report it independently
+beside02, with latency visible; do not pool away disagreement or run until a
+desired result appears. No production changes or additional mechanisms enter
+this comparison. Public protocol allocation, C parity and upstream SDK pin
+remain separate integration gates. Attempt01 stays failed and untouched.
 
 ### Test-environment disposition, October 28
 
