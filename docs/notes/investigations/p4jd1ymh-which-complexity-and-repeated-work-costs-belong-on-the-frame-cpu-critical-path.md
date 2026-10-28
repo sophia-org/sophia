@@ -121,6 +121,53 @@ approved by this source closure. Measure actual scans separately from calls;
 the diagnostic Settle timer surrounds every reconcile call, so its inclusive
 67-68 us/completion cannot price a four-slot scan or its removal.
 
+## Collection candidate: device-free correctness gate closed
+
+Mason's subsequent "proceed on critical path" authorized the narrow candidate.
+Signed local commit `75ff298ab46058f78b2ff0fc1454010116f537c5` on
+`cpu/collect-idle` in `~/dev/sophia-cpu-collect-idle` has exact base
+`d9116ff0905fab5c8bc01a71228ecc9e1a7a0a6d`. Four production lines add the guard
+and its positive-byte invariant comment. Three new fixtures cover CPU and
+capture zero-dimension admission and repeated collection with both a live and
+a retiring resource. There is no new field, feature, timer or authority cache.
+W2 sources, releases and all sealed packages are unchanged.
+
+The new fixtures first passed on the unchanged collector in a focused suite
+(228 tests). The candidate passed all runtime tests with capture enabled
+(785 passed, 41 ignored) and default features (761 passed, 41 ignored), including
+the existing capture eviction, revocation, epoch replacement and last-lease
+tests. Capture-enabled all-target clippy with warnings denied, package formatting
+and the source-layout audit passed. These are device-free runtime checks, not
+Session/native qualification.
+
+Two mutations were tested separately and reverted:
+
+- Removing `!revoked` failed the existing revoked resident-only resource test.
+- Replacing the guard with `!revoked && usage.resident != 0` failed the new
+  mixed-store test: the retiring resource's release was missing.
+
+After restoration the complete diff matched the reviewed bytes and all 15
+resource tests passed. Claude and Muse independently reviewed the saved diff
+without running tests or changing files and found no blocking source gap.
+Deleting the optimization would preserve the old behavior and pass these tests:
+they prove equivalence and catch unsafe broadening, not fast-path execution.
+
+Durable receipts: `~/.local/state/collect-idle-proof-01/RECEIPT.json`
+(`a88c2d9daa330874a1be68d419f60ef3919470410469d88bbc74054fca5acdf3`),
+with inventory `SHA256SUMS`
+(`7beefb313c61a9c61b2095bb6d1fab085f0fa9699b0285fddb20081425dfffc0`).
+They retain the initial command error (nonexistent test target, before
+compilation), corrected baseline, candidate checks, exact mutation diffs and
+restored green receipt. Nothing was copied from a build slot.
+
+Next is performance qualification, not adoption: establish actual scan/skip
+movement and an isolated CPU comparison before claiming benefit. The scan has
+only two accepted resources in this workload, so a correct guard can still have
+an unresolved or negligible CPU effect. No release build or native package was
+created at this gate. W2 integration must still place the guard after intent
+cleanup. Any future admission path allowing zero charged bytes must revisit
+the invariant before using this guard.
+
 ## Connections
 
 - [Optimization critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md): experiment order, completed results and stop gates.

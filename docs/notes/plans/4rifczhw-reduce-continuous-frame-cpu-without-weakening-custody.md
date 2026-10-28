@@ -78,12 +78,12 @@ serial backlog. A blocked lane does not stop an independent ready candidate.
 | Single-submit | Parked | Completed combined interval [-55,+25] us/frame; inconclusive, no promotion. |
 | S1 | Parked | Completed Session regression [+25,+65] us/frame and rare quiet conversion; no promotion or wider-predicate work. |
 | Cost attribution | Complete diagnostic | Two arms validated; use separate inclusive scopes and thread windows to rank investigations, never as additive savings. |
-| Empty owner work | Codex / Muse, active read-only | [Trace exact readiness and callers](../investigations/p4jd1ymh-which-complexity-and-repeated-work-costs-belong-on-the-frame-cpu-critical-path.md) for repeated empty settlement/collection. Device-free custody proof before any candidate or native package. |
+| Empty owner work | Codex, device-free candidate ready | [Collection guard and proofs](../investigations/p4jd1ymh-which-complexity-and-repeated-work-costs-belong-on-the-frame-cpu-critical-path.md) are signed at `75ff298ab` on a separate `d9116ff0` lane. Source review and runtime tests pass; actual skip frequency and CPU benefit remain unmeasured. Settlement state, expiry caching and authority checks are unchanged. |
 | Frame stream | Muse / authority review | Written bounded-credit design complete; dependency evidence and device-free proof still gate production wiring. |
 | Integration gates | Codex / Claude, active read-only | Map minimal W2 C parity, public SDK pin and protocol allocation work, including the t341 boundary. No publication/source changes from this mapping; preserve frozen evidence and review the concrete proposal. |
 
 W2 off/on confirmation has completed; no further W2 measurement is scheduled.
-Advance its integration gates while tracing the bounded empty-work candidate.
+Advance its integration gates while qualifying the bounded empty-work candidate.
 Single-submit, attribution, S1 and the W2 side-effect screen are also complete.
 Frame-stream proof remains separate; do not bundle mechanisms. Each new candidate
 has fresh inputs and one exclusive attempt. Attribution arms are not CPU comparators.
