@@ -66,10 +66,14 @@ impl Raw {
     }
 
     fn read_events(&mut self, tag: u16, offset: u64) {
+        self.read_events_counted(tag, offset, 65500);
+    }
+
+    fn read_events_counted(&mut self, tag: u16, offset: u64, count: u32) {
         let body = [
             2u32.to_le_bytes().as_slice(),
             &offset.to_le_bytes(),
-            &65500u32.to_le_bytes(),
+            &count.to_le_bytes(),
         ]
         .concat();
         self.send(116, tag, &body);
@@ -92,7 +96,26 @@ impl Raw {
 
 /// Event kinds and sequences in one `Rread` body.
 fn events(body: &[u8]) -> Vec<(ShellFileKind, u64)> {
-    let mut rest = &body[4..];
+    records(&body[4..])
+}
+
+/// How many whole records `bytes` holds.
+fn records_complete(bytes: &[u8]) -> usize {
+    let (mut rest, mut whole) = (bytes, 0);
+    while rest.len() >= 4 {
+        let size = u32::from_le_bytes(rest[..4].try_into().unwrap()) as usize;
+        if rest.len() < size {
+            break;
+        }
+        rest = &rest[size..];
+        whole += 1;
+    }
+    whole
+}
+
+/// Event kinds and sequences in whole journal bytes.
+fn records(bytes: &[u8]) -> Vec<(ShellFileKind, u64)> {
+    let mut rest = bytes;
     let mut events = Vec::new();
     while !rest.is_empty() {
         let size = u32::from_le_bytes(rest[..4].try_into().unwrap()) as usize;
@@ -111,12 +134,18 @@ struct Delivery {
     first: Vec<(ShellFileKind, u64)>,
     /// Events of the re-armed read, if the reply was not in the first.
     second: Vec<(ShellFileKind, u64)>,
+    /// Small-count reads only: the reads taken and the bytes they rebuilt.
+    small_reads: usize,
+    small_bytes: Vec<u8>,
 }
 
 /// Negotiates, parks one event read, submits a FrameDemand and collects its
 /// events. The owner grants the demand in the same phase that received it
 /// when `grant` is set, as the live content service does.
-fn deliver(grant: bool) -> Delivery {
+///
+/// With `small`, no read is parked: once the owner has granted, the peer
+/// reads both events through reads of at most `small` bytes.
+fn deliver(grant: bool, small: Option<u32>) -> Delivery {
     let mut registry = ContentEpochRegistry::new(64 * 1024 * 1024).unwrap();
     let (mut transport, directory) = transport();
     let limits = ContentLimits::prototype(ContentGrant {
@@ -163,7 +192,9 @@ fn deliver(grant: bool) -> Delivery {
         .unwrap();
         // The SDK's one outstanding read, parked before the record goes.
         let mut offset = peer.event_offset();
-        raw.read_events(1001, offset);
+        if small.is_none() {
+            raw.read_events(1001, offset);
+        }
         peer.open(5, b"transaction", 2);
         assert_eq!(peer.write(5, &demand).0, 119);
         let submit = encode_shell_file_submit(ShellFileSubmit {
@@ -187,6 +218,24 @@ fn deliver(grant: bool) -> Delivery {
         // demand: whatever arrives was written by that phase, not a later one.
         stopped_rx.recv_timeout(Duration::from_secs(3)).unwrap();
         let mut delivery = Delivery::default();
+        if let Some(count) = small {
+            assert_eq!(raw.reply().0, 119, "submit reply");
+            // Two whole records: Submitted and the permit granted after it.
+            let mut tag = 2000;
+            while records_complete(&delivery.small_bytes) < 2 {
+                raw.read_events_counted(tag, offset, count);
+                let (kind, reply, body) = raw.reply();
+                assert_eq!((kind, reply), (117, tag));
+                assert!(body.len() - 4 <= count as usize && body.len() > 4);
+                offset += body.len() as u64 - 4;
+                delivery.small_bytes.extend_from_slice(&body[4..]);
+                delivery.small_reads += 1;
+                tag += 1;
+            }
+            done_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+            return delivery;
+        }
         let mut submitted = false;
         while !submitted || delivery.first.is_empty() {
             match raw.reply() {
@@ -276,7 +325,7 @@ fn deliver(grant: bool) -> Delivery {
 /// permit costs one more client read. W1 would make this one `Rread`.
 #[test]
 fn a_same_phase_reply_needs_a_second_read_after_submitted() {
-    let delivery = deliver(true);
+    let delivery = deliver(true, None);
     let [(ShellFileKind::Submitted, submitted)] = delivery.first[..] else {
         panic!("parked read carried {:?}", delivery.first);
     };
@@ -293,10 +342,34 @@ fn a_same_phase_reply_needs_a_second_read_after_submitted() {
 /// declared end of that phase, but must not need a later turn.
 #[test]
 fn submitted_without_any_reply_is_delivered_to_the_parked_read() {
-    let delivery = deliver(false);
+    let delivery = deliver(false, None);
     assert!(matches!(
         delivery.first[..],
         [(ShellFileKind::Submitted, _)]
     ));
     assert!(delivery.second.is_empty());
+}
+
+/// Case 4: reads too small for one record still rebuild `Submitted` and the
+/// permit byte for byte, in sequence, with nothing lost or repeated. A read
+/// is never required to hold both events.
+#[test]
+fn small_event_reads_rebuild_both_events_exactly() {
+    for count in [1, 7, 29] {
+        let delivery = deliver(true, Some(count));
+        assert_eq!(records_complete(&delivery.small_bytes), 2);
+        let events = records(&delivery.small_bytes);
+        let [
+            (ShellFileKind::Submitted, first),
+            (ShellFileKind::FramePermit, second),
+        ] = events[..]
+        else {
+            panic!("rebuilt {events:?}");
+        };
+        assert_eq!(second, first + 1);
+        assert_eq!(
+            delivery.small_reads,
+            delivery.small_bytes.len().div_ceil(count as usize)
+        );
+    }
 }
