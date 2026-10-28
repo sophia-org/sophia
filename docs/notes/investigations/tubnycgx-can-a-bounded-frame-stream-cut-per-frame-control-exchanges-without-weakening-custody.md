@@ -19,8 +19,10 @@ a production change, a device experiment, or a CPU saving claim.
 It sits under [the continuous-frame CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 and beside [the shell 9P allocation plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md).
 It complements W2 (retire the predecessor on presentation, Claude's
-written-design lane) and does not duplicate it. W1's delayed event
-delivery remains shelved; nothing here reopens `delayedSubmitted`.
+lane, now in implementation) and does not duplicate it. W1's delayed
+event delivery remains shelved; nothing here reopens
+`delayedSubmitted`. Source identifiers below are as of this note's
+commit on master; pinned measurement baselines are named where used.
 
 ## Evidence and its limits
 
@@ -91,16 +93,39 @@ grant epoch, allocation, output, topology generation) tuple.
   event; it reserves nothing beyond the existing credit it stands
   in for.
 - A candidate submitted against a standing credit consumes one
-  credit atomically at admission. The existing `CandidateOutcome`
-  for that exact candidate replenishes exactly one credit; the
-  replenishment rides on the outcome record as an additive,
-  versioned field (see wire compatibility), it is not a new event.
-- Rate control is unchanged in effect: the replenishment can only
-  arrive after a completed candidate, so the producer cannot run
-  ahead of presentation by more than the initial window, and the
-  250 ms permit TTL is replaced by a stream-level inactivity expiry
-  with identical refusal semantics (a stale stream must re-open;
-  no clock is renewed by wakes).
+  credit atomically at admission. The exact replenishing transition
+  is: **exactly one credit returns when that candidate reaches a
+  terminal `CandidateOutcome`** — presented (the exact candidate
+  retired on its output), rejected, or superseded. A `Prepared`
+  outcome is non-terminal and replenishes **nothing**; the credit
+  stays spent while that candidate is still live. The replenishment
+  rides on the terminal outcome record as an additive, versioned
+  field (see wire compatibility); it is not a new event.
+- Rate and expiry are per-credit, not stream-global. Each credit
+  carries the instant it became spendable. A returned credit is
+  spendable under the same bounds a `FramePermit` is today: it
+  expires 250 ms after it becomes spendable, and candidate
+  admission still enforces the role's existing rate bound
+  (120 Hz candidate rate in the prototype limits) per admission,
+  independently of how many credits are held. Consequence: a fast
+  reject/supersede cycle returns credits but cannot admit
+  successors faster than today's permit-and-rate path admits them,
+  and an idle producer's credits lapse exactly as unused permits
+  lapse today (re-open or re-grant, no wake renews any clock).
+  Whether per-credit expiry of *unspent initial* credits must use
+  the stream-open instant or the first-candidate instant is left as
+  the one named open decision below; everything else above is
+  specified to preserve today's bounds rather than approximate them.
+- Journal and response capacity are rechecked per generation,
+  exactly as today. Terminal outcomes, statuses, and releases still
+  consume journal sequence and held-status reservations; stream
+  open reserves no journal capacity in advance, and admission still
+  refuses `EAGAIN` under journal, queue, slot, or credit pressure.
+  The window (`Credit = min(slots, max in-flight candidates)`)
+  therefore bounds *pacing* only; it does not by itself prove that
+  each generation's existing response/journal obligations fit —
+  those existing per-generation checks are what prove it, and they
+  are unchanged.
 
 Everything else is deliberately frozen for the prototype: offers,
 status-before-release, slot reuse, candidate contents, explicit
@@ -169,44 +194,58 @@ For the frozen 2120-frame, two-slot continuous workload, counting
 logical submitted records and events per side (not syscalls, not
 Twrites, not measured CPU):
 
-| Exchange | Today | With standing credit |
-| --- | --- | --- |
-| `FrameDemand` submitted | 2120 | 0 (1 stream-open) |
-| `FramePermit` events | 2120 | 0 (1 stream-open reply) |
-| Ring `Offer` + `ResourceStatus` + `SlotReleased` | 2120 each | unchanged |
-| `Candidate` + `CandidateOutcome` | 2120 each | unchanged (outcome gains a field) |
-| `ResourceRetire` + `ResourceReleased` | 2119 each | unchanged (W2 owns this row) |
+Only one prediction is made: the design removes 2120 `FrameDemand`
+submissions and the 2120 `FramePermit` events they produce, replaced
+by one stream-open submitted record and one reply. Nothing else is
+counted. In particular, `CandidateOutcome` counts are **not**
+predicted: a candidate can produce a non-terminal `Prepared`
+outcome before its terminal one, so outcome records per run are at
+least the candidate count and depend on the path taken; `Candidate`
+submissions are workload-given (2120), not a design prediction.
+`FramePermit` is a server-produced event, not a record consumed by
+an owner turn, so "records removed" splits by direction: 2120 fewer
+demands decoded by Session, 2120 fewer permits produced by Session.
 
-So the design removes 4240 logical control records per 2120-frame
-run and replaces them with two one-time records. How many owner
-turns that removes is **not** predicted by this table: turns depend
-on how many of those records currently arrive already buffered
-inside turns started by other records, which is exactly what the
-falsifier below must measure. Claiming a CPU saving from this table
-alone would repeat the inclusive-profile error this note exists to
-avoid.
+No owner-turn or CPU effect is inferred from those counts.
+Coalesced records still cost CPU, and removing records can change
+subsequent wake scheduling in either direction; neither "turns fall
+by the removed share" nor "nothing changes" follows from counting.
+Only measured per-class work (below) and then a bounded prototype
+can price the change.
 
-### First falsifiable counter
+### First counter, and what can actually falsify this
 
-Before any prototype: on the unmodified baseline, count
-`FrameDemand`/`FramePermit` records per completed interval **by the
-turn that consumed them** — specifically, how many owner turns exist
-solely because a demand or permit was the only pending work, versus
-turns where they were drained alongside offers, candidates, or
-statuses. The existing pass-cost harness already classifies passes
-by preceding readiness; the counter it lacks is records consumed per
-pass, by class.
+An earlier draft proposed a "sole content of a turn" share with a
+~90% build/don't-build line. That rule is withdrawn: it treated a
+descriptive count as a causal test. Records consumed per pass, by
+class — demands decoded, permits produced, candidates, outcomes by
+kind (Prepared versus terminal), statuses, releases — remain worth
+counting on the unmodified baseline, but only as description.
+Readiness class is not causality, and records-per-pass alone
+decides nothing: a demand drained inside another turn still costs
+decode and permit production, and removing it can shift wake
+scheduling for everything after it.
 
-Falsification rule, frozen in advance: if demand/permit records are
-almost never the sole content of a turn at h24 continuous (say, they
-ride inside other turns in over ~90% of cases), standing credit
-removes records but not turns, and this prototype should not be
-built for CPU reasons. If they do start a material share of turns,
-the prototype's prediction is that turns per completed interval
-fall by about that share, with every other counter (offers,
-settlements, joins, cleanups) identical. CPU is compared only
-after the counter moves as predicted, under the plan's existing
-threshold and ABBA rules.
+What can falsify the prototype, in order:
+
+1. Per-class work on the baseline: attribute demand-decode,
+   permit-production, and outcome-encoding CPU (or stage time) per
+   completed interval, with the thread and window named for every
+   clock. If that attributed share is below noise for the harness,
+   the design has nothing to remove and should not be prototyped
+   for CPU reasons.
+2. Dependency traces: show which turns a demand actually gated
+   (candidate could not be admitted before it, nothing else pending)
+   versus turns where admission was already available. This
+   distinguishes scheduling serialization from flat per-record cost,
+   which the A1 result ([−62.5, +22.5] µs, inconclusive) could not.
+3. Only then a bounded prototype, whose pre-registered prediction
+   is stated in turns per interval and attributed per-class CPU —
+   not in total CPU alone — and is falsified if those counters do
+   not move as predicted while joins, settlements, and cleanup
+   receipts stay identical. Total-CPU comparison follows the plan's
+   existing threshold and ABBA rules, never before the mechanism
+   counters move.
 
 ### Authority amortization: separate sketch only
 
@@ -228,6 +267,9 @@ Device-free proof matrix for the prototype, before any package:
 | Case | Required outcome |
 | --- | --- |
 | Credit exhaustion at window edge | Candidate waits/refused with existing backpressure; no over-issue |
+| `Prepared` outcome for a credited candidate | No replenishment; credit stays spent until that candidate's terminal outcome |
+| Fast reject/supersede cycling | Successor admissions bounded by exactly today's rate gate; credits return but cannot be spent early |
+| Credit held past its 250 ms spendable window | Credit lapsed; candidate refused until re-grant/re-open; no wake renewed it |
 | Replenishment replay / duplicate outcome | Second replenishment refused; credit unchanged |
 | Outcome for foreign grant or stale generation | Settles nothing, replenishes nothing |
 | Topology or allocation change mid-stream | Stream expired; later candidates refused until re-open |
