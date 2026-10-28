@@ -260,9 +260,11 @@ produce, replaced by one stream-open submitted record and one
 reply. Every expiry-driven close ends that stream's credit
 window; a run with `k` additional explicit re-opens still removes
 2120 demands and 2120 permits but adds `k + 1` open pairs in total.
-For the continuous 60 Hz workload, where replenished
-credits are spent ~16.7 ms after commit, `k = 0` is the prediction
-to be falsified, not an assumption to bake into results. Nothing else is
+For this programme's frozen 2120-frame continuous workload
+(nominal 120 Hz, actual 119.88 Hz), where replenished credits would
+be spent ~8.3 ms after commit, `k = 0` is the prediction to be
+falsified, not an assumption to bake into results and not a proven
+property. Nothing else is
 counted. In particular, `CandidateOutcome` counts are **not**
 predicted: a candidate can produce a non-terminal `Prepared`
 outcome before its terminal one, so outcome records per run are at
