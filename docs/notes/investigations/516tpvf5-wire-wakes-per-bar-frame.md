@@ -196,7 +196,7 @@ Every boundary from step 5 on spans steps 2 to 4 and part of step 5, which inclu
 Discharge immediately after the demand loop in `service_with_catalog`, before the Candidates stage.
 
 - The held answer spans steps 1 to 5 exactly, and never spans step 6 or any wait, client ACK or later pass.
-- Saving: only the same-closure replies that come before the grant, which are the demand → permit and retire → release replies. Candidate → prepared is excluded by construction because it follows native queueing. That makes the prediction at most 2 of the roughly 9 wire wakes per frame, before any native confirmation.
+- Saving: only the same-closure replies that come before the grant, which are the demand → permit and retire → release replies. Candidate → prepared is excluded by construction because it follows native queueing. These are two candidate reply-pair opportunities per frame under this traced recipe. That is not a measured figure, and not a general upper bound on how far owner wakes could fall.
 - Whether a span over steps 2 to 4 is acceptable is root's decision. If it is not, no boundary satisfies the earlier limit without reordering, and W1 should be dropped in favour of W2.
 
 ### Every exit between hold and discharge
@@ -211,11 +211,11 @@ Each exit must drain or revoke before returning. That is a structural guarantee:
 | `finish_poll` | service construction fails (`return Err`) | This happens before `turn_connected`, so nothing is held yet. |
 | `service_components` | `set_presentation_available?`, `settle_revocations?`, `reconcile?`, `root?`, `with_service?` (×3), the bar's `Completion` `return Err`, `service_execution?`/`??`, the final `settle_revocations?` | wrapper |
 | `service_components` | the `!available` early `return Ok` | wrapper |
-| role closures | dock, launcher or bar `Poll` failure → `components.stop(key)` | Drain first, then stop, so the client sees `Submitted` before the close, as it does today. Revoke only if the drain fails. |
+| role closures | dock, launcher or bar `Poll` failure → `components.stop(key)` | Proposed drain-before-stop; rejected (see the decision below). |
 | `service_with_catalog` | every `?` before the grant, including permit-identity exhaustion and `ContentQueueSaturated` | It becomes a role `Poll` failure; the row above applies. |
 | owner loop | `service_components(..)?` at `owner_loop/physical_input_loop.rs:585` | The wrapper has already run, so nothing reaches the loop still held. |
 
-Open question for root: should the role-failure paths drain before they stop (proposed above, which preserves today's client-visible order), or revoke only?
+Root's answer: drain-before-stop is rejected as a blanket rule (see the decision below).
 
 The prototype tests must add:
 - the windows that cases 3 and 6 lack (revocation, and a saturated grant, between hold and discharge);
@@ -225,3 +225,18 @@ The prototype tests must add:
 Case 2 must keep passing. No other export's `retry_waiting` changes, and `export.check`, guarded delivery and Tflush/clunk progress are kept.
 
 Prediction to test, not a claim: one fewer client re-arm for each demand → permit (and retire → release) reply in the same closure. Native owner wakes may not fall by the same amount (see the corrections above).
+
+## Decision (root, 2026-10-27): W1 shelved
+
+NO-GO for the expanded hold window. The proposed production implementation is shelved.
+
+- The corrected map shows that this is more than a local change of flush placement. Even with the pre-Candidates boundary, `Submitted` would be delayed across other wire and image work, `settle_revocations`, `start_next`, other roles' effects and conditional native work. "Same pass, no wait" does not prove that the delay of the acceptance notification is suitably bounded, or that failure ordering is unchanged.
+- Phases are not reordered, and no outer discharge wrapper is added to recover the optimization. This is a decision about scope and tradeoff. It does not claim that every batching design is unsound.
+- Failure policy:
+  - Authority loss, revocation, disconnect and transport failure keep their existing stop and revoke priority. No connection is resurrected or prolonged to deliver `Submitted`.
+  - For an ordinary semantic error while authority is still live, a future, separately approved design could attempt a guarded nonblocking delivery before the stop, but it could not guarantee that the client sees it.
+  - "The client sees `Submitted` before the close" is not a proven guarantee today either: retry and flush can leave bytes queued under backpressure.
+  - An outer wrapper cannot drain before a stop that the inner function has already made, because the connection is closed by then.
+- The baseline proof (`shell_event_delivery_files.rs`) and this note are kept.
+
+Next: W2, design-only.
