@@ -159,29 +159,69 @@ Shell-specific tests are in `crates/sophia-runtime/tests/shell_event_delivery_fi
 | 1 | `Submitted` precedes its same-phase reply, at consecutive sequences | `a_same_phase_reply_needs_a_second_read_after_submitted` (b2cb7b2ed) |
 | 2 | `Submitted` leaves from the accepting phase alone: no later owner poll, publication or client ACK (the unconditional-drain oracle) | `submitted_without_any_reply_is_delivered_to_the_parked_read` (8d4621715) |
 | 3 | Accepted custody is unique and the next staging stays busy until the covering ACK. A replay is refused or returns the same acceptance. A full journal refuses custody before accepting, and capacity returns for the same ID | `shell_file_descriptor_export::whole_candidate_custody_is_once_only_and_blocks_reopen_until_ack`, `::backpressure_refuses_custody_and_allows_same_id_after_capacity_returns`; `shell_file_transaction_reuse::reusable_writer_recycles_only_after_covering_ack`; `shell_file_transport` (`EALREADY` on replay); `shell_control_budget::full_file_inbox_refuses_custody_then_retries_the_same_id_without_loss`; `shell_file_journal` terminal-reserve tests; sophia-9p `journal::staging_appends_accepts_exact_repeats_and_refuses_gaps_and_changes` |
-| 4 | Small reads rebuild events byte for byte with nothing lost or repeated, and queued data resumes when room returns without another publication | `small_event_reads_rebuild_both_events_exactly` (5029d9bad, counts 1, 7 and 29); sophia-9p `journal::reads_span_records_wait_at_the_end_and_refuse_released_offsets`, `pending_read_retries::freeing_reply_capacity_retries_without_another_publication`, `waiting_and_bounds::a_waiting_read_is_not_retried_without_room_for_its_reply` |
+| 4 | Small reads rebuild events byte for byte with nothing lost or repeated, and queued data resumes when room returns without another publication | `small_event_reads_rebuild_both_events_exactly` (5029d9bad, counts 1, 7 and 29; the rebuilt bytes equal one large read of the same retained range); sophia-9p `journal::reads_span_records_wait_at_the_end_and_refuse_released_offsets`, `pending_read_retries::freeing_reply_capacity_retries_without_another_publication`, `waiting_and_bounds::a_waiting_read_is_not_retried_without_room_for_its_reply` |
 | 5 | A flushed parked tag gets no later `Rread` and consumes no event. Clunk and disconnect release retained state | sophia-9p `waiting_and_bounds::a_flushed_read_is_never_answered_and_consumes_nothing`, `::clunk_answers_the_reads_waiting_on_its_fid_first`, `::a_flush_held_behind_full_output_still_wins_over_the_retry`; `pending_read_retries::socket_backpressure_preserves_a_publication_and_flush_cancels_a_waiter`; `shell_file_transaction_reuse::clunk_preserves_accepted_custody_and_revoke_fences_writer`; `shell_typed_outbox_transport::disconnect_releases_typed_records_file_input_and_snapshots` |
 | 6 | Retry and queued or partial delivery keep the epoch checks: nothing protected is delivered after revocation, even while output is blocked | sophia-9p `waiting_and_bounds::revocation_ends_a_waiting_read_when_it_is_retried`, `pending_read_retries::revocation_retries_check_authority_before_consuming_data`, `guarded_delivery::revoked_reply_cannot_resume_after_real_socket_backpressure`, `authentication_wire::flush_only_cancels_the_waiting_read_and_revocation_rechecks_it`; `shell_file_authentication::shell_root_refuses_foreign_connections_and_revoked_epochs` |
 
 Notes and gaps:
-- **Case 3, room for the reply.** A semantic reply cannot be refused for lack of room once its record is accepted: demand admission reserves the response credits (`shell_content/candidates/demands.rs`, `response_credits`). Case 2 independently shows that `Submitted` never waits for a reply.
+- **Case 3, no promise of a reply.** Demand credits keep a reserved obligation from being lost; they do not promise an immediate semantic reply, or its delivery to the socket or journal. `ShellTransportConnection::grant_content_demand` (`shell_transport/content_candidates.rs`) first requires `control_capacity_available(.., 2)` and returns `ContentQueueSaturated` otherwise. `ContentCandidates::grant_demand` then runs `grant_permit` (`shell_content/candidates.rs:297`), which has its own stale and budget checks and restores the demand and credit when it refuses. In the live bar a refusal propagates through `service_content` as a service failure and stops the component. `Submitted` is earlier still: it is appended at acceptance. So the unconditional drain (case 2) remains essential.
 - **Case 6, delivery guard.** Event-read delivery is guarded only through `AuthenticatedFiles::guard_read_delivery` (`sophia-runtime/src/authenticated_files.rs:300`). The unauthenticated metadata wire relies on `export.check` at each retry. A deferred path must keep both.
 - **Untested windows.** Cases 3 and 6 have no shell test for a window between acceptance and deferred delivery, because the current ordering has no such window. Any W1 prototype must add one, and case 2 must keep passing.
 
 ## Exact batch boundary in the live owner pass
 
-Within one owner pass, a component's wire input is served once, and its role services run later in the same `service_components` call:
+The earlier version of this section claimed that a deferred answer would never span another component's visit or native work. That is false for any boundary at or after the bar's demand grant, so it is withdrawn. Intake for every wire precedes every role effect, and this design does not reorder them.
 
-1. `component_service::service_components` calls `components.poll_authenticated(...)` (`component_service.rs:32`).
-2. That visit ends in `processes.turn_connected()` (`metadata_shell/component_session.rs`, "Every connected wire turns once per visit"), which calls `ShellComponentTransport::service_owner_observed`. Here the submit is accepted, `Submitted` is appended, and a parked `Tread` is answered at once from `sophia-9p` `Server::write` → `retry_waiting`.
-3. In the same call, the bar's role closure (`component_service.rs:245`) runs `service_indicators`, `service_actions_from`, `service_content` (which grants the demand: `metadata_shell/content.rs:268`) and `observe_presentation`. Its `poll_io` calls only drain and flush (`serve_input=false` once the owner has serviced the wire, `shell_transport.rs:407`). By then the client has not re-armed, so the permit waits for the next wire pass.
+### Actual lifetime of a held answer
 
-Proposed boundary (not implemented):
-- Answers to event reads that become ready during the step-2 wire turn are an explicit, per-component deferred obligation.
-- It is discharged by that component's first drain-and-flush after its role closure returns, inside the same `service_components` iteration.
-- It is discharged unconditionally at the end of `service_components` for every component, including the `continue` paths (dock, launcher), failure and stop paths, and the stopping branch at `component_session.rs:394`.
-- It is also discharged before the next owner wait as a safety net. That point should never find work, and an assertion should check it.
+The ordering is today's, with slot `b` the bar and the answer held from the moment its parked `Tread` becomes answerable:
 
-The deferral never spans a wait, another component's visit, the native-present or GPU phases, or a client ACK. It changes no other export's `retry_waiting`. It must cover a `Tread` received after `submit` in the same receive as well as one already parked, and must keep `export.check`, the guarded delivery and Tflush/clunk progress.
+1. **Wire turn, slot `b`.** `poll_authenticated` → `finish_poll` → `processes.turn_connected()` (`shell_component_connections.rs:598`) → `service_owner_observed`. The submit is accepted, `Submitted` is appended, and today the parked `Tread` is answered here from `Server::write` → `retry_waiting`.
+2. **The rest of the same loop.** That covers the wire turns of slots after `b`, every slot's image owner (`b`'s own after its wire), and, with `experimental-shell-capture`, capture completions. A failure here makes `finish_poll` stop that slot.
+3. **Back in `service_components` (`component_service.rs`), before any role.** Negotiation and process records are written, then `settle_revocations(Some(runtime))` runs, then `start_next` (which may start a process), then `reconcile_catalog_connections`. Next comes the `!available` early return (with `service_execution`), and then `root`.
+4. **Role closures of connected slots ordered before `b`** (`component_service.rs:160`). Dock calls `catalog.service_dock`, and launcher calls `service_actions` and `service_open_content`. Both take `native`.
+5. **The bar's own closure, up to the grant.** First `service_indicators` and `service_actions_from`, then `service_content` → `LiveContentSession::service_with_catalog` (`metadata_shell/content.rs:193`). Its stages are:
+   - presentation observation;
+   - resources (retire → release is decided here);
+   - outputs;
+   - allocations;
+   - `service_dismissals`, which can call `runtime.withdraw_shell_popout` with `native` (`content/actions/dismissal.rs`);
+   - demands → `grant_content_demand` (`content.rs:273`), which appends the permit.
+6. **After the grant (not crossed by the narrow boundary).** Candidates, then `submit_bundle` (`content/submission.rs`). There `runtime.set_shell_component_content` runs before `content_prepared`, and the backend's `queue_retained_projection` reaches `native.queue_retained_batch`.
 
-Prediction to test, not a claim: one fewer client re-arm for each record whose reply is produced by that component's role closure in the same pass. Native owner wakes may not fall by the same amount (see the corrections above).
+Every boundary from step 5 on spans steps 2 to 4 and part of step 5, which include other wires, other components' role effects and conditional native work. A boundary "after the bar's role closure returns" also spans step 6, the native queueing for this very candidate.
+
+### Narrower proposal
+
+Discharge immediately after the demand loop in `service_with_catalog`, before the Candidates stage.
+
+- The held answer spans steps 1 to 5 exactly, and never spans step 6 or any wait, client ACK or later pass.
+- Saving: only the same-closure replies that come before the grant, which are the demand → permit and retire → release replies. Candidate → prepared is excluded by construction because it follows native queueing. That makes the prediction at most 2 of the roughly 9 wire wakes per frame, before any native confirmation.
+- Whether a span over steps 2 to 4 is acceptable is root's decision. If it is not, no boundary satisfies the earlier limit without reordering, and W1 should be dropped in favour of W2.
+
+### Every exit between hold and discharge
+
+Each exit must drain or revoke before returning. That is a structural guarantee: `service_components` runs its current body as an inner function, and the outer function always runs `discharge_held` before returning the inner result, `Ok` or `Err`. It is not an assertion. `discharge_held` drains and flushes each held answer whose connection is still `Connected` and passes `export.check` and the guarded delivery. If that drain fails, it stops the component, which goes through `request_stop` → `connections.close` and so revokes. A connection that is already closed has its held answer revoked with it. The exits are:
+
+| From | Exit | Handling |
+|---|---|---|
+| `turn_connected` | a slot's turn fails | `finish_poll` stops that slot, which revokes it; other slots keep their held answers. |
+| `finish_poll` | `stop(key)?` / `record_service_failure(..)?` fails mid-loop | `poll_authenticated` returns `Err`; `service_components` logs `poll_failed` and continues; the wrapper covers it. |
+| `finish_poll` | the `!available \|\| stopping` branch | The wires are already revoked, so no answer is held. |
+| `finish_poll` | service construction fails (`return Err`) | This happens before `turn_connected`, so nothing is held yet. |
+| `service_components` | `set_presentation_available?`, `settle_revocations?`, `reconcile?`, `root?`, `with_service?` (×3), the bar's `Completion` `return Err`, `service_execution?`/`??`, the final `settle_revocations?` | wrapper |
+| `service_components` | the `!available` early `return Ok` | wrapper |
+| role closures | dock, launcher or bar `Poll` failure → `components.stop(key)` | Drain first, then stop, so the client sees `Submitted` before the close, as it does today. Revoke only if the drain fails. |
+| `service_with_catalog` | every `?` before the grant, including permit-identity exhaustion and `ContentQueueSaturated` | It becomes a role `Poll` failure; the row above applies. |
+| owner loop | `service_components(..)?` at `owner_loop/physical_input_loop.rs:585` | The wrapper has already run, so nothing reaches the loop still held. |
+
+Open question for root: should the role-failure paths drain before they stop (proposed above, which preserves today's client-visible order), or revoke only?
+
+The prototype tests must add:
+- the windows that cases 3 and 6 lack (revocation, and a saturated grant, between hold and discharge);
+- a held answer on a slot that fails in step 2;
+- a `Tread` received after `submit` in the same receive.
+
+Case 2 must keep passing. No other export's `retry_waiting` changes, and `export.check`, guarded delivery and Tflush/clunk progress are kept.
+
+Prediction to test, not a claim: one fewer client re-arm for each demand → permit (and retire → release) reply in the same closure. Native owner wakes may not fall by the same amount (see the corrections above).
