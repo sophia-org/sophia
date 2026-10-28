@@ -128,6 +128,7 @@ fn deliver(grant: bool) -> Delivery {
     let socket = transport.socket_path().to_owned();
     let (done_tx, done_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel::<()>();
+    let (stopped_tx, stopped_rx) = mpsc::channel::<()>();
     let peer = std::thread::spawn(move || {
         let stream = UnixStream::connect(&socket).unwrap();
         let mut raw = Raw(stream.try_clone().unwrap());
@@ -182,6 +183,9 @@ fn deliver(grant: bool) -> Delivery {
             ]
             .concat(),
         );
+        // Read only once the owner has finished the phase that accepted the
+        // demand: whatever arrives was written by that phase, not a later one.
+        stopped_rx.recv_timeout(Duration::from_secs(3)).unwrap();
         let mut delivery = Delivery::default();
         let mut submitted = false;
         while !submitted || delivery.first.is_empty() {
@@ -228,22 +232,36 @@ fn deliver(grant: bool) -> Delivery {
         assert!(start.elapsed() < Duration::from_secs(3));
         std::thread::yield_now();
     }
-    let mut granted = false;
-    while done_rx.try_recv().is_err() {
-        // One synchronous owner phase: receive, then grant, then flush.
+    // Owner phases until one accepts the demand: receive, then (as the live
+    // content service does) grant and flush in that same phase.
+    loop {
         transport.poll_io(&mut registry).unwrap();
         transport
             .service_content_demands(&mut registry, &[OUTPUT], &[])
             .unwrap();
-        if grant && !granted && transport.next_content_demand(&registry).is_some() {
-            transport
-                .grant_content_demand(&mut registry, TransactionId::from_raw(15), OUTPUT, 7, 10)
-                .unwrap();
-            transport.poll_io(&mut registry).unwrap();
-            granted = true;
+        if transport.next_content_demand(&registry).is_some() {
+            if grant {
+                transport
+                    .grant_content_demand(&mut registry, TransactionId::from_raw(15), OUTPUT, 7, 10)
+                    .unwrap();
+                transport.poll_io(&mut registry).unwrap();
+            }
+            break;
         }
         assert!(start.elapsed() < Duration::from_secs(3));
         std::thread::yield_now();
+    }
+    stopped_tx.send(()).unwrap();
+    if grant {
+        // Only the peer's re-armed read for the permit needs a later turn.
+        while done_rx.try_recv().is_err() {
+            transport.poll_io(&mut registry).unwrap();
+            assert!(start.elapsed() < Duration::from_secs(3));
+            std::thread::yield_now();
+        }
+    } else {
+        // No owner call of any kind after the accepting phase.
+        done_rx.recv_timeout(Duration::from_secs(3)).unwrap();
     }
     release_tx.send(()).unwrap();
     let delivery = peer.join().unwrap();
@@ -269,8 +287,10 @@ fn a_same_phase_reply_needs_a_second_read_after_submitted() {
     );
 }
 
-/// Case 2: with no domain reply at all, `Submitted` still leaves at once.
-/// Any deferral must keep this.
+/// Case 2, the unconditional-drain oracle: with no domain reply, `Submitted`
+/// reaches the parked read from the accepting phase alone, with no later
+/// owner poll, publication or client ACK. A deferred path may flush at the
+/// declared end of that phase, but must not need a later turn.
 #[test]
 fn submitted_without_any_reply_is_delivered_to_the_parked_read() {
     let delivery = deliver(false);
