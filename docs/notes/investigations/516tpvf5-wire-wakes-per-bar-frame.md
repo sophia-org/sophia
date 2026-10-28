@@ -149,3 +149,39 @@ Real SDK scheduling and native owner wakes still need separate validation.
 Phase 0's wire-pass body cost ranks this work but does not price it: that
 full-pass CPU includes work that may move to the passes that remain. Only a
 native ABBA plus the actual counters can decide CPU.
+
+## Baseline invariant coverage (current ordering, proof only)
+
+Shell-specific tests are in `crates/sophia-runtime/tests/shell_event_delivery_files.rs`. For the transport, existing generic 9P tests are reused rather than duplicated.
+
+| Case | Invariant a deferred path must keep | Covered by |
+|---|---|---|
+| 1 | `Submitted` precedes its same-phase reply, at consecutive sequences | `a_same_phase_reply_needs_a_second_read_after_submitted` (b2cb7b2ed) |
+| 2 | `Submitted` leaves from the accepting phase alone: no later owner poll, publication or client ACK (the unconditional-drain oracle) | `submitted_without_any_reply_is_delivered_to_the_parked_read` (8d4621715) |
+| 3 | Accepted custody is unique and the next staging stays busy until the covering ACK. A replay is refused or returns the same acceptance. A full journal refuses custody before accepting, and capacity returns for the same ID | `shell_file_descriptor_export::whole_candidate_custody_is_once_only_and_blocks_reopen_until_ack`, `::backpressure_refuses_custody_and_allows_same_id_after_capacity_returns`; `shell_file_transaction_reuse::reusable_writer_recycles_only_after_covering_ack`; `shell_file_transport` (`EALREADY` on replay); `shell_control_budget::full_file_inbox_refuses_custody_then_retries_the_same_id_without_loss`; `shell_file_journal` terminal-reserve tests; sophia-9p `journal::staging_appends_accepts_exact_repeats_and_refuses_gaps_and_changes` |
+| 4 | Small reads rebuild events byte for byte with nothing lost or repeated, and queued data resumes when room returns without another publication | `small_event_reads_rebuild_both_events_exactly` (5029d9bad, counts 1, 7 and 29); sophia-9p `journal::reads_span_records_wait_at_the_end_and_refuse_released_offsets`, `pending_read_retries::freeing_reply_capacity_retries_without_another_publication`, `waiting_and_bounds::a_waiting_read_is_not_retried_without_room_for_its_reply` |
+| 5 | A flushed parked tag gets no later `Rread` and consumes no event. Clunk and disconnect release retained state | sophia-9p `waiting_and_bounds::a_flushed_read_is_never_answered_and_consumes_nothing`, `::clunk_answers_the_reads_waiting_on_its_fid_first`, `::a_flush_held_behind_full_output_still_wins_over_the_retry`; `pending_read_retries::socket_backpressure_preserves_a_publication_and_flush_cancels_a_waiter`; `shell_file_transaction_reuse::clunk_preserves_accepted_custody_and_revoke_fences_writer`; `shell_typed_outbox_transport::disconnect_releases_typed_records_file_input_and_snapshots` |
+| 6 | Retry and queued or partial delivery keep the epoch checks: nothing protected is delivered after revocation, even while output is blocked | sophia-9p `waiting_and_bounds::revocation_ends_a_waiting_read_when_it_is_retried`, `pending_read_retries::revocation_retries_check_authority_before_consuming_data`, `guarded_delivery::revoked_reply_cannot_resume_after_real_socket_backpressure`, `authentication_wire::flush_only_cancels_the_waiting_read_and_revocation_rechecks_it`; `shell_file_authentication::shell_root_refuses_foreign_connections_and_revoked_epochs` |
+
+Notes and gaps:
+- **Case 3, room for the reply.** A semantic reply cannot be refused for lack of room once its record is accepted: demand admission reserves the response credits (`shell_content/candidates/demands.rs`, `response_credits`). Case 2 independently shows that `Submitted` never waits for a reply.
+- **Case 6, delivery guard.** Event-read delivery is guarded only through `AuthenticatedFiles::guard_read_delivery` (`sophia-runtime/src/authenticated_files.rs:300`). The unauthenticated metadata wire relies on `export.check` at each retry. A deferred path must keep both.
+- **Untested windows.** Cases 3 and 6 have no shell test for a window between acceptance and deferred delivery, because the current ordering has no such window. Any W1 prototype must add one, and case 2 must keep passing.
+
+## Exact batch boundary in the live owner pass
+
+Within one owner pass, a component's wire input is served once, and its role services run later in the same `service_components` call:
+
+1. `component_service::service_components` calls `components.poll_authenticated(...)` (`component_service.rs:32`).
+2. That visit ends in `processes.turn_connected()` (`metadata_shell/component_session.rs`, "Every connected wire turns once per visit"), which calls `ShellComponentTransport::service_owner_observed`. Here the submit is accepted, `Submitted` is appended, and a parked `Tread` is answered at once from `sophia-9p` `Server::write` → `retry_waiting`.
+3. In the same call, the bar's role closure (`component_service.rs:245`) runs `service_indicators`, `service_actions_from`, `service_content` (which grants the demand: `metadata_shell/content.rs:268`) and `observe_presentation`. Its `poll_io` calls only drain and flush (`serve_input=false` once the owner has serviced the wire, `shell_transport.rs:407`). By then the client has not re-armed, so the permit waits for the next wire pass.
+
+Proposed boundary (not implemented):
+- Answers to event reads that become ready during the step-2 wire turn are an explicit, per-component deferred obligation.
+- It is discharged by that component's first drain-and-flush after its role closure returns, inside the same `service_components` iteration.
+- It is discharged unconditionally at the end of `service_components` for every component, including the `continue` paths (dock, launcher), failure and stop paths, and the stopping branch at `component_session.rs:394`.
+- It is also discharged before the next owner wait as a safety net. That point should never find work, and an assertion should check it.
+
+The deferral never spans a wait, another component's visit, the native-present or GPU phases, or a client ACK. It changes no other export's `retry_waiting`. It must cover a `Tread` received after `submit` in the same receive as well as one already parked, and must keep `export.check`, the guarded delivery and Tflush/clunk progress.
+
+Prediction to test, not a claim: one fewer client re-arm for each record whose reply is produced by that component's role closure in the same pass. Native owner wakes may not fall by the same amount (see the corrections above).
