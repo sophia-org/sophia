@@ -73,17 +73,20 @@ serial backlog. A blocked lane does not stop an independent ready candidate.
 
 | Lane | Owner | Immediate implementation and exit |
 | --- | --- | --- |
-| W2 | Claude | Correct the two design contradictions; implement and test host/CLI policy, peer SDK pin/counters, and runner/qualification in separate reviewable commits. Original-artifact acceptance stays separate from W2 off/on acceptance. |
-| Single-submit | Producer | Review the four source trees and dependency closure; build/test in its own cargo-slot pool; stage `continuous-single-submit-01`, instrumentation none, unsealed for root review. No new GPU test is assumed. |
-| S1 | Native-owner | Finish admitted-authentication, native accept/activation and send-before-notify fixtures; wire the event-read-only probe behind a default-off feature, with the original deadline and exact failure retention. |
-| Cost attribution | Transport | Reuse pass-cost instrumentation to separate immutable copy, admission, settlement and retirement; count logical records per turn and authority checks by site, with disabled-path and accounting tests. Diagnostic only. |
-| Frame stream | Muse | Deliver a bounded-credit state machine, compatibility and failure matrix, logical exchange prediction and falsifier; no production code or overlap with W2. |
-| Integration gates | Codex | Classify the 61 native-session failures and renderer lint, review every changed boundary, pin artifacts and seal only after checks and independent review. |
+| W2 effect | Producer / Codex | Same-binary off/on ABBA staged as `continuous-retire-on-present-01`; final review, exact-artifact preflight and seal before Mason launch. Source and releases frozen. |
+| W2 side effects | Complete | `continuous-retire-on-present-screen-01` passed the predeclared upper margins; not equivalence or a gain. |
+| Single-submit | Parked | Completed combined interval [-55,+25] us/frame; inconclusive, no promotion. |
+| S1 | Parked | Completed Session regression [+25,+65] us/frame and rare quiet conversion; no promotion or wider-predicate work. |
+| Cost attribution | Complete diagnostic | Two arms validated; use separate inclusive scopes and thread windows to rank investigations, never as additive savings. |
+| Empty owner work | Codex, next after W2 | [Trace exact readiness and callers](../investigations/p4jd1ymh-which-complexity-and-repeated-work-costs-belong-on-the-frame-cpu-critical-path.md) for repeated empty settlement/collection. Device-free custody proof before any candidate or native package. |
+| Frame stream | Muse / authority review | Written bounded-credit design complete; dependency evidence and device-free proof still gate production wiring. |
+| Integration gates | Codex | Preserve exact provenance, independent review, serialized capture and no-promotion rules. |
 
-Native queue priority is single-submit, baseline attribution, W2 side-effect
-screen then W2 off/on effect, and S1. A not-ready package does not block another
-ready one. Each has fresh inputs and one exclusive attempt; no rerun or overwrite
-of historical evidence. The attribution arm is not a CPU comparator.
+Current native priority is W2 off/on effect. Single-submit, attribution, S1 and
+the W2 side-effect screen have completed. After W2, select the bounded empty-work
+investigation and frame-stream proof using the measured result; do not bundle
+mechanisms. Each new candidate has fresh inputs and one exclusive attempt.
+The attribution arms are not CPU comparators.
 
 For the W2 side-effect screen, predeclare a maximum unresolved regression of
 50 µs/frame combined and 25 µs/frame for either bound process, using the upper
@@ -152,6 +155,41 @@ turns containing each class, outgoing FramePermit journal commits, inclusive
 worker stages and authority sites. Each thread retains its own window; invalid
 clocks/counters refuse attribution. This is mechanism evidence, not a saving.
 
+### Completed captures and next gate, October 28
+
+The earlier staging descriptions above are historical checkpoints. Attribution,
+S1 and the W2 side-effect screen have now completed; their sealed packages remain
+unchanged. Root recomputed saved reductions/raw CPU bounds and checked integrity,
+identity/native anchors and cleanup. Claude and Muse independently reproduced
+CPU arithmetic and receipt constraints with their stated review limits.
+
+- `continuous-shell-work-cost-01`: two valid diagnostic arms. About 91 custody
+  checks and 121 settlement calls per descriptive completion, 99.17% of settlement
+  calls empty. Inclusive custody 100–101 us and settlement 67–68 us are not an
+  additive budget. Worker copy 17–18.5 us/job is inside validation 43–46 us/job;
+  clocks and accounting perturb execution. See the [complexity/repetition note](../investigations/p4jd1ymh-which-complexity-and-repeated-work-costs-belong-on-the-frame-cpu-critical-path.md).
+- `continuous-owner-probe-01`: all four arms passed, but combined difference is
+  [0,+80], Session [+25,+65], peer [-25,+15] us/frame. Both combined pair midpoints
+  are positive (+30/+50). Quiet re-waits are 35/10187 and 46/10177 attempts over
+  selected intervals; this proves reachability, not passes saved or fallback cause.
+  No promotion; park S1. One screen does not identify marginal probe overhead.
+- `continuous-retire-on-present-screen-01`: all four arms passed. Combined
+  [-40,+40], Session [-17.5,+22.5], peer [-22.5,+17.5] us/frame meet the declared
+  50/25/25 upper margins. Original versus new host+peer with W2 off is a side-effect
+  screen, not equivalence, zero effect or a gain. Candidate receipts are exact
+  r10/0x8183 with explicit-retire/release counters (2119,2119).
+- Next, `continuous-retire-on-present-01` uses host `2eeb7a71`, peer `e2a47b47`
+  and runner `7a952dfc` unchanged in every arm. Only paired W2 policy changes:
+  off r10/0x8183/(2119,2119), on r12/0x28183/(0,2119). Exact final host argv
+  preflights accepted 13/14 arguments device-free. The package is staged,
+  awaiting final root review/seal; no enabled native result exists yet.
+
+Durable root receipts under `continuous-cpu-optimization-01/` are
+`shell-work-cost/post-run-root-review.json` (91a209c6),
+`turn-proof/post-run-root-review.json` (7b819266), and
+`w2-screen/post-run-root-review.json` (d2dce4e3). Bounds are tick-accounting
+intervals, not confidence intervals. No completed candidate above is promoted.
+
 ### Test-environment disposition, October 28
 
 The reported native-session run failed 61 tests. Using the same retained test
@@ -210,12 +248,13 @@ The c2 Session CPU dip is unexplained; an unchanged binary does not exclude an
 indirect scheduling effect. All four postflights and cleanup receipts passed;
 120 input hashes, CPU bounds and 2120 kernel joins per arm were checked.
 
-There is **no isolated Session destination-copy cost** in this evidence. Claude's
-10–20 µs memcpy-speed estimate, repeated by Muse, was withdrawn by both as a
-measurement. Peer `ring_upload`
-does not price that Session copy. The proposed 1–2 µs per liveness check and
-allocation-churn explanation are also unmeasured hypotheses. Flat self-time
-does not establish irreducibility. Do not add inclusive profile scopes together.
+The earlier 10–20 us memcpy-speed estimate from Claude, repeated by Muse, was
+withdrawn as a measurement. The later attribution capture now measures the
+worker's inclusive immutable-copy stage at 17–18.5 us/job and custody calls at
+about 1.09–1.11 us/call under instrumentation. These are not uninstrumented savings
+or isolated memcpy cost; peer `ring_upload` is still a different scope. Allocation
+churn as a dominant explanation remains unmeasured. Flat self-time does not
+establish irreducibility. Do not add inclusive profile scopes together.
 
 ## Contracts that every candidate must retain
 
@@ -286,14 +325,14 @@ test feature-off/flag-absent defaults, role/source/key refusals, exact negotiati
 and missing/malformed counters. Then review provenance and package one candidate
 with its own ABBA. No native package is authorized by this note.
 
-### 2. Avoid unnecessary whole-owner passes: finish S1's proof before wiring
+### 2. Avoid unnecessary whole-owner passes: S1 tested and parked
 
 S1 is an event-file-read-only neutral-prefix probe, not the earlier broad
 `turn_connected` shortcut. ACK, flush, submit, open and other requests remain
 normal-pass work. Existing scaffolding stops before consuming a nonpermitted
 request and resumes it once in the normal path.
 
-Before live wiring, close the remaining authentic-custody integration and
+The original pre-wiring requirements were to close authentic-custody integration and
 quietness fixtures, complete the Session gate wiring review, and prove the
 send-before-notify case and keyed failure retention. Exit on mixed/error
 readiness, authority work, ring, disconnect, nonquiet state or burst limit.
@@ -304,9 +343,11 @@ unchanged outcomes. Measure conversion first. If conversion is rare, stop; the
 whole wire-started body is not a defensible savings estimate. Use a separate
 candidate and ABBA, without W2, to identify its effect.
 
-### 3. Separate immutable-byte copying from resource lifecycle work
+### 3. Use attribution to select a bounded empty-work candidate
 
-First reuse existing evidence; if it cannot distinguish the costs, propose a
+The completed diagnostic supplies the first split. Follow the
+[bounded complexity/repetition investigation](../investigations/p4jd1ymh-which-complexity-and-repeated-work-costs-belong-on-the-frame-cpu-critical-path.md)
+for empty settlement/collection gates after W2. For any unresolved distinction, propose a
 small opt-in diagnostic split at actual worker stages: immutable capture/copy,
 admission/reservation, completion settlement and retirement. Name the thread and
 window for every clock and reconcile the measured stage totals with their own
