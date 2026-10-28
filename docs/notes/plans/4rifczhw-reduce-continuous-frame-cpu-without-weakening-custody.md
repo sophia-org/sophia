@@ -73,20 +73,20 @@ serial backlog. A blocked lane does not stop an independent ready candidate.
 
 | Lane | Owner | Immediate implementation and exit |
 | --- | --- | --- |
-| W2 effect | Producer / Codex | Package02 completed: combined [-132.5,-52.5] µs/frame, predicted counter moved. Positive experimental effect, no promotion. Fresh identical-artifact confirmation03 is next; sources and releases frozen. |
+| W2 effect | Complete / Codex | Separate02 and03 blocks resolve combined and Session CPU benefit and the expected counter. Performance gate passed for this workload; no fourth run or default-on promotion. Frozen evidence moves to integration review. |
 | W2 side effects | Complete | `continuous-retire-on-present-screen-01` passed the predeclared upper margins; not equivalence or a gain. |
 | Single-submit | Parked | Completed combined interval [-55,+25] us/frame; inconclusive, no promotion. |
 | S1 | Parked | Completed Session regression [+25,+65] us/frame and rare quiet conversion; no promotion or wider-predicate work. |
 | Cost attribution | Complete diagnostic | Two arms validated; use separate inclusive scopes and thread windows to rank investigations, never as additive savings. |
-| Empty owner work | Codex, next after W2 | [Trace exact readiness and callers](../investigations/p4jd1ymh-which-complexity-and-repeated-work-costs-belong-on-the-frame-cpu-critical-path.md) for repeated empty settlement/collection. Device-free custody proof before any candidate or native package. |
+| Empty owner work | Codex / Muse, active read-only | [Trace exact readiness and callers](../investigations/p4jd1ymh-which-complexity-and-repeated-work-costs-belong-on-the-frame-cpu-critical-path.md) for repeated empty settlement/collection. Device-free custody proof before any candidate or native package. |
 | Frame stream | Muse / authority review | Written bounded-credit design complete; dependency evidence and device-free proof still gate production wiring. |
-| Integration gates | Codex | Preserve exact provenance, independent review, serialized capture and no-promotion rules. |
+| Integration gates | Codex / Claude, active read-only | Map minimal W2 C parity, public SDK pin and protocol allocation work, including the t341 boundary. No publication/source changes from this mapping; preserve frozen evidence and review the concrete proposal. |
 
-Current native priority is W2 off/on confirmation. Single-submit, attribution, S1 and
-the W2 side-effect screen have completed. After W2, select the bounded empty-work
-investigation and frame-stream proof using the measured result; do not bundle
-mechanisms. Each new candidate has fresh inputs and one exclusive attempt.
-The attribution arms are not CPU comparators.
+W2 off/on confirmation has completed; no further W2 measurement is scheduled.
+Advance its integration gates while tracing the bounded empty-work candidate.
+Single-submit, attribution, S1 and the W2 side-effect screen are also complete.
+Frame-stream proof remains separate; do not bundle mechanisms. Each new candidate
+has fresh inputs and one exclusive attempt. Attribution arms are not CPU comparators.
 
 For the W2 side-effect screen, predeclare a maximum unresolved regression of
 50 µs/frame combined and 25 µs/frame for either bound process, using the upper
@@ -284,6 +284,52 @@ evidence differ. Manifest SHA-256 is
 has SHA-256 `e8e37dc998438de1151d17cdf483d87ddbd92c8a3ca583915f54da288401f3aa`.
 Launch remains Mason's through `continuous-retire-on-present-03/run.sh`; the
 build/test/mutation hold lasts through the attempt and saved-data audit.
+
+### W2 confirmation result, October 28
+
+Package03 completed four arms and passed root's saved-data audit: unchanged seal
+and pins, exact signed clean source closure, all analysis input hashes, raw
+process identities and CPU brackets, native joins, phase-accounting and release
+receipts, and clean PAM/VT/outer recovery. Claude and Muse independently agree.
+The two experiments remain separate, without pooling:
+
+| Scope |02 enabled minus disabled, µs/frame |03 enabled minus disabled, µs/frame |
+| --- | --- | --- |
+| Combined | [-132.5,-52.5] | **[-112.5,-30]** |
+| Session | [-90,-50] | **[-75,-35]** |
+| Peer | [-42.5,-2.5] | **[-37.5,+5]** |
+
+Confirmation03 combined midpoint is -71.25 µs/frame (-5.44%), with pair midpoints
+-75/-67.5. Session midpoint is -55 (-6.57%); the peer-only interval includes
+zero in03 and is not independently resolved by this block. Raw Session ticks are
+168/156/157/167; peer 94/91/91/94 inner, with95 outer only for b2. That last
+bracket explains03's slightly wider combined interval; it is retained.
+
+All arms again present2120 generations. Explicit retire requests are2119 off
+and zero on, with2119 validated releases in both modes. The end event remains
+schema7 with `retire_counter_schema=1`. Negotiation and phase tuples agree with
+the declared modes. This demonstrates the protocol path, not measured wake or
+syscall reductions.
+
+The latency observation also repeats: submit-to-kernel-completion median pair
+changes are **+77.5/+67 µs**, p99 **+75/+69 µs**. Completion gaps retain median
+8342 µs and maxima8347–8351, with zero sampler late slots. Cause and visual or
+end-to-end latency remain unmeasured; do not call this shift harmless or a
+photon-latency regression from these receipts alone.
+
+Verdict: **W2's combined and Session CPU benefit is reproduced for this workload;
+the experimental performance gate is closed successfully.** No fourth run is
+planned. This does not close public protocol allocation, C SDK parity, upstream
+SDK provenance or product acceptance of the latency tradeoff. Preserve the
+default-off policy and frozen experimental trees until reviewed integration.
+These are accounting intervals, not confidence intervals or a general CPU floor.
+
+Root audit:
+`~/.local/state/t331/continuous-cpu-optimization-01/w2-effect/post-run-root-review-03.json`,
+SHA-256 `8f47eb4433a538d818594d4466b90b541f69eabe5932cf07f379d505f7fc2869`.
+The native hold is lifted after this audit; sealed packages and release/source
+identities stay frozen. Claude maps the remaining integration work, and Muse
+traces empty settlement/collection obligations, both read-only before new code.
 
 ### Test-environment disposition, October 28
 
