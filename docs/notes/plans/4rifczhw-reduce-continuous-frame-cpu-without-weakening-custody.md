@@ -41,8 +41,8 @@ planner tests passed and their mutation failed.
 Mason said “Implement the plan” on October 28. The lanes below are now active
 in parallel, rather than waiting for W2's native result. Claude owns W2 wiring
 in its isolated host, peer and runner trees. Host wiring is signed at
-`88c1cda50`, peer counters and SDK repin at `b12b0a1c`; runner wiring is in
-progress. The original host already emits negotiated revision, but no capability
+`88c1cda50`, peer counters and SDK repin at `b12b0a1c`; runner wiring and
+strict counter parsing closed review at `17dc6a6f`. The original host already emits negotiated revision, but no capability
 word. W2 artifacts extend that existing receipt; the original-artifact screen
 keeps its original acceptance rather than inventing missing fields.
 The native-owner agent owns S1's remaining fixtures and default-off Session
@@ -101,26 +101,56 @@ of the immediate experiments.
 
 ### Implementation checkpoint, October 28
 
-`continuous-single-submit-01` is sealed after independent root and Muse reviews:
-92 input entries, 197 external pins, MANIFEST SHA-256
-`67b5f665aeb33f80aa7e54e9473d7e6781c141536c911c2f1d7477dc8749cbed`.
-All four check-only preflights passed; no Session or device was launched. Its
-runner binary is `62df9c30` from source `2329fca7`, not the current main-pool
-runner. Preserve that exact pin. The baseline two-submit test remains reported
-and reconstructed, not a full retained baseline counter receipt.
+`continuous-single-submit-01` completed all four arms after independent root and
+Muse reviews. Root rechecked the sealed manifest, raw CPU identities and tick
+brackets, native generation/anchor joins and interval arithmetic; Muse separately
+reproduced the result. Combined candidate-minus-baseline is **[-55,+25] µs/frame**,
+midpoint -15 (-1.145%): inconclusive, no promotion. Peer is [-50,-10] and Session
+[-5,+35]; the Session movement is unexplained. Pair midpoints are 0 and -30.
+Completion gaps have median 8342 µs and maxima 8347–8350; all postflights and
+cleanup receipts passed. Pair latency medians move -17/-4 µs, without a common
+end-to-end latency claim. The native submission count was not instrumented;
+the baseline two-submit control remains reported/reconstructed.
 
-S1 default-off wiring on `596ee463e` is review-ready, not yet signed. Root and
-Muse found no code blocker; the fresh full native-session/capture/probe
-library gate passed 1119 tests, with zero failures and 65 ignored. Its admitted-authentication fixture uses supplied authority and does
-not prove Factotum or protected launch custody. Probe re-waits add waits to the
-experimental counters: compare full passes and completed quiet re-waits, not
-baseline wait-attribution counts as if they had identical semantics.
+The no-retry package remains unchanged. Root's durable saved-data audit is
+`continuous-cpu-optimization-01/single-submit/post-run-root-review.json`, SHA-256
+`fb601ff619bd60c1e4f9354e711d38a9a210063e0de60dd4745edf70c9c9bbc7`.
+The build/test hold ended after completion; attribution and other isolated work
+resumed. Keep runner binary `62df9c30` from source `2329fca7` for packages that
+inherit its validated recipe; do not substitute a current main-pool binary.
 
-W2 host `88c1cda50` passed its fresh full native-session/capture/W2 library gate:
-1108 passed, 65 ignored, zero failures. Its 36 tracked KDL files were changed
-from 0664 to 0644 without changing bytes. Peer `b12b0a1c` records counters only
-after successful sends and validated releases; the historical peer omits the
-extension and keeps its old end bytes. Neither is native performance evidence.
+S1 default-off wiring is signed and clean at `18eb3302`. Root and Muse found no
+code blocker; the full native-session/capture/probe library gate passed 1119,
+zero failed, 65 ignored. Its isolated release is `6508a9ed`; actual compiler
+commands confirm owner-probe, capture and native-session with custody-dispatch
+disabled. `continuous-owner-probe-01` is being staged, unsealed, as a host-only
+ABBA against d9116ff0 with the original peer. Its authentication fixture uses
+supplied authority and does not prove Factotum or protected launch custody.
+Probe re-waits add waits to experimental counters: compare full passes and
+completed quiet re-waits, not baseline wait attribution as identical semantics.
+
+W2 host `88c1cda50` passed 1108 native-session/capture/W2 tests, 65 ignored,
+zero failed. Its 36 tracked KDL files changed from 0664 to 0644 without changing
+bytes. Peer `b12b0a1c` counts successful sends and validated releases; historical
+peer end bytes stay unchanged. Runner `17dc6a6f` rejects explicit-null counters
+and Python bool/float numeric aliases; its 472 xtask tests and focused Python
+gates passed. The runner proves paired settings and counts, not host build
+features. Before sealing, the package must bind the exact host binary hash to
+its signed source/build receipt and run that artifact's validate-session-args
+on the paired argv. Local experimental source review is closed; isolated
+host/peer/runner releases are authorized, not native execution or promotion.
+
+The attribution host is signed at `5e6db9f` (parent pass-cost `026eb3282`), release
+`16f10191`. Runtime capture tests passed 793 with 41 ignored, Session parser 10;
+Clippy, fmt and layout passed. Independent review covered actual decode/admission
+and journal publication boundaries. The separate runner `8fbd1708` forwards only
+exact `SOPHIA_SHELL_WORK_COST=1` in addition to the two existing opt-ins; release
+`e0b7f1a1`. `continuous-shell-work-cost-01` is being staged with the unchanged
+Phase-0 peer `1d9a76a`/`95aa00f8`, two fresh diagnostic arms, and no CPU comparison.
+Twenty-seven bounded rows per snapshot distinguish incoming staged-record classes,
+turns containing each class, outgoing FramePermit journal commits, inclusive
+worker stages and authority sites. Each thread retains its own window; invalid
+clocks/counters refuse attribution. This is mechanism evidence, not a saving.
 
 ### Test-environment disposition, October 28
 
@@ -170,6 +200,7 @@ and client thread groups, not the whole desktop or kernel workers.
 | `continuous-pass-stage-cost-01` | About 9.05/9.02 wire-started passes per interval; 455/452 owner-body µs per interval, about 71% of owner body | Work to investigate, including useful turn work and all services in those passes; not removable overhead |
 | Same diagnostic, peer main thread | Render/readback 327/311; ring upload about 17; total 497/480 | Different frame-function window, generations 121–2120; helper threads and GPU time excluded |
 | `continuous-ack-coalesce-02` | Combined difference [-62.5, +22.5], midpoint −1.52% | Inconclusive; neither cheap framing nor per-record causality is proved |
+| `continuous-single-submit-01` | Combined [-55,+25], peer [-50,-10], Session [-5,+35] | Complete isolated ABBA; combined inconclusive, no promotion; no native submission counter |
 | `continuous-release-overlap-01` | Combined difference [-55, +25], midpoint −15 (−1.14%); peer [-15, +25], midpoint +5; Session [-40, 0], midpoint −20 | Inconclusive; no resolved peer saving and no syscall counter proving fewer waits |
 
 Release-overlap's latency medians increased by 39 and 46 µs in the adjacent
@@ -356,7 +387,8 @@ Branch-qualified investigations are not claimed merged into this notebook:
 
 - `~/dev/sophia-cpu-w2`, `cpu/w2-prototype`,
   `docs/notes/investigations/qyktai1j-w2-retire-the-predecessor-on-presentation.md`:
-  lifecycle proof `7cc36ebde`; host wiring `88c1cda50`, runner qualification pending.
+  lifecycle proof `7cc36ebde`; host wiring `88c1cda50`, peer `b12b0a1c`,
+  runner qualification `17dc6a6f`; local-only diagnostic provenance exceptions.
 - `~/dev/sophia-cpu-turn-proof`, `cpu-turn-proof`,
   `docs/notes/investigations/4cm5nuda-turn-only-owner-pass-for-wire-wakes.md`:
   S1 boundary, default-off wiring and exact fixture/qualification limits.
