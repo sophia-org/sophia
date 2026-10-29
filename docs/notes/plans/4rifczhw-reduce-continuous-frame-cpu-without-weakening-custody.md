@@ -79,7 +79,8 @@ serial backlog. A blocked lane does not stop an independent ready candidate.
 | S1 | Parked | Completed Session regression [+25,+65] us/frame and rare quiet conversion; no promotion or wider-predicate work. |
 | Cost attribution | Complete diagnostic | Two arms validated; use separate inclusive scopes and thread windows to rank investigations, never as additive savings. |
 | Empty owner work | Codex, device-free candidate ready | [Collection guard and proofs](../investigations/p4jd1ymh-which-complexity-and-repeated-work-costs-belong-on-the-frame-cpu-critical-path.md) are signed at `75ff298ab` on a separate `d9116ff0` lane. Source review and runtime tests pass; actual skip frequency and CPU benefit remain unmeasured. Settlement state, expiry caching and authority checks are unchanged. |
-| Frame stream | Muse / authority review | Written bounded-credit design complete; dependency evidence and device-free proof still gate production wiring. |
+| Frame stream / W3 | Codex authority review; Claude and Muse read-only until assigned | Immediately after collect-idle qualification, reconcile `516tpvf5` with canonical `tubnycgx` and trace demand/permit dependencies after W2. No competing design, public allocation or live wiring. |
+| Single-submit disposition | Codex / Mason | Immediately after collect-idle qualification, decide whether an encoder API should be upstreamed or a fork maintained. Combined CPU remains inconclusive; no integration or promotion from the peer interval alone. |
 | Integration gates | Codex / Claude, active read-only | Map minimal W2 C parity, public SDK pin and protocol allocation work, including the t341 boundary. No publication/source changes from this mapping; preserve frozen evidence and review the concrete proposal. |
 
 W2 off/on confirmation has completed; no further W2 measurement is scheduled.
@@ -94,6 +95,43 @@ candidate-minus-baseline accounting bound. Exceeding a margin is not accepted;
 insufficient precision is inconclusive. This is a regression screen, not an
 equivalence claim. A beneficial effect requires an upper CPU difference bound
 below zero, its predicted mechanism and the existing correctness/cadence gates.
+### Collection gate and the next two decisions
+
+The minimal guard is signed at `75ff298ab`, parent exactly `d9116ff0`.
+Correctness is closed; performance is not. The separate diagnostic source is
+signed at `6f82de2c9`, parent `75ff298ab`. It counts actual calls, eligible
+entries, skips, first-walk scans and selections in both variants. The original
+scan is selected only by the diagnostic-baseline build feature. The opposite
+feature tests pass, and removing the actual return makes the scan test fail.
+Receipts: `~/.local/state/collect-observe-proof-01/RECEIPT.json`, SHA-256
+`ea7752e47a012e3e02a5e801725b49126ac88e4bda7ae6b0996e315d78941b62`.
+
+`continuous-collect-work-01` is being prepared as two diagnostic arms, not an
+ABBA CPU comparison. The reducer joins exact owner/thread timestamps with the
+existing five-second clock observations, requires at least two strictly inside
+the anchors, checks global-call and owner-call deltas, and reports any fixed
+pre-observation offset. Selections precede journal emission. Ratios cover only
+the observed interval; baseline eligible selections must be zero, whereas the
+candidate's zero is structural. Instrumented hosts never enter the CPU package.
+
+After mechanism movement and root audit, `continuous-collect-idle-01` is the
+isolated uninstrumented ABBA against the original host. It stays unsealed until
+that prerequisite is recorded. Builds are serial and use separate cargo slots;
+no other optimization is bundled, and Mason alone launches native packages.
+
+Mason requested the next two decisions on the immediate critical path after
+collect-idle qualification. First, W3's written reconciliation must use the
+existing [standing-credit design](../investigations/tubnycgx-can-a-bounded-frame-stream-cut-per-frame-control-exchanges-without-weakening-custody.md),
+trace post-W2 demand/permit dependencies, and retain bounded credits, expiry,
+fresh pacing/admission, response reservations and cancellation/revocation
+obligations. W2 demonstrates retire-exchange removal and CPU benefit, not a
+measured reduction in wake counts. D1/t341 still gates any new allocation.
+Second, decide fork maintenance versus upstream encoder API for single-submit.
+Its combined interval is still [-55,+25] us/frame, with an unexplained Session
+increase. The peer result alone does not authorize productization. No stacked
+experiment, new native package or implementation is authorized by these written
+follow-ups; each needs its own reviewed mechanism and qualification decision.
+
 Do not reject an improvement because its interval excludes zero.
 
 Keep initial Cargo jobs at two per lane, reuse existing pools where their source
