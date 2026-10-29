@@ -290,6 +290,63 @@ verification remain device receipts. Next are the linux-dmabuf and DRI3 consumer
 adapters, then pixel/import/lifetime qualification. No GPU was opened, no native
 run or release build occurred, and no frozen source, binary or package changed.
 
+## External import adapters: device-free gate closed
+
+Signed local niltempus `622145d4ad8408ca3029c0ca80b0d3dacf31d1c1`, parent
+`554935ee2`, adds explicit `wl-panel-gpu` and `x-panel-gpu` build targets in the
+same `bench/gpu-bridge` worktree. Both use the bridge above. The ordinary CPU
+clients preprocess byte-identically to the signed parent; no CPU artifact or
+frozen package is replaced. No Rust source or renderer dependency changes here.
+
+Wayland binds linux-dmabuf v4, uses surface feedback, and requires the main GPU
+plus an XR24/LINEAR tranche to resolve to `0000:03:00.0`. Format-table bounds,
+indices, batch state and unknown flags are checked. Missing tranche flags are
+zero. Compatible updates may complete under a bounded wait. Immediate import
+keeps a fatal failed-event listener alive until buffer release; this avoids an
+extra creation round trip without silently dropping failed imports. The caller
+closes its outgoing duplicate after libwayland queues its own FD. Each exact
+wl_buffer release drops its bridge token. Final teardown waits for presentations,
+detaches the last buffer and drains releases; timeout never counts as release.
+
+X requires DRI3 1.2, XR24 visual masks, LINEAR support and a DRI3Open FD whose
+sysfs physical device matches. Each generation imports a fresh pixmap, transfers
+FD ownership to XCB, and uses plain PresentPixmap without fences. The exact
+event/window/pixmap/serial must match IdleNotify before release. Completion alone
+does not free a token; stale, foreign, duplicate or skipped events refuse. Both
+backs drain before bridge close. X COPY may release before completion, Wayland
+may retain the displayed buffer, and Sophia releases its source after capture:
+two frames is a common cap, not identical instantaneous retention.
+
+GPU journals name `vello_shade_mod128_opaque_rgb`; the preparation start spans
+render/export and producer completion, not CPU fill. The future GPU qualifier
+must require exactly one complete producer/import/end receipt, exact transport
+and device values, and rendered/released counts equal to frames plus warmup.
+These are supporting self-reports, not authenticated custody. The existing CPU
+harness is not claimed to qualify these GPU journals.
+
+Device-free evidence: both CPU/GPU C targets compile with warnings as errors;
+three adapter test executables pass, including 13 Wayland and 12 X refusal cases,
+11 invalid layouts, stubbed actual import-call/FD-transfer checks, exact releases,
+fake sysfs aliases and an installed-libwayland socket-pair timeout. Two CLI tests
+cover 12 refused recipe combinations before display connection. Existing CPU
+fill parity and X event controls pass. Six mutations are killed (five assertions,
+one final-drain refusal), followed by the restored full gate. A first main-device
+mutation survived a nondiscriminating test; its duplicate-state masking was fixed.
+The first listener mutation failed compilation on an unused test function and is
+not counted; the corrected mutation fails at the import listener assertion.
+
+The tests use memfds and protocol stubs, never a real GPU or display; the mock is
+not linked into GPU clients. Claude's read-only review identified the immediate-
+import failure listener and evidence-label issues, now addressed. Source, compiler,
+XML and compile-only binary hashes, parity, tests and mutations are recorded at
+`~/.local/state/matched-gpu-adapters-01/` with checksums. No native run, package,
+publication or performance claim follows.
+
+Next is the qualification harness: strict GPU receipts and pinned installed
+niri/device configuration; then real single-frame pixel/import/sync/release proof,
+including a non-grey channel-order oracle and final detach/drain. Only after those
+gates may a separately sealed matched GPU comparison be prepared.
+
 ## Review receipt
 
 Claude independently checked the pinned exporter, external clients, XLibre import

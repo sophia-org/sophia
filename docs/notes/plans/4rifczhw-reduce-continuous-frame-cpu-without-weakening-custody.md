@@ -106,8 +106,15 @@ on `bench/gpu-bridge`: shared scene, physical PCI binding, bounded two-frame
 ownership and a C ABI. Six bridge tests, the linked C ABI check, 14 peer tests,
 strict Clippy/formatting and six assertion-killed mutations pass. Both producer
 closures pin Lom `1a0dc2329` under a local-only provenance exception. No GPU open,
-release build or native run occurred. Next: linux-dmabuf and DRI3 adapters, then
-independent device pixel/import/lifetime qualification before a comparison.
+release build or native run occurred.
+
+Both external adapters are implemented at signed local `622145d4a`, parent
+`554935ee2`, as separate GPU build targets. Device-free feedback/import-call,
+FD ownership, release and CLI controls pass; six mutations are killed and the
+CPU clients preprocess identically to their signed baseline. GPU journal labels
+separate render/export from CPU fill. The matrix records the exact limitations.
+Next: strict GPU receipt qualification and pinned installed niri/device config,
+then real pixel/import/synchronization/release proof before a comparison package.
 Frozen CPU/W2 references remain unchanged; no performance claim follows.
 
 ## Earlier resumption context
