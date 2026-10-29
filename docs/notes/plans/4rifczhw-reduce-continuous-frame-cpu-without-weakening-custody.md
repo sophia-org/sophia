@@ -23,13 +23,18 @@ for each selected mechanism. A profile share is not a savings target.
 ## October 29 current gate: matched CPU native comparison
 
 The CPU producer, runner and comparison harness are signed locally and
-qualified device-free. `desktop-matched-cpu-01` is sealed and check-only passed;
-Mason's single-use native attempt and root's saved-data audit are next.
-[The producer comparison note](../investigations/iq4zf50w-how-do-we-compare-sophia-xlibre-and-niri-with-matched-pixel-producers.md#october-29-cpu-implementation-and-sealed-first-attempt)
-records the exact commits, artifact pins, manifest and limits. No native result
-exists yet. All benchmark sources/releases stay stable through the attempt and
-audit, with builds paused during capture. GPU-buffer qualification remains next;
-no W3 implementation, W2 integration or collect rerun is added to this gate.
+qualified device-free. `desktop-matched-cpu-01` failed after niri1 when XLibre
+qualification found a missing static source receipt. Both captures cleaned up;
+01 stays immutable and supplies no six-arm comparison. The preparation omission
+is fixed in fresh `desktop-matched-cpu-02`, with the same binaries and workload.
+The receipt is now required during preparation, sealing and prelaunch checks.
+02 is sealed (`d17d5ef1` manifest); all six user-level read-only launch checks
+passed. Mason's single-use native attempt and root's saved-data audit are next.
+The sudo wrapper requires Mason's terminal password and has not started an attempt.
+[The producer comparison note](../investigations/iq4zf50w-how-do-we-compare-sophia-xlibre-and-niri-with-matched-pixel-producers.md#october-29-first-attempt-failure-and-repaired-package)
+records the repair, exact pins and limits. Sources/releases stay stable through
+the attempt and audit, with builds paused during capture. GPU-buffer qualification
+remains next; no W3 implementation, W2 integration or collect rerun is added.
 
 ## Earlier resumption context
 

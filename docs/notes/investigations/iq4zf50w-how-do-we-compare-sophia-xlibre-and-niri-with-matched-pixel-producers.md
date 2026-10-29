@@ -141,8 +141,8 @@ The matched CPU lane is implemented, device-free qualified and sealed as
 The MANIFEST SHA256 is
 `93fdaccd22b21332d2b9f93378871af2c8aed77cff5a5ecfd391eadce1902843`:
 101 package files and 196 external pins. Read-only launch checks passed all
-six SSH/idle-VT checks and both schema-4 diagnostic checks. Mason launches
-`bash ~/.local/state/t331/desktop-matched-cpu-01/run.sh`; it is single-use.
+six SSH/idle-VT checks and both schema-4 diagnostic checks at that point.
+This package was subsequently attempted and failed as recorded below; do not rerun it.
 
 Signed local source identities (no push or merge):
 
@@ -179,6 +179,51 @@ PageFlip-off COPY path. A CPU stderr receipt is supporting evidence beside
 binary/argv/PID binding and denied GPU admission, not an independent driver
 trace. No CPU benefit or cross-stack result is claimed before the saved-data
 audit. GPU-buffer qualification follows that gate; W3 and W2 holds are unchanged.
+
+## October 29: first-attempt failure and repaired package
+
+`desktop-matched-cpu-01` stopped after niri1 completed. The xlibre1 capture
+finished but qualification failed because root preparation omitted
+`preparation/xlibre-source.json`. This was a package defect, not a measured
+rendering failure. Root verified the manifest, all 196 external pins and both
+captures' PAM/terminal cleanup: no residual processes or rescue signals.
+The remaining four arms never launched. No six-arm result or comparison is
+claimed; all 143 saved files remain unchanged.
+
+Fresh `desktop-matched-cpu-02` keeps the exact host, peer, runner and external
+client binaries, workload, arm order and accounting rules. It copies the
+qualified desktop-cpu-04 source receipt (SHA256 `d689be92…47ca`). Root checked
+its driver hash and every excerpt against XLibre commit `56be9f4320ef` and the
+installed commit marker. The original postflight source predicate is extracted
+unchanged into a shared function. Preparation, seal and launch checks now
+require the frozen receipt bytes and that predicate before any native arm.
+This remains source-derived TearFree qualification, not a runtime query.
+
+Four new device-free tests reproduce the actual01 missing-input failure,
+supply only the receipt in memory and obtain identical old/new qualification
+results for niri1 and xlibre1, and prove early refusal for missing or altered
+receipts and a stale installed marker. Frozen-SHA corruption tests are not
+additional predicate coverage. Existing seven wrapper tests, seven package
+tests, eight qualification tests and 43 postflight mutation refusals pass.
+The prior package is rehashed before/after the saved-data test. Claude's
+read-only review found no blocker. The offline fixture depends on01 remaining
+in place; launch check-only does not replay that fixture.
+
+02 is sealed with 110 files and 196 external pins. Manifest SHA256:
+`d17d5ef1997ea9663cf66ecda5b0b737bc5f2e02c3d9ced9be89ef21dd88808a`.
+All six user-level SSH/idle-VT checks and both schema4 descriptor checks pass.
+The sudo wrapper could not authenticate without Mason's terminal; no attempt
+was started. Run from Mason's terminal:
+
+```sh
+bash ~/.local/state/t331/desktop-matched-cpu-02/run.sh --check-only
+bash ~/.local/state/t331/desktop-matched-cpu-02/run.sh
+```
+
+The new package includes the failed result, failure receipt, root cleanup audit,
+source provenance and repair parity under preparation. Additional root receipts
+are in `~/.local/state/matched-cpu-repair-02`. A new six-arm result must stand
+alone: do not pool or substitute01 rows. No native02 result exists yet.
 
 ## Connections
 
