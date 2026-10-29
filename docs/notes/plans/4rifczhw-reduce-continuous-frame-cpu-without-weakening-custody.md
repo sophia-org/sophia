@@ -124,9 +124,33 @@ fixed. The original helper-pin path set contained two historical hash changes;
 preparation records verified values from the completed W2-03 pins and refuses
 later drift. Old packages were not edited.
 
+Package01 later stopped after a passing baseline native postflight: root's
+reducer wrongly required positive `present_clock_service.completions`, a router
+counter that stays zero on this owned-ring path. The candidate never launched.
+All cleanup passed;01 stays failed and immutable. Three interior observations
+show46920 calls,45721 eligible calls,78250 eligible entries,80648 scanned entries
+and1199 selections over1199 native completions. The counter scopes are distinct;
+these instrumented counts do not price CPU cost.
+
+Fresh `continuous-collect-work-02` replaces that router-activity predicate with a
+descriptive positive native-journal completion count in(first,last]. Router delta
+is still reported, every collection invariant and exact timestamp join remains,
+and all sources/binaries/workload are unchanged. Saved01 inputs fail the old
+reducer and pass the new one; boundary/refusal tests and hashes are retained.
+Both read-only reviews and sealed check-only gates pass. Manifest SHA-256:
+`46427174695f867477b4d19b57bc4406fa5c50ae5345fab66b9974eb99b5da5d`
+(140files,37external pins). Root receipt `diagnostic-seal-review-02.json` in the
+same collect-idle evidence directory has SHA-256
+`cb080f6f2633363947797a7a0480de6728afbf2ad70d25738d116757514c65fd`.
+Mason launches02; no attempt has been made by root.
+
 After mechanism movement and root audit, `continuous-collect-idle-01` is the
 isolated uninstrumented ABBA against the original host. It stays unsealed until
-that prerequisite is recorded. Builds are serial and use separate cargo slots;
+that prerequisite is recorded. One ABBA remains the benefit/regression screen;
+if inconclusive, stop this lane and move to W3. A100ns/walk estimate is a prior,
+not a measurement: neither counter movement nor an unresolved CPU interval
+establishes a sub-resolution gain. No repeated tiny-gain hunt. Builds are serial
+and use separate cargo slots;
 no other optimization is bundled, and Mason alone launches native packages.
 
 Mason requested the next two decisions on the immediate critical path after
