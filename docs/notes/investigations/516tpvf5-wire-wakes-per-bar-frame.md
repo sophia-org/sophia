@@ -107,6 +107,11 @@ semantics. Requirements:
 
 Design W3 only after W1 and W2 have evidence.
 
+This sketch is superseded by the canonical W3 design,
+[tubnycgx](tubnycgx-can-a-bounded-frame-stream-cut-per-frame-control-exchanges-without-weakening-custody.md).
+Its requirement list is kept as the checklist in
+[W3 reconciliation with tubnycgx](#w3-reconciliation-with-tubnycgx-2026-10-29).
+
 S1 (a turn-only pass for wire-only wakes) is complementary. It makes the
 remaining wakes cheaper, while W1 to W3 remove them.
 
@@ -240,3 +245,120 @@ NO-GO for the expanded hold window. The proposed production implementation is sh
 - The baseline proof (`shell_event_delivery_files.rs`) and this note are kept.
 
 Next: W2, design-only.
+
+## W3 reconciliation with tubnycgx (2026-10-29)
+
+This is a written reconciliation only, under root's GO of 2026-10-29. It has no code, builds, tests or native runs, and it allocates no identifiers.
+
+[tubnycgx](tubnycgx-can-a-bounded-frame-stream-cut-per-frame-control-exchanges-without-weakening-custody.md) is the canonical W3 design; it is on master at `4c7e8f44b`. The W3 sketch above is superseded wherever the two differ. Its requirement list is kept below as a checklist. Nothing here proposes a competing mechanism: the gaps are recorded for tubnycgx's owner and for root to resolve.
+
+Sources:
+- **Session after W2:** `a6f16af50`, the frozen W2 tree. Its demand and permit code in `demands.rs` and `metadata_shell/content.rs` is identical at `d9116ff09`. `candidates.rs` differs from `d9116ff09` only by the W2 retire hooks.
+- **SDK:** `1951d597`.
+- **Peer:** `b12b0a1c`.
+- **Contract:** `docs/sophia-shell-files.md` at master `05db0c886`.
+
+Path prefixes used below:
+
+| Prefix | Path |
+|---|---|
+| runtime | `crates/sophia-runtime/src` |
+| session | `crates/sophia-session/src/live_session` |
+| limits | `sophia-shell-protocol` `shell/content/limits.rs` |
+| peer | `niltempus` `tools/gpu-bar/dma/src/main.rs` |
+
+### Demand and permit dependencies after W2
+
+This is a source trace; none of it has been observed.
+
+For each frame g, the W2 peer is strictly serial. Each step blocks until the one before it has completed (`present`, peer `:814-1003`; the frame loop is `:644-692`):
+
+1. **Ring upload of g:** the offer, the `Accepted` status, then the exact `SlotReleased` (`ring_frame`, peer `:760-807`).
+2. **Demand:** `FrameDemand` on transaction 5 (`:826-835`), then a wait for `FramePermit` (`:836-846`).
+3. **Candidate:** one `Candidate` on transaction 6, whose W2 intent names g−1's resource (`:887-920`). The peer then waits for `Prepared` and then `Presented` (`:921-968`).
+4. **Release:** a wait for `ResourceReleased` of g−1's resource (`:971-982`). Frame g+1 starts only after this.
+
+**The demand never waits on store state.** By the time `FrameDemand(g)` arrives, every per-output slot in the store is empty: g−1's permit was consumed at Begin, and g−1's candidate left `pending` and `submitted` when it was presented. The Demands stage grants the permit in the same visit that decodes the demand (session `metadata_shell/content.rs:266-274`). The only checks are `control_capacity_available(.., 2)` (runtime `shell_transport/content_candidates.rs:70-72`) and those in `grant_permit` (runtime `shell_content/candidates.rs:315-392`). There is no clock wait.
+
+**Its only cost on this workload is serialization.** On the session side the demand gates nothing. On the client side, the candidate for g cannot be sent until the permit round trip completes, and that round trip sits between `SlotReleased(g)` and `Candidate(g)`. This answers tubnycgx's falsifier 2 from source, for the bench peer only. It says nothing about turns, wakes or CPU. Lom's producer order is not traced.
+
+**W2 did not touch the demand path.** It removed `ResourceRetire` and its round trip after `Presented`. After W2, each frame's client records are `FrameDemand` and `Candidate`, plus the image-channel offer. Under tubnycgx's no-re-open prediction (`k = 0`), only `Candidate` would remain.
+
+**Removing demand and permit adds no concurrency here.** The bench peer never holds two candidates in flight, so a credit of 2 would go unused. The peer would still serialize on `Presented` and `ResourceReleased`.
+
+### Checklist: the W3 requirements above against tubnycgx
+
+**1. "One demand yields a permit per frame until cancelled."**
+- tubnycgx: superseded. There are no per-frame permit events; standing credits are replenished on a terminal `CandidateOutcome`.
+- Finding: the sketch's shape would keep all 2120 `FramePermit` events, and tubnycgx removes them. The sketch's wording is withdrawn.
+
+**2. Bounded outstanding permits per output.**
+- tubnycgx: `Credit = min(slots, max in-flight)`, which is 2 for this workload, with `0 <= outstanding <= Credit`.
+- Finding: the store holds at most one permit, one assembly, one pending candidate and one submitted candidate per output (runtime `shell_content/candidates.rs:144-152`).
+  - `begin_submission` refuses with Budget while a candidate is submitted (`:712-714`).
+  - The SDK refuses a further candidate per output beyond pending plus open, which is 1 + 1 (`sophia-shell-client` `lifecycle.rs:116-127`).
+  - So tubnycgx's 2 matches one pending candidate plus one submitted candidate.
+
+**3. Unique IDs and epochs, with a TTL.**
+- tubnycgx: credits are bound to the tuple. Each credit expires 250 ms after it becomes spendable, on the server's permit clock.
+- Finding: consistent with today.
+  - Permit IDs come from a session-wide monotonic `next_permit_id` (session `metadata_shell/content.rs:269-272`), and `permit_id <= last_permit_id` is refused (`candidates.rs:330`).
+  - The deadline is the grant's `now` plus `permit_timeout_ms` (`:351-353`). It is checked at Begin (`:428`) and by `expire` (`:855-878`).
+  - The contract anchors the TTL at the grant-time sample, not at client receipt (contract, **Permit time**, `:1018-1025`).
+
+**4. Fresh pacing and admission for every permit.**
+- tubnycgx: every admission passes today's checks and "the role's existing configured/negotiated rate gate".
+- Finding — gap: no rate gate exists in today's session.
+  - `max_candidate_rate_millihz` (limits `:61`, 120000 in the prototype profile at `:339`) is validated and documented (contract `:102,149`).
+  - But no session or runtime crate reads it, at `d9116ff09`, `a6f16af50` or `05db0c886`.
+- Today's pacing is structural:
+  - one standing demand per output (limits `:246` requires exactly 1);
+  - one permit per output, granted only from that demand;
+  - no new demand while a permit or an assembling candidate is outstanding (contract `:1031-1034`);
+  - one submitted candidate per output;
+  - native presentation.
+- Consequence: today a fast reject or supersede loop is bounded by the demand→permit round trip, and standing credit removes that round trip. So tubnycgx's "bounded by exactly today's rate gate" names a gate the source does not have.
+
+**5. Reserved response credits.**
+- tubnycgx: opening a stream reserves nothing in advance. The per-generation journal and response checks are unchanged.
+- Finding: the reservation rule is preserved, but its point moves.
+  - Today a demand reserves 1 credit (`demands.rs:48-50`).
+  - `grant_permit` converts that credit, pushes the permit and reserves 2 for the Prepared and terminal outcomes (`needed = 3`; `candidates.rs:342-350,368`).
+  - Expiry and cancellation refund the 2 (`:864`; `demands.rs:127`).
+  - Under tubnycgx no permit is granted, so the per-generation reservation of 2 moves from the grant to admission. tubnycgx's state machine says the reservation happens at admission "as today", but today it happens at the grant.
+
+**6. Defined behaviour for cancellation races, expiry and withdrawal.**
+- tubnycgx: expiry observed at an admission boundary closes the stream. A tuple change, revocation, partner exit or journal loss moves the stream to `Closing`.
+- Finding — gap: tubnycgx does not say what happens at the new revision to:
+  - `FrameDemandCancel` (`demands.rs:97-146`; contract `:824-828`);
+  - reason-3 withdrawal demands, which take priority and cannot be replaced by lower-priority demands (`demands.rs:12-13,40-46,61-66`).
+- tubnycgx also has no producer-initiated close.
+
+**7. No idle permit or wake stream to a peer that stops consuming.**
+- tubnycgx: replenishment rides only on terminal outcomes. Idle credits expire, and expiry closes the stream.
+- Finding: satisfied as written. Today an unconsumed permit expires with a `FramePermit` state 2 event (`candidates.rs:862-877`). tubnycgx emits nothing at expiry and reports the closure at the next admission. Whether a close notice is owed is the owner's decision.
+
+**8. No bypass of permits or credits.**
+- tubnycgx: stream credit is pacing authority only, and every admission check is unchanged.
+- Finding: satisfied as written.
+
+### Further gaps against today's rules
+
+These are recorded for tubnycgx's owner and root. They are not resolved here.
+
+1. **Where supersession happens.** Today a pending candidate is superseded only when a new permit is granted for its output (`grant_permit`, `candidates.rs:355-367`; contract `:829-830`). W2 cancels that candidate's intent reservation on the same path. tubnycgx counts superseded as a terminal, replenishing outcome, but it grants no permits. Suppose a second credit is spent while one candidate is pending and none is submitted. That case needs a defined supersession point, and W2's intent must be cancelled there exactly once.
+2. **Running out of credit is fatal today.** A `Candidate` without a current unconsumed permit is a stale record: it receives `Submitted` custody but no outcome, and the component's authority is revoked (contract `:831-836`; `candidates.rs:419-424`). tubnycgx's proof row instead expects such a candidate to wait or be refused "with existing backpressure". The meaning of the candidate's `pacing_permit` field at the new revision is not specified.
+3. **The rate gate** (checklist item 4). Keeping today's pacing bound once the round trip is gone needs an explicit decision. Enforcing the already-advertised `max_candidate_rate_millihz` at admission is one possibility. That would be a design change for the owner to make, and it is not proposed here.
+
+### Preserved unchanged
+
+tubnycgx's rules stand as written:
+- credit expiry;
+- oldest-expiring credit spent first;
+- expiry closing the stream;
+- the per-generation journal and response checks;
+- the custody and authority checks;
+- W2's retire and release ordering;
+- negotiation refusing mixed peers.
+
+This section allocates no revision or capability. r12/bit 17 remains W2's experimental slot and is not an allocation.
