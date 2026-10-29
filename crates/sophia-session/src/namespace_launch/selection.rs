@@ -162,6 +162,10 @@ impl ResolvedApplicationLaunch {
     ) -> Result<ApplicationProcess, String> {
         self.request.diagnostic =
             crate::diagnostics::application::prepare(&self.request.launch.program, diagnostic);
+        #[cfg(feature = "diagnostic-capture-delivery")]
+        {
+            self.request.capture_context = Some(diagnostic);
+        }
         Ok(ApplicationProcess::namespace(
             service.start(self.request, launches, wake, now)?,
             self.services,
@@ -307,6 +311,8 @@ impl RecipeLaunchTarget {
             request: ClientLaunchRequest {
                 x11_target: self.x11.clone(),
                 diagnostic: None,
+                #[cfg(feature = "diagnostic-capture-delivery")]
+                capture_context: None,
                 launch,
                 recipe,
                 namespace: self.context.id,

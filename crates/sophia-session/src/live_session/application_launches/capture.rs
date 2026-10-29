@@ -54,6 +54,8 @@ struct Pending {
     completion: Option<mpsc::Receiver<Result<(), PortalTransferFailure>>>,
 }
 struct Recipient {
+    #[cfg(feature = "diagnostic-capture-delivery")]
+    delivery: Option<Arc<crate::diagnostics::pixel_delivery::CaptureStore>>,
     allowed: Vec<String>,
     queue: Arc<CaptureRequestQueue>,
     objects: Arc<PortalObjectRecipient>,
@@ -101,6 +103,8 @@ impl LiveApplicationLaunches {
             );
             target.portal.1 = objects.clone();
             recipients.push(Recipient {
+                #[cfg(feature = "diagnostic-capture-delivery")]
+                delivery: prepared.service.capture_delivery.clone(),
                 allowed: recipe.capture_outputs.clone(),
                 queue,
                 objects,
@@ -289,6 +293,12 @@ impl Recipient {
             width: capture.width,
             height: capture.height,
         };
+        #[cfg(feature = "diagnostic-capture-delivery")]
+        if self.delivery.is_some() && !backend.allowed(output, &self.allowed) {
+            return Err(Status::Denied);
+        }
+        #[cfg(feature = "diagnostic-capture-delivery")]
+        let diagnostic_pixels = self.delivery.as_ref().map(|_| capture.pixels.clone());
         let image = pending
             .reservation
             .take()
@@ -302,6 +312,15 @@ impl Recipient {
         });
         if !source.image.publish(Arc::new(image)) {
             return Err(Status::Unavailable);
+        }
+        #[cfg(feature = "diagnostic-capture-delivery")]
+        if let (Some(delivery), Some(pixels)) = (&self.delivery, diagnostic_pixels) {
+            delivery.served(
+                self.objects.namespace(),
+                pending.work.request().serial,
+                info,
+                &pixels,
+            );
         }
         let coordinator = PortalTransferCoordinator::start(
             Arc::new(Policy {

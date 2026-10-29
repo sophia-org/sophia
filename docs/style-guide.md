@@ -501,6 +501,12 @@ should gain a useful extension, not a private dependency.
 
 ## Verification
 
+The diagnostic pixel-delivery fixtures mount external files from
+`tests/support` beside the private stream and storage owners. They supply
+activation/exit facts to test bounded private delivery and the server-frame
+join without exposing a production API that can manufacture authentication.
+They do not prove protected launch or native capture execution.
+
 Docs-only changes need inspection, not a build.
 
 For code, each component needs a concrete check:

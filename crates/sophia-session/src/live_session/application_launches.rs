@@ -95,6 +95,9 @@ impl LiveApplicationLaunches {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let policy = &config.core_config_state.active().session.namespace_policy;
         if policy.recipes.is_empty() {
+            if config.diagnostic_capture_directory.is_some() {
+                return Err("capture delivery requires an observer recipe".into());
+            }
             return Ok(Self::default());
         }
         let root = config
@@ -107,6 +110,24 @@ impl LiveApplicationLaunches {
         let parent =
             std::env::var_os("XDG_RUNTIME_DIR").ok_or("recipe runtime directory absent")?;
         let service = NamespaceLaunchService::new(registry.clone(), parent.into());
+        #[cfg(feature = "diagnostic-capture-delivery")]
+        let service = if let Some(path) = &config.diagnostic_capture_directory {
+            if !policy.recipes.values().any(|r| {
+                r.profile == NamespaceRecipeProfile::Observer
+                    && r.developer_launch
+                    && r.capture_outputs.len() == 1
+            }) {
+                return Err(
+                    "capture delivery requires a developer observer with one approved output"
+                        .into(),
+                );
+            }
+            service.with_capture_delivery(crate::diagnostics::pixel_delivery::CaptureStore::create(
+                path,
+            )?)
+        } else {
+            service
+        };
         let display = parse_display_number(&config.display)?;
         let layout = socket_directories::SocketDirectoryLayout::prepare(display)?;
         let mut targets = BTreeMap::new();

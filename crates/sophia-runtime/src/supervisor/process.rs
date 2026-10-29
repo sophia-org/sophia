@@ -161,6 +161,7 @@ pub struct ProcessSupervisor {
     exit_status: Option<std::process::ExitStatus>,
     last_launch_generation: u64,
     launch_stderr: Option<std::os::fd::OwnedFd>,
+    launch_stdout: Option<std::os::fd::OwnedFd>,
     exec_gate: Option<sophia_linux_peer::ExecGateChild>,
     spawned_pid: Option<u32>,
 }
@@ -190,6 +191,7 @@ impl ProcessSupervisor {
             exit_status: None,
             last_launch_generation: 0,
             launch_stderr: None,
+            launch_stdout: None,
             exec_gate: None,
             spawned_pid: None,
         }
@@ -209,6 +211,13 @@ impl ProcessSupervisor {
 
     pub const fn process(&self) -> SupervisedProcessKind {
         self.process
+    }
+
+    /// One attempt's private output destination, owned by the spawner rather
+    /// than inherited from a launch requester. Never retained for restart.
+    pub fn with_stdout(mut self, stdout: std::os::fd::OwnedFd) -> Self {
+        self.launch_stdout = Some(stdout);
+        self
     }
 
     /// One attempt's provenance rendezvous, consumed by the actual spawn.
@@ -444,6 +453,9 @@ impl ProcessSupervisor {
         if let Some(stderr) = self.launch_stderr.take() {
             command.stderr(std::process::Stdio::from(stderr));
         }
+        if let Some(stdout) = self.launch_stdout.take() {
+            command.stdout(std::process::Stdio::from(stdout));
+        }
         if let Some(gate) = self.exec_gate.take() {
             gate.install(&mut command);
         }
@@ -637,6 +649,7 @@ impl ProcessSupervisor {
                 domain,
                 channel,
                 self.launch_stderr.take(),
+                self.launch_stdout.take(),
                 self.exec_gate.take(),
             );
             let protected = match result {
@@ -672,6 +685,9 @@ impl ProcessSupervisor {
             }
             if let Some(stderr) = self.launch_stderr.take() {
                 command.stderr(std::process::Stdio::from(stderr));
+            }
+            if let Some(stdout) = self.launch_stdout.take() {
+                command.stdout(std::process::Stdio::from(stdout));
             }
             if let Some(gate) = self.exec_gate.take() {
                 gate.install(&mut command);

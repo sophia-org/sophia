@@ -16,6 +16,8 @@ mod portal_dispatch;
 
 #[path = "namespace_application_process.rs"]
 mod application_process;
+#[path = "namespace_capture_delivery.rs"]
+mod capture_delivery;
 
 pub(super) struct Fixture {
     pub(super) auth: factotum::Fixture,
@@ -72,6 +74,8 @@ impl Fixture {
         ClientLaunchRequest {
             x11_target: None,
             diagnostic: None,
+            #[cfg(feature = "diagnostic-capture-delivery")]
+            capture_context: None,
             launch: ProcessLaunchSpec::new("/usr/bin/sleep")
                 .arg("30")
                 .protection_domain(

@@ -7,6 +7,8 @@ mod input_device;
 mod native_stall;
 mod output_profile;
 mod output_resolution;
+#[cfg(feature = "diagnostic-capture-delivery")]
+pub mod pixel_delivery;
 mod recovery;
 mod renderer_handoff;
 mod renderer_worker;

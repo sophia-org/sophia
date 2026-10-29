@@ -132,6 +132,22 @@ impl Directory {
     pub fn sync(&self, name: &str) -> io::Result<()> {
         self.file(name, OFlags::RDONLY)?.sync_all()
     }
+
+    #[cfg(feature = "diagnostic-capture-delivery")]
+    pub fn publish_new(&self, name: &str, bytes: &[u8]) -> io::Result<()> {
+        let pending = format!("{name}.partial");
+        let mut file = self.file(&pending, OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        rustix::fs::renameat_with(
+            &self.fd,
+            pending.as_str(),
+            &self.fd,
+            name,
+            rustix::fs::RenameFlags::NOREPLACE,
+        )?;
+        self.fd.sync_all()
+    }
 }
 
 pub(super) fn field<'a>(text: &'a str, name: &str) -> Option<&'a str> {

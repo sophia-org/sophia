@@ -27,6 +27,21 @@ pub(super) fn run(args: &[String]) -> Result<()> {
     } else {
         (false, args)
     };
+    #[cfg(feature = "diagnostic-capture-delivery")]
+    let (mut diagnostic, args) = if args.last().is_some_and(|a| a == "--diagnostic-stream") {
+        if relay_ready || args.len() != 2 {
+            return Err("diagnostic capture requires the ordinary admitted launch channel".into());
+        }
+        let stat = rustix::fs::fstat(std::io::stdout())?;
+        if rustix::fs::FileType::from_raw_mode(stat.st_mode) != rustix::fs::FileType::Socket {
+            return Err("diagnostic capture requires private socket stdout".into());
+        }
+        let socket = UnixStream::from(rustix::io::fcntl_dupfd_cloexec(std::io::stdout(), 3)?);
+        socket.peer_addr()?;
+        (Some(socket), &args[..1])
+    } else {
+        (None, args)
+    };
     let (output, destination) = parse(args)?;
     let directory = std::env::var_os(NAMESPACE_DIRECTORY_ENV)
         .ok_or("capture requires an admitted namespace launch")?;
@@ -114,6 +129,16 @@ pub(super) fn run(args: &[String]) -> Result<()> {
     }
     close(pipe, image, deadline)?;
     close(pipe, record, deadline)?;
+    #[cfg(feature = "diagnostic-capture-delivery")]
+    if let Some(socket) = diagnostic.as_mut() {
+        sophia_session::diagnostics::pixel_delivery::write_frame(
+            socket,
+            request.serial,
+            info,
+            &pixels,
+        )?;
+        return Ok(());
+    }
     if let Some(path) = destination {
         let mut file = std::fs::OpenOptions::new()
             .write(true)

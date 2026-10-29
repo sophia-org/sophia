@@ -33,6 +33,7 @@ x11rb = { version = "0.13.1", features = ["shm", "render", "dri3"] }
 sophia-sysv-shm = { path = "../sophia-sysv-shm" }
 
 [features]
+diagnostic-capture-delivery = ["sophia-session/diagnostic-capture-delivery"]
 experimental-draw = ["sophia-session/experimental-draw"]
 experimental-shell-capture = ["sophia-session/experimental-shell-capture"]
 default = []

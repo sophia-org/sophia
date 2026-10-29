@@ -411,6 +411,7 @@ pub struct ProtectionDomainEvidence {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProtectionDomainLaunchError {
+    PrivateOutputNotInherited,
     ReservedEnvironment,
     RoleMismatch {
         process: SupervisedProcessKind,
@@ -450,8 +451,12 @@ pub(crate) fn spawn_bubblewrap_with_io(
     domain: &ProtectionDomainSpec,
     channel: Option<LaunchChannel>,
     stderr: Option<std::os::fd::OwnedFd>,
+    stdout: Option<std::os::fd::OwnedFd>,
     exec_gate: Option<sophia_linux_peer::ExecGateChild>,
 ) -> Result<ProtectedProcess, ProtectionDomainLaunchError> {
+    if stdout.is_some() && !domain.inherited_fds.contains(&1) {
+        return Err(ProtectionDomainLaunchError::PrivateOutputNotInherited);
+    }
     let required_role = required_role(process);
     if !domain.roles.contains(&required_role) {
         return Err(ProtectionDomainLaunchError::RoleMismatch {
@@ -481,6 +486,9 @@ pub(crate) fn spawn_bubblewrap_with_io(
     };
     if let Some(stderr) = stderr {
         command.stderr(Stdio::from(stderr));
+    }
+    if let Some(stdout) = stdout {
+        command.stdout(Stdio::from(stdout));
     }
     if let Some(gate) = exec_gate {
         gate.install(&mut command);

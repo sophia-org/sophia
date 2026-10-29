@@ -77,6 +77,8 @@ impl Fixture {
                 PortalObjectRecipient::new(namespace).with_capture_requests(queue.clone()),
             );
             recipients.push(Recipient {
+                #[cfg(feature = "diagnostic-capture-delivery")]
+                delivery: None,
                 allowed: vec![format!("out{id}")],
                 queue,
                 objects,

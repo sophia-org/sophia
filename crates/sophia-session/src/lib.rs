@@ -1,4 +1,7 @@
 mod output;
+// The existing portal fixture compiles the real capture CLI inside this crate.
+#[cfg(all(test, feature = "diagnostic-capture-delivery"))]
+extern crate self as sophia_session;
 // Endpoint demand has no production ingress caller; GPU admission remains disabled.
 #[cfg(feature = "experimental-shell-capture")]
 #[allow(dead_code)]

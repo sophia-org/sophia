@@ -31,6 +31,8 @@ use std::{
 
 const MAX_CLIENTS: usize = 64;
 mod application;
+#[cfg(feature = "diagnostic-capture-delivery")]
+mod capture_delivery;
 mod dispatch;
 mod selection;
 pub use application::{ApplicationProcess, ApplicationProcessEvent, NamespaceApplicationServices};
@@ -42,6 +44,8 @@ pub const NAMESPACE_CLIENT_UNAME: &[u8] = b"namespace-client";
 pub struct ClientLaunchRequest {
     pub x11_target: Option<Arc<RecipeXTarget>>,
     pub diagnostic: Option<crate::diagnostics::application::PreparedLaunch>,
+    #[cfg(feature = "diagnostic-capture-delivery")]
+    pub capture_context: Option<crate::diagnostics::application::LaunchContext>,
     pub launch: ProcessLaunchSpec,
     pub recipe: Arc<LoadedNamespaceRecipe>,
     pub namespace: NamespaceId,
@@ -60,6 +64,8 @@ impl Drop for Slot {
 /// One per Session. Preparing, running and reaping clients all spend the same
 /// bound, including workers whose caller has abandoned its result.
 pub struct NamespaceLaunchService {
+    #[cfg(feature = "diagnostic-capture-delivery")]
+    pub(crate) capture_delivery: Option<Arc<crate::diagnostics::pixel_delivery::CaptureStore>>,
     registry: Arc<Mutex<NamespaceRegistry>>,
     parent: PathBuf,
     slots: Arc<AtomicUsize>,
@@ -67,6 +73,8 @@ pub struct NamespaceLaunchService {
 impl NamespaceLaunchService {
     pub fn new(registry: Arc<Mutex<NamespaceRegistry>>, parent: PathBuf) -> Self {
         Self {
+            #[cfg(feature = "diagnostic-capture-delivery")]
+            capture_delivery: None,
             registry,
             parent,
             slots: Arc::new(AtomicUsize::new(0)),
@@ -82,6 +90,15 @@ impl NamespaceLaunchService {
         wake: sophia_wake::Notifier,
         now: Instant,
     ) -> Result<PendingNamespaceClient, String> {
+        let diagnostic_stream = request
+            .launch
+            .args
+            .iter()
+            .any(|a| a == "--diagnostic-stream");
+        #[cfg(not(feature = "diagnostic-capture-delivery"))]
+        if diagnostic_stream {
+            return Err("diagnostic capture delivery is not compiled".into());
+        }
         if !launches.uses_namespaces(&self.registry) {
             return Err("namespace launch and authentication owners differ".into());
         }
@@ -153,6 +170,15 @@ impl NamespaceLaunchService {
             .reserve_owned(policy, audiences, now)
             .map_err(|e| format!("recipe registration: {e:?}"))?;
         let generation = registration.registration().launch_generation();
+        #[cfg(feature = "diagnostic-capture-delivery")]
+        let capture = if diagnostic_stream {
+            Some(
+                self.prepare_capture(&request, generation, wake.clone())
+                    .map_err(|e| e.to_string())?,
+            )
+        } else {
+            None
+        };
         let registry = self.registry.clone();
         let parent = self.parent.clone();
         let (sender, prepared) = mpsc::sync_channel(1);
@@ -165,7 +191,16 @@ impl NamespaceLaunchService {
         std::thread::Builder::new()
             .name("sophia-recipe-prepare".into())
             .spawn(move || {
-                let result = prepare(request, registry, parent, generation, slot, child_gate);
+                let result = prepare(
+                    request,
+                    registry,
+                    parent,
+                    generation,
+                    slot,
+                    child_gate,
+                    #[cfg(feature = "diagnostic-capture-delivery")]
+                    capture,
+                );
                 let _ = sender.send(result);
                 wake.notify();
                 if let Ok(resources) = lifetime.recv() {
@@ -189,6 +224,8 @@ impl NamespaceLaunchService {
 }
 
 struct Prepared {
+    #[cfg(feature = "diagnostic-capture-delivery")]
+    capture: Option<crate::diagnostics::pixel_delivery::CaptureLaunch>,
     x_application: bool,
     diagnostic: Option<crate::diagnostics::application::PreparedLaunch>,
     supervisor: Option<ProcessSupervisor>,
@@ -204,6 +241,11 @@ fn prepare(
     generation: u64,
     slot: Slot,
     child_gate: sophia_runtime::ExecGateChild,
+    #[cfg(feature = "diagnostic-capture-delivery")] capture: Option<(
+        crate::diagnostics::pixel_delivery::CaptureLaunch,
+        std::os::fd::OwnedFd,
+        std::os::fd::OwnedFd,
+    )>,
 ) -> Result<Prepared, String> {
     if let Some(target) = &request.x11_target {
         target.verify()?;
@@ -231,6 +273,14 @@ fn prepare(
         );
     }
     let stderr = request.diagnostic.as_mut().and_then(|d| d.take_stderr());
+    #[cfg(feature = "diagnostic-capture-delivery")]
+    let (capture, stdout, stderr) = match capture {
+        // Private capture stderr replaces the ordinary application diagnostic sink.
+        Some((capture, stdout, private_stderr)) => {
+            (Some(capture), Some(stdout), Some(private_stderr))
+        }
+        None => (None, None, stderr),
+    };
     let supervisor = match stderr {
         Some(stderr) => ProcessSupervisor::new_with_stderr(
             SupervisedProcessKind::NamespaceClient,
@@ -239,7 +289,14 @@ fn prepare(
         ),
         None => ProcessSupervisor::new(SupervisedProcessKind::NamespaceClient, request.launch),
     };
+    #[cfg(feature = "diagnostic-capture-delivery")]
+    let supervisor = match stdout {
+        Some(stdout) => supervisor.with_stdout(stdout),
+        None => supervisor,
+    };
     Ok(Prepared {
+        #[cfg(feature = "diagnostic-capture-delivery")]
+        capture,
         x_application: request.x11_target.is_some(),
         supervisor: Some(supervisor.with_exec_gate(child_gate)),
         diagnostic: request.diagnostic,
@@ -344,6 +401,17 @@ impl PendingNamespaceClient {
                 }
             }
         }
+        #[cfg(feature = "diagnostic-capture-delivery")]
+        if self
+            .resources
+            .as_ref()
+            .expect("prepared namespace")
+            .capture
+            .as_ref()
+            .is_some_and(|c| c.failed())
+        {
+            return Err("diagnostic capture delivery failed or expired".into());
+        }
         match self
             .resources
             .as_ref()
@@ -427,6 +495,8 @@ impl PendingNamespaceClient {
         };
         // Install retirement custody before any fallible endpoint binding.
         let mut running = RunningNamespaceClient {
+            #[cfg(feature = "diagnostic-capture-delivery")]
+            capture: resources.capture.take(),
             x_application: resources.x_application,
             registration: self.registration.take(),
             supervisor: Some(supervisor),
@@ -439,9 +509,19 @@ impl PendingNamespaceClient {
             services: Vec::new(),
         };
         if factory.is_none() {
+            #[cfg(feature = "diagnostic-capture-delivery")]
+            if running.capture.is_some() {
+                return Err("diagnostic capture requires authenticated startup".into());
+            }
             running.revoke_protocol();
             self.finished = true;
             return Ok(Some(running));
+        }
+        #[cfg(feature = "diagnostic-capture-delivery")]
+        if let Some(capture) = running.capture.as_mut() {
+            capture
+                .activate(running.supervisor.as_ref().expect("started supervisor"))
+                .map_err(|e| e.to_string())?;
         }
         let mut primary_factory = factory;
         for listener in std::mem::take(&mut resources.published.namespace.listeners) {
@@ -542,6 +622,8 @@ impl Drop for RetiredPending {
 /// Keeps the view, grant owners and spawn thread alive through the child's
 /// lifetime. Dispatch must retain each endpoint view while serving its streams.
 pub struct RunningNamespaceClient {
+    #[cfg(feature = "diagnostic-capture-delivery")]
+    capture: Option<crate::diagnostics::pixel_delivery::CaptureLaunch>,
     x_application: bool,
     diagnostic: Option<crate::diagnostics::application::PreparedLaunch>,
     registration: Option<RegistrationOwner>,
@@ -584,6 +666,10 @@ impl RunningNamespaceClient {
         &mut self,
         launches: &LaunchCoordinator,
     ) -> Result<Option<std::process::ExitStatus>, String> {
+        #[cfg(feature = "diagnostic-capture-delivery")]
+        if self.capture.as_ref().is_some_and(|c| c.failed()) {
+            return Err("diagnostic capture delivery failed or expired".into());
+        }
         // Peer-channel EOF can retire authority before this owner observes the
         // same process exit. A reaped status is the terminal process outcome.
         let supervisor = self
@@ -595,10 +681,14 @@ impl RunningNamespaceClient {
         if let (Some(diagnostic), Some(status)) = (&self.diagnostic, status) {
             diagnostic.exited(status);
         }
-        if status.is_some() {
+        if let Some(status) = status {
+            #[cfg(feature = "diagnostic-capture-delivery")]
+            if let Some(capture) = self.capture.as_mut() {
+                capture.reaped(status);
+            }
             self.registration.take();
             self.names.as_mut().expect("live view").revoke_grants();
-            return Ok(status);
+            return Ok(Some(status));
         }
         if self.services.iter().any(dispatch::DispatchWorker::failed) {
             self.registration.take();

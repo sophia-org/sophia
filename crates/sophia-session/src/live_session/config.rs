@@ -13,6 +13,9 @@ use lock::SessionFactotum;
 mod output;
 #[path = "config/output_proof.rs"]
 mod output_proof;
+#[path = "config/capture_delivery.rs"]
+mod capture_delivery;
+use capture_delivery::capture_delivery_directory;
 #[path = "config/reload.rs"]
 mod reload;
 #[path = "config/startup.rs"]
@@ -161,6 +164,7 @@ struct PersistentXtermSessionConfig {
     shell_content_enabled: bool,
     shell_content_input_enabled: bool,
     shell_capture_destination_reuse: bool,
+    diagnostic_capture_directory: Option<std::path::PathBuf>,
     shell_gpu_mode: sophia_config::ShellGpuMode,
     shell_proof_restart_after_visible: Option<u32>,
     wm_interface: sophia_config::ExternalWmInterface,

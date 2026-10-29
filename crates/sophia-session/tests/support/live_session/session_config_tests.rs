@@ -6,6 +6,8 @@ mod development_config;
 #[path = "wm_transport_config.rs"]
 mod wm_transport_config;
 
+#[path = "capture_delivery_config.rs"]
+mod capture_delivery_config;
 #[path = "confined_application_config.rs"]
 mod confined_application_config;
 #[path = "inspection_environment.rs"]
