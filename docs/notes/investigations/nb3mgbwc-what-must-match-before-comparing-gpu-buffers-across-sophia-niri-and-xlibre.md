@@ -248,6 +248,48 @@ Physical PCI binding to03:00.0 is the next bridge's responsibility, not claimed
 by this constructor. Next is the in-process shared producer bridge, then both
 consumer adapters and their independent device qualification.
 
+## Shared producer bridge: device-free gate closed
+
+Signed local niltempus commit `554935ee25f286a453bcb9906fad12716bbdd358`, parent
+`9cb0a37`, adds `tools/gpu-bar/bridge` on `bench/gpu-bridge` in
+`~/dev/niltempus-matched-gpu-bridge`. The static library executes in each external
+client's process. It shares the existing scene function byte-for-byte with the
+Sophia peer, extracted to `common/gpu_scene.rs`. Both pin signed Lom `1a0dc2329`
+through an explicit local `file://` exception. Registry dependency versions are
+unchanged; the peer lock changes only the Lom source. No public-pin or packaging
+approval is claimed.
+
+The C ABI fixes the first workload at 1920×24. It returns actual offset, stride
+and source bytes for fresh producer-completed XR24/LINEAR exports. The opened
+node and selected adapter must agree with the requested physical PCI device:
+sysfs resolves the DRM identity before and after construction, and a nonempty
+Vulkan PCI address must also match. Empty PCI evidence refuses. The recipe must
+pin `0000:03:00.0`; the fake-sysfs test distinguishes the other GPU `0000:16:00.0`
+and permits primary/render aliases of the same device. This is identity agreement,
+not use of the retained FD for Vulkan submission.
+
+At most two frames are retained. Generations advance on successful render;
+process-wide nonwrapping tokens permit exact out-of-order release but reject
+foreign, stale and duplicate releases. C owns a CLOEXEC duplicate only on success.
+Render/dup failures poison the owner; close refuses uncertain or outstanding
+custody. Panic is caught at each calling-thread C boundary and aborts the process.
+Consumer release proof and valid, disjoint C pointers remain adapter obligations.
+No unsafe redraw/reuse entry point is exposed.
+
+Final device-free checks: six Rust bridge tests, an actual linked C ABI/refusal
+test, 14 DMA-peer tests, formatting and strict all-target Clippy for both crates.
+Six mutations (physical identity, adapter identity, capacity, token, generation,
+empty FD) each fail assertions; restored source passes the full gate. The first
+compile exposed a u32-to-u64 offset mismatch, corrected explicitly. Claude's
+read-only review also prompted the mandatory nonempty PCI evidence and poisoned
+dup-failure behavior. Receipts and checksums are in
+`~/.local/state/matched-gpu-bridge-01/`.
+
+Real render/dup/commit, release of a real frame, renderer close and post-Vulkan
+verification remain device receipts. Next are the linux-dmabuf and DRI3 consumer
+adapters, then pixel/import/lifetime qualification. No GPU was opened, no native
+run or release build occurred, and no frozen source, binary or package changed.
+
 ## Review receipt
 
 Claude independently checked the pinned exporter, external clients, XLibre import

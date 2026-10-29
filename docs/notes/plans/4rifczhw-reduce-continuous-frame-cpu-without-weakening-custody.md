@@ -76,7 +76,7 @@ The allocation ledger changes no runtime, SDK archive, measured artifact or
 policy. Existing mirrored contracts remain byte-identical until that coordinated
 integration. Native GPU comparison remains the immediate benchmark critical path.
 
-### GPU source matrix: next implementation gate
+### GPU source matrix and producer gates
 
 The [GPU-buffer compatibility matrix](../investigations/nb3mgbwc-what-must-match-before-comparing-gpu-buffers-across-sophia-niri-and-xlibre.md)
 traces the pinned exporter and existing external clients. Sophia already has
@@ -99,9 +99,16 @@ The external constructor's device-free gate is closed at signed local Lom
 and separate external evidence are implemented; grant behavior and render/export
 commands are preserved. Full gate: 81 Rust tests, 17 tooling tests, strict Clippy;
 four guard mutations fail. No GPU/native execution or release build. The matrix
-records the remaining hardware checks. Immediate next work is the in-process
-shared producer bridge, including physical-device binding, followed by the two
-external import adapters. Frozen CPU/W2 references remain unchanged.
+records the remaining hardware checks.
+
+The in-process bridge gate is now closed at signed local niltempus `554935ee2`
+on `bench/gpu-bridge`: shared scene, physical PCI binding, bounded two-frame
+ownership and a C ABI. Six bridge tests, the linked C ABI check, 14 peer tests,
+strict Clippy/formatting and six assertion-killed mutations pass. Both producer
+closures pin Lom `1a0dc2329` under a local-only provenance exception. No GPU open,
+release build or native run occurred. Next: linux-dmabuf and DRI3 adapters, then
+independent device pixel/import/lifetime qualification before a comparison.
+Frozen CPU/W2 references remain unchanged; no performance claim follows.
 
 ## Earlier resumption context
 
