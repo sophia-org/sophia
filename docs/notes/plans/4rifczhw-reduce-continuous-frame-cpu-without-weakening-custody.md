@@ -134,7 +134,23 @@ recipe filesystem authority, plus the same-namespace capture controller.
 Colour/hold entry points and per-stack capture normalization follow; only then
 release/link receipts, a sealed diagnostic package and attended native proof.
 The [matrix](../investigations/nb3mgbwc-what-must-match-before-comparing-gpu-buffers-across-sophia-niri-and-xlibre.md#untimed-consumer-capture-preparation-october-29)
-records the exact remaining gaps. No native, GPU, cargo or C build occurred here.
+records the exact remaining gaps. That preparation did not launch native work.
+
+The private delivery **source gate** is now closed at signed local
+`a56ace891` on `bench/gpu-capture-delivery` (exact base `d9116ff0`). The
+feature-on lib passed 1119 tests with 65 ignored, protected stdio passed 2/2,
+feature-off refusals passed, clippy/layout passed, and eight guard mutations
+were killed. The [matrix's delivery receipt](../investigations/nb3mgbwc-what-must-match-before-comparing-gpu-buffers-across-sophia-niri-and-xlibre.md#private-delivery-source-gate-october-29)
+keeps the scope and hashes. This proves device-free framing/custody machinery,
+not a real authenticated capture or pixel match.
+
+**Immediate next work:** the same-namespace diagnostic controller must await
+and verify complete JSON/PAM/zero-byte-stderr evidence before shutdown, with
+no refusal or partial files and the pinned connector/incarnation/held-scene
+join. Then finish colour/hold entry points and per-stack normalization, review
+the full device gate, produce separate diagnostic release receipts, and seal
+an attended qualification package. No timed comparison or W2 change is opened
+by this source gate.
 
 ## Earlier resumption context
 

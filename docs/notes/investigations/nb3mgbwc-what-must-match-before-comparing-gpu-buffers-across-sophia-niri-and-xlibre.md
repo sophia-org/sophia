@@ -444,6 +444,50 @@ versus-render-node identity correction. Source hashes and link checks are record
 outside the repository in `~/.local/state/matched-gpu-matrix-01/source-check.json`.
 No independent review is treated as native or device-free execution evidence.
 
+## Private delivery source gate (October 29)
+
+Signed local Sophia `a56ace89116c02064b93462aa8d41e2f82dd2dab`, on
+`bench/gpu-capture-delivery` with exact parent `d9116ff0`, implements the
+private delivery prerequisite. Its contract is branch-local
+`docs/diagnostic-capture-delivery.md`. No frozen CPU/W2 source, release or
+package was changed; nothing is pushed or merged.
+
+The default-off `diagnostic-capture-delivery` feature installs separate stdout
+and stderr socketpairs only for the exact admitted developer observer launch.
+Session creates a new private directory, without giving the child a writable
+host path. After authenticated startup, it pins the live inner child by pidfd,
+starttime and executable device/inode. The binding is **launch custody, not
+per-message writer identity**. At capture publication it rechecks the fully
+qualified connector against the live primary head, and retains server-side
+request/output/incarnation/presentation-generation/pixel-hash evidence. The
+returned frame must match, end at EOF and be followed by a successful reap.
+Failures and the shared reader deadline notify the owner; pending checks run
+before the namespace try-lock once preparation has returned.
+
+Final device-free checks: feature-on Session lib **1119 passed, 65 ignored**,
+including 12 private-delivery tests; real protected/host stdio tests **2/2**;
+CLI refusal **1/1** in each build mode; feature-off Session controls **2/2**.
+Feature-on and feature-off all-target clippy passed with warnings denied,
+layout passed, and scoped formatting passed (two pre-existing config formatting
+drifts excluded). Eight mutations were killed: missing wake, missing server
+join, unsuccessful reap accepted, checksum bypass, EOF bypass, attempt-limit
+bypass, overwrite allowed, and unqualified connector allowed. Final checks ran
+after all mutations were byte-restored. Receipts are under
+`~/.local/state/matched-gpu-capture-delivery-01/`; receipt SHA256
+`c4bb2ed4d8edd5bb6960e371f3e5632bcb2a33193909373ec3754bf763d768d8`,
+checksums SHA256 `cc092844af3f7c958aa7637b30eb1973cc83cb441aeb38dd12f07a9a8c0655a8`.
+
+**Next is the controller, not a native launch.** It must wait for terminal
+publication before stopping Session, require the exact complete JSON plus
+matching PAM SHA256, an existing zero-byte stderr file, no refusal or partial
+files, and the package-pinned connector/incarnation/held scene. The two files
+are not a crash-atomic pair and workers are detached. A PAM alone never
+qualifies. Filesystem preparation/thread scheduling before handoff is not
+bounded by the reader deadline; the controller must enforce its own refusal
+timeout. Fixture activation is supplied: real authenticated observer delivery,
+namespace equality, output joins and consumer pixels remain native gates.
+No GPU device, release build, native attempt or package was produced here.
+
 ## Connections
 
 - [Critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md).
