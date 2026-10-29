@@ -44,6 +44,38 @@ Preserve CPU artifacts/evidence as the reference. The native capture hold is
 closed; no new builds or native run are implied. W2 stays frozen, W3 remains
 written-only, and the collect lane stays closed inconclusive.
 
+## Owner approval and W2 allocation, October 29
+
+Mason approved the next sequence: retain the matched CPU reference; complete
+GPU-buffer compatibility mapping; implement and qualify the smallest matched
+GPU path; run its separate comparison; use both references to select attributable
+optimizations; resolve the canonical W3 standing-credit design gaps before a
+prototype. These are successive gates, not permission to bypass producer parity,
+correctness, package sealing or attended native execution. Do not bundle W2,
+single-submit or other optimizations into the producer comparison.
+
+Mason also requested resolution of W2's protocol allocation. Root assigned it
+**shell r12 / bit 17**, while adopting and preserving **draw r11 / bit 16** from
+t341's unmerged contract. The authoritative
+[shell extension allocation ledger](../../../protocol/sophia-shell-allocations.md)
+closes the identifier decision. Overview and W3 remain unallocated; no r13/bit18
+reservation is made. The old informal overview “next available” pointers are
+superseded. t341 is deferred, not a source of reusable identifiers.
+
+Cumulative grammar and explicit capability grants are required, with exact
+image/header/record mapping rows rather than numeric `>=` widening. r12 does
+not imply draw or DMA. Unsupported required combinations refuse; a compatible
+revision may be selected within the offered range. Frozen W2 measurements remain
+prototype evidence, not retroactively conforming cumulative-r12 evidence.
+
+W2 integration can now proceed past D1 on fresh branches: coordinated byte
+contract/goldens plus C/Rust parity, explicit negotiation/coexistence tests,
+reviewed upstream-reachable SDK commits, then xtask vendoring and host review.
+C parity, public pin reachability and production qualification remain open.
+The allocation ledger changes no runtime, SDK archive, measured artifact or
+policy. Existing mirrored contracts remain byte-identical until that coordinated
+integration. Native GPU comparison remains the immediate benchmark critical path.
+
 ## Earlier resumption context
 
 The first question is how much repeated control and lifecycle work can be
