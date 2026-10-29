@@ -76,6 +76,24 @@ The allocation ledger changes no runtime, SDK archive, measured artifact or
 policy. Existing mirrored contracts remain byte-identical until that coordinated
 integration. Native GPU comparison remains the immediate benchmark critical path.
 
+### GPU source matrix: next implementation gate
+
+The [GPU-buffer compatibility matrix](../investigations/nb3mgbwc-what-must-match-before-comparing-gpu-buffers-across-sophia-niri-and-xlibre.md)
+traces the pinned exporter and existing external clients. Sophia already has
+producer-completed XR24/LINEAR export and owned capture; the external clients
+need linux-dmabuf and DRI3 adapters. Lom's ordinary diagnostic constructor cannot
+export, so a narrowly scoped exact-device external constructor is first, followed
+by one in-process renderer bridge shared by the external clients. Preserve the
+Sophia grant path and use the same renderer/scene closure in all three arms.
+
+The first GPU lane uses fresh exports with a two-frame ownership cap, not unsafe
+redraw after a compositor notification. X IdleNotify follows a flush and is not
+proof for Lom's foreign-GPU-complete reuse precondition. Keep CPU/default paths,
+W2 and single-submit unchanged. The matrix names device-free failure/lifetime
+tests, then separate native pixel/import/synchronization qualification before any
+comparison package. Installed niri source identity and runtime format support
+remain open evidence, not inferred from a nearby source checkout.
+
 ## Earlier resumption context
 
 The first question is how much repeated control and lifecycle work can be

@@ -282,6 +282,18 @@ above. Keep this CPU reference and frozen experiments unchanged. No repeat of
 collect-idle, W3 implementation or W2 production allocation is authorized by
 this result.
 
+## October 29: GPU-buffer source gate
+
+The [compatibility matrix](nb3mgbwc-what-must-match-before-comparing-gpu-buffers-across-sophia-niri-and-xlibre.md)
+records exact renderer versions, transports, layout, synchronization and lifetime
+differences. The minimal next implementation reuses fresh Lom DMA exports with
+an exact-device external constructor and an in-process bridge to the two existing
+external clients. Native import/pixel/lifetime qualification follows; no matched
+GPU result or zero-copy claim exists yet. This fresh-buffer lane is separate from
+the two-slot CPU reference and cannot isolate GPU production cost by subtraction.
+W2's identifier decision is now closed by the shell allocation ledger; parity,
+public SDK pins and production qualification remain open.
+
 ## Connections
 
 - [CPU critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md): owns ordering and optimization decisions.
