@@ -347,6 +347,47 @@ niri/device configuration; then real single-frame pixel/import/sync/release proo
 including a non-grey channel-order oracle and final detach/drain. Only after those
 gates may a separately sealed matched GPU comparison be prepared.
 
+### GPU receipt and installed-config gate, October 29
+
+Signed local niltempus `d81ccf6ad` on `bench/gpu-bridge`, parent `622145d4a`,
+adds `tools/external-bar/gpu/qualify.py` and the separate `gpu/niri.kdl`.
+The validator requires declared transport/frame/warmup values, exact GPU
+producer/import/end receipts, exact header and allowlisted metadata, each
+transport's actual writer order, contiguous counted rows, monotonic submission
+and presentation times, native timestamp sources and X clock-check counts.
+The client PID is returned for later binding; it is still a self-report.
+Wayland's selected-output row must be DP-1/1920×1080/scale 1 and precedes its
+header. Its end/drain receipt precedes the counted rows. The GPU-only clock note
+now describes DMA-BUF implicit synchronization rather than inherited SHM seals;
+CPU preprocessing is unchanged.
+
+The result is **receipts_valid**, never a native qualification pass. The future
+harness must bind that PID to the sampled TGID/starttime and pinned executable,
+cross-check presentation feedback and sampler anchors, check actual compositor
+output/refresh, and establish pixel correctness, real import/synchronization,
+release and cleanup. The selected wl_output line is not actual mode readback.
+Self-reported drain counts do not independently prove consumer completion.
+
+Installed `/usr/bin/niri` reports `26.04 (unknown commit)`, binary SHA256
+`5b8c21910f17ab1eaed6562bc54a09532c8f15dbd3abf563817158511acbe986`.
+It accepts the exact renderD128/DP-1 diagnostic configuration and refuses the
+same file with an unknown device key. The successful validation syscall trace
+has no device opens, connections or ioctls. This proves syntax only, not runtime
+device selection. The native gate still requires main/tranche physical-device
+resolution to 03:00.0 and actual output readback, retaining the niri render-device
+log if emitted. The nearby source checkout is not claimed to identify this binary.
+
+Seven Python tests pass, including missing/duplicate/foreign receipts and metadata,
+every adjacent record-order swap, bad devices/layout/counts/timestamps and a CLI
+refusal with no success output. Three scratch-copy mutations are assertion-killed
+(receipt values, record order, canonical metadata integers). Both GPU adapters
+compile; the three adapter tests and two refused-CLI tests pass; preprocessed CPU
+sources remain identical to their signed baseline. Claude's final read-only review
+found no blocker. Receipts and checksums are in
+`~/.local/state/matched-gpu-receipts-01/`. No GPU/display/native execution, release
+build, package, push or performance claim. Next is real non-grey pixel/import/
+synchronization/release qualification before a separately sealed comparison.
+
 ## Review receipt
 
 Claude independently checked the pinned exporter, external clients, XLibre import

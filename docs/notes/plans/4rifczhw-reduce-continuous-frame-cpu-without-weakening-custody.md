@@ -113,8 +113,14 @@ Both external adapters are implemented at signed local `622145d4a`, parent
 FD ownership, release and CLI controls pass; six mutations are killed and the
 CPU clients preprocess identically to their signed baseline. GPU journal labels
 separate render/export from CPU fill. The matrix records the exact limitations.
-Next: strict GPU receipt qualification and pinned installed niri/device config,
-then real pixel/import/synchronization/release proof before a comparison package.
+The supporting GPU receipt/config gate is closed at signed local `d81ccf6ad`:
+strict transport-specific journal order, metadata and counts, seven Python tests
+and three killed mutations. Installed niri 26.04 accepts the pinned renderD128
+configuration and refuses a misspelled key, with no device open during validation.
+Its source commit remains unknown. `receipts_valid` is not native qualification;
+the self-reported PID/output still need process and actual-mode binding.
+Next: real non-grey pixel/import/synchronization/release proof, process/feedback/
+anchor/output/cleanup checks, then a separately sealed comparison package.
 Frozen CPU/W2 references remain unchanged; no performance claim follows.
 
 ## Earlier resumption context
