@@ -20,7 +20,18 @@ It does not reopen their completed exits or replace `todo.md` as the task ledger
 The exit is a separately qualified improvement, or a documented no-change result
 for each selected mechanism. A profile share is not a savings target.
 
-## Current resumption
+## October 29 current gate: matched CPU native comparison
+
+The CPU producer, runner and comparison harness are signed locally and
+qualified device-free. `desktop-matched-cpu-01` is sealed and check-only passed;
+Mason's single-use native attempt and root's saved-data audit are next.
+[The producer comparison note](../investigations/iq4zf50w-how-do-we-compare-sophia-xlibre-and-niri-with-matched-pixel-producers.md#october-29-cpu-implementation-and-sealed-first-attempt)
+records the exact commits, artifact pins, manifest and limits. No native result
+exists yet. All benchmark sources/releases stay stable through the attempt and
+audit, with builds paused during capture. GPU-buffer qualification remains next;
+no W3 implementation, W2 integration or collect rerun is added to this gate.
+
+## Earlier resumption context
 
 The first question is how much repeated control and lifecycle work can be
 removed while keeping the current guarantees. There is no measured irreducible
@@ -691,7 +702,7 @@ The source baseline for the continuous Sophia diagnostics is host `d9116ff0`
 with integration/peer `748c325`, unless a package explicitly pins another pair.
 All local evidence below is under `~/.local/state/t331/` on crunch:
 
-- `desktop-cpu-04/report/{report.md,report.json}`: uninstrumented matched rows,
+- `desktop-cpu-04/report/{report.md,report.json}`: uninstrumented display/cadence-matched rows with different pixel producers,
   bound-process and pixel-producer limits; XLibre COPY-at-vblank qualification.
 - `continuous-pass-stage-cost-01/analysis/sophia{1,2}.json`: diagnostic owner
   pass and peer-stage costs; the windows and threads differ.

@@ -134,6 +134,52 @@ admission/capacity checks and processing; it is not evidence of zero server cost
 No protocol identifiers are allocated here. W2 C parity, public SDK reachability
 and D1/t341 decisions remain separate gates. All sealed packages remain immutable.
 
+## October 29: CPU implementation and sealed first attempt
+
+The matched CPU lane is implemented, device-free qualified and sealed as
+`desktop-matched-cpu-01` on crunch. No native arm has run at this checkpoint.
+The MANIFEST SHA256 is
+`93fdaccd22b21332d2b9f93378871af2c8aed77cff5a5ecfd391eadce1902843`:
+101 package files and 196 external pins. Read-only launch checks passed all
+six SSH/idle-VT checks and both schema-4 diagnostic checks. Mason launches
+`bash ~/.local/state/t331/desktop-matched-cpu-01/run.sh`; it is single-use.
+
+Signed local source identities (no push or merge):
+
+- Peer `9cb0a37c7b088422c0a71706700f4c7a5adf23e5`, parent `748c325`:
+  explicit CPU selection, direct slot fill through existing SDK0706ea2c,
+  unchanged GPU default. Fourteen tests and clippy pass; pixel/alpha and
+  accidental GPU-initialization mutations fail. A two-slot fixture proves
+  acceptance alone does not make a held slot writable.
+- Runner `c62d4382179a7952db1d36f952f0b5f2d1d98ad3`, parent `2329fca7`:
+  paired producer configuration, schema4, exact observed CPU receipt and
+  historical defaults preserved. 472 Rust tests, 44 cpuplan tests and clippy
+  pass. Schema4 pins the peer configuration and rejects malformed numeric
+  schema/receipt/configuration. cpuplan is reusable support, not this package's
+  accounting entry point.
+- Harness `3b24ccdd02a4f91a2bd0f1c6db12b82cdfae410f`, parent `13915e05`:
+  `report --matched-cpu` refuses historical, GPU or unqualified Sophia rows.
+  Twenty-four tests pass. External C sources are unchanged; rebuilt clients
+  pass the fill-parity test. The package calls this harness and cpuwin directly.
+
+Both Sophia arms use original host `d9116ff0` / binary `3897c98c`, new peer
+`2a49d47d`, and runner `04b965d1`. Release builds ran serially in their own
+cargo-slot pools; all 93 recorded protected paths were unchanged. Exact-host
+argument preflights accepted 13 arguments without opening devices. Seven
+package tests, eight external qualification tests, seven wrapper tests and
+43 postflight mutation refusals passed; 38 frozen fixture inputs were unchanged.
+Build/source/fixture receipts are under `matched-cpu-producer-01`,
+`matched-cpu-runner-01`, and `matched-cpu-release-01` in local state; the sealed
+package retains its build receipts and complete validation inventory.
+
+Native order is niri1, xlibre1, sophia1, niri2, xlibre2, sophia2: two interleaved
+observations, not ABBA. Pixel generation matches; custody, copies, presentation
+feedback and bound-process coverage still differ. XLibre retains the qualified
+PageFlip-off COPY path. A CPU stderr receipt is supporting evidence beside
+binary/argv/PID binding and denied GPU admission, not an independent driver
+trace. No CPU benefit or cross-stack result is claimed before the saved-data
+audit. GPU-buffer qualification follows that gate; W3 and W2 holds are unchanged.
+
 ## Connections
 
 - [CPU critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md): owns ordering and optimization decisions.
