@@ -94,6 +94,15 @@ tests, then separate native pixel/import/synchronization qualification before an
 comparison package. Installed niri source identity and runtime format support
 remain open evidence, not inferred from a nearby source checkout.
 
+The external constructor's device-free gate is closed at signed local Lom
+`1a0dc2329` (`bench/gpu-device`, parent`dcb1eb88`). Exact node/adapter selection
+and separate external evidence are implemented; grant behavior and render/export
+commands are preserved. Full gate: 81 Rust tests, 17 tooling tests, strict Clippy;
+four guard mutations fail. No GPU/native execution or release build. The matrix
+records the remaining hardware checks. Immediate next work is the in-process
+shared producer bridge, including physical-device binding, followed by the two
+external import adapters. Frozen CPU/W2 references remain unchanged.
+
 ## Earlier resumption context
 
 The first question is how much repeated control and lifecycle work can be

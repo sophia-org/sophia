@@ -213,6 +213,41 @@ Keep frame cadence and each stack's feedback span separate from CPU us/frame.
 All sealed CPU/W2 evidence and binaries remain unchanged. No build, GPU open,
 native run, package or production change was performed for this source gate.
 
+## External constructor: device-free gate closed
+
+Signed local Lom commit `1a0dc2329e18fe17f9bdf08e0d9ddcb03f57fbc7`, parent
+`dcb1eb88`, implements the first step on `bench/gpu-device` in
+`~/dev/lom-matched-gpu-device`. It adds `GpuPreview::new_external(path, major,
+minor)` and separate `ExternalGpuEvidence`. Exact canonical path, NOFOLLOW open,
+opened character-device metadata and exactly one matching hardware Vulkan adapter
+are required. The opened FD stays retained. The shared selector's diagnostic text
+now names the requested render node; grant-selection behavior is unchanged.
+An externally created instance cannot produce Sophia admission evidence. Ordinary
+`new_diagnostic()` still cannot export. No existing application calls the new API.
+
+The complete repository gate passes: 81 Rust tests, zero failures, one ignored;
+17 tooling tests; layout, formatting, dependency audit, doctests and strict Clippy.
+Three new device-free tests cover path rejection before Vulkan initialization,
+metadata and adapter selection, and the evidence collector's origin refusal.
+Four focused mutations (character type, FD minor, adapter minor and external-origin
+refusal) fail in the intended tests; each is restored and the three tests pass.
+The initial Clippy run stopped on two unnecessary test clones; fixed. An initial
+character-type mutant failed compilation on an unused import and is retained as
+invalid mutation evidence; the corrected mutant fails its assertion.
+
+Claude's read-only source review found no blocker. `Cargo.lock`, manifests,
+toolchain, render/export/reuse/readback and Vulkan DRM query code are unchanged.
+Receipts, exact diff, per-target results and mutation logs are under
+`~/.local/state/matched-gpu-device-01/`, with SHA256SUMS. No release build, GPU open,
+native run, push, SDK repin or frozen artifact change occurred.
+
+This proves the device-free boundary only. Real render-node open/NOFOLLOW behavior,
+live constructor/export and `evidence()` on a live external renderer remain device
+checks. The opened FD and Vulkan agree by dev_t; Vulkan opens its own device.
+Physical PCI binding to03:00.0 is the next bridge's responsibility, not claimed
+by this constructor. Next is the in-process shared producer bridge, then both
+consumer adapters and their independent device qualification.
+
 ## Review receipt
 
 Claude independently checked the pinned exporter, external clients, XLibre import
