@@ -106,13 +106,23 @@ feature tests pass, and removing the actual return makes the scan test fail.
 Receipts: `~/.local/state/collect-observe-proof-01/RECEIPT.json`, SHA-256
 `ea7752e47a012e3e02a5e801725b49126ac88e4bda7ae6b0996e315d78941b62`.
 
-`continuous-collect-work-01` is being prepared as two diagnostic arms, not an
+`continuous-collect-work-01` is sealed as two diagnostic arms, not an
 ABBA CPU comparison. The reducer joins exact owner/thread timestamps with the
 existing five-second clock observations, requires at least two strictly inside
 the anchors, checks global-call and owner-call deltas, and reports any fixed
 pre-observation offset. Selections precede journal emission. Ratios cover only
 the observed interval; baseline eligible selections must be zero, whereas the
-candidate's zero is structural. Instrumented hosts never enter the CPU package.
+candidate's zero is structural. Instrumented hosts never enter the CPU package. The sealed check-only path
+passed both SSH/idle-tty4 and runner checks without a Session launch. Manifest
+SHA-256 `3e4f306b80ea1d35f1f59e2f76565764b0168c0df4e6042f2c0555f639c54045`
+binds 133 files and 37 external pins. Root handoff receipt:
+`~/.local/state/t331/continuous-cpu-optimization-01/collect-idle/diagnostic-seal-review.json`,
+SHA-256 `4038399aba5cb77de2c453e18f677e5ed6dc59dcfdfc0462c81e43c17d06f552`.
+Diagnostic baseline/guard binaries are `28ef2813`/`fcaf1573` in separate slots;
+the uninstrumented CPU candidate is `682a781f`. Original peer and runner remain
+fixed. The original helper-pin path set contained two historical hash changes;
+preparation records verified values from the completed W2-03 pins and refuses
+later drift. Old packages were not edited.
 
 After mechanism movement and root audit, `continuous-collect-idle-01` is the
 isolated uninstrumented ABBA against the original host. It stays unsealed until
