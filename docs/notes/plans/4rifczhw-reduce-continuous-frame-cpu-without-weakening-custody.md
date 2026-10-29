@@ -78,7 +78,7 @@ serial backlog. A blocked lane does not stop an independent ready candidate.
 | Single-submit | Parked | Completed combined interval [-55,+25] us/frame; inconclusive, no promotion. |
 | S1 | Parked | Completed Session regression [+25,+65] us/frame and rare quiet conversion; no promotion or wider-predicate work. |
 | Cost attribution | Complete diagnostic | Two arms validated; use separate inclusive scopes and thread windows to rank investigations, never as additive savings. |
-| Empty owner work | Codex, device-free candidate ready | [Collection guard and proofs](../investigations/p4jd1ymh-which-complexity-and-repeated-work-costs-belong-on-the-frame-cpu-critical-path.md) are signed at `75ff298ab` on a separate `d9116ff0` lane. Source review and runtime tests pass; diagnostic02 qualifies actual skip/scan movement. CPU benefit remains unmeasured. Settlement state, expiry caching and authority checks are unchanged. |
+| Empty owner work | Closed: inconclusive CPU, no promotion | [Collection guard and proofs](../investigations/p4jd1ymh-which-complexity-and-repeated-work-costs-belong-on-the-frame-cpu-critical-path.md) are signed at `75ff298ab` on a separate `d9116ff0` lane. Source review and runtime tests pass; diagnostic02 qualifies actual skip/scan movement. CPU ABBA combined [-35,+45] us/frame is inconclusive; no repeat or sub-resolution benefit claim. Settlement state, expiry caching and authority checks are unchanged. |
 | Frame stream / W3 | Codex authority review; Claude and Muse read-only until assigned | Immediately after collect-idle qualification, reconcile `516tpvf5` with canonical `tubnycgx` and trace demand/permit dependencies after W2. No competing design, public allocation or live wiring. |
 | Single-submit disposition | Codex / Mason | Immediately after collect-idle qualification, decide whether an encoder API should be upstreamed or a fork maintained. Combined CPU remains inconclusive; no integration or promotion from the peer interval alone. |
 | Integration gates | Codex / Claude, active read-only | Map minimal W2 C parity, public SDK pin and protocol allocation work, including the t341 boundary. No publication/source changes from this mapping; preserve frozen evidence and review the concrete proposal. |
@@ -170,6 +170,26 @@ not a measurement: neither counter movement nor an unresolved CPU interval
 establishes a sub-resolution gain. No repeated tiny-gain hunt. Builds are serial
 and use separate cargo slots;
 no other optimization is bundled, and Mason alone launches native packages.
+
+The CPU ABBA subsequently completed all four arms. Root independently checked
+raw tick brackets, native anchors and joins, executable/device/inode/argv and
+PID/starttime identities, all source and artifact pins, the mechanism prerequisite,
+latency/cadence and PAM/VT/outer cleanup. Every gate passed; no diagnostic collection
+records appeared. Combined candidate-minus-baseline is **[-35,+45] us/frame**
+(midpoint +5, +0.38%); Session **[-22.5,+17.5]**, peer **[-12.5,+27.5]**.
+Pairs are +10 and 0. All intervals contain zero: **INCONCLUSIVE, NO PROMOTION**.
+This closes the collect lane under its stop rule; no repeat, equivalence or
+below-resolution saving claim. Mechanism qualification remains separate.
+Submission-to-completion medians in b1/c1/c2/b2 order are 7513/7511/7510/7507 us;
+p99 is 7620/7633/7631/7628. Completion-gap medians are 8342 us throughout,
+maxima 8347–8348. These are accounting bounds and kernel completion spans,
+not confidence intervals or end-to-end latency. Root receipt in the same evidence
+directory: `cpu-post-run-root-review-01.json`, SHA-256
+`7c3af5ec0478b1a2a0318b90a2c0f9044b0934f775ec4d315a94799e3c868b38`.
+The benchmark uses Vello/wgpu in the peer, GPU texture readback to RGBA, then
+owned-ring pixel upload. It does not exercise the experimental shell Draw protocol
+or direct DMA-BUF transport. Native-run hold is lifted after audit; frozen W2 and
+sealed packages stay untouched. Next work is written/source-trace only.
 
 Mason requested the next two decisions on the immediate critical path after
 collect-idle qualification. First, W3's written reconciliation must use the
