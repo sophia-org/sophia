@@ -78,7 +78,7 @@ serial backlog. A blocked lane does not stop an independent ready candidate.
 | Single-submit | Parked | Completed combined interval [-55,+25] us/frame; inconclusive, no promotion. |
 | S1 | Parked | Completed Session regression [+25,+65] us/frame and rare quiet conversion; no promotion or wider-predicate work. |
 | Cost attribution | Complete diagnostic | Two arms validated; use separate inclusive scopes and thread windows to rank investigations, never as additive savings. |
-| Empty owner work | Codex, device-free candidate ready | [Collection guard and proofs](../investigations/p4jd1ymh-which-complexity-and-repeated-work-costs-belong-on-the-frame-cpu-critical-path.md) are signed at `75ff298ab` on a separate `d9116ff0` lane. Source review and runtime tests pass; actual skip frequency and CPU benefit remain unmeasured. Settlement state, expiry caching and authority checks are unchanged. |
+| Empty owner work | Codex, device-free candidate ready | [Collection guard and proofs](../investigations/p4jd1ymh-which-complexity-and-repeated-work-costs-belong-on-the-frame-cpu-critical-path.md) are signed at `75ff298ab` on a separate `d9116ff0` lane. Source review and runtime tests pass; diagnostic02 qualifies actual skip/scan movement. CPU benefit remains unmeasured. Settlement state, expiry caching and authority checks are unchanged. |
 | Frame stream / W3 | Codex authority review; Claude and Muse read-only until assigned | Immediately after collect-idle qualification, reconcile `516tpvf5` with canonical `tubnycgx` and trace demand/permit dependencies after W2. No competing design, public allocation or live wiring. |
 | Single-submit disposition | Codex / Mason | Immediately after collect-idle qualification, decide whether an encoder API should be upstreamed or a fork maintained. Combined CPU remains inconclusive; no integration or promotion from the peer interval alone. |
 | Integration gates | Codex / Claude, active read-only | Map minimal W2 C parity, public SDK pin and protocol allocation work, including the t341 boundary. No publication/source changes from this mapping; preserve frozen evidence and review the concrete proposal. |
@@ -142,11 +142,29 @@ Both read-only reviews and sealed check-only gates pass. Manifest SHA-256:
 (140files,37external pins). Root receipt `diagnostic-seal-review-02.json` in the
 same collect-idle evidence directory has SHA-256
 `cb080f6f2633363947797a7a0480de6728afbf2ad70d25738d116757514c65fd`.
-Mason launches02; no attempt has been made by root.
+Mason completed02, both arms passed postflight and root saved-data audit, and
+mechanism qualification is closed. Across three interior observations per arm,
+baseline executed 46942 scans (45743 eligible); candidate skipped 45819 of
+47019 calls and executed 1200 scans. Candidate skip fraction is 97.45%.
+Baseline eligible selections were zero; the non-eligible retiring walks remain.
+The covered intervals are about 10.01 seconds, with 1199/1200 descriptive native
+completions. There is no per-call/frame join, full-window extrapolation or CPU
+claim. Identities, anchors, input hashes and PAM/VT cleanup passed. Root audit
+`post-run-root-review-02.json` in the same evidence directory has SHA-256
+`a3eb4ee105b3de9f1cb07c759cda64a0d38bd5979c685fe6df16e676b8c4266d`.
 
-After mechanism movement and root audit, `continuous-collect-idle-01` is the
-isolated uninstrumented ABBA against the original host. It stays unsealed until
-that prerequisite is recorded. One ABBA remains the benefit/regression screen;
+`continuous-collect-idle-01` is now sealed for the isolated uninstrumented ABBA
+against the original host. Its prerequisite binds 70 saved evidence inputs;
+validation was refreshed after the prerequisite and refusal test were added.
+Manifest `77da74f6173358fd0562381c028e34f591dfd7b8620e0c5df814bf2dcaa8a736`
+binds 127 files and 45 external pins. All four exact-artifact SSH/panel check-only
+gates passed without launching Session. Root receipt `cpu-seal-review-01.json`
+has SHA-256 `2179f7f8e88d2358708f8e2165712724419cd48035766fa76c551e2cc0e22849`.
+Original host `3897c98c` and guard-only host `682a781f` use the same feature recipe;
+peer `e730fef6` and runner `62df9c30` are fixed. No diagnostic host enters this ABBA.
+Mason launches with `bash ~/.local/state/t331/continuous-collect-idle-01/run.sh`.
+Builds, tests and mutations are held through the native attempt and root audit.
+One ABBA remains the benefit/regression screen;
 if inconclusive, stop this lane and move to W3. A100ns/walk estimate is a prior,
 not a measurement: neither counter movement nor an unresolved CPU interval
 establishes a sub-resolution gain. No repeated tiny-gain hunt. Builds are serial
