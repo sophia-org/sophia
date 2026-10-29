@@ -68,24 +68,30 @@ alone. The exact mechanism must receive its own custody review.
 
 ## Immediate critical path
 
-The task ledger is `todo.md` t344. These are concurrent assignments, not a
-serial backlog. A blocked lane does not stop an independent ready candidate.
+The task ledger is `todo.md` t344. Mason's October 29 priority is the
+[matched-producer benchmark](../investigations/iq4zf50w-how-do-we-compare-sophia-xlibre-and-niri-with-matched-pixel-producers.md):
+CPU-filled shared-memory comparison first, GPU-buffer qualification second,
+then further native optimization experiments. Written W3 and single-submit
+reviews may continue; they do not bypass these measurement gates.
 
 | Lane | Owner | Immediate implementation and exit |
 | --- | --- | --- |
+| Matched CPU producers | Codex, first implementation gate | Use the existing SDK direct-fill ring API; match external CPU pixels, buffers and pacing. Preserve the GPU default, qualify the new producer and pin a fresh cross-stack package before native launch. |
+| Matched GPU producers | Codex, second qualification gate | Verify the same renderer/scene and compatible GPU-buffer transport/synchronization on all three stacks. No readback fallback disguised as equivalence; missing support blocks this lane. |
 | W2 effect | Complete / Codex | Separate02 and03 blocks resolve combined and Session CPU benefit and the expected counter. Performance gate passed for this workload; no fourth run or default-on promotion. Frozen evidence moves to integration review. |
 | W2 side effects | Complete | `continuous-retire-on-present-screen-01` passed the predeclared upper margins; not equivalence or a gain. |
 | Single-submit | Parked | Completed combined interval [-55,+25] us/frame; inconclusive, no promotion. |
 | S1 | Parked | Completed Session regression [+25,+65] us/frame and rare quiet conversion; no promotion or wider-predicate work. |
 | Cost attribution | Complete diagnostic | Two arms validated; use separate inclusive scopes and thread windows to rank investigations, never as additive savings. |
 | Empty owner work | Closed: inconclusive CPU, no promotion | [Collection guard and proofs](../investigations/p4jd1ymh-which-complexity-and-repeated-work-costs-belong-on-the-frame-cpu-critical-path.md) are signed at `75ff298ab` on a separate `d9116ff0` lane. Source review and runtime tests pass; diagnostic02 qualifies actual skip/scan movement. CPU ABBA combined [-35,+45] us/frame is inconclusive; no repeat or sub-resolution benefit claim. Settlement state, expiry caching and authority checks are unchanged. |
-| Frame stream / W3 | Codex authority review; Claude and Muse read-only until assigned | Immediately after collect-idle qualification, reconcile `516tpvf5` with canonical `tubnycgx` and trace demand/permit dependencies after W2. No competing design, public allocation or live wiring. |
-| Single-submit disposition | Codex / Mason | Immediately after collect-idle qualification, decide whether an encoder API should be upstreamed or a fork maintained. Combined CPU remains inconclusive; no integration or promotion from the peer interval alone. |
+| Frame stream / W3 | Written reconciliation complete; authority decisions pending | Signed `dbe426932` records the post-W2 trace and six contract gaps. Resolve them against canonical `tubnycgx`; implementation/live wiring stays held. Matched benchmarks precede further native experiments. |
+| Single-submit disposition | Codex / Mason, written review | Decide fork maintenance versus upstream API while matched benchmarks are qualified. Combined CPU remains inconclusive; no integration or promotion from the peer interval alone. |
 | Integration gates | Codex / Claude, active read-only | Map minimal W2 C parity, public SDK pin and protocol allocation work, including the t341 boundary. No publication/source changes from this mapping; preserve frozen evidence and review the concrete proposal. |
 
 W2 off/on confirmation has completed; no further W2 measurement is scheduled.
-Advance its integration gates while qualifying the bounded empty-work candidate.
-Single-submit, attribution, S1 and the W2 side-effect screen are also complete.
+The empty-work candidate is closed as inconclusive; do not rerun it. Matched
+CPU and GPU producer qualification now precedes further native optimization work.
+Single-submit, attribution, S1 and the W2 side-effect screen remain complete.
 Frame-stream proof remains separate; do not bundle mechanisms. Each new candidate
 has fresh inputs and one exclusive attempt. Attribution arms are not CPU comparators.
 
@@ -95,6 +101,26 @@ candidate-minus-baseline accounting bound. Exceeding a margin is not accepted;
 insufficient precision is inconclusive. This is a regression screen, not an
 equivalence claim. A beneficial effect requires an upper CPU difference bound
 below zero, its predicted mechanism and the existing correctness/cadence gates.
+
+### Matched-producer priority, October 29
+
+The [benchmark investigation](../investigations/iq4zf50w-how-do-we-compare-sophia-xlibre-and-niri-with-matched-pixel-producers.md)
+records the accepted plan, exact baseline, direct-slot CPU API, GPU feasibility
+matrix and acceptance gates. `desktop-cpu-04` compared different producers;
+keep its numbers as concrete-path evidence, not intrinsic compositor efficiency.
+The XLibre PageFlip-off COPY/no-compositor condition and different feedback clocks
+remain explicit even after producers match. Niri represents one compositor.
+
+W3 reconciliation `dbe426932` is signed and local on `cpu/wake-design`. Its six
+open areas are rate enforcement, response-reservation timing, supersession/W2
+cancellation, exhausted-credit semantics, cancellation/withdrawal and expiry
+notice. No session-side rate gate may be assumed from the advertised limit.
+A benchmark's serial dependency trace does not remove admission/capacity checks
+or price server work. `tubnycgx` remains canonical and production work held.
+This ordering supersedes the earlier instruction to advance W3 immediately after
+collect-idle. Written review can proceed; native optimization work waits on the
+matched comparisons. No source/release/package mutation follows from this note.
+
 ### Collection gate and the next two decisions
 
 The minimal guard is signed at `75ff298ab`, parent exactly `d9116ff0`.
