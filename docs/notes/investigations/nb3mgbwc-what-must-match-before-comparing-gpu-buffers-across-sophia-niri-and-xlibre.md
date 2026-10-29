@@ -390,6 +390,53 @@ synchronization/release qualification before a separately sealed comparison.
 
 ## Review receipt
 
+### Untimed consumer-capture preparation, October 29
+
+Signed local niltempus `8a32087cb`, parent `d81ccf6ad`, adds
+`tools/external-bar/gpu/QUALIFICATION.md`, `pixels.py` and synthetic controls.
+This advances preparation; the native gate remains open and no launch package
+is ready. The contract separates diagnostic colour/hold producers from timed
+grey binaries, with three held generations (red/blue, green/white, red/blue),
+consumer-side captures on all three stacks, actual import refusal and exact
+release/drain/cleanup evidence. No producer-readback substitution is allowed.
+
+`pixels.py` accepts only a declared pattern and exact full-output 1920×1080
+RGBA8 PAM. It checks every pixel in the top 24 rows except the two split-edge
+columns, checks captured alpha and hashes the full capture and strip. Its result
+is `pixels_match` only. Five synthetic tests and three assertion-killed mutations
+cover wrong channels, grey fallback, stale patterns, alpha, dimensions, truncation,
+trailers and the intentionally excluded region. Seven existing receipt tests
+still pass. No cargo, C build or device execution occurred.
+
+Claude's source review found a necessary correction to the capture route:
+**d9116ff0 cannot configure a writable host destination for an observer recipe.**
+The private `/tmp` is discarded at observer exit; the naming recipe's `source`
+property does not grant writable host paths. The guide's conditional PAM output
+description is not a capability that the recipe grammar exposes. The contract
+now names this prerequisite instead of pretending a configuration change suffices.
+
+The complete wrapper trace also rules out inherited stdout as-is: it is Session's
+fd 1, not the launch caller's pipe, and may be discarded or tee into shared logs
+and the VT. The separate untrusted-output branch is explicitly not acceptance
+evidence. Atomic framing does not bind a writer. The immediate prerequisite is
+a reviewed private diagnostic delivery channel, preferably a dedicated observer
+stdout pipe installed by the process owner at spawn, with a separate pixel helper
+or CLI change. This is new diagnostic plumbing, not existing configuration.
+Normal recipe/Session output policy stays unchanged; no writable filesystem grant,
+broad FD inheritance or checksum-only substitute is assumed. Process/request/
+size/checksum/generation binding and same-namespace launch must be proved before
+native sealing. Signed local `d593d887f`, parent `8a32087cb`, records this
+delivery correction without changing the pixel checker.
+
+Niri's PNG normalization and X's mask/byte-order RGBA writer also need explicit
+tests; existing alpha cannot be overwritten to pass. Formats without alpha may
+normalize to opaque with that synthesis recorded. Sophia's output generation and
+presentation generation must be tied to the held candidate/capture interval;
+the colour match alone is insufficient. Source trace, tests and mutations live
+at `~/.local/state/matched-gpu-device-prep-01/` with checksums. Next is proving
+the diagnostic pixel-delivery/controller route, then implementing colour/hold
+entry points and normalization before release receipts and attended native sealing.
+
 Claude independently checked the pinned exporter, external clients, XLibre import
 and Present source, and niri source. His device-selection and Sophia feature/
 capability prerequisites are incorporated above, with the protocol's primary-

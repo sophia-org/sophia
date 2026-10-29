@@ -123,6 +123,19 @@ Next: real non-grey pixel/import/synchronization/release proof, process/feedback
 anchor/output/cleanup checks, then a separately sealed comparison package.
 Frozen CPU/W2 references remain unchanged; no performance claim follows.
 
+Untimed consumer preparation advanced at signed local `8a32087cb`: explicit
+three-stack capture/hold/refusal/lifetime contract and a strict non-grey pixel
+checker (five synthetic tests, three killed mutations). This is not a native pass
+or launchable package. Source review found that d9116ff0 observer recipes cannot
+export a PAM through a writable host destination. The wrapper also makes inherited
+stdout shared/untrusted, discarded or VT-visible. Immediate prerequisite: review
+and prove a private process-bound diagnostic pixel channel, without widening
+recipe filesystem authority, plus the same-namespace capture controller.
+Colour/hold entry points and per-stack capture normalization follow; only then
+release/link receipts, a sealed diagnostic package and attended native proof.
+The [matrix](../investigations/nb3mgbwc-what-must-match-before-comparing-gpu-buffers-across-sophia-niri-and-xlibre.md#untimed-consumer-capture-preparation-october-29)
+records the exact remaining gaps. No native, GPU, cargo or C build occurred here.
+
 ## Earlier resumption context
 
 The first question is how much repeated control and lifecycle work can be
