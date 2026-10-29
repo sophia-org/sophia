@@ -225,6 +225,63 @@ source provenance and repair parity under preparation. Additional root receipts
 are in `~/.local/state/matched-cpu-repair-02`. A new six-arm result must stand
 alone: do not pool or substitute01 rows. No native02 result exists yet.
 
+## October 29: matched CPU result and root verdict
+
+`desktop-matched-cpu-02` completed niri1, xlibre1, sophia1, niri2, xlibre2,
+sophia2. Root's saved-data audit reproduced every CPU bound from raw samples,
+validated generation120/2120 anchors and bound PID/starttime throughout each
+window, and recomputed latency and completion gaps. All postflights and cleanup
+passed. The source receipt repair changed no rendering or accounting rule.
+Manifest `d17d5ef1` verifies; all 196 external pins and 266 saved files were
+unchanged during audit. Root receipts are outside the package in
+`~/.local/state/matched-cpu-audit-02/{audit.py,root-review.json}`. Claude independently
+checked saved receipts and reported no discrepancy. No capture was rerun.
+
+| Stack | First total CPU us/frame | Second total | Mean interval | Server/Session mean | Client/peer mean |
+| --- | --- | --- | --- | --- | --- |
+| niri | [295,340] | [315,355] | [305,347.5] | [285,305] | [20,42.5] |
+| XLibre | [90,130] | [80,120] | [85,125] | [75,95] | [10,30] |
+| Sophia | [1030,1070] | [1025,1070] | [1027.5,1070] | [825,847.5] | [202.5,222.5] |
+
+Sophia minus niri is [680,765] us/frame; Sophia minus XLibre is [902.5,985].
+These differences are resolved at tick-accounting resolution for this workload.
+The result qualifies the matched CPU reference; it does not promote an
+optimization or establish statistical confidence from two interleaved repeats.
+The Session accounts for most measured Sophia CPU, but this measurement does
+not apportion it among protocol, validation, copying and presentation work.
+Historical GPU/readback rows are not a paired intervention and cannot isolate
+readback cost or establish a causal optimization saving.
+
+Every counted window contains2000 intervals over about16.68346 seconds, with
+median completion gap8342us and zero missed-refresh gaps. Own-clock latency
+medians: niri16643.9/16625.2us, XLibre8513.7/8521.9us, Sophia8110/8108us.
+These span different submission/feedback boundaries; no end-to-end or photon
+latency ranking follows. The XLibre path remains PageFlip-off COPY/vblank with
+no WM/compositor. External producer evidence combines pinned source/binaries
+and journal recipe; Sophia additionally has the exact CPU receipt and denied
+GPU admission. This is not an exhaustive syscall/GPU-work trace.
+
+CPU us/frame measures accumulated CPU execution per completed interval across
+the bound processes. Latency measures elapsed time for an individual frame,
+including waits and queueing. At119.88Hz, about1050 CPU us/frame is about12.6%
+of one core, while a frame can spend about8110us between submission and
+completion. Pipelining can sustain one completion every8342us even when each
+frame's latency is two periods. Do not subtract averaged CPU/frame from a
+frame's latency to infer exact waiting time: their scopes and boundaries differ.
+
+Watch items retained: Sophia2's maximum sampler read bracket was270495ns,
+within the existing gate (other arms at most61697ns); unclean reads84/93 were
+outside Sophia's counted windows and do not alter the bounds. Native-owner
+submission/retirement totals2124/2123 exceed benchmark frame counts; they are
+not attributed as benchmark transactions. All cleanup/settlement gates pass.
+Bound TGIDs exclude unmeasured workers/children and GPU execution; this is not
+whole-desktop CPU. Pixel-producer matching does not equalize custody or copying.
+
+Next gate is the written GPU-buffer compatibility matrix already specified
+above. Keep this CPU reference and frozen experiments unchanged. No repeat of
+collect-idle, W3 implementation or W2 production allocation is authorized by
+this result.
+
 ## Connections
 
 - [CPU critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md): owns ordering and optimization decisions.

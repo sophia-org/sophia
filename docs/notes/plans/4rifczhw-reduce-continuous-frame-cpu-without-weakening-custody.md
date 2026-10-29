@@ -20,21 +20,29 @@ It does not reopen their completed exits or replace `todo.md` as the task ledger
 The exit is a separately qualified improvement, or a documented no-change result
 for each selected mechanism. A profile share is not a savings target.
 
-## October 29 current gate: matched CPU native comparison
+## October 29 current gate: matched CPU comparison qualified
 
-The CPU producer, runner and comparison harness are signed locally and
-qualified device-free. `desktop-matched-cpu-01` failed after niri1 when XLibre
-qualification found a missing static source receipt. Both captures cleaned up;
-01 stays immutable and supplies no six-arm comparison. The preparation omission
-is fixed in fresh `desktop-matched-cpu-02`, with the same binaries and workload.
-The receipt is now required during preparation, sealing and prelaunch checks.
-02 is sealed (`d17d5ef1` manifest); all six user-level read-only launch checks
-passed. Mason's single-use native attempt and root's saved-data audit are next.
-The sudo wrapper requires Mason's terminal password and has not started an attempt.
-[The producer comparison note](../investigations/iq4zf50w-how-do-we-compare-sophia-xlibre-and-niri-with-matched-pixel-producers.md#october-29-first-attempt-failure-and-repaired-package)
-records the repair, exact pins and limits. Sources/releases stay stable through
-the attempt and audit, with builds paused during capture. GPU-buffer qualification
-remains next; no W3 implementation, W2 integration or collect rerun is added.
+`desktop-matched-cpu-02` completed all six arms. Root independently recomputed
+raw CPUwin bounds, anchors, process identities and latency/cadence; qualification,
+producer receipts and PAM/terminal cleanup passed. All 266 saved files remain
+unchanged, and all 196 external pins match. Claude's independent read-only review
+found no discrepancy. Failed01 remains failed; no row was reused or pooled.
+
+Mean bound-process CPU per frame: Sophia [1027.5,1070], niri [305,347.5], XLibre
+[85,125] microseconds. Sophia minus niri is [680,765], versus XLibre [902.5,985].
+This is the qualified CPU shared-memory reference, not a performance promotion,
+whole-desktop accounting or proof of intrinsic compositor efficiency. Pixel
+production matches; custody, copies and presentation contracts still differ.
+Two interleaved observations per stack are tick-accounting bounds, not confidence
+intervals. Latency endpoints differ and cannot rank end-to-end responsiveness.
+
+[The producer comparison note](../investigations/iq4zf50w-how-do-we-compare-sophia-xlibre-and-niri-with-matched-pixel-producers.md#october-29-matched-cpu-result-and-root-verdict)
+contains the per-process results and limitations. Next is the GPU-buffer
+compatibility matrix (renderer/scene, transport, format/modifier, synchronization,
+lifetime and feedback) before adapter implementation or another native package.
+Preserve CPU artifacts/evidence as the reference. The native capture hold is
+closed; no new builds or native run are implied. W2 stays frozen, W3 remains
+written-only, and the collect lane stays closed inconclusive.
 
 ## Earlier resumption context
 
