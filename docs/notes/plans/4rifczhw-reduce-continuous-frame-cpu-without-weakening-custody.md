@@ -267,19 +267,24 @@ measured Sparse Strips scene rendering directly into an owned-ring slot.
    The diagnostic copy-reference source gate is now signed and pushed as Lom
    `8358cb3f` (`cpu/copy-reference`), using published Rust SDK `99b05e34`.
    Default and feature gates pass 113 and 120 Rust tests; both arms share the CPU
-   renderer and conversion, and actual SDK peer bytes match device-free. Next is
-   a fresh direct-then-copy native qualification, using one diagnostic binary and
+   renderer and conversion, and actual SDK peer bytes match device-free. The
+   direct-then-copy native qualification used one diagnostic binary and
    a separately pinned feature-on config checker. Each arm is an independent
    startup/custody/cadence/cleanup check with descriptive fixed-time CPU only.
    No ABBA, cross-arm pixel equality, CPU difference or savings claim belongs to
    this first native reference gate. The
    [direct-fill investigation](../investigations/i9ljdlt4-how-can-lom-render-vello-cpu-directly-into-an-owned-ring-slot-across-its-worker-boundary.md)
    records the source receipt and the later performance gate.
-   `lom-cpu-reference-native-01` is now sealed, unattempted (manifest `4ad78dd3`,
+   `lom-cpu-reference-native-01` is now complete (manifest `4ad78dd3`,
    65 files and 268 pins): 46 package tests and both post-seal check-only arms
    pass. Runtime `2facb26d` and checker `134291da` share signed source `8358cb3f`.
-   Next is Mason's attended two-arm run, then root's saved-data audit. Hold builds,
-   tests and mutations through that audit; no agent launches the session.
+   Both arms passed: 100 Lom presentations each, 71 stable binding checks each,
+   zero late sampler slots and clean PAM/TTY cleanup. Root's separate
+   `lom-cpu-reference-native-audit-01` rechecked raw evidence and reproduced both
+   fixed-time CPU results exactly, without changing the package. The attempt is
+   spent: do not relaunch it. Displayed-pixel qualification and a predeclared
+   same-scene performance gate remain before default-adoption claims; these
+   unpaired clock runs establish no speedup.
 
    Two native pixel movers remain: CPU pixels and GPU buffers. App/user policy
    chooses the supported renderer; Sophia enforces authority. Direct fill is the

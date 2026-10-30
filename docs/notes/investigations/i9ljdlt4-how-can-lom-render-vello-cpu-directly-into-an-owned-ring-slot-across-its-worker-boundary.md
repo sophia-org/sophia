@@ -282,7 +282,7 @@ These checks opened no live connection. `RELEASE-READY.json` SHA256 is
 `5cf51e02aba5ae99bd2755c8f15f7560165cc7e4c43d5bb963d8649e7345015f`.
 Keep this source worktree and its Cargo pool frozen through package consumption.
 
-Next is a fresh two-arm native qualification: direct then copy, each independently
+The following two-arm native qualification used: direct then copy, each independently
 checking startup, denied GPU admission, custody, rendered-clock progress and
 cleanup. Keep the seconds-clock workload and fixed-time descriptive CPU window.
 Do not spend an ABBA on this gate or derive differences, ratios, per-frame cost,
@@ -291,7 +291,8 @@ requires a later separately declared comparison; GPU direct rendering stays late
 
 ### Sealed diagnostic native qualification
 
-`~/.local/state/t331/lom-cpu-reference-native-01` is sealed and unattempted.
+`~/.local/state/t331/lom-cpu-reference-native-01` is sealed and now complete.
+Its single attempt is spent; do not relaunch it.
 Order is `clock-cpu-direct`, then `clock-cpu-copy`, each with the inherited
 100-second seconds-clock recipe and a fixed 60-second CPU accounting window.
 Both use runtime `2facb26d`; checker `134291da` is used only offline. The host,
@@ -310,7 +311,7 @@ Root validation covers all 61 static inputs and nine successful check logs;
 44 tested inputs were unchanged, and all 268 preliminary pins matched. The seal
 covers 65 files. Post-seal check-only passed both SSH/idle-VT and argument/config
 preflights, with `devices_opened=false`; no run directory, attempt or result
-marker exists. Manifest SHA256:
+marker existed at that point. Manifest SHA256:
 `4ad78dd3d72e42d24514250cb54b16f9f98eb7e719193b47ac8bac17b47a29b3`.
 Root validation SHA256:
 `e5d88f651932ebace3950877cf7880394b07cec39e218e9632cb68c15333d75d`.
@@ -319,16 +320,39 @@ Root receipt in `~/.local/state/lom-cpu-reference-native-root-01/` is
 its manifest is
 `cce04401450762b550fe8a36fdb5779f0b2449b4ee06ab84c5b2e7a9b6f2bdc3`.
 
-Mason runs this once from SSH while attending VT4:
+### Completed native reference qualification
 
-```sh
-sh ~/.local/state/t331/lom-cpu-reference-native-01/run.sh
-```
+Mason ran the package once. Both arms completed and passed their sealed
+postflights: each produced 100 rendered Lom presentations and one dock
+presentation, with 71 stable process-binding checks. The exact diagnostic
+startup line selects each arm; both used the same pinned runtime. The bar had
+GPU access denied. Client/host joins, resource settlement, protocol, output,
+recovery and PAM/TTY cleanup passed with no residual processes.
 
-Both arms preflight before the attempt; first-arm failure stops the second.
-No retry belongs to this package. Keep builds, tests and source/release/package
-mutations held through the attempt and root's saved-data audit. Native results,
-displayed-pixel correctness, performance and default adoption remain unqualified.
+Root's separate saved-data audit in
+`~/.local/state/lom-cpu-reference-native-audit-01/` rechecked all 65 sealed inputs
+and 268 pins, raw native/recovery records, every saved process binding and CPU
+sample identity, and environment evidence. Reanalysis of both saved CPU windows
+reproduced their JSON results exactly. Every package file and its recorded
+metadata remained unchanged (124 files). `AUDIT.json` and the external receipt
+bind the verifier, sampler and complete input inventory; no native rerun or
+build ran. Claude's independent read-only audit also passed. Receipt SHA256:
+`9b1623d974079f1aa80e6a8dca8cf6cee5a260c9e8f18677df338e6af8cd995c`;
+its nine-entry manifest SHA256:
+`1b6e811623b28b63e201ff7248e5d449a13be41fcd74731486fb1b2b60e28e7c`.
+
+The windows were 60.002495 s (direct) and 60.006523 s (copy), with zero late
+sampler slots. Total descriptive CPU intervals were respectively [9.67, 11.67]
+and [9.83, 11.83] ms/s; Lom's were [0.50, 1.17] and [0.67, 1.33] ms/s. These
+independent clock scenes support no subtraction, ratio, per-frame, latency or
+benefit inference. Both logs contain `hagia: WM SDK dispatch failed: -1
+remote=116` after frontend join during shutdown, followed by quiescent components
+and clean cleanup; the audit does not claim error-free application text.
+
+This closes the diagnostic native startup/custody/clock-progress/cleanup gate.
+Displayed-pixel correctness, default adoption and a predeclared same-scene
+performance comparison remain open. Preserve the package and release artifacts;
+GPU direct-render work still follows the CPU adoption work.
 
 ## Existing renderer support and pixel contract
 
