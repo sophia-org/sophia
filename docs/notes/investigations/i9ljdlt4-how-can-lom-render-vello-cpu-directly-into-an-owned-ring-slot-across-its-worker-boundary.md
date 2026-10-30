@@ -386,16 +386,32 @@ indicator records. Every sampling row must match the 1:1 exact-nearest bar
 contract. Final postflight must separately validate shutdown and reject later
 scene changes. Direct/copy checksum equality is a separate criterion requiring
 identical configs except the renderer and identical admitted model inputs.
-The fresh `~/.local/state/t331/lom-cpu-pixels-native-01` package is sealed and
-unattempted. Its two arms, `static-direct` then `static-copy`, each run for
-180 seconds. All 26 package tests and both device-free argument checks pass;
-the boundary fixture executes the signed controller and feeds its actual
-result and saved snapshots to package postflight. The final root inventory
-verifies 54 tested inputs, 274 pins and all 69 manifest entries. Manifest
-SHA256 is `71cc9ec7311f25372aec053bb5770a51f6f2f011fc58b56934442f028aeac94f`.
-Post-seal check-only passes with no run directory or attempt/result marker.
-Root receipt: `~/.local/state/lom-cpu-pixels-native-root-01/RECEIPT.json`,
-SHA256 `07cef0a09180e0ed676e2932b770fb6bd9149a05ec1b04f54e7e8f58d65b1b17`.
+The first package, `~/.local/state/t331/lom-cpu-pixels-native-01`, is spent
+and failed before Session launch. Its wrapper requested a 240000-ms environment
+receiver, but the pinned runner accepts at most 180000 ms and refused before
+binding its socket. No Session, Lom, controller or pixel capture started;
+the copy arm was not reached. The tty4 PAM session cleaned up with no residual
+processes and restored the terminal. All 69 sealed inputs still verify, and
+all 79 files and recorded metadata are unchanged by the read-only audit.
+Failure receipt: `~/.local/state/lom-cpu-pixels-native-failure-01/RECEIPT.json`,
+SHA256 `1478c419e9956dfc3e1400fb1aa13582595383acecbdd733443c585e36838f83`.
+This is a package argument error, not a Lom or pixel result; never rerun 01.
+
+Fresh `~/.local/state/t331/lom-cpu-pixels-native-02` is sealed and unattempted.
+Only package paths and timing bounds change: receiver 180 seconds, host 120,
+watchdog 150, collector 165, VT 200 and outer SSH 240. Readiness 30 plus the
+outer controller limit 80 stays below the host deadline. The actual pinned
+receiver is exercised offline: 240000 refuses without a socket; 180000 binds
+a private temporary socket and is then stopped. No display is opened.
+
+All 28 package tests and both device-free argument checks pass. The boundary
+fixture executes the signed controller and feeds its actual result and saved
+snapshots to postflight. Root verifies 55 tested inputs, 275 pins and all 71
+manifest entries. Manifest SHA256 is
+`75dd23b523eb69fb5337c8975f22da14c53b06555e98c13969bf8d43fe097840`.
+Post-seal check-only passes with no runs or attempt/result marker. Root receipt:
+`~/.local/state/lom-cpu-pixels-native-root-02/RECEIPT.json`, SHA256
+`da8dd7e0ba21e75e866ff995cc0e5074fc2bd4a99737e9d425b2b1c06aa0cb60`.
 
 The wrapper waits for complete log lines and permits peer disappearance only
 after the exact runtime-deadline quiescence transition. Final postflight uses
