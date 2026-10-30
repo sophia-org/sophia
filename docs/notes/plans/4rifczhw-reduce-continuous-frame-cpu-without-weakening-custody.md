@@ -144,13 +144,21 @@ were killed. The [matrix's delivery receipt](../investigations/nb3mgbwc-what-mus
 keeps the scope and hashes. This proves device-free framing/custody machinery,
 not a real authenticated capture or pixel match.
 
-**Immediate next work:** the same-namespace diagnostic controller must await
-and verify complete JSON/PAM/zero-byte-stderr evidence before shutdown, with
-no refusal or partial files and the pinned connector/incarnation/held-scene
-join. Then finish colour/hold entry points and per-stack normalization, review
-the full device gate, produce separate diagnostic release receipts, and seal
-an attended qualification package. No timed comparison or W2 change is opened
-by this source gate.
+The single-capture controller source gate is now closed at signed local
+niltempus `7214d43372bd019ea4db55bc0ad2ff2662ef722d`: 14 controller fixtures,
+5 pixel fixtures, 7 journal fixtures and 8 killed/restored guard mutations.
+It waits beyond `Started` for complete JSON/PAM/zero-byte-stderr evidence,
+checks a held candidate before/after, and refuses stale sequences or any failed
+attempt. Its join is serialized directory custody, not launch-monitor PID or
+per-message writer identity. The [matrix's controller receipt](../investigations/nb3mgbwc-what-must-match-before-comparing-gpu-buffers-across-sophia-niri-and-xlibre.md#private-capture-controller-source-gate-october-29)
+records the log-format correction and proof limits.
+
+**Immediate next work:** implement the parent READY/ACK driver and diagnostic
+colour/hold producers, wire the helper as Session's same-namespace sibling,
+and finish per-stack normalization. Review that full device gate before separate
+diagnostic releases and an attended package. Authenticated capture, actual mode,
+consumer pixels and cleanup remain unqualified. No timed comparison or W2 change
+is opened by these source gates.
 
 ## Earlier resumption context
 

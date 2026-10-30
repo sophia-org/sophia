@@ -488,6 +488,60 @@ timeout. Fixture activation is supplied: real authenticated observer delivery,
 namespace equality, output joins and consumer pixels remain native gates.
 No GPU device, release build, native attempt or package was produced here.
 
+## Private capture controller source gate (October 29)
+
+Signed local niltempus `7214d43372bd019ea4db55bc0ad2ff2662ef722d`, exact parent
+`d593d887f`, adds `tools/external-bar/gpu/capture_sophia.py` and
+`capture_receipt.py` plus fixtures and the contract in `gpu/QUALIFICATION.md`.
+One helper invocation handles one declared READY hold; the parent producer
+channel and same-namespace wrapper wiring are still the next implementation.
+Nothing was built, packaged, run natively, pushed or merged; W2 and CPU evidence
+remain frozen.
+
+The helper checks Session pidfd/starttime, executable hash/dev/inode, UID and
+user/mount/PID namespace equality. It verifies the log-derived launch listener
+through `/proc` inode ownership without connecting. It calls the exact pinned
+self executable once, retains bounded private CLI stdout/stderr, and treats
+`Started` only as readiness. A separate 30-second terminal wait exceeds the
+host's 20-second delivery deadline; waits share a 75-second outer limit. No
+retry, generation skip or stdout pixel fallback exists.
+
+Acceptance requires complete private JSON/PAM/zero-byte-stderr triples, matching
+PAM SHA and the declared non-grey pixel oracle, with no partial/refused files.
+The output ID comes from this run's log. Review against saved CPU-02 evidence
+caught that the actual head record is **bare DP-1 and nominal 120000 mHz**,
+not qualified PCI/119880. The receipt must bind that output to the qualified
+connector rechecked by Session at publication; actual 119.880 Hz stays a separate
+native readback gate. Log reads use complete prefixes, and listener uniqueness
+ignores accepted connections. Regression fixtures cover all three corrections.
+
+The launch-to-receipt join is the sole new receipt in a serialized exclusive
+directory. Transaction 1 is constant and only a format check; the CLI monitor PID
+is not the observer PID. Across patterns 1,2,1, namespace and output incarnation
+stay fixed while launch generation, request and capture presentation generation
+increase. The held owner candidate must agree before and after capture, without
+equating shell presentation_epoch to capture presentation_generation. A partial
+log tail is deferred; this is why the parent hold barrier remains necessary.
+
+Final device-free checks: **14 controller tests, 5 pixel tests, 7 journal tests**;
+all **8 guard mutations killed and restored** (hash, stderr, sequence, connector,
+after-hold, namespace, listener ownership and receipt mode). Claude reviewed
+the saved final diff read-only with no blockers. These fixtures use local
+processes, pidfds, Unix sockets and files; they execute no Sophia session or GPU.
+Receipts are `~/.local/state/matched-gpu-capture-controller-01/`:
+`RECEIPT.json` SHA256
+`0341ccb3657bbd002f656a900a994ff18840b3794e0840794fb15cf45e56171a`;
+`SHA256SUMS` SHA256
+`a22ba66a0c88f1d62f0a7a4861ee78a53cd568852fe478424436384967b4c07f`,
+29 entries verified. The committed diff equals the reviewed final diff.
+
+Limits: custody-only delivery; CLI path reconnect has a time-of-check gap in
+the private runtime directory; filesystem/scheduling are not hard real-time.
+The helper kills only its launch client; Session owns observer retirement and
+the parent owns full cleanup. Next: parent READY/ACK and diagnostic colour/hold
+entry points, real same-namespace wiring and per-stack normalization, then
+separate releases and native identity/pixel/refusal/lifetime qualification.
+
 ## Connections
 
 - [Critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md).
