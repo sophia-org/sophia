@@ -386,9 +386,26 @@ indicator records. Every sampling row must match the 1:1 exact-nearest bar
 contract. Final postflight must separately validate shutdown and reject later
 scene changes. Direct/copy checksum equality is a separate criterion requiring
 identical configs except the renderer and identical admitted model inputs.
-Package integration, seal and attended native delivery remain pending. This
-gate makes no performance, changing-content, blending, scaling or adoption
-claim; captures remain private outside repositories.
+The fresh `~/.local/state/t331/lom-cpu-pixels-native-01` package is sealed and
+unattempted. Its two arms, `static-direct` then `static-copy`, each run for
+180 seconds. All 26 package tests and both device-free argument checks pass;
+the boundary fixture executes the signed controller and feeds its actual
+result and saved snapshots to package postflight. The final root inventory
+verifies 54 tested inputs, 274 pins and all 69 manifest entries. Manifest
+SHA256 is `71cc9ec7311f25372aec053bb5770a51f6f2f011fc58b56934442f028aeac94f`.
+Post-seal check-only passes with no run directory or attempt/result marker.
+Root receipt: `~/.local/state/lom-cpu-pixels-native-root-01/RECEIPT.json`,
+SHA256 `07cef0a09180e0ed676e2932b770fb6bd9149a05ec1b04f54e7e8f58d65b1b17`.
+
+The wrapper waits for complete log lines and permits peer disappearance only
+after the exact runtime-deadline quiescence transition. Final postflight uses
+the actual a56 resource schema, binds the controller's before/after snapshots
+to the final log prefix, and validates the observer delivery and cleanup.
+Native authenticated delivery and displayed-strip equality remain pending.
+This gate makes no performance, changing-content, blending, scaling or adoption
+claim; captures remain private outside repositories. Keep the Lom, diagnostic
+host and controller worktrees and artifact pools frozen until the attempt is
+consumed; never retry a refused arm in this package.
 
 ## Existing renderer support and pixel contract
 
