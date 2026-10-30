@@ -397,7 +397,7 @@ Failure receipt: `~/.local/state/lom-cpu-pixels-native-failure-01/RECEIPT.json`,
 SHA256 `1478c419e9956dfc3e1400fb1aa13582595383acecbdd733443c585e36838f83`.
 This is a package argument error, not a Lom or pixel result; never rerun 01.
 
-Fresh `~/.local/state/t331/lom-cpu-pixels-native-02` is sealed and unattempted.
+Fresh `~/.local/state/t331/lom-cpu-pixels-native-02` was sealed before its attempt.
 Only package paths and timing bounds change: receiver 180 seconds, host 120,
 watchdog 150, collector 165, VT 200 and outer SSH 240. Readiness 30 plus the
 outer controller limit 80 stays below the host deadline. The actual pinned
@@ -417,7 +417,55 @@ The wrapper waits for complete log lines and permits peer disappearance only
 after the exact runtime-deadline quiescence transition. Final postflight uses
 the actual a56 resource schema, binds the controller's before/after snapshots
 to the final log prefix, and validates the observer delivery and cleanup.
-Native authenticated delivery and displayed-strip equality remain pending.
+The 02 attempt reached Session and delivered `capture-3.{json,pam,stderr}`,
+then the controller refused `unexpected capture attempt`: both controller and
+package postflight confused Session's global launch generation with capture
+ordinal 1. WM and Lom registrations had consumed generations 1 and 2. The
+three-attempt budget does not limit the generation value. The wrapper exited
+0 after the normal 120-second deadline; PAM cleanup completed, residual PIDs
+were empty and tty4 was restored. The copy arm never started.
+
+A separate saved-data audit verifies all 71 manifest entries and preserves
+all 103 file/socket entries and metadata. It checks the delivered generation-3
+receipt, empty stderr, PAM SHA and all 46,080 opaque strip pixels: produced and
+captured FNV64 both `a7bbb8c840a7303c`. Independently reconstructed log prefixes
+agree, but the controller saved no actual before/after/result files. Thus 02
+remains failed, with a saved pixel consistency observation, not a controller
+or bracket pass. Audit: `~/.local/state/lom-cpu-pixels-native-failure-02/RECEIPT.json`,
+SHA256 `75803793b8f6f59ec5d12a97d5786da09803bc584bb3c7be27eb9ecd95189275`.
+The existing native-log and recovery verifiers also pass on the saved text;
+this does not run or replace full postflight. Hagia remote=116 remains a
+shutdown observation followed by quiescent/clean, not error-free text.
+
+Signed and pushed niltempus `1d3fe6e95b547064183e1b2b519cb52afd1165ae`,
+tree `b980787264975ea59f33d2aa1610b975da358830`, fixes the controller in a new
+`niltempus-lom-cpu-pixels-generation` worktree. It pins the first observed
+single generation and retains it through the final exact triple check. Tests
+cover generations 3 and 41, real delayed inotify delivery, changed/disappeared
+or extra groups, mismatched receipts and refusal/partial files. The final gate
+passes 5 pixel, 18 controller and 14 shared GPU-controller tests; three mutants
+are killed and restored. Receipt: `~/.local/state/lom-cpu-pixel-controller-02/RECEIPT.json`,
+SHA256 `4052f39d650045ae240d90acdf8683f3d0f9ca0e345f8a2765d3de29516932e8`.
+Fresh `~/.local/state/t331/lom-cpu-pixels-native-03` is sealed and unattempted.
+It applies the same dynamic join in postflight; its boundary fixture executes
+the signed controller for generations 3 and 41. All 31 package tests and both
+device-free argument checks pass. Root verifies 55 tested inputs, 275 pins,
+67 validation inputs and 71 manifest entries. All arm/SSH configs equal 02
+apart from the package path; binaries, scene, budgets and pixel criteria stay
+the same. The controller compatibility receipt `PACKAGE-READY.json` projects
+per-file hashes from the exact gated Git tree and labels that derivation;
+it does not claim additional tests or independent timed snapshots.
+
+03 manifest SHA256:
+`61e1e08b6e79fa03bc7b85bfedc60920cc6f24d0531f2c7d166b06f16388c72e`.
+Root receipt: `~/.local/state/lom-cpu-pixels-native-root-03/RECEIPT.json`, SHA256
+`1dcc6d6ffd62630731a8ab43156686257ea894d26cd5a4cc571ffe5796b5b43d`.
+Post-seal check-only passes with no attempt/result marker and an empty runs
+directory. The first seal invocation refused the absent empty runs directory;
+creating that directory mode0700 satisfied the precondition without changing
+any validated file, and the successful seal is separately recorded.
+Never retry or relabel 01/02. The complete two-arm native displayed-strip gate
+remains pending.
 This gate makes no performance, changing-content, blending, scaling or adoption
 claim; captures remain private outside repositories. Keep the Lom, diagnostic
 host and controller worktrees and artifact pools frozen until the attempt is
