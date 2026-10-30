@@ -354,6 +354,42 @@ Displayed-pixel correctness, default adoption and a predeclared same-scene
 performance comparison remain open. Preserve the package and release artifacts;
 GPU direct-render work still follows the CPU adoption work.
 
+### Static opaque displayed-strip gate: source ready, native pending
+
+Signed niltempus `f7510a96361f41d18b95d8318269230954dd54da` on
+`bench/lom-cpu-pixels` adds the untimed controller and comparator. It reuses
+the private capture delivery verifier, with no Lom or Sophia source change.
+The gate passes 5 pixel tests, 10 controller tests and 14 existing capture
+tests; four source mutations are caught and restored. The immutable source
+receipt is `~/.local/state/lom-cpu-pixel-controller-01/RECEIPT.json`, SHA256
+`0d3d7ff0fd248b0e8bc4ba6d4378a1d6cc7c0f79b0fbb244113af7d78bf4cf5d`.
+
+A separate diagnostic host builds exact signed Sophia `a56ace891`, whose
+lineage is `a56ace891` → `d9116ff0` → `560b0aae`, with
+`native-session,experimental-shell-capture,diagnostic-capture-delivery`.
+The release stays in the `sophia@sophia-lom-cpu-pixel-host/1` slot, SHA256
+`e43936c30cd8e67156e708f74851dd3c71df82d7bf05dcf00953666fdf18f0db`.
+Its release-ready receipt is `~/.local/state/lom-cpu-pixel-host-01/RELEASE-READY.json`,
+SHA256 `9038afa0279dd640df66c0cee880fa4934d2bb009e138e87fca4c9ba3f048a2c`.
+Session and its admitted capture observer must use this same executable.
+
+The pending fresh package uses the frozen diagnostic Lom runtime for two
+static workspace-only arms, with one denied-GPU bar and no dock, clock or
+input. The portal supplies a private full-output top-down RGBA8 PAM. Check
+every pixel in its top 24 rows: alpha 255, a red/blue-distinguishing pixel,
+then swap R/B and compare FNV64 against the unique Lom candidate. No flip,
+PNG normalization or excluded columns are allowed. Capture SHA256 binds saved
+pixels; it does not make the producer's FNV64 a cryptographic proof.
+
+The controller brackets capture with unchanged live candidate, host and
+indicator records. Every sampling row must match the 1:1 exact-nearest bar
+contract. Final postflight must separately validate shutdown and reject later
+scene changes. Direct/copy checksum equality is a separate criterion requiring
+identical configs except the renderer and identical admitted model inputs.
+Package integration, seal and attended native delivery remain pending. This
+gate makes no performance, changing-content, blending, scaling or adoption
+claim; captures remain private outside repositories.
+
 ## Existing renderer support and pixel contract
 
 Baseline Lom `32e0bab3` pins SDK `0706ea2c78cd16ba59ed209620354f30a2c78906`
