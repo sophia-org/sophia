@@ -275,6 +275,11 @@ measured Sparse Strips scene rendering directly into an owned-ring slot.
    this first native reference gate. The
    [direct-fill investigation](../investigations/i9ljdlt4-how-can-lom-render-vello-cpu-directly-into-an-owned-ring-slot-across-its-worker-boundary.md)
    records the source receipt and the later performance gate.
+   `lom-cpu-reference-native-01` is now sealed, unattempted (manifest `4ad78dd3`,
+   65 files and 268 pins): 46 package tests and both post-seal check-only arms
+   pass. Runtime `2facb26d` and checker `134291da` share signed source `8358cb3f`.
+   Next is Mason's attended two-arm run, then root's saved-data audit. Hold builds,
+   tests and mutations through that audit; no agent launches the session.
 
    Two native pixel movers remain: CPU pixels and GPU buffers. App/user policy
    chooses the supported renderer; Sophia enforces authority. Direct fill is the

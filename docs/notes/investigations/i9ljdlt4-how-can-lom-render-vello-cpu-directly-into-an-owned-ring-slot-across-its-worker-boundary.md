@@ -289,6 +289,47 @@ Do not spend an ABBA on this gate or derive differences, ratios, per-frame cost,
 latency or a benefit claim from its two unpaired wall-clock scenes. Performance
 requires a later separately declared comparison; GPU direct rendering stays later.
 
+### Sealed diagnostic native qualification
+
+`~/.local/state/t331/lom-cpu-reference-native-01` is sealed and unattempted.
+Order is `clock-cpu-direct`, then `clock-cpu-copy`, each with the inherited
+100-second seconds-clock recipe and a fixed 60-second CPU accounting window.
+Both use runtime `2facb26d`; checker `134291da` is used only offline. The host,
+GPU dock, output profile and other inherited artifacts are unchanged. The panel
+GPU grant is denied. No ABBA or performance comparison is authorized by this
+package, and different wall-clock scenes forbid cross-arm checksum equality.
+
+Forty-six package tests pass, including an in-memory adaptation of the real
+failed-01 log to each exact diagnostic startup line. All 74 original files and
+their metadata remain unchanged. The correct seven-field Provlita schema and
+host-side grant join are preserved. Root also exercised the new binding block
+on real saved identities and eight refusal mutations; that is a schema check,
+not native evidence for the diagnostic binary.
+
+Root validation covers all 61 static inputs and nine successful check logs;
+44 tested inputs were unchanged, and all 268 preliminary pins matched. The seal
+covers 65 files. Post-seal check-only passed both SSH/idle-VT and argument/config
+preflights, with `devices_opened=false`; no run directory, attempt or result
+marker exists. Manifest SHA256:
+`4ad78dd3d72e42d24514250cb54b16f9f98eb7e719193b47ac8bac17b47a29b3`.
+Root validation SHA256:
+`e5d88f651932ebace3950877cf7880394b07cec39e218e9632cb68c15333d75d`.
+Root receipt in `~/.local/state/lom-cpu-reference-native-root-01/` is
+`ac41f1e37ef626834f95f7f4c494d85e2e2e755023e87b220b29540a412c736c`;
+its manifest is
+`cce04401450762b550fe8a36fdb5779f0b2449b4ee06ab84c5b2e7a9b6f2bdc3`.
+
+Mason runs this once from SSH while attending VT4:
+
+```sh
+sh ~/.local/state/t331/lom-cpu-reference-native-01/run.sh
+```
+
+Both arms preflight before the attempt; first-arm failure stops the second.
+No retry belongs to this package. Keep builds, tests and source/release/package
+mutations held through the attempt and root's saved-data audit. Native results,
+displayed-pixel correctness, performance and default adoption remain unqualified.
+
 ## Existing renderer support and pixel contract
 
 Baseline Lom `32e0bab3` pins SDK `0706ea2c78cd16ba59ed209620354f30a2c78906`
