@@ -719,6 +719,34 @@ The separate read-only `TIMING-CONTRACT.json` beside the failure receipt binds
 the local header, signed host source and saved timing checks; its SHA256 is
 `b51d6a87776d848f77f54de3ec533baf56f6be8a8ae33d4bd4948ba25fb189ac`.
 
+Fresh `~/.local/state/t331/lom-cpu-cadence-native-02` is sealed and has passed
+check-only, with no native attempt. It keeps the same signed source, artifacts,
+eight-arm order, workloads and budgets. Each Binder helper's complete clock proof
+is validated against its own child PID; only transient observer identity is
+excluded from cross-call comparison. Startup JSON `null` remains a readiness
+retry, while a missing binding after readiness still refuses before teardown.
+Every saved binding-check row receives the same full clock validation.
+
+Timing now reports signed Presented-minus-reported-scanout offsets without
+clamping or requiring either sign. Offer-before-reported-scanout and the next
+generation's ordering remain strict. CPUwin still accounts over reported DRM
+scanout-start intervals, with actual sampler coverage required before advancing
+to another arm. The quota boundary is not an exactly-2,000-jobs claim; saved 01's
+boundary pattern is an observation, not a promised pattern in future arms.
+
+The frozen offline receipt binds 63 unit tests and eight Lom config checks.
+Root separately verified all eight SSH/idle-TTY preflights and host session
+argument checks (`devices_opened=false`). Check-only changed none of the 144
+sealed files and created no attempt/result markers or run output. All 171 saved
+files of spent 01 remain unchanged. Its failure is not relabelled.
+
+Package 02's 143-entry manifest is SHA256
+`d74fba0d1f62ab5827875f02934cff3865b8d90a4893620a99ea16a19825ddc4`.
+The external root receipt is
+`~/.local/state/lom-cpu-cadence-preflight-02/RECEIPT.json`, SHA256
+`6120cb9e28349cc41c087630de8cdf12898bd905d8be3ae1e3e6f9a2e42f02ee`.
+This is preparation evidence only; there is still no qualified CPU comparison.
+
 ## Existing renderer support and pixel contract
 
 Baseline Lom `32e0bab3` pins SDK `0706ea2c78cd16ba59ed209620354f30a2c78906`
