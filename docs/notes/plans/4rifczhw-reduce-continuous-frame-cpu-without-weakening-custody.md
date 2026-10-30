@@ -264,6 +264,18 @@ measured Sparse Strips scene rendering directly into an owned-ring slot.
    clean custody/cleanup qualify this ordinary seconds-clock path. No pixel
    readback, comparison or default-adoption claim follows.
 
+   The diagnostic copy-reference source gate is now signed and pushed as Lom
+   `8358cb3f` (`cpu/copy-reference`), using published Rust SDK `99b05e34`.
+   Default and feature gates pass 113 and 120 Rust tests; both arms share the CPU
+   renderer and conversion, and actual SDK peer bytes match device-free. Next is
+   a fresh direct-then-copy native qualification, using one diagnostic binary and
+   a separately pinned feature-on config checker. Each arm is an independent
+   startup/custody/cadence/cleanup check with descriptive fixed-time CPU only.
+   No ABBA, cross-arm pixel equality, CPU difference or savings claim belongs to
+   this first native reference gate. The
+   [direct-fill investigation](../investigations/i9ljdlt4-how-can-lom-render-vello-cpu-directly-into-an-owned-ring-slot-across-its-worker-boundary.md)
+   records the source receipt and the later performance gate.
+
    Two native pixel movers remain: CPU pixels and GPU buffers. App/user policy
    chooses the supported renderer; Sophia enforces authority. Direct fill is the
    intended default **within CPU mode**, not forced CPU rendering or hidden fallback.

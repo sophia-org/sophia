@@ -229,6 +229,66 @@ artifacts. No native rerun was needed. Pixel readback, the same-renderer copy
 reference, default adoption and performance remain separate gates; the reference
 is next, with GPU direct rendering still later.
 
+### Same-renderer diagnostic reference source gate
+
+Signed Lom `8358cb3fa5ae121fd04fa89084b8a8f5b776528c`, tree
+`4f8771e21bd14ff046d3687b0bfe4348bd8d9285`, adds the default-off
+`diagnostic-cpu-reference` feature and a separate `lom-cpu-reference` binary.
+It accepts only the host's fixed `--serve`. The protected panel selects
+`renderer "cpu"` (direct fill) or `renderer "cpu-copy-reference"` (owned image
+plus the existing slice upload). Both arms use the same binary, retained scene
+worker, Vello CPU renderer and pixel conversion. No service or scheduler source
+changes were needed. Ordinary Lom's CLI, startup record and default stay the same.
+
+The diagnostic entry refuses GPU; ordinary serve refuses the reference mode;
+both CPU selections refuse DMA. These checks run after config/argument resolution
+and before connecting. The ordinary feature-on binary can still run `check-config`
+for either panel; it is a diagnostic config checker, not a default-feature build.
+Both diagnostic startup records include `diagnostic=cpu-reference`.
+
+The final default and feature gates passed 113 and 120 Rust tests respectively,
+with zero failures and two existing subprocess entries ignored across the builds.
+Eighteen tooling tests, formatting, dependency audit and both Clippy passes also
+passed without warnings. The tests compare renderer output, real worker output,
+and peer-read SDK ring-slot bytes, and prove prohibited entries never connect.
+This is device-free equality evidence, not a native displayed-pixel claim.
+Candidate 1's feature-off test warnings and candidate 2's superseded passing gate
+are retained; candidate 3 uses a fresh exclusive socket-test directory.
+
+Evidence is `~/.local/state/lom-cpu-reference-01/`: receipt SHA256
+`388a8518356a4af8e7090ef51a671a78070d799560d92e60f7a28da311749538`,
+manifest SHA256
+`4dd8581fadeec4720bc2a0a1b72944d64dca9003fb616a51468168c2e38610cf`.
+The signed branch is published as `sophia-org/lom:cpu/copy-reference`.
+Rust SDK `99b05e34` and C parity `9adb3c5b` are published on `cpu/owned-fill`
+and `cpu/direct-fill-caller` in their respective official SDK repositories.
+This new Lom branch uses the official HTTPS Rust SDK pin at the same revision;
+the earlier native build retains its recorded local-file provenance unchanged.
+
+The separate release build uses `cargo-slot lom cargo build --locked --release
+--features diagnostic-cpu-reference --bin lom --bin lom-cpu-reference`, with
+two jobs. Source stayed signed and clean before/after; all three Lom fingerprints
+list exactly that feature. The runtime is
+`~/.cache/cargo-slots/lom@lom-cpu-copy-reference/1/release/lom-cpu-reference`,
+SHA256 `2facb26d59fcb26308e8dbaccb26355add490611bdb142d61c175839f6d9f5a8`,
+device/inode `2067/64518768`. The adjacent feature-on `lom` checker is SHA256
+`134291da81f9495da36f123fa1885d6ff9bc70e57b0bf034c8e6fb35b5be121a`,
+device/inode `2067/64518767`. Both are consumed in place at mode 0700, uid 1000;
+neither binary was copied. Offline checker runs accepted both exact panel
+spellings, while the frozen default binary refused the copy-reference spelling.
+These checks opened no live connection. `RELEASE-READY.json` SHA256 is
+`8e84b9a5e0be30798167d04402cbe505fb6d6f6fe0e7ad27a1651f3c6fb3fca6`;
+`RELEASE-SHA256SUMS` is
+`5cf51e02aba5ae99bd2755c8f15f7560165cc7e4c43d5bb963d8649e7345015f`.
+Keep this source worktree and its Cargo pool frozen through package consumption.
+
+Next is a fresh two-arm native qualification: direct then copy, each independently
+checking startup, denied GPU admission, custody, rendered-clock progress and
+cleanup. Keep the seconds-clock workload and fixed-time descriptive CPU window.
+Do not spend an ABBA on this gate or derive differences, ratios, per-frame cost,
+latency or a benefit claim from its two unpaired wall-clock scenes. Performance
+requires a later separately declared comparison; GPU direct rendering stays later.
+
 ## Existing renderer support and pixel contract
 
 Baseline Lom `32e0bab3` pins SDK `0706ea2c78cd16ba59ed209620354f30a2c78906`

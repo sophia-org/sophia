@@ -84,15 +84,18 @@ records the explicit CPU renderer and worker-safe owned slot custody. Direct
 fill is the intended default **when CPU is selected**, after qualification.
 Slice upload remains for callers already holding pixels.
 
-The Rust owned-loan API now has a signed local device-free implementation
-(`5d895652`, parity documentation `99b05e34`). C `9adb3c5` independently proves
+The Rust owned-loan API has a signed device-free implementation
+(`5d895652`, parity documentation `99b05e34`), published on the official SDK's
+`cpu/owned-fill` branch. C `9adb3c5`, published on `cpu/direct-fill-caller`, proves
 the existing pixels/offer sequence under documented caller ownership; C callers
 must enforce the worker lifetime that Rust's loan protects. Neither is a verified
-Sophia SDK pin update. Lom's source gate passes 106 Rust and 18 Python tests,
-including owned-loan byte equivalence, fresh commit checks and exact-release
-reuse. Native qualification, default adoption and performance remain open;
-the local SDK pin is a development exception. Consult the linked design's
-source-gate receipts before adoption.
+Sophia SDK pin update. Lom's source gates cover owned-loan byte equivalence,
+fresh commit checks and exact-release reuse. Broader native visual qualification,
+default adoption and performance remain open. The earlier native build retains
+its local SDK development exception; diagnostic reference branch `8358cb3f` uses
+the same revision through the official HTTPS repository. Its separate reference
+binary is qualification tooling, not a public renderer choice. Consult the linked
+design's receipts before adoption.
 
 GPU DMA export remains subject to its experimental profile and exact format/device
 admission. The current producer renders RGBA then blits into a LINEAR XR24 export
