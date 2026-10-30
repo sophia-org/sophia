@@ -559,7 +559,7 @@ Neither is isolated raster time, host CPU time or photon latency. Carry timestam
 with the exact job/pending candidate and check ordering against kernel completion.
 Treat kernel timestamp `u` as the bucket `[u*1000, u*1000+1000)` ns for ordering:
 Offer must be no later than its lower bound and Presented observation no earlier
-than its upper bound; ambiguity refuses timing qualification. For each measured
+than its upper bound; ambiguity refuses the arm. For each measured
 job, the eligible attempt follows the start anchor's upper bound and the preceding
 candidate's Presented observation. Require attempt <= Offer; the final Presented
 observation may follow the end kernel anchor. Report the kernel clock's
@@ -602,12 +602,33 @@ The diagnostic emits `lom_cadence`, per-candidate `lom_cadence_sample`, and a
 `lom_cadence_final` counter/status record, without changing the existing candidate
 schema. Its first timestamp is after the owner clones the model; it does not
 include that cloning cost. Extra externally dirtied work is not suppressed: it
-refuses sampling or appears in the final counters, so a native reducer must
-require the exact quota and complete final status. Existing slot custody and
+refuses sampling or appears in the final counters. A native reducer must require
+the exact quota; a final record, when observed, must be complete. Slot custody and
 rendering worker code are unchanged. The owner loop enables cadence counters
 after the normal reporter initializes, and rejects any work-stat environment
 variable before connecting. Two setup mutations were killed before the final
 fixture/lint cleanup; the complete gate binds the final exact tree.
+
+The package review changed the final-record requirement before native attempts.
+The pinned host revokes component authority before terminating the outer bwrap
+process group, while Lom runs in its own session inside a PID namespace. Saved
+static03 direct evidence has no Lom teardown output; copy has a shell-I/O error
+during runtime-deadline quiescence. Neither establishes a graceful Lom exit.
+Requiring a final record would therefore make valid windows depend on a teardown
+race. Keep the signed source unchanged: zero final records is allowed, one must
+validate completely, and duplicate, malformed or refused finals reject the arm.
+Missing output is recorded as an observation, not proof of a particular kill.
+
+The quota sample's counters are read at emission after its Presented timestamp,
+which must follow the end kernel bucket. All candidate, timing, counter and
+kernel joins remain mandatory. Extra presented work still refuses; an unfinished
+post-quota job can remain unknown when teardown output is absent. There is no
+whole-run exact-job or graceful-Lom-exit claim. CPUwin's enclosing sample still
+provides an upper bound if later work falls inside that bracket, without making
+the window an exact causal attribution. Host cleanup and process custody remain
+independent mandatory checks. Pre-quiescence Lom errors refuse; only the known
+shell-I/O teardown error after exact runtime-deadline quiescence may be classified
+as a teardown observation. The package must test this distinction before sealing.
 
 The immutable source receipt is
 `~/.local/state/lom-cpu-cadence-01/RECEIPT.json`, SHA256
