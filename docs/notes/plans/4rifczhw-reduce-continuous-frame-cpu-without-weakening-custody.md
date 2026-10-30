@@ -295,6 +295,15 @@ measured Sparse Strips scene rendering directly into an owned-ring slot.
    opaque displayed-path gate, not dynamic/blended/scaled rendering or performance.
    The predeclared same-scene performance gate remains before benefit or
    default-adoption claims; GPU direct-render work still follows CPU adoption.
+   Its selected design is a separate diagnostic cadence executable: re-render the
+   static scene after exact Presented, using the existing release and scheduling
+   path, then stop after 120 warmup frames plus 2,000 measured completion intervals.
+   Compare direct/copy/copy/direct separately at 1920x24 and 1920x512 using kernel
+   completion anchors, Session/Lom/Hagia CPU accounting bounds and explicit owner
+   timing endpoints. Cadence is an outcome, not an assumed 60 Hz result. This is
+   instrumented repeated-scene qualification, not isolated memcpy or ordinary idle
+   desktop performance; overlapping bounds are inconclusive. Implementation and a
+   fresh attended package are still pending; see the direct-fill investigation.
 
    Two native pixel movers remain: CPU pixels and GPU buffers. App/user policy
    chooses the supported renderer; Sophia enforces authority. Direct fill is the

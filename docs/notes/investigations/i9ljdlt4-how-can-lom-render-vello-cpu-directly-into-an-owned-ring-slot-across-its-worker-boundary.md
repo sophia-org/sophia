@@ -502,6 +502,88 @@ blending, scaling, other outputs and default adoption remain unqualified.
 Never rerun spent 03 or relabel failed 01/02. Captures remain private outside
 repositories; source/artifact holds remain until explicitly released.
 
+### Next gate: repeated static-scene CPU comparison
+
+This is the selected design, not a tested implementation or performance result.
+Implement in a fresh Lom worktree from `8358cb3f`; keep the qualified static
+binary, source pools and spent native packages frozen. GPU direct-render work
+remains after CPU qualification. A new `lom-cpu-cadence` executable under the
+existing default-off diagnostic feature selects the workload by executable
+path. It accepts the host's fixed `--serve`; ordinary Lom and the existing
+`lom-cpu-reference` entry keep their behavior. No host driver, public renderer
+mode, environment selector, timer thread or new rendering backend is needed.
+
+After each exact Presented outcome, mark the same static scene dirty again.
+Existing one-job scheduling, resource retirement, exact ring release and fresh
+commit checks still decide when another render may start. Stop requesting work
+after 2,120 presentations and retain the connection through settlement and the
+sampler's closing bracket. The first 120 frames are warmup, not 120 seconds.
+Identical pixels in a fresh candidate still require a fresh physical presentation;
+the native gate must verify a fresh bound flip through candidate/frame/completion
+joins. These joins do not independently measure predecessor resource retirement.
+Every qualified candidate must be rendered, never an interaction-only reuse.
+
+Use two workloads, separately: 1920x24 and 1920x512, the latter 3,932,160 bytes
+within the 4 MiB resource grant. Each has fixed direct/copy/copy/direct order,
+with copy as the analysis baseline, and
+one signed diagnostic runtime for both selections. Pin equivalent static panel,
+theme, desktop and admitted indicator inputs. Require constant produced
+checksums within an arm and equality across equivalent arms. The narrow workload
+retains the already qualified `a7bbb8c840a7303c` checksum; do not invent a larger
+surface checksum. This remains a repeated static Vello scene, not normal idle
+bar behavior or a changing-content correctness test.
+
+CPU anchors come from `sophia_shell_native_completion.monotonic_usec`, joined
+through `sophia_shell_native_binding` to candidates 120 and 2120. Require
+`timestamp_source=kernel`, `missing_kernel_timestamp=0`,
+`drm_timestamp_monotonic=1`, the same clock domain as the sampler,
+and unique native binding/completion identities for every counted candidate.
+Refuse extra native frames in the counted window, missing or coalesced candidates,
+identity changes and incomplete sample brackets. Log polling only controls
+collection lifetime; it is not a timestamp or evidence of bounded log lag.
+Require consecutive native frame IDs from candidate 120 through 2120 and enumerate
+all completions in that window, rather than filtering unexpected frames away.
+Bootstrap redraws before the start anchor are outside this count. CPUwin uses
+the reported microsecond timestamps multiplied by 1,000, not reconstructed
+sub-microsecond physical boundaries.
+
+Add diagnostic-only owner timestamps for the first eligible render attempt,
+successful ring commit with Offer queued, and exact Presented observation.
+Retain the first timestamp across direct acquisition backpressure, just as copy
+upload backpressure remains inside its interval. The SDK slice copy is synchronous
+before the second timestamp, but its control bytes may reach the host later.
+Thus attempt-to-Offer includes queueing, rasterization, conversion and applicable
+storage work; Offer-to-kernel includes dispatch, custody, composition and pacing.
+Neither is isolated raster time, host CPU time or photon latency. Carry timestamps
+with the exact job/pending candidate and check ordering against kernel completion.
+Treat kernel timestamp `u` as the bucket `[u*1000, u*1000+1000)` ns for ordering:
+Offer must be no later than its lower bound and Presented observation no earlier
+than its upper bound; ambiguity refuses timing qualification. For each measured
+job, the eligible attempt follows the start anchor's upper bound and the preceding
+candidate's Presented observation. Require attempt <= Offer; the final Presented
+observation may follow the end kernel anchor. Report the kernel clock's
+microsecond resolution in elapsed-time summaries.
+Use cumulative render/upload/reuse counters to reject extra or missing work;
+counter deltas alone do not establish temporal containment.
+
+Predeclare the CPU sum as Session + Lom + Hagia, with all three process rows and
+the sampler's separate overhead. No dock is present. Reuse CPUwin's inner/outer
+sample bounds over 2,000 completion intervals, with no interpolation, point
+estimate or confidence-interval wording. Boundary observation/retirement work
+can straddle the two kernel anchors; this is process CPU per completion interval,
+not exact causal attribution to those jobs. The shared diagnostic clocks, counters
+and per-candidate logging are part of the workload. The copy arm also allocates
+an owned image, so the difference compares the two paths, not isolated memcpy.
+
+Report cadence as an outcome, including missed refreshes; do not discard a slower
+large-surface arm merely because it cannot sustain 60 Hz. Failure to reach the
+declared count within the bounded session is a qualification refusal, not a zero
+cost result. Analyze each geometry separately, allow overlapping accounting bounds
+as inconclusive, and do not rerun until a desired result appears. Offline source
+gates, exact release receipts, a reviewed fresh package and an attended launch
+remain required. No production saving or default-adoption claim follows this
+design or the earlier one-Hz descriptive CPU measurements.
+
 ## Existing renderer support and pixel contract
 
 Baseline Lom `32e0bab3` pins SDK `0706ea2c78cd16ba59ed209620354f30a2c78906`
