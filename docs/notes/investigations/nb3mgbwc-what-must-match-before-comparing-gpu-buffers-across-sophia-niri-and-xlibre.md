@@ -593,6 +593,63 @@ releases, and qualify actual identity/mode/import/pixels/refusal/lifetime/cleanu
 Wayland must continue dispatching releases during a hold. No timed GPU comparison
 is authorized by this source gate; W2 and CPU evidence remain frozen.
 
+## External colour/hold source gate — October 29
+
+Signed local niltempus `0f3bfc42c506d4379f14b64092702253672afe91`, parent
+`80afd166859156cd8628a63b4b73d5571ecada2b`, closes the external source gate.
+The worktree is clean. Separate diagnostic clients render three fresh patterns
+1,2,1, publish READY only after presentation, service display events while
+waiting, and accept one exact nonce/generation ACK after the parent pixel oracle.
+Wayland's barrier is inside the fresh submission path before its continue;
+X's is inside the validated presentation path. PNG decoding and XImage mask,
+byte-order and padding normalization produce the shared RGBA PAM oracle input.
+The parent sequence is an embedding API, not yet the complete native launcher.
+
+Default bridge slot 1 and diagnostic slot 2 have separate paths/hashes. `nm`
+shows the colour symbol absent from the default library and both default-check
+clients, present in the diagnostic library and both hold clients. Timed Make
+rules additionally refuse a supplied library containing that symbol before
+linking. Both wrong-library controls refused without changing the clients;
+default links then passed. These are debug/source controls only. No existing
+CPU client binary was rebuilt; both CPU translation units passed syntax-only.
+
+Final checks: **7 external-hold, 5 normalization, 8 journal Python tests**;
+bridge **7 feature-on / 6 feature-off** tests, **14 DMA** tests, both-mode
+fmt/clippy, C ABI controls with explicit rc=0, production-helper adapter
+fixtures and existing GPU mock controls. **6 mutations** were killed and
+restored, including removal of each production hold barrier. Claude's saved-diff
+review found no blockers; the subsequent timed-link guard implements its
+remaining artifact-separation suggestion.
+
+Fixture limits matter: the Wayland fixture releases the generation during its
+own hold, so it does not prove attached-buffer lifetime across the next commit.
+The X fixture covers IdleNotify before completion, not during hold dispatch.
+Neither exercises a real compositor or the complete client main loop. Under
+X Present Copy, the pixel oracle checks the server's screen-pixmap copy, not a
+client export retained through ACK. Wayland retains its attached buffer until a
+later commit. Sophia captures its own imported copy. These are separate lifetime
+contracts, not identical retention claims.
+
+The niri native recipe must pin its IPC/output identity and screenshot path,
+use `--show-pointer false`, and enable only DP-1 at scale 1 with no transform.
+X requires the pinned server/output and no compositing manager redirecting
+windows. The parent owns bounded capture callbacks, sampled-process identity,
+output proof and successful reap. Socketpair holds provide custody, not
+per-message writer identity. Real imports, screenshots, delayed releases,
+protected Sophia capture and PAM/VT cleanup remain unqualified.
+
+Receipts: `~/.local/state/matched-gpu-external-hold-01/`, **48 entries verified**.
+`RECEIPT.json` SHA256
+`c612d9752f10cb2d878f63d4d8e71ce10a3dfa61b5f515c76fc57cb4d0d3d2dc`;
+`SHA256SUMS` SHA256
+`5a57c7bbfc4ffc6faae4c68fedd2aaeb56612bd5c25bf767e570e54f1aab0c35`.
+Committed diff equals final-candidate.diff. Early failed/superseded builds are
+retained and labeled. No GPU/native run, release build, package, merge or push.
+
+Next: complete the native controller/wrapper and diagnostic recipe, review them,
+then separately build/pin releases and qualify actual device delivery. No timed
+GPU comparison is opened by this gate; CPU and W2 evidence remain frozen.
+
 ## Connections
 
 - [Critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md).

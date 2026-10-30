@@ -163,9 +163,19 @@ shared-canvas check, and 6 killed/restored mutations. The
 records custody limits, separate generation domains and the single-producer
 profile requirement. This is device-free, not authenticated native delivery.
 
-**Immediate next work:** external Wayland/X colour holds and consumer-capture
-normalization, followed by review of the complete protected same-namespace
-recipe. Then produce separate diagnostic release receipts and an attended
+External colour/hold and consumer-normalization source gate is closed at signed
+local niltempus `0f3bfc42c506d4379f14b64092702253672afe91` (parent `80afd166`).
+Wayland's barrier is inside fresh submission; X holds after presentation and
+may already have released its client export. Default and diagnostic bridge
+artifacts occupy separate slots, and timed links refuse the diagnostic symbol.
+Final device-free checks: 20 Python tests, Rust 7 feature-on / 6 feature-off
+bridge tests plus 14 DMA tests, adapter/C ABI controls, 6 killed/restored
+mutations and both wrong-library link refusals. The matrix records fixture
+limits; these are debug source controls, not release or native evidence.
+
+**Immediate next work:** implement and review the complete native controller,
+protected same-namespace wrapper and per-stack diagnostic recipe. Then produce
+separate diagnostic release receipts and an attended
 package. Authenticated capture, actual mode, consumer pixels, import refusal,
 release and full cleanup remain unqualified. No timed comparison or W2 change
 is opened by these source gates.
