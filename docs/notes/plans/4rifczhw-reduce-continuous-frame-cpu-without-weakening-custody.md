@@ -282,9 +282,19 @@ measured Sparse Strips scene rendering directly into an owned-ring slot.
    zero late sampler slots and clean PAM/TTY cleanup. Root's separate
    `lom-cpu-reference-native-audit-01` rechecked raw evidence and reproduced both
    fixed-time CPU results exactly, without changing the package. The attempt is
-   spent: do not relaunch it. Displayed-pixel qualification and a predeclared
-   same-scene performance gate remain before default-adoption claims; these
-   unpaired clock runs establish no speedup.
+   spent: do not relaunch it. The unpaired clock runs establish no speedup.
+
+   The separate `lom-cpu-pixels-native-03` gate now passes for both CPU arms:
+   actual capture brackets and launch-custody receipts, one opaque static 1920x24
+   scale-1 scene, 46,080 checked pixels per arm, identical produced FNV64 and
+   byte-identical captured BGRA strips under equal configs/model inputs. All 71
+   manifest entries verify; each arm has 118 stable binding checks and clean
+   Session/PAM/TTY cleanup. Root audit `lom-cpu-pixels-native-audit-03/RECEIPT.json`
+   is `0ee9a4972c3737f981c2d17684b6fac24476d883d0e654090738c2b28c77239e`.
+   Failed predecessors 01/02 stay failed; 03 is spent. This closes that narrow
+   opaque displayed-path gate, not dynamic/blended/scaled rendering or performance.
+   The predeclared same-scene performance gate remains before benefit or
+   default-adoption claims; GPU direct-render work still follows CPU adoption.
 
    Two native pixel movers remain: CPU pixels and GPU buffers. App/user policy
    chooses the supported renderer; Sophia enforces authority. Direct fill is the

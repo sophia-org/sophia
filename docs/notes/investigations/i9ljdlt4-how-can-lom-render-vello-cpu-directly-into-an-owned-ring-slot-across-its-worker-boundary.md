@@ -354,7 +354,7 @@ Displayed-pixel correctness, default adoption and a predeclared same-scene
 performance comparison remain open. Preserve the package and release artifacts;
 GPU direct-render work still follows the CPU adoption work.
 
-### Static opaque displayed-strip gate: source ready, native pending
+### Static opaque displayed-strip gate: native pass
 
 Signed niltempus `f7510a96361f41d18b95d8318269230954dd54da` on
 `bench/lom-cpu-pixels` adds the untimed controller and comparator. It reuses
@@ -446,7 +446,7 @@ or extra groups, mismatched receipts and refusal/partial files. The final gate
 passes 5 pixel, 18 controller and 14 shared GPU-controller tests; three mutants
 are killed and restored. Receipt: `~/.local/state/lom-cpu-pixel-controller-02/RECEIPT.json`,
 SHA256 `4052f39d650045ae240d90acdf8683f3d0f9ca0e345f8a2765d3de29516932e8`.
-Fresh `~/.local/state/t331/lom-cpu-pixels-native-03` is sealed and unattempted.
+Fresh `~/.local/state/t331/lom-cpu-pixels-native-03` was sealed before its attempt.
 It applies the same dynamic join in postflight; its boundary fixture executes
 the signed controller for generations 3 and 41. All 31 package tests and both
 device-free argument checks pass. Root verifies 55 tested inputs, 275 pins,
@@ -464,12 +464,43 @@ Post-seal check-only passes with no attempt/result marker and an empty runs
 directory. The first seal invocation refused the absent empty runs directory;
 creating that directory mode0700 satisfied the precondition without changing
 any validated file, and the successful seal is separately recorded.
-Never retry or relabel 01/02. The complete two-arm native displayed-strip gate
-remains pending.
-This gate makes no performance, changing-content, blending, scaling or adoption
-claim; captures remain private outside repositories. Keep the Lom, diagnostic
-host and controller worktrees and artifact pools frozen until the attempt is
-consumed; never retry a refused arm in this package.
+03 completed both arms and the conditional comparison. Both real controllers
+saved their before/after/result files; the before log is a strict prefix of the
+after log, which is a strict prefix of the final raw log. The signed static
+snapshot agrees at both brackets and before teardown. Each arm delivers only
+`capture-3.{json,pam,stderr}`, with zero-byte stderr, receipt/PAM SHA agreement,
+the pinned host executable identity and launch-custody binding. Shell candidate
+1 / presentation epoch 4 remains distinct from native capture generation 7.
+
+For both arms all 46,080 top-strip pixels are opaque, include a red/blue control,
+and match the produced FNV64 `a7bbb8c840a7303c` after RGBA-to-BGRA conversion.
+The captured BGRA strips are byte-identical, SHA256
+`20ce6ece2d199bf93435d35e3751e95538730af465f0d3fd5f9b5ee44a06b404`.
+This cross-arm result is conditioned on identical panel/theme configs except
+the renderer, normalized desktop equality and identical admitted indicators
+and model inputs. It is a strip claim, even though the full PAM hashes also
+happen to match.
+
+Each arm has one client/host candidate, three valid sampling rows, 118 stable
+binding checks, zero resource failure/leak invariants, wrapper/controller exit
+0 and clean Session/PAM/TTY cleanup. The observer exited successfully; no run
+PID/starttime remains live. Hagia remote=116 is recorded at shutdown followed
+by quiescent/clean, not described as error-free text. The environment receiver's
+SIGTERM is the intended collection shutdown.
+
+Root's external audit checks all 71 manifest entries, all 275 current pins,
+actual controller brackets, native/capture/recovery validators, environment,
+process identities and an independent FNV/byte comparison. All 143 file/socket
+entries and metadata are unchanged. Independent pK and Muse reviews concur.
+Audit: `~/.local/state/lom-cpu-pixels-native-audit-03/RECEIPT.json`, SHA256
+`0ee9a4972c3737f981c2d17684b6fac24476d883d0e654090738c2b28c77239e`;
+checksums `849bbb04ac255b05e9bc00117278bc2ba34fbe44f50a42b1689aefadf23236a5`.
+This closes the two-arm opaque static scale-1 displayed-strip gate. Capture
+hashes bind saved bytes; FNV does not become a cryptographic producer proof,
+and shared-log joins establish consistency. Performance, changing content,
+blending, scaling, other outputs and default adoption remain unqualified.
+Never rerun spent 03 or relabel failed 01/02. Captures remain private outside
+repositories; source/artifact holds remain until explicitly released.
 
 ## Existing renderer support and pixel contract
 
