@@ -153,11 +153,21 @@ attempt. Its join is serialized directory custody, not launch-monitor PID or
 per-message writer identity. The [matrix's controller receipt](../investigations/nb3mgbwc-what-must-match-before-comparing-gpu-buffers-across-sophia-niri-and-xlibre.md#private-capture-controller-source-gate-october-29)
 records the log-format correction and proof limits.
 
-**Immediate next work:** implement the parent READY/ACK driver and diagnostic
-colour/hold producers, wire the helper as Session's same-namespace sibling,
-and finish per-stack normalization. Review that full device gate before separate
-diagnostic releases and an attended package. Authenticated capture, actual mode,
-consumer pixels and cleanup remain unqualified. No timed comparison or W2 change
+The Sophia colour/hold source gate is closed at signed local niltempus
+`80afd166859156cd8628a63b4b73d5571ecada2b`: separate feature-required peer,
+SDK external readiness loop, parent pidfd/ancestry-bound READY/capture/ACK and
+local sibling wrapper. Final checks: 10 hold + 14 controller + 5 pixel + 7
+journal tests; Rust 17+17 feature-on and 14 feature-off, clippy/fmt, historical
+shared-canvas check, and 6 killed/restored mutations. The
+[matrix receipt](../investigations/nb3mgbwc-what-must-match-before-comparing-gpu-buffers-across-sophia-niri-and-xlibre.md#sophia-colourhold-source-gate--october-29)
+records custody limits, separate generation domains and the single-producer
+profile requirement. This is device-free, not authenticated native delivery.
+
+**Immediate next work:** external Wayland/X colour holds and consumer-capture
+normalization, followed by review of the complete protected same-namespace
+recipe. Then produce separate diagnostic release receipts and an attended
+package. Authenticated capture, actual mode, consumer pixels, import refusal,
+release and full cleanup remain unqualified. No timed comparison or W2 change
 is opened by these source gates.
 
 ## Earlier resumption context

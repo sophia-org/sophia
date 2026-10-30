@@ -542,6 +542,57 @@ the parent owns full cleanup. Next: parent READY/ACK and diagnostic colour/hold
 entry points, real same-namespace wiring and per-stack normalization, then
 separate releases and native identity/pixel/refusal/lifetime qualification.
 
+## Sophia colour/hold source gate — October 29
+
+Signed local niltempus `80afd166859156cd8628a63b4b73d5571ecada2b`, parent
+`7214d43372bd019ea4db55bc0ad2ff2662ef722d`, closes the Sophia parent hold-channel
+source gate. The branch/worktree is `bench/gpu-bridge` at
+`~/dev/niltempus-matched-gpu-bridge`; it is clean and unpushed.
+
+The separate feature-required `gpu-bar-colour-hold` binary renders three fresh
+GPU DMA patterns 1,2,1. READY follows exact presentation and predecessor release;
+ACK follows the existing capture helper and a fresh owner-log hold check. During
+holds the SDK 0706ea2 external loop services session IN/OUT, image readiness,
+immediate work and retry deadlines. Unexpected typed content refuses; no cloned
+9P socket or sleeping hold is used. Sophia releases the DMA source at settlement,
+so the oracle concerns Session's imported copy, not producer-buffer scanout.
+
+The parent derives the Session-owned shell listener, opens its private directory,
+listens before publishing hold.sock, and pins the connecting peer with
+SO_PEERPIDFD/starttime/executable and the single-child bwrap -> Session ancestry.
+It removes its own endpoint before Session shutdown. A second hint, peer refusal,
+changed grant, early data, process exit or stale challenge refuses without ACK
+or retry. The diagnostic profile must contain only this shell-content producer;
+other producers' grants are not multiplexed. stderr diagnostics are formatted
+into complete bounded lines before write_all; JSON journals already did that.
+
+READY.shell_output_generation is explicitly separate from the native capture
+incarnation declared in the recipe and verified by the helper. The head log has
+no incarnation field, so it is not derived from the shell facts or an earlier
+run. A fixture deliberately uses shell generation 90 versus native incarnation 1.
+The local wrapper starts Session/driver siblings and records owned-child cleanup;
+it does not prove protected launch, PAM/VT cleanup or a native device path.
+
+Final checks: **10 hold-driver, 14 capture-controller, 5 pixel, 7 journal tests**;
+Rust feature-on **17+17**, feature-off **14**, both-mode clippy/fmt and the
+historical shared-canvas check pass. **4 Python and 2 Rust mutations** were killed
+and restored. Claude's saved-diff review closed all three findings read-only.
+No GPU, protected launch, native run, release build, package, merge or push occurred.
+
+Receipts: `~/.local/state/matched-gpu-hold-01/`, 28 entries verified.
+`RECEIPT.json` SHA256
+`8617082a58660851fbf173784a068937a340a3b38b9c08fa310857c25fe20e1e`;
+`SHA256SUMS` SHA256
+`1bb2b2f686e34087692e450502d2662c50237d1ce0380033237c8999115a5df2`.
+The committed diff matches final-candidate.diff. Superseded failed build logs
+remain labeled in the receipt rather than being removed.
+
+Next: external Wayland/X colour holds and consumer-capture normalization, then
+review the complete same-namespace/native recipe, separately build and pin its
+releases, and qualify actual identity/mode/import/pixels/refusal/lifetime/cleanup.
+Wayland must continue dispatching releases during a hold. No timed GPU comparison
+is authorized by this source gate; W2 and CPU evidence remain frozen.
+
 ## Connections
 
 - [Critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md).
