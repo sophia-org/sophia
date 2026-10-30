@@ -660,6 +660,24 @@ The source and pool are frozen through package preparation, attended attempts
 and audit. Offline package integration is authorized against these exact inputs;
 no native launch or performance result follows the release gate.
 
+The eight-arm package `~/.local/state/t331/lom-cpu-cadence-native-01` is now
+sealed for an attended attempt. Its final offline gate passed 48 unit tests and
+eight device-free argument checks. Root verified 332 pins, 102 unchanged tested
+inputs, clean signed sources and artifact identities, and reconstructed the six
+modified-file diffs against their sealed bases. The isolated Python entry checks
+also cover the shared reducer exception identity. Optional-final and exact
+teardown-error controls are included; no native result is implied.
+
+Manifest SHA256 is
+`3c7d432a9c914bf8d39f22b8d4d713abea00e15ff3e657a8ae86b6acb0f6ab62`
+(142 entries). After sealing, `run.py --check-only` passed all eight SSH/tty
+preflights and eight host argument checks, with no devices opened, attempt
+markers or run outputs. Root created the missing empty `runs/` directory before
+sealing; no tested file changed. The read-only root receipt is
+`~/.local/state/lom-cpu-cadence-preflight-01/RECEIPT.json`, SHA256
+`448f784a8f3b6501f50af1890c6491e50f1a4ee96d9eaa6165298620e5740709`.
+Source and pool holds remain through the attended run and audit.
+
 ## Existing renderer support and pixel contract
 
 Baseline Lom `32e0bab3` pins SDK `0706ea2c78cd16ba59ed209620354f30a2c78906`
