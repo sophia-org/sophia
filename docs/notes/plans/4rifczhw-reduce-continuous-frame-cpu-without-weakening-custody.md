@@ -190,9 +190,18 @@ and an exclusive attempt record. Staging leaves the seal absent. Eight new
 handoff tests, 19 wrapper tests and eight killed/restored mutations pass;
 all 166 inherited host-helper hashes match. No native handoff was executed.
 
-**Immediate next work:** review the staged handoff implementation and complete
-Sophia's protected namespace/core/feature and package integration, including
-real import-refusal and delayed-release controls; then
+Sophia's fixed diagnostic configuration and handoff source are integrated at
+signed local niltempus `8c527e8bcb142ca534b4bb41717b8d93468733e0`, parent
+`fb21242f9`. One capture observer, one GPU-direct DMA bar and explicit artifact
+pins feed the existing sibling Session/driver wrapper and PAM handoff. Nine
+recipe, eight handoff and ten hold tests pass; eight mutations are killed and
+restored. The available debug host accepts the generated configuration and
+rejects five invalid controls with no DRM opens under strace. That parser-only
+control uses a non-launched stand-in peer; it is not a release-ready recipe.
+
+**Immediate next work:** review these source changes, bind Sophia's actual
+refresh readback through the existing credential/pidfd environment contract,
+and implement the real import-refusal and delayed-release controls; then
 produce separate diagnostic release/link receipts and an attended package.
 Authenticated capture, actual mode, consumer pixels, release and outer
 descendant/PAM/VT cleanup remain unqualified. Real server shutdown codes and
