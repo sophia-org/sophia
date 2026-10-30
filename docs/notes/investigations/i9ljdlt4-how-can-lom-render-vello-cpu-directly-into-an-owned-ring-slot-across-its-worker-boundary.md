@@ -535,7 +535,9 @@ surface checksum. This remains a repeated static Vello scene, not normal idle
 bar behavior or a changing-content correctness test.
 
 CPU anchors come from `sophia_shell_native_completion.monotonic_usec`, joined
-through `sophia_shell_native_binding` to candidates 120 and 2120. Require
+through `sophia_shell_native_binding` to candidates 120 and 2120. These are
+reported DRM scanout-start timestamps, not times at which userspace received the
+page-flip event. Require
 `timestamp_source=kernel`, `missing_kernel_timestamp=0`,
 `drm_timestamp_monotonic=1`, the same clock domain as the sampler,
 and unique native binding/completion identities for every counted candidate.
@@ -557,13 +559,14 @@ Thus attempt-to-Offer includes queueing, rasterization, conversion and applicabl
 storage work; Offer-to-kernel includes dispatch, custody, composition and pacing.
 Neither is isolated raster time, host CPU time or photon latency. Carry timestamps
 with the exact job/pending candidate and check ordering against kernel completion.
-Treat kernel timestamp `u` as the bucket `[u*1000, u*1000+1000)` ns for ordering:
-Offer must be no later than its lower bound and Presented observation no earlier
-than its upper bound; ambiguity refuses the arm. For each measured
-job, the eligible attempt follows the start anchor's upper bound and the preceding
-candidate's Presented observation. Require attempt <= Offer; the final Presented
-observation may follow the end kernel anchor. Report the kernel clock's
-microsecond resolution in elapsed-time summaries.
+Treat reported timestamp `u` as the representation bucket
+`[u*1000, u*1000+1000)` ns; this is quantization, not a physical scanout accuracy
+guarantee. Require Offer no later than its lower bound. Presented observation can
+precede the timestamp: report its signed offset from the bucket without clamping
+or requiring either sign. Require attempt <= Offer <= Presented observation and
+each next attempt after the preceding observation. An attempt can precede the
+start anchor; the final observation can precede or follow the end anchor. No
+ordering or vblank-lead bound is inferred from the nominal refresh rate.
 Use cumulative render/upload/reuse counters to reject extra or missing work;
 counter deltas alone do not establish temporal containment.
 
@@ -619,13 +622,14 @@ race. Keep the signed source unchanged: zero final records is allowed, one must
 validate completely, and duplicate, malformed or refused finals reject the arm.
 Missing output is recorded as an observation, not proof of a particular kill.
 
-The quota sample's counters are read at emission after its Presented timestamp,
-which must follow the end kernel bucket. All candidate, timing, counter and
+The quota sample's counters are read at emission after its Presented timestamp;
+that observation need not follow the end kernel bucket. All candidate, timing, counter and
 kernel joins remain mandatory. Extra presented work still refuses; an unfinished
 post-quota job can remain unknown when teardown output is absent. There is no
-whole-run exact-job or graceful-Lom-exit claim. CPUwin's enclosing sample still
-provides an upper bound if later work falls inside that bracket, without making
-the window an exact causal attribution. Host cleanup and process custody remain
+whole-run exact-job or graceful-Lom-exit claim. Unknown post-quota work may overlap
+the end boundary, not merely the outer sample bracket. CPUwin accounts for actual
+process CPU over reported scanout-start intervals, without exact causal job
+attribution. Host cleanup and process custody remain
 independent mandatory checks. Pre-quiescence Lom errors refuse; only the known
 shell-I/O teardown error after exact runtime-deadline quiescence may be classified
 as a teardown observation. The package must test this distinction before sealing.
@@ -698,6 +702,22 @@ timing and CPU qualification do not. All 171 saved package files remain unchange
 The read-only failure audit receipt is
 `~/.local/state/lom-cpu-cadence-native-failure-01/RECEIPT.json`, SHA256
 `cc78561977f0c60ce3545a8b7735f2db9fb3cac13ffd190c9e17afc7ad149ecd`.
+
+The subsequent read-only trace explains the timing refusal as an invalid reducer
+premise. The running kernel's matching
+`/usr/src/kernel-headers-6.18.58_1/include/drm/drm_crtc.h` documents
+`get_vblank_timestamp` as the start of the first scanline after vblank, potentially
+in the future during vblank. Signed host `a56ace891` forwards the event timestamp
+as microseconds in `src/drm/native_page_flip/route.rs` of `sophia-backend-live`.
+Thus downstream Presented observation can precede the reported scanout time.
+No guessed vblank duration or fixed offset correction is an acceptance rule.
+The next recipe must fix transient Binder identity comparison and report signed
+Presented-versus-scanout offsets, retaining all clock, candidate and frame joins.
+This changes the next gate's contract; it does not upgrade failed 01 or restore
+its missing CPU samples. Source and artifact holds remain unchanged.
+The separate read-only `TIMING-CONTRACT.json` beside the failure receipt binds
+the local header, signed host source and saved timing checks; its SHA256 is
+`b51d6a87776d848f77f54de3ec533baf56f6be8a8ae33d4bd4948ba25fb189ac`.
 
 ## Existing renderer support and pixel contract
 
