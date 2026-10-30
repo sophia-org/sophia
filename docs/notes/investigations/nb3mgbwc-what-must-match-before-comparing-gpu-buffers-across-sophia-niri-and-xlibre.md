@@ -800,3 +800,59 @@ the package must bind all three required host features in its build receipt.
 - [Critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md).
 - [Producer comparison and CPU result](iq4zf50w-how-do-we-compare-sophia-xlibre-and-niri-with-matched-pixel-producers.md).
 - [Owned GPU capture qualification](../plans/h38nf8bk-qualify-gpu-native-shell-images-through-owned-capture.md).
+
+
+## October 30: startup readback source gate and CPU-first sequencing
+
+Signed local niltempus `d997e29f76bd845c5394a10ac3dcb16a5222cdac`, parent
+`8c527e8bcb142ca534b4bb41717b8d93468733e0`, binds the diagnostic wrapper to the
+existing Rust environment receiver. The optional `--ready` acknowledgement
+follows SO_PASSCRED setup. The helper's opened executable is hash-pinned;
+received credentials and the transferred live TGID pidfd are checked by the
+existing receiver, then joined to the supervised Session PID/starttime/exe.
+Private stdout/stderr, exact record sets, a bounded startup interval, and the
+same output/card/timestamp bind the actual 119880 mHz timing, scale 1, VRR off
+and amdgpu renderer. The existing sysfs check binds card0 to PCI 03:00.0.
+The three held outputs must match. The native incarnation is a separate
+capture-controller check, not equated with a shell generation or output ID.
+
+The hold driver starts concurrently because GL identity can depend on a first
+rendered frame. The receiver exits after 15 seconds; both its readback gate
+and the driver/capture gate must pass. This is one startup hardware readback,
+not per-hold re-observation. A slow or absent readback refuses without retry.
+No native session, GPU, PAM/VT handoff, release or package was run here.
+
+Device-free evidence: 34 Python tests, 10 receiver socket and 32 process-
+binding tests; the Python integration uses real local kernel credentials and
+pidfds with synthetic mode rows and a mocked DRM layout. Nine guard mutations
+are killed and restored. The exact available debug host accepts the parser
+configuration and refuses missing-arm and relative-socket controls under
+strace without DRM opens or destination creation. The grammar-only peer is
+`/usr/bin/true`, never launched. Both existing bridge archives are unchanged.
+
+The first full xtask run fails an unchanged audit:
+`physical_runner_bounds::no_runner_builds_or_reads_a_source_target` flags
+`tools/gpu-bar/bridge/check.sh:11`. Both audit and script match the parent.
+The remaining suite passes with only that named test excluded; do not call
+this an entirely green full suite. Clippy and fmt pass. Receipts are under
+`~/.local/state/matched-gpu-sophia-environment-01/`; receipt SHA
+`9dff8f7a3204416eb4ae53ddedae3887a9b19bee44deceee09509a860a9a5917`, manifest SHA
+`e29fa433ffb648348b9c9115ed6a39e837c96af66077e68c9d9be0f69972de37`, 58 entries.
+
+Mason's new order is recorded in [the critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md):
+finish this in-progress source gate, then production Vello CPU/Sparse Strips
+slot custody and direct-fill adoption before further GPU work. Retain slice
+upload for already-owned pixels, one frame in flight and Session's acceptance
+copy; require equivalence, exact release/abort tests and a predeclared native
+CPU comparison before defaulting production. The completed matched-CPU 02
+shade benchmark supplies no scene-direct-fill savings claim; 01 failed and
+remains immutable.
+
+Only after CPU direct-fill comes the proposed GPU direct-render path. The
+reviewed recommendation is format-first: qualify a LINEAR RGBA-order target
+with storage usage through exact SDK/runtime/EGL/import rows and the non-grey
+foreign-Vulkan→EGL oracle before eliminating Lom's RGBA-to-BGRA export blit.
+Preserve foreign-release/fence/SourceReleased custody and Session's copy.
+Evaluate GPU stage timing and cadence at bar and large sizes, not CPUwin as
+GPU time. No implementation is authorized by placing this later item in the
+plan, and Vello GPU is not proposed for Session's capture or composition.

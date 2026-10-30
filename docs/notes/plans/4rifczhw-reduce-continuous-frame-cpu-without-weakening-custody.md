@@ -199,15 +199,73 @@ restored. The available debug host accepts the generated configuration and
 rejects five invalid controls with no DRM opens under strace. That parser-only
 control uses a non-launched stand-in peer; it is not a release-ready recipe.
 
-**Immediate next work:** review these source changes, bind Sophia's actual
-refresh readback through the existing credential/pidfd environment contract,
-and implement the real import-refusal and delayed-release controls; then
-produce separate diagnostic release/link receipts and an attended package.
-Authenticated capture, actual mode, consumer pixels, release and outer
-descendant/PAM/VT cleanup remain unqualified. Real server shutdown codes and
-niri's second-GPU exclusion are first-attempt calibration checks; a refusal
-stays a failed attempt. No timed comparison or W2 change is opened by these
-source gates.
+The startup-readback source gate is now signed locally at niltempus
+`d997e29f76bd845c5394a10ac3dcb16a5222cdac`. It reuses the credential/live-TGID-
+pidfd receiver with an explicit ready acknowledgement, a pinned helper and a
+15-second startup window concurrent with the hold driver. It requires the
+actual 119880 mHz row, not the nominal 120000 head log. Thirty-four Python
+tests, 10 socket plus 32 binding tests, clippy and nine killed/restored
+mutations pass. The full xtask run hit an unchanged bridge/check.sh source-
+audit failure; the rest passes with only that named test skipped. This is
+startup/source evidence, not a native mode or capture qualification. Receipts:
+`~/.local/state/matched-gpu-sophia-environment-01/` (58 entries, manifest
+`e29fa433ffb648348b9c9115ed6a39e837c96af66077e68c9d9be0f69972de37`).
+
+**Immediate order, Mason's October 30 instruction:** CPU direct-fill
+custody design/adoption before further GPU implementation. Do not let the
+GPU qualification or direct-render follow-up displace or delay CPU work.
+Existing holds, sealed packages, W2 trees and evidence remain untouched.
+`desktop-matched-cpu-01` failed qualification and `-02` completed; neither
+measured Sparse Strips scene rendering directly into an owned-ring slot.
+
+1. **Production pure-CPU direct fill.** Make Vello CPU / Sparse Strips rendering
+   directly into the owned-ring slot the intended default native CPU mover,
+   only after the gates below. Lom currently renders on a worker into an owned
+   pixel buffer and the service thread calls
+   `image_upload_ring(upload, pixels.bytes(), ...)` at
+   `src/service/presentation.rs:240`. The matched CPU peer's direct shade fill
+   is a serial benchmark implementation, not production scene-rendering proof.
+   Design SDK/Lom acquire → render → commit custody across the worker boundary
+   first: `RingSlotFill` currently borrows the connection's producer. Preserve
+   one frame in flight, exact SlotReleased reuse, cancellation/disconnect and
+   render-error aborts that publish/spend nothing. Do not put a borrowed slot
+   on a worker by an unchecked lifetime or Send escape.
+
+   Then render via imaging_vello_cpu into the slot's mutable pixels, with
+   exact width×height×4 length and frame capacity. Retain slice upload for
+   callers that already own pixels, including decoders. GPU/DMA paths and
+   Session's custody copy after acceptance stay unchanged. Qualification
+   before any default flip: byte-equivalence against the current slice path,
+   exact release/abort fixtures, CPU arms denied GPU grants, and a predeclared
+   native CPU comparison with combined and per-process intervals. This removes
+   one client-side Vec-to-slot copy (184320 bytes at 1920×24); its benefit has
+   not been measured. No savings claim follows from the shade-fill benchmark.
+
+2. **GPU direct render, strictly after CPU direct fill.** Record the proposed
+   Vello render into the exportable target as a later design/qualification
+   item, not implementation authority from the recommendation alone. Today's
+   reported client path renders Rgba8Unorm then blits into LINEAR BGRA/XR24,
+   with two submissions and an extra full-frame GPU copy before Session's
+   unchanged custody capture. First qualify a LINEAR RGBA-order export format
+   on the same device through exact SDK capability/runtime format rows,
+   Session EGL capture and compositor imports, using the non-grey Vulkan→EGL
+   oracle. No channel-swizzle shortcut or assumption that an existing texture
+   view API proves export-format/storage usage compatibility.
+
+   Only after that gate consider rendering into the export view while keeping
+   foreign release, fence and SourceReleased semantics. Judge DMA stage timing
+   and cadence at bar and large-surface sizes; CPUwin is not GPU time or
+   end-to-end latency. Do not move Vello GPU into Session's capture/composition:
+   the proposed saving is client-side, and no extra Vulkan/wgpu context beside
+   the EGL/GBM owner is justified here.
+
+The existing GPU qualification prerequisites remain recorded, in that lower
+priority lane: real import-refusal and delayed-release controls, separate
+signed diagnostic release/link receipts, then an attended sealed package.
+Authenticated capture, actual native mode, consumer pixels, release and outer
+PAM/VT cleanup remain unqualified. Real server shutdown codes and niri's
+second-GPU exclusion are first-attempt calibration checks; any refusal remains
+a failed attempt. No timed GPU comparison or W2 change follows from source gates.
 
 ## Earlier resumption context
 
