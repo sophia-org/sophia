@@ -302,8 +302,11 @@ measured Sparse Strips scene rendering directly into an owned-ring slot.
    completion anchors, Session/Lom/Hagia CPU accounting bounds and explicit owner
    timing endpoints. Cadence is an outcome, not an assumed 60 Hz result. This is
    instrumented repeated-scene qualification, not isolated memcpy or ordinary idle
-   desktop performance; overlapping bounds are inconclusive. Implementation and a
-   fresh attended package are still pending; see the direct-fill investigation.
+   desktop performance; overlapping bounds are inconclusive. The diagnostic source
+   gate is signed and pushed as Lom `3fe206dc` (tree `289f14e4`): 239 Rust tests
+   passed, two existing entries ignored, and default/feature Clippy is clean.
+   Release provenance and a fresh attended package remain separate gates; see
+   the direct-fill investigation. No performance or adoption result follows.
 
    Two native pixel movers remain: CPU pixels and GPU buffers. App/user policy
    chooses the supported renderer; Sophia enforces authority. Direct fill is the

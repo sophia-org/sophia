@@ -504,8 +504,9 @@ repositories; source/artifact holds remain until explicitly released.
 
 ### Next gate: repeated static-scene CPU comparison
 
-This is the selected design, not a tested implementation or performance result.
-Implement in a fresh Lom worktree from `8358cb3f`; keep the qualified static
+This design was selected before the source gate recorded below; it is not a
+native performance result. Implement in a fresh Lom worktree from `8358cb3f`;
+keep the qualified static
 binary, source pools and spent native packages frozen. GPU direct-render work
 remains after CPU qualification. A new `lom-cpu-cadence` executable under the
 existing default-off diagnostic feature selects the workload by executable
@@ -583,6 +584,37 @@ as inconclusive, and do not rerun until a desired result appears. Offline source
 gates, exact release receipts, a reviewed fresh package and an attended launch
 remain required. No production saving or default-adoption claim follows this
 design or the earlier one-Hz descriptive CPU measurements.
+
+The offline implementation is now signed and pushed on `cpu/cadence` as
+`3fe206dc25f26905531ae8365b7f4580d75fa72b`, parent `8358cb3f`, tree
+`289f14e43e3553d0fdcaed413a428edff19de6f2`, in `~/dev/lom-cpu-cadence`.
+Root reviewed candidate SHA256
+`1ed0406fdf3153a493b8aad4449f0b85cd98197afb2e99f1b29d613d8b163e56`
+and verified the source hashes remained equal through the full default/feature
+gate: 239 Rust tests passed, two existing subprocess entries ignored, 18 Python
+tool tests passed, and both Clippy passes were warning-free. Six new real-service
+tests cover both Vello CPU arms, quota stopping, withheld Presented/release,
+unchanged static behavior, lost counters/extra work, and the actual CLI owner
+loop's reporter/cadence setup order. Test sockets use fresh exclusively created
+directories and the watchdog is joined.
+
+The diagnostic emits `lom_cadence`, per-candidate `lom_cadence_sample`, and a
+`lom_cadence_final` counter/status record, without changing the existing candidate
+schema. Its first timestamp is after the owner clones the model; it does not
+include that cloning cost. Extra externally dirtied work is not suppressed: it
+refuses sampling or appears in the final counters, so a native reducer must
+require the exact quota and complete final status. Existing slot custody and
+rendering worker code are unchanged. The owner loop enables cadence counters
+after the normal reporter initializes, and rejects any work-stat environment
+variable before connecting. Two setup mutations were killed before the final
+fixture/lint cleanup; the complete gate binds the final exact tree.
+
+The immutable source receipt is
+`~/.local/state/lom-cpu-cadence-01/RECEIPT.json`, SHA256
+`135a5ea84460db15f3885e2af92622ea56aa6aa6f75109981dc5b95a4785bcf9`.
+The checksum manifest verifies. Release provenance, package qualification and
+attended native measurements are separate gates; this source result establishes
+no cadence, timing, CPU saving or default-adoption result.
 
 ## Existing renderer support and pixel contract
 
