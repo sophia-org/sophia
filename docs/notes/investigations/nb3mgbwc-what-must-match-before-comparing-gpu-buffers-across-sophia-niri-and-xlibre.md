@@ -650,6 +650,59 @@ Next: complete the native controller/wrapper and diagnostic recipe, review them,
 then separately build/pin releases and qualify actual device delivery. No timed
 GPU comparison is opened by this gate; CPU and W2 evidence remain frozen.
 
+## External native-wrapper source gate — October 30
+
+Signed local niltempus `286eb0ed75ee91ac6fc4cbc3ec06188d728ef78d`, parent
+`0f3bfc42c`, adds the untimed external wrapper and fixed niri/XLibre recipes.
+It binds opened executable identities, process starttimes/pidfds, owned
+listeners, physical DRM mapping, live output readbacks and the three held
+colour captures. Helpers have bounded private output and deadlines. The
+client journal must join each READY presentation timestamp; local cleanup
+checks client then server, including a server exit after DONE. This is a
+source gate, not native qualification or a comparison row.
+
+The niri config now ignores `/dev/dri/card1`; SHA256 is
+`58948f4c081a5f29f45af0ebff91a71d072795912eef9a5f4b87c05ba972c976`.
+Pinned installed niri `5b8c2191` accepts it and refuses a misspelled key under
+strace with no DRM opens. This proves syntax only. Four-node lstat/sysfs
+checks pin this boot's card0/renderD128 to 03:00.0 and card1/renderD129 to
+16:00.0 before launch and during identity checks. Live server FD checks must
+still establish that no second GPU was opened. Newly attached DRM devices
+are outside that four-node preflight, but remain subject to live FD checks.
+
+X uses the saved CPU recipe, checks filesystem and any abstract listener
+ownership, and uses `xrandr --current --verbose` during holds. X capture
+refuses a registered compositing manager. XKB data, xkbcomp and the input
+module remain explicitly host-unpinned; the package must bind their closure
+or preserve that limit. The opened executable FD is intentionally inherited.
+The bridge hash alone does not prove static linking: release/link receipts
+remain necessary.
+
+Final saved checks: **19 wrapper, 7 external-hold, 8 journal, 14 capture,
+10 Sophia-hold and 5 pixel tests** (63 total), C capture controls with rc=0,
+and **12 killed/restored mutations**. M12 removes coupled server exit guards;
+it is not three independent mutation proofs. Fixtures use real local
+process/socket/pipe/inotify mechanisms with compositor/device stand-ins.
+Both saved CPU output fixtures parse unchanged. Claude's final read-only
+review found no blockers.
+
+Receipts: `~/.local/state/matched-gpu-native-wrapper-01/`, **44 entries verified**.
+`RECEIPT.json` SHA256
+`6de1ea095193975bbd941d6615213416a62028bf12af580f12e1c367d5508889`;
+`SHA256SUMS` SHA256
+`cd475674cfe16bc5e5b42776393d030b3cd39ca1a92f7bb7edd70ca0804e4a5e`.
+Committed diff equals final-candidate.diff (`96881ed8`). Earlier logs/diffs
+are retained as superseded history. No Cargo/release build, GPU device open,
+native run, package, merge or push occurred; frozen W2/CPU evidence is unchanged.
+
+Next is protected handoff/package integration, concrete real import-refusal
+and delayed-release controls, and separate release receipts before attended
+device qualification. Server shutdown codes and whether niri's primary-node
+ignore excludes all second-GPU nodes remain runtime-unknown. A first refusal
+is a calibration finding retained as failed evidence, not permission to count
+the attempt as qualified. Outer descendant, PAM and VT cleanup remain separate
+from this wrapper's local process cleanup.
+
 ## Connections
 
 - [Critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md).

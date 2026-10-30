@@ -173,12 +173,23 @@ bridge tests plus 14 DMA tests, adapter/C ABI controls, 6 killed/restored
 mutations and both wrong-library link refusals. The matrix records fixture
 limits; these are debug source controls, not release or native evidence.
 
-**Immediate next work:** implement and review the complete native controller,
-protected same-namespace wrapper and per-stack diagnostic recipe. Then produce
-separate diagnostic release receipts and an attended
-package. Authenticated capture, actual mode, consumer pixels, import refusal,
-release and full cleanup remain unqualified. No timed comparison or W2 change
-is opened by these source gates.
+The external native-wrapper source gate is closed at signed local niltempus
+`286eb0ed75ee91ac6fc4cbc3ec06188d728ef78d` (parent `0f3bfc42c`). Fixed
+niri/XLibre recipes now bind processes, devices, outputs, capture and hold
+events, with bounded local cleanup. Final checks: 63 Python tests, C capture
+controls and 12 killed/restored mutations. The installed niri binary accepts
+the second-GPU ignore syntax and rejects a misspelling without opening DRM;
+this does not establish runtime exclusion. The matrix records the receipt
+and remaining qualification limits.
+
+**Immediate next work:** complete and review the protected handoff/package
+integration, including real import-refusal and delayed-release controls; then
+produce separate diagnostic release/link receipts and an attended package.
+Authenticated capture, actual mode, consumer pixels, release and outer
+descendant/PAM/VT cleanup remain unqualified. Real server shutdown codes and
+niri's second-GPU exclusion are first-attempt calibration checks; a refusal
+stays a failed attempt. No timed comparison or W2 change is opened by these
+source gates.
 
 ## Earlier resumption context
 
