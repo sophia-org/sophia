@@ -678,6 +678,27 @@ sealing; no tested file changed. The read-only root receipt is
 `448f784a8f3b6501f50af1890c6491e50f1a4ee96d9eaa6165298620e5740709`.
 Source and pool holds remain through the attended run and audit.
 
+The first attended attempt then failed in `h24-direct-a`; package 01 is spent
+and must not be retried or resealed. The collector compared the transient Binder
+helper's PID/starttime and `/proc` paths across separate helper invocations, so
+the first live identity check refused an expected observer change. It stopped
+the CPU sampler after three samples. Session continued to its deadline and Lom
+emitted all 2,120 rendered candidates/samples plus a complete final record, but
+this does not recover the missing CPU window. The remaining seven arms did not
+run. VT/PAM cleanup completed, tty state was restored, and the bound processes
+were gone at audit.
+
+External saved-data reduction also found a separate timing refusal: all 2,120
+Lom Presented-observation timestamps precede their joined reported kernel
+completion times by 27,766 to 524,171 ns. The declared timing ordering therefore
+fails independently of the collector. No timestamp adjustment or gate relaxation
+has been accepted; the source/clock path needs investigation before another
+package. Native/kernel/recovery component checks pass on the saved log, while
+timing and CPU qualification do not. All 171 saved package files remain unchanged.
+The read-only failure audit receipt is
+`~/.local/state/lom-cpu-cadence-native-failure-01/RECEIPT.json`, SHA256
+`cc78561977f0c60ce3545a8b7735f2db9fb3cac13ffd190c9e17afc7ad149ecd`.
+
 ## Existing renderer support and pixel contract
 
 Baseline Lom `32e0bab3` pins SDK `0706ea2c78cd16ba59ed209620354f30a2c78906`
