@@ -218,28 +218,34 @@ Existing holds, sealed packages, W2 trees and evidence remain untouched.
 `desktop-matched-cpu-01` failed qualification and `-02` completed; neither
 measured Sparse Strips scene rendering directly into an owned-ring slot.
 
-1. **Production pure-CPU direct fill.** Make Vello CPU / Sparse Strips rendering
-   directly into the owned-ring slot the intended default native CPU mover,
-   only after the gates below. Lom currently renders on a worker into an owned
-   pixel buffer and the service thread calls
-   `image_upload_ring(upload, pixels.bytes(), ...)` at
-   `src/service/presentation.rs:240`. The matched CPU peer's direct shade fill
-   is a serial benchmark implementation, not production scene-rendering proof.
-   Design SDK/Lom acquire → render → commit custody across the worker boundary
-   first: `RingSlotFill` currently borrows the connection's producer. Preserve
-   one frame in flight, exact SlotReleased reuse, cancellation/disconnect and
-   render-error aborts that publish/spend nothing. Do not put a borrowed slot
-   on a worker by an unchecked lifetime or Send escape.
+1. **Production pure-CPU direct fill.** Follow the
+   [worker-custody design](../investigations/i9ljdlt4-how-can-lom-render-vello-cpu-directly-into-an-owned-ring-slot-across-its-worker-boundary.md).
+   Source correction: Lom `32e0bab3` native `--serve` always requires a GPU grant;
+   its `RenderImage::Cpu` is GPU readback. Vello CPU currently appears in UI tests,
+   not the production worker. Add the explicit pure-CPU renderer and an owned SDK
+   slot loan; keep the service thread polling while the worker renders. The imaging
+   API already supports a borrowed destination, so no imaging fork is needed.
 
-   Then render via imaging_vello_cpu into the slot's mutable pixels, with
-   exact width×height×4 length and frame capacity. Retain slice upload for
-   callers that already own pixels, including decoders. GPU/DMA paths and
-   Session's custody copy after acceptance stay unchanged. Qualification
-   before any default flip: byte-equivalence against the current slice path,
-   exact release/abort fixtures, CPU arms denied GPU grants, and a predeclared
-   native CPU comparison with combined and per-process intervals. This removes
-   one client-side Vec-to-slot copy (184320 bytes at 1920×24); its benefit has
-   not been measured. No savings claim follows from the shade-fill benchmark.
+   Two native pixel movers remain: CPU pixels and GPU buffers. App/user policy
+   chooses the supported renderer; Sophia enforces authority. Direct fill is the
+   intended default **within CPU mode**, not forced CPU rendering or hidden fallback.
+   Hybrid rendering inside an app still produces one of these output forms. See the
+   [application guide](../../native-rendering-choice.md).
+
+   Preserve exact SlotReleased reuse, one render job, fresh commit validation,
+   abort-without-publication, existing-pixel slice upload, GPU/DMA behavior and
+   Session's custody copy. Keep registration capacity fixed and expose an exact
+   width×height×4 frame slice; do not import the serial benchmark's per-frame
+   capacity assumption into a multi-panel service. Preserve pixel conversion.
+
+   Qualification compares the same new Vello CPU renderer with slice upload versus
+   direct fill, including real scenes, alpha, scale and larger surfaces. GPU
+   readback is not the copy-only baseline. Require device-free custody/equivalence
+   proofs, native GPU-denied CPU arms, and predeclared combined/per-process CPU
+   intervals, elapsed render-to-ready time and cadence before any default flip.
+   The removed client copy is 184320 bytes at 1920×24; its benefit is unmeasured.
+   Neither the shade-fill results nor a plausible small-scene CPU advantage proves
+   that benefit. GPU implementation must not displace this CPU work.
 
 2. **GPU direct render, strictly after CPU direct fill.** Record the proposed
    Vello render into the exportable target as a later design/qualification

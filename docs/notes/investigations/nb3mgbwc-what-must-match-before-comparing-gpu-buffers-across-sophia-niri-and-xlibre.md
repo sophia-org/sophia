@@ -9,8 +9,10 @@ tags: [investigation, performance, benchmark, gpu]
 
 ## Decision and scope
 
+**October 30 sequencing:** [CPU direct-fill adoption](i9ljdlt4-how-can-lom-render-vello-cpu-directly-into-an-owned-ring-slot-across-its-worker-boundary.md) comes before further GPU implementation. This matrix retains the GPU gates for afterward.
+
 The [matched CPU comparison](iq4zf50w-how-do-we-compare-sophia-xlibre-and-niri-with-matched-pixel-producers.md)
-is qualified. The next critical-path gate is a matched GPU-buffer producer,
+is qualified. The subsequent GPU comparison needs a matched GPU-buffer producer,
 not a repeat of GPU render → CPU readback → owned-ring upload. Source tracing
 finds a usable Sophia exporter and import protocols for the other stacks, but
 no existing three-stack benchmark adapter. This matrix closes the initial source

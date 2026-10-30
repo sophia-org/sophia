@@ -11,6 +11,8 @@ wins when prose disagrees.
 
 ## Orientation
 
+- [Choosing CPU pixels or GPU buffers](native-rendering-choice.md): app/user choice, hybrid renderers, current APIs and measurement.
+
 - [Native desktop capabilities](native-desktop-capabilities.md) maps current
   developer operations, authority boundaries, evidence and protocol gaps;
   reference clients are not a commitment to implement a complete desktop UI.
