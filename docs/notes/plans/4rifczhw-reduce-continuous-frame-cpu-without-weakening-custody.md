@@ -226,6 +226,14 @@ measured Sparse Strips scene rendering directly into an owned-ring slot.
    slot loan; keep the service thread polling while the worker renders. The imaging
    API already supports a borrowed destination, so no imaging fork is needed.
 
+   The SDK custody source gate is signed at `5d895652` with parity documentation
+   at `4d81630`: 948 workspace tests, zero-warning clippy and four killed/restored
+   mutations. Only baseline `role.rs` formatting remains outside the changed-file
+   clean check. Receipts are in `~/.local/state/cpu-owned-fill-sdk-01/`.
+   C worker/close lifetime parity remains open; no verified SDK pin update or
+   production adoption follows yet. Next close that proof and implement Lom's
+   explicit CPU worker, preserving the same scene and conversion baseline.
+
    Two native pixel movers remain: CPU pixels and GPU buffers. App/user policy
    chooses the supported renderer; Sophia enforces authority. Direct fill is the
    intended default **within CPU mode**, not forced CPU rendering or hidden fallback.

@@ -32,6 +32,46 @@ by `tests/ui.rs`, but not by this production worker. Earlier shorthand that
 production already rendered Sparse Strips into an owned CPU buffer was wrong.
 Adoption needs both an explicit CPU renderer and worker-safe slot custody.
 
+## October 30 SDK source gate
+
+The Rust custody layer is implemented locally on `cpu/owned-fill` in
+`~/dev/sdk-rs-cpu-owned-fill`: signed implementation
+`5d89565266c3a066c32c2eebac6fad40dc1d0a66`, parent exactly
+`0706ea2c78cd16ba59ed209620354f30a2c78906`; signed documentation head
+`4d81630c5125c88cb74c1b45c1a0fe890a12a64a`. The tree is clean and unpushed.
+Public operations are `image_acquire_ring_fill`, `image_commit_ring_fill` and
+`image_abort_ring_fill`, with an owned `OwnedRingSlotFill`. Failed commits retain
+the loan, successful operations leave it inert, and abandonment is terminal.
+One lazily allocated producer identity is reused across fills; consumed-payload
+checks prevent an old handle claiming a later fill. No per-frame token allocation,
+new thread, wire record or unsafe block was added.
+
+All 948 workspace tests pass (174 result lines, including doc tests). Fifteen new
+cases cover producer custody and scripted shell-client integration, including
+actual mapping identity, wire-visible payload, owner progress, foreign/stale
+handles, exact release, failures and late commit after disconnect. Four guard
+mutations are killed and restored; the restored producer/client tests pass.
+Workspace/all-target clippy has no warnings. Changed Rust files pass formatting;
+whole-workspace fmt still refuses one unchanged baseline hunk in
+`sophia-image-producer/src/role.rs`, hash-checked against the base. No DMA edit was
+included to conceal that exception.
+
+Receipts: `~/.local/state/cpu-owned-fill-sdk-01/`, 25 manifest entries verified;
+`RECEIPT.json` SHA256 `bb8d771d7b3f886b4a0f7ce718655e53c2c01d84e838d595411eb8b7d2423e5c`,
+manifest SHA256 `30ff435ff65698052f1499c09a8c665728a2afbf7805b98c13b9fef3a6b7d73c`.
+This is device-free Rust source evidence, not Lom integration or native acceptance.
+
+**C parity remains an adoption gate.** Read-only comparison at signed C
+`3ccc7d04c28309ebed6fd53f399af7c7a5682d80` finds split
+`sophia_ss_image_ring_pixels` / `sophia_ss_image_ring_offer` operations, but the
+pointer lookup does not reserve a slot and `sophia_ss_image_close` unmaps it.
+Prove and document the caller's worker/close synchronization independently;
+determine whether a C helper is needed from those proofs rather than blindly
+porting Rust ownership. The SDK's `API-PARITY.md` records this open gate. No C
+changes/tests, verified Sophia pin update, default flip, release or native run
+are claimed. Close the parity proof before production adoption; then complete
+Lom's explicit CPU worker and its scene/pixel/custody gates.
+
 ## Existing renderer support and pixel contract
 
 Lom pins SDK `0706ea2c78cd16ba59ed209620354f30a2c78906` and
@@ -77,7 +117,7 @@ remain provisional until the SDK implementation review.
 5. Explicit abort returns the mapping and frees the unoffered acquisition without
    sending or spending anything. Render errors return the loan for abort.
    Dropping an unreturned loan must instead terminate that ring, never mark it
-   reusable. A private per-loan identity and abandonment signal checked by owner
+   reusable. A private producer identity, consumed-payload checks and an abandonment signal checked by owner
    polling avoid a second SDK worker/return queue. The exact signal and caller
    wake obligations still require implementation tests.
 6. Disconnect, revoke, stale allocation and timeout cannot reclaim memory from a
