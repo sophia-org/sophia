@@ -114,10 +114,90 @@ or performance claim. C consumer enforcement remains caller-specific. Next is
 native CPU qualification against the same-renderer copy reference; GPU direct
 rendering stays later.
 
+## Native launch prerequisite and qualification order
+
+Sophia's `base_launch_spec` at `d9116ff0` starts the configured executable with
+exactly `--serve`; it canonicalizes and read-only binds `SOPHIA_SHELL_CONFIG`,
+without parsing Lom's panel keys. Consequently the CLI-only CPU selector in
+`ceb89664` was not selectable through an ordinary native component recipe.
+Signed local Lom `9b1cf041203b03b69b675d2d771f80b15ab9cae2` fixes that prerequisite:
+`panel { renderer "cpu"; }` selects CPU, absence still selects GPU, and explicit
+`--renderer` overrides the config. CPU plus the resolved DMA source refuses before
+connection or renderer startup. Sophia, the SDK and the renderer/custody path are
+unchanged. No environment override or wrapper executable is introduced.
+
+The default full gate passes 110 Rust tests (one existing ignored subprocess
+entry), 18 Python tests, formatting, dependency audit and warning-free clippy.
+Five controls catch ignored config, ignored CLI override, omitted CPU/DMA refusal,
+ignored CPU parsing and ignored CPU startup routing. Receipts are in
+`~/.local/state/lom-cpu-native-config-01/`: signed receipt SHA256
+`a8aca6a45d8d1e65a541f349bcaa08ada69cbc183a83c96244e047c497c25277` and manifest
+`82db193f9117512a21e4c70f6107c7a50ea6d7ef8fd9beb5f7e9b6ebe7dc2199`.
+The isolated default-feature release is
+`~/.cache/cargo-slots/lom@lom-cpu-native-config/1/release/lom`, SHA256
+`123746c6fd52670bdd8ded6dcd3237ca867424b8d6a0fbd0305eee2cf3b1b13b`.
+`RELEASE-READY.json` (`3640db6fcae9ffd6f1eaaca0693d97e505229192944846fe1ce937da8031e255`)
+records permission normalization to 0700 without changing the binary bytes.
+The local SDK pin remains a development exception.
+
+Qualification proceeds in this order:
+
+1. An ordinary native CPU clock run, using the sealed `shell-client-work-02`
+   recipe as a read-only reference, in a fresh package. Preserve its one-output
+   topology, fixed-time collection, identity binding and recovery checks. Deny
+   GPU access to Lom and require its exact CPU renderer record; keep any retained
+   dock's GPU admission separate. This is not a wholly GPU-free desktop. Check
+   matching client/host presentation identities, ongoing rendered clock updates,
+   resource settlement and cleanup. There is no output pixel readback or CPU
+   improvement verdict in this gate.
+2. After ordinary startup works, add a separate default-off diagnostic reference
+   entry point. Use one binary for both arms, selected by an explicit protected
+   config value; the ordinary entry point must refuse the diagnostic reference.
+   Reuse Vello CPU, retained scene construction, conversion and the existing slice
+   upload. Do not use the GPU-readback path as the baseline, a hidden environment
+   switch, a new host-side workload driver or a continuous-redraw hook.
+3. Qualify that reference and predeclare its comparison before running it. The
+   seconds clock is a real approximately 1 Hz workload, not a 120 Hz producer.
+   Existing fixed-time snapshots only bracket presentation counts; report CPU
+   per time and the count bracket, never divide by an assumed frame count.
+   Same-scene byte proof, native pixel evidence and elapsed render-to-ready timing
+   remain distinct gates. Keep inconclusive outcomes and do not repeat for a win.
+
+No native result, default adoption or performance claim follows from the launch
+prerequisite or release build.
+
+### Sealed ordinary CPU clock package
+
+`~/.local/state/t331/lom-cpu-native-01` is sealed for one attended `clock-cpu`
+attempt. It retains host `560b0aa` / binary `25f2ed76`, the GPU dock and the
+60 Hz topology from `shell-client-work-02`; Lom uses release `123746c6` with
+`renderer "cpu"` and a denied GPU grant. The run lasts 100 seconds, with a
+10-second warmup and a 60-second fixed accounting window. Seconds-clock updates
+are required; pointer/keyboard interaction is excluded. CPU accounting is
+descriptive, with no comparison or per-frame denominator.
+
+The package requires exact CPU renderer/transport records, distinct bar/dock
+negotiations, and a bijection between Lom and host presentation records.
+Candidate generations and presentation epochs are separate domains: epochs may
+skip values. This shared untrusted-log join proves consistency, not pixels.
+Existing identity, resource-settlement, output, VT/PAM and cleanup checks remain.
+Exclusive attempt/result markers prevent retry after an attempt is spent.
+
+Offline validation passes 43 tests; 28 tested inputs stayed unchanged. Root's
+validation receipt binds all seven checks and 43 static input hashes, including
+test logs and preparation code. Its SHA256 is
+`2ce4f43da77ce1742d92798ead72cfdfc5357fd010890b54bad3b433bf257f35`.
+The 46-entry manifest SHA256 is
+`560eed909da2b042df99902966aec23cf8d5ea888c3973d9f666a59c3c208f75`.
+Post-seal check-only passed without launching a session or opening devices.
+No attempt or result exists yet. Launch with
+`sh ~/.local/state/t331/lom-cpu-native-01/run.sh`; retain the Lom source worktree
+and leave its release pool unchanged through the saved-data audit.
+
 ## Existing renderer support and pixel contract
 
-Lom pins SDK `0706ea2c78cd16ba59ed209620354f30a2c78906` and
-`imaging_vello_cpu 0.0.1` (lock checksum
+Baseline Lom `32e0bab3` pins SDK `0706ea2c78cd16ba59ed209620354f30a2c78906`
+and `imaging_vello_cpu 0.0.1` (lock checksum
 `fd411d3ad5f4b8271a45b4bc69df7f88bb4236b71fbd4e5a5177c6e93eb67f44`).
 The imaging crate already implements `ImageRenderer::render_source_into` using
 a borrowed `ImageBufferTarget`. `finish_into_target` validates dimensions,

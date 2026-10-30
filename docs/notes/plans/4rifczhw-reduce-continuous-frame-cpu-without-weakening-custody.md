@@ -241,9 +241,23 @@ measured Sparse Strips scene rendering directly into an owned-ring slot.
    Owner snapshots survive through commit; Accepted alone blocks reuse. Receipts
    are in `~/.local/state/lom-cpu-direct-fill-01/`; the linked design records
    hashes and coverage limits. Its SDK `file://` pin remains a development
-   exception. Next qualify the native CPU path and same-renderer copy reference,
-   preserving the same scene and conversion baseline. No native/default or
-   performance promotion follows from source tests.
+   exception. Signed successor `9b1cf041` adds protected panel `renderer "cpu"`
+   selection because Sophia launches components with fixed `--serve`; CLI values
+   override config and the default remains GPU. Its full gate passes 110 Rust
+   and 18 Python tests plus five negative controls. Release `123746c6` is prepared
+   in the separate `lom@lom-cpu-native-config` pool, with receipts under
+   `~/.local/state/lom-cpu-native-config-01/`.
+   Next qualify ordinary native CPU startup, seconds-clock presentation, custody
+   and cleanup. Then qualify the same-renderer diagnostic copy reference,
+   preserving the scene and conversion baseline. Fixed-time clock observations
+   do not provide an exact frame denominator or a 120 Hz workload. No
+   native/default or performance promotion follows from source tests.
+
+   Ordinary CPU qualification package `lom-cpu-native-01` is sealed, unattempted,
+   with manifest `560eed90` (46 entries); post-seal check-only passes. It retains
+   the 60 Hz desktop and GPU dock, denies Lom's GPU grant, and tests seconds-clock
+   progress plus custody/cleanup. Its 43 offline tests and seven-check validation
+   receipt are bound to the sealed inputs. No comparison or native result yet.
 
    Two native pixel movers remain: CPU pixels and GPU buffers. App/user policy
    chooses the supported renderer; Sophia enforces authority. Direct fill is the

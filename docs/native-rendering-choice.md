@@ -72,8 +72,11 @@ Baseline Lom `32e0bab3` requires a GPU grant for native `--serve`; its
 `RenderImage::Cpu` is GPU-readback data, not CPU rasterization. Signed local
 `ceb89664` adds explicit `--serve --renderer cpu`, using Vello CPU directly in an
 owned-ring slot. GPU remains the default. CPU refuses DMA and neither mode falls
-back to the other. This is device-free source qualification, not a released or
-native-qualified CPU mode.
+back to the other. Local successor `9b1cf041` also accepts `renderer "cpu"`
+inside the panel config, so Sophia's fixed `--serve` launch can select it.
+Explicit CLI selection overrides the config; an omitted setting still selects
+GPU. These are device-free source gates, not a published or native-qualified CPU
+mode.
 
 The [CPU direct-fill design](notes/investigations/i9ljdlt4-how-can-lom-render-vello-cpu-directly-into-an-owned-ring-slot-across-its-worker-boundary.md)
 records the explicit CPU renderer and worker-safe owned slot custody. Direct
