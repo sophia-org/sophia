@@ -68,12 +68,15 @@ for writing a slot through a callback. Its lower-level `RingSlotFill` borrows it
 producer. Respect negotiated pixel format, logical byte length and release rules;
 do not move that borrow to a worker while continuing to use the connection.
 
-Lom `32e0bab31594f70c3d945547d7e81e2806b6fae8` still requires a GPU grant for
-native `--serve`. Its `RenderImage::Cpu` is GPU-readback data, not CPU rasterization.
-Vello CPU scene tests do not establish a production CPU worker.
+Baseline Lom `32e0bab3` requires a GPU grant for native `--serve`; its
+`RenderImage::Cpu` is GPU-readback data, not CPU rasterization. Signed local
+`ceb89664` adds explicit `--serve --renderer cpu`, using Vello CPU directly in an
+owned-ring slot. GPU remains the default. CPU refuses DMA and neither mode falls
+back to the other. This is device-free source qualification, not a released or
+native-qualified CPU mode.
 
 The [CPU direct-fill design](notes/investigations/i9ljdlt4-how-can-lom-render-vello-cpu-directly-into-an-owned-ring-slot-across-its-worker-boundary.md)
-adds an explicit CPU renderer and proposes worker-safe owned slot custody. Direct
+records the explicit CPU renderer and worker-safe owned slot custody. Direct
 fill is the intended default **when CPU is selected**, after qualification.
 Slice upload remains for callers already holding pixels.
 
@@ -81,8 +84,11 @@ The Rust owned-loan API now has a signed local device-free implementation
 (`5d895652`, parity documentation `99b05e34`). C `9adb3c5` independently proves
 the existing pixels/offer sequence under documented caller ownership; C callers
 must enforce the worker lifetime that Rust's loan protects. Neither is a verified
-Sophia SDK pin update. Lom integration, consumer lifecycle and native qualification
-remain open. Consult the linked design's source-gate receipts before adoption.
+Sophia SDK pin update. Lom's source gate passes 106 Rust and 18 Python tests,
+including owned-loan byte equivalence, fresh commit checks and exact-release
+reuse. Native qualification, default adoption and performance remain open;
+the local SDK pin is a development exception. Consult the linked design's
+source-gate receipts before adoption.
 
 GPU DMA export remains subject to its experimental profile and exact format/device
 admission. The current producer renders RGBA then blits into a LINEAR XR24 export

@@ -82,10 +82,37 @@ manifest SHA256 `5554687862534df6be7cabe11d32bd7f1fc45dcb2fc35286bac89d9602a67b7
 Rust's documentation follow-up is signed `99b05e345be34678128733bf0166ded85b06239a`;
 its implementation and original receipts are unchanged.
 
-Consumer lifecycle qualification remains open, including C caller enforcement
-and Lom's explicit CPU worker with scene/pixel/custody proofs. No verified Sophia
-SDK pin update, production default, release, native run or performance follows
-from these SDK gates. Lom integration is next; GPU direct rendering stays later.
+## October 30 Lom consumer source gate
+
+Signed local Lom `ceb89664ab07abae57bf6c56fe772820d37a8786`, tree
+`674f10ca9ad90d9ab4afa69fb8dba99347aa1927`, parent `32e0bab3`, adds explicit
+`--serve --renderer cpu`; GPU remains the default. CPU requires owned-ring and
+does not read the GPU grant. Its existing worker renders the retained scene into
+an owned slot loan and applies the same pixel conversion as the copy reference.
+The owner retains its acquisition snapshot through completion and commit,
+rechecks it at both stages, and commits that exact metadata. A stale completion
+aborts before staging and re-dirties the panel. Errors after staging are terminal:
+abort an uncommitted loan, then drop/restart the service. A successful Offer is
+never rolled back by a later timeout. Accepted alone does not permit reuse.
+
+The final device-free gate passes 18 Python tests and 106 Rust tests (one existing
+ignored subprocess entry), source layout, formatting, dependency audit and
+warning-free clippy. Seven snapshot/abort mutations were killed and restored.
+Byte equivalence combines an actual owned-loan worker comparison against the
+same CPU renderer's copy reference with the scripted peer's slot-byte check;
+it does not establish CPU/GPU pixel equality. A real Accepted-only hold proves
+that no second job or Offer starts before exact SlotReleased. SDK hard-commit
+Refused/Closed/Argument is not induced end-to-end; only the components are covered.
+
+Receipts: `~/.local/state/lom-cpu-direct-fill-01/`. Candidate and committed diff
+SHA256 `22abd46edcf093a957818ff434dce6bd0fc38a92d6edefdbb957c13953fbe0b0`;
+`RECEIPT.json` SHA256 `da0399053fd56b4707d7798ef77db7dc8df6e4cce7521bd8853376201be2d5d6`;
+manifest SHA256 `a9009ef09bfa4aa5579a27cd5a53ae24df2a292ca3a9f49e3cd5ca5d1708e6f2`.
+The SDK `file://` pin is a recorded local development exception. There is no
+verified Sophia SDK pin update, release, native qualification, default adoption
+or performance claim. C consumer enforcement remains caller-specific. Next is
+native CPU qualification against the same-renderer copy reference; GPU direct
+rendering stays later.
 
 ## Existing renderer support and pixel contract
 

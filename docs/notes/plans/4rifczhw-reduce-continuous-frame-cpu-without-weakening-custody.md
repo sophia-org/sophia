@@ -221,9 +221,9 @@ measured Sparse Strips scene rendering directly into an owned-ring slot.
 1. **Production pure-CPU direct fill.** Follow the
    [worker-custody design](../investigations/i9ljdlt4-how-can-lom-render-vello-cpu-directly-into-an-owned-ring-slot-across-its-worker-boundary.md).
    Source correction: Lom `32e0bab3` native `--serve` always requires a GPU grant;
-   its `RenderImage::Cpu` is GPU readback. Vello CPU currently appears in UI tests,
-   not the production worker. Add the explicit pure-CPU renderer and an owned SDK
-   slot loan; keep the service thread polling while the worker renders. The imaging
+   its `RenderImage::Cpu` is GPU readback. The consumer source gate below adds the
+   explicit pure-CPU renderer and an owned SDK slot loan, keeping the service
+   thread polling while the worker renders. The imaging
    API already supports a borrowed destination, so no imaging fork is needed.
 
    The SDK custody source gate is signed at `5d895652` with parity documentation
@@ -235,8 +235,15 @@ measured Sparse Strips scene rendering directly into an owned-ring slot.
    controls. Its existing pixels/offer API needs no new helper; callers enforce
    lifetime, exclusion, geometry and identity explicitly. Receipts are in
    `~/.local/state/cpu-owned-fill-c-01/`. No verified SDK pin update or production
-   adoption follows yet. Next implement and qualify Lom's explicit CPU worker,
-   preserving the same scene and conversion baseline.
+   adoption follows yet. Signed local Lom `ceb89664` closes the consumer source
+   gate: explicit `--renderer cpu`, default GPU unchanged, 106 Rust and 18 Python
+   tests, clean full check and seven killed/restored snapshot/abort controls.
+   Owner snapshots survive through commit; Accepted alone blocks reuse. Receipts
+   are in `~/.local/state/lom-cpu-direct-fill-01/`; the linked design records
+   hashes and coverage limits. Its SDK `file://` pin remains a development
+   exception. Next qualify the native CPU path and same-renderer copy reference,
+   preserving the same scene and conversion baseline. No native/default or
+   performance promotion follows from source tests.
 
    Two native pixel movers remain: CPU pixels and GPU buffers. App/user policy
    chooses the supported renderer; Sophia enforces authority. Direct fill is the
