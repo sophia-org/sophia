@@ -305,8 +305,10 @@ measured Sparse Strips scene rendering directly into an owned-ring slot.
    desktop performance; overlapping bounds are inconclusive. The diagnostic source
    gate is signed and pushed as Lom `3fe206dc` (tree `289f14e4`): 239 Rust tests
    passed, two existing entries ignored, and default/feature Clippy is clean.
-   Release provenance and a fresh attended package remain separate gates; see
-   the direct-fill investigation. No performance or adoption result follows.
+   Release provenance is verified: runtime `889219dc`, feature-on config checker
+   `16c4881a`, and all four static configs pass offline checks. The source and
+   pool remain frozen while the fresh attended package is prepared; see the
+   direct-fill investigation. No performance or adoption result follows.
 
    Two native pixel movers remain: CPU pixels and GPU buffers. App/user policy
    chooses the supported renderer; Sophia enforces authority. Direct fill is the

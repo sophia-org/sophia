@@ -616,6 +616,29 @@ The checksum manifest verifies. Release provenance, package qualification and
 attended native measurements are separate gates; this source result establishes
 no cadence, timing, CPU saving or default-adoption result.
 
+The release gate also passed on that unchanged signed tree. The two binaries
+were built together with `cargo-slot lom cargo build --locked --release
+--features diagnostic-cpu-reference --bin lom --bin lom-cpu-cadence`, jobs 2,
+in the worktree's own pool. Runtime `lom-cpu-cadence` is SHA256
+`889219dc359535cc087a591ab4b394708e89b7c82b616a14ba3990a045ea2474`,
+device/inode `2067/66087122`; the feature-on ordinary `lom` config checker is
+`16c4881aa08b5a64bbc85b97ea71ad85701baa86aacadaee0a2706a374d2f41d`,
+`2067/66087123`. Both remain at their original Cargo paths, mode 0700, uid 1000;
+no binary was copied. The checker accepted all four static panel configurations
+(24/512 rows, direct/copy), with only PATH in its environment. It is not a
+production-default artifact and must never be the desktop runtime in this gate.
+
+Root independently verified both manifests, current artifact hashes/identities
+and clean signed source. `RELEASE-READY.json` in the same evidence directory is
+`7559f0c4d4230180a4f6df11a9f399a9d39a0040452c89bb58d86e4b8f92efb8`;
+it binds release receipt
+`f673dd7b7afab387ef98a04e7ef3ff66cff47131f752cf8cdd0c1fc4e9249baf`
+and checker results
+`0aa3ca3a975acbac590a161e4074cadc4faeb394982367aaf8e3995490d38337`.
+The source and pool are frozen through package preparation, attended attempts
+and audit. Offline package integration is authorized against these exact inputs;
+no native launch or performance result follows the release gate.
+
 ## Existing renderer support and pixel contract
 
 Baseline Lom `32e0bab3` pins SDK `0706ea2c78cd16ba59ed209620354f30a2c78906`
