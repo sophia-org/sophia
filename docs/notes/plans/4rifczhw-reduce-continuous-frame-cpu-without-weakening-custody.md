@@ -227,12 +227,16 @@ measured Sparse Strips scene rendering directly into an owned-ring slot.
    API already supports a borrowed destination, so no imaging fork is needed.
 
    The SDK custody source gate is signed at `5d895652` with parity documentation
-   at `4d81630`: 948 workspace tests, zero-warning clippy and four killed/restored
+   at `99b05e34`: 948 workspace tests, zero-warning clippy and four killed/restored
    mutations. Only baseline `role.rs` formatting remains outside the changed-file
    clean check. Receipts are in `~/.local/state/cpu-owned-fill-sdk-01/`.
-   C worker/close lifetime parity remains open; no verified SDK pin update or
-   production adoption follows yet. Next close that proof and implement Lom's
-   explicit CPU worker, preserving the same scene and conversion baseline.
+   C `9adb3c5` closes behavioral parity under documented caller ownership:
+   74 test binaries, five worker scenarios, Nim binding and three killed/restored
+   controls. Its existing pixels/offer API needs no new helper; callers enforce
+   lifetime, exclusion, geometry and identity explicitly. Receipts are in
+   `~/.local/state/cpu-owned-fill-c-01/`. No verified SDK pin update or production
+   adoption follows yet. Next implement and qualify Lom's explicit CPU worker,
+   preserving the same scene and conversion baseline.
 
    Two native pixel movers remain: CPU pixels and GPU buffers. App/user policy
    chooses the supported renderer; Sophia enforces authority. Direct fill is the

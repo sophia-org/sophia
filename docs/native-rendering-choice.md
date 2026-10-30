@@ -78,9 +78,11 @@ fill is the intended default **when CPU is selected**, after qualification.
 Slice upload remains for callers already holding pixels.
 
 The Rust owned-loan API now has a signed local device-free implementation
-(`5d895652`, parity documentation `4d81630`). It is not yet a verified Sophia SDK
-pin: C worker-lifetime parity, Lom integration and native qualification remain
-open. Consult the linked design's source-gate receipt before using that local API.
+(`5d895652`, parity documentation `99b05e34`). C `9adb3c5` independently proves
+the existing pixels/offer sequence under documented caller ownership; C callers
+must enforce the worker lifetime that Rust's loan protects. Neither is a verified
+Sophia SDK pin update. Lom integration, consumer lifecycle and native qualification
+remain open. Consult the linked design's source-gate receipts before adoption.
 
 GPU DMA export remains subject to its experimental profile and exact format/device
 admission. The current producer renders RGBA then blits into a LINEAR XR24 export

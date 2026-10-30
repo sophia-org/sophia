@@ -61,16 +61,31 @@ Receipts: `~/.local/state/cpu-owned-fill-sdk-01/`, 25 manifest entries verified;
 manifest SHA256 `30ff435ff65698052f1499c09a8c665728a2afbf7805b98c13b9fef3a6b7d73c`.
 This is device-free Rust source evidence, not Lom integration or native acceptance.
 
-**C parity remains an adoption gate.** Read-only comparison at signed C
-`3ccc7d04c28309ebed6fd53f399af7c7a5682d80` finds split
-`sophia_ss_image_ring_pixels` / `sophia_ss_image_ring_offer` operations, but the
-pointer lookup does not reserve a slot and `sophia_ss_image_close` unmaps it.
-Prove and document the caller's worker/close synchronization independently;
-determine whether a C helper is needed from those proofs rather than blindly
-porting Rust ownership. The SDK's `API-PARITY.md` records this open gate. No C
-changes/tests, verified Sophia pin update, default flip, release or native run
-are claimed. Close the parity proof before production adoption; then complete
-Lom's explicit CPU worker and its scene/pixel/custody gates.
+**C behavioral parity is proved under documented caller ownership.** Signed
+`9adb3c5b83a52baf2a8728cb10fcf821d1d6729b`, tree `cd509040`, based on
+`3ccc7d04c28309ebed6fd53f399af7c7a5682d80`, needs no new C operation or ABI.
+The existing pixels/offer split supports a worker while owner dispatch and
+disconnect leave its mapping intact. C callers enforce one fill, exclusion of
+other pixel/offer calls, exact geometry and identity, synchronized completion,
+and no result surviving close/init. Image close must wait for the worker to stop.
+Rust enforces its loan rules; C does not automatically detect misuse or abandonment.
+
+All 74 C test binaries and the Nim binding smoke test pass. Five new scenarios
+use a real pthread parked mid-fill and independently transferred ring FD to prove
+owner progress, abort/refusal without ID spending, backpressure/retry, exact
+release reuse, and mapping lifetime across session/channel failure. Three
+negative controls are killed and restored; M1's SIGSEGV site is inferred, without
+a stack trace. The final checks bind tree and diff before/after. Receipts:
+`~/.local/state/cpu-owned-fill-c-01/`, 33 manifest entries;
+`RECEIPT.json` SHA256 `ac856c095c80861bfe941970db5c406166457228372e982c9b96233d9148a323`,
+manifest SHA256 `5554687862534df6be7cabe11d32bd7f1fc45dcb2fc35286bac89d9602a67b7c`.
+Rust's documentation follow-up is signed `99b05e345be34678128733bf0166ded85b06239a`;
+its implementation and original receipts are unchanged.
+
+Consumer lifecycle qualification remains open, including C caller enforcement
+and Lom's explicit CPU worker with scene/pixel/custody proofs. No verified Sophia
+SDK pin update, production default, release, native run or performance follows
+from these SDK gates. Lom integration is next; GPU direct rendering stays later.
 
 ## Existing renderer support and pixel contract
 
