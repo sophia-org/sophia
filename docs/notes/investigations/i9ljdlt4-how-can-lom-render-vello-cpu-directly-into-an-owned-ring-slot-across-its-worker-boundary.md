@@ -190,9 +190,44 @@ test logs and preparation code. Its SHA256 is
 The 46-entry manifest SHA256 is
 `560eed909da2b042df99902966aec23cf8d5ea888c3973d9f666a59c3c208f75`.
 Post-seal check-only passed without launching a session or opening devices.
-No attempt or result exists yet. Launch with
-`sh ~/.local/state/t331/lom-cpu-native-01/run.sh`; retain the Lom source worktree
-and leave its release pool unchanged through the saved-data audit.
+The single attempt is now spent. Do not relaunch this package. Its failed
+postflight and the separate saved-data qualification are recorded below.
+
+### Saved-data qualification after a verifier correction
+
+The native collection completed with clean shutdown, but the package postflight
+failed on an incorrect dock-field requirement. Provlita `01035e62` emits
+`connection_epoch` in `provlita_candidate`, not `content_grant_epoch`. The test
+fixture had invented that field. This was a package verification defect, not a
+Provlita failure; the review did not catch it before the attempt.
+
+`~/.local/state/lom-cpu-native-audit-01` contains the separate correction. It
+requires Provlita's actual seven-field schema and joins its output, candidate,
+presentation epoch and connection to the host's presented record, where grant 2
+is required. It refuses missing/duplicate joins, mismatches and foreign
+connections. Other native gates are unchanged; outputs go only to the audit
+directory. The original package remains failed and immutable, with all 74 files
+and their recorded metadata unchanged. All 248 package pins still match.
+
+The original verifier fails on the saved log and the repaired verifier passes.
+Sixteen adapted tests and four saved-data tests pass, including nine dock and
+seven host refusal controls. The full saved-data audit exits zero: 100 rendered
+Lom candidates join to 100 host presentations, with the GPU grant denied; one
+dock candidate joins through host grant 2. All 71 process-binding checks are
+stable, native worker requests/completions are 109/109, and output, resource,
+VT/PAM, recovery and cleanup gates pass. The accounting window is 60.004633 s;
+one-second polling brackets its rendered count at 60–62. There is no exact
+per-frame denominator or performance comparison.
+
+The audit receipt SHA256 is
+`c7ed9eb0ace2ede96f4201c23888025fe783824b1e69fa4cf870a38eca5367a5`;
+its 21-entry manifest SHA256 is
+`e46e91b6cff25e81c8bb20ca015e3ee66cef2985a755a220fc6580b81a76854e`.
+The corrected reducer is `be4ebef6`; the reviewed diff is `dc47f147`.
+This qualifies the ordinary native CPU seconds-clock path on the pinned local
+artifacts. No native rerun was needed. Pixel readback, the same-renderer copy
+reference, default adoption and performance remain separate gates; the reference
+is next, with GPU direct rendering still later.
 
 ## Existing renderer support and pixel contract
 

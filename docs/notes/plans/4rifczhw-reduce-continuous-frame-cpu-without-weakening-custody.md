@@ -247,17 +247,22 @@ measured Sparse Strips scene rendering directly into an owned-ring slot.
    and 18 Python tests plus five negative controls. Release `123746c6` is prepared
    in the separate `lom@lom-cpu-native-config` pool, with receipts under
    `~/.local/state/lom-cpu-native-config-01/`.
-   Next qualify ordinary native CPU startup, seconds-clock presentation, custody
-   and cleanup. Then qualify the same-renderer diagnostic copy reference,
+   Ordinary native CPU startup, seconds-clock presentation, custody and cleanup
+   now qualify through the saved-data audit below. Next qualify the same-renderer
+   diagnostic copy reference,
    preserving the scene and conversion baseline. Fixed-time clock observations
    do not provide an exact frame denominator or a 120 Hz workload. No
    native/default or performance promotion follows from source tests.
 
-   Ordinary CPU qualification package `lom-cpu-native-01` is sealed, unattempted,
-   with manifest `560eed90` (46 entries); post-seal check-only passes. It retains
-   the 60 Hz desktop and GPU dock, denies Lom's GPU grant, and tests seconds-clock
-   progress plus custody/cleanup. Its 43 offline tests and seven-check validation
-   receipt are bound to the sealed inputs. No comparison or native result yet.
+   `lom-cpu-native-01` spent its single attempt: native collection and cleanup
+   succeeded, but postflight incorrectly required a field Provlita never emits.
+   Keep that package failed and immutable (manifest `560eed90`). Separate
+   `lom-cpu-native-audit-01` corrects the dock schema and binds the grant through
+   the host join; 20 tests and the full saved-data audit pass, without a native
+   rerun. All 74 original files are unchanged. Its receipt is `c7ed9eb0`, manifest
+   `e46e91b6`. The 100 Lom presentations, denied GPU grant, stable bindings and
+   clean custody/cleanup qualify this ordinary seconds-clock path. No pixel
+   readback, comparison or default-adoption claim follows.
 
    Two native pixel movers remain: CPU pixels and GPU buffers. App/user policy
    chooses the supported renderer; Sophia enforces authority. Direct fill is the

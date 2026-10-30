@@ -75,8 +75,9 @@ owned-ring slot. GPU remains the default. CPU refuses DMA and neither mode falls
 back to the other. Local successor `9b1cf041` also accepts `renderer "cpu"`
 inside the panel config, so Sophia's fixed `--serve` launch can select it.
 Explicit CLI selection overrides the config; an omitted setting still selects
-GPU. These are device-free source gates, not a published or native-qualified CPU
-mode.
+GPU. The local CPU path has passed source gates and one ordinary native
+seconds-clock qualification with its GPU grant denied. This is not a published
+release, general visual qualification or measured performance improvement.
 
 The [CPU direct-fill design](notes/investigations/i9ljdlt4-how-can-lom-render-vello-cpu-directly-into-an-owned-ring-slot-across-its-worker-boundary.md)
 records the explicit CPU renderer and worker-safe owned slot custody. Direct
