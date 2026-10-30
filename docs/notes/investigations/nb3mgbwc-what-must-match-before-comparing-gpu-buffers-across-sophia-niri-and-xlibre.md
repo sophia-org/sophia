@@ -703,6 +703,49 @@ is a calibration finding retained as failed evidence, not permission to count
 the attempt as qualified. Outer descendant, PAM and VT cleanup remain separate
 from this wrapper's local process cleanup.
 
+## External handoff staging — October 30
+
+Signed local niltempus `fb21242f9df7a42fc6b6b13af1a7c91120c4c701`, parent
+`286eb0ed75ee91ac6fc4cbc3ec06188d728ef78d`, adds `gpu/handoff.py` and its
+device-free controls. The committed diff equals the saved candidate diff
+(`e514f00c`). The worktree is clean and the signature verifies G.
+
+Staging checks the exact immutable CPU02 helper templates and reuses its PAM/VT
+program byte-for-byte. It renders only the explicit external colour command,
+extends the enclosing deadlines to wrapper/PAM/outer 300/360/420 seconds, and
+creates a single-use attempt record before stopping getty. The root entry
+requires a complete nine-file seal and verifies external hashes before loading
+the privileged control helper. Staging creates no seal and launches nothing.
+These checks do not replace the package's release/link provenance review.
+
+The saved terminal-receipt check combines local client/server cleanup with
+PAM close, credential deletion, pam_end, TTY restoration and empty outer
+occupant/session/kill lists. Its result is `handoff_cleanup_verified`, not
+device qualification. Missing, failed, mismatched or incorrectly typed
+evidence refuses. External stacks alone are covered; this does not supply
+Sophia's diagnostic namespace/core/feature configuration.
+
+Final checks: **8 handoff and 19 wrapper tests**, plus **8 killed/restored
+mutations**. All **166 inherited host-helper hashes** match in a read-only
+check. Fixtures use the pinned templates but execute only the pre-import
+seal/pin guard and receipt predicates; no PAM, VT, getty, elogind, compositor
+or GPU operation ran. No Cargo/release build, native package, merge or push.
+W2 and CPU source/artifacts/evidence remain unchanged.
+
+Receipts: `~/.local/state/matched-gpu-handoff-01/`, **21 entries verified**.
+`RECEIPT.json` SHA256
+`6d030f88b9319a5511f25d50f06148c7e466b1336cc7f578bc9da3b33be54431`;
+`SHA256SUMS` SHA256
+`605086ec6dc8ecf866b6f8d8ef543e5b5dd63621884dbea3ab1de471c9126813`.
+Earlier development failures and signing interruptions are retained/labeled;
+final tests passed on the unchanged committed source.
+
+Next: review this handoff source, finish Sophia protected launch configuration
+and real import-refusal/delayed-release controls, then separate diagnostic
+release/link receipts and an attended sealed package. Actual server shutdown,
+second-GPU exclusion, authenticated capture and outer cleanup remain runtime
+qualification requirements. No timed comparison is opened by these checks.
+
 ## Connections
 
 - [Critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md).

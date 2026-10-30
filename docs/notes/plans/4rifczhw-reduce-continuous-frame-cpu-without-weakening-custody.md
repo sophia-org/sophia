@@ -182,8 +182,17 @@ the second-GPU ignore syntax and rejects a misspelling without opening DRM;
 this does not establish runtime exclusion. The matrix records the receipt
 and remaining qualification limits.
 
-**Immediate next work:** complete and review the protected handoff/package
-integration, including real import-refusal and delayed-release controls; then
+External handoff staging is implemented at signed local niltempus
+`fb21242f9df7a42fc6b6b13af1a7c91120c4c701`, parent `286eb0ed7`. It reuses
+the hash-pinned CPU02 PAM/VT template unchanged, with enclosing 300/360/420
+second budgets, complete seal/pin checks before privileged helper import,
+and an exclusive attempt record. Staging leaves the seal absent. Eight new
+handoff tests, 19 wrapper tests and eight killed/restored mutations pass;
+all 166 inherited host-helper hashes match. No native handoff was executed.
+
+**Immediate next work:** review the staged handoff implementation and complete
+Sophia's protected namespace/core/feature and package integration, including
+real import-refusal and delayed-release controls; then
 produce separate diagnostic release/link receipts and an attended package.
 Authenticated capture, actual mode, consumer pixels, release and outer
 descendant/PAM/VT cleanup remain unqualified. Real server shutdown codes and
