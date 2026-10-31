@@ -84,6 +84,21 @@ and resident image leases have separate lifetimes; do not assume two ring
 slots per tile. Tile equivalence, placement overhead and unchanged-texture
 re-import behavior still need proof before selecting that mechanism.
 
+October 31 candidate, not promotion: Lom `cpu/diagnostic-checksum` (`91e792d`
+source, `332ab39` report) omits the ordinary CPU hash pass while retaining it
+in the explicit diagnostic entries. Full offline gate and policy-mutation
+controls pass. One offscreen sequence measured render-call CPU means of
+302 → 161 µs (h24) and 4811 → 1924 µs (h512), with block variation retained.
+These are not Session costs or native savings. See the
+[candidate report](https://github.com/sophia-org/lom/blob/cpu/diagnostic-checksum/docs/redraw-attribution.md)
+and `~/.local/state/lom-cpu-diagnostic-checksum-01/RECEIPT.json`
+(`a557db4f70093591fe3bea9ad8595244a6173c49e5fa645ec5b850635703d68b`).
+The runtime change remains off master. Its ordinary logs would report schema 2
+and `checksum=unavailable`; diagnostics retain schema 1. Existing cadence
+still hashes, so a fresh native design must qualify pixels separately from
+measuring the no-hash path. No native run or rollout is authorized by these
+offscreen results, and t344/t022 remain open.
+
 Keep the default-off copy-reference code as a baseline for this work; retaining
 the code does not revive retired worktree or pool holds. Existing saved evidence
 is immutable. GPU qualification and GPU direct-render optimization remain later
