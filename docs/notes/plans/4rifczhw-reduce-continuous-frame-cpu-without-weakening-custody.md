@@ -20,6 +20,53 @@ It does not reopen their completed exits or replace `todo.md` as the task ledger
 The exit is a separately qualified improvement, or a documented no-change result
 for each selected mechanism. A profile share is not a savings target.
 
+## October 31: bounded CPU dirty updates landed; GPU qualification resumes
+
+This status supersedes the CPU-first sequencing below. Mason accepted the
+bounded retained-region implementation with its h24 limit. Lom master
+`8c225acecd21bdbee85c20cd43b0873c44b66aa2` now includes the owner, full-frame
+fallback, fixture sequence and matched cadence driver. The
+[Lom result](https://github.com/sophia-org/lom/blob/8c225acecd21bdbee85c20cd43b0873c44b66aa2/docs/region-cadence.md#audited-native-result-2026-10-31)
+records the qualification and scope; t017's bounded investigation is complete,
+while t022 and ordinary-rate costs remain open.
+
+The attended pixel package compared opaque full-frame and region strips:
+18 matching phase pairs, four matching same-model controls and 24 differing
+adjacent-phase controls. It captured the forward 01-to-02 transition; reverse
+reconstruction and nonopaque fallback have device-free owner controls. The
+cadence executables themselves were not captured and are bound by unchanged
+renderer/owner source to the sequence qualification.
+
+The eight-run matched cadence result, regions minus full, is in microseconds
+per reported scanout-start interval at DP-1 1920×1080, nominal 60 Hz:
+
+| Measure | h24 | h512 |
+| --- | --- | --- |
+| Session + Lom + WM | −85 to +15 (inconclusive) | −1390 to −1285 (reduction) |
+| Lom | −65 to −25 | −877.5 to −835 |
+| Session | −10 to +30 (inconclusive) | −502.5 to −460 |
+
+All eight runs had median intervals of 16683 µs and zero missed refreshes.
+These are accounting bounds for fixture-driven, hot-cache, seconds-only
+updates, not confidence intervals or ordinary once-per-second savings. Both
+roles use the same six-resource ledger. Session still uploads and composites
+every placement; retained tiles save redraw and ingestion work, not that work.
+The root audit receipt is
+`~/.local/state/lom-region-cadence-audit-01/RECEIPT.json`
+(`9410ef56c4b6eed56a38672e4112e8482ab1a26de69b7be24c017db88835329d`);
+the independent receipt is
+`~/.local/state/lom-region-cadence-claude-audit-01/RECEIPT.json`
+(`e0c969c348328b3927397948e6913817402e9c407eac4383ad4588225ad3aa2c`).
+
+Next, finish the [GPU qualification contract](../investigations/nb3mgbwc-what-must-match-before-comparing-gpu-buffers-across-sophia-niri-and-xlibre.md):
+device-free import/refusal/lifetime controls, fresh signed releases and link
+receipts, then a sealed untimed consumer-pixel qualification across Sophia,
+niri and XLibre. The attended display run is Mason's next boundary. Only a
+passed saved-data audit permits the matched GPU timing package. A current
+CPU-versus-Wayland claim also needs a refreshed matched CPU baseline; neither
+CPU result above substitutes for it. All historical sources, releases and
+evidence remain held. S1, zero-fill removal, single-submit and W3 stay parked.
+
 ## October 31: opaque validation qualified; production source promotion
 
 This status supersedes the candidate-only checksum status below. Lom's ordinary
@@ -73,9 +120,10 @@ Both passed; failed OV01 remains failed and is not pooled into OV02.
 Production promotion carries only those four source/test files onto master,
 whose pre-change scan and tests match the experimental baseline byte-for-byte.
 It does not import the diagnostic host's instrumentation or capture-delivery
-ancestors. The full redraw critical path remains open: retained-region reuse
-still needs workload and custody qualification, and GPU work remains a separate
-gate. Held sources, releases and sealed evidence remain immutable.
+ancestors. At that checkpoint retained-region workload and custody qualification
+was still pending; the later closeout above records its bounded result. Broader
+redraw costs and GPU qualification remain open. Held sources, releases and
+sealed evidence remain immutable.
 
 ## Current priority: make each CPU redraw cheaper, October 30
 

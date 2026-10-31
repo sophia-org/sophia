@@ -9,7 +9,13 @@ tags: [investigation, performance, benchmark, gpu]
 
 ## Decision and scope
 
-**October 30 sequencing:** [CPU direct-fill adoption](i9ljdlt4-how-can-lom-render-vello-cpu-directly-into-an-owned-ring-slot-across-its-worker-boundary.md) is complete. Mason then restored **cheaper CPU redraws** to the near-term critical path: device-free phase attribution, Session marginal-cost review, and one evidence-selected optimization. The [current plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md#current-priority-make-each-cpu-redraw-cheaper-october-30) takes precedence over GPU release/package work. This matrix retains the GPU gates for afterward.
+**October 31 sequencing:** Lom's bounded CPU dirty updates are merged at
+`8c225acecd21bdbee85c20cd43b0873c44b66aa2`, after the opaque pixel qualification
+and matched cadence audit. The h512 combined result is a reduction; h24 remains
+inconclusive. Mason accepted promotion with that limit. The
+[current plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md#october-31-bounded-cpu-dirty-updates-landed-gpu-qualification-resumes)
+now resumes this untimed GPU qualification before any matched GPU timing.
+A current CPU-versus-Wayland comparison still needs a refreshed matched CPU run.
 
 The intervening tooling repair is signed and pushed on niltempus
 `bench/gpu-qualification` at `cf49caa204dbac214a05cd83e3b7444b0da4dd8b`:
@@ -20,8 +26,9 @@ lines sum to 467 passed, 13 ignored and 34 filtered, including child fixtures;
 these are not unique test counts. Receipt:
 `~/.local/state/matched-gpu-qualification-source-01/RECEIPT.json`, SHA256
 `6afb8ea5f6f9690ca45d9209a939120ef0d64351a8de67e71ab1b08769a33c96`.
-No bridge/adapter rerun, release, master merge, package or native run followed.
-That worktree is parked; the held GPU sources and artifacts remain unchanged.
+At that checkpoint no bridge/adapter rerun, release, master merge, package or
+native run followed. New qualification work starts from that signed source in
+a fresh worktree; the held GPU sources and artifacts remain unchanged.
 
 The [matched CPU comparison](iq4zf50w-how-do-we-compare-sophia-xlibre-and-niri-with-matched-pixel-producers.md)
 is qualified. The subsequent GPU comparison needs a matched GPU-buffer producer,
@@ -78,7 +85,7 @@ W2, destination-reuse policy or a new display topology in one GPU arm alone.
 | Consumer lifetime | Accepted plus exact capture-complete SourceReleased ends source use; ResourceReleased is later | Retain exported object through matching wl_buffer.release; presentation feedback is separate | Retain through matching pixmap+serial IdleNotify; CompleteNotify is separate |
 | Copies retained | Vello source → export blit; Session capture into owned storage, then composition | Same export blit; compositor import/composition, further copies not assumed absent | Same export blit; DRI3 import and existing COPY-at-vblank, not a zero-copy/flip claim |
 | Feedback | Existing candidate/native kernel-completion join | wp_presentation timestamp plus release/frame-callback pacing | Present CompleteNotify UST/MSC plus IdleNotify |
-| Current qualification | Existing Sophia path/source evidence; new matched recipe still required | Transport/producer bridge missing; native format and lifetime proof pending | Transport/producer bridge missing; native DRI3/import and lifetime proof pending |
+| Current qualification | Source-gated matched recipe and private capture route; matched GPU native proof pending | Source-gated bridge, adapter and colour capture; native format and lifetime proof pending | Source-gated bridge, adapter and colour capture; native DRI3/import and lifetime proof pending |
 
 The common scene is in `gpu_canvas.rs:47`: an opaque rectangle whose RGB channels
 are equal. XR24 stores B,G,R,X and ignores X; it is not a promise that the stored
