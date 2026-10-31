@@ -788,6 +788,32 @@ root audit receipt is
 `77d98df405a5d27f85188afd7e0356358f0d5b4c1c5826d9c1a5b3bd16bee281`.
 Source and artifact holds remain in place.
 
+The saved-data follow-up separates the large-surface aggregate algebraically:
+direct-minus-copy Lom CPU is −262.5 to −222.5 µs per reported interval, Session
+is +115 to +155, and Hagia is −10 to +10. These sum to the existing combined
+−157.5 to −57.5 interval; they are not causal attribution. At h24, Lom alone is
+−42.5 to −2.5, but the combined interval still includes zero.
+
+None of the six missed-refresh candidates has a fill or upload deferral. Their
+attempt-to-queued-Offer spans are 6.38, 10.10, 9.19, 14.51, 10.52 and 13.64 ms.
+The first is close to ordinary rendering duration, so longer Lom production
+does not explain all six. Offer is queued locally, not received by the host;
+the saved timestamps cannot localize the remaining delay to transport,
+scheduling, composition or display. Whole-run resource totals are identical
+across all eight arms except `max_worker_request_msec`; they include startup
+and teardown and do not prove equal accounting-window costs.
+
+No source fix is justified from this evidence. If repeatability qualification
+continues, the smallest follow-up is one predeclared fresh h512
+copy/direct/direct/copy block with the same held artifacts and acceptance gates.
+Retain the original block, every new arm and all cadence outcomes; report blocks
+separately as well as combined, without retrying to obtain a preferred result.
+This is a proposed follow-up, not a prepared package or native authorization.
+The read-only analysis receipt is
+`~/.local/state/lom-cpu-cadence-followup-02/RECEIPT.json`, SHA256
+`c82a10d90d3fab07f2937ab410c75486596891b2045e9f27e6b85ddb7b33bf1b`.
+All 403 saved package files remain unchanged.
+
 ## Existing renderer support and pixel contract
 
 Baseline Lom `32e0bab3` pins SDK `0706ea2c78cd16ba59ed209620354f30a2c78906`
