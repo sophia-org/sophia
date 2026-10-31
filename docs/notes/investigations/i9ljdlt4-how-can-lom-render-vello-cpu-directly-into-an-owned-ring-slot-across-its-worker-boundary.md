@@ -11,8 +11,10 @@ tags: [investigation, performance, rendering, cpu]
 
 CPU direct-fill adoption precedes further GPU implementation on the
 [critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md).
-This is a source-grounded design, not an implemented API or performance result.
-Existing holds, W2, releases and sealed benchmark evidence stay untouched.
+The implementation, native opaque-strip proof and fixed diagnostic CPU comparison
+are complete. Lom master now contains the qualified source; the ordinary
+default-feature release awaits its attended smoke test. The sections below
+retain the sequence of evidence. Existing holds and sealed evidence stay untouched.
 
 Mason's clarification is two native pixel movers: CPU shared-memory pixels and
 GPU buffers. The application chooses, with user preference where supported;
@@ -859,8 +861,8 @@ Evidence is `~/.local/state/lom-cpu-cadence-repeat-preflight-01/`:
 `4cc85761f26a5ab9e2aef3cfa3cf348d6798310391066bc98a830515a9b03dc7`;
 `SHA256SUMS` SHA256
 `adaf8a9c429d3a575551a6cc0b6d9a0d522291e2ab8e940dd2d6cf4af3b2c270`.
-At seal there was no repeat performance result. The attended result and audit
-follow; no production-adoption change has been made and all holds remain.
+At seal there was no repeat performance result or production-adoption change.
+The attended result and audit follow; all holds remain.
 
 The attended repeat completed all four arms and the combined analysis. Root's
 saved-data audit passes: all 120 manifest entries and 121 sealed files are
@@ -902,6 +904,48 @@ The audit used frozen pure verifiers plus independent aggregate arithmetic and
 raw candidate checks; only offline CPUwin replay outputs were written, in the
 external audit directory. No package entrypoint, tests, builds or native reruns
 were executed, and no package bytes changed.
+
+## Ordinary production landing and smoke package
+
+After the fixed repeat closed, Lom master was fast-forwarded from `32e0bab3`
+to signed `3fe206dc25f26905531ae8365b7f4580d75fa72b` and pushed. This is exactly
+tree `289f14e43e3553d0fdcaed413a428edff19de6f2`, with no implementation rewrite.
+Explicit CPU uses owned-ring-fill; GPU remains the parser default, CPU never
+reads a GPU grant, and there is no fallback. Copy-reference and cadence remain
+behind the default-off diagnostic feature. The published SDK HTTPS pin remains
+`99b05e345be34678128733bf0166ded85b06239a`; SDK master was not merged wholesale.
+
+A fresh `~/dev/lom-cpu-production` worktree and `lom@lom-cpu-production/1` pool
+passed the full `tools/check.sh` gate, then built ordinary `lom --release --locked`
+without features. Both lib and binary fingerprints are `[]`. The checker accepts
+CPU, GPU and absent-renderer configs and refuses the diagnostic copy spelling.
+The in-place release SHA256 is
+`0e54f969d75947b8923081af4aba7f004febfa084433fdadcf277b8e46f8a8aa`,
+mode 0700. Source gate, release and landing receipts are in
+`~/.local/state/lom-cpu-production-01`; RELEASE-READY SHA256 is
+`dc374ebce212caced10ff4db1ad77eb2405323629c070d1b9807e366ea57cc44`.
+
+Fresh `~/.local/state/t331/lom-cpu-production-native-01` is sealed for one
+attended `clock-cpu` run. It retains the ordinary 100-second clock-panel/dock
+recipe, exact inherited host and helpers, and corrected Provlita seven-field
+join. Ordinary Lom is the runtime and checker; no diagnostic entry is launched.
+Its 60-second CPU window is descriptive only, not another performance repeat.
+Forty-seven package tests, actual device-free host/client argument checks, SSH
+preflight and post-seal `run.py --check-only` passed. No native session, attempt
+marker or run output exists at this handoff.
+
+The manifest has 51 entries, SHA256
+`64a57c4a10730cf2e003295b141523c815ff9264c86bfdb378c8eb1132223cf3`.
+Root preflight receipt:
+`~/.local/state/lom-cpu-production-native-preflight-01/RECEIPT.json`, SHA256
+`5f4fd7078e65868f7ed20eb595035bf3a273b07919b31c7ee07eb62110d21f61`;
+its SHA256SUMS is `91176334449ea1c65fc368ef7f25b7b998506e8dc7421e6a7ab29da26550c144`.
+
+Mason's attended launch is `sh ~/.local/state/t331/lom-cpu-production-native-01/run.sh`.
+The source landing is complete; ordinary release native acceptance remains
+pending. Keep all evidence holds, including the new production worktree/pool,
+through that run and audit. Merged worktree cleanup and the return to GPU work
+follow that closeout; there are no further CPU performance repeats.
 
 ## Existing renderer support and pixel contract
 
