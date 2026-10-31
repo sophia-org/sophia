@@ -461,80 +461,88 @@ impl ContentResourceStore {
         transaction: TransactionId,
         request: &ContentResourceRetire,
     ) -> Result<(), ContentStoreError> {
-        self.check(request.grant, transaction)?;
-        let value = self
-            .accepted
-            .get_mut(&request.resource)
-            .ok_or(ContentStoreError::Stale)?;
-        if value.retiring {
-            return Err(ContentStoreError::Stale);
-        }
-        let bytes = value.pixels.description().total_bytes;
-        if self.usage.retiring + bytes > self.limits.max_retiring_bytes {
-            return Err(ContentStoreError::Budget);
-        }
-        value.retiring = true;
-        value.transaction = transaction;
-        self.usage.resident -= bytes;
-        self.usage.retiring += bytes;
-        self.collect();
-        Ok(())
+        crate::shell_work_cost::result(crate::shell_work_cost::Stage::Retire, 0, || {
+            self.check(request.grant, transaction)?;
+            let value = self
+                .accepted
+                .get_mut(&request.resource)
+                .ok_or(ContentStoreError::Stale)?;
+            if value.retiring {
+                return Err(ContentStoreError::Stale);
+            }
+            let bytes = value.pixels.description().total_bytes;
+            if self.usage.retiring + bytes > self.limits.max_retiring_bytes {
+                return Err(ContentStoreError::Budget);
+            }
+            value.retiring = true;
+            value.transaction = transaction;
+            self.usage.resident -= bytes;
+            self.usage.retiring += bytes;
+            self.collect();
+            Ok(())
+        })
     }
 
     pub fn collect(&mut self) {
-        let ready: Vec<_> = self
-            .accepted
-            .iter()
-            .filter(|(_, v)| !v.release_pending && (v.retiring || self.revoked) && v.releasable())
-            .map(|(key, _)| *key)
-            .collect();
-        for resource in ready {
-            let value = self.accepted.get_mut(&resource).expect("selected resource");
-            let transaction = value.transaction;
-            let defer = !self.revoked;
-            if defer {
-                // Keep the backing and its byte charge until ResourceReleased
-                // enters the journal, not merely the outbound FIFO.
-                value.release_pending = true;
-            } else {
-                self.remove_accepted(resource);
-            }
-            self.response_credits -= 1;
-            self.events.push_back(ContentResourceEvent {
-                transaction,
-                record: ShellContentRecord::ResourceReleased(ContentResourceReleased {
-                    grant: self.limits.grant,
-                    resource,
-                    reason: if self.revoked {
-                        ContentReason::Revoked
-                    } else {
-                        ContentReason::None
-                    } as u16,
-                }),
-            });
-        }
-        if self.revoked {
-            let pending: Vec<_> = self
+        crate::shell_work_cost::unit(crate::shell_work_cost::Stage::Collect, || {
+            let ready: Vec<_> = self
                 .accepted
                 .iter()
-                .filter(|(_, v)| v.release_pending && v.releasable())
+                .filter(|(_, v)| {
+                    !v.release_pending && (v.retiring || self.revoked) && v.releasable()
+                })
                 .map(|(key, _)| *key)
                 .collect();
-            for key in pending {
-                self.remove_accepted(key);
+            for resource in ready {
+                let value = self.accepted.get_mut(&resource).expect("selected resource");
+                let transaction = value.transaction;
+                let defer = !self.revoked;
+                if defer {
+                    // Keep the backing and its byte charge until ResourceReleased
+                    // enters the journal, not merely the outbound FIFO.
+                    value.release_pending = true;
+                } else {
+                    self.remove_accepted(resource);
+                }
+                self.response_credits -= 1;
+                self.events.push_back(ContentResourceEvent {
+                    transaction,
+                    record: ShellContentRecord::ResourceReleased(ContentResourceReleased {
+                        grant: self.limits.grant,
+                        resource,
+                        reason: if self.revoked {
+                            ContentReason::Revoked
+                        } else {
+                            ContentReason::None
+                        } as u16,
+                    }),
+                });
             }
-        }
+            if self.revoked {
+                let pending: Vec<_> = self
+                    .accepted
+                    .iter()
+                    .filter(|(_, v)| v.release_pending && v.releasable())
+                    .map(|(key, _)| *key)
+                    .collect();
+                for key in pending {
+                    self.remove_accepted(key);
+                }
+            }
+        })
     }
 
     fn remove_accepted(&mut self, resource: ContentResourceId) {
-        let value = self.accepted.remove(&resource).expect("selected resource");
-        let bytes = value.pixels.description().total_bytes;
-        if value.retiring {
-            self.usage.retiring -= bytes;
-        } else {
-            self.usage.resident -= bytes;
-        }
-        self.usage.backing -= bytes;
+        crate::shell_work_cost::unit(crate::shell_work_cost::Stage::Remove, || {
+            let value = self.accepted.remove(&resource).expect("selected resource");
+            let bytes = value.pixels.description().total_bytes;
+            if value.retiring {
+                self.usage.retiring -= bytes;
+            } else {
+                self.usage.resident -= bytes;
+            }
+            self.usage.backing -= bytes;
+        })
     }
 
     /// Called by the image owner only after the corresponding ResourceReleased

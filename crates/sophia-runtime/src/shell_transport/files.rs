@@ -201,32 +201,34 @@ impl ShellFileWire {
         flush_only: bool,
         service_images: bool,
     ) -> Result<(), ShellTransportError> {
-        let readiness = self.readiness.take();
-        let listener_idle = readiness
-            .as_ref()
-            .filter(|observation| {
-                !flush_only && self.server.observation_is_current(&observation.wire)
+        crate::shell_work_cost::turn(flush_only, || {
+            let readiness = self.readiness.take();
+            let listener_idle = readiness
+                .as_ref()
+                .filter(|observation| {
+                    !flush_only && self.server.observation_is_current(&observation.wire)
+                })
+                .and_then(|observation| observation.listener_idle);
+            #[cfg(feature = "experimental-custody-dispatch")]
+            let live = custody_dispatch::turn(self, flush_only, readiness)?;
+            #[cfg(not(feature = "experimental-custody-dispatch"))]
+            let live = self.service_turn(flush_only, readiness)?;
+            if !live || self.server.connection_count() == 0 {
+                self.export_mut().revoke();
+                return Err(ShellTransportError::NotConnected);
+            }
+            // The experimental request/retry scope has ended. This final custody
+            // check and image service retain caller-fresh liveness.
+            crate::shell_work_cost::boundary(crate::shell_work_cost::Boundary::AfterTurn, || {
+                self.server.export_mut().poll(Instant::now())
             })
-            .and_then(|observation| observation.listener_idle);
-        #[cfg(feature = "experimental-custody-dispatch")]
-        let live = custody_dispatch::turn(self, flush_only, readiness)?;
-        #[cfg(not(feature = "experimental-custody-dispatch"))]
-        let live = self.service_turn(flush_only, readiness)?;
-        if !live || self.server.connection_count() == 0 {
-            self.export_mut().revoke();
-            return Err(ShellTransportError::NotConnected);
-        }
-        // The experimental request/retry scope has ended. This final custody
-        // check and image service retain caller-fresh liveness.
-        self.server
-            .export_mut()
-            .poll(Instant::now())
             .map_err(|_| ShellTransportError::NotConnected)?;
-        self.export_mut().expire();
-        if service_images {
-            self.service_image_channel(Instant::now(), listener_idle);
-        }
-        Ok(())
+            self.export_mut().expire();
+            if service_images {
+                self.service_image_channel(Instant::now(), listener_idle);
+            }
+            Ok(())
+        })
     }
 
     fn service_turn(
@@ -234,19 +236,28 @@ impl ShellFileWire {
         flush_only: bool,
         readiness: Option<ShellReadinessObservation>,
     ) -> Result<bool, ShellTransportError> {
-        self.server
-            .export_mut()
-            .poll(Instant::now())
-            .map_err(|_| ShellTransportError::NotConnected)?;
+        crate::shell_work_cost::boundary(crate::shell_work_cost::Boundary::BeforeTurn, || {
+            self.server.export_mut().poll(Instant::now())
+        })
+        .map_err(|_| ShellTransportError::NotConnected)?;
         self.turns = self.turns.saturating_add(1);
         self.publication_pending = false;
-        if flush_only {
-            self.server.flush()
-        } else if let Some(readiness) = readiness {
-            self.server.turn_observed(readiness.wire)
-        } else {
-            self.server.turn(Some(Duration::ZERO))
-        }
+        crate::shell_work_cost::boundary(
+            if flush_only {
+                crate::shell_work_cost::Boundary::ServerFlush
+            } else {
+                crate::shell_work_cost::Boundary::ServerTurn
+            },
+            || {
+                if flush_only {
+                    self.server.flush()
+                } else if let Some(readiness) = readiness {
+                    self.server.turn_observed(readiness.wire)
+                } else {
+                    self.server.turn(Some(Duration::ZERO))
+                }
+            },
+        )
         .map_err(io_error)
     }
 

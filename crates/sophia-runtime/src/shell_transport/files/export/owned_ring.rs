@@ -144,114 +144,117 @@ impl ShellFiles {
             .map(|s| s.deadline)
     }
     pub(super) fn write_owned_ring(&mut self, bytes: &[u8]) -> Result<u32, Errno> {
-        if !self.owned_disclosed() {
-            return Err(Errno::EACCES);
-        }
-        let control = Control::decode(bytes).ok_or(Errno::EINVAL)?;
-        let identity = control.identity();
-        let image = self.image.as_ref().ok_or(Errno::EACCES)?;
-        if self.content_limits.as_ref().map(|l| l.grant) != Some(identity.grant)
-            || identity.channel != image.config.discovery.channel_generation
-        {
-            return Err(Errno::ESTALE);
-        }
-        if self.owned.last == Some(control) {
-            return Ok(bytes.len() as u32);
-        }
-        let deadline = Instant::now()
-            .checked_add(self.image_validation_timeout().ok_or(Errno::EACCES)?)
-            .ok_or(Errno::EINVAL)?;
-        match control {
-            Control::Register(request) => {
-                if self.owned_mode() {
-                    return Err(EALREADY);
-                }
-                #[cfg(feature = "experimental-draw")]
-                if self.has_draw_work() {
-                    return Err(EALREADY);
-                }
-                if !self.inbound_is_empty() {
-                    return Err(Errno::EAGAIN);
-                }
-                if request.pixels as u64 > image.config.limits.max_resource_bytes
-                    || (request
-                        .geometry()
-                        .map_err(|_| Errno::EINVAL)?
-                        .source_bytes() as u64)
-                        .checked_add(request.pixels as u64)
-                        .is_none_or(|n| n > image.config.limits.max_sealed_backing_bytes)
-                {
-                    return Err(Errno::EINVAL);
-                }
-                let admitted = self
-                    .journal
-                    .hold_reservation(EVENT_BYTES)
-                    .ok_or(Errno::EAGAIN)?;
-                let Some(terminal) = self.journal.hold_reservation(EVENT_BYTES) else {
-                    self.journal.release_reservation(admitted);
-                    return Err(Errno::EAGAIN);
-                };
-                self.owned.registration = Some(Setup {
-                    request,
-                    deadline,
-                    phase: Phase::AwaitingBudget { admitted, terminal },
-                });
+        crate::shell_work_cost::admission(1, || {
+            if !self.owned_disclosed() {
+                return Err(Errno::EACCES);
             }
-            Control::Offer(offer) => {
-                if self.owned_current_identity() != Some(identity) {
-                    return Err(Errno::ESTALE);
-                }
-                if self.owned.pending.is_some() {
-                    return Err(Errno::EAGAIN);
-                }
-                let request = self
-                    .owned
-                    .registration
-                    .as_ref()
-                    .ok_or(Errno::ESTALE)?
-                    .request;
-                let r = offer.request;
-                if r.slot.slot >= request.slots
-                    || r.width > image.config.limits.max_width
-                    || r.height > image.config.limits.max_height
-                    || r.pixel_bytes().is_none_or(|bytes| bytes > request.pixels)
-                {
-                    return Err(Errno::EINVAL);
-                }
-                if matches!(self.owned.last, Some(Control::Offer(old)) if r.slot.offer <= old.request.slot.offer)
-                    || r.slot.generation <= self.owned.generations[r.slot.slot]
-                {
-                    return Err(EALREADY);
-                }
-                if self.owned.live.iter().flatten().any(|c| {
-                    c.offer.request.slot.slot == r.slot.slot
-                        || c.offer.request.resource == r.resource
-                }) {
-                    return Err(Errno::EAGAIN);
-                }
-                let slot = self.owned.live[..image.config.limits.max_offers.min(4) as usize]
-                    .iter_mut()
-                    .find(|s| s.is_none())
-                    .ok_or(Errno::EAGAIN)?;
-                let status = self
-                    .journal
-                    .hold_reservation(SHELL_FILE_HEADER_BYTES + 56)
-                    .ok_or(Errno::EAGAIN)?;
-                let Some(release) = self.journal.hold_reservation(EVENT_BYTES) else {
-                    self.journal.release_reservation(status);
-                    return Err(Errno::EAGAIN);
-                };
-                *slot = Some(Credits {
-                    offer,
-                    status: Some(status),
-                    release,
-                });
-                self.owned.generations[r.slot.slot] = r.slot.generation;
-                self.owned.pending = Some((offer, deadline));
+            let control =
+                crate::shell_work_cost::decode(1, || Control::decode(bytes).ok_or(Errno::EINVAL))?;
+            let identity = control.identity();
+            let image = self.image.as_ref().ok_or(Errno::EACCES)?;
+            if self.content_limits.as_ref().map(|l| l.grant) != Some(identity.grant)
+                || identity.channel != image.config.discovery.channel_generation
+            {
+                return Err(Errno::ESTALE);
             }
-        }
-        self.owned.last = Some(control);
-        Ok(bytes.len() as u32)
+            if self.owned.last == Some(control) {
+                return Ok(bytes.len() as u32);
+            }
+            let deadline = Instant::now()
+                .checked_add(self.image_validation_timeout().ok_or(Errno::EACCES)?)
+                .ok_or(Errno::EINVAL)?;
+            match control {
+                Control::Register(request) => {
+                    if self.owned_mode() {
+                        return Err(EALREADY);
+                    }
+                    #[cfg(feature = "experimental-draw")]
+                    if self.has_draw_work() {
+                        return Err(EALREADY);
+                    }
+                    if !self.inbound_is_empty() {
+                        return Err(Errno::EAGAIN);
+                    }
+                    if request.pixels as u64 > image.config.limits.max_resource_bytes
+                        || (request
+                            .geometry()
+                            .map_err(|_| Errno::EINVAL)?
+                            .source_bytes() as u64)
+                            .checked_add(request.pixels as u64)
+                            .is_none_or(|n| n > image.config.limits.max_sealed_backing_bytes)
+                    {
+                        return Err(Errno::EINVAL);
+                    }
+                    let admitted = self
+                        .journal
+                        .hold_reservation(EVENT_BYTES)
+                        .ok_or(Errno::EAGAIN)?;
+                    let Some(terminal) = self.journal.hold_reservation(EVENT_BYTES) else {
+                        self.journal.release_reservation(admitted);
+                        return Err(Errno::EAGAIN);
+                    };
+                    self.owned.registration = Some(Setup {
+                        request,
+                        deadline,
+                        phase: Phase::AwaitingBudget { admitted, terminal },
+                    });
+                }
+                Control::Offer(offer) => {
+                    if self.owned_current_identity() != Some(identity) {
+                        return Err(Errno::ESTALE);
+                    }
+                    if self.owned.pending.is_some() {
+                        return Err(Errno::EAGAIN);
+                    }
+                    let request = self
+                        .owned
+                        .registration
+                        .as_ref()
+                        .ok_or(Errno::ESTALE)?
+                        .request;
+                    let r = offer.request;
+                    if r.slot.slot >= request.slots
+                        || r.width > image.config.limits.max_width
+                        || r.height > image.config.limits.max_height
+                        || r.pixel_bytes().is_none_or(|bytes| bytes > request.pixels)
+                    {
+                        return Err(Errno::EINVAL);
+                    }
+                    if matches!(self.owned.last, Some(Control::Offer(old)) if r.slot.offer <= old.request.slot.offer)
+                        || r.slot.generation <= self.owned.generations[r.slot.slot]
+                    {
+                        return Err(EALREADY);
+                    }
+                    if self.owned.live.iter().flatten().any(|c| {
+                        c.offer.request.slot.slot == r.slot.slot
+                            || c.offer.request.resource == r.resource
+                    }) {
+                        return Err(Errno::EAGAIN);
+                    }
+                    let slot = self.owned.live[..image.config.limits.max_offers.min(4) as usize]
+                        .iter_mut()
+                        .find(|s| s.is_none())
+                        .ok_or(Errno::EAGAIN)?;
+                    let status = self
+                        .journal
+                        .hold_reservation(SHELL_FILE_HEADER_BYTES + 56)
+                        .ok_or(Errno::EAGAIN)?;
+                    let Some(release) = self.journal.hold_reservation(EVENT_BYTES) else {
+                        self.journal.release_reservation(status);
+                        return Err(Errno::EAGAIN);
+                    };
+                    *slot = Some(Credits {
+                        offer,
+                        status: Some(status),
+                        release,
+                    });
+                    self.owned.generations[r.slot.slot] = r.slot.generation;
+                    self.owned.pending = Some((offer, deadline));
+                }
+            }
+            self.owned.last = Some(control);
+            Ok(bytes.len() as u32)
+        })
     }
     pub(super) fn reset_owned_ring(&mut self) {
         if let Some(setup) = self.owned.registration.take() {

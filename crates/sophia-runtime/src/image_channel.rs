@@ -54,18 +54,21 @@ impl ImageChannelPeer {
 }
 
 fn process_alive(process: &OwnedFd) -> Result<bool, Errno> {
-    let mut ready = [rustix::event::PollFd::new(
-        process,
-        rustix::event::PollFlags::IN,
-    )];
-    rustix::event::poll(
-        &mut ready,
-        Some(&rustix::event::Timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        }),
-    )?;
-    Ok(ready[0].revents().is_empty())
+    crate::shell_work_cost::count(crate::shell_work_cost::Call::ImageAlive);
+    crate::shell_work_cost::result(crate::shell_work_cost::Stage::ImageAlive, 0, || {
+        let mut ready = [rustix::event::PollFd::new(
+            process,
+            rustix::event::PollFlags::IN,
+        )];
+        rustix::event::poll(
+            &mut ready,
+            Some(&rustix::event::Timespec {
+                tv_sec: 0,
+                tv_nsec: 0,
+            }),
+        )?;
+        Ok(ready[0].revents().is_empty())
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

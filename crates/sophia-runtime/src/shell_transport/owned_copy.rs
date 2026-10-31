@@ -176,52 +176,54 @@ impl OwnedCopyOwner {
         transport: &mut ShellComponentTransport,
         current: Option<Identity>,
     ) -> Result<(), ShellTransportError> {
-        for entry in &mut self.work {
-            let Some(Work::Releasing {
-                identity,
-                settlement,
-                handed_off,
-            }) = entry
-            else {
-                continue;
-            };
-            if Some(*identity) != current {
-                // Reconciliation consumed the exact retired resource result.
-                // A replacement journal never inherits its release event.
-                *entry = None;
-                continue;
-            }
-            let Some(active) = self.active.as_mut().filter(|a| a.identity == *identity) else {
-                continue;
-            };
-            let slot = settlement.admission.metadata.request().slot;
-            if *handed_off && active.ring.pending_release(slot.slot) != Some(slot) {
-                continue;
-            }
-            let files = transport
-                .files_mut()
-                .ok_or(ShellTransportError::NotConnected)?;
-            let before = files.export().owned_publication_sequence();
-            let publication = files.export_mut().owned_release(settlement);
-            if before != files.export().owned_publication_sequence() {
-                files.image_publication_pending();
-            }
-            match publication {
-                Ok(()) => {
-                    if *handed_off {
-                        assert!(
-                            active.ring.confirm_release(slot),
-                            "exact finished source read"
-                        );
-                    }
+        crate::shell_work_cost::result(crate::shell_work_cost::Stage::SourceRelease, 0, || {
+            for entry in &mut self.work {
+                let Some(Work::Releasing {
+                    identity,
+                    settlement,
+                    handed_off,
+                }) = entry
+                else {
+                    continue;
+                };
+                if Some(*identity) != current {
+                    // Reconciliation consumed the exact retired resource result.
+                    // A replacement journal never inherits its release event.
                     *entry = None;
+                    continue;
                 }
-                // Terminal ResourceStatus must be journaled before slot release.
-                Err(sophia_9p::Errno::EAGAIN) => {}
-                Err(error) => return Err(export_error("slot release", error)),
+                let Some(active) = self.active.as_mut().filter(|a| a.identity == *identity) else {
+                    continue;
+                };
+                let slot = settlement.admission.metadata.request().slot;
+                if *handed_off && active.ring.pending_release(slot.slot) != Some(slot) {
+                    continue;
+                }
+                let files = transport
+                    .files_mut()
+                    .ok_or(ShellTransportError::NotConnected)?;
+                let before = files.export().owned_publication_sequence();
+                let publication = files.export_mut().owned_release(settlement);
+                if before != files.export().owned_publication_sequence() {
+                    files.image_publication_pending();
+                }
+                match publication {
+                    Ok(()) => {
+                        if *handed_off {
+                            assert!(
+                                active.ring.confirm_release(slot),
+                                "exact finished source read"
+                            );
+                        }
+                        *entry = None;
+                    }
+                    // Terminal ResourceStatus must be journaled before slot release.
+                    Err(sophia_9p::Errno::EAGAIN) => {}
+                    Err(error) => return Err(export_error("slot release", error)),
+                }
             }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 }
 

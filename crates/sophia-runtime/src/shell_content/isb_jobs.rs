@@ -219,64 +219,66 @@ impl<M: CpuImageMetadata> CpuImageJobs<M> {
         registry: &mut ContentEpochRegistry,
         now: u64,
     ) -> Option<CpuImageSettlement<M>> {
-        for slot in &mut self.pending {
-            let Some(pending) = slot.as_mut().filter(|pending| pending.result.is_some()) else {
-                continue;
-            };
-            let metadata = &pending.admission.metadata;
-            if pending.stopped.is_none()
-                && !metadata.allocation_current(registry, pending.admission.grant)
-            {
-                match registry.stop_isb_image(
-                    pending.admission.grant,
-                    metadata.resource(),
-                    ContentReason::AllocationLost,
-                    now,
-                ) {
-                    Ok(reason) => pending.stopped = Some(reason),
-                    Err(_) => continue,
-                }
-            }
-            // A validation deadline can precede the transfer timeout. Preserve
-            // that timeout as a store outcome instead of reporting bad pixels.
-            if pending.stopped.is_none()
-                && matches!(
-                    pending.failure,
-                    Some(IsbValidationFailure::Timeout | IsbValidationFailure::Cancelled)
-                )
-            {
-                let reason = if pending.failure == Some(IsbValidationFailure::Timeout) {
-                    ContentReason::Timeout
-                } else {
-                    ContentReason::Cancelled
+        crate::shell_work_cost::option(crate::shell_work_cost::Stage::Settle, || {
+            for slot in &mut self.pending {
+                let Some(pending) = slot.as_mut().filter(|pending| pending.result.is_some()) else {
+                    continue;
                 };
-                match registry.stop_isb_image(
+                let metadata = &pending.admission.metadata;
+                if pending.stopped.is_none()
+                    && !metadata.allocation_current(registry, pending.admission.grant)
+                {
+                    match registry.stop_isb_image(
+                        pending.admission.grant,
+                        metadata.resource(),
+                        ContentReason::AllocationLost,
+                        now,
+                    ) {
+                        Ok(reason) => pending.stopped = Some(reason),
+                        Err(_) => continue,
+                    }
+                }
+                // A validation deadline can precede the transfer timeout. Preserve
+                // that timeout as a store outcome instead of reporting bad pixels.
+                if pending.stopped.is_none()
+                    && matches!(
+                        pending.failure,
+                        Some(IsbValidationFailure::Timeout | IsbValidationFailure::Cancelled)
+                    )
+                {
+                    let reason = if pending.failure == Some(IsbValidationFailure::Timeout) {
+                        ContentReason::Timeout
+                    } else {
+                        ContentReason::Cancelled
+                    };
+                    match registry.stop_isb_image(
+                        pending.admission.grant,
+                        metadata.resource(),
+                        reason,
+                        now,
+                    ) {
+                        Ok(reason) => pending.stopped = Some(reason),
+                        Err(_) => continue,
+                    }
+                }
+                let outcome = registry.complete_isb(
                     pending.admission.grant,
                     metadata.resource(),
-                    reason,
+                    &mut pending.result,
                     now,
-                ) {
-                    Ok(reason) => pending.stopped = Some(reason),
-                    Err(_) => continue,
+                );
+                if pending.result.is_none() {
+                    let pending = slot.take().expect("consumed job occupies its slot");
+                    return Some(CpuImageSettlement {
+                        admission: pending.admission,
+                        outcome,
+                        validation_failure: pending.failure,
+                        stopped: pending.stopped,
+                    });
                 }
             }
-            let outcome = registry.complete_isb(
-                pending.admission.grant,
-                metadata.resource(),
-                &mut pending.result,
-                now,
-            );
-            if pending.result.is_none() {
-                let pending = slot.take().expect("consumed job occupies its slot");
-                return Some(CpuImageSettlement {
-                    admission: pending.admission,
-                    outcome,
-                    validation_failure: pending.failure,
-                    stopped: pending.stopped,
-                });
-            }
-        }
-        None
+            None
+        })
     }
 
     pub fn pending(&self) -> usize {

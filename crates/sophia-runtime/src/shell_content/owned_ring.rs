@@ -241,42 +241,62 @@ impl OwnedRingRead {
         self,
         check: impl Fn() -> Result<(), IsbValidationFailure>,
     ) -> Result<Box<[u8]>, IsbValidationFailure> {
-        check()?;
-        let offset = (self.identity.slot * self.geometry.extent) as u64;
-        let generation = || {
-            let mut bytes = [0; 8];
-            if self.source.file.read_at(&mut bytes, offset).ok() != Some(bytes.len()) {
-                return Err(IsbValidationFailure::SizeMismatch);
-            }
-            if u64::from_le_bytes(bytes) != self.identity.generation {
-                return Err(IsbValidationFailure::GenerationChanged);
-            }
-            Ok(())
-        };
-        generation()?;
-        check()?;
-        let mut bytes = Vec::new();
-        bytes
-            .try_reserve_exact(self.pixels)
-            .map_err(|_| IsbValidationFailure::Malformed)?;
-        bytes.resize(self.pixels, 0);
-        // One payload read: short reads, EINTR and errors reject the offer. Never
-        // stitch partial revisions or silently retry a possibly torn snapshot.
-        check()?;
-        if self
-            .source
-            .file
-            .read_at(&mut bytes, offset + HEADER as u64)
-            .ok()
-            != Some(bytes.len())
-        {
-            return Err(IsbValidationFailure::SizeMismatch);
-        }
-        check()?;
-        generation()?;
-        check()?;
-        // Equal producer-controlled words do not authenticate hostile pixels.
-        // Only this owned result is subsequently scanned and given to consumers.
-        Ok(bytes.into_boxed_slice())
+        crate::shell_work_cost::result(
+            crate::shell_work_cost::Stage::Copy,
+            self.pixels as u64,
+            || {
+                check()?;
+                let offset = (self.identity.slot * self.geometry.extent) as u64;
+                let generation = || {
+                    let mut bytes = [0; 8];
+                    if self.source.file.read_at(&mut bytes, offset).ok() != Some(bytes.len()) {
+                        return Err(IsbValidationFailure::SizeMismatch);
+                    }
+                    if u64::from_le_bytes(bytes) != self.identity.generation {
+                        return Err(IsbValidationFailure::GenerationChanged);
+                    }
+                    Ok(())
+                };
+                generation()?;
+                check()?;
+                let mut bytes = crate::shell_work_cost::result(
+                    crate::shell_work_cost::Stage::Allocate,
+                    self.pixels as u64,
+                    || {
+                        let mut bytes = Vec::new();
+                        bytes
+                            .try_reserve_exact(self.pixels)
+                            .map_err(|_| IsbValidationFailure::Malformed)?;
+                        bytes.resize(self.pixels, 0);
+                        Ok::<_, IsbValidationFailure>(bytes)
+                    },
+                )?;
+                // One payload read: short reads, EINTR and errors reject the offer. Never
+                // stitch partial revisions or silently retry a possibly torn snapshot.
+                check()?;
+                crate::shell_work_cost::result(
+                    crate::shell_work_cost::Stage::Read,
+                    self.pixels as u64,
+                    || {
+                        if self
+                            .source
+                            .file
+                            .read_at(&mut bytes, offset + HEADER as u64)
+                            .ok()
+                            != Some(bytes.len())
+                        {
+                            return Err(IsbValidationFailure::SizeMismatch);
+                        }
+                        Ok::<_, IsbValidationFailure>(())
+                    },
+                )?;
+                check()?;
+                generation()?;
+                check()?;
+                // Equal producer-controlled words do not authenticate hostile pixels.
+                // Only this owned result is subsequently scanned and given to consumers.
+                Ok(bytes.into_boxed_slice())
+            },
+        )
     }
 }

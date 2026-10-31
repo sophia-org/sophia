@@ -33,6 +33,7 @@ pub(crate) fn run_persistent_xterm_session(
     // Every producer the owner loop inspects gets this before it can publish
     // anything the owner would otherwise sleep past.
     let owner_wake = OwnerWake::new()?;
+let _work_cost_exit = sophia_runtime::shell_work_cost::OwnerExit;
     let session_generation = NEXT_SESSION_GENERATION
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |generation| {
             generation.checked_add(1)

@@ -1,6 +1,9 @@
 /// The source is Sophia's own evidence callback, never a mixed child-output
 /// pipe. Keep numeric measurements and a small vocabulary; reject payload fields.
 pub fn reduced_record(line: &str) -> Option<String> {
+    if line.split_whitespace().next() == Some("sophia_shell_work_cost") {
+        return sophia_runtime::shell_work_cost::valid_record(line).then(|| line.to_owned());
+    }
     let mut fields = line.split_whitespace();
     let name = fields.next()?;
     if !name.starts_with("sophia_") || !name.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_')

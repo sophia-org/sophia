@@ -501,6 +501,11 @@ should gain a useful extension, not a private dependency.
 
 ## Verification
 
+The shell-work diagnostic mounts `tests/support/shell_work_cost.rs` inside its
+private counter owner. It injects clock regression, overflow and nested scope
+outcomes without exposing production counter mutation. All test bodies remain
+outside `src`; its exact mount is listed in the layout exceptions.
+
 The diagnostic pixel-delivery fixtures mount external files from
 `tests/support` beside the private stream and storage owners. They supply
 activation/exit facts to test bounded private delivery and the server-frame

@@ -166,6 +166,7 @@ impl<E> AuthenticatedFiles<E> {
         owner.admission_context().ok_or(Errno::EACCES)
     }
     pub fn poll(&mut self, now: Instant) -> Result<(), Errno> {
+        crate::shell_work_cost::count(crate::shell_work_cost::Call::ExportPoll);
         match &mut self.admission {
             Admission::Legacy => Ok(()),
             Admission::Pending => Err(Errno::EACCES),
@@ -275,27 +276,32 @@ impl<E: ProtectedFiles> Export for AuthenticatedFiles<E> {
         Ok(map_attachment(root.publish()))
     }
     fn check(&mut self, a: &Access<'_, Self::Node>) -> Result<(), Errno> {
-        match a.node {
-            AuthenticatedNode::Auth { attempt, .. } => {
-                if attempt.connection != a.connection {
-                    return Err(Errno::EACCES);
+        crate::shell_work_cost::boundary(crate::shell_work_cost::Boundary::FileCheck, || {
+            crate::shell_work_cost::count(crate::shell_work_cost::Call::FileCheck);
+            match a.node {
+                AuthenticatedNode::Auth { attempt, .. } => {
+                    if attempt.connection != a.connection {
+                        return Err(Errno::EACCES);
+                    }
+                    self.authentication()?.poll(Instant::now())
                 }
-                self.authentication()?.poll(Instant::now())
-            }
-            AuthenticatedNode::File(node) => {
-                match &mut self.admission {
-                    Admission::Authenticated(owner) => owner.check(a.connection, Instant::now())?,
-                    Admission::Pending => return Err(Errno::EACCES),
-                    Admission::Legacy => (),
+                AuthenticatedNode::File(node) => {
+                    match &mut self.admission {
+                        Admission::Authenticated(owner) => {
+                            owner.check(a.connection, Instant::now())?
+                        }
+                        Admission::Pending => return Err(Errno::EACCES),
+                        Admission::Legacy => (),
+                    }
+                    self.files.check(&Access {
+                        connection: a.connection,
+                        epoch: a.epoch,
+                        node,
+                        operation: a.operation,
+                    })
                 }
-                self.files.check(&Access {
-                    connection: a.connection,
-                    epoch: a.epoch,
-                    node,
-                    operation: a.operation,
-                })
             }
-        }
+        })
     }
     fn guard_read_delivery(&self, node: &Self::Node) -> bool {
         matches!(node, AuthenticatedNode::File(node) if self.files.guard_read_delivery(node))

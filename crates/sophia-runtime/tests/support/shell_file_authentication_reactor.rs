@@ -122,46 +122,61 @@ fn shell_reactor_refuses_missing_or_failed_authentication_factory() {
 
 #[test]
 fn shell_reactor_polls_idle_authority_and_hands_closed_custody_back_once() {
-    let state = Arc::new(State::default());
-    let (local, _peer) = UnixStream::pair().unwrap();
-    let factory = Box::new(Factory {
-        state: state.clone(),
-        refuse: false,
+    let cost_rows = crate::shell_work_cost::tests::test_snapshot(|| {
+        let state = Arc::new(State::default());
+        let (local, _peer) = UnixStream::pair().unwrap();
+        let factory = Box::new(Factory {
+            state: state.clone(),
+            refuse: false,
+        });
+        let mut wire = ShellFileWire::adopt(local, export(), Some(factory), true).unwrap();
+        assert!(wire.server.export().requires_authentication());
+        assert!(
+            wire.server
+                .export_mut()
+                .attach(&AttachContext {
+                    connection: ConnectionId(1),
+                    peer: None,
+                    uname: b"shell",
+                    aname: b"descriptor",
+                    n_uname: u32::MAX
+                })
+                .is_err(),
+            "shell root requires a verified afid"
+        );
+        assert_eq!(
+            wire.authentication_wait(Instant::now()),
+            Duration::from_millis(17)
+        );
+        wire.turn().unwrap();
+        assert!(state.polls.load(Ordering::SeqCst) >= 2);
+        wire.flush().unwrap();
+        state.revoked.store(true, Ordering::SeqCst);
+        assert_eq!(
+            wire.turn(),
+            Err(ShellTransportError::NotConnected),
+            "idle shell revocation must stop the reactor"
+        );
+        drop(wire);
+        assert_eq!(state.closed.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            state.retired.load(Ordering::SeqCst),
+            1,
+            "shell cleanup must return to its Session owner"
+        );
     });
-    let mut wire = ShellFileWire::adopt(local, export(), Some(factory), true).unwrap();
-    assert!(wire.server.export().requires_authentication());
-    assert!(
-        wire.server
-            .export_mut()
-            .attach(&AttachContext {
-                connection: ConnectionId(1),
-                peer: None,
-                uname: b"shell",
-                aname: b"descriptor",
-                n_uname: u32::MAX
-            })
-            .is_err(),
-        "shell root requires a verified afid"
-    );
-    assert_eq!(
-        wire.authentication_wait(Instant::now()),
-        Duration::from_millis(17)
-    );
-    wire.turn().unwrap();
-    assert!(state.polls.load(Ordering::SeqCst) >= 2);
-    state.revoked.store(true, Ordering::SeqCst);
-    assert_eq!(
-        wire.turn(),
-        Err(ShellTransportError::NotConnected),
-        "idle shell revocation must stop the reactor"
-    );
-    drop(wire);
-    assert_eq!(state.closed.load(Ordering::SeqCst), 1);
-    assert_eq!(
-        state.retired.load(Ordering::SeqCst),
-        1,
-        "shell cleanup must return to its Session owner"
-    );
+    let before = cost_rows
+        .iter()
+        .find(|r| r.contains("boundary=before_turn "))
+        .unwrap();
+    let after = cost_rows
+        .iter()
+        .find(|r| r.contains("boundary=after_turn "))
+        .unwrap();
+    assert!(before.contains("export_polls=3"));
+    assert!(after.contains("export_polls=2"));
+    assert!(cost_rows[0].contains("service_turns=2 service_empty=2 service_records=0"));
+    assert!(cost_rows[0].contains("flush_turns=1 flush_empty=1 flush_records=0"));
 }
 
 #[test]

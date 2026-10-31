@@ -94,6 +94,16 @@ impl Peer {
         kind: ShellFileKind,
         encode: impl FnOnce(ShellFileHeader) -> Vec<u8>,
     ) -> bool {
+        self.try_submit_with_refusal(t, kind, 11, encode)
+    }
+
+    pub fn try_submit_with_refusal(
+        &mut self,
+        t: &mut ShellComponentTransport,
+        kind: ShellFileKind,
+        expected_errno: u32,
+        encode: impl FnOnce(ShellFileHeader) -> Vec<u8>,
+    ) -> bool {
         let id = self.submission + 1;
         let bytes = encode(ShellFileHeader {
             kind,
@@ -104,7 +114,10 @@ impl Peer {
         let accepted = self.drive(t, |raw| {
             let reply = raw.submit(&bytes);
             if reply.0 == 7 {
-                assert_eq!(u32::from_le_bytes(reply.1.try_into().unwrap()), 11);
+                assert_eq!(
+                    u32::from_le_bytes(reply.1.try_into().unwrap()),
+                    expected_errno
+                );
                 raw.clear();
                 return false;
             }

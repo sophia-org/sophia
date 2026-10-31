@@ -1,4 +1,6 @@
 # Temporary legacy exceptions. Remove each entry when its domain split lands.
+# External diagnostic counter/clock fault controls; no production test API.
+inline-tests crates/sophia-runtime/src/shell_work_cost.rs
 large-source crates/sophia-x-authority/src/x11_socket/connection/dispatch.rs
 
 # External ioctl ABI/descriptor fixtures; no device access or inline test bodies.

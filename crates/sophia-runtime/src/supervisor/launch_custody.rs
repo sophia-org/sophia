@@ -55,21 +55,24 @@ impl LaunchCustody {
     /// Zero-time poll of both kernel identities. An exit is observed without
     /// waiting for Session to reap it. Any poll error refuses custody.
     pub fn is_live(&self) -> io::Result<bool> {
-        if !self.inner.active.load(Ordering::Acquire) {
-            return Ok(false);
-        }
-        let mut fds = [
-            rustix::event::PollFd::new(&self.inner.wrapper, rustix::event::PollFlags::IN),
-            rustix::event::PollFd::new(&self.inner.peer, rustix::event::PollFlags::IN),
-        ];
-        let quiet = rustix::event::poll(
-            &mut fds,
-            Some(&rustix::event::Timespec {
-                tv_sec: 0,
-                tv_nsec: 0,
-            }),
-        )? == 0;
-        Ok(quiet && self.inner.active.load(Ordering::Acquire))
+        crate::shell_work_cost::count(crate::shell_work_cost::Call::Custody);
+        crate::shell_work_cost::result(crate::shell_work_cost::Stage::Custody, 0, || {
+            if !self.inner.active.load(Ordering::Acquire) {
+                return Ok(false);
+            }
+            let mut fds = [
+                rustix::event::PollFd::new(&self.inner.wrapper, rustix::event::PollFlags::IN),
+                rustix::event::PollFd::new(&self.inner.peer, rustix::event::PollFlags::IN),
+            ];
+            let quiet = rustix::event::poll(
+                &mut fds,
+                Some(&rustix::event::Timespec {
+                    tv_sec: 0,
+                    tv_nsec: 0,
+                }),
+            )? == 0;
+            Ok(quiet && self.inner.active.load(Ordering::Acquire))
+        })
     }
 }
 

@@ -120,18 +120,21 @@ impl IsbValidationWorker {
             .name("isb-validation".into())
             .spawn(move || {
                 let _exit = NotifyOnExit(notify.clone());
+                let _cost_exit = crate::shell_work_cost::WorkerExit;
                 // Declared after the guard so the sender drops first on unwind.
                 let completion_sender = results;
                 #[cfg(feature = "experimental-draw")]
                 let mut raster = None;
                 while let Ok(job) = jobs.recv() {
                     let id = job.id;
+                    let cost_bytes = job.bytes as u64;
                     let result = validate(
                         job,
                         validation_bytes,
                         #[cfg(feature = "experimental-draw")]
                         &mut raster,
                     );
+                    crate::shell_work_cost::job_completed(cost_bytes, result.is_ok());
                     if completion_sender
                         .send(IsbValidationCompletion { job: id, result })
                         .is_err()
@@ -314,42 +317,54 @@ fn validate(
     validation_bytes: usize,
     #[cfg(feature = "experimental-draw")] raster: &mut Option<sophia_draw::Rasterizer>,
 ) -> Result<ValidatedIsbPixels, IsbValidationFailure> {
-    let check = || {
-        if job.cancelled.load(Ordering::Acquire) {
-            Err(IsbValidationFailure::Cancelled)
-        } else if Instant::now() >= job.deadline {
-            Err(IsbValidationFailure::Timeout)
-        } else {
-            Ok(())
-        }
-    };
-    check()?;
-    let mut validation = match job.source {
-        Source::Isb(fd) => sealed_validation(fd, job.bytes)?,
-        Source::Ring(read) => IsbPixelValidation::from_owned(read.copy(check)?)
-            .map_err(|_| IsbValidationFailure::Malformed)?,
-        #[cfg(feature = "experimental-draw")]
-        Source::Draw(batch) => sealed_validation(
-            draw_source(
-                raster.get_or_insert_with(sophia_draw::Rasterizer::default),
-                &batch,
-                || check().is_err(),
-            )?,
-            job.bytes,
-        )?,
-    };
-    loop {
-        check()?;
-        let complete = validation
-            .step_with_budget(validation_bytes)
-            .map_err(|_| IsbValidationFailure::Malformed)?;
-        if complete {
+    crate::shell_work_cost::result(
+        crate::shell_work_cost::Stage::Validate,
+        job.bytes as u64,
+        || {
+            let check = || {
+                if job.cancelled.load(Ordering::Acquire) {
+                    Err(IsbValidationFailure::Cancelled)
+                } else if Instant::now() >= job.deadline {
+                    Err(IsbValidationFailure::Timeout)
+                } else {
+                    Ok(())
+                }
+            };
             check()?;
-            return validation
-                .finish()
-                .map_err(|_| IsbValidationFailure::Malformed);
-        }
-    }
+            let mut validation = match job.source {
+                Source::Isb(fd) => sealed_validation(fd, job.bytes)?,
+                Source::Ring(read) => IsbPixelValidation::from_owned(read.copy(check)?)
+                    .map_err(|_| IsbValidationFailure::Malformed)?,
+                #[cfg(feature = "experimental-draw")]
+                Source::Draw(batch) => sealed_validation(
+                    draw_source(
+                        raster.get_or_insert_with(sophia_draw::Rasterizer::default),
+                        &batch,
+                        || check().is_err(),
+                    )?,
+                    job.bytes,
+                )?,
+            };
+            crate::shell_work_cost::result(
+                crate::shell_work_cost::Stage::Pixels,
+                job.bytes as u64,
+                || {
+                    loop {
+                        check()?;
+                        let complete = validation
+                            .step_with_budget(validation_bytes)
+                            .map_err(|_| IsbValidationFailure::Malformed)?;
+                        if complete {
+                            check()?;
+                            return validation
+                                .finish()
+                                .map_err(|_| IsbValidationFailure::Malformed);
+                        }
+                    }
+                },
+            )
+        },
+    )
 }
 
 fn sealed_validation(

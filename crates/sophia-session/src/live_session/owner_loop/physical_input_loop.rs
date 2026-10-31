@@ -195,6 +195,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         if resource_sampler.is_due(sample_now) {
+sophia_runtime::shell_work_cost::emit_snapshot(false, false);
             let (observations, observation_runtime_locks) = present_clock_router.observation_counts();
             let (completion_runtime_locks, completion_historical_samples) = present_clock_router.completion_observation_counts();
             let timing = present_clock_router.wire_timing_statistics()?;

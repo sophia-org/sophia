@@ -238,7 +238,9 @@ impl ShellFileWire {
         expected: PolicyPeerIdentity,
         now: Instant,
     ) -> std::io::Result<Option<ImageChannelPeer>> {
-        listener.accept_authenticated(expected, self.connection, self.server.export_mut(), now)
+        crate::shell_work_cost::boundary(crate::shell_work_cost::Boundary::ImageAccept, || {
+            listener.accept_authenticated(expected, self.connection, self.server.export_mut(), now)
+        })
     }
 
     pub(in crate::shell_transport) fn poll_image_hello(
@@ -254,6 +256,8 @@ impl ShellFileWire {
         peer: &ImageChannelPeer,
         now: Instant,
     ) -> std::io::Result<()> {
-        peer.check(self.server.export_mut(), now)
+        crate::shell_work_cost::boundary(crate::shell_work_cost::Boundary::ImageCheck, || {
+            peer.check(self.server.export_mut(), now)
+        })
     }
 }

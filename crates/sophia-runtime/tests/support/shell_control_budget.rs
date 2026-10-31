@@ -783,3 +783,8 @@ fn full_file_inbox_refuses_custody_then_retries_the_same_id_without_loss() {
     assert!(t.state.inbound_idle());
     peer.quiet(&mut t.state);
 }
+
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/shell_control_work_cost.rs"
+));

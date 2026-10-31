@@ -144,7 +144,9 @@ impl Journal {
         body: &[u8],
         credited: bool,
     ) -> Result<u64, Errno> {
-        Ok(self.prepare_append(kind, body, credited)?.commit())
+        let sequence = self.prepare_append(kind, body, credited)?.commit();
+        crate::shell_work_cost::published(kind);
+        Ok(sequence)
     }
 
     /// Finish every fallible journal check before the owner reserves a resource

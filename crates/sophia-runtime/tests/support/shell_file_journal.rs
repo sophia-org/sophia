@@ -429,3 +429,59 @@ mod terminal_reserve {
         );
     }
 }
+
+#[test]
+fn work_cost_counts_only_committed_server_permit_publications() {
+    use sophia_protocol::shell_files::{
+        SHELL_FILE_HEADER_BYTES, ShellFileTransactionRecord, encode_shell_file_transaction,
+    };
+    use sophia_protocol::{
+        ContentFramePermit, ContentGrant, ContentOutputId, ShellContentRecord, TransactionId,
+    };
+    let encoded = encode_shell_file_transaction(
+        ShellFileHeader {
+            kind: ShellFileKind::FramePermit,
+            connection_epoch: 1,
+            submission_id: 0,
+            sequence: 1,
+        },
+        &ShellFileTransactionRecord {
+            transaction: TransactionId::from_raw(1),
+            record: ShellContentRecord::FramePermit(ContentFramePermit {
+                grant: ContentGrant {
+                    connection_epoch: 1,
+                    content_grant_epoch: 1,
+                },
+                output: ContentOutputId {
+                    id: 1,
+                    generation: 1,
+                },
+                demand_id: 1,
+                permit_id: 1,
+                state: 1,
+                reason: 0,
+                ttl_ms: 100,
+                max_candidate_bytes: 4096,
+            }),
+        },
+    )
+    .unwrap();
+    let body = &encoded[SHELL_FILE_HEADER_BYTES..];
+    let mut journal = Journal::new(1, BOUNDS, Instant::now());
+    let mut full = Journal::new(
+        1,
+        JournalBounds {
+            bytes: 0,
+            reserve_bytes: 0,
+        },
+        Instant::now(),
+    );
+    let rows = crate::shell_work_cost::tests::test_snapshot(|| {
+        assert_eq!(
+            journal.append(ShellFileKind::FramePermit, body, true),
+            Ok(1)
+        );
+        assert!(full.append(ShellFileKind::FramePermit, body, true).is_err());
+    });
+    assert!(rows[0].contains("server_frame_permits=1"), "{}", rows[0]);
+}

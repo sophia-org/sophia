@@ -227,99 +227,104 @@ impl ShellFiles {
     }
 
     pub(super) fn submit_decoded(&mut self, submit: ShellFileSubmit) -> Result<(), Errno> {
-        // A pending image refusal blocks every further submission until
-        // it is emitted. An identical retry of the accepted submission
-        // that produced it returns accepted success and retries
-        // publication; anything else is refused while it is pending.
-        if self.pending_image_refusal.is_some() {
-            let _ = self.retry_pending_image_refusal();
-            if self.pending_image_refusal.is_some()
-                && !self.accepted.as_ref().is_some_and(|a| a.submit == submit)
-            {
-                return Err(EBUSY);
+        crate::shell_work_cost::admission(0, || {
+            // A pending image refusal blocks every further submission until
+            // it is emitted. An identical retry of the accepted submission
+            // that produced it returns accepted success and retries
+            // publication; anything else is refused while it is pending.
+            if self.pending_image_refusal.is_some() {
+                let _ = self.retry_pending_image_refusal();
+                if self.pending_image_refusal.is_some()
+                    && !self.accepted.as_ref().is_some_and(|a| a.submit == submit)
+                {
+                    return Err(EBUSY);
+                }
             }
-        }
-        // Accepted bytes cannot be edited. An identical retry names the same
-        // retained object and never enqueues it again.
-        if let Some(accepted) = &self.accepted {
-            return if accepted.submit == submit {
-                Ok(())
-            } else {
-                Err(EBUSY)
+            // Accepted bytes cannot be edited. An identical retry names the same
+            // retained object and never enqueues it again.
+            if let Some(accepted) = &self.accepted {
+                return if accepted.submit == submit {
+                    Ok(())
+                } else {
+                    Err(EBUSY)
+                };
+            }
+            if submit.submission_id <= self.submission_watermark {
+                return Err(EALREADY);
+            }
+            // Owner backpressure precedes any decoding work.
+            if self.inbound.len() >= INBOUND_RECORDS {
+                return Err(Errno::EAGAIN);
+            }
+            let staging = self.staging.as_ref().ok_or(Errno::ESTALE)?;
+            if staging.bytes.len() != submit.candidate_bytes as usize {
+                return Err(Errno::EINVAL);
+            }
+            let revision = if self.image_disclosed() { 9 } else { 8 };
+            let record = decode_shell_file_record_at_revision(
+                &staging.bytes,
+                ShellFileClass::Candidate,
+                revision,
+            )
+            .map_err(|_| Errno::EINVAL)?;
+            if record.header.connection_epoch != self.epoch {
+                return Err(Errno::ESTALE);
+            }
+            if record.header.submission_id != submit.submission_id {
+                return Err(Errno::EINVAL);
+            }
+            let kind = record.header.kind;
+            let (inbound, effect) =
+                crate::shell_work_cost::decode(0, || self.decode(&staging.bytes, kind))?;
+            crate::shell_work_cost::record_class(kind, false);
+            // An offer's admission deadline starts at accepted custody and is
+            // computed before it, so this failure cannot strand a Submitted record.
+            let offer_deadline = match inbound {
+                Some(Inbound::ImageBegin(_)) => Some(
+                    self.image_validation_timeout()
+                        .and_then(|timeout| Instant::now().checked_add(timeout))
+                        .ok_or(Errno::EINVAL)?,
+                ),
+                _ => None,
             };
-        }
-        if submit.submission_id <= self.submission_watermark {
-            return Err(EALREADY);
-        }
-        // Owner backpressure precedes any decoding work.
-        if self.inbound.len() >= INBOUND_RECORDS {
-            return Err(Errno::EAGAIN);
-        }
-        let staging = self.staging.as_ref().ok_or(Errno::ESTALE)?;
-        if staging.bytes.len() != submit.candidate_bytes as usize {
-            return Err(Errno::EINVAL);
-        }
-        let revision = if self.image_disclosed() { 9 } else { 8 };
-        let record = decode_shell_file_record_at_revision(
-            &staging.bytes,
-            ShellFileClass::Candidate,
-            revision,
-        )
-        .map_err(|_| Errno::EINVAL)?;
-        if record.header.connection_epoch != self.epoch {
-            return Err(Errno::ESTALE);
-        }
-        if record.header.submission_id != submit.submission_id {
-            return Err(Errno::EINVAL);
-        }
-        let kind = record.header.kind;
-        let (inbound, effect) = self.decode(&staging.bytes, kind)?;
-        // An offer's admission deadline starts at accepted custody and is
-        // computed before it, so this failure cannot strand a Submitted record.
-        let offer_deadline = match inbound {
-            Some(Inbound::ImageBegin(_)) => Some(
-                self.image_validation_timeout()
-                    .and_then(|timeout| Instant::now().checked_add(timeout))
-                    .ok_or(Errno::EINVAL)?,
-            ),
-            _ => None,
-        };
-        let body = encode_shell_file_submitted_body_at_revision(
-            ShellFileSubmitted {
-                submission_id: submit.submission_id,
-                candidate_kind: kind,
-            },
-            revision,
-        )
-        .map_err(|_| Errno::EINVAL)?;
-        // Every fallible check precedes custody transfer, including journal
-        // capacity. Custody records never use the terminal reserve.
-        let sequence = self
-            .journal
-            .append(ShellFileKind::Submitted, &body, false)?;
-        let staging = self.staging.take().expect("candidate checked");
-        self.accepted = Some(Accepted {
-            submit,
-            bytes: staging.bytes,
-            handle: staging.handle,
-            sequence,
-        });
-        self.submission_watermark = submit.submission_id;
-        if kind == ShellFileKind::Negotiate {
-            self.negotiate_accepted = true;
-        }
-        if let Some(inbound) = inbound {
-            if let Inbound::ImageBegin(metadata) = &inbound {
-                self.image
-                    .as_mut()
-                    .expect("disclosed image state")
-                    .offers
-                    .note_submitted(metadata.offer_id, offer_deadline.expect("offer deadline"));
+            let body = encode_shell_file_submitted_body_at_revision(
+                ShellFileSubmitted {
+                    submission_id: submit.submission_id,
+                    candidate_kind: kind,
+                },
+                revision,
+            )
+            .map_err(|_| Errno::EINVAL)?;
+            // Every fallible check precedes custody transfer, including journal
+            // capacity. Custody records never use the terminal reserve.
+            let sequence = self
+                .journal
+                .append(ShellFileKind::Submitted, &body, false)?;
+            crate::shell_work_cost::record_class(kind, true);
+            let staging = self.staging.take().expect("candidate checked");
+            self.accepted = Some(Accepted {
+                submit,
+                bytes: staging.bytes,
+                handle: staging.handle,
+                sequence,
+            });
+            self.submission_watermark = submit.submission_id;
+            if kind == ShellFileKind::Negotiate {
+                self.negotiate_accepted = true;
             }
-            self.inbound.push_back(inbound);
-        }
-        self.apply(effect);
-        Ok(())
+            if let Some(inbound) = inbound {
+                if let Inbound::ImageBegin(metadata) = &inbound {
+                    self.image
+                        .as_mut()
+                        .expect("disclosed image state")
+                        .offers
+                        .note_submitted(metadata.offer_id, offer_deadline.expect("offer deadline"));
+                }
+                self.inbound.push_back(inbound);
+            }
+            self.apply(effect);
+            Ok(())
+        })
     }
 }
 

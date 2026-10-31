@@ -25,7 +25,9 @@ static OUTPUT: OnceLock<SessionOutput> = OnceLock::new();
 pub fn install(output: SessionOutput) -> Result<(), &'static str> {
     OUTPUT
         .set(output)
-        .map_err(|_| "Sophia session output is already installed")
+        .map_err(|_| "Sophia session output is already installed")?;
+    sophia_runtime::shell_work_cost::install_sink(output.stdout);
+    Ok(())
 }
 
 #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
