@@ -82,10 +82,10 @@ refused, never silently downgraded (`docs/sophia-shell-v1-direction.md`).
 ### Content limits
 
 `ContentLimits::prototype` (`vendor/rust-desktop-sdk/source/crates/sophia-shell-protocol/src/shell/content/limits.rs`)
-is the starting grant. `role_limits` (`shell_component_connections.rs:378-394`)
-lowers it per role: with a dock present, staging is 4 MiB, resident 12 MiB for
-the bar and 8 MiB otherwise, and retiring 8 MiB. A launcher without a dock gets
-staging 4 MiB, resident 12 MiB and retiring 8 MiB. The values this contract
+is the starting grant. `role_limits` in
+`crates/sophia-session/src/shell_component_connections.rs` lowers it for every
+role: staging is 4 MiB; with a dock present, resident is 8 MiB and retiring
+5 MiB; without a dock, resident is 12 MiB and retiring 8 MiB. The values this contract
 depends on:
 
 | Limit | Prototype |

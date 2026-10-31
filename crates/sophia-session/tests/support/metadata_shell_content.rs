@@ -27,11 +27,6 @@ const ALLOCATION: ContentAllocationId = ContentAllocationId {
     id: 1,
     generation: 1,
 };
-const RESOURCE: ContentResourceId = ContentResourceId {
-    id: 1,
-    generation: 1,
-};
-
 fn tx(raw: u64) -> TransactionId {
     TransactionId::from_raw(raw)
 }
@@ -132,26 +127,32 @@ fn allocation() -> ContentAllocationSnapshot {
 }
 
 fn render_bundle() -> ContentRenderBundle {
+    render_bundle_with_placements(1)
+}
+
+fn render_bundle_with_placements(count: u16) -> ContentRenderBundle {
     let limits = ContentLimits::prototype(GRANT);
     let mut resources = ContentResourceStore::new(limits.clone()).unwrap();
     // The pixels arrive as a real sealed mapping, validated before admission.
-    isb::accept(
-        &mut resources,
-        tx(1),
-        ContentResourceBegin {
-            grant: GRANT,
-            resource: RESOURCE,
-            width_px: 2,
-            height_px: 1,
-            rendered_scale_numerator: 1,
-            rendered_scale_denominator: 1,
-            pixel_format: 1,
-            chunk_count: 1,
-            total_bytes: 8,
-        },
-        &[0, 0, 255, 255, 0, 128, 0, 128],
-        0,
-    );
+    for id in 1..=u64::from(count) {
+        isb::accept(
+            &mut resources,
+            tx(1),
+            ContentResourceBegin {
+                grant: GRANT,
+                resource: ContentResourceId { id, generation: 1 },
+                width_px: 2,
+                height_px: 1,
+                rendered_scale_numerator: 1,
+                rendered_scale_denominator: 1,
+                pixel_format: 1,
+                chunk_count: 1,
+                total_bytes: 8,
+            },
+            &[u8::try_from(id - 1).unwrap(), 0, 255, 255, 0, 128, 0, 128],
+            0,
+        );
+    }
     let mut candidates = ContentCandidateStore::new(limits).unwrap();
     candidates.grant_permit(tx(4), OUTPUT, 1, 1, 0).unwrap();
     candidates
@@ -165,7 +166,7 @@ fn render_bundle() -> ContentRenderBundle {
                 pacing_permit: 1,
                 interaction_generation: 8,
                 surface_count: 1,
-                placement_count: 1,
+                placement_count: u32::from(count),
                 target_count: 0,
             },
             1,
@@ -188,12 +189,17 @@ fn render_bundle() -> ContentRenderBundle {
                     parent_surface_index: u16::MAX,
                     anchor_parent_rect: ContentPixelRect::default(),
                 }],
-                placements: vec![ContentPlacement {
-                    resource: RESOURCE,
-                    surface_index: 0,
-                    destination_x_px: 3,
-                    destination_y_px: 4,
-                }],
+                placements: (0..count)
+                    .map(|index| ContentPlacement {
+                        resource: ContentResourceId {
+                            id: u64::from(index) + 1,
+                            generation: 1,
+                        },
+                        surface_index: 0,
+                        destination_x_px: 3 + i32::from(index) * 2,
+                        destination_y_px: 4,
+                    })
+                    .collect(),
                 targets: vec![],
             },
             2,
@@ -207,7 +213,7 @@ fn render_bundle() -> ContentRenderBundle {
                 grant: GRANT,
                 candidate_generation: 1,
                 surface_count: 1,
-                placement_count: 1,
+                placement_count: u32::from(count),
                 target_count: 0,
             },
             ContentCandidateContext {
@@ -259,6 +265,65 @@ fn projection_keeps_exact_pixels_and_allocation_local_placement() {
         vec![(allocation.allocation, allocation.logical, allocation.pixel)],
         "visible content with no rows must still occlude input"
     );
+}
+
+#[test]
+fn projection_retains_three_distinct_placements_after_the_bundle_is_dropped() {
+    let bundle = render_bundle_with_placements(3);
+    let projected = project_render_bundle(
+        &bundle,
+        HeadlessOutput {
+            id: OutputId::from_raw(2),
+            size: Size {
+                width: 1920,
+                height: 1080,
+            },
+            scale: 1,
+        },
+        OUTPUT,
+        &[allocation()],
+    )
+    .unwrap();
+    assert_eq!(projected.images.len(), 3);
+    assert_eq!(projected.allocations.len(), 1);
+    assert!(projected.targets.is_empty());
+    for (index, image) in projected.images.iter().enumerate() {
+        let id = ContentResourceId {
+            id: index as u64 + 1,
+            generation: 1,
+        };
+        assert_eq!(
+            image.geometry_px,
+            Rect {
+                x: 13 + index as i32 * 2,
+                y: 24,
+                width: 2,
+                height: 1
+            }
+        );
+        // This pins today's projection, not damage or upload reuse.
+        assert_eq!(
+            image.node,
+            CompositorNodeId::ShellContent {
+                grant: GRANT,
+                output: OutputId::from_raw(2),
+                candidate: 1,
+                surface: 0,
+                placement: index as u16,
+            }
+        );
+        assert_eq!(
+            image.resource.cpu_bytes().unwrap().as_ptr(),
+            bundle.resource(id).unwrap().cpu_bytes().unwrap().as_ptr()
+        );
+    }
+    drop(bundle);
+    for (index, image) in projected.images.iter().enumerate() {
+        assert_eq!(
+            image.resource.cpu_bytes().unwrap(),
+            &[index as u8, 0, 255, 255, 0, 128, 0, 128]
+        );
+    }
 }
 
 #[test]

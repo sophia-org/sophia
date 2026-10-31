@@ -6,6 +6,9 @@ mod isb;
 #[path = "support/content_shutdown.rs"]
 mod shutdown;
 
+#[path = "support/multiple_content_placements.rs"]
+mod multiple_placements;
+
 fn grant() -> ContentGrant {
     ContentGrant {
         connection_epoch: 7,
