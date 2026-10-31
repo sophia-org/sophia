@@ -20,6 +20,63 @@ It does not reopen their completed exits or replace `todo.md` as the task ledger
 The exit is a separately qualified improvement, or a documented no-change result
 for each selected mechanism. A profile share is not a savings target.
 
+## October 31: opaque validation qualified; production source promotion
+
+This status supersedes the candidate-only checksum status below. Lom's ordinary
+CPU checksum removal and opaque BGRA conversion have landed after separate pixel
+and cadence gates. Session attribution then identified pixel validation as the
+largest measured size-dependent worker stage. S1 remains closed; the separate
+reserve-without-zero-fill candidate is parked and is not stacked here.
+
+`lom-session-opaque-validation-native-02` completed eight attended runs, baseline /
+candidate / candidate / baseline at each of h24 and h512, on one boot. The mode
+was DP-1 1920×1080 at nominal 60 Hz (60000 millihertz; interval p50 16683 µs).
+Both hosts had work-cost instrumentation enabled and used the same held checksum-off Lom
+cadence executable. The baseline was `babc4e78`; candidate `6c6f5edd` changes only
+the bounded pixel predicate and its three test files. It proves all complete
+pixels in a unit opaque before skipping redundant colour-versus-alpha tests;
+nonopaque units retain the original checks. Split-pixel checks, immutable
+storage, cancellation/deadline checks, budgets and release custody are unchanged.
+
+Combined Session + Lom + WM CPU accounting bounds, in microseconds per reported
+DRM scanout-start interval:
+
+| Workload | Baseline | Candidate | Candidate minus baseline |
+| --- | --- | --- | --- |
+| 1920×24 | 1730–1780 | 1702.5–1755 | −77.5 to +25 (inconclusive) |
+| 1920×512 | 3660–3710 | 3265–3315 | −445 to −345 (reduction) |
+
+The h512 qualification rule passed: the combined interval excludes zero and
+Pixels and Validate each fell in both pairs. Pixels fell 422.29/423.34 µs per
+job and Validate fell 412.27/406.64. Copy rose 10.01/16.69; owner and Lom movement
+is retained in the report. Nested stages must not be added. Worker snapshots
+cover 1792 jobs in their own window, not the 2000-interval CPU window; do not
+scale one into the other. All eight runs retained zero missed refreshes and
+clean custody/cleanup. These are tick-accounting bounds, not confidence
+intervals, isolated causal costs or measured production savings.
+
+The tradeoff is content-dependent: the warm mapped scan screen measured about
++28 µs (+7.7%) at 3,932,160 bytes for the tested varying, alternating and
+one-translucent-per-unit alpha patterns. That is not a general regression bound.
+The native opaque workload does not exercise it. Its displayed-pixel prerequisite
+captured ordinary/reference Lom entries; the cadence checksum-off executable
+itself was not captured. No current matched Lom-versus-Wayland result is implied.
+
+Root's saved-data audit is
+`~/.local/state/lom-session-opaque-validation-audit-02/RECEIPT.json`
+(`5a6209564b95623228cf0337ba9b226eb90fd32cd1e46e1c9d80abeb96f4cf49`).
+The independent audit is
+`~/.local/state/lom-session-opaque-validation-claude-audit-02/AUDIT.json`
+(`e00296340e7c4ea0d31a558ee2e6d89c2f56b1b6f1057299a948115c67aeed6c`).
+Both passed; failed OV01 remains failed and is not pooled into OV02.
+
+Production promotion carries only those four source/test files onto master,
+whose pre-change scan and tests match the experimental baseline byte-for-byte.
+It does not import the diagnostic host's instrumentation or capture-delivery
+ancestors. The full redraw critical path remains open: retained-region reuse
+still needs workload and custody qualification, and GPU work remains a separate
+gate. Held sources, releases and sealed evidence remain immutable.
+
 ## Current priority: make each CPU redraw cheaper, October 30
 
 Mason restored CPU redraw cost to the near-term critical path after the

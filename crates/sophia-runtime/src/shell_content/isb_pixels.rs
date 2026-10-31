@@ -118,20 +118,26 @@ fn valid_unit(pixels: &[u8], start: usize, end: usize) -> bool {
     // Fixed-size arrays expose a constant trip count to the vectorizer. Test
     // accumulated validity per block; failure leaves the unit uncommitted.
     let (blocks, remainder) = whole.as_chunks::<16>();
-    for block in blocks {
-        let mut valid = true;
-        for &[b, g, r, a] in block {
-            valid &= (b <= a) & (g <= a) & (r <= a);
+    // Prove opacity once per bounded unit so the fallback keeps its vector loop.
+    let common = whole
+        .iter()
+        .fold(u32::MAX, |bits, pixel| bits & u32::from_le_bytes(*pixel));
+    if common >> 24 != 255 {
+        for block in blocks {
+            let mut valid = true;
+            for &[b, g, r, a] in block {
+                valid &= (b <= a) & (g <= a) & (r <= a);
+            }
+            if !valid {
+                return false;
+            }
         }
-        if !valid {
+        if remainder
+            .iter()
+            .any(|&[b, g, r, a]| b > a || g > a || r > a)
+        {
             return false;
         }
-    }
-    if remainder
-        .iter()
-        .any(|&[b, g, r, a]| b > a || g > a || r > a)
-    {
-        return false;
     }
     let tail_start = end - tail.len();
     (tail_start..end).all(|i| pixels[i] <= pixels[i | 3])

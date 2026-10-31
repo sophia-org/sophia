@@ -1,4 +1,4 @@
-//! Frozen pre-SIMD block implementation, used only as a timing reference.
+//! Frozen fixed-block implementation from babc4e78, used only as a timing reference.
 //! Bounded validation on a worker-owned immutable mapping. No owner-loop scan.
 use sophia_linux_peer::SealedMapping;
 use sophia_runtime::ContentStoreError;
@@ -73,9 +73,10 @@ fn valid_unit(pixels: &[u8], start: usize, end: usize) -> bool {
         return false;
     }
     let (whole, tail) = pixels[head_end..end].as_chunks::<4>();
-    // Accumulate a block before branching so the compiler can compare several
-    // pixels together. Failure still leaves the whole unit uncommitted.
-    for block in whole.chunks(16) {
+    // Fixed-size arrays expose a constant trip count to the vectorizer. Test
+    // accumulated validity per block; failure leaves the unit uncommitted.
+    let (blocks, remainder) = whole.as_chunks::<16>();
+    for block in blocks {
         let mut valid = true;
         for &[b, g, r, a] in block {
             valid &= (b <= a) & (g <= a) & (r <= a);
@@ -83,6 +84,12 @@ fn valid_unit(pixels: &[u8], start: usize, end: usize) -> bool {
         if !valid {
             return false;
         }
+    }
+    if remainder
+        .iter()
+        .any(|&[b, g, r, a]| b > a || g > a || r > a)
+    {
+        return false;
     }
     let tail_start = end - tail.len();
     (tail_start..end).all(|i| pixels[i] <= pixels[i | 3])

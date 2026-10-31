@@ -127,3 +127,55 @@ fn deterministic_random_pixels_and_budget_sequences_match_scalar_scan() {
         compare(&bytes, &schedule);
     }
 }
+
+#[test]
+fn one_nonopaque_pixel_cannot_hide_inside_an_opaque_block() {
+    for start in 1..=64 {
+        for pixel in 0..80 {
+            for colour in 0..3 {
+                let mut bytes = [255; 80 * 4];
+                bytes[pixel * 4..pixel * 4 + 3].fill(0);
+                bytes[pixel * 4 + 3] = 254;
+                bytes[pixel * 4 + colour] = 255;
+                compare(&bytes, &[start, 128, 128, usize::MAX, usize::MAX]);
+            }
+            let mut bytes = [255; 80 * 4];
+            bytes[pixel * 4..pixel * 4 + 4].fill(0);
+            compare(&bytes, &[start, 128, 128, usize::MAX]);
+        }
+    }
+}
+
+#[test]
+fn mostly_opaque_random_pixels_keep_the_scalar_predicate() {
+    let mut seed = 0xaffe_5510_0137_9bdf;
+    for case in 0..256 {
+        let len = ((next(&mut seed) % 1024 + 1) * 4) as usize;
+        let mut bytes = vec![0; len];
+        for pixel in bytes.chunks_exact_mut(4) {
+            let alpha = if next(&mut seed).is_multiple_of(10) {
+                (next(&mut seed) & 255) as u8
+            } else {
+                255
+            };
+            for value in &mut pixel[..3] {
+                *value = (next(&mut seed) % (u64::from(alpha) + 1)) as u8;
+            }
+            pixel[3] = alpha;
+        }
+        if case % 2 == 0 {
+            let pixel = (next(&mut seed) as usize % (len / 4)) * 4;
+            bytes[pixel + 3] = 254;
+            bytes[pixel + next(&mut seed) as usize % 3] = 255;
+        }
+        let mut schedule = Vec::new();
+        let mut offered = 0;
+        while offered < len {
+            let budget = 1 + next(&mut seed) as usize % 129;
+            schedule.push(budget);
+            offered += budget;
+        }
+        schedule.extend([0, usize::MAX]);
+        compare(&bytes, &schedule);
+    }
+}
