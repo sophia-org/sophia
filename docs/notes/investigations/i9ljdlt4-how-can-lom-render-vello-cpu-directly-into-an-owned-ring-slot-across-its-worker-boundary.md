@@ -808,13 +808,13 @@ continues, the smallest follow-up is one predeclared fresh h512
 copy/direct/direct/copy block with the same held artifacts and acceptance gates.
 Retain the original block, every new arm and all cadence outcomes; report blocks
 separately as well as combined, without retrying to obtain a preferred result.
-That proposal is now prepared as the fixed repeat below; it has not run.
+That proposal completed as the fixed repeat below; no further repeat is planned.
 The read-only analysis receipt is
 `~/.local/state/lom-cpu-cadence-followup-02/RECEIPT.json`, SHA256
 `c82a10d90d3fab07f2937ab410c75486596891b2045e9f27e6b85ddb7b33bf1b`.
 All 403 saved package files remain unchanged.
 
-### Fixed reverse-order h512 repeat: sealed, not run
+### Fixed reverse-order h512 repeat: sealed and completed
 
 `~/.local/state/t331/lom-cpu-cadence-repeat-native-01` is a fresh disposable
 four-arm package: `h512r-copy-a`, `h512r-direct-a`, `h512r-direct-b`,
@@ -859,8 +859,49 @@ Evidence is `~/.local/state/lom-cpu-cadence-repeat-preflight-01/`:
 `4cc85761f26a5ab9e2aef3cfa3cf348d6798310391066bc98a830515a9b03dc7`;
 `SHA256SUMS` SHA256
 `adaf8a9c429d3a575551a6cc0b6d9a0d522291e2ab8e940dd2d6cf4af3b2c270`.
-No repeat performance result or production-adoption claim exists yet. All holds
-remain pending the attended run and saved-data audit.
+At seal there was no repeat performance result. The attended result and audit
+follow; no production-adoption change has been made and all holds remain.
+
+The attended repeat completed all four arms and the combined analysis. Root's
+saved-data audit passes: all 120 manifest entries and 121 sealed files are
+unchanged, all 403 original-package files retain their complete metadata, and
+both pinned CPUwin replays exactly reproduce the saved JSON. Every repeat arm
+has 2120 rendered candidates, checksum `9a603a023eb2ab7c`, validated kernel and
+timing joins, zero-offset clock proof, 115 binding checks with 116 distinct
+capturers including the initial bind, and clean VT/PAM/recovery. All four cadence
+final records are complete and follow exact quiescence. No repeat arm has a
+descriptive missed refresh; intervals have maximum 16.694–16.695 ms.
+
+Combined Session + Lom + Hagia CPU, in microseconds per reported DRM
+scanout-start interval:
+
+| Block | Direct bounds | Copy bounds | Direct minus copy |
+| --- | ---: | ---: | ---: |
+| Original D/C/C/D | 7895–7945 | 8002.5–8052.5 | −157.5 to −57.5 |
+| Repeat C/D/D/C | 7785–7835 | 8147.5–8197.5 | −412.5 to −312.5 |
+| Combined eight | 7840–7890 | 8075–8125 | −285 to −185 |
+
+Thus direct fill has lower aggregate accounted CPU in both blocks. The combined
+Lom difference is −251.25 to −211.25 us; Session is −23.75 to +16.25 and Hagia is
+−10 to +10. These are algebraic process-accounting differences, not causal
+attribution. The original direct arm's six missed refreshes remain in the
+combined report. h24 remains original-only and inconclusive, −70 to +30 us.
+
+Both blocks share a boot, but are separated in time. This fixed post-hoc repeat
+does not establish identical operating conditions, cancel arbitrary drift or
+turn accounting bounds into confidence intervals. The diagnostic copy path also
+allocates an owned image, so this is not isolated memcpy cost or a production
+saving. The planned repeat is now closed; no replacement or additional repeat
+is scheduled and no default/adoption change follows automatically.
+
+Read-only audit: `~/.local/state/lom-cpu-cadence-repeat-audit-01/RECEIPT.json`,
+SHA256 `2d215c1093a74de32c4a69174376a9d328b27470bd2b6b60e7184b91c3116a88`;
+`SHA256SUMS` SHA256
+`04fc4405fda428a718f022cb8991bdb8d455bb1d4a5cb3fc4947822f3e10db5c`.
+The audit used frozen pure verifiers plus independent aggregate arithmetic and
+raw candidate checks; only offline CPUwin replay outputs were written, in the
+external audit directory. No package entrypoint, tests, builds or native reruns
+were executed, and no package bytes changed.
 
 ## Existing renderer support and pixel contract
 
