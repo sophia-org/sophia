@@ -20,6 +20,56 @@ It does not reopen their completed exits or replace `todo.md` as the task ledger
 The exit is a separately qualified improvement, or a documented no-change result
 for each selected mechanism. A profile share is not a savings target.
 
+## Current priority: make each CPU redraw cheaper, October 30
+
+Mason restored CPU redraw cost to the near-term critical path after the
+direct-fill closeout. This order supersedes the historical GPU-first ordering
+below. Direct fill is landed and qualified within explicit CPU mode; it does
+not finish CPU rendering optimization. The fixed h512 reverse-order repeat
+and combined eight-run result remain diagnostic path comparisons: combined
+direct-minus-copy is [-285,-185] microseconds per reported scanout-start
+interval; h24 remains original-only and inconclusive at [-70,+30]. Do not
+schedule another repeat or treat those intervals as isolated copy costs.
+
+1. **Attribute one redraw device-free at h24 and h512.** Use the signed Lom
+   `3fe206dc` scene, configuration, model inputs and dependencies, with the
+   saved produced checksums as refusal criteria. Split retained scene
+   preparation, Vello CPU rasterization, RGBA-to-premultiplied-BGRA conversion,
+   the full-surface FNV checksum, and owned-ring acquire/commit. The checksum
+   is a separate pass in `src/render/worker.rs`, not part of Vello. Keep the
+   actual mapped loan and SDK commit where measuring that path; a vector or
+   memcpy microbenchmark is not ring-commit evidence. Record worker and owner
+   thread CPU separately, check whether rasterization uses helper threads,
+   and distinguish elapsed time from CPU. Measure instrumentation overhead;
+   never add overlapping scopes or extrapolate offscreen costs to Session.
+2. **Revisit Session marginal cost using the existing Phase 0 attribution.**
+   Rank actual repeated work before proposing a new turn-only pass. The old
+   S1 candidate regressed and stays closed; neither the approximate h24
+   Session share nor redraw frequency establishes an irreducible fixed cost
+   or authorizes rerunning S1. Any new candidate needs a distinct mechanism
+   and predicted counter change.
+3. **Select the smallest supported redraw optimization from that evidence.**
+   Damage-region rendering is a candidate, not an assumed protocol feature:
+   first check clipped rasterization, complete-image reconstruction across
+   alternating slots, unchanged pixels and exact released-slot custody.
+   Partial writes do not authorize mutation of a retained image. Keep a
+   correct full-frame fallback. If conversion is material, assess direct
+   premultiplied-BGRA output or conversion during fill, preserving alpha,
+   rounding and byte equivalence. Do not implement both mechanisms together.
+4. **Qualify each selected change separately.** Device-free scene/pixel and
+   custody controls precede a fresh attended native comparison. The cadence
+   harness can measure redraw cost; damage work also needs a predeclared
+   changing-region workload because its static redirty scene has no real
+   damage. Benefit requires a CPU difference interval excluding zero, the
+   predicted mechanism counter and retained cadence/cleanup outcomes. It is
+   not a causal per-job, isolated memcpy or production gain claim.
+
+Keep the default-off copy-reference code as a baseline for this work; retaining
+the code does not revive retired worktree or pool holds. Existing saved evidence
+is immutable. GPU qualification and GPU direct-render optimization remain later
+gates. The already-started GPU tooling check may finish, but no GPU release,
+package or native work takes priority over this CPU attribution.
+
 ## October 29 current gate: matched CPU comparison qualified
 
 `desktop-matched-cpu-02` completed all six arms. Root independently recomputed
@@ -419,6 +469,9 @@ approval. No storage or authority-window change is authorized by attribution
 alone. The exact mechanism must receive its own custody review.
 
 ## Immediate critical path
+
+The October 30 CPU redraw priority above supersedes this ordering. The table
+retains prior dispositions; it does not reopen completed or regressed candidates.
 
 The task ledger is `todo.md` t344. Mason's October 29 priority is the
 [matched-producer benchmark](../investigations/iq4zf50w-how-do-we-compare-sophia-xlibre-and-niri-with-matched-pixel-producers.md):

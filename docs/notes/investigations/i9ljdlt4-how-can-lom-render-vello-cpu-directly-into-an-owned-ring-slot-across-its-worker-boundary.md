@@ -17,6 +17,14 @@ default-feature release passed its attended smoke and saved-data audit. The
 sections below retain the sequence of evidence. Sealed evidence remains
 untouched; the five merged Lom CPU worktrees were retired after closeout.
 
+The next CPU gate is **cheaper redraws**, before returning to GPU qualification.
+The [updated critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md#current-priority-make-each-cpu-redraw-cheaper-october-30)
+starts with device-free attribution of scene preparation, rasterization,
+conversion, checksum and ring commit at h24/h512. Damage rendering and direct
+BGRA output are hypotheses to select from that evidence, not qualified changes.
+The default-off copy reference remains available; no further repeat of the
+completed direct-fill comparison is scheduled.
+
 Mason's clarification is two native pixel movers: CPU shared-memory pixels and
 GPU buffers. The application chooses, with user preference where supported;
 Sophia still enforces permissions and negotiated capabilities. Direct fill is

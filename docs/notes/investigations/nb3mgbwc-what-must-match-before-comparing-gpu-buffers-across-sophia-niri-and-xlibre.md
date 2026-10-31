@@ -9,7 +9,19 @@ tags: [investigation, performance, benchmark, gpu]
 
 ## Decision and scope
 
-**October 30 sequencing:** [CPU direct-fill adoption](i9ljdlt4-how-can-lom-render-vello-cpu-directly-into-an-owned-ring-slot-across-its-worker-boundary.md) comes before further GPU implementation. This matrix retains the GPU gates for afterward.
+**October 30 sequencing:** [CPU direct-fill adoption](i9ljdlt4-how-can-lom-render-vello-cpu-directly-into-an-owned-ring-slot-across-its-worker-boundary.md) is complete. Mason then restored **cheaper CPU redraws** to the near-term critical path: device-free phase attribution, Session marginal-cost review, and one evidence-selected optimization. The [current plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md#current-priority-make-each-cpu-redraw-cheaper-october-30) takes precedence over GPU release/package work. This matrix retains the GPU gates for afterward.
+
+The intervening tooling repair is signed and pushed on niltempus
+`bench/gpu-qualification` at `cf49caa204dbac214a05cd83e3b7444b0da4dd8b`:
+the unchanged build-only bridge check moved into `bridge/tests/`, with its
+documented command updated. The full xtask gate now passes its physical-runner
+audit without an exception, plus formatting and strict Clippy. The 70 result
+lines sum to 467 passed, 13 ignored and 34 filtered, including child fixtures;
+these are not unique test counts. Receipt:
+`~/.local/state/matched-gpu-qualification-source-01/RECEIPT.json`, SHA256
+`6afb8ea5f6f9690ca45d9209a939120ef0d64351a8de67e71ab1b08769a33c96`.
+No bridge/adapter rerun, release, master merge, package or native run followed.
+That worktree is parked; the held GPU sources and artifacts remain unchanged.
 
 The [matched CPU comparison](iq4zf50w-how-do-we-compare-sophia-xlibre-and-niri-with-matched-pixel-producers.md)
 is qualified. The subsequent GPU comparison needs a matched GPU-buffer producer,
