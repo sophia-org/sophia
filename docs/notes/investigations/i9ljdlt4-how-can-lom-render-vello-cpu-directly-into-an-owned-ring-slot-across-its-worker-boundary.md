@@ -745,7 +745,48 @@ Package 02's 143-entry manifest is SHA256
 The external root receipt is
 `~/.local/state/lom-cpu-cadence-preflight-02/RECEIPT.json`, SHA256
 `6120cb9e28349cc41c087630de8cdf12898bd905d8be3ae1e3e6f9a2e42f02ee`.
-This is preparation evidence only; there is still no qualified CPU comparison.
+Those checks were preparation evidence only.
+
+The attended package 02 attempt subsequently completed all eight arms and its
+comparison. Root replayed the pinned offline CPU analyzer into separate evidence;
+both geometry results exactly match the saved JSON. Independent arithmetic also
+reproduces the process sums, arm means and direct-minus-copy intervals. The 143
+manifest entries verify, all 403 saved files remained unchanged during audit,
+and pK's independent raw-log and pure-verifier audit found no discrepancy.
+
+Mean combined Session + Lom + Hagia CPU accounting bounds, in microseconds per
+reported DRM scanout-start interval (2,000 intervals per arm):
+
+| Static workload | Direct fill | Copy reference | Direct minus copy |
+| --- | ---: | ---: | ---: |
+| 1920×24 | 1572.5–1622.5 | 1592.5–1642.5 | −70 to +30 |
+| 1920×512 | 7895–7945 | 8002.5–8052.5 | −157.5 to −57.5 |
+
+The small bar is inconclusive. The large-surface aggregate supports lower CPU
+accounting for direct fill in this particular ABBA group, but cadence and run
+variation must accompany it: `h512-direct-a` had six descriptive missed-refresh
+intervals (33.363–33.371 ms); the other seven runs had none. The large direct
+runs individually span 8235–8285 and 7555–7605 µs per interval, while copy spans
+7820–7870 and 8185–8235. The aggregate bounds are not confidence intervals and do
+not cover this run-to-run variability. No attribution for the missed refreshes
+is established. Sampler CPU remains separate, approximately 10.2–14.3 ms/s.
+
+Each arm produced 2,120 rendered candidates and exact timing/kernel joins, with
+115 live binding checks and distinct helper identities. Complete cadence finals
+follow exact runtime-deadline quiescence in all eight arms, so their render-count
+observations are after B in this run set. VT/PAM cleanup, process custody,
+quiescence and protocol checks pass. Both timestamp-offset signs occur, as the
+corrected contract permits. W1 checksum stays `a7bbb8c840a7303c`; W2 is
+`9a603a023eb2ab7c`, equal across its four arms.
+
+This remains an instrumented diagnostic path comparison on one machine, including
+the copy arm's owned-image allocation. It is not isolated memcpy cost, causal
+job CPU, a fixed-frequency production saving or evidence for default adoption.
+No boundary work is subtracted. Failed package 01 remains failed. The read-only
+root audit receipt is
+`~/.local/state/lom-cpu-cadence-native-audit-02/RECEIPT.json`, SHA256
+`77d98df405a5d27f85188afd7e0356358f0d5b4c1c5826d9c1a5b3bd16bee281`.
+Source and artifact holds remain in place.
 
 ## Existing renderer support and pixel contract
 
