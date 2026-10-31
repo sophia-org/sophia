@@ -808,11 +808,59 @@ continues, the smallest follow-up is one predeclared fresh h512
 copy/direct/direct/copy block with the same held artifacts and acceptance gates.
 Retain the original block, every new arm and all cadence outcomes; report blocks
 separately as well as combined, without retrying to obtain a preferred result.
-This is a proposed follow-up, not a prepared package or native authorization.
+That proposal is now prepared as the fixed repeat below; it has not run.
 The read-only analysis receipt is
 `~/.local/state/lom-cpu-cadence-followup-02/RECEIPT.json`, SHA256
 `c82a10d90d3fab07f2937ab410c75486596891b2045e9f27e6b85ddb7b33bf1b`.
 All 403 saved package files remain unchanged.
+
+### Fixed reverse-order h512 repeat: sealed, not run
+
+`~/.local/state/t331/lom-cpu-cadence-repeat-native-01` is a fresh disposable
+four-arm package: `h512r-copy-a`, `h512r-direct-a`, `h512r-direct-b`,
+`h512r-copy-b`. This is exactly one fixed reverse-order repeat, selected after
+observing the original block's variability. There is no replacement run,
+conditional continuation or further repeat; any arm failure stops the package.
+The held source, release artifacts, workload, quota, budgets, timing and clock
+proofs remain unchanged. The collector source is byte-identical, but its
+preflight now additionally validates the original evidence before Session starts.
+
+Every arm requires the original h512 produced checksum `9a603a023eb2ab7c`.
+Configs match the original after per-arm path normalization; the held binaries,
+checker, host and analyzer must match the original external pins. The original
+saved analysis is reported by hash, not replaced by a recomputation. Its plan
+supplies the original process identities; anchors join its saved postflights.
+Authenticated audit receipt `77d98df4` and its checksums bind all selected original
+inputs to the audited snapshot. Original inputs are rehashed before and after
+analysis; every new output is under the repeat package.
+
+Reports retain the original, repeat and combined-eight results regardless of
+sign. Combined order is D/C/C/D then C/D/D/C, with eight distinct names and copy
+as baseline. CPUwin uses unweighted per-run arm means (four runs per arm), with
+accounting difference bounds, not confidence intervals. These are two separate
+blocks, not a balanced drift design. Each run retains cadence, boot ID and a
+labelled sample-file modification date. Mixed boots are disclosed. The original
+six missed refreshes remain; h24 remains original-only and inconclusive.
+
+The final offline gate passes 70 unit tests and four actual host argument/config
+checks (`arguments=13`, `devices_opened=false`). It covers unique names, exact
+orders, original-plan preservation, synthetic end-to-end combined analysis,
+workload drift and an attempted re-declaration of the original hashes. Synthetic
+samples are parser/analyzer evidence only. pK's final read-only review found no
+blocker. Both inventories found all 403 original saved files unchanged, including
+hash, size, mode, owner and modification time.
+
+Root inventory and seal passed. Post-seal `run.py --check-only` passed four SSH
+preflights and four argument checks with all 121 files unchanged, no attempt or
+result markers and no run entries. The 120-entry manifest is
+`00e0e9d23a265dc8271cd8d66831550a80b07db736416f9dd64cc8fc3a13d130`.
+Evidence is `~/.local/state/lom-cpu-cadence-repeat-preflight-01/`:
+`RECEIPT.json` SHA256
+`4cc85761f26a5ab9e2aef3cfa3cf348d6798310391066bc98a830515a9b03dc7`;
+`SHA256SUMS` SHA256
+`adaf8a9c429d3a575551a6cc0b6d9a0d522291e2ab8e940dd2d6cf4af3b2c270`.
+No repeat performance result or production-adoption claim exists yet. All holds
+remain pending the attended run and saved-data audit.
 
 ## Existing renderer support and pixel contract
 
