@@ -218,6 +218,20 @@ Existing holds, sealed packages, W2 trees and evidence remain untouched.
 `desktop-matched-cpu-01` failed qualification and `-02` completed; neither
 measured Sparse Strips scene rendering directly into an owned-ring slot.
 
+**CPU gate now closed:** the fixed diagnostic h512 repeat and combined eight-run
+accounting both favor direct fill (combined difference −285 to −185 microseconds
+per reported scanout-start interval); h24 remains inconclusive. This is a path
+comparison with accounting bounds, not isolated memcpy, a confidence interval
+or ordinary desktop savings. Lom master is signed `3fe206dc`, with GPU still the
+default and direct fill used only when CPU is selected. The fresh default-feature
+release passed its ordinary 100-second clock smoke and saved-data audit: 100
+rendered candidates, exact host/dock joins, stable custody and clean PAM/TTY
+recovery. The [closeout and receipts](../investigations/i9ljdlt4-how-can-lom-render-vello-cpu-directly-into-an-owned-ring-slot-across-its-worker-boundary.md#ordinary-production-landing-and-smoke-package)
+record the scope. Five merged Lom CPU worktrees are retired; their evidence is
+archived and their pools may be reclaimed normally. Unrelated holds remain.
+No further CPU repeat is planned. GPU qualification is the next lane, with its
+existing separate source, release, sealing and attended-run gates intact.
+
 1. **Production pure-CPU direct fill.** Follow the
    [worker-custody design](../investigations/i9ljdlt4-how-can-lom-render-vello-cpu-directly-into-an-owned-ring-slot-across-its-worker-boundary.md).
    Source correction: Lom `32e0bab3` native `--serve` always requires a GPU grant;
@@ -307,8 +321,9 @@ measured Sparse Strips scene rendering directly into an owned-ring slot.
    passed, two existing entries ignored, and default/feature Clippy is clean.
    Release provenance is verified: runtime `889219dc`, feature-on config checker
    `16c4881a`, and all four static configs pass offline checks. The source and
-   pool remain frozen while the fresh attended package is prepared; see the
-   direct-fill investigation. No performance or adoption result follows.
+   pool were frozen through the attended gates. The completed performance and
+   ordinary-release closeout above supersedes this source-stage status; see the
+   direct-fill investigation for the complete evidence sequence.
 
    Two native pixel movers remain: CPU pixels and GPU buffers. App/user policy
    chooses the supported renderer; Sophia enforces authority. Direct fill is the
@@ -327,9 +342,9 @@ measured Sparse Strips scene rendering directly into an owned-ring slot.
    readback is not the copy-only baseline. Require device-free custody/equivalence
    proofs, native GPU-denied CPU arms, and predeclared combined/per-process CPU
    intervals, elapsed render-to-ready time and cadence before any default flip.
-   The removed client copy is 184320 bytes at 1920×24; its benefit is unmeasured.
-   Neither the shade-fill results nor a plausible small-scene CPU advantage proves
-   that benefit. GPU implementation must not displace this CPU work.
+   The removed client copy is 184320 bytes at 1920×24; that size's measured CPU
+   difference remains inconclusive. The larger diagnostic workload and ordinary
+   smoke close the selected CPU gate without claiming a small-bar benefit.
 
 2. **GPU direct render, strictly after CPU direct fill.** Record the proposed
    Vello render into the exportable target as a later design/qualification

@@ -12,9 +12,10 @@ tags: [investigation, performance, rendering, cpu]
 CPU direct-fill adoption precedes further GPU implementation on the
 [critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md).
 The implementation, native opaque-strip proof and fixed diagnostic CPU comparison
-are complete. Lom master now contains the qualified source; the ordinary
-default-feature release awaits its attended smoke test. The sections below
-retain the sequence of evidence. Existing holds and sealed evidence stay untouched.
+are complete. Lom master contains the qualified source, and the ordinary
+default-feature release passed its attended smoke and saved-data audit. The
+sections below retain the sequence of evidence. Sealed evidence remains
+untouched; the five merged Lom CPU worktrees were retired after closeout.
 
 Mason's clarification is two native pixel movers: CPU shared-memory pixels and
 GPU buffers. The application chooses, with user preference where supported;
@@ -941,11 +942,43 @@ Root preflight receipt:
 `5f4fd7078e65868f7ed20eb595035bf3a273b07919b31c7ee07eb62110d21f61`;
 its SHA256SUMS is `91176334449ea1c65fc368ef7f25b7b998506e8dc7421e6a7ab29da26550c144`.
 
-Mason's attended launch is `sh ~/.local/state/t331/lom-cpu-production-native-01/run.sh`.
-The source landing is complete; ordinary release native acceptance remains
-pending. Keep all evidence holds, including the new production worktree/pool,
-through that run and audit. Merged worktree cleanup and the return to GPU work
-follow that closeout; there are no further CPU performance repeats.
+The attended run is complete and spent; do not launch it again. Root's separate
+saved-data audit passed: all 51 manifest entries and 52 sealed files are unchanged,
+with 82 saved files in total. Ordinary `lom` emitted the exact non-diagnostic
+owned-ring-fill startup line, 100 rendered clock candidates with 100 checksums,
+and a bijective join to 100 host connection-1/grant-1 presentations. The single
+dock presentation joins host connection-2/grant-2. Seventy-one binding checks
+preserve the four process identities and executable custody.
+
+CPUwin replay exactly reproduces the saved fixed 60.002888261-second analysis,
+with zero late slots: combined Session/Lom/Provlita/Hagia CPU [9.833,11.833] ms/s,
+Lom alone [0.500,1.167] ms/s. These are descriptive only, not another comparison.
+Wrapper and remote-user exit 0; PAM cleanup, empty residual set, namespace
+revocation and TTY restoration pass. One Hagia remote=116 dispatch message
+follows frontend_joined and precedes quiescent/clean; it is a shutdown observation,
+not an error-free-text claim.
+
+Audit receipt: `~/.local/state/lom-cpu-production-native-audit-01/RECEIPT.json`,
+SHA256 `1216a8d8cc54bfa2b6fd0680e8c4685c89c43b071b0f9fd76de194501617961b`;
+SHA256SUMS `94f10dd3ca0334c091412729b57c693e954b3e4833d0aae11a218cc530fe78b3`.
+Only pure saved-data verifiers and an external CPUwin replay were run by the
+auditor; no package entrypoint, native session, tests or build was rerun.
+
+CPU adoption closeout is complete. The clean, fully merged worktrees
+`lom-cpu-direct-fill`, `lom-cpu-native-config`, `lom-cpu-copy-reference`,
+`lom-cpu-cadence` and `lom-cpu-production` were removed with `git worktree remove`,
+after checking remote master ancestry, no untracked/ignored files and no active
+process or Cargo-slot lock. Their source commits and branches remain in Git;
+all packages and evidence remain archived. Their pool holds are lifted for
+normal dev-hygiene reclamation. Historical artifact paths/hashes remain receipts,
+not a promise that fresh preflight checks against retired paths will succeed.
+Unrelated SDK, host, controller and other worktree holds remain unchanged.
+
+Closeout receipt: `~/.local/state/lom-cpu-production-closeout-01/RECEIPT.json`,
+SHA256 `7da233092912fcdbc8c6e2813376effdc5248d36e99efdbc01f446bb4d58d4c7`.
+GPU remains the default, explicit CPU uses direct fill, and no further CPU
+performance repeats are scheduled. The next lane is the existing GPU format,
+import and release qualification; this closeout starts no new native work.
 
 ## Existing renderer support and pixel contract
 
