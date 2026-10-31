@@ -64,6 +64,26 @@ schedule another repeat or treat those intervals as isolated copy costs.
    predicted mechanism counter and retained cadence/cleanup outcomes. It is
    not a causal per-job, isolated memcpy or production gain claim.
 
+Step 1 completed device-free on October 30. Lom's signed harness `8c31f95`
+uses real mapped loans and the saved h24/h512 scenes; 200 measured renders
+per size all match their expected checksum. Mean worker CPU at h24/h512:
+checksum 156/2795 µs, BGRA conversion 75/1324, raster plus RGBA output
+64/552. The resolved Vello build has no multithreading. The
+[phase report](https://github.com/sophia-org/lom/blob/master/docs/redraw-attribution.md)
+and `~/.local/state/lom-cpu-redraw-attribution-01/RECEIPT.json`
+(`ee389b05a459111ce9ce06e434528ef9af579c8c457062fae099a7a8a25f5674`)
+retain raw CPU/elapsed records, timer overhead and scope exclusions. These
+warm offscreen phase costs are not native savings or whole-process shares.
+The first Lom follow-up is checksum policy, preserving diagnostic pixel
+qualification; conversion remains a separate candidate. No optimization is
+implemented by this attribution, and Session's separate attribution stays open.
+
+The t017 trace also confirms that existing retained resource placements can
+carry changed tiles without t335's proposed damage writes. Staging ring slots
+and resident image leases have separate lifetimes; do not assume two ring
+slots per tile. Tile equivalence, placement overhead and unchanged-texture
+re-import behavior still need proof before selecting that mechanism.
+
 Keep the default-off copy-reference code as a baseline for this work; retaining
 the code does not revive retired worktree or pool holds. Existing saved evidence
 is immutable. GPU qualification and GPU direct-render optimization remain later
