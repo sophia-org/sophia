@@ -203,7 +203,7 @@ Signed niltempus commit `32e6f6164e10926e6864dff1df453fbde324bfb1`, held in
 `~/dev/niltempus-sophia-igpu-shutdown`, uses `take_content()` after the explicit
 drive. Its real-SDK regression fails before the fix with `Pipeline(Poisoned)`
 and passes afterward; malformed transport still refuses, and buffered content
-is checked before EOF. Formatting, strict Clippy and 116 tests pass. Evidence:
+is checked before EOF. Strict Clippy and 116 tests pass. Evidence:
 `~/.local/state/sophia-igpu-shutdown-fix-01/`. The SDK pins and public contracts
 are unchanged.
 
