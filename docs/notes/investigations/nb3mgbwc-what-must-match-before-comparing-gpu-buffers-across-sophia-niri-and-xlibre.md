@@ -49,14 +49,17 @@ niltempus reserves the discrete GPU for Mini's optimizer worker and permits
 parallel Sophia work on the integrated GPU. The existing draft still requires
 PCI 0000:03:00.0, DP-1 and 119.88 Hz; DP-1 is disconnected. Continue device-free
 work without disturbing training. The separate
-[iGPU qualification package](#november-1-igpu-qualification-preparation) is now
-sealed and passes check-only. Its next gate is the owner's attended tty4 run,
-followed by independent saved-data review. It cannot answer the dGPU attribution
-question or claim an optimization. t344 remains open.
+[iGPU qualification attempt](#november-1-igpu-qualification-preparation) stopped
+before output startup because the existing udev policy assigns the iGPU to
+seat1 while the diagnostic uses seat0. Fresh package 03 now rejects this policy
+before consuming an attempt. It is sealed and passes check-only, but native
+execution requires an owner decision on the deliberate seat isolation, then
+attended qualification and independent saved-data review. It cannot answer the
+dGPU attribution question or claim an optimization. t344 remains open.
 
 ## November 1: iGPU qualification preparation
 
-The new Sophia-only package is `~/.local/state/t331/gpu-igpu-02`, manifest SHA256
+The first attempted Sophia-only package was `~/.local/state/t331/gpu-igpu-02`, manifest SHA256
 `aac49a27994327d995e4e524af09974140d94bd73f5e4979945221090d30de69` (58 files).
 It runs colour capture, delayed release and invalid import on PCI
 0000:16:00.0, card1/renderD129, HDMI-A-2. Both nominal and startup readback must
@@ -89,9 +92,44 @@ SHA256 `865415cb676349b9efd7149bc0542c6696c1a77fb89c88e45f6dc82941c808d7`.
 Claude independently verified the final seal, private file custody, all three
 recipes, source identities and handoff derivation, with no remaining finding.
 
-The new readiness guard checks only card1/renderD129; it leaves Mini's dGPU
-worker alone. Native pixels, actual mode, release/refusal custody and cleanup
-still need the attended run and audit. A later 60 Hz iGPU CPU baseline is a
+The attended colour arm failed after 15.3 seconds. Session reported
+`phase=startup status=waiting`; the receiver saved only its READY marker and
+therefore refused the missing output/renderer records. No peer or capture was
+produced, and the two later arms did not run. The PAM receipt reports successful
+cleanup, no residual PIDs and tty restoration; the outer receipt reports no
+remaining occupants or sessions. Preserve this consumed package and its logs.
+
+The cause is `/etc/udev/rules.d/72-sophia-igpu-seat1.rules`, a deliberate
+October 9 isolation rule: both card1 and renderD129 have `ID_SEAT=seat1`.
+The held host's seat inventory admits only initialized devices belonging to
+its seat. The diagnostic uses seat0 and excludes the discrete GPU, leaving no
+eligible card. This failure did not reach the mode or pixel checks. Saved logs
+show no GPU admission, but without native syscall tracing they do not prove
+zero device opens. The timeout and qualification requirements remain unchanged.
+
+Fresh package `~/.local/state/t331/gpu-igpu-03` has manifest SHA256
+`d90697fd46e0cfebaf3467a47de95a4665dda8fb983128d8bf236e6309cd8443`
+(58 files). Its readiness guard now checks initialized udev PCI identity and
+seat0 assignment for both iGPU nodes before attempt creation and before every
+arm. It accepts an absent ID_SEAT as seat0, matching the host, and refuses other
+or empty seat names. The udevadm executable and its library closure are pinned.
+The source checkout, host, peers, recipe and existing mode/pixel/custody checks
+are unchanged. Thirteen device-hidden tests pass; a traced host check refuses
+the current seat1 assignment before creating an attempt. All three argument
+preflights and the sealed check-only pass. Traces show no graphics, compute or
+input device opens. Evidence is
+`~/.local/state/sophia-igpu-seat-readiness-01/`.
+
+No udev rule has been changed. The next decision is whether to allow a temporary
+iGPU-only seat0 assignment and restore seat1 after the qualification. A dry-run
+DRM trigger restricted to PCI 0000:16:00.0 selects card1, its five connectors
+and renderD129, with no discrete-GPU path. The installed desktop profile excludes
+the iGPU, but the user override does not; making the iGPU available on seat0
+must not be treated as an unrelated permanent desktop-policy change.
+
+The readiness guard checks only card1/renderD129; it leaves Mini's dGPU worker
+alone. Native pixels, actual mode and release/refusal custody still need the
+attended run and audit. A later 60 Hz iGPU CPU baseline is a
 separate experiment, with shared host CPU/memory interference to address; it
 cannot be subtracted from the 119.88 Hz dGPU comparison.
 

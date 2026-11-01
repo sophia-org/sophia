@@ -24,8 +24,11 @@ for each selected mechanism. A profile share is not a savings target.
 
 **November 1 resumption:** the six-arm fresh-DMA GPU comparison has passed its
 independent audit. The dGPU attribution package is owned by another session.
-Parallel iGPU work now has a separately sealed, untimed Sophia-only package;
-its next gate is attended pixel/lifetime qualification at 60 Hz. The
+The first parallel iGPU attempt stopped before output startup: the host's
+deliberate udev policy assigns that GPU to seat1, while the diagnostic uses
+seat0. Fresh untimed package 03 now rejects that mismatch before consuming an
+attempt. Its next gate is an owner decision on temporary seat reassignment,
+then attended pixel/lifetime qualification at 60 Hz. The
 [current investigation handoff](../investigations/nb3mgbwc-what-must-match-before-comparing-gpu-buffers-across-sophia-niri-and-xlibre.md#current-resumption)
 records exact evidence, source custody and remaining gates. niltempus now
 reserves the discrete GPU for Mini's optimizer worker. Parallel device-free
