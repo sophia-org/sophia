@@ -52,9 +52,10 @@ work without disturbing training. The separate
 [iGPU qualification attempt](#november-1-igpu-qualification-preparation) stopped
 before output startup because the existing udev policy assigns the iGPU to
 seat1 while the diagnostic uses seat0. Fresh package 03 now rejects this policy
-before consuming an attempt. It is sealed and passes check-only, but native
-execution requires an owner decision on the deliberate seat isolation, then
-attended qualification and independent saved-data review. It cannot answer the
+before consuming an attempt. It is sealed and passes check-only. niltempus has
+approved a temporary iGPU-only seat0 assignment, with restoration to seat1 after
+qualification. Interactive sudo authentication remains needed for the attended
+run, followed by independent saved-data review. It cannot answer the
 dGPU attribution question or claim an optimization. t344 remains open.
 
 ## November 1: iGPU qualification preparation
@@ -120,12 +121,29 @@ preflights and the sealed check-only pass. Traces show no graphics, compute or
 input device opens. Evidence is
 `~/.local/state/sophia-igpu-seat-readiness-01/`.
 
-No udev rule has been changed. The next decision is whether to allow a temporary
-iGPU-only seat0 assignment and restore seat1 after the qualification. A dry-run
+No udev rule has been changed. niltempus approved the temporary iGPU-only seat0
+assignment and restoration to seat1 after qualification. A dry-run
 DRM trigger restricted to PCI 0000:16:00.0 selects card1, its five connectors
 and renderD129, with no discrete-GPU path. The installed desktop profile excludes
 the iGPU, but the user override does not; making the iGPU available on seat0
-must not be treated as an unrelated permanent desktop-policy change.
+must not be treated as an unrelated permanent desktop-policy change. Claude's
+independent review passed, requiring live udev database/tag-index and elogind
+membership readbacks after both application and restoration. The installed
+desktop launcher explicitly selects its packaged exclusion; the user profile
+is relevant to direct manual launches, which must remain idle during the window.
+
+The bounded administrative launcher is
+`~/.local/state/sophia-igpu-seat-window-01/run.py`. It preserves the permanent
+rule, exclusively creates the reviewed transient `/run/udev/rules.d/72-z-`
+`sophia-igpu-qualification.rules`, triggers only the reviewed seven iGPU paths,
+checks both seat readbacks and invokes sealed package 03. Its cleanup restores
+seat1 after success or failure, waiting for the iGPU and tty4 to become idle;
+if they remain occupied past the bound it retains the override and reports
+that explicit recovery is required. Eight device-hidden tests cover successful
+execution, failed application/readback/native execution, pre-existing overrides,
+busy cleanup, changed trigger scope and inconsistent seat records. A traced
+read-only host check passes for the original seat1 state. Sudo requires an
+interactive password, so no privileged action or native retry has run yet.
 
 The readiness guard checks only card1/renderD129; it leaves Mini's dGPU worker
 alone. Native pixels, actual mode and release/refusal custody still need the
