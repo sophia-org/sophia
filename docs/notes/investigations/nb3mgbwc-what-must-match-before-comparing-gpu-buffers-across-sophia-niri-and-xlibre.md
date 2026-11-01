@@ -49,18 +49,16 @@ niltempus reserves the discrete GPU for Mini's optimizer worker and permits
 parallel Sophia work on the integrated GPU. The existing draft still requires
 PCI 0000:03:00.0, DP-1 and 119.88 Hz; DP-1 is disconnected. Continue device-free
 work without disturbing training. The separate
-[iGPU qualification attempt](#november-1-igpu-qualification-preparation) stopped
-before output startup because the existing udev policy assigns the iGPU to
-seat1 while the diagnostic uses seat0. Fresh package 03 now rejects this policy
-before consuming an attempt. It is sealed and passes check-only. niltempus has
-approved a temporary iGPU-only seat0 assignment, with restoration to seat1 after
-qualification. The administrative launcher then refused before mutation because
-Mini's optimizer worker holds the iGPU render node despite selecting the dGPU
-for computation. Mini has now disabled the remote launcher and all crunch GPU
-probes, using local-update fallback until cleanup and a separately verified
-isolation path permit resumption. The unchanged launcher is ready for another
-attended invocation with interactive sudo, followed by independent saved-data
-review. It cannot answer the
+[iGPU qualification](#november-1-igpu-colour-proof-and-shutdown-repair) now proves
+three colour captures at an observed 60000 mHz. Package 03 then failed delayed
+release teardown because the diagnostic helper drove the SDK twice after EOF;
+seat1 restoration and PAM cleanup passed. Signed helper fix `32e6f616` passes
+116 tests, including the real-SDK regression, and is held in release 07.
+Fresh package 04 and seat-window launcher 02 are sealed and independently
+reviewed. The next step is the approved attended launcher with interactive
+sudo, followed by saved-data review of all three arms and restoration. Mini
+keeps its remote launcher and crunch GPU probes disabled, using local updates;
+persistent worker isolation remains unqualified. This lane cannot answer the
 dGPU attribution question or claim an optimization. t344 remains open.
 
 ## November 1: iGPU qualification preparation
@@ -126,8 +124,9 @@ preflights and the sealed check-only pass. Traces show no graphics, compute or
 input device opens. Evidence is
 `~/.local/state/sophia-igpu-seat-readiness-01/`.
 
-No udev rule has been changed. niltempus approved the temporary iGPU-only seat0
-assignment and restoration to seat1 after qualification. A dry-run
+At that preparation checkpoint, no udev rule had changed. niltempus approved
+the temporary iGPU-only seat0 assignment and restoration to seat1 after
+qualification. A dry-run
 DRM trigger restricted to PCI 0000:16:00.0 selects card1, its five connectors
 and renderD129, with no discrete-GPU path. The installed desktop profile excludes
 the iGPU, but the user override does not; making the iGPU available on seat0
@@ -161,9 +160,9 @@ prove exclusive device access. The positive FD observations are saved under
 prove absence of inaccessible holders. Mini's Claude was contacted over herdr
 to isolate its worker to the discrete GPU while preserving its resource limits
 and local-update fallback. Keep the iGPU occupancy check: launching in an idle
-gap would allow the next optimizer update to reopen the node. Both package 03
-and the seat-window launcher remain unconsumed; no policy change or native
-retry has run.
+gap would allow the next optimizer update to reopen the node. At that refusal,
+both package 03 and the seat-window launcher remained unconsumed; no policy
+change or native retry had run.
 
 Mini subsequently confirmed the quiet fallback window: `~/nc-ai-state/t235/update.sh`
 returns 3 immediately, with the old launcher retained only as `update.sh.live`.
@@ -172,14 +171,77 @@ devices, so no persistent isolation solution is qualified. Mini guarantees no
 remote launch or further crunch GPU probe until coordinated resumption and a
 working isolation path; it will not restore the old iGPU-opening worker. The
 confirmation is recorded in `sophia-igpu-worker-conflict-01/quiet-window.json`.
-The approved package and launcher can be used unchanged. Sudo still requires
-the owner's terminal password; no new attempt or seat override has occurred.
+The approved package and launcher were then used unchanged in the attended
+retry recorded below.
 
 The readiness guard checks only card1/renderD129; it leaves Mini's dGPU worker
-alone. Native pixels, actual mode and release/refusal custody still need the
-attended run and audit. A later 60 Hz iGPU CPU baseline is a
+alone. Complete release/refusal custody still needs the attended run and audit.
+A later 60 Hz iGPU CPU baseline is a
 separate experiment, with shared host CPU/memory interference to address; it
 cannot be subtracted from the 119.88 Hz dGPU comparison.
+
+## November 1: iGPU colour proof and shutdown repair
+
+Package 03 completed `s-colour`: three nonce-bound 1920×1080 captures passed
+the 1920×24 pixel oracle with patterns 1/2/1. Their hashes begin
+`78880a2e`, `0b583e1c`, `78880a2e`; the first and third match and differ from
+the second. Startup readback proves card1, HDMI-A-2, nominal and actual
+60000 mHz, scale 1 and VRR off. The producer received only renderD129,
+226:129, PCI 0000:16:00.0. Claude independently checked the saved captures,
+environment and custody records. This is a colour result, not a complete
+qualification or performance measurement.
+
+The delayed-release arm presented its frame and verified the authenticated
+one-shot control, then logged `Pipeline(Poisoned)` during shutdown. The driver
+correctly refused that failure marker; invalid import never ran. The helper's
+`wait()` called `poll_io()` followed by `poll_content()`, which drove I/O again.
+After EOF, that second drive returned a poisoned-pipeline error before the
+SDK could expose the typed `PeerClosed` already accepted by shutdown. Earlier
+passing runs depended on teardown ordering. No failure check was relaxed.
+
+Signed niltempus commit `32e6f6164e10926e6864dff1df453fbde324bfb1`, held in
+`~/dev/niltempus-sophia-igpu-shutdown`, uses `take_content()` after the explicit
+drive. Its real-SDK regression fails before the fix with `Pipeline(Poisoned)`
+and passes afterward; malformed transport still refuses, and buffered content
+is checked before EOF. Formatting, strict Clippy and 116 tests pass. Evidence:
+`~/.local/state/sophia-igpu-shutdown-fix-01/`. The SDK pins and public contracts
+are unchanged.
+
+Release `~/.local/state/matched-gpu-qualification-release-07/` builds only the
+three Rust diagnostic helpers from that signed source. Its READY digest is
+`ee5f86b07ec8c68f258ab2d4eb8351a2272a70c0e598ba49676d659c7240114c`.
+The host and release-06 receiver remain the original held artifacts; nothing
+was copied. Nine device-hidden argument/endpoint refusals pass. The five
+Python receiver/external-C suites from release 06 were not rerun; those
+unchanged artifacts retain their previous validation.
+
+Seat-window 01 restored the original seat1 properties, database tags, tag
+indices and elogind membership after the failed package. Its result records
+`override_present=false` and `restoration_receipt=true`; the original rule hash
+is unchanged, PAM/tty4 cleanup passed and no residual session remained. Both
+package 03 and launcher 01 are consumed and must not be rerun.
+
+Fresh `~/.local/state/t331/gpu-igpu-04` repeats all three arms with the fixed
+helpers. Its 58-file manifest digest is
+`27885ed7c5e9857429abf6de438556730bede91aa134313ed59322010903b3a5`.
+It separately binds recipe `e71adbd`, helper source `32e6f616`, receiver source
+`8d6b4f90` and host `a482e9ed`, all signed and clean. Thirteen package tests,
+three argument preflights and sealed check-only pass without native launches
+or graphics/compute/input opens. Evidence and scope limits are sealed under
+`~/.local/state/sophia-igpu-package-04-preflight-01/`. Its two-minute metadata
+sample found no visible holders; inaccessible processes remain outside that
+unprivileged observation, so the root launch guards remain authoritative.
+
+The approved administrative entry point is now
+`~/.local/state/sophia-igpu-seat-window-02/run.py`, manifest digest
+`f5d22b422b5458b0659718e34fff78dec2c77e314c0d9572bd4d2788d53c2132`.
+Only the package path, digest and docstring changed from launcher 01; its nine
+tests and seat1 readback pass. Claude's independent final review passed both
+packages. Mini reconfirmed local fallback at iteration 84 and no crunch GPU
+probes or worker until coordinated resumption. Package 04 and launcher 02 are
+unconsumed; the helper fix still needs native qualification. Interactive sudo
+requires the owner's terminal. Keep other desktop launches idle during the
+temporary seat0 window, and verify the saved restoration after the run.
 
 ## Decision and scope
 
