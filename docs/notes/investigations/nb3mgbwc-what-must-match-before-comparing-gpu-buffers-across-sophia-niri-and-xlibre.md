@@ -54,7 +54,9 @@ before output startup because the existing udev policy assigns the iGPU to
 seat1 while the diagnostic uses seat0. Fresh package 03 now rejects this policy
 before consuming an attempt. It is sealed and passes check-only. niltempus has
 approved a temporary iGPU-only seat0 assignment, with restoration to seat1 after
-qualification. Interactive sudo authentication remains needed for the attended
+qualification. The administrative launcher then refused before mutation because
+Mini's optimizer worker holds the iGPU render node despite selecting the dGPU
+for computation. Coordinate device isolation with Mini before another attended
 run, followed by independent saved-data review. It cannot answer the
 dGPU attribution question or claim an optimization. t344 remains open.
 
@@ -142,8 +144,23 @@ if they remain occupied past the 600-second bound it retains the override and
 reports that explicit recovery is required. Nine device-hidden tests cover successful
 execution, failed application/readback/native execution, pre-existing overrides,
 busy cleanup, changed trigger scope, udev warnings and inconsistent seat records. A traced
-read-only host check passes for the original seat1 state. Sudo requires an
-interactive password, so no privileged action or native retry has run yet.
+read-only host check passes for the original seat1 state. Claude reviewed the
+launcher after its cleanup fixes; its ten-file manifest is
+`49a5b99a91bf648adc4da9dcf21826cc0562e975f4c36bc3424a4ef0467bb1a2`.
+
+The owner's next launch refused at the initial idle check, before creating the
+transient rule or either attempt record. tty4 has only agetty and no logged-in
+session. Two successive optimizer workers, PIDs 25444 and 29250, were observed
+holding `/dev/dri/renderD129` as fd 8 while running
+`remote_update.py --expect gfx1100:3`. Selecting a GPU for computation does not
+prove exclusive device access. The positive FD observations are saved under
+`~/.local/state/sophia-igpu-worker-conflict-01/`; the unprivileged scan cannot
+prove absence of inaccessible holders. Mini's Claude was contacted over herdr
+to isolate its worker to the discrete GPU while preserving its resource limits
+and local-update fallback. Keep the iGPU occupancy check: launching in an idle
+gap would allow the next optimizer update to reopen the node. Both package 03
+and the seat-window launcher remain unconsumed; no policy change or native
+retry has run.
 
 The readiness guard checks only card1/renderD129; it leaves Mini's dGPU worker
 alone. Native pixels, actual mode and release/refusal custody still need the
