@@ -49,14 +49,14 @@ niltempus reserves the discrete GPU for Mini's optimizer worker and permits
 parallel Sophia work on the integrated GPU. The existing draft still requires
 PCI 0000:03:00.0, DP-1 and 119.88 Hz; DP-1 is disconnected. Continue device-free
 work without disturbing training. The separate
-[iGPU qualification](#november-1-igpu-colour-proof-and-shutdown-repair) now proves
-three colour captures at an observed 60000 mHz. Package 03 then failed delayed
-release teardown because the diagnostic helper drove the SDK twice after EOF;
-seat1 restoration and PAM cleanup passed. Signed helper fix `32e6f616` passes
-116 tests, including the real-SDK regression, and is held in release 07.
-Fresh package 04 and seat-window launcher 02 are sealed and independently
-reviewed. The next step is the approved attended launcher with interactive
-sudo, followed by saved-data review of all three arms and restoration. Mini
+[iGPU qualification](#november-1-package-04-native-result) completed all three
+arms at an observed 60000 mHz. The helper shutdown repair `32e6f616` passed the
+native retry: colour capture, delayed release and import refusal all completed
+with clean driver/PAM teardown. Seat-window 02 restored seat1 and removed its
+temporary override. Root saved-data verification and Claude's independent
+audit pass. Preserve consumed package 04 and launcher 02. The next measurement
+gate is a separately pinned 60 Hz iGPU timing/attribution package; these
+untimed results do not authorize reusing the dGPU timing recipe. Mini
 keeps its remote launcher and crunch GPU probes disabled, using local updates;
 persistent worker isolation remains unqualified. This lane cannot answer the
 dGPU attribution question or claim an optimization. t344 remains open.
@@ -238,10 +238,60 @@ The approved administrative entry point is now
 Only the package path, digest and docstring changed from launcher 01; its nine
 tests and seat1 readback pass. Claude's independent final review passed both
 packages. Mini reconfirmed local fallback at iteration 84 and no crunch GPU
-probes or worker until coordinated resumption. Package 04 and launcher 02 are
-unconsumed; the helper fix still needs native qualification. Interactive sudo
-requires the owner's terminal. Keep other desktop launches idle during the
-temporary seat0 window, and verify the saved restoration after the run.
+probes or worker until coordinated resumption. At that handoff, package 04 and
+launcher 02 were unconsumed; the helper fix still needed native qualification.
+The owner subsequently ran the approved launcher, as recorded below.
+
+## November 1: package 04 native result
+
+`gpu-igpu-04/result.json` records `complete` for `s-colour`, `s-delay` and
+`s-invalid`. All three startup receipts bind card1/HDMI-A-2, 1920×1080,
+nominal and actual 60000 mHz, scale 1, VRR off and the iGPU-only producer grant.
+The colour captures repeat the 1/2/1 hashes from package 03 and pass the
+1920×24 oracle with 46032 checked pixels per capture. The nonce-bound capture
+and private delivery checks pass again with the rebuilt helper.
+
+Delayed release records held/resume/released at 8714322755, 8714422842 and
+8714422927 monotonic microseconds. This proves delayed application of the
+matched release event, not how long the consumer held the image. The frame
+was presented and the authenticated one-shot control completed. Invalid import
+records reason 9 (`RendererFailed`) for the injected 184320-byte resource,
+without a producer release. Its authenticated control also completed.
+Final-log requalification finds no failure marker; `Pipeline(Poisoned)`
+does not recur. Each driver exits 0, Session exits through the wrapper's
+unforced SIGTERM, and the saved PAM/VT cleanup passes without residual PIDs.
+The control peer's exit code is not independently observed.
+
+`sophia-igpu-seat-window-02/result.json` records `complete`,
+`override_present=false` and `restoration_receipt=true`. Saved readbacks prove
+seat1 → seat0 → seat1 on both nodes through properties, database tags,
+tag indices and elogind membership. Both triggers match the reviewed seven
+iGPU paths, and the permanent rule hash is unchanged. The audit's current
+readback also verifies seat1, no temporary override and no tty4 session.
+
+Root audit evidence is `~/.local/state/sophia-igpu-native-04-audit-01/`.
+It recomputes all three saved analyses, requalifies both controls against the
+final logs, checks all 1155 external pins and four signed source identities,
+and verifies that all 161 package/window files remain unchanged. Its syscall
+trace contains no graphics, compute or input device opens. An initial
+device-hidden audit refused a root-owned PAM pin because the user namespace
+mapped UID 0 to 65534; the host check preserves real custody metadata and
+passes. Both the refusal and its explanation are retained. Claude's independent
+audit also passes, retained at
+`~/.local/state/sophia-igpu-native-04-audit-claude-01/`, whose SHA256SUMS digest is
+`9f52f80a5f467e9590e8f7c4fa496349bf5abda08bd94e4a46df7ba78ce6182b`.
+The root audit's sealed `RECEIPT.json` binds both reviews and records
+`untimed_igpu_native_qualification_audited`; the original consumed package
+result remains unchanged. The independent report's phrase “log ends at the
+end event” describes the peer JSON journal; later Session resource samples
+are present and contain no failure marker.
+
+This qualifies the three untimed Sophia-only iGPU arms and natively accepts
+the shutdown fix on this host, GPU and mode. It establishes no CPU/GPU
+performance result, cross-stack equivalence or
+dGPU attribution. The native launch was not syscall-traced, so the audit does
+not claim independent proof of zero dGPU opens. Mini was informed that cleanup
+completed; its old worker remains disabled until device isolation is qualified.
 
 ## Decision and scope
 

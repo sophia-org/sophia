@@ -24,16 +24,15 @@ for each selected mechanism. A profile share is not a savings target.
 
 **November 1 resumption:** the six-arm fresh-DMA GPU comparison has passed its
 independent audit. The dGPU attribution package is owned by another session.
-The attended iGPU package 03 proved three colour captures at an observed
-60000 mHz, then failed delayed-release teardown because the diagnostic helper
-drove the SDK twice after EOF. PAM cleanup and restoration to seat1 passed.
-Signed helper fix `32e6f616` passes 116 tests, including the real-SDK EOF
-regression, and is held in release 07; host, receiver and SDK pins are unchanged.
-Fresh untimed package 04 and seat-window launcher 02 are sealed and independently
-reviewed. Run that approved attended launcher next, then audit all three arms
-and restoration. Mini guarantees a quiet window with remote workers/probes
-disabled and local updates continuing. Persistent worker isolation and native
-acceptance of the helper fix remain unqualified. The
+The attended iGPU package 04 completed colour, delayed-release and invalid-import
+arms at an observed 60000 mHz. Signed helper shutdown fix `32e6f616` passed
+the native retry after its 116-test source gate; host, receiver and SDK pins
+are unchanged. Root and independent saved-data audits pass, including
+pixel/control custody, PAM cleanup and restoration to seat1. Preserve
+the consumed package and launcher. Timing/attribution requires a separate
+60 Hz iGPU package and cannot reuse the dGPU recipe or comparison. Mini's
+remote worker remains disabled with local updates continuing; persistent
+worker isolation remains unqualified. The
 [current investigation handoff](../investigations/nb3mgbwc-what-must-match-before-comparing-gpu-buffers-across-sophia-niri-and-xlibre.md#current-resumption)
 records exact evidence, source custody and remaining gates. niltempus now
 reserves the discrete GPU for Mini's optimizer worker. Parallel device-free
