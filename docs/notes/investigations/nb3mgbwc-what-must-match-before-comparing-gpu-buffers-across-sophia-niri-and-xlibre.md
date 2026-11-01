@@ -138,10 +138,10 @@ rule, exclusively creates the reviewed transient `/run/udev/rules.d/72-z-`
 `sophia-igpu-qualification.rules`, triggers only the reviewed seven iGPU paths,
 checks both seat readbacks and invokes sealed package 03. Its cleanup restores
 seat1 after success or failure, waiting for the iGPU and tty4 to become idle;
-if they remain occupied past the bound it retains the override and reports
-that explicit recovery is required. Eight device-hidden tests cover successful
+if they remain occupied past the 600-second bound it retains the override and
+reports that explicit recovery is required. Nine device-hidden tests cover successful
 execution, failed application/readback/native execution, pre-existing overrides,
-busy cleanup, changed trigger scope and inconsistent seat records. A traced
+busy cleanup, changed trigger scope, udev warnings and inconsistent seat records. A traced
 read-only host check passes for the original seat1 state. Sudo requires an
 interactive password, so no privileged action or native retry has run yet.
 
