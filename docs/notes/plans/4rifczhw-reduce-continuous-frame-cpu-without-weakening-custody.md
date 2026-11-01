@@ -29,9 +29,10 @@ deliberate udev policy assigns that GPU to seat1, while the diagnostic uses
 seat0. Fresh untimed package 03 now rejects that mismatch before consuming an
 attempt. niltempus approved temporary iGPU-only seat reassignment with restoration
 afterward. The administrative launcher refused before mutation because Mini's
-optimizer worker holds the iGPU render node despite selecting the dGPU. Isolate
-that worker's device access before attended pixel/lifetime qualification at
-60 Hz. The
+optimizer worker holds the iGPU render node despite selecting the dGPU. Mini
+now guarantees a quiet window with remote workers/probes disabled and local
+updates continuing; retry the unchanged attended qualification launcher in
+that window. Persistent worker isolation remains unqualified. The
 [current investigation handoff](../investigations/nb3mgbwc-what-must-match-before-comparing-gpu-buffers-across-sophia-niri-and-xlibre.md#current-resumption)
 records exact evidence, source custody and remaining gates. niltempus now
 reserves the discrete GPU for Mini's optimizer worker. Parallel device-free

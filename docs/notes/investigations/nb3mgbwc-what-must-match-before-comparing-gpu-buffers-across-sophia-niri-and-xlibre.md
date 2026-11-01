@@ -56,8 +56,11 @@ before consuming an attempt. It is sealed and passes check-only. niltempus has
 approved a temporary iGPU-only seat0 assignment, with restoration to seat1 after
 qualification. The administrative launcher then refused before mutation because
 Mini's optimizer worker holds the iGPU render node despite selecting the dGPU
-for computation. Coordinate device isolation with Mini before another attended
-run, followed by independent saved-data review. It cannot answer the
+for computation. Mini has now disabled the remote launcher and all crunch GPU
+probes, using local-update fallback until cleanup and a separately verified
+isolation path permit resumption. The unchanged launcher is ready for another
+attended invocation with interactive sudo, followed by independent saved-data
+review. It cannot answer the
 dGPU attribution question or claim an optimization. t344 remains open.
 
 ## November 1: iGPU qualification preparation
@@ -161,6 +164,16 @@ and local-update fallback. Keep the iGPU occupancy check: launching in an idle
 gap would allow the next optimizer update to reopen the node. Both package 03
 and the seat-window launcher remain unconsumed; no policy change or native
 retry has run.
+
+Mini subsequently confirmed the quiet fallback window: `~/nc-ai-state/t235/update.sh`
+returns 3 immediately, with the old launcher retained only as `update.sh.live`.
+Its namespace attempts to hide the iGPU device/topology made HIP report zero
+devices, so no persistent isolation solution is qualified. Mini guarantees no
+remote launch or further crunch GPU probe until coordinated resumption and a
+working isolation path; it will not restore the old iGPU-opening worker. The
+confirmation is recorded in `sophia-igpu-worker-conflict-01/quiet-window.json`.
+The approved package and launcher can be used unchanged. Sudo still requires
+the owner's terminal password; no new attempt or seat override has occurred.
 
 The readiness guard checks only card1/renderD129; it leaves Mini's dGPU worker
 alone. Native pixels, actual mode and release/refusal custody still need the
