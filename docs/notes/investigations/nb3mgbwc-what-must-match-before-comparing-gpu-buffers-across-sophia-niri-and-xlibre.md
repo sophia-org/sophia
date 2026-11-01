@@ -7,6 +7,94 @@ tags: [investigation, performance, benchmark, gpu]
 ---
 # What must match before comparing GPU buffers across Sophia, niri and XLibre?
 
+## Current resumption
+
+November 1, 2026: the six-arm fresh-DMA comparison is complete. This supersedes
+the pending qualification sequence below. The retained package is
+`~/.local/state/t331/desktop-matched-gpu-01`, manifest SHA256
+`15e4117ffa5abc6ab6e926d134f3014f7a666beaeec9734de50e0cfce141f14a`.
+The root audit's `QUALIFICATION.json` and Claude's independent `audit.json`
+under `~/.local/state/desktop-matched-gpu-{root-audit,audit-claude}-01/`
+record acceptance, including 214 independent checks with no failures. The
+manifest was verified again during this resumption.
+
+Mean combined process CPU bounds were 635–675 µs/interval for niri,
+495–537.5 for XLibre, and 1687.5–1727.5 for Sophia. Sophia Session alone was
+1070–1090. These are tick-accounting bounds for two runs per stack of the
+1920×24 fresh-DMA workload at 119.88 Hz, not confidence intervals, GPU time,
+ordinary desktop cost or comparable presentation latency. The source/counter
+investigation at `~/.local/state/sophia-gpu-gap-attribution-01/REPORT.txt`
+identifies owner work, logging and capture allocation as leads; it does not
+assign them measured costs or authorize an optimization from counts alone.
+
+The next step is a fresh unprofiled Sophia control followed by narrow CPU
+attribution on the updated runtime. niltempus chose to retain the package
+updates, including Mesa 26.2.6 and kernel 6.18.60. Historical measurements remain
+valid for their original runtime; old-minus-new subtraction cannot isolate a
+Sophia source change. The reboot handoff is
+`~/.local/state/sophia-gpu-attribution-reboot-handoff-01/RESUME.txt`.
+The held host is Sophia `a482e9ed89166c444afcc078e175f3b636b50614`; the
+peer/runner is niltempus `167d620a0f66f81bad5d5b79208fd2bf623647a1`.
+Both are signed and clean; the peer/runner commit is still local-only.
+
+Another active session owns `~/.local/state/t331/sophia-gpu-attribution-02`;
+coordinate ownership before editing it. This session's independent read-only
+audit passed its eight offline suites. Six ran with devices hidden; two custody
+suites needed host UID/filesystem metadata and passed under syscall tracing
+with no graphics-device opens. The initial namespace-induced refusals remain
+in `~/.local/state/sophia-attribution-readonly-audit-{01,02,03}/`. This audit
+does not qualify native behaviour or change the other session's package.
+
+niltempus reserves the discrete GPU for Mini's optimizer worker and permits
+parallel Sophia work on the integrated GPU. The existing draft still requires
+PCI 0000:03:00.0, DP-1 and 119.88 Hz; DP-1 is disconnected. Continue device-free
+work without disturbing training. The separate
+[iGPU qualification package](#november-1-igpu-qualification-preparation) is now
+sealed and passes check-only. Its next gate is the owner's attended tty4 run,
+followed by independent saved-data review. It cannot answer the dGPU attribution
+question or claim an optimization. t344 remains open.
+
+## November 1: iGPU qualification preparation
+
+The new Sophia-only package is `~/.local/state/t331/gpu-igpu-02`, manifest SHA256
+`aac49a27994327d995e4e524af09974140d94bd73f5e4979945221090d30de69` (58 files).
+It runs colour capture, delayed release and invalid import on PCI
+0000:16:00.0, card1/renderD129, HDMI-A-2. Both nominal and startup readback must
+be exactly 60000 mHz at 1920×1080, scale 1, VRR off; a 59940 mHz mode refuses.
+These are admission requirements, not observed native results.
+
+The signed recipe source is niltempus branch `bench/sophia-igpu` at
+`e71adbdaf256eda33c0d376dc3fc53555ac44616`, checkout
+`~/dev/niltempus-sophia-igpu`. Its preceding commit `1343900` changes only the
+Sophia recipe, environment/capture checks and their fixtures. The follow-up
+changes only the handoff seed path and pin digest. Both commits remain local;
+no master merge or default benchmark change is claimed. Host and Rust
+diagnostic peers remain the held binaries from host `a482e9ed` and qualification
+release 06, whose binary source is `8d6b4f90`. No binary was rebuilt or copied.
+
+Preparation 01 correctly refused the inherited pre-update Z3 pin and remains
+preserved. The new seed's three PAM/VT scripts are byte-identical to CPU02.
+Exactly seven library entries were refreshed by matching their old and new
+hashes against the verified current-runtime receipt. Claude independently
+verified that selection and all 296 seed pins. Old seeds and packages remain
+unchanged.
+
+Verification passed 32 affected source tests, including the real
+credential/pidfd receiver join, nine handoff tests and nine package tests.
+The real host accepted all three argument/configuration preflights. The sealed
+check-only verified the three inherited handoffs and idle tty4 without launching
+a session. Recorded syscall traces contain no graphics, compute or input
+device paths. Evidence is `~/.local/state/sophia-igpu-source-01/READY.json`,
+SHA256 `865415cb676349b9efd7149bc0542c6696c1a77fb89c88e45f6dc82941c808d7`.
+Claude independently verified the final seal, private file custody, all three
+recipes, source identities and handoff derivation, with no remaining finding.
+
+The new readiness guard checks only card1/renderD129; it leaves Mini's dGPU
+worker alone. Native pixels, actual mode, release/refusal custody and cleanup
+still need the attended run and audit. A later 60 Hz iGPU CPU baseline is a
+separate experiment, with shared host CPU/memory interference to address; it
+cannot be subtracted from the 119.88 Hz dGPU comparison.
+
 ## Decision and scope
 
 **October 31 sequencing:** Lom's bounded CPU dirty updates are merged at

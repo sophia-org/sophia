@@ -22,6 +22,16 @@ for each selected mechanism. A profile share is not a savings target.
 
 ## October 31: bounded CPU dirty updates landed; GPU qualification resumes
 
+**November 1 resumption:** the six-arm fresh-DMA GPU comparison has passed its
+independent audit. The dGPU attribution package is owned by another session.
+Parallel iGPU work now has a separately sealed, untimed Sophia-only package;
+its next gate is attended pixel/lifetime qualification at 60 Hz. The
+[current investigation handoff](../investigations/nb3mgbwc-what-must-match-before-comparing-gpu-buffers-across-sophia-niri-and-xlibre.md#current-resumption)
+records exact evidence, source custody and remaining gates. niltempus now
+reserves the discrete GPU for Mini's optimizer worker. Parallel device-free
+Sophia work can proceed; integrated-GPU measurements need their own qualified
+package and do not replace the existing discrete-GPU baseline.
+
 This status supersedes the CPU-first sequencing below. Mason accepted the
 bounded retained-region implementation with its h24 limit. Lom master
 `8c225acecd21bdbee85c20cd43b0873c44b66aa2` now includes the owner, full-frame
