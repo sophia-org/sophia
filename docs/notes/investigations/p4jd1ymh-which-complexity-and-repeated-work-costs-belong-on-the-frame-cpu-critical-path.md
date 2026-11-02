@@ -38,16 +38,22 @@ visits, cache freshness, subtract overlapping clocks, or propose a candidate
 from the owner outer window. S1, single-submit and empty-owner-work remain parked;
 the historical disposition below does not override this current sequencing.
 
-A separate follow-up worktree, `sophia-session-owner-attribution`, now counts
-all stage entries and times selected entries at period 64. It also separates
-fresh 9P checks, journal reads/acknowledgements, control dispatch and publication
-flushes, with clock-free ready/pending/refused journal outcomes. The old signed
-branch, release binary and sealed evidence remain held. The first source checks
-cover sparse phase selection, worker generation/exit custody and count-only
-outcomes; no new timing result or candidate is established yet. The next gate
-is the paired off/on perturbation check, followed by actual component service
-and readiness/cadence coverage rather than another manually reconstructed loop.
-See the [follow-up contract](../../session-frame-attribution.md#follow-up-sparse-timers-and-fresh-9p-boundaries).
+The separate `sophia-session-owner-attribution` checkpoint `45260844b` added
+complete counters, sparse clocks and fresh 9P export scopes. Its 16-block run
+passed count/pixel/protocol invariants and independent saved-record review, but
+failed the 5% perturbation gate (owner CPU differences reached 9.29%). Preserve
+`~/.local/state/sophia-session-owner-attribution-01` as failed perturbation
+evidence. The next declared probe uses period 256, 8000 frames and an additional
+5% agreement check between off controls; no measurements are corrected by
+subtracting timer costs. The [follow-up contract](../../session-frame-attribution.md#period-64-attempt-and-next-control)
+records the exact parameters.
+
+Two production gaps are now source-confirmed: the supplied authentication
+owner omits production's per-operation pidfd custody poll, and fixture polling
+omits production's consumed readiness observation. Use the existing protected
+Rust conformance peer and real component service/readiness seams to close these
+gaps before selecting any mechanism. No candidate or performance claim follows
+from the sparse fixture; the earlier held baseline remains unchanged.
 
 ## Evidence
 

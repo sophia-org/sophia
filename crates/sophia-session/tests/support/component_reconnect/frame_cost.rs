@@ -561,6 +561,16 @@ fn exercise(
 fn frame_attribution_owned_ring_smoke() {
     let _alone = ALONE.lock().unwrap_or_else(|e| e.into_inner());
     crate::output::install(crate::output::SessionOutput::new(|_| {}, |_| {})).unwrap();
+    exercise(
+        24,
+        2,
+        4,
+        TimerSettings {
+            enabled: true,
+            period: 256,
+            phase: 193,
+        },
+    );
     for (height, enabled, phase) in [(24, true, 0), (512, false, 17), (24, true, 33)] {
         exercise(
             height,
@@ -642,8 +652,18 @@ fn frame_attribution_measure() {
 #[test]
 #[ignore = "sparse release attribution; run alone with devices hidden and stdout saved"]
 fn frame_attribution_sparse_measure() {
+    sparse_measure(64, 2000, [0, 17, 33, 49]);
+}
+
+#[test]
+#[ignore = "sparse long-block attribution; run alone with devices hidden and stdout saved"]
+fn frame_attribution_sparse_long_measure() {
+    sparse_measure(256, 8000, [0, 65, 129, 193]);
+}
+
+fn sparse_measure(period: u32, measured: u64, phases: [u32; 4]) {
     let _alone = ALONE.lock().unwrap_or_else(|e| e.into_inner());
-    timer_controls(64);
+    timer_controls(period);
     crate::output::install(crate::output::SessionOutput::new(
         |line| println!("{line}"),
         |line| eprintln!("{line}"),
@@ -651,26 +671,26 @@ fn frame_attribution_sparse_measure() {
     .unwrap();
     for height in [24, 512] {
         for (block, (enabled, phase)) in [
-            (false, 0),
-            (true, 0),
-            (true, 17),
-            (false, 17),
-            (false, 33),
-            (true, 33),
-            (true, 49),
-            (false, 49),
+            (false, phases[0]),
+            (true, phases[0]),
+            (true, phases[1]),
+            (false, phases[1]),
+            (false, phases[2]),
+            (true, phases[2]),
+            (true, phases[3]),
+            (false, phases[3]),
         ]
         .into_iter()
         .enumerate()
         {
             let timers = TimerSettings {
                 enabled,
-                period: 64,
+                period,
                 phase,
             };
-            let (snapshots, visits, fill_wire_turns) = exercise(height, 120, 2000, timers);
+            let (snapshots, visits, fill_wire_turns) = exercise(height, 120, measured, timers);
             println!(
-                "sophia_frame_block schema=2 height={height} block={block} enabled={} warmup=120 completed=2000 visits={visits} fill_wire_turns={fill_wire_turns} ring_slots=2 alternating_slots=1 sample_period=64 sample_phase={phase} generation={}",
+                "sophia_frame_block schema=2 height={height} block={block} enabled={} warmup=120 completed={measured} visits={visits} fill_wire_turns={fill_wire_turns} ring_slots=2 alternating_slots=1 sample_period={period} sample_phase={phase} generation={}",
                 u8::from(enabled),
                 snapshots[0].generation
             );

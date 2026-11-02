@@ -230,3 +230,32 @@ Run one exact ignored test per process with devices hidden and stdout retained:
 This is still the paired content fixture. Full component orchestration and
 production cadence remain subsequent work. No optimization candidate follows
 from these source changes alone.
+
+### Period-64 attempt and next control
+
+Signed `45260844b` passed 167 runtime and 1063 Session tests, strict Clippy,
+feature-off/draw/custody builds, and device-hidden release smoke. Its release
+run passed all 16 workload blocks and four controls, including the journal
+outcome join. Root reduction passed 11 mutation refusals; the independent
+saved-record audit confirmed source/build identity and counts.
+
+The perturbation gate failed: three on-block owner CPU differences exceeded
+5%, reaching 9.29%; visits stayed within 5%. Off-block h24 CPU also varied
+163.19–192.26 us/completion, so this does not quantify a causal timer cost.
+Retain `~/.local/state/sophia-session-owner-attribution-01` as a failed
+perturbation attempt, not an accepted low-overhead baseline.
+
+Before the next run, the declared control is period 256, phases 0/65/129/193,
+8000 completions per workload block and the same 120 warmup. The exact test is
+`live_session::metadata_shell::component_session::reconnect_tests::frame_cost::frame_attribution_sparse_long_measure`.
+This reduces clock frequency fourfold while retaining about 31 samples per
+per-frame stage. Require the two off controls in each ABBA group to agree within
+5% for CPU and visits, as well as the on-block comparison to their mean. Retain
+all blocks and refusals; do not correct or extrapolate sampled clocks.
+
+The current Authority9p row uses the supplied authentication owner in
+`image_test_authority.rs`; it includes real file-export checks but not the
+production owner's per-operation poll of wrapper and peer pidfds. The current
+fixture also lacks production's `subscribe_wait`/`observe` path, causing a
+fallback poll inside each Transport turn. Those gaps must close before this
+fixture can support a mechanism choice for production fixed-frame work.
