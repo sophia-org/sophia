@@ -3,6 +3,9 @@ use super::*;
 use sophia_runtime::frame_cost::{self as cost, Role, Snapshot, Stage, measure};
 #[path = "frame_cost/peer.rs"]
 mod peer;
+#[path = "frame_cost/protected.rs"]
+mod protected;
+use crate::shell_component_connections::ComponentFdReadiness;
 use peer::{PeerTurn, ThreadLink, peer_frames};
 use std::sync::mpsc;
 static ALONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -52,6 +55,7 @@ struct BlockResult {
     fill_wire_turns: u64,
     owner_cpu_nsec: u64,
     owner_elapsed_nsec: u64,
+    readiness: ComponentFdReadiness,
 }
 
 fn outer_clocks() -> (u64, u64) {
@@ -68,7 +72,31 @@ fn outer_clocks() -> (u64, u64) {
     (nsec(ClockId::ThreadCPUTime), nsec(ClockId::Monotonic))
 }
 
+enum PeerConnection {
+    Local(Box<ShellConnection>),
+    Protected(std::os::unix::net::UnixStream),
+}
+
+impl PeerConnection {
+    fn close(self) {
+        match self {
+            Self::Local(peer) => drop(peer),
+            Self::Protected(control) => drop(control),
+        }
+    }
+}
+
 fn exercise(height: u32, warmup: u64, measured: u64, timers: TimerSettings) -> BlockResult {
+    exercise_peer(height, warmup, measured, timers, false)
+}
+
+fn exercise_peer(
+    height: u32,
+    warmup: u64,
+    measured: u64,
+    timers: TimerSettings,
+    protected: bool,
+) -> BlockResult {
     assert!(warmup.is_multiple_of(2) && measured.is_multiple_of(2));
     cost::enable(false);
     cost::begin_block();
@@ -76,19 +104,6 @@ fn exercise(height: u32, warmup: u64, measured: u64, timers: TimerSettings) -> B
     let frames = warmup + measured;
     let mut h = Harness::new();
     h.backend = SessionContentFixture::new(&[descriptor()]).unwrap();
-    let (key, mut peer) = wire::connect_with_slots(&mut h.owner, 0, 2);
-    h.owner
-        .with_service(key, |service, transport| {
-            wire::allocate_size(transport, &mut peer, 1920, 1080, height);
-            let ShellComponentService::Bar(bar) = service else {
-                panic!("bar required")
-            };
-            crate::live_session::metadata_shell::content::reconnect_fixture::prime_outputs(
-                &mut bar.content,
-                descriptor(),
-            );
-        })
-        .unwrap();
     let (ready_tx, ready_rx) = mpsc::channel();
     let (start_tx, start_rx) = mpsc::channel();
     let (pixels_tx, pixels_rx) = mpsc::channel();
@@ -97,13 +112,36 @@ fn exercise(height: u32, warmup: u64, measured: u64, timers: TimerSettings) -> B
         start: start_rx,
         pixels: pixels_rx,
     };
-    let worker =
-        std::thread::spawn(move || peer_frames(peer, key.grant, height, frames, warmup, &mut link));
+    let (key, worker, mut custody) = if protected {
+        let (key, worker, custody) = protected::start(&mut h, height, frames, warmup, link);
+        (key, worker, Some(custody))
+    } else {
+        let (key, mut peer) = wire::connect_with_slots(&mut h.owner, 0, 2);
+        h.owner
+            .with_service(key, |service, transport| {
+                wire::allocate_size(transport, &mut peer, 1920, 1080, height);
+                let ShellComponentService::Bar(bar) = service else {
+                    panic!("bar required")
+                };
+                crate::live_session::metadata_shell::content::reconnect_fixture::prime_outputs(
+                    &mut bar.content,
+                    descriptor(),
+                );
+            })
+            .unwrap();
+        let worker = std::thread::spawn(move || {
+            PeerConnection::Local(Box::new(peer_frames(
+                peer, key.grant, height, frames, warmup, &mut link,
+            )))
+        });
+        (key, worker, None)
+    };
     let mut completed = 0;
     let mut visits = 0;
     let mut fill_wire_turns = 0;
     let mut generation = None;
     let mut outer_start = None;
+    let mut readiness_start = ComponentFdReadiness::default();
     let scene = sophia_backend_live::LiveProductionCpuScene::new(descriptor().size);
     let output = descriptor();
     let root = Rect {
@@ -125,6 +163,7 @@ fn exercise(height: u32, warmup: u64, measured: u64, timers: TimerSettings) -> B
                     assert!(generation.is_none());
                     assert_eq!(completed, warmup);
                     generation = Some(timers.begin());
+                    readiness_start = h.owner.fd_readiness();
                     outer_start = Some(outer_clocks());
                     start_tx.send(()).unwrap();
                 }
@@ -168,13 +207,48 @@ fn exercise(height: u32, warmup: u64, measured: u64, timers: TimerSettings) -> B
         if generation.is_some() {
             visits += 1;
         }
-        assert!(
-            h.owner
-                .processes
-                .turn_connected()
-                .iter()
-                .all(Option::is_none)
-        );
+        if let Some(custody) = &mut custody {
+            // Subscribe after the fill pump; no wire touch may invalidate this observation.
+            let mut fds = smallvec::SmallVec::new();
+            let waits = h.owner.subscribe_wait(&mut fds);
+            assert_eq!(waits.len(), 1);
+            rustix::event::poll(
+                &mut fds,
+                Some(&rustix::event::Timespec {
+                    tv_sec: 0,
+                    tv_nsec: 1_000_000,
+                }),
+            )
+            .unwrap();
+            waits.observe(&fds);
+            drop(fds);
+            custody.auth.coordinator.poll(Instant::now()).unwrap();
+            let visit = h
+                .owner
+                .poll_authenticated(
+                    65536,
+                    &mut custody.auth.coordinator,
+                    custody.wake.notifier(),
+                )
+                .unwrap();
+            assert!(
+                visit.processes.iter().all(Option::is_none),
+                "protected peer exited early: {:?}",
+                visit.processes
+            );
+            assert_eq!(
+                h.owner.phase(key).unwrap(),
+                ComponentConnectionPhase::Connected
+            );
+        } else {
+            assert!(
+                h.owner
+                    .processes
+                    .turn_connected()
+                    .iter()
+                    .all(Option::is_none)
+            );
+        }
         h.owner
             .with_service(key, |service, transport| {
                 let ShellComponentService::Bar(bar) = service else {
@@ -229,19 +303,27 @@ fn exercise(height: u32, warmup: u64, measured: u64, timers: TimerSettings) -> B
             .unwrap();
         assert!(Instant::now() < deadline, "frame driver timed out");
         // Bound fixture control-channel latency; worker and wire readiness wake sooner.
-        let mut fds = h.owner.poll_fds();
-        rustix::event::poll(
-            &mut fds,
-            Some(&rustix::event::Timespec {
-                tv_sec: 0,
-                tv_nsec: 1_000_000,
-            }),
-        )
-        .unwrap();
+        if protected {
+            h.owner.discard_readiness();
+        } else {
+            let mut fds = h.owner.poll_fds();
+            rustix::event::poll(
+                &mut fds,
+                Some(&rustix::event::Timespec {
+                    tv_sec: 0,
+                    tv_nsec: 1_000_000,
+                }),
+            )
+            .unwrap();
+        }
     }
     let peer = worker.join().unwrap();
     assert_eq!(completed, frames);
     let (cpu_end, mono_end) = outer_clocks();
+    let readiness = readiness_delta(h.owner.fd_readiness(), readiness_start);
+    if protected {
+        assert_eq!(readiness.waits, visits);
+    }
     let (cpu_start, mono_start) = outer_start.expect("outer measurement boundary was reached");
     let owner_cpu_nsec = cpu_end.checked_sub(cpu_start).expect("CPU clock regressed");
     let owner_elapsed_nsec = mono_end
@@ -254,9 +336,24 @@ fn exercise(height: u32, warmup: u64, measured: u64, timers: TimerSettings) -> B
     cost::enable(false);
     cost::begin_block();
     h.backend.teardown();
-    drop(peer);
+    peer.close();
     h.owner.stop(key).unwrap();
+    if let Some(custody) = &mut custody {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while h.owner.processes.process_retained(key) {
+            custody.auth.tick();
+            h.owner
+                .poll_authenticated(
+                    65536,
+                    &mut custody.auth.coordinator,
+                    custody.wake.notifier(),
+                )
+                .unwrap();
+            assert!(Instant::now() < deadline, "protected peer reap deadline");
+        }
+    }
     drop(h);
+    drop(custody);
     let Some(owner) = owner else {
         assert!(cost::drain().is_empty());
         return BlockResult {
@@ -265,6 +362,7 @@ fn exercise(height: u32, warmup: u64, measured: u64, timers: TimerSettings) -> B
             fill_wire_turns,
             owner_cpu_nsec,
             owner_elapsed_nsec,
+            readiness,
         };
     };
     assert_eq!(owner.generation, generation);
@@ -359,9 +457,25 @@ fn exercise(height: u32, warmup: u64, measured: u64, timers: TimerSettings) -> B
     assert_eq!(entries(Stage::OwnerService), visits);
     assert_eq!(entries(Stage::FixtureTarget), measured);
     assert_eq!(
-        snapshots[0].events.iter().sum::<u64>(),
+        [
+            cost::Event::JournalReady,
+            cost::Event::JournalPending,
+            cost::Event::JournalRefused
+        ]
+        .into_iter()
+        .map(|event| snapshots[0].events[event as usize])
+        .sum::<u64>(),
         entries(Stage::JournalRead)
     );
+    let observed = snapshots[0].events[cost::Event::WireObserved as usize];
+    let fallback = snapshots[0].events[cost::Event::WireFallback as usize];
+    assert_eq!(observed + fallback, entries(Stage::Transport));
+    if protected {
+        assert_eq!(observed, visits);
+        assert_eq!(fallback, fill_wire_turns);
+    } else {
+        assert_eq!(observed, 0);
+    }
     assert_eq!(snapshots[0].events[cost::Event::JournalRefused as usize], 0);
     assert!(worker.events.iter().all(|count| *count == 0));
     assert!(peer.events.iter().all(|count| *count == 0));
@@ -372,6 +486,75 @@ fn exercise(height: u32, warmup: u64, measured: u64, timers: TimerSettings) -> B
         fill_wire_turns,
         owner_cpu_nsec,
         owner_elapsed_nsec,
+        readiness,
+    }
+}
+
+fn readiness_delta(
+    after: ComponentFdReadiness,
+    before: ComponentFdReadiness,
+) -> ComponentFdReadiness {
+    ComponentFdReadiness {
+        waits: after.waits.checked_sub(before.waits).unwrap(),
+        any: after.any.checked_sub(before.any).unwrap(),
+        wire: after.wire.checked_sub(before.wire).unwrap(),
+        wire_wake: after.wire_wake.checked_sub(before.wire_wake).unwrap(),
+        image_worker: after.image_worker.checked_sub(before.image_worker).unwrap(),
+        image_listener: after
+            .image_listener
+            .checked_sub(before.image_listener)
+            .unwrap(),
+        image_socket: after.image_socket.checked_sub(before.image_socket).unwrap(),
+        authentication: after
+            .authentication
+            .checked_sub(before.authentication)
+            .unwrap(),
+        negotiation: after.negotiation.checked_sub(before.negotiation).unwrap(),
+        capture_completion: after
+            .capture_completion
+            .checked_sub(before.capture_completion)
+            .unwrap(),
+    }
+}
+
+#[test]
+#[ignore = "protected process and process-global diagnostics; run exact with devices hidden"]
+fn frame_attribution_protected_smoke() {
+    let _alone = ALONE.lock().unwrap_or_else(|e| e.into_inner());
+    crate::output::install(crate::output::SessionOutput::new(|_| {}, |_| {})).unwrap();
+    for (height, enabled) in [(24, true), (512, false)] {
+        let result = exercise_peer(
+            height,
+            6,
+            12,
+            TimerSettings {
+                enabled,
+                period: 256,
+                phase: 0,
+            },
+            true,
+        );
+        let r = result.readiness;
+        println!(
+            "sophia_frame_readiness schema=1 height={height} waits={} any={} wire={} wire_wake={} image_worker={} image_listener={} image_socket={} authentication={} negotiation={} capture_completion={}",
+            r.waits,
+            r.any,
+            r.wire,
+            r.wire_wake,
+            r.image_worker,
+            r.image_listener,
+            r.image_socket,
+            r.authentication,
+            r.negotiation,
+            r.capture_completion
+        );
+        if let Some(owner) = result.snapshots.first() {
+            println!(
+                "sophia_frame_wire_turns schema=1 height={height} observed={} fallback={}",
+                owner.events[cost::Event::WireObserved as usize],
+                owner.events[cost::Event::WireFallback as usize]
+            );
+        }
     }
 }
 
@@ -421,6 +604,7 @@ fn frame_attribution_counter_reference() {
                 fill_wire_turns,
                 owner_cpu_nsec,
                 owner_elapsed_nsec,
+                ..
             } = exercise(
                 height,
                 120,

@@ -108,9 +108,24 @@ fn client_with_slots(
     slot: usize,
     slots: u8,
 ) -> (ShellConnection, ContentLimits) {
+    let mut peer = sdk_image::authenticated_client(
+        &socket,
+        ShellClientOptions {
+            minimum_revision: 10,
+            maximum_revision: 10,
+            required_capabilities: capabilities(slot),
+            handshake_timeout: Duration::from_secs(3),
+        },
+    )
+    .unwrap();
+    let limits = enable_image(&mut peer, &socket, slots);
+    (peer, limits)
+}
+
+pub(super) fn capabilities(slot: usize) -> u64 {
     assert!(slot <= 2, "role");
     // Bit 13: sealed images, required for every content attach at r9.
-    let capabilities = SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+    SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
         | (1 << 15)
         | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
         | match slot {
@@ -129,17 +144,14 @@ fn client_with_slots(
                     | SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
             }
             _ => unreachable!(),
-        };
-    let mut peer = sdk_image::authenticated_client(
-        &socket,
-        ShellClientOptions {
-            minimum_revision: 10,
-            maximum_revision: 10,
-            required_capabilities: capabilities,
-            handshake_timeout: Duration::from_secs(3),
-        },
-    )
-    .unwrap();
+        }
+}
+
+pub(super) fn enable_image(
+    peer: &mut ShellConnection,
+    socket: &std::path::Path,
+    slots: u8,
+) -> ContentLimits {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Some((_, record)) = peer.poll_content().unwrap() {
@@ -167,7 +179,7 @@ fn client_with_slots(
                 0,
             )
             .unwrap();
-            return (peer, limits);
+            return limits;
         }
         assert!(Instant::now() < deadline, "Limits fetch missing");
         std::thread::yield_now();

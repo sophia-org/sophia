@@ -252,10 +252,24 @@ impl ShellFileWire {
         self.publication_pending = false;
         if flush_only {
             self.server.flush()
-        } else if let Some(readiness) = readiness {
-            self.server.turn_observed(readiness.wire)
         } else {
-            self.server.turn(Some(Duration::ZERO))
+            // Observer cost: record the owner's readiness decision ahead of the
+            // turn that validates it again. The compiled stub re-checks nothing.
+            #[cfg(feature = "diagnostic-frame-cost")]
+            frame_cost::count(
+                if readiness.as_ref().is_some_and(|observation| {
+                    self.server.observation_is_current(&observation.wire)
+                }) {
+                    frame_cost::Event::WireObserved
+                } else {
+                    frame_cost::Event::WireFallback
+                },
+            );
+            if let Some(readiness) = readiness {
+                self.server.turn_observed(readiness.wire)
+            } else {
+                self.server.turn(Some(Duration::ZERO))
+            }
         }
         .map_err(io_error)
     }

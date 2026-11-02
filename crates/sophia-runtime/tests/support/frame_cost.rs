@@ -384,13 +384,15 @@ fn outcome_counts_are_independent_of_timer_mode_and_reset_with_generation() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     fresh_block();
     count(Event::JournalPending);
+    count(Event::WireFallback);
     enable(true);
     count(Event::JournalReady);
     count(Event::JournalReady);
     enable(false);
     count(Event::JournalRefused);
+    count(Event::WireObserved);
     let snapshot = snapshot_thread().unwrap();
-    assert_eq!(snapshot.events, [2, 1, 1]);
+    assert_eq!(snapshot.events, [2, 1, 1, 1, 1]);
     assert_eq!((snapshot.enabled_calls, snapshot.disabled_calls), (0, 0));
     assert!(
         snapshot

@@ -143,14 +143,18 @@ pub enum Event {
     JournalReady,
     JournalPending,
     JournalRefused,
+    WireObserved,
+    WireFallback,
 }
 
 impl Event {
-    pub const COUNT: usize = 3;
+    pub const COUNT: usize = 5;
     pub const ALL: [Self; Self::COUNT] = [
         Self::JournalReady,
         Self::JournalPending,
         Self::JournalRefused,
+        Self::WireObserved,
+        Self::WireFallback,
     ];
 
     pub fn name(self) -> &'static str {
@@ -158,6 +162,8 @@ impl Event {
             Self::JournalReady => "journal_ready",
             Self::JournalPending => "journal_pending",
             Self::JournalRefused => "journal_refused",
+            Self::WireObserved => "wire_observed",
+            Self::WireFallback => "wire_fallback",
         }
     }
 }

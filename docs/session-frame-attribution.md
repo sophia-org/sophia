@@ -349,3 +349,45 @@ its banner; the retained correction recognizes that prefix and preserves the
 exact count checks. Counter-path and combined timer/counter perturbation remain
 unqualified. Proceed with production coverage, and requalify instrumentation
 against the compiled stub on that workload before choosing any optimization.
+
+### Protected authentication and observed readiness
+
+The protected fixture reuses the existing supervised Rust conformance peer:
+real launch authentication, role attachment, wrapper/peer pidfd custody and
+the existing owned-ring frame loop. The child negotiates revision 10 and two
+source slots. Output facts and allocation now come from the production
+content service; the diagnostic panel limit is explicitly the requested
+height. No authentication factory or allocation verdict is supplied on this
+path. The native composition target and completion remain simulated.
+
+A bounded control socket carries the same Measure/Fill/Filled rendezvous.
+The root-side oracle thread checks each lease and drops its extra reference
+before acknowledging Verify, so the child cannot retire early. It is the
+recorded Peer thread; CPU in the protected child is not included in that
+snapshot. The child retains the shell connection and authentication relay
+until the parent closes the control stream after taking the owner snapshot.
+Process and custody reaping happen outside the measured window. The small C
+exec bootstrap is compiled before each block's warmup, outside its clocks.
+
+Every protected service visit subscribes component descriptors, polls with
+the fixture's 1 ms cap, observes readiness and immediately invokes the actual
+authenticated component poll. Role service follows; unused observations are
+discarded. The paired-fill pump still services only the wire, without image
+admission or readiness subscription. This covers the production subscription
+mechanism, not production's complete wait set or native pacing.
+
+Raw readiness deltas report waits and each descriptor class. They do not by
+themselves prove consumption. Two additional clock-free events record the
+actual non-flush branch: `wire_observed` for a current observation and
+`wire_fallback` otherwise. Their sum equals Transport entries in this path;
+journal outcomes retain their separate three-counter join. There are now
+38 rows per snapshot (summary, 32 stages, five events). The observer's duplicate
+readiness validation is absent from the compiled stub and included in its
+overhead qualification. The experimental custody-dispatch path bypasses
+`service_turn`, so it has neither event, Transport nor WireFlush.
+
+The protected owner also polls its launch coordinator and authenticated
+component lifecycle. Its CPU window is therefore not comparable to the
+supplied-owner fixture. Full component-service orchestration remains the next
+coverage step. No protected timing run or optimization claim is recorded yet;
+combined counter/timer perturbation must pass against this workload's stub.

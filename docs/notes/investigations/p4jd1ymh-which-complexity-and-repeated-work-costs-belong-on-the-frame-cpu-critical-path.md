@@ -56,12 +56,20 @@ predeclared perturbation gate failed: one h512 comparison is +5.08% CPU against
 the 5% limit. Keep that refusal; neither counter-only nor combined observer
 overhead is qualified. Evidence and independent audit are sealed separately.
 
-Next close two source-confirmed production gaps: supplied authentication omits
-the per-operation pidfd custody poll, and fixture polling omits consumed
-readiness observations. Reuse the protected Rust conformance peer and actual
-component service/readiness seams before selecting a mechanism. The byte
-oracle stays off the owner thread and must preserve last-release custody.
-Requalify combined instrumentation against the compiled stub on that workload.
+The [protected authentication/readiness fixture](../../session-frame-attribution.md#protected-authentication-and-observed-readiness)
+now passes device-hidden smoke with diagnostics enabled and compiled out.
+It uses real supervised authentication and allocation, the shared frame loop,
+and the production subscribe/observe/consume sequence. Recorded decisions
+prove one observed turn per normal visit; fallback turns belong to the paired
+fill pump. The oracle stays off the owner thread, with release ordering intact.
+The 1063-test Session suite and 14 runtime diagnostic tests pass; these are
+correctness checks, not protected performance measurements.
+
+Next replace the manual content driver with the complete production component
+pass, supplying only the native admission/completion edge. Keep the actual
+launch coordinator and readiness observations through that pass. Requalify
+combined instrumentation against the compiled stub on that workload before
+selecting a mechanism.
 No candidate or performance claim follows from this fixture; the original
 attribution baseline and binary remain held separately.
 

@@ -3,21 +3,46 @@
 use std::path::PathBuf;
 
 #[path = "shell_rust_peer.rs"]
-mod rust_peer;
+pub(crate) mod rust_peer;
 
 pub(crate) struct Peer(pub(crate) PathBuf);
 impl Peer {
     pub(crate) fn rust(label: &str) -> Self {
+        Self::rust_child(
+            label,
+            "live_session::authenticated_shell_peer::rust_peer::protected_shell_child",
+        )
+    }
+
+    /// The same bootstrap, exec'ing `child` (an ignored test in this binary).
+    pub(crate) fn rust_child(label: &str, child: &str) -> Self {
         let target = PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").expect("cargo-slot"));
         let temporary = target.join("tmp");
         std::fs::create_dir_all(&temporary).unwrap();
         let binary = temporary.join(format!("t317-shell-rust-{label}-{}", std::process::id()));
-        assert!(std::process::Command::new("/usr/bin/cc")
-            .env_clear().env("PATH", "/usr/bin:/bin")
-            .args(["-std=c99", "-Wall", "-Wextra", "-Werror", "-pedantic", "-O2",
-                "-DSOPHIA_TEST_CHILD=\"live_session::authenticated_shell_peer::rust_peer::protected_shell_child\""])
-            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/lock_rust_bootstrap.c"))
-            .arg("-o").arg(&binary).status().unwrap().success());
+        assert!(
+            std::process::Command::new("/usr/bin/cc")
+                .env_clear()
+                .env("PATH", "/usr/bin:/bin")
+                .args([
+                    "-std=c99",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-pedantic",
+                    "-O2"
+                ])
+                .arg(format!("-DSOPHIA_TEST_CHILD=\"{child}\""))
+                .arg(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/tests/support/lock_rust_bootstrap.c"
+                ))
+                .arg("-o")
+                .arg(&binary)
+                .status()
+                .unwrap()
+                .success()
+        );
         Self(binary)
     }
 
