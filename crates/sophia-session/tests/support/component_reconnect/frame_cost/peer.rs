@@ -19,6 +19,7 @@ pub(super) struct ThreadLink {
     pub(super) ready: mpsc::Sender<PeerTurn>,
     pub(super) start: mpsc::Receiver<()>,
     pub(super) pixels: mpsc::Receiver<sophia_runtime::ContentResourceLease>,
+    pub(super) verified: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl PeerLink for ThreadLink {
@@ -36,6 +37,8 @@ impl PeerLink for ThreadLink {
         let expected = [if frame.is_multiple_of(2) { 32 } else { 64 }, 0, 0, 255];
         assert!(bytes.chunks_exact(4).all(|pixel| pixel == expected));
         drop(lease);
+        self.verified
+            .store(frame, std::sync::atomic::Ordering::Release);
     }
 }
 

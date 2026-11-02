@@ -29,6 +29,26 @@ impl SessionContentFixture {
         &mut self.runtime
     }
 
+    /// Lend the runtime separately while retaining the fixture target's custody.
+    #[allow(clippy::type_complexity)]
+    pub fn split_admission(
+        &mut self,
+    ) -> (
+        &mut LiveProductionVisualRuntime,
+        impl FnMut(
+            &mut LiveProductionVisualRuntime,
+            LiveShellContentFrame,
+            LiveShellContentLayer,
+        ) -> Result<bool, Box<dyn std::error::Error>>
+        + '_,
+    ) {
+        let target = &mut self.target;
+        let scene = &self.scene;
+        (&mut self.runtime, move |runtime, frame, layer| {
+            runtime.set_shell_component_content_on_target(frame, layer, scene, Some(&mut *target))
+        })
+    }
+
     pub fn admit(
         &mut self,
         frame: LiveShellContentFrame,

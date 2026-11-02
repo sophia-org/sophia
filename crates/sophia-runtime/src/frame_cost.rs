@@ -58,10 +58,11 @@ pub enum Stage {
     ImageChannel,
     DrainJournal,
     OwnerTurn,
+    ComponentPass,
 }
 
 impl Stage {
-    pub const COUNT: usize = 32;
+    pub const COUNT: usize = 33;
     pub const ALL: [Stage; Stage::COUNT] = [
         Stage::Transport,
         Stage::DecodeJournal,
@@ -95,6 +96,7 @@ impl Stage {
         Stage::ImageChannel,
         Stage::DrainJournal,
         Stage::OwnerTurn,
+        Stage::ComponentPass,
     ];
 
     /// Snake-case key used in record lines.
@@ -132,6 +134,7 @@ impl Stage {
             Stage::ImageChannel => "image_channel",
             Stage::DrainJournal => "drain_journal",
             Stage::OwnerTurn => "owner_turn",
+            Stage::ComponentPass => "component_pass",
         }
     }
 }

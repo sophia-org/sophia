@@ -211,117 +211,163 @@ impl LiveContentSession {
         >,
         catalog: Option<&sophia_protocol::ShellApplicationCatalog>,
     ) -> Result<Option<ContentSubmissionInputs>, Box<dyn std::error::Error>> {
-        if catalog.is_some() != transport.supports_persistent_catalog() {
-            return Err(ShellTransportError::MissingCapability.into());
-        }
-        if transport.content_grant().is_none() {
-            return Ok(None);
-        }
-        let now = self.now_msec();
-        while self.observe_presentation(transport, runtime)? {}
-        let presented_allocations = self
-            .presented
-            .values()
-            .flat_map(|presented| presented.allocations.iter().copied())
-            .collect::<Vec<_>>();
-        self.stage = ContentServiceStage::Resources;
-        transport.service_content_resources(now)?;
-        self.stage = ContentServiceStage::Outputs;
-        measure(Stage::Outputs, || {
-            self.publish_outputs(transport, outputs, transaction)
-        })?;
-        self.stage = ContentServiceStage::Allocations;
         measure(
-            Stage::Allocations,
-            || -> Result<(), Box<dyn std::error::Error>> {
-                transport.service_content_allocation_requests(&presented_allocations, now)?;
-                while let Some((_, request)) = transport.next_content_allocation_request() {
-                    if request.operation == 3 {
-                        transport.release_content_allocation(request.allocation_request_id)?;
-                        continue;
-                    }
-                    if self.actions.dismissal_expired(request.prior, now) {
-                        transport.reject_content_allocation(
-                            request.allocation_request_id,
-                            sophia_runtime::ContentAllocationError::AllocationLost,
+            Stage::OwnerService,
+            || -> Result<Option<ContentSubmissionInputs>, Box<dyn std::error::Error>> {
+                if catalog.is_some() != transport.supports_persistent_catalog() {
+                    return Err(ShellTransportError::MissingCapability.into());
+                }
+                if transport.content_grant().is_none() {
+                    return Ok(None);
+                }
+                let now = self.now_msec();
+                while self.observe_presentation(transport, runtime)? {}
+                let presented_allocations = self
+                    .presented
+                    .values()
+                    .flat_map(|presented| presented.allocations.iter().copied())
+                    .collect::<Vec<_>>();
+                self.stage = ContentServiceStage::Resources;
+                transport.service_content_resources(now)?;
+                self.stage = ContentServiceStage::Outputs;
+                measure(Stage::Outputs, || {
+                    self.publish_outputs(transport, outputs, transaction)
+                })?;
+                self.stage = ContentServiceStage::Allocations;
+                measure(
+                    Stage::Allocations,
+                    || -> Result<(), Box<dyn std::error::Error>> {
+                        transport
+                            .service_content_allocation_requests(&presented_allocations, now)?;
+                        while let Some((_, request)) = transport.next_content_allocation_request() {
+                            if request.operation == 3 {
+                                transport
+                                    .release_content_allocation(request.allocation_request_id)?;
+                                continue;
+                            }
+                            if self.actions.dismissal_expired(request.prior, now) {
+                                transport.reject_content_allocation(
+                                    request.allocation_request_id,
+                                    sophia_runtime::ContentAllocationError::AllocationLost,
+                                )?;
+                                continue;
+                            }
+                            let active_allocations = transport.content_allocation_snapshots();
+                            match self.resolve_allocation(&request, outputs, &active_allocations) {
+                                Ok(snapshot) => transport.grant_content_allocation(
+                                    request.allocation_request_id,
+                                    snapshot,
+                                    &presented_allocations,
+                                )?,
+                                Err(error) => transport.reject_content_allocation(
+                                    request.allocation_request_id,
+                                    error,
+                                )?,
+                            }
+                        }
+                        self.service_dismissals(
+                            transport,
+                            runtime,
+                            scene,
+                            native_scanout,
+                            now,
+                            transaction,
                         )?;
-                        continue;
-                    }
-                    let active_allocations = transport.content_allocation_snapshots();
-                    match self.resolve_allocation(&request, outputs, &active_allocations) {
-                        Ok(snapshot) => transport.grant_content_allocation(
-                            request.allocation_request_id,
-                            snapshot,
-                            &presented_allocations,
-                        )?,
-                        Err(error) => transport
-                            .reject_content_allocation(request.allocation_request_id, error)?,
-                    }
-                }
-                self.service_dismissals(
-                    transport,
-                    runtime,
-                    scene,
-                    native_scanout,
-                    now,
-                    transaction,
+                        Ok(())
+                    },
                 )?;
-                Ok(())
+                let allocations = transport.content_allocation_snapshots();
+                let content_outputs = self
+                    .published_facts
+                    .iter()
+                    .map(|facts| facts.output)
+                    .collect::<Vec<_>>();
+                self.stage = ContentServiceStage::Demands;
+                measure(
+                    Stage::Demands,
+                    || -> Result<(), Box<dyn std::error::Error>> {
+                        transport.service_content_demands(&content_outputs, &allocations)?;
+                        while let Some((demand_transaction, demand)) =
+                            transport.next_content_demand()
+                        {
+                            let permit = self.next_permit_id;
+                            self.next_permit_id = permit
+                                .checked_add(1)
+                                .ok_or("shell content permit identity exhausted")?;
+                            transport.grant_content_demand(
+                                demand_transaction,
+                                demand.output,
+                                permit,
+                                now,
+                            )?;
+                        }
+                        Ok(())
+                    },
+                )?;
+                let contexts = content_outputs
+                    .iter()
+                    .map(|output| sophia_runtime::ContentCandidateContext {
+                        output: *output,
+                        facts_generation: self.facts_generation,
+                        interaction_generation: 1,
+                        allocations: &allocations,
+                    })
+                    .collect::<Vec<_>>();
+                self.stage = ContentServiceStage::Candidates;
+                measure(Stage::Candidates, || {
+                    if let Some(catalog) = catalog {
+                        transport.service_catalog_candidates(&contexts, catalog, now)
+                    } else {
+                        transport.service_content_candidates(&contexts, now)
+                    }
+                })?;
+                Ok(Some(ContentSubmissionInputs {
+                    allocations,
+                    outputs: content_outputs,
+                    facts_generation: self.facts_generation,
+                    now,
+                }))
             },
-        )?;
-        let allocations = transport.content_allocation_snapshots();
-        let content_outputs = self
-            .published_facts
-            .iter()
-            .map(|facts| facts.output)
-            .collect::<Vec<_>>();
-        self.stage = ContentServiceStage::Demands;
-        measure(
-            Stage::Demands,
-            || -> Result<(), Box<dyn std::error::Error>> {
-                transport.service_content_demands(&content_outputs, &allocations)?;
-                while let Some((demand_transaction, demand)) = transport.next_content_demand() {
-                    let permit = self.next_permit_id;
-                    self.next_permit_id = permit
-                        .checked_add(1)
-                        .ok_or("shell content permit identity exhausted")?;
-                    transport.grant_content_demand(
-                        demand_transaction,
-                        demand.output,
-                        permit,
-                        now,
-                    )?;
-                }
-                Ok(())
-            },
-        )?;
-        let contexts = content_outputs
-            .iter()
-            .map(|output| sophia_runtime::ContentCandidateContext {
-                output: *output,
-                facts_generation: self.facts_generation,
-                interaction_generation: 1,
-                allocations: &allocations,
-            })
-            .collect::<Vec<_>>();
-        self.stage = ContentServiceStage::Candidates;
-        measure(Stage::Candidates, || {
-            if let Some(catalog) = catalog {
-                transport.service_catalog_candidates(&contexts, catalog, now)
-            } else {
-                transport.service_content_candidates(&contexts, now)
-            }
-        })?;
-        Ok(Some(ContentSubmissionInputs {
-            allocations,
-            outputs: content_outputs,
-            facts_generation: self.facts_generation,
-            now,
-        }))
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
     pub(super) fn service_with_catalog(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        runtime: &mut sophia_backend_live::LiveProductionVisualRuntime,
+        scene: &sophia_backend_live::LiveProductionCpuScene,
+        native_scanout: Option<&mut sophia_backend_live::LiveProductionNativeScanout>,
+        outputs: &[HeadlessOutput],
+        output_bounds: &[(OutputId, Rect)],
+        root: Rect,
+        transaction: &mut dyn FnMut() -> Result<
+            sophia_protocol::TransactionId,
+            Box<dyn std::error::Error>,
+        >,
+        catalog: Option<&sophia_protocol::ShellApplicationCatalog>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.service_with_catalog_to(
+            transport,
+            runtime,
+            scene,
+            native_scanout,
+            outputs,
+            output_bounds,
+            root,
+            transaction,
+            catalog,
+            |runtime, native_scanout, frame, layer| {
+                runtime.set_shell_component_content(frame, layer, scene, native_scanout)
+            },
+        )
+    }
+
+    /// The same service with the caller's admission edge in place of the
+    /// native one. The edge is handed the runtime and native scanout it may
+    /// use; dismissals still see the native scanout directly.
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::live_session) fn service_with_catalog_to(
         &mut self,
         transport: &mut ShellTransportConnection<'_>,
         runtime: &mut sophia_backend_live::LiveProductionVisualRuntime,
@@ -335,6 +381,12 @@ impl LiveContentSession {
             Box<dyn std::error::Error>,
         >,
         catalog: Option<&sophia_protocol::ShellApplicationCatalog>,
+        mut submit: impl FnMut(
+            &mut sophia_backend_live::LiveProductionVisualRuntime,
+            Option<&mut sophia_backend_live::LiveProductionNativeScanout>,
+            LiveShellContentFrame,
+            sophia_backend_live::LiveShellContentLayer,
+        ) -> Result<bool, Box<dyn std::error::Error>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let Some(inputs) = self.service_until_submission(
             transport,
@@ -349,11 +401,8 @@ impl LiveContentSession {
             return Ok(());
         };
         while let Some(bundle) = self.next_submission(transport, &inputs, catalog)? {
-            self.submit_bundle(
+            self.submit_bundle_to(
                 transport,
-                runtime,
-                scene,
-                native_scanout.as_deref_mut(),
                 outputs,
                 output_bounds,
                 root,
@@ -364,6 +413,7 @@ impl LiveContentSession {
                     sophia_backend_live::LiveShellContentLayer::Shell
                 },
                 inputs.now,
+                |frame, layer| submit(runtime, native_scanout.as_deref_mut(), frame, layer),
             )?;
         }
         Ok(())

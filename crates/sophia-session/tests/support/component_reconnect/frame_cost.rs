@@ -1,6 +1,8 @@
 //! Real owned-ring and 9P traffic; only native completion is simulated.
 use super::*;
 use sophia_runtime::frame_cost::{self as cost, Role, Snapshot, Stage, measure};
+#[path = "frame_cost/owner.rs"]
+mod owner;
 #[path = "frame_cost/peer.rs"]
 mod peer;
 #[path = "frame_cost/protected.rs"]
@@ -102,15 +104,21 @@ fn exercise_peer(
     cost::begin_block();
     cost::drain();
     let frames = warmup + measured;
-    let mut h = Harness::new();
+    let mut h = if protected {
+        Harness::panel_only()
+    } else {
+        Harness::new()
+    };
     h.backend = SessionContentFixture::new(&[descriptor()]).unwrap();
     let (ready_tx, ready_rx) = mpsc::channel();
     let (start_tx, start_rx) = mpsc::channel();
     let (pixels_tx, pixels_rx) = mpsc::channel();
+    let verified = std::sync::Arc::new(AtomicU64::new(0));
     let mut link = ThreadLink {
         ready: ready_tx,
         start: start_rx,
         pixels: pixels_rx,
+        verified: verified.clone(),
     };
     let (key, worker, mut custody) = if protected {
         let (key, worker, custody) = protected::start(&mut h, height, frames, warmup, link);
@@ -136,7 +144,7 @@ fn exercise_peer(
         });
         (key, worker, None)
     };
-    let mut completed = 0;
+    let mut submitted_frames = 0;
     let mut visits = 0;
     let mut fill_wire_turns = 0;
     let mut generation = None;
@@ -161,7 +169,8 @@ fn exercise_peer(
             match turn {
                 PeerTurn::Measure => {
                     assert!(generation.is_none());
-                    assert_eq!(completed, warmup);
+                    assert_eq!(submitted_frames, warmup);
+                    assert_eq!(verified.load(Ordering::Acquire), warmup);
                     generation = Some(timers.begin());
                     readiness_start = h.owner.fd_readiness();
                     outer_start = Some(outer_clocks());
@@ -223,23 +232,12 @@ fn exercise_peer(
             waits.observe(&fds);
             drop(fds);
             custody.auth.coordinator.poll(Instant::now()).unwrap();
-            let visit = h
-                .owner
-                .poll_authenticated(
-                    65536,
-                    &mut custody.auth.coordinator,
-                    custody.wake.notifier(),
-                )
-                .unwrap();
-            assert!(
-                visit.processes.iter().all(Option::is_none),
-                "protected peer exited early: {:?}",
-                visit.processes
-            );
-            assert_eq!(
-                h.owner.phase(key).unwrap(),
-                ComponentConnectionPhase::Connected
-            );
+            if let Some(frame) =
+                owner::service(&mut h, custody, key, &scene, output, root, &pixels_tx)
+            {
+                assert_eq!(frame, submitted_frames + 1);
+                submitted_frames += 1;
+            }
         } else {
             assert!(
                 h.owner
@@ -249,58 +247,60 @@ fn exercise_peer(
                     .all(Option::is_none)
             );
         }
-        h.owner
-            .with_service(key, |service, transport| {
-                let ShellComponentService::Bar(bar) = service else {
-                    panic!("bar required")
-                };
-                let inputs = measure(Stage::OwnerService, || {
-                    bar.content.service_until_submission(
-                        transport,
-                        h.backend.runtime_mut(),
-                        &scene,
-                        None,
-                        &[output],
-                        &mut transaction,
-                        None,
-                    )
-                })
-                .unwrap()
-                .expect("fixture grant remains live");
-                while let Some(bundle) = bar
-                    .content
-                    .next_submission(transport, &inputs, None)
-                    .unwrap()
-                {
-                    let generation = bundle.candidate_generation;
-                    let pixels = bundle.resource(resource(generation)).unwrap().clone();
-                    pixels_tx.send(pixels).unwrap();
-                    bar.content
-                        .submit_bundle_to(
+        if !protected {
+            h.owner
+                .with_service(key, |service, transport| {
+                    let ShellComponentService::Bar(bar) = service else {
+                        panic!("bar required")
+                    };
+                    let inputs = bar
+                        .content
+                        .service_until_submission(
                             transport,
+                            h.backend.runtime_mut(),
+                            &scene,
+                            None,
                             &[output],
-                            &[(output.id, root)],
-                            root,
-                            bundle,
-                            sophia_backend_live::LiveShellContentLayer::Shell,
-                            inputs.now,
-                            |frame, layer| h.backend.admit(frame, layer),
+                            &mut transaction,
+                            None,
                         )
-                        .unwrap();
-                    measure(Stage::FixtureTarget, || {
-                        h.backend.simulate_submit(output.id);
-                        h.backend.simulate_completion(output.id);
-                    });
-                    assert!(
-                        bar.observe_presentation(transport, h.backend.runtime())
-                            .unwrap()
-                    );
-                    completed += 1;
-                }
-                transport.service_content_resources(inputs.now).unwrap();
-                transport.poll_io().unwrap();
-            })
-            .unwrap();
+                        .unwrap()
+                        .expect("fixture grant remains live");
+                    while let Some(bundle) = bar
+                        .content
+                        .next_submission(transport, &inputs, None)
+                        .unwrap()
+                    {
+                        let generation = bundle.candidate_generation;
+                        let pixels = bundle.resource(resource(generation)).unwrap().clone();
+                        pixels_tx.send(pixels).unwrap();
+                        bar.content
+                            .submit_bundle_to(
+                                transport,
+                                &[output],
+                                &[(output.id, root)],
+                                root,
+                                bundle,
+                                sophia_backend_live::LiveShellContentLayer::Shell,
+                                inputs.now,
+                                |frame, layer| h.backend.admit(frame, layer),
+                            )
+                            .unwrap();
+                        measure(Stage::FixtureTarget, || {
+                            h.backend.simulate_submit(output.id);
+                            h.backend.simulate_completion(output.id);
+                        });
+                        assert!(
+                            bar.observe_presentation(transport, h.backend.runtime())
+                                .unwrap()
+                        );
+                        submitted_frames += 1;
+                    }
+                    transport.service_content_resources(inputs.now).unwrap();
+                    transport.poll_io().unwrap();
+                })
+                .unwrap();
+        }
         assert!(Instant::now() < deadline, "frame driver timed out");
         // Bound fixture control-channel latency; worker and wire readiness wake sooner.
         if protected {
@@ -318,7 +318,8 @@ fn exercise_peer(
         }
     }
     let peer = worker.join().unwrap();
-    assert_eq!(completed, frames);
+    assert_eq!(submitted_frames, frames);
+    assert_eq!(verified.load(Ordering::Acquire), frames);
     let (cpu_end, mono_end) = outer_clocks();
     let readiness = readiness_delta(h.owner.fd_readiness(), readiness_start);
     if protected {
@@ -451,10 +452,17 @@ fn exercise_peer(
     assert!(entries(Stage::Reserve) >= measured);
     assert_eq!(entries(Stage::Reserve), entries(Stage::Authority));
     assert!(entries(Stage::Collect) >= measured);
-    assert_eq!(entries(Stage::Completion), visits + measured);
+    assert_eq!(
+        entries(Stage::Completion),
+        visits * if protected { 2 } else { 1 } + measured
+    );
     assert!(entries(Stage::Transport) >= visits);
     assert_eq!(entries(Stage::Submission), measured);
     assert_eq!(entries(Stage::OwnerService), visits);
+    assert_eq!(
+        entries(Stage::ComponentPass),
+        if protected { visits } else { 0 }
+    );
     assert_eq!(entries(Stage::FixtureTarget), measured);
     assert_eq!(
         [
@@ -623,6 +631,65 @@ fn frame_attribution_counter_reference() {
                 for record in snapshot.records() {
                     println!("{record}");
                 }
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "protected release reference; exact binary, phase env and saved stdout required"]
+fn frame_attribution_protected_reference() {
+    let _alone = ALONE.lock().unwrap_or_else(|e| e.into_inner());
+    let phase: u32 = std::env::var("SOPHIA_FRAME_SAMPLE_PHASE")
+        .expect("SOPHIA_FRAME_SAMPLE_PHASE is required")
+        .parse()
+        .unwrap();
+    assert!([0, 65, 129, 193].contains(&phase));
+    crate::output::install(crate::output::SessionOutput::new(
+        |line| println!("{line}"),
+        |line| eprintln!("{line}"),
+    ))
+    .unwrap();
+    #[cfg(feature = "diagnostic-frame-cost")]
+    timer_controls(256);
+    for height in [24, 512] {
+        let enabled = cfg!(feature = "diagnostic-frame-cost");
+        let BlockResult {
+            snapshots,
+            visits,
+            fill_wire_turns,
+            owner_cpu_nsec,
+            owner_elapsed_nsec,
+            readiness: r,
+        } = exercise_peer(
+            height,
+            120,
+            8000,
+            TimerSettings {
+                enabled,
+                period: 256,
+                phase,
+            },
+            true,
+        );
+        println!(
+            "sophia_frame_protected schema=1 height={height} observer={} timed={} warmup=120 completed=8000 visits={visits} fill_wire_turns={fill_wire_turns} ring_slots=2 alternating_slots=1 resource_ids={RESOURCE_IDS} sample_period=256 sample_phase={phase} owner_cpu_nsec={owner_cpu_nsec} owner_elapsed_nsec={owner_elapsed_nsec} waits={} any={} wire={} wire_wake={} image_worker={} image_listener={} image_socket={} authentication={} negotiation={} capture_completion={}",
+            u8::from(enabled),
+            u8::from(enabled),
+            r.waits,
+            r.any,
+            r.wire,
+            r.wire_wake,
+            r.image_worker,
+            r.image_listener,
+            r.image_socket,
+            r.authentication,
+            r.negotiation,
+            r.capture_completion
+        );
+        for snapshot in snapshots {
+            for record in snapshot.records() {
+                println!("{record}");
             }
         }
     }

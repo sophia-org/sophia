@@ -85,9 +85,42 @@ impl PanelComponentService {
         bounds: &[(OutputId, Rect)],
         root: Rect,
     ) -> ServiceResult<()> {
+        self.service_content_to(
+            transport,
+            runtime,
+            scene,
+            native,
+            outputs,
+            bounds,
+            root,
+            |runtime, native, frame, layer| {
+                runtime.set_shell_component_content(frame, layer, scene, native)
+            },
+        )
+    }
+
+    /// `service_content` with the caller's admission edge in place of the
+    /// native one; the edge receives the runtime and native scanout it may use.
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::live_session) fn service_content_to(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        runtime: &mut LiveProductionVisualRuntime,
+        scene: &LiveProductionCpuScene,
+        native: Option<&mut LiveProductionNativeScanout>,
+        outputs: &[HeadlessOutput],
+        bounds: &[(OutputId, Rect)],
+        root: Rect,
+        submit: impl FnMut(
+            &mut LiveProductionVisualRuntime,
+            Option<&mut LiveProductionNativeScanout>,
+            sophia_backend_live::LiveShellContentFrame,
+            sophia_backend_live::LiveShellContentLayer,
+        ) -> ServiceResult<bool>,
+    ) -> ServiceResult<()> {
         self.validate(transport)?;
         let next = &mut self.next_transaction;
-        self.content.service(
+        self.content.service_with_catalog_to(
             transport,
             runtime,
             scene,
@@ -96,6 +129,8 @@ impl PanelComponentService {
             bounds,
             root,
             &mut || take_shell_transaction(next),
+            None,
+            submit,
         )
     }
 

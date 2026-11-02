@@ -391,3 +391,56 @@ component lifecycle. Its CPU window is therefore not comparable to the
 supplied-owner fixture. Full component-service orchestration remains the next
 coverage step. No protected timing run or optimization claim is recorded yet;
 combined counter/timer perturbation must pass against this workload's stub.
+
+### Complete bar component pass and next reference
+
+The protected driver now configures one bar and invokes the complete production
+component-service routine. Its launch coordinator, OwnerWake, children,
+application-launch state and optional WM persist for the block. There is no
+WM in this fixture, so the production unavailable-indicator paths run. The
+native admission callback uses the same backend admission function and keeps
+the target separate from the borrowed runtime. Dock and launcher production
+paths are unchanged and unconfigured here. Dismissals still receive the native
+argument; the fixture supplies no native scanout.
+
+`ComponentPass` includes the full routine. `OwnerService` now lives directly
+around the shared content service through candidate preparation; the former
+driver wrapper is removed. FixtureTarget still covers simulated submit and
+completion after the pass returns. The following production pass observes
+that completion; there is no additional fixture transport visit to observe it.
+The peer oracle publishes its last verified frame after checking and dropping
+its extra lease. The owner reads that count only at the warmup boundary and
+after joining, proving every presentation was received and checked.
+
+For this single-output workload, ComponentPass and OwnerService entries equal
+visits. Completion entries equal twice visits plus measured frames: the content
+service's observation loop and the bar branch each check once per visit, with
+one extra successful loop iteration for each completion between passes.
+Submission and FixtureTarget each equal measured frames. Snapshots now have
+39 rows: summary, 33 stages and five events. Coordinator polling remains in the
+outer owner window outside ComponentPass. The complete physical owner loop,
+other native wait descriptors, protected-child CPU and native pacing remain
+outside this fixture's claim.
+
+The next experiment compares combined sparse clocks and counters with the
+compiled stub, not with counter-only operation. Both use this protected full
+pass, 120 warmup and 8000 measured frames at heights 24 and 512. Period 256 is
+fixed. For each phase 0, 65, 129 and 193, run stub/observer/observer/stub; each
+process runs one block at each height. This interleaves controls more closely
+than the earlier eight-block processes. Compare matching phase/height to the
+mean stub endpoints, require their CPU and visit agreement within 5%, and
+require each observer difference within 5%. Keep every run and refusal.
+
+Use the exact test
+`live_session::metadata_shell::component_session::reconnect_tests::frame_cost::frame_attribution_protected_reference`
+with `SOPHIA_FRAME_SAMPLE_PHASE` explicitly set to one of those four phases.
+The observer build retains empty-scope controls and all raw sampled records;
+the stub has neither diagnostic stage records nor fabricated counts. This is
+a predeclared experiment, not a result or optimization claim.
+
+Correctness gates for this integration passed in the device-hidden namespace:
+14 runtime instrumentation tests, 1,063 Session tests (73 ignored), strict
+Clippy, and the protected smoke in both observer and compiled-stub builds.
+Both smoke traces contain no graphics, compute or input-device opens. Source
+logs are retained in `~/.local/state/sophia-session-component-pass-source-01`.
+These checks establish behavior and accounting, not performance.

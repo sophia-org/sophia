@@ -70,6 +70,14 @@ impl Harness {
     }
 
     fn with_dock(has_dock: bool) -> Self {
+        Self::configured(has_dock, false)
+    }
+
+    fn panel_only() -> Self {
+        Self::configured(false, true)
+    }
+
+    fn configured(has_dock: bool, panel_only: bool) -> Self {
         let root = std::env::temp_dir().join(format!(
             "t100-{}-{}",
             std::process::id(),
@@ -81,7 +89,13 @@ impl Harness {
             ("menu", ShellComponentRole::ApplicationLauncher),
             ("dock", ShellComponentRole::Dock),
         ];
-        let selections: Vec<_> = roles[..if has_dock { 3 } else { 2 }]
+        let selections: Vec<_> = roles[..if panel_only {
+            1
+        } else if has_dock {
+            3
+        } else {
+            2
+        }]
             .iter()
             .copied()
             .map(|(id, role)| ShellComponentConfig {

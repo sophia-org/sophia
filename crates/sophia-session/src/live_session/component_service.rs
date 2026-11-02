@@ -1,12 +1,59 @@
 //! Owner-loop service of independently negotiated component roles.
 use super::*;
 mod native_input;
+use metadata_shell::PanelComponentService;
 use metadata_shell::component_session::{ShellComponentService, ShellComponentSession};
 use metadata_shell::indicators::IndicatorServiceError;
 pub(super) use native_input::{dispatch_native_input, synchronize_native_capture};
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn service_components(
+    components: &mut ShellComponentSession,
+    catalog: &mut component_catalog::ComponentCatalog,
+    runtime: &mut LiveProductionVisualRuntime,
+    scene: &LiveProductionCpuScene,
+    native: Option<&mut LiveProductionNativeScanout>,
+    outputs: &[sophia_engine::HeadlessOutput],
+    bounds: &[(sophia_protocol::OutputId, sophia_protocol::Rect)],
+    wm: &mut Option<LiveWmSession>,
+    available: bool,
+    launches: &mut SessionLaunchQueue,
+    children: &mut Vec<ManagedSessionChild>,
+    config: &PersistentXtermSessionConfig,
+    xauthority: &std::path::Path,
+    admission_started: &mut Option<Instant>,
+    authenticated_launches: &mut crate::launch_authentication::LaunchCoordinator,
+    owner_wake: &OwnerWake,
+    application_launches: &mut LiveApplicationLaunches,
+) -> Result<(), Box<dyn std::error::Error>> {
+    service_components_with_bar_content(
+        components,
+        catalog,
+        runtime,
+        scene,
+        native,
+        outputs,
+        bounds,
+        wm,
+        available,
+        launches,
+        children,
+        config,
+        xauthority,
+        admission_started,
+        authenticated_launches,
+        owner_wake,
+        application_launches,
+        |bar, transport, runtime, scene, native, outputs, bounds, root| {
+            bar.service_content(transport, runtime, scene, native, outputs, bounds, root)
+        },
+    )
+}
+
+/// The full component pass with the bar's content service supplied by the
+/// caller; dock and launcher roles always take the production path.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn service_components_with_bar_content(
     components: &mut ShellComponentSession,
     catalog: &mut component_catalog::ComponentCatalog,
     runtime: &mut LiveProductionVisualRuntime,
@@ -24,6 +71,16 @@ pub(super) fn service_components(
     authenticated_launches: &mut crate::launch_authentication::LaunchCoordinator,
     owner_wake: &OwnerWake,
     application_launches: &mut LiveApplicationLaunches,
+    mut bar_content: impl FnMut(
+        &mut PanelComponentService,
+        &mut sophia_runtime::ShellTransportConnection<'_>,
+        &mut LiveProductionVisualRuntime,
+        &LiveProductionCpuScene,
+        Option<&mut LiveProductionNativeScanout>,
+        &[sophia_engine::HeadlessOutput],
+        &[(sophia_protocol::OutputId, sophia_protocol::Rect)],
+        sophia_protocol::Rect,
+    ) -> Result<(), Box<dyn std::error::Error>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if !available {
         catalog.cancel_open_request();
@@ -242,7 +299,8 @@ pub(super) fn service_components(
                     .iter()
                     .flat_map(|projection| projection.content.iter());
                 bar.service_actions_from(transport, presented)?;
-                bar.service_content(
+                bar_content(
+                    bar.as_mut(),
                     transport,
                     runtime,
                     scene,

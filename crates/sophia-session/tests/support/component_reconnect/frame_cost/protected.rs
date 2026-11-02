@@ -10,7 +10,11 @@ use std::path::PathBuf;
 
 pub(super) struct Custody {
     pub(super) auth: Fixture,
-    pub(super) wake: sophia_wake::Wake,
+    pub(super) wake: crate::live_session::OwnerWake,
+    pub(super) wm: Option<crate::live_session::LiveWmSession>,
+    pub(super) children: Vec<crate::live_session::ManagedSessionChild>,
+    pub(super) admission_started: Option<Instant>,
+    pub(super) applications: crate::live_session::LiveApplicationLaunches,
     _bootstrap: Peer,
 }
 
@@ -130,7 +134,7 @@ pub(super) fn start(
     Custody,
 ) {
     let mut auth = Fixture::new();
-    let wake = sophia_wake::Wake::new().unwrap();
+    let wake = crate::live_session::OwnerWake::new().unwrap();
     h.owner.panel_limit = u16::try_from(height).unwrap();
     h.owner
         .processes
@@ -301,6 +305,10 @@ pub(super) fn start(
         Custody {
             auth,
             wake,
+            wm: None,
+            children: Vec::new(),
+            admission_started: None,
+            applications: Default::default(),
             _bootstrap: bootstrap,
         },
     )
