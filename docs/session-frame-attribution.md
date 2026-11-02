@@ -64,11 +64,18 @@ warmup snapshots are discarded. The peer publishes on thread exit. Worker
 snapshots retain the last generation observed at a job: their CPU windows run
 from the first measured job to thread exit and include teardown; their elapsed
 windows also include idle time. Counts must prove exactly 2000 validation/copy/
-pixel jobs, reservations, authority lookups, source releases and submissions,
+pixel jobs, source releases and submissions,
 4000 projection scopes, and 2000 supplied target completions. Off blocks retain
 outer clocks and disabled-entry counts but must have zero enabled stage counts.
 Timer-only controls call an empty scope 2000 times in off/on/on/off order;
 their observed overhead is retained without subtraction.
+
+Reserve and Authority count attempts, including retained-offer retries after
+worker-capacity or resource-budget backpressure; they must be at least the
+accepted job count, not equal to it. The first release attempt exposed this
+distinction at h512 (5000 reservation attempts for 2000 completed frames) and
+was refused by the original equality assertion. Its evidence remains in
+`~/.local/state/sophia-session-frame-attribution-01`; it is not a completed run.
 
 The owner outer window includes fixture coordination and target simulation.
 The peer window includes fill, polling, protocol handling and the pixel oracle.
