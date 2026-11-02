@@ -1,8 +1,12 @@
 //! Single-shell compatibility owner. Independent components retain their own
 //! ShellComponentTransport and borrow one Session-owned ContentEpochRegistry.
+use std::cell::Cell;
 use std::path::Path;
 
-use super::{ShellComponentTransport, ShellTransportError};
+use super::{
+    ShellComponentTransport, ShellReadinessObservation, ShellReadinessSubscription,
+    ShellTransportError,
+};
 use crate::ContentEpochRegistry;
 
 #[path = "legacy_methods.rs"]
@@ -12,6 +16,29 @@ pub struct ShellSessionTransport {
     pub(super) state: ShellComponentTransport,
     images: Option<super::ShellIsbImageOwner>,
     pub(super) content_epochs: ContentEpochRegistry,
+    /// Readiness the owner's last wait observed for the wire, consumed by the
+    /// next owner turn or replaced by the next wait.
+    readiness: Cell<Option<ShellReadinessObservation>>,
+}
+
+/// One owner wait's registration of the wire's descriptors, observed once
+/// after the poll that included them.
+pub struct ShellSessionWait<'a> {
+    start: usize,
+    end: usize,
+    subscription: ShellReadinessSubscription,
+    target: &'a Cell<Option<ShellReadinessObservation>>,
+}
+
+impl ShellSessionWait<'_> {
+    /// Call once after the wait polled the slice this registration appended.
+    /// A changed slice records nothing, and the next turn probes instead.
+    pub fn observe(self, fds: &[rustix::event::PollFd<'_>]) {
+        self.target.set(
+            fds.get(self.start..self.end)
+                .and_then(|fds| self.subscription.observe(fds)),
+        );
+    }
 }
 
 impl ShellSessionTransport {
@@ -23,6 +50,7 @@ impl ShellSessionTransport {
             state: ShellComponentTransport::bind_for_supervised_uid(directory, expected_uid)?,
             content_epochs: ContentEpochRegistry::new(64 * 1024 * 1024)?,
             images: None,
+            readiness: Cell::new(None),
         })
     }
 
@@ -35,6 +63,42 @@ impl ShellSessionTransport {
     pub fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(rustix::event::PollFd<'a>)) {
         self.state.visit_poll_fds(&mut visit);
         self.visit_image_worker(visit);
+    }
+
+    /// Registers the wire's descriptors from index `start` of the caller's
+    /// poll set, then any retained image worker, for one owner wait. An
+    /// earlier wait's unconsumed observation is dropped. The next
+    /// [`Self::service_owner_turn`] consumes the observation; with none, or
+    /// after an intervening turn, the wire probes its descriptors itself.
+    pub fn subscribe_wait<'a>(
+        &'a self,
+        start: usize,
+        mut visit: impl FnMut(rustix::event::PollFd<'a>),
+    ) -> Option<ShellSessionWait<'a>> {
+        self.readiness.take();
+        let mut end = start;
+        self.state.visit_poll_fds(|fd| {
+            end += 1;
+            visit(fd);
+        });
+        self.visit_image_worker(visit);
+        Some(ShellSessionWait {
+            start,
+            end,
+            subscription: self.state.readiness_subscription()?,
+            target: &self.readiness,
+        })
+    }
+
+    /// Drops a wait's observation when the pass does not turn the wire.
+    pub fn discard_readiness(&self) {
+        self.readiness.take();
+    }
+
+    /// One owner pass, consuming the last wait's observation of the wire.
+    pub fn service_owner_turn(&mut self) -> Result<(), ShellTransportError> {
+        self.state
+            .service_owner_observed(&mut self.content_epochs, self.readiness.take())
     }
 
     /// See [`ShellComponentTransport::output_pending`].

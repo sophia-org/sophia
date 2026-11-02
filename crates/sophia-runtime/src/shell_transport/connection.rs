@@ -11,6 +11,11 @@ pub struct ShellTransportConnection<'a> {
 }
 
 impl ShellTransportConnection<'_> {
+    /// One owner pass; the component's owner hands readiness in separately.
+    pub fn service_owner_turn(&mut self) -> Result<(), super::ShellTransportError> {
+        self.state.service_owner_turn(self.content_epochs)
+    }
+
     /// Service the component's persistent image owner using the same clock as
     /// ordinary content resources. The owner itself must outlive this borrow.
     pub fn service_isb_images(

@@ -47,8 +47,9 @@
     let mut shell_wires = smallvec::SmallVec::<[rustix::event::PollFd<'_>; 64]>::new();
     let mut shell_output_pending = false;
     let mut component_waits = None;
+    let mut shell_wait = None;
     if let Some(shell) = metadata_shell.as_ref() {
-        shell.visit_poll_fds(|fd| shell_wires.push(fd));
+        shell_wait = shell.subscribe_wait(shell_wires.len(), |fd| shell_wires.push(fd));
         shell_output_pending |= shell.output_pending();
         plan.cap(shell.authentication_wait(now), R::ShellAuthentication);
     }
@@ -79,6 +80,7 @@
             .map(|fd| rustix::event::PollFd::from_borrowed_fd(fd, rustix::event::PollFlags::IN)),
         native_scanout.as_ref().map(LiveProductionNativeScanout::completion_progress),
         |fds| {
+            if let Some(wait) = shell_wait { wait.observe(fds); }
             if let Some(waits) = component_waits { waits.observe(fds); }
             for registration in relay_waits { registration.observe(fds); }
         },

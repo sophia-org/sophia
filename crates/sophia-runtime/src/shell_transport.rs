@@ -27,7 +27,7 @@ pub use native_launcher::control::{
 mod negotiation;
 mod negotiation_policy;
 mod negotiation_service;
-pub use legacy::ShellSessionTransport;
+pub use legacy::{ShellSessionTransport, ShellSessionWait};
 mod catalog_candidates;
 mod catalog_responses;
 mod content_actions;

@@ -161,20 +161,22 @@ impl LiveMetadataShell {
         self.reconnect_or_defer("retry")
     }
 
-    /// Readiness of the shell's wire, borrowed for the owner's wait. The next
-    /// pass's `poll` turns that wire. Nothing is subscribed while paused, when
-    /// `poll` does not turn it.
-    pub(in crate::live_session) fn visit_poll_fds<'a>(
+    /// Readiness of the shell's wire, registered for the owner's wait. The
+    /// next pass's `poll` turns that wire with what the wait observed. Nothing
+    /// is subscribed while paused, when `poll` does not turn it.
+    pub(in crate::live_session) fn subscribe_wait<'a>(
         &'a self,
+        start: usize,
         visit: impl FnMut(rustix::event::PollFd<'a>),
-    ) {
+    ) -> Option<sophia_runtime::ShellSessionWait<'a>> {
         if self.presentation_paused
             || (!self.connected && !self.authentication.as_ref().is_some_and(|a| a.negotiating))
         {
+            self.transport.discard_readiness();
             self.transport.visit_image_worker(visit);
-            return;
+            return None;
         }
-        self.transport.visit_poll_fds(visit)
+        self.transport.subscribe_wait(start, visit)
     }
 
     /// Whether the wire holds records the next pass's turn can move.
