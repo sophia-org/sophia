@@ -248,7 +248,30 @@ fn peer_frames(
     peer
 }
 
-fn exercise(height: u32, warmup: u64, measured: u64, enabled: bool) -> (Vec<Snapshot>, u64, u64) {
+#[derive(Clone, Copy)]
+struct TimerSettings {
+    enabled: bool,
+    period: u32,
+    phase: u32,
+}
+
+impl TimerSettings {
+    fn begin(self) -> u64 {
+        let generation = cost::begin_sampled_block(
+            std::num::NonZeroU32::new(self.period).expect("nonzero sampling period"),
+            self.phase,
+        );
+        cost::enable(self.enabled);
+        generation
+    }
+}
+
+fn exercise(
+    height: u32,
+    warmup: u64,
+    measured: u64,
+    timers: TimerSettings,
+) -> (Vec<Snapshot>, u64, u64) {
     assert!(warmup.is_multiple_of(2) && measured.is_multiple_of(2));
     cost::enable(false);
     cost::begin_block();
@@ -301,8 +324,7 @@ fn exercise(height: u32, warmup: u64, measured: u64, enabled: bool) -> (Vec<Snap
                 PeerTurn::Measure => {
                     assert!(generation.is_none());
                     assert_eq!(completed, warmup);
-                    generation = Some(cost::begin_block());
-                    cost::enable(enabled);
+                    generation = Some(timers.begin());
                     start_tx.send(()).unwrap();
                 }
                 PeerTurn::Fill => {
@@ -469,65 +491,67 @@ fn exercise(height: u32, warmup: u64, measured: u64, enabled: bool) -> (Vec<Snap
         1
     );
     for snapshot in [&snapshots[0], worker] {
-        if enabled {
-            assert!(snapshot.enabled_calls > 0);
-            assert_eq!(snapshot.disabled_calls, 0);
-        } else {
-            assert_eq!(snapshot.enabled_calls, 0);
-            assert!(snapshot.disabled_calls > 0);
-            assert!(
-                snapshot
-                    .stages
-                    .iter()
-                    .all(|stage| *stage == cost::StageCost::default())
-            );
+        assert_eq!(
+            (snapshot.sample_period, snapshot.sample_phase),
+            (timers.period, timers.phase)
+        );
+        let entries: u64 = snapshot.stages.iter().map(|stage| stage.entries).sum();
+        assert!(entries > 0);
+        assert_eq!(
+            snapshot.enabled_calls,
+            if timers.enabled { entries } else { 0 }
+        );
+        assert_eq!(
+            snapshot.disabled_calls,
+            if timers.enabled { 0 } else { entries }
+        );
+        for stage in snapshot.stages {
+            let samples = if timers.enabled && stage.entries > u64::from(timers.phase) {
+                1 + (stage.entries - 1 - u64::from(timers.phase)) / u64::from(timers.period)
+            } else {
+                0
+            };
+            assert_eq!(stage.calls, samples);
+            if samples == 0 {
+                assert_eq!(
+                    (
+                        stage.cpu_nsec,
+                        stage.elapsed_nsec,
+                        stage.max_cpu_nsec,
+                        stage.max_elapsed_nsec
+                    ),
+                    (0, 0, 0, 0)
+                );
+            }
         }
     }
-    if enabled {
-        for stage in [Stage::Validation, Stage::Copy, Stage::Pixels] {
-            assert_eq!(
-                worker.stages[stage as usize].calls,
-                measured,
-                "{} job count",
-                stage.name()
-            );
-        }
+    for stage in [Stage::Validation, Stage::Copy, Stage::Pixels] {
         assert_eq!(
-            snapshots[0].stages[Stage::Projection as usize].calls,
-            measured * 2
-        );
-        assert_eq!(
-            snapshots[0].stages[Stage::SourceRelease as usize].calls,
-            measured
+            worker.stages[stage as usize].entries,
+            measured,
+            "{} jobs",
+            stage.name()
         );
     }
-    if enabled {
-        for stage in [Stage::Reserve, Stage::Authority] {
-            assert!(
-                snapshots[0].stages[stage as usize].calls >= measured,
-                "{} count",
-                stage.name()
-            );
-        }
-        assert!(snapshots[0].stages[Stage::Collect as usize].calls >= measured);
-        assert_eq!(
-            snapshots[0].stages[Stage::Completion as usize].calls,
-            visits + measured
-        );
-        assert!(snapshots[0].stages[Stage::Transport as usize].calls >= visits);
-        assert_eq!(
-            snapshots[0].stages[Stage::Submission as usize].calls,
-            measured
-        );
-        assert_eq!(
-            snapshots[0].stages[Stage::OwnerService as usize].calls,
-            visits
-        );
-        assert_eq!(
-            snapshots[0].stages[Stage::FixtureTarget as usize].calls,
-            measured
-        );
-    }
+    let entries = |stage: Stage| snapshots[0].stages[stage as usize].entries;
+    assert_eq!(entries(Stage::Projection), measured * 2);
+    assert_eq!(entries(Stage::Logging), measured * 2);
+    assert_eq!(entries(Stage::SourceRelease), measured);
+    assert!(entries(Stage::Reserve) >= measured);
+    assert_eq!(entries(Stage::Reserve), entries(Stage::Authority));
+    assert!(entries(Stage::Collect) >= measured);
+    assert_eq!(entries(Stage::Completion), visits + measured);
+    assert!(entries(Stage::Transport) >= visits);
+    assert_eq!(entries(Stage::Submission), measured);
+    assert_eq!(entries(Stage::OwnerService), visits);
+    assert_eq!(entries(Stage::FixtureTarget), measured);
+    assert_eq!(
+        snapshots[0].events.iter().sum::<u64>(),
+        entries(Stage::JournalRead)
+    );
+    assert_eq!(snapshots[0].events[cost::Event::JournalRefused as usize], 0);
+    assert!(worker.events.iter().all(|count| *count == 0));
+    assert!(peer.events.iter().all(|count| *count == 0));
     assert!(visits >= measured);
     (snapshots, visits, fill_wire_turns)
 }
@@ -536,14 +560,29 @@ fn exercise(height: u32, warmup: u64, measured: u64, enabled: bool) -> (Vec<Snap
 #[ignore = "process-global timers; run alone with devices hidden"]
 fn frame_attribution_owned_ring_smoke() {
     let _alone = ALONE.lock().unwrap_or_else(|e| e.into_inner());
-    exercise(24, 2, 4, true);
-    exercise(512, 2, 4, false);
+    crate::output::install(crate::output::SessionOutput::new(|_| {}, |_| {})).unwrap();
+    for (height, enabled, phase) in [(24, true, 0), (512, false, 17), (24, true, 33)] {
+        exercise(
+            height,
+            2,
+            4,
+            TimerSettings {
+                enabled,
+                period: 64,
+                phase,
+            },
+        );
+    }
 }
 
-fn timer_controls() {
+fn timer_controls(period: u32) {
     for (block, enabled) in [false, true, true, false].into_iter().enumerate() {
-        cost::enable(enabled);
-        let generation = cost::begin_block();
+        let generation = TimerSettings {
+            enabled,
+            period,
+            phase: 0,
+        }
+        .begin();
         for _ in 0..2000 {
             measure(Stage::OwnerService, || std::hint::black_box(()));
         }
@@ -552,7 +591,7 @@ fn timer_controls() {
         assert_eq!(snapshot.enabled_calls, if enabled { 2000 } else { 0 });
         assert_eq!(snapshot.disabled_calls, if enabled { 0 } else { 2000 });
         println!(
-            "sophia_frame_timer schema=1 block={block} enabled={} iterations=2000 generation={generation}",
+            "sophia_frame_timer schema=2 block={block} enabled={} iterations=2000 generation={generation} sample_period={period} sample_phase=0",
             u8::from(enabled)
         );
         for record in snapshot.records() {
@@ -568,7 +607,7 @@ fn timer_controls() {
 #[ignore = "release attribution; run alone with devices hidden and stdout saved"]
 fn frame_attribution_measure() {
     let _alone = ALONE.lock().unwrap_or_else(|e| e.into_inner());
-    timer_controls();
+    timer_controls(1);
     crate::output::install(crate::output::SessionOutput::new(
         |line| println!("{line}"),
         |line| eprintln!("{line}"),
@@ -576,9 +615,62 @@ fn frame_attribution_measure() {
     .unwrap();
     for height in [24, 512] {
         for (block, enabled) in [false, true, true, false].into_iter().enumerate() {
-            let (snapshots, visits, fill_wire_turns) = exercise(height, 120, 2000, enabled);
+            let (snapshots, visits, fill_wire_turns) = exercise(
+                height,
+                120,
+                2000,
+                TimerSettings {
+                    enabled,
+                    period: 1,
+                    phase: 0,
+                },
+            );
             println!(
-                "sophia_frame_block schema=1 height={height} block={block} enabled={} warmup=120 completed=2000 visits={visits} fill_wire_turns={fill_wire_turns} ring_slots=2 alternating_slots=1 generation={}",
+                "sophia_frame_block schema=2 height={height} block={block} enabled={} warmup=120 completed=2000 visits={visits} fill_wire_turns={fill_wire_turns} ring_slots=2 alternating_slots=1 sample_period=1 sample_phase=0 generation={}",
+                u8::from(enabled),
+                snapshots[0].generation
+            );
+            for snapshot in snapshots {
+                for record in snapshot.records() {
+                    println!("{record}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "sparse release attribution; run alone with devices hidden and stdout saved"]
+fn frame_attribution_sparse_measure() {
+    let _alone = ALONE.lock().unwrap_or_else(|e| e.into_inner());
+    timer_controls(64);
+    crate::output::install(crate::output::SessionOutput::new(
+        |line| println!("{line}"),
+        |line| eprintln!("{line}"),
+    ))
+    .unwrap();
+    for height in [24, 512] {
+        for (block, (enabled, phase)) in [
+            (false, 0),
+            (true, 0),
+            (true, 17),
+            (false, 17),
+            (false, 33),
+            (true, 33),
+            (true, 49),
+            (false, 49),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let timers = TimerSettings {
+                enabled,
+                period: 64,
+                phase,
+            };
+            let (snapshots, visits, fill_wire_turns) = exercise(height, 120, 2000, timers);
+            println!(
+                "sophia_frame_block schema=2 height={height} block={block} enabled={} warmup=120 completed=2000 visits={visits} fill_wire_turns={fill_wire_turns} ring_slots=2 alternating_slots=1 sample_period=64 sample_phase={phase} generation={}",
                 u8::from(enabled),
                 snapshots[0].generation
             );

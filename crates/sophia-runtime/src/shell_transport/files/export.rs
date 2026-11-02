@@ -20,6 +20,7 @@ use sophia_protocol::{
 };
 
 use super::journal::{Journal, JournalBounds};
+use crate::frame_cost;
 use sophia_9p::journal::{Staging, StagingBounds};
 
 mod authentication;
@@ -658,7 +659,15 @@ impl Export for ShellFiles {
         scratch: &mut Vec<u8>,
     ) -> Result<ReadOutcome, Errno> {
         if matches!(node, Node::Events) {
-            self.journal.read_buffered(offset, count, scratch)
+            let result = frame_cost::measure(frame_cost::Stage::JournalRead, || {
+                self.journal.read_buffered(offset, count, scratch)
+            });
+            frame_cost::count(match &result {
+                Ok(ReadOutcome::Ready(_)) => frame_cost::Event::JournalReady,
+                Ok(ReadOutcome::Pending) => frame_cost::Event::JournalPending,
+                Err(_) => frame_cost::Event::JournalRefused,
+            });
+            result
         } else {
             self.read(node, handle, offset, count)
         }
@@ -718,35 +727,46 @@ impl Export for ShellFiles {
         self.expire();
         match (node, handle) {
             (Node::TransactionReuse, Handle::ReusableTransaction(id)) => {
-                self.write_reusable_transaction(*id, offset, data)
+                frame_cost::measure(frame_cost::Stage::TransactionWrite, || {
+                    self.write_reusable_transaction(*id, offset, data)
+                })
             }
-            (Node::Transaction, Handle::Transaction(id)) => self
-                .staging
-                .as_mut()
-                .filter(|s| s.handle == *id)
-                .ok_or(Errno::ESTALE)?
-                .write(offset, data, Instant::now()),
+            (Node::Transaction, Handle::Transaction(id)) => {
+                frame_cost::measure(frame_cost::Stage::TransactionWrite, || {
+                    self.staging
+                        .as_mut()
+                        .filter(|s| s.handle == *id)
+                        .ok_or(Errno::ESTALE)?
+                        .write(offset, data, Instant::now())
+                })
+            }
             #[cfg(feature = "experimental-draw")]
             (Node::Draw, _) if offset == 0 => self.write_draw(data),
-            (Node::OwnedRing, _) if offset == 0 => self.write_owned_ring(data),
+            (Node::OwnedRing, _) if offset == 0 => {
+                frame_cost::measure(frame_cost::Stage::OwnedRingWrite, || {
+                    self.write_owned_ring(data)
+                })
+            }
             (Node::Submit, _) if offset == 0 => {
-                self.submit(data)?;
+                frame_cost::measure(frame_cost::Stage::SubmitCommand, || self.submit(data))?;
                 Ok(data.len() as u32)
             }
             (Node::Ack, _) if offset == 0 => {
-                let ack = decode_shell_file_ack(data).map_err(|_| Errno::EINVAL)?;
-                self.journal.ack(ack, Instant::now())?;
-                // A pending image refusal retries from ACK progress; its
-                // outcome never fails the acknowledgement itself.
-                let _ = self.retry_pending_image_refusal();
-                if self
-                    .accepted
-                    .as_ref()
-                    .is_some_and(|a| a.sequence <= ack.sequence)
-                {
-                    self.recycle_transaction();
-                }
-                Ok(data.len() as u32)
+                frame_cost::measure(frame_cost::Stage::JournalAck, || {
+                    let ack = decode_shell_file_ack(data).map_err(|_| Errno::EINVAL)?;
+                    self.journal.ack(ack, Instant::now())?;
+                    // A pending image refusal retries from ACK progress; its
+                    // outcome never fails the acknowledgement itself.
+                    let _ = self.retry_pending_image_refusal();
+                    if self
+                        .accepted
+                        .as_ref()
+                        .is_some_and(|a| a.sequence <= ack.sequence)
+                    {
+                        self.recycle_transaction();
+                    }
+                    Ok(data.len() as u32)
+                })
             }
             _ => Err(Errno::EINVAL),
         }

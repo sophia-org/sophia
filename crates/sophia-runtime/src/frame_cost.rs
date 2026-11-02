@@ -15,7 +15,10 @@ pub(crate) mod state;
 #[cfg(not(all(feature = "diagnostic-frame-cost", target_os = "linux")))]
 pub use disabled::*;
 #[cfg(all(feature = "diagnostic-frame-cost", target_os = "linux"))]
-pub use state::{begin_block, drain, enable, enabled, measure, register_thread, snapshot_thread};
+pub use state::{
+    begin_block, begin_sampled_block, count, drain, enable, enabled, measure, register_thread,
+    snapshot_thread,
+};
 
 /// Inclusive work scopes: runtime owned-ring path, then Session service, then
 /// the harness-only supplied target.
@@ -45,10 +48,20 @@ pub enum Stage {
     Logging,
     /// Work of a supplied deterministic target in a harness, never Session work.
     FixtureTarget,
+    Authority9p,
+    JournalRead,
+    JournalAck,
+    SubmitCommand,
+    OwnedRingWrite,
+    TransactionWrite,
+    WireFlush,
+    ImageChannel,
+    DrainJournal,
+    OwnerTurn,
 }
 
 impl Stage {
-    pub const COUNT: usize = 22;
+    pub const COUNT: usize = 32;
     pub const ALL: [Stage; Stage::COUNT] = [
         Stage::Transport,
         Stage::DecodeJournal,
@@ -72,6 +85,16 @@ impl Stage {
         Stage::Completion,
         Stage::Logging,
         Stage::FixtureTarget,
+        Stage::Authority9p,
+        Stage::JournalRead,
+        Stage::JournalAck,
+        Stage::SubmitCommand,
+        Stage::OwnedRingWrite,
+        Stage::TransactionWrite,
+        Stage::WireFlush,
+        Stage::ImageChannel,
+        Stage::DrainJournal,
+        Stage::OwnerTurn,
     ];
 
     /// Snake-case key used in record lines.
@@ -99,6 +122,42 @@ impl Stage {
             Stage::Completion => "completion",
             Stage::Logging => "logging",
             Stage::FixtureTarget => "fixture_target",
+            Stage::Authority9p => "authority_9p",
+            Stage::JournalRead => "journal_read",
+            Stage::JournalAck => "journal_ack",
+            Stage::SubmitCommand => "submit_command",
+            Stage::OwnedRingWrite => "owned_ring_write",
+            Stage::TransactionWrite => "transaction_write",
+            Stage::WireFlush => "wire_flush",
+            Stage::ImageChannel => "image_channel",
+            Stage::DrainJournal => "drain_journal",
+            Stage::OwnerTurn => "owner_turn",
+        }
+    }
+}
+
+/// Observed outcomes counted without reading a clock, regardless of timer mode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(usize)]
+pub enum Event {
+    JournalReady,
+    JournalPending,
+    JournalRefused,
+}
+
+impl Event {
+    pub const COUNT: usize = 3;
+    pub const ALL: [Self; Self::COUNT] = [
+        Self::JournalReady,
+        Self::JournalPending,
+        Self::JournalRefused,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::JournalReady => "journal_ready",
+            Self::JournalPending => "journal_pending",
+            Self::JournalRefused => "journal_refused",
         }
     }
 }
@@ -144,6 +203,9 @@ impl Reason {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct StageCost {
+    /// Every entry, including disabled and unsampled calls; no per-entry clock.
+    pub entries: u64,
+    /// Completed timed samples, not an estimate of total entries.
     pub calls: u64,
     /// Scopes left by unwinding; their clocks are still accumulated.
     pub aborted: u64,
@@ -162,6 +224,9 @@ pub struct Snapshot {
     /// Process-wide order in which touched threads opened their state.
     pub thread_sequence: u64,
     pub generation: u64,
+    /// Time entries whose zero-based stage ordinal modulo period equals phase.
+    pub sample_period: u32,
+    pub sample_phase: u32,
     /// Outer window, sampled at open/reset and at publish regardless of `enabled`.
     pub cpu_first_nsec: u64,
     pub cpu_now_nsec: u64,
@@ -172,6 +237,8 @@ pub struct Snapshot {
     pub disabled_calls: u64,
     /// Indexed by `Stage as usize`.
     pub stages: [StageCost; Stage::COUNT],
+    /// Count-only outcomes, indexed by `Event as usize`.
+    pub events: [u64; Event::COUNT],
     pub clock_regressions: u32,
     pub saturations: u32,
     /// Set by any regression, saturation, failed clock read or generation
@@ -181,13 +248,19 @@ pub struct Snapshot {
 
 #[cfg(not(all(feature = "diagnostic-frame-cost", target_os = "linux")))]
 mod disabled {
-    use super::{Role, Snapshot, Stage};
+    use super::{Event, Role, Snapshot, Stage};
+
+    #[inline(always)]
+    pub fn count(_event: Event) {}
 
     pub fn enable(_on: bool) {}
     pub fn enabled() -> bool {
         false
     }
     pub fn begin_block() -> u64 {
+        0
+    }
+    pub fn begin_sampled_block(_period: std::num::NonZeroU32, _phase: u32) -> u64 {
         0
     }
     pub fn drain() -> Vec<Snapshot> {

@@ -1,22 +1,22 @@
-use super::{Snapshot, Stage};
+use super::{Event, Snapshot, Stage};
 
 impl Snapshot {
-    /// One `kind=summary` line followed by one `kind=stage` row per stage.
+    /// One summary followed by stage samples and count-only event rows.
     /// Values are numeric or fixed words; rows repeat the thread/generation
     /// keys so a reader can join them without state.
     pub fn records(&self) -> Vec<String> {
         let key = format!(
-            "sophia_frame_cost schema=1 role={} tid={} thread_sequence={} generation={}",
+            "sophia_frame_cost schema=2 role={} tid={} thread_sequence={} generation={}",
             self.role.name(),
             self.tid,
             self.thread_sequence,
             self.generation
         );
-        let mut lines = Vec::with_capacity(Stage::COUNT + 1);
+        let mut lines = Vec::with_capacity(Stage::COUNT + Event::COUNT + 1);
         lines.push(format!(
             "{key} kind=summary reason={} cpu_first_nsec={} cpu_now_nsec={} mono_first_nsec={} \
              mono_now_nsec={} enabled_calls={} disabled_calls={} clock_regressions={} \
-             saturations={} invalid={}",
+             saturations={} invalid={} sample_period={} sample_phase={}",
             self.reason.name(),
             self.cpu_first_nsec,
             self.cpu_now_nsec,
@@ -27,19 +27,29 @@ impl Snapshot {
             self.clock_regressions,
             self.saturations,
             u8::from(self.invalid),
+            self.sample_period,
+            self.sample_phase,
         ));
         for stage in Stage::ALL {
             let cost = self.stages[stage as usize];
             lines.push(format!(
-                "{key} kind=stage stage={} calls={} aborted={} cpu_nsec={} elapsed_nsec={} \
+                "{key} kind=stage stage={} entries={} calls={} aborted={} cpu_nsec={} elapsed_nsec={} \
                  max_cpu_nsec={} max_elapsed_nsec={}",
                 stage.name(),
+                cost.entries,
                 cost.calls,
                 cost.aborted,
                 cost.cpu_nsec,
                 cost.elapsed_nsec,
                 cost.max_cpu_nsec,
                 cost.max_elapsed_nsec,
+            ));
+        }
+        for event in Event::ALL {
+            lines.push(format!(
+                "{key} kind=count event={} count={}",
+                event.name(),
+                self.events[event as usize]
             ));
         }
         lines

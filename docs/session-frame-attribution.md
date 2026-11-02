@@ -173,3 +173,60 @@ scope nesting and independent review. Rank measured costs and repetition; list
 unmeasured work explicitly. Only then identify a bounded mechanism with a
 predicted counter change. S1, single-submit and empty-owner-work stay parked.
 No SDK/protocol, authority, scheduling or release-policy change belongs here.
+
+## Follow-up: sparse timers and fresh 9P boundaries
+
+The follow-up worktree preserves the audited branch and its binary. Schema 2
+adds `entries` to every stage, including timer-disabled entries, and records
+`sample_period` and `sample_phase` on each snapshot. Each stage samples its
+zero-based entry ordinal independently. `calls` and accumulated clocks describe
+only the selected samples; neither is multiplied by the period. Sampling phases
+are not paired across nested scopes. Inclusive rows remain independent: do not
+sum them or subtract them from an outer window.
+`enabled_calls` and `disabled_calls` count hook entries by timer mode; the
+number of timed scopes is the sum of stage `calls`, not `enabled_calls`.
+
+The coordinator changes sampling settings only between quiescent pairs. Each
+thread latches settings when its generation changes; a worker's exit preserves
+its last observed generation and settings. The compile-time feature-off path
+still calls the supplied closure directly. Runtime timer-off blocks count
+entries but read no per-entry clocks. Their counters therefore prove the same
+completion, worker and lifetime invariants as timed blocks.
+Threads register before recording work: registration resets their window.
+Generation changes must not race a thread's registration or a measured call
+and its outcome count. The owner rolls its own window outside all calls and
+keeps the peer and worker quiescent across the sampling-settings update.
+
+`frame_attribution_sparse_measure` runs the same workload with period 64 and
+phases 0, 17, 33 and 49, in two off/on/on/off groups per height. It retains four
+empty-scope controls at period 64. Compare raw owner CPU, visits and fill-wire
+turns with adjacent timer-off controls before interpreting sample averages.
+The initial perturbation target is less than 5% for both owner CPU and visits;
+it is a gate to verify, not a result or an overhead correction. Changing phase
+helps reveal alignment with repeated protocol work; it is not random sampling
+and does not establish statistical representativeness.
+
+Transport now counts request-service turns; WireFlush separately counts
+publication flushes. Both still include shared-core work. The new inner scopes
+are Authority9p (fresh authenticated-export checks), JournalRead, JournalAck,
+SubmitCommand, OwnedRingWrite and TransactionWrite. OwnerTurn includes the
+runtime connection visit; ImageChannel and DrainJournal identify channel
+service and publication drain. Journal appends remain DecodeJournal. Authority
+continues to mean the allocation-description lookup, not Authority9p.
+All request scopes count attempts, including retries and refusals.
+Journal read outcomes have separate clock-free counters for ready, pending and
+refused returns. Their sum must equal JournalRead entries in every block;
+pending means a read found no record yet, not an extra completed frame.
+Shared-core socket I/O, framing and dispatch outside the export boundary remain grouped;
+no clock subtraction estimates them. The experimental custody-dispatch path
+remains outside Transport/WireFlush instrumentation.
+
+Run one exact ignored test per process with devices hidden and stdout retained:
+
+```sh
+<held-test-binary> --ignored --exact live_session::metadata_shell::component_session::reconnect_tests::frame_cost::frame_attribution_sparse_measure --test-threads=1 --nocapture
+```
+
+This is still the paired content fixture. Full component orchestration and
+production cadence remain subsequent work. No optimization candidate follows
+from these source changes alone.

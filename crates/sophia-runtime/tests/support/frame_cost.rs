@@ -63,12 +63,16 @@ fn enabled_timers_accumulate_nested_inclusive_scopes_and_record_rows() {
     assert!(transport.max_cpu_nsec <= transport.cpu_nsec);
     assert!(!snapshot.invalid);
     let lines = snapshot.records();
-    assert_eq!(lines.len(), Stage::COUNT + 1);
-    assert!(lines[0].starts_with("sophia_frame_cost schema=1 role=owner tid="));
+    assert_eq!(
+        lines.len(),
+        Stage::COUNT + crate::frame_cost::Event::COUNT + 1
+    );
+    assert!(lines[0].starts_with("sophia_frame_cost schema=2 role=owner tid="));
     assert!(lines[0].contains(" kind=summary reason=explicit "));
-    assert!(lines[0].ends_with(" invalid=0"));
+    assert!(lines[0].ends_with(" invalid=0 sample_period=1 sample_phase=0"));
     assert!(
-        lines[1 + Stage::Pixels as usize].contains(" kind=stage stage=pixels calls=2 aborted=0 ")
+        lines[1 + Stage::Pixels as usize]
+            .contains(" kind=stage stage=pixels entries=2 calls=2 aborted=0 ")
     );
     assert!(lines.iter().all(|l| l.len() < 512));
 }
@@ -277,4 +281,130 @@ fn accumulate_reports_regression_and_saturation() {
         Some(Fault::Saturation)
     );
     assert_eq!(total, u64::MAX);
+}
+
+#[test]
+fn sparse_timing_counts_every_entry_without_scaling_sample_clocks() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    enable(false);
+    crate::frame_cost::begin_sampled_block(std::num::NonZeroU32::new(8).unwrap(), 3);
+    for _ in 0..16 {
+        measure(Stage::Transport, || ());
+    }
+    let disabled = snapshot_thread().unwrap();
+    assert_eq!(disabled.stages[Stage::Transport as usize].entries, 16);
+    assert_eq!(disabled.stages[Stage::Transport as usize].calls, 0);
+    enable(true);
+    for value in 0..128 {
+        assert_eq!(measure(Stage::Transport, || value + 1), value + 1);
+    }
+    enable(false);
+    let snapshot = snapshot_thread().unwrap();
+    let stage = snapshot.stages[Stage::Transport as usize];
+    assert_eq!((snapshot.sample_period, snapshot.sample_phase), (8, 3));
+    assert_eq!((snapshot.enabled_calls, snapshot.disabled_calls), (128, 16));
+    assert_eq!((stage.entries, stage.calls), (144, 16));
+    assert!(stage.cpu_nsec <= snapshot.cpu_now_nsec - snapshot.cpu_first_nsec);
+    assert!(!snapshot.invalid);
+}
+
+#[test]
+fn sampling_phases_select_disjoint_stage_ordinals() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let mut selected = std::collections::BTreeSet::new();
+    for phase in 0..8 {
+        crate::frame_cost::begin_sampled_block(std::num::NonZeroU32::new(8).unwrap(), phase);
+        enable(true);
+        let mut previous = 0;
+        for ordinal in 0..16 {
+            measure(Stage::Copy, || ());
+            let snapshot = snapshot_thread().unwrap();
+            let calls = snapshot.stages[Stage::Copy as usize].calls;
+            if calls != previous {
+                assert!(selected.insert(ordinal));
+            }
+            previous = calls;
+        }
+        assert_eq!(previous, 2);
+    }
+    enable(false);
+    assert_eq!(selected, (0..16).collect());
+}
+
+#[test]
+fn worker_latches_sampling_on_roll_and_keeps_it_through_exit() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    fresh_block();
+    let (next_tx, next_rx) = std::sync::mpsc::channel();
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        register_thread(Role::Worker);
+        let tid = my_tid();
+        done_tx.send(tid).unwrap();
+        next_rx.recv().unwrap();
+        for _ in 0..20 {
+            measure(Stage::Copy, || ());
+        }
+        done_tx.send(tid).unwrap();
+        next_rx.recv().unwrap();
+    });
+    let tid = done_rx.recv().unwrap();
+    let generation =
+        crate::frame_cost::begin_sampled_block(std::num::NonZeroU32::new(8).unwrap(), 3);
+    enable(true);
+    next_tx.send(()).unwrap();
+    done_rx.recv().unwrap();
+    enable(false);
+    begin_block();
+    next_tx.send(()).unwrap();
+    worker.join().unwrap();
+    let snapshots = drain_tid(tid);
+    let measured = snapshots
+        .iter()
+        .find(|s| s.generation == generation)
+        .unwrap();
+    assert_eq!(measured.reason, Reason::Drop);
+    assert_eq!((measured.sample_period, measured.sample_phase), (8, 3));
+    assert_eq!(measured.enabled_calls, 20);
+    assert_eq!(measured.stages[Stage::Copy as usize].entries, 20);
+    assert_eq!(measured.stages[Stage::Copy as usize].calls, 3);
+    assert!(!measured.invalid);
+    assert_eq!(
+        snapshots
+            .iter()
+            .filter(|s| s.generation == generation)
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn outcome_counts_are_independent_of_timer_mode_and_reset_with_generation() {
+    use crate::frame_cost::{Event, count};
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    fresh_block();
+    count(Event::JournalPending);
+    enable(true);
+    count(Event::JournalReady);
+    count(Event::JournalReady);
+    enable(false);
+    count(Event::JournalRefused);
+    let snapshot = snapshot_thread().unwrap();
+    assert_eq!(snapshot.events, [2, 1, 1]);
+    assert_eq!((snapshot.enabled_calls, snapshot.disabled_calls), (0, 0));
+    assert!(
+        snapshot
+            .stages
+            .iter()
+            .all(|stage| stage.entries == 0 && stage.calls == 0)
+    );
+    assert!(!snapshot.invalid);
+    assert!(
+        snapshot
+            .records()
+            .iter()
+            .any(|line| line.ends_with("kind=count event=journal_ready count=2"))
+    );
+    begin_block();
+    assert_eq!(snapshot_thread().unwrap().events, [0; Event::COUNT]);
 }

@@ -38,6 +38,17 @@ visits, cache freshness, subtract overlapping clocks, or propose a candidate
 from the owner outer window. S1, single-submit and empty-owner-work remain parked;
 the historical disposition below does not override this current sequencing.
 
+A separate follow-up worktree, `sophia-session-owner-attribution`, now counts
+all stage entries and times selected entries at period 64. It also separates
+fresh 9P checks, journal reads/acknowledgements, control dispatch and publication
+flushes, with clock-free ready/pending/refused journal outcomes. The old signed
+branch, release binary and sealed evidence remain held. The first source checks
+cover sparse phase selection, worker generation/exit custody and count-only
+outcomes; no new timing result or candidate is established yet. The next gate
+is the paired off/on perturbation check, followed by actual component service
+and readiness/cadence coverage rather than another manually reconstructed loop.
+See the [follow-up contract](../../session-frame-attribution.md#follow-up-sparse-timers-and-fresh-9p-boundaries).
+
 ## Evidence
 
 The source-file hashes and reviewed checkout HEAD are retained in

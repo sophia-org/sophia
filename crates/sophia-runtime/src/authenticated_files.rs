@@ -5,6 +5,8 @@ use sophia_9p::{
 };
 use std::time::{Duration, Instant};
 
+use crate::frame_cost;
+
 /// Trusted, transport-scoped authentication owner. Implementations must retain
 /// identity across reset and must not wait on a peer or another owner thread.
 pub trait FileAuthentication: Send {
@@ -275,7 +277,7 @@ impl<E: ProtectedFiles> Export for AuthenticatedFiles<E> {
         Ok(map_attachment(root.publish()))
     }
     fn check(&mut self, a: &Access<'_, Self::Node>) -> Result<(), Errno> {
-        match a.node {
+        frame_cost::measure(frame_cost::Stage::Authority9p, || match a.node {
             AuthenticatedNode::Auth { attempt, .. } => {
                 if attempt.connection != a.connection {
                     return Err(Errno::EACCES);
@@ -295,7 +297,7 @@ impl<E: ProtectedFiles> Export for AuthenticatedFiles<E> {
                     operation: a.operation,
                 })
             }
-        }
+        })
     }
     fn guard_read_delivery(&self, node: &Self::Node) -> bool {
         matches!(node, AuthenticatedNode::File(node) if self.files.guard_read_delivery(node))

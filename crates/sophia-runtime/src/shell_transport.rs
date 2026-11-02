@@ -8,6 +8,7 @@ use sophia_protocol::{
     SOPHIA_SHELL_MAX_PENDING_ACTIVATIONS, ShellV1ClientHello, ShellV1ServerWelcome, TransactionId,
 };
 
+use crate::frame_cost;
 use crate::{
     ContentAllocationError, ContentCandidateError, ContentStoreError, PolicyRole,
     ProtectionDomainEvidence, RoleEndpoint, RoleEndpointError,
@@ -368,10 +369,12 @@ impl ShellComponentTransport {
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<(), ShellTransportError> {
-        self.owner_serviced = false;
-        self.poll_io(epochs)?;
-        self.owner_serviced = true;
-        Ok(())
+        frame_cost::measure(frame_cost::Stage::OwnerTurn, || {
+            self.owner_serviced = false;
+            self.poll_io(epochs)?;
+            self.owner_serviced = true;
+            Ok(())
+        })
     }
 
     pub fn readiness_subscription(&self) -> Option<ShellReadinessSubscription> {
@@ -572,7 +575,9 @@ impl ShellComponentTransport {
                 Ok(()) => {}
             }
         }
-        let blocked = !Self::drain_file_output(files, output, resources)?;
+        let blocked = !frame_cost::measure(frame_cost::Stage::DrainJournal, || {
+            Self::drain_file_output(files, output, resources)
+        })?;
         // A role-only visit cannot decide that a peer stopped acknowledging:
         // its next acknowledgement may still be waiting in the socket. Judge
         // the deadline only after the owner has serviced input.

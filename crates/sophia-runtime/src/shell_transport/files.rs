@@ -212,9 +212,14 @@ impl ShellFileWire {
         #[cfg(feature = "experimental-custody-dispatch")]
         let live = custody_dispatch::turn(self, flush_only, readiness)?;
         #[cfg(not(feature = "experimental-custody-dispatch"))]
-        let live = frame_cost::measure(frame_cost::Stage::Transport, || {
-            self.service_turn(flush_only, readiness)
-        })?;
+        let live = frame_cost::measure(
+            if flush_only {
+                frame_cost::Stage::WireFlush
+            } else {
+                frame_cost::Stage::Transport
+            },
+            || self.service_turn(flush_only, readiness),
+        )?;
         if !live || self.server.connection_count() == 0 {
             self.export_mut().revoke();
             return Err(ShellTransportError::NotConnected);
@@ -227,7 +232,9 @@ impl ShellFileWire {
             .map_err(|_| ShellTransportError::NotConnected)?;
         self.export_mut().expire();
         if service_images {
-            self.service_image_channel(Instant::now(), listener_idle);
+            frame_cost::measure(frame_cost::Stage::ImageChannel, || {
+                self.service_image_channel(Instant::now(), listener_idle)
+            });
         }
         Ok(())
     }

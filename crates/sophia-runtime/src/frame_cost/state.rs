@@ -1,13 +1,18 @@
 use std::cell::RefCell;
+use std::num::NonZeroU32;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
+use std::sync::atomic::{
+    AtomicBool, AtomicU64,
+    Ordering::{Acquire, Relaxed, Release},
+};
 
 use rustix::time::{ClockId, clock_gettime};
 
-use super::{Reason, Role, Snapshot, Stage, StageCost};
+use super::{Event, Reason, Role, Snapshot, Stage, StageCost};
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static GENERATION: AtomicU64 = AtomicU64::new(0);
+static SAMPLING: AtomicU64 = AtomicU64::new(1);
 static THREADS: AtomicU64 = AtomicU64::new(0);
 static QUEUE: Mutex<Vec<Snapshot>> = Mutex::new(Vec::new());
 
@@ -25,8 +30,19 @@ pub fn enabled() -> bool {
 /// Start a new generation. The calling thread publishes its previous
 /// generation now; other threads publish when they next enter a timer or exit.
 pub fn begin_block() -> u64 {
+    begin_sampled_block(NonZeroU32::MIN, 0)
+}
+
+/// A coordinator opens this block while workers are quiescent. Settings are
+/// latched on each thread's generation roll; counts include unsampled entries.
+///
+/// # Panics
+/// Panics if `phase` is not below `period`.
+pub fn begin_sampled_block(period: NonZeroU32, phase: u32) -> u64 {
+    assert!(phase < period.get(), "sample phase must be below period");
+    SAMPLING.store(u64::from(period.get()) | (u64::from(phase) << 32), Relaxed);
     // 2^64 blocks cannot happen in one process; a wrap would alias generations.
-    let generation = GENERATION.fetch_add(1, Relaxed).wrapping_add(1);
+    let generation = GENERATION.fetch_add(1, Release).wrapping_add(1);
     let _ = STATE.try_with(|state| state.borrow_mut().observe());
     generation
 }
@@ -55,7 +71,7 @@ pub fn register_thread(role: Role) {
     let _ = STATE.try_with(|state| {
         let mut state = state.borrow_mut();
         state.snapshot.role = role;
-        state.reopen(GENERATION.load(Relaxed));
+        state.reopen(GENERATION.load(Acquire));
     });
 }
 
@@ -68,9 +84,15 @@ pub fn measure<T>(stage: Stage, f: impl FnOnce() -> T) -> T {
         .try_with(|state| {
             let mut state = state.borrow_mut();
             state.observe();
+            let snapshot = &mut state.snapshot;
+            let entries = &mut snapshot.stages[stage as usize].entries;
+            let ordinal = *entries;
+            bump(entries, &mut snapshot.invalid);
             if on {
-                let snapshot = &mut state.snapshot;
                 bump(&mut snapshot.enabled_calls, &mut snapshot.invalid);
+                if ordinal % u64::from(snapshot.sample_period) != u64::from(snapshot.sample_phase) {
+                    return None;
+                }
                 state.active = state.active.saturating_add(1);
                 let start = clocks();
                 state.snapshot.invalid |= start.is_none();
@@ -93,6 +115,16 @@ pub fn measure<T>(stage: Stage, f: impl FnOnce() -> T) -> T {
         scope.done = true;
     }
     out
+}
+
+/// Record an observed outcome without a timer or a synthetic scope.
+pub fn count(event: Event) {
+    let _ = STATE.try_with(|state| {
+        let mut state = state.borrow_mut();
+        state.observe();
+        let snapshot = &mut state.snapshot;
+        bump(&mut snapshot.events[event as usize], &mut snapshot.invalid);
+    });
 }
 
 struct Scope {
@@ -129,6 +161,8 @@ impl State {
                 tid,
                 thread_sequence: THREADS.fetch_add(1, Relaxed),
                 generation: 0,
+                sample_period: 1,
+                sample_phase: 0,
                 cpu_first_nsec: 0,
                 cpu_now_nsec: 0,
                 mono_first_nsec: 0,
@@ -136,18 +170,22 @@ impl State {
                 enabled_calls: 0,
                 disabled_calls: 0,
                 stages: [StageCost::default(); Stage::COUNT],
+                events: [0; Event::COUNT],
                 clock_regressions: 0,
                 saturations: 0,
                 invalid: false,
             },
         };
-        state.reopen(GENERATION.load(Relaxed));
+        state.reopen(GENERATION.load(Acquire));
         state
     }
 
     /// Reset counters and open the outer window now, keeping thread identity.
     fn reopen(&mut self, generation: u64) {
         let snapshot = &mut self.snapshot;
+        let sampling = SAMPLING.load(Relaxed);
+        snapshot.sample_period = sampling as u32;
+        snapshot.sample_phase = (sampling >> 32) as u32;
         let now = clocks();
         let (cpu, mono) = now.unwrap_or((0, 0));
         snapshot.generation = generation;
@@ -158,6 +196,7 @@ impl State {
         snapshot.enabled_calls = 0;
         snapshot.disabled_calls = 0;
         snapshot.stages = [StageCost::default(); Stage::COUNT];
+        snapshot.events = [0; Event::COUNT];
         snapshot.clock_regressions = 0;
         snapshot.saturations = 0;
         snapshot.invalid = now.is_none();
@@ -181,7 +220,7 @@ impl State {
     /// Publish the current generation if a newer one exists, then reset. An
     /// open scope straddling the change voids both generations.
     fn observe(&mut self) {
-        let generation = GENERATION.load(Relaxed);
+        let generation = GENERATION.load(Acquire);
         if generation != self.snapshot.generation {
             self.snapshot.invalid |= self.active > 0;
             publish(self.finished(Reason::Block));
