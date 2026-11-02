@@ -38,27 +38,26 @@ visits, cache freshness, subtract overlapping clocks, or propose a candidate
 from the owner outer window. S1, single-submit and empty-owner-work remain parked;
 the historical disposition below does not override this current sequencing.
 
-The separate `sophia-session-owner-attribution` checkpoint `45260844b` added
-complete counters, sparse clocks and fresh 9P export scopes. Its 16-block run
-passed count/pixel/protocol invariants and independent saved-record review, but
-failed the 5% perturbation gate (owner CPU differences reached 9.29%). Preserve
-`~/.local/state/sophia-session-owner-attribution-01` as failed perturbation
-evidence. The next declared probe uses period 256, 8000 frames and an additional
-5% agreement check between off controls; no measurements are corrected by
-subtracting timer costs. The [follow-up contract](../../session-frame-attribution.md#period-64-attempt-and-next-control)
-records the exact parameters. Its first long attempt (`f24dcad4b`) stopped
-at frame 4097 before emitting a block: the fixture exhausted the unchanged
-4096 lifetime resource-ID limit. Attempt 02 is retained without workload
-numbers. The follow-up reuses six IDs with increasing generations and keeps
-all release/freshness checks; this new fixture is compared only to its own
-controls.
+The follow-up now has an accepted timer-perturbation checkpoint at signed
+`9ba5b0b3b`: period 256, six reusable resource IDs, sixteen blocks of 8000
+measured frames. Root reduction and independent audit pass all counts and
+both predeclared 5% gates. Owner CPU differs by −2.35% to +1.65% from paired
+counter-only controls; visits differ by less than 0.66%. Off controls are stable.
+The [audited sparse result](../../session-frame-attribution.md#audited-sparse-result)
+records sealed attempt 03 and its audit. Attempts 01 (perturbation refusal)
+and 02 (the old fixture's 4096-ID lifetime bound) remain retained; production
+limits were not changed. ACKs are cumulative, so the reducer's initial observed
+ACK/read equality was removed with its source justification and old validator
+preserved, not replaced by a tolerance.
 
-Two production gaps are now source-confirmed: the supplied authentication
-owner omits production's per-operation pidfd custody poll, and fixture polling
-omits production's consumed readiness observation. Use the existing protected
-Rust conformance peer and real component service/readiness seams to close these
-gaps before selecting any mechanism. No candidate or performance claim follows
-from the sparse fixture; the earlier held baseline remains unchanged.
+Next bound the counter-only path against a compile-time feature-off reference.
+Then close two source-confirmed production gaps: supplied authentication omits
+the per-operation pidfd custody poll, and fixture polling omits consumed
+readiness observations. Reuse the protected Rust conformance peer and actual
+component service/readiness seams before selecting a mechanism. The byte
+oracle stays off the owner thread and must preserve last-release custody.
+No candidate or performance claim follows from this fixture; the original
+attribution baseline and binary remain held separately.
 
 ## Evidence
 

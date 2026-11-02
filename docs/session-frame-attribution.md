@@ -279,3 +279,29 @@ Headers record `resource_ids=6`. This changes the fixture workload: compare
 the new run's own off/on controls, not its costs against the unbounded-ID run.
 The 8000-frame/period-256 experiment and its predeclared gates otherwise remain
 unchanged.
+
+### Audited sparse result
+
+Signed `9ba5b0b3b` completed all 16 longer blocks: 128,000 measured and 1920
+warmup frames, with exact pixels, jobs, completions and lifetime counts. The
+root reduction and independent saved-record audit pass. Timer-on owner CPU
+differs by −2.35% to +1.65% from each group's off-control mean; visits differ
+by less than 0.66%. The off controls within each group agree within 0.58% for
+CPU and 0.79% for visits. Both predeclared 5% gates pass.
+
+Evidence: `~/.local/state/sophia-session-owner-attribution-03`, manifest
+`3daf00063038d90194ae07413a47e100cd4ac0da47537fb9131fb13e875f5657`.
+The independent audit is `sophia-session-owner-attribution-audit-claude-03`,
+manifest `9488b8cca98abbcc7b486563d17e627e25d5f66ed60e7c917fffddf4643bca70`.
+All 52 snapshots (1872 diagnostic rows) and 259,840 ordinary Session lines
+are retained, with 11 negative-control refusals. The initial reducer, which
+incorrectly required one ACK per ready journal read, is retained too. ACKs
+are cumulative and may cross block boundaries; both counts are now reported
+independently, without a tolerance. The event-sum and other exact joins remain.
+
+This proves timer perturbation relative to the counter-only path, not the
+counter path's cost relative to a compile-time feature-off build. That reference
+is the next measurement gap, followed by real protected-peer authentication,
+consumed readiness observations and full component orchestration. Sampled
+scope clocks remain raw and inclusive. No optimization or native fixed-cost
+claim is promoted.
