@@ -533,6 +533,67 @@ workloads drop uid/capabilities before the device-hidden namespace. There are
 no sysctl, sudoers, installed-capability or service changes. The whole launched
 process tree is sampled, including setup and warmup; owner-thread and window
 attribution require saved-data validation. The same 5% outer-CPU/visit gates
-apply. Actual privileged capture, symbol/unwind quality and overhead remain
-unproved; the next launch requires the owner at sudo. No GPU or native display
-qualification is part of this step.
+apply. This was the sudo handoff; the completed capture is recorded below.
+No GPU or native display qualification is part of this step.
+
+### External sampling reference: November 2
+
+The owner-attended capture passes the predeclared 5% overhead gate. Identity,
+saved protocol records, explicit user/kernel events and loss checks pass root
+reduction and the corrected independent audit. The compiled stub remains
+`758b883a…`, built from `4b204fdbb`; source HEAD at capture was the docs-only
+successor `3fe193cb2`. All four processes completed: eight blocks, 64,000
+measured frames, 960 warmup frames and 129,920 prepared/presented records.
+Four root record mutations refuse.
+
+| Height | Profile 1 CPU / visits | Profile 2 CPU / visits | Control agreement CPU / visits |
+| --- | ---: | ---: | ---: |
+| 24 | +0.274% / +0.124% | +0.493% / +0.128% | 0.284% / 0.058% |
+| 512 | +2.929% / +0.075% | +1.527% / -0.008% | 0.004% / 0.243% |
+
+The two profiles contain 2205 and 2192 software `cpu-clock:uk` samples at
+99 Hz, with monotonic timestamps and 8192-byte DWARF user stacks. Neither
+contains LOST or LOST_SAMPLES records. Workload stderr is empty. This
+qualifies external recording on this workload; all earlier inline-observer
+refusals remain intact.
+
+The recording covers the whole workload tree. Exec/COMM/FORK metadata and
+`exercise_peer` stacks identify owner threads 6842 and 6987, contributing
+480 and 473 samples. Their profiles span both heights, setup, warmup and
+teardown; exact measured-window partitioning is unavailable. Compiler
+descendants belong to fixture bootstrap, not an external build.
+
+Visible owner stacks contain `LaunchCustody::is_live` in 65/69 samples,
+`ImageChannelPeer::check` in 32/29 and `do_sys_poll` in 63/53. These inclusive
+occurrences overlap: do not add them or interpret them as savings. They
+corroborate fresh custody and image-channel checks as investigation leads,
+without justifying cached authority decisions or skipped checks.
+
+Unresolved leaf IPs are 30/2205 (1.36%) and 29/2192 (1.32%) overall, and
+5/480 (1.04%) and 12/473 (2.54%) on the owner. They are vdso except one
+usbcore and one cc1 sample. Caller recovery is a separate limit: of 100/101
+owner memcpy/memmove-family leaves, 98/99 have only that leaf in the stack.
+Do not charge those copies to a Sophia caller or the fixture. A symbol-sorted
+perf report hid unresolved vdso leaves; the independent audit's initial
+zero-unknown claim is superseded by its retained correction. `perf script`
+requires `ip` in the field list to emit sym/dso; strip addresses after decoding.
+
+The original package/results are unchanged. Root reduction and report:
+`~/.local/state/sophia-session-perf-analysis-01`, manifest
+`5539bd6b3b2c86b59c5a63fbf417dd89a12ce5a237ec5f91984e6cc5d2fc1eb0`
+(28 files), receipt
+`a6bc47b60426f3a50bb8e09deb009f3ff47156f43c0dbe24d06de2a7a3ff1925`.
+It hashes all 41 original results files. Preparation manifest:
+`301fc8232ac3289b204de18d7bef3ba1110cafb3e05480fb120577b62ab4fe36`.
+Corrected independent audit:
+`~/.local/state/sophia-session-perf-reference-audit-claude-01/SHA256SUMS.2`,
+`6c5d46c41df281d4a1c12d6480a49b8f10f6ef7c67410dd62403a8d1d0791e2b`.
+The original audit and its manifest remain retained.
+
+Next close missing callers and window partitioning with a separately declared
+observation plan before selecting a production candidate. Native target and
+completion remain simulated, other physical-owner phases remain absent, and
+no native fixed-cost or savings claim follows. Private kernel maps and raw
+instruction-address decodes stay local. The CPU quiet hold is released; the
+Mini GPU worker remains disabled. No new build, launch or policy change was
+needed for saved-data reduction.

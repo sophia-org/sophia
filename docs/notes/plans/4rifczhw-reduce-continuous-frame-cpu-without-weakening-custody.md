@@ -53,11 +53,20 @@ record the limits. Other physical-owner phases and native pacing remain open.
 
 The masked observer at `4b204fdbb` also fails combined overhead qualification
 (two h512 comparisons above 5%); exact counts and independent audit pass.
-No candidate follows. The next prepared step is owner-attended external perf
-sampling of the same compiled stub, because kernel sampling is permission-
-restricted on this host. Its separate 5% gate and saved-data limits remain
-open; [handoff details](../../session-frame-attribution.md#masked-observer-result-and-external-sampling-handoff)
-record the sudo boundary without changing system policy.
+No candidate follows. On November 2 the owner completed external perf sampling
+of the same compiled stub. Its separate 5% gate passes: profiled owner CPU is
++0.274% to +2.929% against compiled-stub controls, with visit deltas below
+0.128% in magnitude. Root reduction and corrected independent audit agree on
+identity, protocol, event attributes and no lost samples. The
+[external sampling result](../../session-frame-attribution.md#external-sampling-reference-november-2)
+records the sealed evidence without changing either earlier refusal.
+
+Fresh custody and image-channel checks are visible in owner stacks, but the
+whole-tree profile spans both heights and setup/teardown. Nearly all owner
+memcpy/memmove leaves lack callers; unresolved owner leaves are 1.04–2.54%.
+Next close caller recovery and measured-window partitioning before selecting
+a candidate. No saving or native fixed cost is inferred. t344 remains open;
+the CPU quiet hold is released and Mini's GPU worker remains disabled.
 
 ## October 31: bounded CPU dirty updates landed; GPU qualification resumes
 

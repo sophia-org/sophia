@@ -78,14 +78,28 @@ refusals remain sealed, with independent audit agreement. The
 [masked result and next handoff](../../session-frame-attribution.md#masked-observer-result-and-external-sampling-handoff)
 record the exact evidence.
 
-Next qualify external user+kernel sampling of the held compiled-stub workload.
-Unprivileged perf probes refuse recording on this host; default stat silently
-falls back to user-only. The owner-attended package at
-`~/.local/state/sophia-session-perf-reference-01` needs sudo for the profiler,
-then drops the workload to niltempus with no capabilities before bubblewrap.
-It changes no system policy. Its first privileged smoke, recording quality
-and overhead gate are still unproved. Other physical-owner phases and native
-pacing remain outside this fixture; the original baseline stays separate.
+On November 2 the owner completed the external user+kernel sampling reference
+against the held compiled stub. The predeclared 5% gate passes all four
+comparisons: h24 owner CPU +0.274/+0.493%, h512 +2.929/+1.527%, visits within
+0.128%. Root and corrected independent audits agree on identity, all eight
+blocks' protocol records, explicit cpu-clock:uk attributes and no sample loss.
+The [result and evidence identities](../../session-frame-attribution.md#external-sampling-reference-november-2)
+retain the earlier inline-observer refusals unchanged.
+
+Owner threads contribute 480/2205 and 473/2192 whole-tree samples. Visible
+stacks corroborate fresh custody checks, image-channel checks and polling,
+but their inclusive occurrences overlap and are not an optimization budget.
+The 100/101 owner memcpy/memmove leaves include 98/99 single-frame stacks;
+their callers are unknown. Unresolved owner leaf IPs are 5/480 and 12/473,
+mostly vdso. The independent audit's original zero-unknown claim is corrected
+in its retained sibling manifest; leaf resolution does not prove full unwind.
+
+Next resolve missing callers and measured-window partitioning before choosing
+a production candidate. The owner profile combines heights, setup, warmup
+and teardown; native admission/completion remains simulated. No cached
+authority decision, savings estimate or native fixed-cost claim follows.
+The CPU quiet hold is released, Mini's GPU worker stays disabled, and the
+original baseline and physical-owner qualification remain separate.
 
 ## Evidence
 
