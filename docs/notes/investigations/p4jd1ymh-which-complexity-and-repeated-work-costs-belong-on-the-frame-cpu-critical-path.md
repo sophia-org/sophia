@@ -46,7 +46,12 @@ failed the 5% perturbation gate (owner CPU differences reached 9.29%). Preserve
 evidence. The next declared probe uses period 256, 8000 frames and an additional
 5% agreement check between off controls; no measurements are corrected by
 subtracting timer costs. The [follow-up contract](../../session-frame-attribution.md#period-64-attempt-and-next-control)
-records the exact parameters.
+records the exact parameters. Its first long attempt (`f24dcad4b`) stopped
+at frame 4097 before emitting a block: the fixture exhausted the unchanged
+4096 lifetime resource-ID limit. Attempt 02 is retained without workload
+numbers. The follow-up reuses six IDs with increasing generations and keeps
+all release/freshness checks; this new fixture is compared only to its own
+controls.
 
 Two production gaps are now source-confirmed: the supplied authentication
 owner omits production's per-operation pidfd custody poll, and fixture polling

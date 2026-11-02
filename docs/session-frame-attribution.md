@@ -259,3 +259,23 @@ production owner's per-operation poll of wrapper and peer pidfds. The current
 fixture also lacks production's `subscribe_wait`/`observe` path, causing a
 fallback poll inside each Transport turn. Those gaps must close before this
 fixture can support a mechanism choice for production fixed-frame work.
+
+### Long-block lifetime bound and reusable ledger
+
+The first longer attempt at signed `f24dcad4b` failed after Presented frame
+4096, before emitting a workload block. The peer saw a refused resource status;
+its old assertion omitted the reason. Source inspection shows the fixture's
+new-ID-per-frame strategy reaches the unchanged 4096 lifetime identity limit.
+Budget admission retries until its deadline. The saved status does not itself
+prove the timeout reason. Preserve attempt 02 and report no workload timings.
+
+The next fixture uses six resource IDs, with generation incremented on each
+reuse. Upload, candidate placement, pixel oracle, retirement and released
+acknowledgement all match the complete `(id, generation)` key. The predecessor
+is released before any ID is reused; both source slots still fill in pairs.
+Production freshness, quota and release rules are unchanged. Smoke crosses
+multiple reuse cycles, with six warmup and twelve measured frames per case.
+Headers record `resource_ids=6`. This changes the fixture workload: compare
+the new run's own off/on controls, not its costs against the unbounded-ID run.
+The 8000-frame/period-256 experiment and its predeclared gates otherwise remain
+unchanged.

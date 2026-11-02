@@ -4,6 +4,7 @@ use sophia_runtime::frame_cost::{self as cost, Role, Snapshot, Stage, measure};
 use sophia_shell_client::{ImageAdapterError, RingOfferState, RingUpload};
 use std::sync::mpsc;
 static ALONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+const RESOURCE_IDS: u64 = 6;
 
 fn descriptor() -> HeadlessOutput {
     HeadlessOutput {
@@ -13,6 +14,15 @@ fn descriptor() -> HeadlessOutput {
             height: 1080,
         },
         scale: 1,
+    }
+}
+
+// A bounded resource ledger keeps long runs below the lifetime identity cap.
+fn resource(frame: u64) -> ContentResourceId {
+    assert!(frame > 0);
+    ContentResourceId {
+        id: (frame - 1) % RESOURCE_IDS + 1,
+        generation: (frame - 1) / RESOURCE_IDS + 1,
     }
 }
 
@@ -58,8 +68,8 @@ fn upload_pair(
         *offer = loop {
             match peer.image_upload_ring_fill(
                 RingUpload {
-                    resource: generation,
-                    resource_generation: 1,
+                    resource: resource(generation).id,
+                    resource_generation: resource(generation).generation,
                     output: 1,
                     output_generation: 1,
                     allocation: 1,
@@ -100,9 +110,12 @@ fn upload_pair(
             let ShellContentRecord::ResourceStatus(status) = record else {
                 panic!("unexpected {record:?}")
             };
-            let index = usize::try_from(status.resource.id.checked_sub(first).unwrap()).unwrap();
-            assert!(index < 2 && !accepted[index]);
-            assert_eq!(status.status, 2);
+            let index = [resource(first), resource(first + 1)]
+                .iter()
+                .position(|key| *key == status.resource)
+                .expect("status must name one of the two current offers");
+            assert!(!accepted[index]);
+            assert_eq!(status.status, 2, "paired offer refused: {status:?}");
             accepted[index] = true;
         }
         if accepted.iter().all(|accepted| *accepted)
@@ -184,10 +197,7 @@ fn peer_frames(
                     anchor_parent_rect: ContentPixelRect::default(),
                 }],
                 placements: vec![ContentPlacement {
-                    resource: ContentResourceId {
-                        id: generation,
-                        generation: 1,
-                    },
+                    resource: resource(generation),
                     surface_index: 0,
                     destination_x_px: 0,
                     destination_y_px: 0,
@@ -216,7 +226,7 @@ fn peer_frames(
         // The oracle is peer work; release its extra lease before retirement.
         let lease = pixels.recv_timeout(Duration::from_secs(10)).unwrap();
         let bytes = lease.cpu_bytes().unwrap();
-        assert_eq!(lease.description().resource.id, generation);
+        assert_eq!(lease.description().resource, resource(generation));
         assert_eq!(bytes.len(), 1920 * height as usize * 4);
         let expected = [
             if generation.is_multiple_of(2) { 32 } else { 64 },
@@ -232,17 +242,14 @@ fn peer_frames(
                 TransactionId::from_raw(generation * 10 + 2),
                 &ShellContentRecord::ResourceRetire(ContentResourceRetire {
                     grant,
-                    resource: ContentResourceId {
-                        id: generation - 1,
-                        generation: 1,
-                    },
+                    resource: resource(generation - 1),
                 }),
             )
             .unwrap();
             let ShellContentRecord::ResourceReleased(released) = next(&mut peer) else {
                 panic!("release required")
             };
-            assert_eq!(released.resource.id, generation - 1);
+            assert_eq!(released.resource, resource(generation - 1));
         }
     }
     peer
@@ -398,13 +405,7 @@ fn exercise(
                     .unwrap()
                 {
                     let generation = bundle.candidate_generation;
-                    let pixels = bundle
-                        .resource(ContentResourceId {
-                            id: generation,
-                            generation: 1,
-                        })
-                        .unwrap()
-                        .clone();
+                    let pixels = bundle.resource(resource(generation)).unwrap().clone();
                     pixels_tx.send(pixels).unwrap();
                     bar.content
                         .submit_bundle_to(
@@ -563,8 +564,8 @@ fn frame_attribution_owned_ring_smoke() {
     crate::output::install(crate::output::SessionOutput::new(|_| {}, |_| {})).unwrap();
     exercise(
         24,
-        2,
-        4,
+        6,
+        12,
         TimerSettings {
             enabled: true,
             period: 256,
@@ -574,8 +575,8 @@ fn frame_attribution_owned_ring_smoke() {
     for (height, enabled, phase) in [(24, true, 0), (512, false, 17), (24, true, 33)] {
         exercise(
             height,
-            2,
-            4,
+            6,
+            12,
             TimerSettings {
                 enabled,
                 period: 64,
@@ -636,7 +637,7 @@ fn frame_attribution_measure() {
                 },
             );
             println!(
-                "sophia_frame_block schema=2 height={height} block={block} enabled={} warmup=120 completed=2000 visits={visits} fill_wire_turns={fill_wire_turns} ring_slots=2 alternating_slots=1 sample_period=1 sample_phase=0 generation={}",
+                "sophia_frame_block schema=2 height={height} block={block} enabled={} warmup=120 completed=2000 visits={visits} fill_wire_turns={fill_wire_turns} ring_slots=2 alternating_slots=1 resource_ids={RESOURCE_IDS} sample_period=1 sample_phase=0 generation={}",
                 u8::from(enabled),
                 snapshots[0].generation
             );
@@ -690,7 +691,7 @@ fn sparse_measure(period: u32, measured: u64, phases: [u32; 4]) {
             };
             let (snapshots, visits, fill_wire_turns) = exercise(height, 120, measured, timers);
             println!(
-                "sophia_frame_block schema=2 height={height} block={block} enabled={} warmup=120 completed={measured} visits={visits} fill_wire_turns={fill_wire_turns} ring_slots=2 alternating_slots=1 sample_period={period} sample_phase={phase} generation={}",
+                "sophia_frame_block schema=2 height={height} block={block} enabled={} warmup=120 completed={measured} visits={visits} fill_wire_turns={fill_wire_turns} ring_slots=2 alternating_slots=1 resource_ids={RESOURCE_IDS} sample_period={period} sample_phase={phase} generation={}",
                 u8::from(enabled),
                 snapshots[0].generation
             );
