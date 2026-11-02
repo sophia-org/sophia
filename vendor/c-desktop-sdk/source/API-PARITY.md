@@ -1829,3 +1829,14 @@ only selected r12, the requested capabilities plus work-area reservation, and
 never an unsolicited W2 grant. The ordinary revision-specific record codecs
 remain bounded; only the image adapter maps these shell revisions to image r10.
 These are device-free SDK tests, not live-host or performance evidence.
+
+### W2 production-export peer qualification (2026-11-02)
+
+`src/tests/shell_retire_on_present_peer.c` is the public C peer for Sophia's
+`shell_retire_on_present_session` lifecycle test. Like its Rust counterpart it
+negotiates r12/bit17, uploads four resources through the owned ring, presents
+successors with predecessor intents, retains a predecessor across renderer
+failure, and revokes its tracker on disconnect with a lease still outstanding.
+The same host assertions check release after the last lease and exact retirement
+accounting. Authentication verdicts and renderer completion are supplied by the
+fixture; this is neither protected launch nor native/performance qualification.

@@ -89,7 +89,7 @@ impl PeerConnection {
 }
 
 fn exercise(height: u32, warmup: u64, measured: u64, timers: TimerSettings) -> BlockResult {
-    exercise_peer(height, warmup, measured, timers, false)
+    exercise_peer(height, warmup, measured, timers, false, false)
 }
 
 fn exercise_peer(
@@ -98,6 +98,7 @@ fn exercise_peer(
     measured: u64,
     timers: TimerSettings,
     protected: bool,
+    retire_on_present: bool,
 ) -> BlockResult {
     assert!(warmup.is_multiple_of(2) && measured.is_multiple_of(2));
     cost::enable(false);
@@ -109,6 +110,8 @@ fn exercise_peer(
     } else {
         Harness::new()
     };
+    assert!(!retire_on_present || protected);
+    h.owner.set_retire_on_present(retire_on_present);
     h.backend = SessionContentFixture::new(&[descriptor()]).unwrap();
     let (ready_tx, ready_rx) = mpsc::channel();
     let (start_tx, start_rx) = mpsc::channel();
@@ -121,7 +124,8 @@ fn exercise_peer(
         verified: verified.clone(),
     };
     let (key, worker, mut custody) = if protected {
-        let (key, worker, custody) = protected::start(&mut h, height, frames, warmup, link);
+        let (key, worker, custody) =
+            protected::start(&mut h, height, frames, warmup, link, retire_on_present);
         (key, worker, Some(custody))
     } else {
         let (key, mut peer) = wire::connect_with_slots(&mut h.owner, 0, 2);
@@ -541,6 +545,7 @@ fn frame_attribution_protected_smoke() {
                 phase: 0,
             },
             true,
+            false,
         );
         let r = result.readiness;
         println!(
@@ -671,6 +676,7 @@ fn frame_attribution_protected_reference() {
                 phase,
             },
             true,
+            false,
         );
         println!(
             "sophia_frame_protected schema=1 height={height} observer={} timed={} warmup=120 completed=8000 visits={visits} fill_wire_turns={fill_wire_turns} ring_slots=2 alternating_slots=1 resource_ids={RESOURCE_IDS} sample_period=256 sample_phase={phase} owner_cpu_nsec={owner_cpu_nsec} owner_elapsed_nsec={owner_elapsed_nsec} waits={} any={} wire={} wire_wake={} image_worker={} image_listener={} image_socket={} authentication={} negotiation={} capture_completion={}",
@@ -825,5 +831,31 @@ fn sparse_measure(period: u32, measured: u64, phases: [u32; 4]) {
                 }
             }
         }
+    }
+}
+
+#[cfg(feature = "experimental-shell-retire-on-present")]
+#[test]
+#[ignore = "protected process; run exact with devices hidden"]
+fn protected_retire_on_present_owned_ring_smoke() {
+    let _alone = ALONE.lock().unwrap_or_else(|e| e.into_inner());
+    crate::output::install(crate::output::SessionOutput::new(|_| {}, |_| {})).unwrap();
+    for height in [24, 512] {
+        let result = exercise_peer(
+            height,
+            6,
+            12,
+            TimerSettings {
+                enabled: false,
+                period: 256,
+                phase: 0,
+            },
+            true,
+            true,
+        );
+        assert!(result.visits >= 12);
+        println!(
+            "sophia_w2_protected status=verified height={height} warmup=6 completed=12 resource_ids={RESOURCE_IDS}"
+        );
     }
 }

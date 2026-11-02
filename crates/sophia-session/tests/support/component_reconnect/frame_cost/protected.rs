@@ -57,7 +57,10 @@ fn protected_frame_child() {
     let warmup = value("SOPHIA_TEST_FRAME_WARMUP");
     let socket = PathBuf::from(std::env::var_os("SOPHIA_TEST_LOCK_SOCKET").unwrap());
     let report = PathBuf::from(std::env::var_os("SOPHIA_TEST_LOCK_REPORT").unwrap());
-    let (mut client, relay) = rust_peer::connect(10, wire::capabilities(0));
+    let w2 = value("SOPHIA_TEST_FRAME_W2") != 0;
+    let capabilities = wire::capabilities(0) | if w2 { 1 << 17 } else { 0 };
+    let (mut client, relay) = rust_peer::connect(if w2 { 12 } else { 10 }, capabilities);
+    assert_eq!(client.retire_on_present(), w2);
     let limits = wire::enable_image(&mut client, &socket, 2);
     client
         .send_content(
@@ -128,6 +131,7 @@ pub(super) fn start(
     frames: u64,
     warmup: u64,
     mut link: ThreadLink,
+    retire_on_present: bool,
 ) -> (
     ComponentConnectionKey,
     std::thread::JoinHandle<PeerConnection>,
@@ -229,6 +233,10 @@ pub(super) fn start(
                     .env("SOPHIA_TEST_FRAME_HEIGHT", height.to_string())
                     .env("SOPHIA_TEST_FRAME_COUNT", frames.to_string())
                     .env("SOPHIA_TEST_FRAME_WARMUP", warmup.to_string())
+                    .env(
+                        "SOPHIA_TEST_FRAME_W2",
+                        u8::from(retire_on_present).to_string(),
+                    )
                     .protection_domain(
                         sophia_runtime::ProtectionDomainSpec::bubblewrap([
                             sophia_runtime::ProtectionDomainRole::MetadataShell,

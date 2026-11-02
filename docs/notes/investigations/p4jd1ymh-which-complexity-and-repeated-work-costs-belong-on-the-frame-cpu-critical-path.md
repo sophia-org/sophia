@@ -85,11 +85,28 @@ keeps only its two W2 additions: formatting the whole old function would exceed
 the 1000-line layout limit. That pre-existing formatting debt is recorded, not
 refactored into this candidate.
 
-Next finish the integrated source gate, cross-language/protected qualification
-and a fresh matched run package. The feature and owner setting remain default
-off. Draw-plus-W2 and other role/source combinations remain unqualified. No
-native launch or new performance claim has occurred; these implementation and
-correctness checks do not close the CPU gap.
+The next correctness checkpoint closes the C production-export and protected
+Rust workload gaps. Published C `a79808950ac2` adds a standalone public-API peer;
+Sophia runs it through the same host lifecycle assertions as the Rust peer.
+Both upload through the owned ring, retire only at Presented, delay release
+until the last lease, preserve the predecessor after renderer failure, and
+revoke on disconnect. The C fixture supplies authentication verdicts; it is not
+a protected-launch claim. Its strict C99 build and the C SDK suite pass.
+
+The Rust protected smoke uses real Factotum/supervisor launch, pidfd custody,
+production readiness and the full bar pass. W2 is selected explicitly at r12;
+shared peer code names the predecessor in the candidate and checks the exact
+retirement transaction with the public tracker, without an explicit Retire.
+At each of h24/h512, six warmup plus twelve checked frames exercise reuse of
+six resource IDs across three generations. Native completion remains simulated.
+The test passed with devices hidden, and its strace contains no graphics,
+compute or input opens. W2-off protected and local controls also pass. These are
+correctness runs, not timing samples or a new attribution lane.
+
+Next prepare the fresh integrated release and matched run package. The feature
+and owner setting remain default off. Draw-plus-W2 and other role/source
+combinations remain unqualified. No native launch or new performance claim has
+occurred; these implementation and correctness checks do not close the CPU gap.
 
 ## Historical attribution checkpoints
 

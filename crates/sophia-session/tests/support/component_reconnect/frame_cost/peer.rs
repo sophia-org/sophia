@@ -2,8 +2,11 @@
 //! and pixel oracle reach the owner through a `PeerLink`, so a protected
 //! child process can later drive the same frames without a second copy.
 use super::*;
+use sophia_protocol::shell::content::ContentCandidateRetire;
 use sophia_runtime::frame_cost::{self as cost, Role};
-use sophia_shell_client::{ImageAdapterError, RingOfferState, RingUpload};
+use sophia_shell_client::{
+    ImageAdapterError, RetireOnPresent, RetireProgress, RingOfferState, RingUpload,
+};
 use std::sync::mpsc;
 
 /// How the peer hands a turn to the owner and checks presented pixels.
@@ -43,9 +46,12 @@ impl PeerLink for ThreadLink {
 }
 
 fn next(peer: &mut ShellConnection) -> ShellContentRecord {
+    next_record(peer).1
+}
+fn next_record(peer: &mut ShellConnection) -> (TransactionId, ShellContentRecord) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        if let Some((_, record)) = peer.poll_content().unwrap() {
+        if let Some(record) = peer.poll_content().unwrap() {
             return record;
         }
         assert!(Instant::now() < deadline, "peer observation timed out");
@@ -155,6 +161,8 @@ pub(super) fn peer_frames(
     warmup: u64,
     link: &mut impl PeerLink,
 ) -> ShellConnection {
+    let w2 = peer.retire_on_present();
+    let mut retirements = RetireOnPresent::new(grant);
     for generation in 1..=frames {
         if generation == warmup + 1 {
             link.turn(PeerTurn::Measure);
@@ -220,32 +228,65 @@ pub(super) fn peer_frames(
                 target_count: 0,
             }),
         ];
-        peer.enqueue_content_group_tracked(TransactionId::from_raw(generation * 10 + 1), &records)
-            .unwrap();
+        let transaction = TransactionId::from_raw(generation * 10 + 1);
+        let retire_transaction = TransactionId::from_raw(generation * 10 + 2);
+        if w2 && generation > 1 {
+            let intent = ContentCandidateRetire {
+                retire_transaction,
+                resource: resource(generation - 1),
+            };
+            peer.enqueue_content_group_with_retire(transaction, &records, intent)
+                .unwrap();
+            retirements.name(OUTPUT, generation, intent).unwrap();
+        } else {
+            peer.enqueue_content_group_tracked(transaction, &records)
+                .unwrap();
+        }
         for kind in [1, 2] {
-            let ShellContentRecord::CandidateOutcome(outcome) = next(&mut peer) else {
-                panic!("outcome required")
+            let (tx, record) = next_record(&mut peer);
+            let ShellContentRecord::CandidateOutcome(outcome) = &record else {
+                panic!("outcome required: {record:?}")
             };
             assert_eq!(
                 (outcome.candidate_generation, outcome.kind),
                 (generation, kind)
             );
+            assert_eq!(outcome.reason, 0);
+            if w2 {
+                let expected = if kind == 2 && generation > 1 {
+                    RetireProgress::Retiring(resource(generation - 1))
+                } else {
+                    RetireProgress::Unrelated
+                };
+                assert_eq!(retirements.observe(tx, &record).unwrap(), expected);
+            }
         }
         link.verify(generation, height);
         // Retirement is explicit; the backend must have released the predecessor.
         if generation > 1 {
-            peer.send_content(
-                TransactionId::from_raw(generation * 10 + 2),
-                &ShellContentRecord::ResourceRetire(ContentResourceRetire {
-                    grant,
-                    resource: resource(generation - 1),
-                }),
-            )
-            .unwrap();
-            let ShellContentRecord::ResourceReleased(released) = next(&mut peer) else {
-                panic!("release required")
+            if !w2 {
+                peer.send_content(
+                    retire_transaction,
+                    &ShellContentRecord::ResourceRetire(ContentResourceRetire {
+                        grant,
+                        resource: resource(generation - 1),
+                    }),
+                )
+                .unwrap();
+            }
+            let (tx, record) = next_record(&mut peer);
+            let ShellContentRecord::ResourceReleased(released) = &record else {
+                panic!("release required: {record:?}")
             };
+            assert_eq!(tx, retire_transaction);
             assert_eq!(released.resource, resource(generation - 1));
+            if w2 {
+                assert_eq!(
+                    retirements.observe(tx, &record).unwrap(),
+                    RetireProgress::Released(resource(generation - 1))
+                );
+                assert!(!retirements.holds(resource(generation - 1)));
+            }
         }
     }
     peer

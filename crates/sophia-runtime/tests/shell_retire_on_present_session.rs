@@ -22,6 +22,9 @@ mod sdk_image;
 #[path = "support/shell_file_peer.rs"]
 mod shell_file_peer;
 
+#[path = "support/shell_retire_on_present_c.rs"]
+mod c_peer;
+
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 const CONTENT: u64 =
@@ -458,6 +461,16 @@ impl Host {
 
 /// A negotiated r12 session with output facts and one granted allocation.
 fn start(quiet: Option<mpsc::Receiver<()>>) -> (Host, std::thread::JoinHandle<()>) {
+    start_peer(move |socket, seen| {
+        (
+            std::thread::spawn(move || client(socket, seen, quiet)),
+            std::process::id(),
+        )
+    })
+}
+fn start_peer(
+    peer: impl FnOnce(std::path::PathBuf, mpsc::Sender<Seen>) -> (std::thread::JoinHandle<()>, u32),
+) -> (Host, std::thread::JoinHandle<()>) {
     let directory = std::env::temp_dir().join(format!(
         "sophia-w2-session-{}-{}-{}",
         std::process::id(),
@@ -476,11 +489,12 @@ fn start(quiet: Option<mpsc::Receiver<()>>) -> (Host, std::thread::JoinHandle<()
     session
         .reserve_content(&mut registry, ContentLimits::prototype(grant()))
         .unwrap();
-    let image_owner = image::configure(&mut session, &ContentLimits::prototype(grant()));
-    session.permit_retire_on_present(true).unwrap();
     let socket = session.socket_path().to_path_buf();
     let (seen_tx, seen) = mpsc::channel();
-    let client = std::thread::spawn(move || client(socket, seen_tx, quiet));
+    let (client, peer_pid) = peer(socket, seen_tx);
+    let image_owner =
+        image::configure_for_peer(&mut session, &ContentLimits::prototype(grant()), peer_pid);
+    session.permit_retire_on_present(true).unwrap();
 
     session
         .begin_file_negotiation(
@@ -572,8 +586,16 @@ fn start(quiet: Option<mpsc::Receiver<()>>) -> (Host, std::thread::JoinHandle<()
 
 #[test]
 fn successors_retire_predecessors_only_after_their_last_lease() {
-    let (mut host, client) = start(None);
+    retirement_lifecycle(start(None));
+}
 
+#[test]
+fn c_successors_retire_predecessors_only_after_their_last_lease() {
+    let binary = c_peer::compile();
+    retirement_lifecycle(start_peer(move |socket, seen| binary.spawn(&socket, seen)));
+}
+
+fn retirement_lifecycle((mut host, client): (Host, std::thread::JoinHandle<()>)) {
     // Frame 1 names nothing; its render lease is kept.
     host.expect(Seen::Uploaded(1));
     let render1 = host.prepare(1);

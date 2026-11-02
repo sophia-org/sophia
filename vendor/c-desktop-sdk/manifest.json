@@ -1,13 +1,13 @@
 {
   "schema": 1,
   "repository": "https://github.com/sophia-org/sophia-desktop-sdk-c",
-  "revision": "5d9d1ff79f9aed16a302a334a06f6668b22aa253",
+  "revision": "a79808950ac2b71881a674a0972ed347b9cc16bd",
   "files": {
     ".gitignore": "020c2606e8ed484089c2083e0be438b9d0736bee1558a6b76af0d58bd23f69cf",
     "ADMIN-CLIENT.md": "da27923c47c8a3c3ecb437c8fbb775409c8382f3ab80457e15d3a5edd2f7edeb",
     "ADMIN-PARITY.md": "e7886c030b24eff018621794faa5d60d06d003fd7a7be68a0ba51187f984cf69",
     "AGENTS.md": "e229bcebfb113b281e30fae5cb37f502aabe8a20def106ab48a877a8a309c030",
-    "API-PARITY.md": "69ffc15cf75243f1ff82e6a030667c0eea609df74846d63de28fd7db5f1247f2",
+    "API-PARITY.md": "fa89e9186c5200fd0c6144703177cc59a8a5cd3b964d9bb8e75d13d24405b5aa",
     "BROKER-PARITY.md": "ba5226dee5929c020dd0a5a313cef9188ae9bae9c51cbed55a230f13eefb6b5d",
     "COVERAGE.md": "7dc3b0a27d5eb8a543bc05682586d0b5e99a6f8785472e2ab73aeb98d8c6bed8",
     "GNUmakefile": "ea7e9da5ff89be74a10136a8b5abb9f107aab4a2fbd70cf038d4ac7d0499c3b8",
@@ -324,6 +324,7 @@
     "src/tests/shell_candidate_retire_test.c": "f00094975bd0111bf17988ec806cd5b55d54aba52393885df07f36dcc9dd2173",
     "src/tests/shell_files_vectors.h": "861885c69c376fc3be5ca07be106cadd938af27be8efa69dbe733405374e1679",
     "src/tests/shell_image_test.c": "6deec30d4bb63aa80fc046fe36d633e9f4888a011616b2a1a23134ebb077ffb9",
+    "src/tests/shell_retire_on_present_peer.c": "741e4518bae768e41daa6624203a20a31991d5b8a7a4a68e2054636936cc306c",
     "src/tests/shell_retire_tracker_test.c": "fb897a22899f317967f4bd62267745aee9e8cae842b1ef48050d66d03680eb7d",
     "src/tests/shell_revision_mapping_test.c": "1384ac2b4b12993cc73c6b0a72a641318e149650fce1cbd334b5b72d04ed4966",
     "src/tests/shell_session_attached_test.c": "1effdb275326bca27fc92f4e166444af1346458bd5e33d0f4ea907296531d086",
