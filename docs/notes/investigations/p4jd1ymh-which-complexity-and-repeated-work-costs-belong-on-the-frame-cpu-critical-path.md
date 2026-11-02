@@ -28,6 +28,36 @@ profiler only for a named blocked decision. Preserve all refusals and unknown
 memcpy callers. S1, single-submit and collection stay parked. Required fresh
 custody checks cannot be treated as redundant work without a separate proof.
 
+### W2 integration checkpoint, November 2
+
+Fresh `cpu/w2-integration` branches live in `~/dev/sophia-w2-integration`,
+`~/dev/sdk-rs-w2-integration` and `~/dev/sdk-c-w2-integration`. Their bases are
+host `e1831a17b`, Rust SDK `0706ea2` and C SDK `3ccc7d0`, matching the pinned
+SDK inputs rather than unrelated old checkout heads. Frozen measured branches
+and packages are unchanged.
+
+The authoritative Candidate flag/trailer and lifetime amendment now exists
+with byte-identical SDK spec copies. The Rust prototype codec/client was
+forward-integrated; allocation-table regressions first demonstrated its
+incorrect acceptance of r13 retirement and rejection of r12 owned-ring without
+W2. Corrected mapping admits owned ring at r10/r11/r12 only with bit 15,
+independent of draw and retirement; intent requires exact r12 and bit 17.
+C now has equivalent mapping and whole-candidate intent codec APIs. A shared
+nine-record corpus proves accepted bytes and malformed/ungranted refusals in
+both languages; C additionally checks every truncation after real rows.
+
+Rust protocol/client suites pass 453 tests; C `make check` passes. The initial
+KDL fixture failure after reserved became flags was corrected with an explicit
+zero-flags fixture value. Initial failures and passing logs are retained under
+`~/.local/state/sophia-w2-integration-01`; this is working evidence, not a sealed
+release. Both SDK parity documents label the integration incomplete.
+
+Next implement C session submission and predecessor tracking, complete both
+handshakes' cumulative revision/capability rules, then forward-integrate host
+admission/lifecycle and qualify the integrated profile. Shared golden bytes do
+not prove those paths. No SDK publication, vendor replacement, default change,
+native launch or performance claim has occurred.
+
 ## Historical attribution checkpoints
 
 November 1: niltempus requested device-free attribution of Session's fixed
