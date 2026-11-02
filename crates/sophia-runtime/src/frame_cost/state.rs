@@ -90,7 +90,14 @@ pub fn measure<T>(stage: Stage, f: impl FnOnce() -> T) -> T {
             bump(entries, &mut snapshot.invalid);
             if on {
                 bump(&mut snapshot.enabled_calls, &mut snapshot.invalid);
-                if ordinal % u64::from(snapshot.sample_period) != u64::from(snapshot.sample_phase) {
+                let period = u64::from(snapshot.sample_period);
+                // Sparse blocks still visit this branch on every entry.
+                let position = if period.is_power_of_two() {
+                    ordinal & (period - 1)
+                } else {
+                    ordinal % period
+                };
+                if position != u64::from(snapshot.sample_phase) {
                     return None;
                 }
                 state.active = state.active.saturating_add(1);

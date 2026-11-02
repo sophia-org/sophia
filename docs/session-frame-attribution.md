@@ -480,3 +480,16 @@ The correctness source gate manifest is
 The next bounded step is observer implementation work before requalification;
 production mechanisms remain parked. The measurement window is closed and
 Mini's CPU-build hold released; its GPU worker remains disabled.
+
+### Observer sampling fast path
+
+The next observer implementation preserves the zero-based sample ordinal and
+latched period/phase. Power-of-two periods use `ordinal & (period - 1)`;
+other periods retain remainder. This avoids general division on unsampled
+entries at period 256 without changing hooks, counters, records or feature-off
+behavior. The real-measure phase-partition regression now checks every phase
+for periods 1, 3, 8, 17, 64 and 256 over two complete cycles.
+
+Requalification uses a new sealed identity and the same protected full-pass
+plan and 5% limits. The prior refusal remains intact, and independent runs are
+not paired to claim savings. This is observer work, not a Session candidate.

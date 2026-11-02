@@ -311,24 +311,30 @@ fn sparse_timing_counts_every_entry_without_scaling_sample_clocks() {
 #[test]
 fn sampling_phases_select_disjoint_stage_ordinals() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let mut selected = std::collections::BTreeSet::new();
-    for phase in 0..8 {
-        crate::frame_cost::begin_sampled_block(std::num::NonZeroU32::new(8).unwrap(), phase);
-        enable(true);
-        let mut previous = 0;
-        for ordinal in 0..16 {
-            measure(Stage::Copy, || ());
-            let snapshot = snapshot_thread().unwrap();
-            let calls = snapshot.stages[Stage::Copy as usize].calls;
-            if calls != previous {
-                assert!(selected.insert(ordinal));
+    for period in [1, 3, 8, 17, 64, 256] {
+        let mut selected = std::collections::BTreeSet::new();
+        for phase in 0..period {
+            crate::frame_cost::begin_sampled_block(
+                std::num::NonZeroU32::new(period).unwrap(),
+                phase,
+            );
+            enable(true);
+            let mut previous = 0;
+            for ordinal in 0..2 * period {
+                measure(Stage::Copy, || ());
+                let snapshot = snapshot_thread().unwrap();
+                let calls = snapshot.stages[Stage::Copy as usize].calls;
+                if calls != previous {
+                    assert_eq!(ordinal % period, phase);
+                    assert!(selected.insert(ordinal));
+                }
+                previous = calls;
             }
-            previous = calls;
+            assert_eq!(previous, 2);
         }
-        assert_eq!(previous, 2);
+        assert_eq!(selected, (0..2 * period).collect());
     }
     enable(false);
-    assert_eq!(selected, (0..16).collect());
 }
 
 #[test]
