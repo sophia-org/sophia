@@ -1,6 +1,7 @@
 //! Ring extents are charged once, independently of every copied destination.
 use super::*;
 use crate::OwnedRingGeometry;
+use crate::frame_cost;
 use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
@@ -66,10 +67,10 @@ impl ContentEpochRegistry {
         if !ring.is_charged_to(&epoch.source_bytes) {
             return Err(Error::Resource(ContentStoreError::Stale));
         }
-        let description = epoch
-            .allocations
-            .owned_copy_description(&request)
-            .map_err(Error::Allocation)?;
+        let description = frame_cost::measure(frame_cost::Stage::Authority, || {
+            epoch.allocations.owned_copy_description(&request)
+        })
+        .map_err(Error::Allocation)?;
         let bytes = usize::try_from(description.total_bytes)
             .map_err(|_| Error::Resource(ContentStoreError::Malformed))?;
         if bytes > ring.geometry().pixel_bytes() || request.slot.offer == 0 {

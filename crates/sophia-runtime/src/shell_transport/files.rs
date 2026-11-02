@@ -14,6 +14,7 @@ use sophia_protocol::shell_files::{
 use super::ShellTransportError;
 use crate::ContentStoreProfile;
 use crate::authenticated_files::{AuthenticatedFiles, FileAuthenticationFactory};
+use crate::frame_cost;
 
 #[cfg(feature = "experimental-custody-dispatch")]
 mod custody_dispatch;
@@ -211,7 +212,9 @@ impl ShellFileWire {
         #[cfg(feature = "experimental-custody-dispatch")]
         let live = custody_dispatch::turn(self, flush_only, readiness)?;
         #[cfg(not(feature = "experimental-custody-dispatch"))]
-        let live = self.service_turn(flush_only, readiness)?;
+        let live = frame_cost::measure(frame_cost::Stage::Transport, || {
+            self.service_turn(flush_only, readiness)
+        })?;
         if !live || self.server.connection_count() == 0 {
             self.export_mut().revoke();
             return Err(ShellTransportError::NotConnected);
@@ -271,7 +274,9 @@ impl ShellFileWire {
         body: &[u8],
         credited: bool,
     ) -> Result<bool, ShellTransportError> {
-        match self.export_mut().append_event(kind, body, credited) {
+        match frame_cost::measure(frame_cost::Stage::DecodeJournal, || {
+            self.export_mut().append_event(kind, body, credited)
+        }) {
             Ok(_) => {
                 self.publication_pending = true;
                 self.server.wake().wake();
@@ -294,10 +299,10 @@ impl ShellFileWire {
         if !(2..=4).contains(&status.status) {
             return Err(ShellTransportError::WrongContentRecord);
         }
-        match self
-            .export_mut()
-            .append_resource_settlement(transaction, status, body)
-        {
+        match frame_cost::measure(frame_cost::Stage::DecodeJournal, || {
+            self.export_mut()
+                .append_resource_settlement(transaction, status, body)
+        }) {
             Ok(Some(_)) => {
                 self.image_publication_pending();
                 Ok(true)

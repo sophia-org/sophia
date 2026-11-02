@@ -1,5 +1,6 @@
 //! One bounded validation worker shared by an owner, never one thread per image.
 use super::{IsbPixelValidation, ValidatedIsbPixels};
+use crate::frame_cost;
 use sophia_linux_peer::SealedMapping;
 use sophia_wake::Wake;
 use std::io;
@@ -120,18 +121,21 @@ impl IsbValidationWorker {
             .name("isb-validation".into())
             .spawn(move || {
                 let _exit = NotifyOnExit(notify.clone());
+                frame_cost::register_thread(frame_cost::Role::Worker);
                 // Declared after the guard so the sender drops first on unwind.
                 let completion_sender = results;
                 #[cfg(feature = "experimental-draw")]
                 let mut raster = None;
                 while let Ok(job) = jobs.recv() {
                     let id = job.id;
-                    let result = validate(
-                        job,
-                        validation_bytes,
-                        #[cfg(feature = "experimental-draw")]
-                        &mut raster,
-                    );
+                    let result = frame_cost::measure(frame_cost::Stage::Validation, || {
+                        validate(
+                            job,
+                            validation_bytes,
+                            #[cfg(feature = "experimental-draw")]
+                            &mut raster,
+                        )
+                    });
                     if completion_sender
                         .send(IsbValidationCompletion { job: id, result })
                         .is_err()
@@ -326,8 +330,12 @@ fn validate(
     check()?;
     let mut validation = match job.source {
         Source::Isb(fd) => sealed_validation(fd, job.bytes)?,
-        Source::Ring(read) => IsbPixelValidation::from_owned(read.copy(check)?)
-            .map_err(|_| IsbValidationFailure::Malformed)?,
+        Source::Ring(read) => {
+            IsbPixelValidation::from_owned(frame_cost::measure(frame_cost::Stage::Copy, || {
+                read.copy(check)
+            })?)
+            .map_err(|_| IsbValidationFailure::Malformed)?
+        }
         #[cfg(feature = "experimental-draw")]
         Source::Draw(batch) => sealed_validation(
             draw_source(
@@ -338,18 +346,20 @@ fn validate(
             job.bytes,
         )?,
     };
-    loop {
-        check()?;
-        let complete = validation
-            .step_with_budget(validation_bytes)
-            .map_err(|_| IsbValidationFailure::Malformed)?;
-        if complete {
+    frame_cost::measure(frame_cost::Stage::Pixels, || {
+        loop {
             check()?;
-            return validation
-                .finish()
-                .map_err(|_| IsbValidationFailure::Malformed);
+            let complete = validation
+                .step_with_budget(validation_bytes)
+                .map_err(|_| IsbValidationFailure::Malformed)?;
+            if complete {
+                check()?;
+                return validation
+                    .finish()
+                    .map_err(|_| IsbValidationFailure::Malformed);
+            }
         }
-    }
+    })
 }
 
 fn sealed_validation(

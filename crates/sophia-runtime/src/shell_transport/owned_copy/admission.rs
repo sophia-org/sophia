@@ -1,4 +1,5 @@
 use super::*;
+use crate::frame_cost;
 use crate::{ContentStoreError, IsbImageAdmissionError, IsbSubmitFailure};
 
 impl OwnedCopyOwner {
@@ -52,14 +53,16 @@ impl OwnedCopyOwner {
             }
             Decision::AwaitingAdmission => {
                 let active = self.active.as_mut().expect("matching admitted ring");
-                match self.jobs.reserve(
-                    epochs,
-                    worker,
-                    &active.ring,
-                    offer.request,
-                    now,
-                    waiting.deadline,
-                ) {
+                match frame_cost::measure(frame_cost::Stage::Reserve, || {
+                    self.jobs.reserve(
+                        epochs,
+                        worker,
+                        &active.ring,
+                        offer.request,
+                        now,
+                        waiting.deadline,
+                    )
+                }) {
                     Ok(job) => {
                         // Reservation checks fixed geometry, slot ownership and
                         // allocation against authority; only then take the read

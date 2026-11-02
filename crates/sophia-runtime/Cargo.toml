@@ -7,6 +7,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
+# Opt-in per-thread stage timers for device-free frame attribution; absent from default builds.
+diagnostic-frame-cost = ["rustix/time", "rustix/thread"]
 experimental-draw = ["dep:sophia-draw", "rustix/fs"]
 experimental-shell-capture = ["dep:sophia-renderer-image", "sophia-renderer-image/experimental-shell-capture", "rustix/fs"]
 # Opt-in shell-file control-turn observation; absent from default builds.

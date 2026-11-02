@@ -15,6 +15,7 @@ mod control;
 #[cfg(target_os = "linux")]
 pub mod developer_launch;
 mod error;
+pub mod frame_cost;
 #[cfg(target_os = "linux")]
 mod host_domain;
 #[cfg(target_os = "linux")]
@@ -116,3 +117,7 @@ mod test_content_isb;
 #[cfg(all(test, target_os = "linux"))]
 #[path = "../tests/support/owned_ring_races.rs"]
 mod owned_ring_races;
+
+#[cfg(all(test, feature = "diagnostic-frame-cost", target_os = "linux"))]
+#[path = "../tests/support/frame_cost.rs"]
+mod test_frame_cost;

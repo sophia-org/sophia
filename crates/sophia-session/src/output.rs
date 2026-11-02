@@ -31,14 +31,18 @@ pub fn install(output: SessionOutput) -> Result<(), &'static str> {
 #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
 pub(crate) fn stdout(arguments: Arguments<'_>) {
     if let Some(output) = OUTPUT.get() {
-        let line = arguments.to_string();
-        (output.stdout)(&line);
+        sophia_runtime::frame_cost::measure(sophia_runtime::frame_cost::Stage::Logging, || {
+            let line = arguments.to_string();
+            (output.stdout)(&line);
+        });
     }
 }
 
 pub(crate) fn stderr(arguments: Arguments<'_>) {
     if let Some(output) = OUTPUT.get() {
-        let line = arguments.to_string();
-        (output.stderr)(&line);
+        sophia_runtime::frame_cost::measure(sophia_runtime::frame_cost::Stage::Logging, || {
+            let line = arguments.to_string();
+            (output.stderr)(&line);
+        });
     }
 }

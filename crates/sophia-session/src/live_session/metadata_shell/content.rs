@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use sophia_backend_live::LiveShellContentFrame;
 use sophia_engine::{CompositorContentImage, CompositorNodeId, HeadlessOutput};
 use sophia_protocol::{ContentOutputId, OutputId, Rect, Size};
+use sophia_runtime::frame_cost::{Stage, measure};
 use sophia_runtime::{ContentAllocationSnapshot, ContentRenderBundle};
 use sophia_runtime::{ShellTransportConnection, ShellTransportError};
 
@@ -92,6 +93,13 @@ pub(super) struct LiveContentSession {
     presented: BTreeMap<ContentOutputId, PresentedOutputContent>,
     actions: ContentActionLedger,
     stage: ContentServiceStage,
+}
+
+pub(in crate::live_session) struct ContentSubmissionInputs {
+    allocations: Vec<ContentAllocationSnapshot>,
+    outputs: Vec<ContentOutputId>,
+    facts_generation: u64,
+    pub(in crate::live_session) now: u64,
 }
 
 impl LiveContentSession {
@@ -190,29 +198,26 @@ impl LiveContentSession {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn service_with_catalog(
+    pub(in crate::live_session) fn service_until_submission(
         &mut self,
         transport: &mut ShellTransportConnection<'_>,
         runtime: &mut sophia_backend_live::LiveProductionVisualRuntime,
         scene: &sophia_backend_live::LiveProductionCpuScene,
         native_scanout: Option<&mut sophia_backend_live::LiveProductionNativeScanout>,
         outputs: &[HeadlessOutput],
-        output_bounds: &[(OutputId, Rect)],
-        root: Rect,
         transaction: &mut dyn FnMut() -> Result<
             sophia_protocol::TransactionId,
             Box<dyn std::error::Error>,
         >,
         catalog: Option<&sophia_protocol::ShellApplicationCatalog>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<Option<ContentSubmissionInputs>, Box<dyn std::error::Error>> {
         if catalog.is_some() != transport.supports_persistent_catalog() {
             return Err(ShellTransportError::MissingCapability.into());
         }
         if transport.content_grant().is_none() {
-            return Ok(());
+            return Ok(None);
         }
         let now = self.now_msec();
-        let mut native_scanout = native_scanout;
         while self.observe_presentation(transport, runtime)? {}
         let presented_allocations = self
             .presented
@@ -222,40 +227,47 @@ impl LiveContentSession {
         self.stage = ContentServiceStage::Resources;
         transport.service_content_resources(now)?;
         self.stage = ContentServiceStage::Outputs;
-        self.publish_outputs(transport, outputs, transaction)?;
+        measure(Stage::Outputs, || {
+            self.publish_outputs(transport, outputs, transaction)
+        })?;
         self.stage = ContentServiceStage::Allocations;
-        transport.service_content_allocation_requests(&presented_allocations, now)?;
-        while let Some((_, request)) = transport.next_content_allocation_request() {
-            if request.operation == 3 {
-                transport.release_content_allocation(request.allocation_request_id)?;
-                continue;
-            }
-            if self.actions.dismissal_expired(request.prior, now) {
-                transport.reject_content_allocation(
-                    request.allocation_request_id,
-                    sophia_runtime::ContentAllocationError::AllocationLost,
-                )?;
-                continue;
-            }
-            let active_allocations = transport.content_allocation_snapshots();
-            match self.resolve_allocation(&request, outputs, &active_allocations) {
-                Ok(snapshot) => transport.grant_content_allocation(
-                    request.allocation_request_id,
-                    snapshot,
-                    &presented_allocations,
-                )?,
-                Err(error) => {
-                    transport.reject_content_allocation(request.allocation_request_id, error)?
+        measure(
+            Stage::Allocations,
+            || -> Result<(), Box<dyn std::error::Error>> {
+                transport.service_content_allocation_requests(&presented_allocations, now)?;
+                while let Some((_, request)) = transport.next_content_allocation_request() {
+                    if request.operation == 3 {
+                        transport.release_content_allocation(request.allocation_request_id)?;
+                        continue;
+                    }
+                    if self.actions.dismissal_expired(request.prior, now) {
+                        transport.reject_content_allocation(
+                            request.allocation_request_id,
+                            sophia_runtime::ContentAllocationError::AllocationLost,
+                        )?;
+                        continue;
+                    }
+                    let active_allocations = transport.content_allocation_snapshots();
+                    match self.resolve_allocation(&request, outputs, &active_allocations) {
+                        Ok(snapshot) => transport.grant_content_allocation(
+                            request.allocation_request_id,
+                            snapshot,
+                            &presented_allocations,
+                        )?,
+                        Err(error) => transport
+                            .reject_content_allocation(request.allocation_request_id, error)?,
+                    }
                 }
-            }
-        }
-        self.service_dismissals(
-            transport,
-            runtime,
-            scene,
-            native_scanout.as_deref_mut(),
-            now,
-            transaction,
+                self.service_dismissals(
+                    transport,
+                    runtime,
+                    scene,
+                    native_scanout,
+                    now,
+                    transaction,
+                )?;
+                Ok(())
+            },
         )?;
         let allocations = transport.content_allocation_snapshots();
         let content_outputs = self
@@ -264,14 +276,25 @@ impl LiveContentSession {
             .map(|facts| facts.output)
             .collect::<Vec<_>>();
         self.stage = ContentServiceStage::Demands;
-        transport.service_content_demands(&content_outputs, &allocations)?;
-        while let Some((demand_transaction, demand)) = transport.next_content_demand() {
-            let permit = self.next_permit_id;
-            self.next_permit_id = permit
-                .checked_add(1)
-                .ok_or("shell content permit identity exhausted")?;
-            transport.grant_content_demand(demand_transaction, demand.output, permit, now)?;
-        }
+        measure(
+            Stage::Demands,
+            || -> Result<(), Box<dyn std::error::Error>> {
+                transport.service_content_demands(&content_outputs, &allocations)?;
+                while let Some((demand_transaction, demand)) = transport.next_content_demand() {
+                    let permit = self.next_permit_id;
+                    self.next_permit_id = permit
+                        .checked_add(1)
+                        .ok_or("shell content permit identity exhausted")?;
+                    transport.grant_content_demand(
+                        demand_transaction,
+                        demand.output,
+                        permit,
+                        now,
+                    )?;
+                }
+                Ok(())
+            },
+        )?;
         let contexts = content_outputs
             .iter()
             .map(|output| sophia_runtime::ContentCandidateContext {
@@ -282,34 +305,50 @@ impl LiveContentSession {
             })
             .collect::<Vec<_>>();
         self.stage = ContentServiceStage::Candidates;
-        if let Some(catalog) = catalog {
-            transport.service_catalog_candidates(&contexts, catalog, now)?;
-        } else {
-            transport.service_content_candidates(&contexts, now)?;
-        }
-        while let Some((output, generation)) = transport.next_content_submission_for(|output| {
-            !self.pending.iter().any(|pending| pending.output == output)
-        }) {
-            self.stage = ContentServiceStage::Submission;
-            let bundle = if let Some(catalog) = catalog {
-                let context = contexts
-                    .iter()
-                    .find(|context| context.output == output)
-                    .copied()
-                    .ok_or("catalog submission output disappeared")?;
-                transport.begin_catalog_submission(generation, context, catalog, now)?
+        measure(Stage::Candidates, || {
+            if let Some(catalog) = catalog {
+                transport.service_catalog_candidates(&contexts, catalog, now)
             } else {
-                transport.begin_content_submission(output, generation, now)?
-            };
-            if bundle.surfaces.iter().any(|surface| {
-                self.actions.dismissal_expired(surface.allocation, now)
-                    || !allocations
-                        .iter()
-                        .any(|allocation| allocation.allocation == surface.allocation)
-            }) {
-                transport.content_renderer_failed(bundle.grant, output, generation)?;
-                continue;
+                transport.service_content_candidates(&contexts, now)
             }
+        })?;
+        Ok(Some(ContentSubmissionInputs {
+            allocations,
+            outputs: content_outputs,
+            facts_generation: self.facts_generation,
+            now,
+        }))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn service_with_catalog(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        runtime: &mut sophia_backend_live::LiveProductionVisualRuntime,
+        scene: &sophia_backend_live::LiveProductionCpuScene,
+        mut native_scanout: Option<&mut sophia_backend_live::LiveProductionNativeScanout>,
+        outputs: &[HeadlessOutput],
+        output_bounds: &[(OutputId, Rect)],
+        root: Rect,
+        transaction: &mut dyn FnMut() -> Result<
+            sophia_protocol::TransactionId,
+            Box<dyn std::error::Error>,
+        >,
+        catalog: Option<&sophia_protocol::ShellApplicationCatalog>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(inputs) = self.service_until_submission(
+            transport,
+            runtime,
+            scene,
+            native_scanout.as_deref_mut(),
+            outputs,
+            transaction,
+            catalog,
+        )?
+        else {
+            return Ok(());
+        };
+        while let Some(bundle) = self.next_submission(transport, &inputs, catalog)? {
             self.submit_bundle(
                 transport,
                 runtime,
@@ -324,11 +363,57 @@ impl LiveContentSession {
                 } else {
                     sophia_backend_live::LiveShellContentLayer::Shell
                 },
-                now,
+                inputs.now,
             )?;
         }
-        self.stage = ContentServiceStage::Idle;
         Ok(())
+    }
+
+    pub(in crate::live_session) fn next_submission(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        inputs: &ContentSubmissionInputs,
+        catalog: Option<&sophia_protocol::ShellApplicationCatalog>,
+    ) -> Result<Option<ContentRenderBundle>, Box<dyn std::error::Error>> {
+        let ContentSubmissionInputs {
+            allocations,
+            outputs: content_outputs,
+            facts_generation,
+            now,
+        } = inputs;
+        let (facts_generation, now) = (*facts_generation, *now);
+        while let Some((output, generation)) = transport.next_content_submission_for(|output| {
+            !self.pending.iter().any(|pending| pending.output == output)
+        }) {
+            self.stage = ContentServiceStage::Submission;
+            let bundle = if let Some(catalog) = catalog {
+                let context = content_outputs
+                    .iter()
+                    .find(|candidate_output| **candidate_output == output)
+                    .map(|candidate_output| sophia_runtime::ContentCandidateContext {
+                        output: *candidate_output,
+                        facts_generation,
+                        interaction_generation: 1,
+                        allocations,
+                    })
+                    .ok_or("catalog submission output disappeared")?;
+                transport.begin_catalog_submission(generation, context, catalog, now)?
+            } else {
+                transport.begin_content_submission(output, generation, now)?
+            };
+            if bundle.surfaces.iter().any(|surface| {
+                self.actions.dismissal_expired(surface.allocation, now)
+                    || !allocations
+                        .iter()
+                        .any(|allocation| allocation.allocation == surface.allocation)
+            }) {
+                transport.content_renderer_failed(bundle.grant, output, generation)?;
+                continue;
+            }
+            return Ok(Some(bundle));
+        }
+        self.stage = ContentServiceStage::Idle;
+        Ok(None)
     }
 
     pub(super) fn observe_presentation(
@@ -336,65 +421,67 @@ impl LiveContentSession {
         transport: &mut ShellTransportConnection<'_>,
         runtime: &sophia_backend_live::LiveProductionVisualRuntime,
     ) -> Result<bool, ShellTransportError> {
-        let Some((index, epoch)) = self
-            .pending
-            .iter()
-            .enumerate()
-            .find_map(|(index, pending)| {
-                runtime
-                    .shell_content_presentation_epoch(
-                        OutputId::from_raw(pending.output.id),
-                        pending.grant,
-                        pending.candidate_generation,
-                    )
-                    .map(|epoch| (index, epoch))
-            })
-        else {
-            return Ok(false);
-        };
-        let pending = &self.pending[index];
-        let publication = transport.content_presented(
-            pending.grant,
-            pending.output,
-            pending.candidate_generation,
-            epoch,
-            1,
-            1,
-        );
-        if publication == Err(ShellTransportError::ContentQueueSaturated) {
-            return Ok(false);
-        }
-        publication?;
-        let pending = self.pending.remove(index);
-        let usage = transport.content_usage().unwrap_or_default();
-        crate::session_println!(
-            "sophia_live_shell_content schema=1 status=presented output={} candidate_generation={} presentation_epoch={} staging_bytes={} resident_bytes={} retiring_bytes={} backing_bytes={} connection_epoch={} content_grant_epoch={}",
-            pending.output.id,
-            pending.candidate_generation,
-            epoch,
-            usage.staging,
-            usage.resident,
-            usage.retiring,
-            usage.backing,
-            pending.grant.connection_epoch,
-            pending.grant.content_grant_epoch,
-        );
-        self.presented.insert(
-            pending.output,
-            PresentedOutputContent {
-                catalog: pending.catalog,
-                grant: pending.grant,
-                candidate_generation: pending.candidate_generation,
-                presentation_epoch: epoch,
-                bands: pending.bands,
-                allocations: pending
-                    .allocations
-                    .into_iter()
-                    .map(|allocation| (allocation, epoch))
-                    .collect(),
-            },
-        );
-        Ok(true)
+        measure(Stage::Completion, || {
+            let Some((index, epoch)) =
+                self.pending
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, pending)| {
+                        runtime
+                            .shell_content_presentation_epoch(
+                                OutputId::from_raw(pending.output.id),
+                                pending.grant,
+                                pending.candidate_generation,
+                            )
+                            .map(|epoch| (index, epoch))
+                    })
+            else {
+                return Ok(false);
+            };
+            let pending = &self.pending[index];
+            let publication = transport.content_presented(
+                pending.grant,
+                pending.output,
+                pending.candidate_generation,
+                epoch,
+                1,
+                1,
+            );
+            if publication == Err(ShellTransportError::ContentQueueSaturated) {
+                return Ok(false);
+            }
+            publication?;
+            let pending = self.pending.remove(index);
+            let usage = transport.content_usage().unwrap_or_default();
+            crate::session_println!(
+                "sophia_live_shell_content schema=1 status=presented output={} candidate_generation={} presentation_epoch={} staging_bytes={} resident_bytes={} retiring_bytes={} backing_bytes={} connection_epoch={} content_grant_epoch={}",
+                pending.output.id,
+                pending.candidate_generation,
+                epoch,
+                usage.staging,
+                usage.resident,
+                usage.retiring,
+                usage.backing,
+                pending.grant.connection_epoch,
+                pending.grant.content_grant_epoch,
+            );
+            self.presented.insert(
+                pending.output,
+                PresentedOutputContent {
+                    catalog: pending.catalog,
+                    grant: pending.grant,
+                    candidate_generation: pending.candidate_generation,
+                    presentation_epoch: epoch,
+                    bands: pending.bands,
+                    allocations: pending
+                        .allocations
+                        .into_iter()
+                        .map(|allocation| (allocation, epoch))
+                        .collect(),
+                },
+            );
+            Ok(true)
+        })
     }
 
     fn publish_outputs(

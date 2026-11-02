@@ -16,19 +16,64 @@ impl LiveContentSession {
         layer: sophia_backend_live::LiveShellContentLayer,
         now: u64,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.submit_bundle_to(
+            transport,
+            outputs,
+            output_bounds,
+            root,
+            bundle,
+            layer,
+            now,
+            |frame, layer| runtime.set_shell_component_content(frame, layer, scene, native_scanout),
+        )
+    }
+
+    /// Shared admission and publication; the caller supplies only the target edge.
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::live_session) fn submit_bundle_to(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        outputs: &[HeadlessOutput],
+        output_bounds: &[(OutputId, Rect)],
+        root: Rect,
+        bundle: ContentRenderBundle,
+        layer: sophia_backend_live::LiveShellContentLayer,
+        now: u64,
+        submit: impl FnOnce(
+            LiveShellContentFrame,
+            sophia_backend_live::LiveShellContentLayer,
+        ) -> Result<bool, Box<dyn std::error::Error>>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        measure(Stage::Submission, || {
+            let output = bundle.output;
+            let allocations = transport.content_allocation_snapshots();
+            let descriptor = outputs
+                .iter()
+                .find(|descriptor| descriptor.id.raw() == output.id)
+                .copied()
+                .ok_or("content candidate targets a removed output")?;
+            self.stage = ContentServiceStage::Projection;
+            let frame = measure(Stage::Projection, || {
+                project_render_bundle(&bundle, descriptor, output, &allocations)
+            })?;
+            let bands = measure(Stage::Projection, || {
+                candidate_bands(&bundle, &allocations, output_bounds, root)
+            })?;
+            self.stage = ContentServiceStage::Runtime;
+            submit(frame, layer)?;
+            self.publish_prepared(transport, bundle, bands, now)
+        })
+    }
+
+    pub(in crate::live_session) fn publish_prepared(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        bundle: ContentRenderBundle,
+        bands: Vec<sophia_protocol::OutputReservation>,
+        now: u64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let output = bundle.output;
         let generation = bundle.candidate_generation;
-        let allocations = transport.content_allocation_snapshots();
-        let descriptor = outputs
-            .iter()
-            .find(|descriptor| descriptor.id.raw() == output.id)
-            .copied()
-            .ok_or("content candidate targets a removed output")?;
-        self.stage = ContentServiceStage::Projection;
-        let frame = project_render_bundle(&bundle, descriptor, output, &allocations)?;
-        let bands = candidate_bands(&bundle, &allocations, output_bounds, root)?;
-        self.stage = ContentServiceStage::Runtime;
-        runtime.set_shell_component_content(frame, layer, scene, native_scanout)?;
         let grant = transport.content_grant().ok_or("content grant vanished")?;
         self.stage = ContentServiceStage::Prepared;
         transport.content_prepared(grant, output, generation, 1, 1, now)?;

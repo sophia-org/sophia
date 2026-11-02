@@ -4,6 +4,7 @@
 //! the current export and registry. Journal publication is a separate next
 //! action, retained under backpressure. No completion authorizes a resource.
 use super::{ShellComponentTransport, ShellTransportError};
+use crate::frame_cost;
 use crate::owned_ring_protocol::{Identity, Offer};
 use crate::{
     ContentEpochRegistry, IsbImageWithdrawal, IsbValidationCompletion, IsbValidationWorker,
@@ -83,7 +84,7 @@ impl OwnedCopyOwner {
         &mut self,
         completion: IsbValidationCompletion,
     ) -> Result<(), IsbValidationCompletion> {
-        self.jobs.receive(completion)
+        frame_cost::measure(frame_cost::Stage::Collect, || self.jobs.receive(completion))
     }
 
     pub fn service(
@@ -140,9 +141,13 @@ impl OwnedCopyOwner {
         }
         self.jobs.observe_store_stops(epochs, worker, now)?;
         self.jobs.expire(epochs, worker, instant, now)?;
-        self.reconcile(epochs, now);
-        self.publish_releases(transport, current)?;
-        self.propose_offer(transport, epochs, worker, now, instant, other_pending)
+        frame_cost::measure(frame_cost::Stage::Settle, || self.reconcile(epochs, now));
+        frame_cost::measure(frame_cost::Stage::Retire, || {
+            self.publish_releases(transport, current)
+        })?;
+        frame_cost::measure(frame_cost::Stage::Admission, || {
+            self.propose_offer(transport, epochs, worker, now, instant, other_pending)
+        })
     }
 
     fn reconcile(&mut self, epochs: &mut ContentEpochRegistry, now: u64) {
@@ -210,7 +215,9 @@ impl OwnedCopyOwner {
                 Ok(()) => {
                     if *handed_off {
                         assert!(
-                            active.ring.confirm_release(slot),
+                            frame_cost::measure(frame_cost::Stage::SourceRelease, || {
+                                active.ring.confirm_release(slot)
+                            }),
                             "exact finished source read"
                         );
                     }

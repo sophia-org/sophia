@@ -100,6 +100,14 @@ pub(super) fn send(
 
 /// Shell r9 with sealed images, over an afid-authenticated attach.
 pub(super) fn client(socket: std::path::PathBuf, slot: usize) -> (ShellConnection, ContentLimits) {
+    client_with_slots(socket, slot, 1)
+}
+
+fn client_with_slots(
+    socket: std::path::PathBuf,
+    slot: usize,
+    slots: u8,
+) -> (ShellConnection, ContentLimits) {
     assert!(slot <= 2, "role");
     // Bit 13: sealed images, required for every content attach at r9.
     let capabilities = SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
@@ -138,7 +146,27 @@ pub(super) fn client(socket: std::path::PathBuf, slot: usize) -> (ShellConnectio
             let ShellContentRecord::Limits(limits) = record else {
                 panic!("Limits");
             };
-            sdk_image::enable(&mut peer, socket.parent().unwrap(), &limits);
+            peer.enable_image(
+                sophia_shell_client::ShellImageConfig {
+                    endpoint_dir: socket.parent().unwrap().to_owned(),
+                    bounds: sophia_shell_client::ProducerRoleBounds {
+                        max_resource_bytes: limits.max_resource_bytes,
+                        max_width: limits.max_width_px,
+                        max_height: limits.max_height_px,
+                        max_admitted_outputs: limits.max_outputs,
+                        transfer_slots: limits.max_open_transfers.min(4),
+                    },
+                    transfer_timeout_ms: limits.transfer_timeout_ms,
+                    startup_deadline_ms: 10000,
+                    formats_capacity: 65536,
+                    ring_slots: slots,
+                    ring_capacity: 0,
+                    content_grant_epoch: limits.grant.content_grant_epoch,
+                },
+                Instant::now(),
+                0,
+            )
+            .unwrap();
             return (peer, limits);
         }
         assert!(Instant::now() < deadline, "Limits fetch missing");
@@ -150,10 +178,18 @@ pub(super) fn connect(
     owner: &mut ShellComponentSession,
     slot: usize,
 ) -> (ComponentConnectionKey, ShellConnection) {
+    connect_with_slots(owner, slot, 1)
+}
+
+pub(super) fn connect_with_slots(
+    owner: &mut ShellComponentSession,
+    slot: usize,
+    slots: u8,
+) -> (ComponentConnectionKey, ShellConnection) {
     let (key, socket) = owner
         .processes
         .reconnect_fixture_endpoint(slot, owner.policy);
-    let worker = std::thread::spawn(move || client(socket, slot));
+    let worker = std::thread::spawn(move || client_with_slots(socket, slot, slots));
     let deadline = Instant::now() + Duration::from_secs(5);
     let welcome = loop {
         let visit = owner.poll(65536).unwrap();
@@ -381,14 +417,24 @@ pub(super) fn allocate_extent(
     peer: &mut ShellConnection,
     extent: u32,
 ) {
+    allocate_size(transport, peer, 64, 32, extent);
+}
+
+pub(super) fn allocate_size(
+    transport: &mut ShellTransportConnection<'_>,
+    peer: &mut ShellConnection,
+    width: u32,
+    output_height: u32,
+    extent: u32,
+) {
     transport
         .publish_content_output_facts(
             TransactionId::from_raw(2),
             1,
             vec![ContentOutputFactsEntry {
                 output: OUTPUT,
-                local_width: 64,
-                local_height: 32,
+                local_width: width,
+                local_height: output_height,
                 scale_numerator: 1,
                 scale_denominator: 1,
                 scale_generation: 1,
@@ -410,7 +456,7 @@ pub(super) fn allocate_extent(
             parent: ContentAllocationId::default(),
             parent_presentation_epoch: 0,
             anchor_parent_rect: ContentPixelRect::default(),
-            desired_width: 64,
+            desired_width: width,
             desired_height: extent,
             margins: ContentMargins::default(),
         }),
@@ -435,13 +481,13 @@ pub(super) fn allocate_extent(
                 logical: ContentLogicalRect {
                     x: 0,
                     y: 0,
-                    width: 64,
+                    width,
                     height: extent,
                 },
                 pixel: ContentPixelRect {
                     x: 0,
                     y: 0,
-                    width: 64,
+                    width,
                     height: extent,
                 },
                 parent: ContentAllocationId::default(),
