@@ -332,3 +332,20 @@ for owner CPU and visits. Compare each counter block to their mean, requiring
 an absolute difference of at most 5% in both quantities. Keep every block and
 refusal. This gate bounds counter-path perturbation in this fixture; it does
 not replace the protected-owner, production-readiness or orchestration work.
+
+The reference ran at signed `112c16d7b`. All four processes completed, with
+256,000 measured frames, exact saved completion sequences, unchanged binaries
+and no diagnostic clock samples. Root reduction passed ten mutation refusals;
+independent source/build/record audit found zero findings. The predeclared
+perturbation gate **fails**: run 2, h512 block 2 is +5.08% CPU over its stub
+endpoint mean. All other comparisons and every endpoint agreement check pass.
+No threshold changed and no workload block was removed or repeated.
+
+Evidence is `~/.local/state/sophia-session-counter-reference-01`; its receipt
+binds the independent `sophia-session-counter-reference-audit-claude-01` audit
+(manifest `929de779b766ced5cb0857e39a545ad23c3c54a2ad275a75a10a2b320fdff5b2`).
+The initial reduction missed the first Prepared line because libtest prepended
+its banner; the retained correction recognizes that prefix and preserves the
+exact count checks. Counter-path and combined timer/counter perturbation remain
+unqualified. Proceed with production coverage, and requalify instrumentation
+against the compiled stub on that workload before choosing any optimization.

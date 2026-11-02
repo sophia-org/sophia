@@ -50,12 +50,18 @@ limits were not changed. ACKs are cumulative, so the reducer's initial observed
 ACK/read equality was removed with its source justification and old validator
 preserved, not replaced by a tolerance.
 
-Next bound the counter-only path against a compile-time feature-off reference.
-Then close two source-confirmed production gaps: supplied authentication omits
+The [compiled-stub reference](../../session-frame-attribution.md#counter-only-reference-against-the-compiled-stub)
+at signed `112c16d7b` passed identity, protocol and saved-record audits, but its
+predeclared perturbation gate failed: one h512 comparison is +5.08% CPU against
+the 5% limit. Keep that refusal; neither counter-only nor combined observer
+overhead is qualified. Evidence and independent audit are sealed separately.
+
+Next close two source-confirmed production gaps: supplied authentication omits
 the per-operation pidfd custody poll, and fixture polling omits consumed
 readiness observations. Reuse the protected Rust conformance peer and actual
 component service/readiness seams before selecting a mechanism. The byte
 oracle stays off the owner thread and must preserve last-release custody.
+Requalify combined instrumentation against the compiled stub on that workload.
 No candidate or performance claim follows from this fixture; the original
 attribution baseline and binary remain held separately.
 
