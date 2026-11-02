@@ -123,7 +123,8 @@ impl ShellComponentTransport {
             if !self.control_capacity_available(epochs, 0) {
                 break;
             }
-            let Some((transaction, record)) = self.poll_content_candidate_record(epochs)? else {
+            let Some((transaction, record, retire)) = self.poll_content_candidate_record(epochs)?
+            else {
                 break;
             };
             if std::env::var_os("SOPHIA_SHELL_CONTENT_TRACE").is_some() {
@@ -181,7 +182,7 @@ impl ShellComponentTransport {
             };
             let (outcome, reported) = {
                 let (resources, candidates) = epochs
-                    .active_parts_mut(self.store_grant)
+                    .active_pair_mut(self.store_grant)
                     .ok_or(ShellTransportError::MissingCapability)?;
                 let outcome = match record {
                     ShellContentRecord::CandidateBegin(value) => {
@@ -190,13 +191,24 @@ impl ShellComponentTransport {
                     ShellContentRecord::CandidateChunk(value) => {
                         candidates.chunk(transaction, value, now_msec)
                     }
-                    ShellContentRecord::CandidateEnd(value) => candidates.end(
-                        transaction,
-                        value,
-                        context.expect("End selected one exact context"),
-                        resources,
-                        now_msec,
-                    ),
+                    ShellContentRecord::CandidateEnd(value) => {
+                        let context = context.expect("End selected one exact context");
+                        match retire {
+                            // W2: the reservation is made here, atomically
+                            // with the candidate's own admission.
+                            Some(retire) => candidates.end_with_retire(
+                                transaction,
+                                value,
+                                retire,
+                                context,
+                                resources,
+                                now_msec,
+                            ),
+                            None => {
+                                candidates.end(transaction, value, context, resources, now_msec)
+                            }
+                        }
+                    }
                     _ => return Err(ShellTransportError::WrongContentRecord),
                 };
                 (outcome, candidates.pending_event().is_some())
@@ -376,13 +388,26 @@ impl ShellComponentTransport {
         Ok(())
     }
 
+    /// The next candidate part; an End brings its candidate's retire intent.
     fn poll_content_candidate_record(
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,
-    ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
+    ) -> Result<
+        Option<(
+            TransactionId,
+            ShellContentRecord,
+            Option<sophia_protocol::shell::content::ContentCandidateRetire>,
+        )>,
+        ShellTransportError,
+    > {
         self.poll_io(epochs)?;
-        let taken = self.take_content(ContentWant::CandidatePart)?;
-        self.admit_client_record(taken)
+        let (taken, retire) = match self.take_candidate_part() {
+            Some((transaction, record, retire)) => (Some((transaction, record)), retire),
+            None => (None, None),
+        };
+        Ok(self
+            .admit_client_record(taken)?
+            .map(|(transaction, record)| (transaction, record, retire)))
     }
 
     fn poll_content_demand_record(
@@ -414,7 +439,17 @@ impl ShellComponentTransport {
                 return Err(ShellTransportError::WrongContentRecord);
             }
             self.transfer_record(admitted);
-            store.take_event();
+            // Presented is in the FIFO and still holds its intent: commit it,
+            // infallibly and once, then take the event. A later
+            // ResourceReleased can only queue behind it.
+            if let Some(owner) = event.retire
+                && let Some((resources, store)) = epochs.active_pair_mut(self.store_grant)
+            {
+                resources.commit_retire(&owner);
+                store.take_event();
+            } else if let Some(store) = epochs.active_candidates_mut(self.store_grant) {
+                store.take_event();
+            }
         }
     }
 }

@@ -760,3 +760,82 @@ fn supply_allocation(epochs: &mut ContentEpochRegistry) {
         .unwrap();
     while store.take_event().is_some() {}
 }
+
+#[cfg(feature = "experimental-shell-retire-on-present")]
+#[test]
+fn configured_dma_capture_does_not_grant_the_unqualified_w2_combination() {
+    use sophia_protocol::shell::content::SOPHIA_SHELL_CAPABILITY_CONTENT_RETIRE_ON_PRESENT;
+    let directory =
+        std::env::temp_dir().join(format!("shell-w2-dma-refusal-{}", std::process::id()));
+    let mut transport = authorized(&directory);
+    let (d, l, f, b) = config();
+    transport.configure_image_channel(d, l, f, b).unwrap();
+    transport.permit_retire_on_present(true).unwrap();
+    let mut epochs = ContentEpochRegistry::new(64 << 20).unwrap();
+    let grant = ContentGrant {
+        connection_epoch: 1,
+        content_grant_epoch: 1,
+    };
+    transport
+        .reserve_content(&mut epochs, ContentLimits::prototype(grant))
+        .unwrap();
+    transport
+        .begin_file_negotiation(
+            &epochs,
+            1,
+            Duration::from_secs(3),
+            ShellContentAdmissionPolicy::Granted {
+                discrete_input: false,
+            },
+        )
+        .unwrap();
+    let path = transport.socket_path().to_owned();
+    let peer = std::thread::spawn(move || {
+        let mut peer = raw::Peer::connect(&path);
+        setup(&mut peer);
+        let hello = encode_shell_file_negotiate(
+            ShellFileHeader {
+                kind: ShellFileKind::Negotiate,
+                connection_epoch: 1,
+                submission_id: 1,
+                sequence: 0,
+            },
+            ShellV1ClientHello {
+                minimum_revision: 12,
+                maximum_revision: 12,
+                required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
+                    | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+                    | OWNED
+                    | DMA
+                    | SOPHIA_SHELL_CAPABILITY_CONTENT_RETIRE_ON_PRESENT,
+            },
+        )
+        .unwrap();
+        peer.submit_acknowledged(&hello, 1);
+        decode_shell_file_refused(&peer.next_event()).unwrap()
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match transport.poll_negotiation(&mut epochs, 65536) {
+            Err(ShellTransportError::NotConnected) => break,
+            Ok(None) => (),
+            other => panic!("unqualified W2/DMA combination: {other:?}"),
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    while !peer.is_finished() {
+        assert!(Instant::now() < deadline);
+        let _ = transport.poll_io(&mut epochs);
+        std::thread::yield_now();
+    }
+    assert_eq!(
+        peer.join().unwrap(),
+        ContentAdmissionRefused {
+            reason: 4,
+            denied_capabilities: DMA,
+        }
+    );
+    assert!(transport.content_grant().is_none());
+    assert!(!directory.join("image.sock").exists());
+}

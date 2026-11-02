@@ -17,8 +17,8 @@ int sf_session_image_r9(const struct sophia_sf_client *c)
 int sf_session_image_r10(const struct sophia_sf_client *c)
 {
     return c->image_mode && c->negotiated &&
-           c->welcome.selected_revision == SOPHIA_SF_REVISION_OWNED_RING &&
-           (c->welcome.capabilities & SOPHIA_SF_CAP_OWNED_RING);
+           sophia_sf_owned_ring_image_revision(c->welcome.selected_revision,
+            c->welcome.capabilities) != 0;
 }
 
 int sf_session_image_kind(uint16_t kind)
@@ -65,7 +65,8 @@ int sf_session_event_decode(const struct sophia_sf_client *c, const uint8_t *b, 
             r->header.sequence = v.header.sequence;
             return 0;
         }
-        if (sophia_sf_decode_revision(b, n, c->welcome.selected_revision, r))
+        if (sophia_sf_decode_revision(b, n, sf_session_image_r10(c) ?
+            SOPHIA_SF_REVISION_OWNED_RING : c->welcome.selected_revision, r))
             return -1;
     } else if (sophia_sf_decode(b, n, r))
         return -1;

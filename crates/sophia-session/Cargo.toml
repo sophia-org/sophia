@@ -51,6 +51,7 @@ diagnostic-frame-cost = ["sophia-runtime/diagnostic-frame-cost"]
 experimental-draw = ["sophia-runtime/experimental-draw"]
 experimental-shell-capture = ["sophia-renderer-live/experimental-shell-capture", "sophia-runtime/experimental-shell-capture", "sophia-backend-live/experimental-shell-capture"]
 experimental-custody-dispatch = ["sophia-runtime/experimental-custody-dispatch"]
+experimental-shell-retire-on-present = ["sophia-runtime/experimental-shell-retire-on-present"]
 default = []
 native-session = [
     "dep:zbus",

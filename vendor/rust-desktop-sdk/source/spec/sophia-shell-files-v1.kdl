@@ -192,6 +192,10 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     // lack a bit it required; the exact role profile is Session's decision.
     // r9 adds shell capability bits 13 (sealed) and 14 (DMA-BUF).
     // r10 adds bit 15 (owned ring) and retires sealed bit 13 for shell.
+    // r12 adds bit 17 (retire predecessor on presentation). It grants no
+    // other capability. Shell r10/r11/r12 with bit 15 use image revision 10;
+    // unallocated later revisions have no image mapping. Draw r11/bit 16
+    // remains independently allocated and requires an explicit supported grant.
     // See sophia-owned-ring-v1.kdl. Revision alone grants no capability.
     body "Negotiated" size=32 {
         field "selected_revision" type="u16" offset=0
@@ -399,7 +403,17 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "surface_count" type="u16" offset=72 max=8
         field "placement_count" type="u16" offset=74 max=32
         field "target_count" type="u16" offset=76 max=64
-        field "reserved" type="u16" offset=78 value=0
+        field "flags" type="u16" offset=78 min=0 max=1
+    }
+    // Candidate flags=0 preserves the old record with no trailer. Bit 0 is
+    // permitted only with selected shell r12 and explicit bit-17 grant.
+    // Exactly one CandidateRetire row follows ALL surfaces, placements and
+    // targets when flags=1. It is included in the complete 8192-byte cap.
+    // Unknown flags, unavailable grants, short or trailing bytes refuse.
+    row "CandidateRetire" size=24 {
+        field "retire_transaction" type="u64" offset=0 nonzero=#true
+        field "resource_id" type="u64" offset=8 nonzero=#true
+        field "resource_generation" type="u64" offset=16 nonzero=#true
     }
     // allocation and scale_generation are always nonzero. role 1 panel, 2
     // popout; edge 1-4; each margin within [-512, 512]; reservation_extent at

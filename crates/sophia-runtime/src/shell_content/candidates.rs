@@ -3,13 +3,15 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use sophia_protocol::*;
 
 use super::{
-    ContentAllocationSnapshot, ContentResourceLease, ContentResourceStore, ContentStoreError,
+    ContentAllocationSnapshot, ContentResourceLease, ContentResourceStore, ContentRetireOnPresent,
+    ContentRetireOwner, ContentRetireToken, ContentStoreError,
 };
 
 mod demands;
 mod native;
 mod native_close;
 mod persistent;
+mod retire_on_present;
 mod validation;
 use super::ContentStoreProfile;
 use demands::StandingDemand;
@@ -69,6 +71,10 @@ pub struct ContentCandidateContext<'a> {
 pub struct ContentCandidateEvent {
     pub transaction: TransactionId,
     pub record: ShellContentRecord,
+    /// The retire intent a queued Presented owns. A clone neither holds nor
+    /// commits it: the store keeps the token until the event is taken, and
+    /// commit is by owner identity, once, in the store.
+    pub retire: Option<ContentRetireOwner>,
 }
 
 struct Permit {
@@ -101,6 +107,8 @@ struct Candidate {
     resources: Vec<(ContentResourceId, ContentResourceLease)>,
     deadline: u64,
     prepared: bool,
+    /// Reserved in the resource store under this candidate's owner identity.
+    retire: Option<(ContentRetireOnPresent, ContentRetireToken)>,
 }
 
 /// Renderer-facing immutable candidate. Its resource leases remain real owners
@@ -142,6 +150,8 @@ pub struct ContentCandidateStore {
     pending: BTreeMap<ContentOutputId, Candidate>,
     submitted: BTreeMap<ContentOutputId, Candidate>,
     events: VecDeque<ContentCandidateEvent>,
+    /// Retire tokens owned by queued Presented events.
+    presented_retire: Vec<(ContentRetireOwner, ContentRetireToken)>,
     /// Reserved output records for obligations which have not settled yet.
     response_credits: usize,
     last_candidate_generation: u64,
@@ -189,6 +199,7 @@ impl ContentCandidateStore {
             pending: BTreeMap::new(),
             submitted: BTreeMap::new(),
             events: VecDeque::new(),
+            presented_retire: Vec::new(),
             response_credits: 0,
             last_candidate_generation: 0,
             last_demand_id: 0,
@@ -198,8 +209,14 @@ impl ContentCandidateStore {
         })
     }
 
+    /// Taking a queued Presented ends its hold on any retire intent; only a
+    /// commit before the take applies it.
     pub fn take_event(&mut self) -> Option<ContentCandidateEvent> {
-        self.events.pop_front()
+        let event = self.events.pop_front()?;
+        if let Some(owner) = event.retire {
+            self.presented_retire.retain(|(held, _)| *held != owner);
+        }
+        Some(event)
     }
 
     pub fn pending_event(&self) -> Option<&ContentCandidateEvent> {
@@ -263,6 +280,7 @@ impl ContentCandidateStore {
         self.events.push_back(ContentCandidateEvent {
             transaction,
             record,
+            retire: None,
         });
     }
 
@@ -648,6 +666,7 @@ impl ContentCandidateStore {
                 .checked_add(u64::from(self.limits.preparation_timeout_ms))
                 .ok_or(ContentCandidateError::Malformed)?,
             prepared: false,
+            retire: None,
         })
     }
 
@@ -793,6 +812,13 @@ impl ContentCandidateStore {
                 work_area_generation,
                 wm_commit_generation,
             );
+            // The queued Presented now owns the intent; only its transfer to
+            // the output commits it.
+            if let Some((_, token)) = candidate.retire {
+                let owner = self.retire_owner(output, candidate_generation);
+                self.events.back_mut().expect("Presented queued").retire = Some(owner);
+                self.presented_retire.push((owner, token));
+            }
         }
         Ok(())
     }
@@ -889,6 +915,7 @@ impl ContentCandidateStore {
         self.assemblies.clear();
         self.pending.clear();
         self.events.clear();
+        self.presented_retire.clear();
         // Submitted work remains non-cancellable, but a dead peer is owed no
         // wire record. Its renderer leases still drain through `presented` or
         // `renderer_failed` without reusing old authority.

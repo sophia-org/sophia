@@ -16,7 +16,7 @@ use sophia_protocol::{
     CatalogActivation, ContentGrant, ContentLimits, ContentResourceId, NativeLauncherActivation,
     NativeLauncherAllocationRequest, NativeLauncherInputAck, ShellCatalogActionRecord,
     ShellContentRecord, ShellIndicatorActivation, ShellNativeLauncherRecord, ShellV1ClientHello,
-    TransactionId,
+    TransactionId, shell::content::ContentCandidateRetire,
 };
 
 use super::journal::{Journal, JournalBounds};
@@ -178,8 +178,9 @@ pub(in crate::shell_transport) enum Inbound {
     Negotiate(ShellV1ClientHello),
     ImageBegin(ShellImageMetadata),
     Content(TransactionId, Box<ShellContentRecord>),
-    /// One whole candidate; its parts reach the owner in wire order.
-    Candidate(Box<ShellFileCandidate>),
+    /// One whole candidate; its parts reach the owner in wire order. A W2
+    /// retire intent rides with it to its End, never by transaction.
+    Candidate(Box<ShellFileCandidate>, Option<ContentCandidateRetire>),
     NativeAllocation(TransactionId, Box<NativeLauncherAllocationRequest>),
     /// One whole native-launcher candidate; its parts reach the owner in
     /// wire order through `take_native_candidate_part`.
@@ -239,6 +240,9 @@ pub(in crate::shell_transport) struct ShellFiles {
     accepted: Option<Accepted>,
     image: Option<ImageChannelState>,
     image_revision: u16,
+    /// W2 prototype: the selected shell revision and granted capabilities
+    /// permit a candidate retire intent. Fixed at negotiation.
+    retire_on_present: bool,
     pending_image_refusal: Option<PendingImageRefusal>,
     pending_image_closed: Option<ShellChannelClosed>,
     submission_watermark: u64,
@@ -247,8 +251,13 @@ pub(in crate::shell_transport) struct ShellFiles {
     #[cfg(feature = "experimental-draw")]
     draw: draw::DrawQueue,
     owned: owned_ring::OwnedRingExport,
-    /// The Begin, Chunk and End of the candidate being handed to the owner.
-    candidate_parts: VecDeque<(TransactionId, ShellContentRecord)>,
+    /// The Begin, Chunk and End of the candidate being handed to the owner;
+    /// only the End carries the candidate's retire intent.
+    candidate_parts: VecDeque<(
+        TransactionId,
+        ShellContentRecord,
+        Option<ContentCandidateRetire>,
+    )>,
     /// As `candidate_parts`, for a whole `NativeCandidate` under assembly.
     native_candidate_parts: VecDeque<(TransactionId, NativeCandidatePart)>,
     /// As `candidate_parts`, for a whole `CatalogCandidate` under assembly.
@@ -314,6 +323,7 @@ impl ShellFiles {
             accepted: None,
             image: None,
             image_revision: 0,
+            retire_on_present: false,
             pending_image_refusal: None,
             pending_image_closed: None,
             submission_watermark: 0,
@@ -354,22 +364,18 @@ impl ShellFiles {
     /// profile has one, whether content records may be submitted, and the
     /// negotiated capability set that gates the native, catalog and
     /// indicator families and the `indicators` root name.
-    pub(in crate::shell_transport) fn complete_negotiation(
-        &mut self,
-        limits: Option<(Vec<u8>, ContentLimits)>,
-        capabilities: u64,
-    ) -> Result<(), Errno> {
-        self.complete_negotiation_with_image_revision(limits, capabilities, 0)
-    }
-
-    /// Negotiation completion with the selected image revision hooked in
+    ///
+    /// The selected image revision is hooked in
     /// atomically: disclosure, readiness and candidate gating all read
-    /// this one recorded value, never a later unchecked setter.
+    /// this one recorded value, never a later unchecked setter. The selected
+    /// shell revision is recorded apart from it: only the W2 retire intent
+    /// reads it, so the r8 to r10 image semantics cannot move.
     pub(in crate::shell_transport) fn complete_negotiation_with_image_revision(
         &mut self,
         limits: Option<(Vec<u8>, ContentLimits)>,
         capabilities: u64,
         image_revision: u16,
+        selected_revision: u16,
     ) -> Result<(), Errno> {
         if self.revoked {
             return Err(Errno::ESTALE);
@@ -394,6 +400,10 @@ impl ShellFiles {
         }
         self.capabilities = capabilities;
         self.image_revision = image_revision;
+        self.retire_on_present = sophia_protocol::shell::content::retire_on_present_enabled(
+            selected_revision,
+            capabilities,
+        );
         if image_revision == crate::owned_ring_protocol::REVISION {
             self.journal.enable_image_revision();
         }

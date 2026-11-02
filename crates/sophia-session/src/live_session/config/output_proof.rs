@@ -254,9 +254,27 @@ pub(super) fn parse_capture_destination_reuse(
                 feature = "experimental-shell-capture"
             )))
     {
-        return Err("--experimental-shell-capture-destination-reuse requires --native-scanout \
+        return Err(
+            "--experimental-shell-capture-destination-reuse requires --native-scanout \
                     and a build with native-session and experimental-shell-capture"
-            .into());
+                .into(),
+        );
+    }
+    Ok(enabled)
+}
+
+/// W2 prototype: an explicit, default-off owner setting that lets the bar
+/// negotiate retire-on-present. A build without the feature has no such flag.
+pub(super) fn parse_retire_on_present(args: &[String]) -> Result<bool, Box<dyn std::error::Error>> {
+    let enabled = args
+        .iter()
+        .any(|arg| arg == "--experimental-shell-retire-on-present");
+    if enabled && !cfg!(feature = "experimental-shell-retire-on-present") {
+        return Err(
+            "--experimental-shell-retire-on-present requires a build with \
+                    experimental-shell-retire-on-present"
+                .into(),
+        );
     }
     Ok(enabled)
 }

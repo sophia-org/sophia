@@ -139,6 +139,7 @@ pub(super) fn prepare(
             let owner = match prepared {
                 Ok(mut owner) => {
                     owner.set_capture_destination_reuse(config.shell_capture_destination_reuse);
+                    owner.set_retire_on_present(config.shell_retire_on_present);
                     owner
                 }
                 Err(error) => {

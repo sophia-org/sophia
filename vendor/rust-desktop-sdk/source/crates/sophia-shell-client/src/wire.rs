@@ -35,6 +35,13 @@ pub(crate) enum Outbound {
     /// A complete bounded group of content records owned atomically (for
     /// example a candidate's Begin/Chunk*/End), encoded as one file record.
     ContentGroup(TransactionId, Vec<ShellContentRecord>),
+    /// W2 prototype: a `ContentGroup` naming one predecessor to retire once
+    /// it is presented. Admitted only on a connection that negotiated it.
+    RetiringContentGroup(
+        TransactionId,
+        Vec<ShellContentRecord>,
+        sophia_shell_protocol::shell::content::ContentCandidateRetire,
+    ),
     /// One r9 ImageBegin candidate: the producer's 96-byte body.
     /// Historical; no longer constructed since shell revision 10
     /// made the owned ring the only shell image source.
@@ -80,6 +87,7 @@ impl Outbound {
                 | sophia_shell_protocol::shell_files::ShellDescriptorRecord::LauncherActivationAck(_)),
             Outbound::Content(_, record) => matches!(record, ShellContentRecord::ActionAck(_)),
             Outbound::ContentGroup(..)
+            | Outbound::RetiringContentGroup(..)
             | Outbound::ImageBegin(..)
             | Outbound::IndicatorActivation(..)
             | Outbound::CatalogCandidateGroup { .. } => false,

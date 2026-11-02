@@ -1064,3 +1064,10 @@ gates; no B3 performance result is claimed.
 ## t339 optional r10 DMA-BUF record vocabulary
 
 The image-channel contract comes from signed Sophia `b47a6a094b3cc5a4da0c1a720d32040dbe05dd8d`. Revision 10 admits the existing image lifecycle envelopes and exact ImageBegin receipt for optional DMA-BUF capture. CPU upload remains owned-ring only; source admission belongs to the server. This codec checkpoint does not enable the shell GPU producer or establish C/Rust producer parity, native capture, or performance qualification.
+# W2 integration contract input
+
+The shell file KDL, lifecycle prose and
+`spec/golden/sophia-shell-retire-v1.tsv` are copied byte-for-byte from Sophia
+`f96437181bb4cd135d24b91bbde69c04c31a07ed` on `cpu/w2-integration`.
+This is an unreleased integration input, not a production W2 qualification.
+The allocation is r12 / bit 17; r11 / bit 16 remains assigned to draw.

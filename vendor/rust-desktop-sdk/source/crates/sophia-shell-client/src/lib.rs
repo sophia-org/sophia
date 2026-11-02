@@ -36,7 +36,9 @@ pub use native_lifecycle::{
 mod outbox;
 pub use outbox::{QueueLimits, QueueReservation};
 mod reservation;
+mod retire_on_present;
 pub use lifecycle::*;
+pub use retire_on_present::{RetireOnPresent, RetireOnPresentError, RetireProgress};
 mod journal_event;
 mod journal_progress;
 pub use journal_event::{JournalEvent, JournalRecord};
@@ -1101,8 +1103,19 @@ fn validate_image_options(
     options: &ShellClientOptions,
     image: &ShellImageConfig,
 ) -> Result<(), ShellClientError> {
-    if options.minimum_revision > sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
-        || options.maximum_revision < sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
+    // W2 asks for exactly r12, whose image protocol is still r10.
+    let w2 = crate::retire_on_present::w2_required(options);
+    let spans_image = if w2 {
+        options.minimum_revision
+            == sophia_shell_protocol::shell::content::SOPHIA_SHELL_RETIRE_ON_PRESENT_REVISION
+            && options.maximum_revision
+                == sophia_shell_protocol::shell::content::SOPHIA_SHELL_RETIRE_ON_PRESENT_REVISION
+    } else {
+        options.minimum_revision
+            <= sophia_shell_protocol::shell::content::SOPHIA_SHELL_RETIRE_ON_PRESENT_REVISION
+            && options.maximum_revision >= sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
+    };
+    if !spans_image
         || options.required_capabilities & IMAGE_CAPABILITY_OWNED_RING == 0
         || image.transfer_timeout_ms == 0
         || image.formats_capacity < 64

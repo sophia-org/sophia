@@ -166,6 +166,8 @@ pub(super) fn connect_role_image(
     let socket_path = dir.join("shell.sock");
     let listener = UnixListener::bind(&socket_path).unwrap();
     let mut offered = options();
+    offered.minimum_revision = profile.revision;
+    offered.maximum_revision = profile.revision;
     offered.required_capabilities = profile.capabilities;
     let thread = std::thread::spawn(move || Peer::handshake(listener, profile));
     // The endpoint listener the producer will connect to.

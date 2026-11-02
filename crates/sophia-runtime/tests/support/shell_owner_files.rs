@@ -18,6 +18,16 @@ pub struct Peer {
 
 impl Peer {
     pub fn attach(t: &mut ShellComponentTransport, profile: Option<ContentStoreProfile>) -> Self {
+        Self::attach_at(t, profile, 0)
+    }
+
+    /// As `attach`, negotiated at `selected_revision`. Test-only negotiation
+    /// setup for the W2 prototype; the image revision stays 0.
+    pub fn attach_at(
+        t: &mut ShellComponentTransport,
+        profile: Option<ContentStoreProfile>,
+        selected_revision: u16,
+    ) -> Self {
         let (local, remote) = UnixStream::pair().unwrap();
         let (role, bounds) = role_bounds(profile);
         let mut export = ShellFiles::awaiting_negotiation(
@@ -44,7 +54,9 @@ impl Peer {
             .unwrap();
             (bytes, limits)
         });
-        export.complete_negotiation(limits, t.capabilities).unwrap();
+        export
+            .complete_negotiation_with_image_revision(limits, t.capabilities, 0, selected_revision)
+            .unwrap();
         t.wire = Some(Box::new(
             ShellFileWire::adopt(local, export, None, false).unwrap(),
         ));
@@ -122,6 +134,72 @@ impl Peer {
             self.submission = id;
         }
         accepted
+    }
+
+    /// A refused submission takes no custody and sends no receipt; the
+    /// submission ID stays unused. Returns the errno.
+    pub fn refused_submit(
+        &mut self,
+        t: &mut ShellComponentTransport,
+        kind: ShellFileKind,
+        encode: impl FnOnce(ShellFileHeader) -> Vec<u8>,
+    ) -> u32 {
+        let bytes = encode(ShellFileHeader {
+            kind,
+            connection_epoch: self.epoch,
+            submission_id: self.submission + 1,
+            sequence: 0,
+        });
+        self.drive(t, |raw| {
+            let reply = raw.submit(&bytes);
+            assert_eq!(reply.0, 7, "refused");
+            raw.clear();
+            u32::from_le_bytes(reply.1.try_into().unwrap())
+        })
+    }
+
+    /// Submits, then repeats the identical submit before the receipt's ACK:
+    /// custody is taken once and exactly one receipt arrives.
+    pub fn submit_twice(
+        &mut self,
+        t: &mut ShellComponentTransport,
+        kind: ShellFileKind,
+        encode: impl FnOnce(ShellFileHeader) -> Vec<u8>,
+    ) {
+        let id = self.submission + 1;
+        let bytes = encode(ShellFileHeader {
+            kind,
+            connection_epoch: self.epoch,
+            submission_id: id,
+            sequence: 0,
+        });
+        let submit = encode_shell_file_submit(ShellFileSubmit {
+            connection_epoch: self.epoch,
+            submission_id: id,
+            candidate_bytes: bytes.len() as u32,
+        })
+        .unwrap();
+        self.drive(t, |raw| {
+            assert_eq!(raw.submit(&bytes).0, 119);
+            assert_eq!(raw.write(3, &submit).0, 119, "identical retry");
+            let receipt = raw.next_event();
+            assert_eq!(
+                decode_shell_file_submitted(&receipt).unwrap().submission_id,
+                id
+            );
+            raw.ack(&receipt);
+            raw.clear();
+        });
+        self.submission = id;
+    }
+
+    /// Reads and acknowledges the next event.
+    pub fn take_event(&mut self, t: &mut ShellComponentTransport) -> Vec<u8> {
+        self.drive(t, |raw| {
+            let event = raw.next_event();
+            raw.ack(&event);
+            event
+        })
     }
 
     /// Every queued record stays charged until the production drain succeeds.

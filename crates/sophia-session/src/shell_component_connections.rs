@@ -162,6 +162,9 @@ pub struct ShellComponentConnections {
     capture_sources: capture::source::Sources,
     #[cfg(feature = "experimental-shell-capture")]
     capture_intake: capture::intake::Intake,
+    /// W2 prototype: owner policy, permitted to the bar at each attempt start.
+    #[cfg(feature = "experimental-shell-retire-on-present")]
+    retire_on_present: bool,
     fd_readiness: Cell<ComponentFdReadiness>,
 }
 
@@ -193,8 +196,15 @@ impl ShellComponentConnections {
             capture_sources: capture::source::Sources::default(),
             #[cfg(feature = "experimental-shell-capture")]
             capture_intake: capture::intake::Intake::default(),
+            #[cfg(feature = "experimental-shell-retire-on-present")]
+            retire_on_present: false,
             fd_readiness: Cell::default(),
         })
+    }
+
+    #[cfg(feature = "experimental-shell-retire-on-present")]
+    pub fn set_retire_on_present(&mut self, enabled: bool) {
+        self.retire_on_present = enabled;
     }
 
     /// Register a selected role before launch. The directory belongs to this
@@ -409,6 +419,10 @@ impl ShellComponentConnections {
         let result = admission.and_then(|()| {
             if authenticated && matches!(policy, ShellContentAdmissionPolicy::Granted { .. }) {
                 images::configure(connection, capture)?;
+                #[cfg(feature = "experimental-shell-retire-on-present")]
+                if self.retire_on_present && connection.role == ShellComponentRole::Bar {
+                    connection.transport.permit_retire_on_present(true)?;
+                }
             }
             connection.transport.begin_file_negotiation(
                 &self.epochs,

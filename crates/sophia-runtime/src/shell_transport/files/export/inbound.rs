@@ -60,7 +60,7 @@ impl ShellFiles {
     /// does when a foreign candidate kind reaches the front of the inbox.
     pub(in crate::shell_transport) fn peek_candidate_family(&self) -> Option<CandidateFamily> {
         self.inbound.iter().find_map(|item| match item {
-            Inbound::Candidate(_) => Some(CandidateFamily::Base),
+            Inbound::Candidate(..) => Some(CandidateFamily::Base),
             Inbound::NativeCandidate(_) => Some(CandidateFamily::Native),
             Inbound::CatalogCandidate(_) => Some(CandidateFamily::Catalog),
             _ => None,
@@ -276,16 +276,21 @@ impl ShellFiles {
 
     /// The next candidate part: the rest of the candidate already begun, or
     /// the first part of the oldest queued candidate. Other queued records
-    /// keep their order.
+    /// keep their order. Only the End carries the candidate's retire intent,
+    /// so discarding the rest discards the intent with it.
     pub(in crate::shell_transport) fn take_candidate_part(
         &mut self,
-    ) -> Option<(TransactionId, ShellContentRecord)> {
+    ) -> Option<(
+        TransactionId,
+        ShellContentRecord,
+        Option<ContentCandidateRetire>,
+    )> {
         if self.candidate_parts.is_empty() {
             let at = self
                 .inbound
                 .iter()
-                .position(|item| matches!(item, Inbound::Candidate(_)))?;
-            let Some(Inbound::Candidate(candidate)) = self.inbound.remove(at) else {
+                .position(|item| matches!(item, Inbound::Candidate(..)))?;
+            let Some(Inbound::Candidate(candidate, retire)) = self.inbound.remove(at) else {
                 return None;
             };
             let transaction = candidate.transaction;
@@ -294,8 +299,11 @@ impl ShellFiles {
                     .candidate
                     .parts()
                     .into_iter()
-                    .map(|record| (transaction, record)),
+                    .map(|record| (transaction, record, None)),
             );
+            if let Some(end) = self.candidate_parts.back_mut() {
+                end.2 = retire;
+            }
         }
         self.candidate_parts.pop_front()
     }

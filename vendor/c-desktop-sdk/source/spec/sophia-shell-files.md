@@ -82,10 +82,10 @@ refused, never silently downgraded (`docs/sophia-shell-v1-direction.md`).
 ### Content limits
 
 `ContentLimits::prototype` (`vendor/rust-desktop-sdk/source/crates/sophia-shell-protocol/src/shell/content/limits.rs`)
-is the starting grant. `role_limits` (`shell_component_connections.rs:378-394`)
-lowers it per role: with a dock present, staging is 4 MiB, resident 12 MiB for
-the bar and 8 MiB otherwise, and retiring 8 MiB. A launcher without a dock gets
-staging 4 MiB, resident 12 MiB and retiring 8 MiB. The values this contract
+is the starting grant. `role_limits` in
+`crates/sophia-session/src/shell_component_connections.rs` lowers it for every
+role: staging is 4 MiB; with a dock present, resident is 8 MiB and retiring
+5 MiB; without a dock, resident is 12 MiB and retiring 8 MiB. The values this contract
 depends on:
 
 | Limit | Prototype |
@@ -1216,7 +1216,7 @@ Rows marked as product gaps belong to their own tasks, not to this transport.
 | Dock (Provlita, r8) | Per-output allocations and edge reservations, checked against the allowed reservation extent. Pinned tiles from the catalog, with r8 identities at the 4 MiB cap. Activation names the catalog generation and slot and is accepted only against the Presented target. Launch context taken by Session from the committed WM output context, refused when stale. Replacing the dock does not disturb bar or launcher. Retained dock content retires after revocation, and storage is reclaimed. | Running-window feed (t043); reservation arbitration (t106) |
 | Launcher (Bemenu, r7) | Opening from Session; parentless allocation with no reservation. Focus lease minted only after an actual Presented, and FocusRevoked on loss. Semantic input with stale acknowledgements. A query edit disarms activation. Activation admits a queue slot only; the revocation semantics above hold. Close, and the opening timeout. | Popout workflow (t099) |
 | Bar (Lom, r6) | Panel allocation per output with its reservation. Indicator snapshot and exact activation echo. Presented work-area bands survive reconnect until the new first Present. Content upload and retirement within role limits. | Recovery (t100) |
-| Legacy descriptor (Narthex, r1-r8) | Descriptor snapshot, candidate, activation and ack; tabs; shortcuts and reference; launcher catalog when r4 and bit 5 are selected. Reservation via candidate, and withdrawal. | The parked `overview` branch has no reserved revision or capability bit; its informal r9/bit-13 claim is withdrawn. Revival needs fresh allocation (currently r11/bit 16) |
+| Legacy descriptor (Narthex, r1-r8) | Descriptor snapshot, candidate, activation and ack; tabs; shortcuts and reference; launcher catalog when r4 and bit 5 are selected. Reservation via candidate, and withdrawal. | The parked `overview` branch has no reserved revision or capability bit; its informal r9/bit-13 claim is withdrawn. Revival needs a fresh later allocation under the shell allocation ledger. |
 
 ## Budgets
 
@@ -1332,3 +1332,56 @@ is required, refuse that capability. Metadata-only r1–r8 profiles remain
 unchanged. Neither revision nor capability is inferred from the other. Lock
 r2 and DMA-BUF retain their separate contracts. The parked overview proposal
 must use a later allocation; it does not own r10 or bit 15.
+
+## Retire predecessor on presentation (shell r12, bit 17)
+
+This extension follows `protocol/sophia-shell-allocations.md`. Selection of
+r12 alone grants nothing. Intent requires an explicit bit-17 grant; the first
+qualified host profile additionally requires the bar content grant and owned
+ring bit 15. Other roles, sources and draw+retirement combinations refuse until
+separately qualified. The r11/bit-16 draw allocation is not reused or implied.
+An implementation may refuse unsupported combinations; it must never silently
+drop a required capability. Existing clients retain explicit retirement.
+
+Candidate kind 262 assigns bit 0 of the u16 at body offset 78 to retire intent.
+With the bit set, exactly three little-endian u64s follow every surface,
+placement and target row: retire transaction, resource ID, resource generation.
+All are nonzero. The 24-byte trailer counts toward the existing complete-record
+8192-byte bound. Flag zero preserves the earlier bytes and permits no trailer.
+Unknown flags, an unavailable grant, truncation and trailing bytes refuse.
+The neutral candidate codec omits the leading transaction word, so its flag
+offset is eight bytes earlier. Envelope api_version remains 1.
+
+An intent names an accepted predecessor under the candidate's exact grant.
+Admission of the complete candidate and its intent is atomic. The intent owner
+is the grant, output identity and candidate generation, not the transaction ID
+alone. A missing, stale, already retiring or already named resource refuses;
+an intent owner or retire transaction already held by another intent refuses.
+The retirement transaction remains reserved until cancellation or exact release.
+Admission reserves the predecessor's retiring-byte budget before success.
+Concurrent explicit retirement cannot consume that reserved headroom.
+
+An admitted intent prevents new leases of its predecessor. Existing consumers
+keep their leases and immutable pixels. Only successful presentation transfer
+of the exact successor commits the retirement; Prepared and submit acceptance
+do not. Commit converts the reservation into retiring charge without requiring
+new headroom. The predecessor's ResourceReleased uses the intent's transaction,
+grant and resource generation and occurs exactly once after the last consumer.
+It does not occur merely because the producer reused its ring slot.
+
+Before commit, candidate rejection, supersession, expiry or cancellation drops
+the intent and its reservation. The predecessor remains the client's resource
+under the ordinary lifecycle. This cancellation takes effect immediately for
+admission checks, without depending on a later collection scan. Revocation,
+disconnect and replacement-grant handling retain their existing cleanup rules;
+no delayed outcome or release may affect a successor grant. Once committed,
+ordinary retiring-resource accounting and release obligations remain in force.
+
+CandidateOutcome kind 35 and ResourceReleased kind 34 keep their existing
+layouts and ordering. W2 adds no event, image source or release reason. Owned
+ring mapping is independent: selected shell r10, r11 or r12 with bit 15 maps
+to image revision 10/source kind 4. Without bit 15 there is no owned ring;
+unallocated later shell revisions establish no mapping. Sealed ingress stays
+retired, and DMA retains its independent contract. Implementations must check
+each record family's exact revision/grant rules rather than widen all codecs
+using a numeric revision lower bound.

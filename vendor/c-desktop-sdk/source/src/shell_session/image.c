@@ -49,17 +49,29 @@ int sophia_ss_image_attach(struct sophia_ss *s, struct sophia_ss_image *img)
 {
     const struct sophia_sf_negotiate *o;
     uint16_t revision;
+    int offered;
     if (!s || !img || img->session)
         return SOPHIA_IPR_ARGUMENT;
     o = &s->files.offer;
     revision = o->required_capabilities & RING_BIT ? SOPHIA_SF_REVISION_OWNED_RING
                                                    : SOPHIA_SF_REVISION_IMAGE_CHANNEL;
-    if (o->minimum_revision > revision || o->maximum_revision < revision ||
-        !image_mask(o->required_capabilities, revision, img->config.dma_buf))
+    if (o->required_capabilities & SOPHIA_SF_CAP_CONTENT_RETIRE_ON_PRESENT)
+        offered = revision == SOPHIA_SF_REVISION_OWNED_RING &&
+            o->minimum_revision == SOPHIA_SF_REVISION_RETIRE_ON_PRESENT &&
+            o->maximum_revision == SOPHIA_SF_REVISION_RETIRE_ON_PRESENT;
+    else if (revision == SOPHIA_SF_REVISION_OWNED_RING)
+        offered = o->minimum_revision <= SOPHIA_SF_REVISION_RETIRE_ON_PRESENT &&
+            o->maximum_revision >= SOPHIA_SF_REVISION_OWNED_RING;
+    else
+        offered = o->minimum_revision <= revision && o->maximum_revision >= revision;
+    if (!offered || !image_mask(o->required_capabilities, revision, img->config.dma_buf))
         return SOPHIA_IPR_ARGUMENT;
     if ((s->state != SOPHIA_SS_NEGOTIATING && s->state != SOPHIA_SS_READY) || s->image)
         return SOPHIA_IPR_BUSY;
-    if (s->files.negotiated && (s->files.welcome.selected_revision != revision ||
+    if (s->files.negotiated && ((revision == SOPHIA_SF_REVISION_OWNED_RING ?
+            sophia_sf_owned_ring_image_revision(s->files.welcome.selected_revision,
+                s->files.welcome.capabilities) != revision :
+            s->files.welcome.selected_revision != revision) ||
                                 !image_mask(s->files.welcome.capabilities, revision,
                                             img->config.dma_buf)))
         return SOPHIA_IPR_ARGUMENT;
@@ -124,7 +136,9 @@ static int start_producer(struct sophia_ss_image *img, uint64_t now)
     const struct sophia_sf_negotiated *w = &img->session->files.welcome;
     struct sophia_ip_config c = img->config.producer;
     c.role = SOPHIA_IC_ROLE_SHELL;
-    c.revision = w->selected_revision;
+    c.revision = w->capabilities & RING_BIT ?
+        sophia_sf_owned_ring_image_revision(w->selected_revision, w->capabilities) :
+        w->selected_revision;
     c.connection_epoch = img->session->files.epoch;
     c.granted_kinds = ((w->capabilities & SEALED_BIT) ? SOPHIA_IC_KIND_BIT_SEALED : 0u) |
                       ((w->capabilities & DMA_BIT) ? SOPHIA_IC_KIND_BIT_DMABUF : 0u) |

@@ -611,6 +611,7 @@ impl Handshake {
                 {
                     return Err(ShellClientError::MissingCapability);
                 }
+                crate::retire_on_present::validate_w2_welcome(&self.options, &n)?;
                 if self.descriptor {
                     super::descriptor::validate_negotiated(&self.options, &n)?;
                 }

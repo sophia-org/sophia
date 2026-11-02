@@ -1367,6 +1367,29 @@ fn the_capture_destination_reuse_flag_needs_native_scanout() {
 }
 
 #[test]
+fn the_retire_on_present_flag_is_an_explicit_owner_setting_of_its_feature() {
+    assert!(
+        !PersistentXtermSessionConfig::from_args(&cursor_flag_arguments())
+            .unwrap()
+            .shell_retire_on_present
+    );
+    let mut arguments = cursor_flag_arguments();
+    arguments.push("--experimental-shell-retire-on-present".to_owned());
+    let config = PersistentXtermSessionConfig::from_args(&arguments);
+    if cfg!(feature = "experimental-shell-retire-on-present") {
+        assert!(config.unwrap().shell_retire_on_present);
+    } else {
+        let error = config.expect_err("a build without the feature has no such flag");
+        assert!(
+            error
+                .to_string()
+                .contains("--experimental-shell-retire-on-present"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn the_font_path_defaults_to_the_host_directories_and_can_be_emptied() {
     // A live session should find the host's core fonts without being told
     // where they are, which is what lets a terminal in UTF-8 mode render real

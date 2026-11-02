@@ -165,6 +165,15 @@ size_t sophia_ss_record_bytes(const struct sophia_sf_record *);
  * pass, and promptly fetch announced objects that hold acknowledgements. */
 int sophia_ss_submit(struct sophia_ss *, const struct sophia_sf_record *records, size_t count,
                      uint64_t *first_ticket);
+/* One Candidate carrying an exact predecessor-retire intent. Uses the same
+ * bounded queue, ticket and EAGAIN retry path as submit. Requires negotiated
+ * r12 / bit 17. Refusal leaves queue/tickets unchanged. The predecessor cannot
+ * appear in this candidate's placements and the retire transaction is distinct.
+ * Size is zero on invalid input and includes the 24-byte intent trailer. */
+size_t sophia_ss_retiring_candidate_bytes(const struct sophia_sf_record *,
+    const struct sophia_sf_candidate_retire *);
+int sophia_ss_submit_retiring_candidate(struct sophia_ss *, const struct sophia_sf_record *,
+    const struct sophia_sf_candidate_retire *, uint64_t *ticket);
 /* Reserve room before an irreversible local step (for example a UI edit
  * whose acknowledgement must follow). Tokens belong to this session address
  * and connection epoch; do not move or reinitialize a session with a live

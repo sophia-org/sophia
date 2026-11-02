@@ -295,6 +295,12 @@ impl ShellComponentProcesses {
         self.connections.set_capture_destination_reuse(enabled);
     }
 
+    #[cfg(feature = "experimental-shell-retire-on-present")]
+    #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
+    pub(crate) fn set_retire_on_present(&mut self, enabled: bool) {
+        self.connections.set_retire_on_present(enabled);
+    }
+
     #[cfg(feature = "experimental-shell-capture")]
     #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
     pub(crate) fn grant_capture_device(

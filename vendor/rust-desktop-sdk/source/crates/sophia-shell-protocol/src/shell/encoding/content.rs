@@ -193,19 +193,46 @@ pub fn parse_shell_content_value(
 pub fn encode_content_candidate(candidate: &ContentCandidate) -> Result<Vec<u8>, ValueError> {
     crate::shell::content::validation::validate_content_candidate(candidate)?;
     let mut bytes = Vec::new();
-    put_candidate(candidate, &mut bytes);
+    put_candidate(candidate, None, &mut bytes);
     Ok(bytes)
+}
+
+/// W2 prototype: the reserved `u16` becomes flags, and bit 0 appends the
+/// retire transaction and the exact resource after the rows.
+pub fn encode_content_candidate_with_retire(
+    candidate: &ContentCandidate,
+    retire: &ContentCandidateRetire,
+) -> Result<Vec<u8>, ValueError> {
+    crate::shell::content::validation::validate_content_candidate(candidate)?;
+    validate_retire(retire)?;
+    let mut bytes = Vec::new();
+    put_candidate(candidate, Some(retire), &mut bytes);
+    Ok(bytes)
+}
+
+pub(crate) fn validate_retire(retire: &ContentCandidateRetire) -> Result<(), ValueError> {
+    if !retire.retire_transaction.is_valid()
+        || retire.resource.id == 0
+        || retire.resource.generation == 0
+    {
+        return Err(ValueError::ReservedNonZero(1));
+    }
+    Ok(())
 }
 
 /// Validated whole candidate value length, without cloning its rows.
 pub fn content_candidate_bytes(candidate: &ContentCandidate) -> Result<usize, ValueError> {
     crate::shell::content::validation::validate_content_candidate(candidate)?;
     let mut bytes = super::ByteCount::new();
-    put_candidate(candidate, &mut bytes);
+    put_candidate(candidate, None, &mut bytes);
     bytes.finish()
 }
 
-fn put_candidate(candidate: &ContentCandidate, bytes: &mut impl super::ByteSink) {
+fn put_candidate(
+    candidate: &ContentCandidate,
+    retire: Option<&ContentCandidateRetire>,
+    bytes: &mut impl super::ByteSink,
+) {
     candidate.grant.put(bytes);
     candidate.candidate_generation.put(bytes);
     candidate.output.put(bytes);
@@ -215,7 +242,7 @@ fn put_candidate(candidate: &ContentCandidate, bytes: &mut impl super::ByteSink)
     (candidate.surfaces.len() as u16).put(bytes);
     (candidate.placements.len() as u16).put(bytes);
     (candidate.targets.len() as u16).put(bytes);
-    0u16.put(bytes);
+    u16::from(retire.is_some()).put(bytes);
     for row in &candidate.surfaces {
         row.put(bytes);
     }
@@ -225,9 +252,22 @@ fn put_candidate(candidate: &ContentCandidate, bytes: &mut impl super::ByteSink)
     for row in &candidate.targets {
         row.put(bytes);
     }
+    if let Some(retire) = retire {
+        retire.retire_transaction.raw().put(bytes);
+        retire.resource.put(bytes);
+    }
 }
 
 pub fn decode_content_candidate(bytes: &[u8]) -> Result<ContentCandidate, ValueError> {
+    decode_content_candidate_with_retire(bytes, false).map(|(candidate, _)| candidate)
+}
+
+/// `enabled` is [`retire_on_present_enabled`] for the connection. Without it
+/// the flags word stays reserved; any unknown flag or trailing byte refuses.
+pub fn decode_content_candidate_with_retire(
+    bytes: &[u8],
+    enabled: bool,
+) -> Result<(ContentCandidate, Option<ContentCandidateRetire>), ValueError> {
     let mut cursor = Cursor::new(bytes);
     let grant = ContentGrant::take(&mut cursor)?;
     let candidate_generation = u64::take(&mut cursor)?;
@@ -238,7 +278,10 @@ pub fn decode_content_candidate(bytes: &[u8]) -> Result<ContentCandidate, ValueE
     let surfaces = table_count(&mut cursor, 8)?;
     let placements = table_count(&mut cursor, 32)?;
     let targets = table_count(&mut cursor, 64)?;
-    super::reserved::<u16>(&mut cursor)?;
+    let flags = u16::take(&mut cursor)?;
+    if flags & !1 != 0 || (flags != 0 && !enabled) {
+        return Err(ValueError::ReservedNonZero(1));
+    }
     let candidate = ContentCandidate {
         grant,
         candidate_generation,
@@ -250,11 +293,21 @@ pub fn decode_content_candidate(bytes: &[u8]) -> Result<ContentCandidate, ValueE
         placements: rows(&mut cursor, placements)?,
         targets: rows(&mut cursor, targets)?,
     };
+    let retire = if flags & 1 != 0 {
+        let retire = ContentCandidateRetire {
+            retire_transaction: TransactionId::from_raw(u64::take(&mut cursor)?),
+            resource: ContentResourceId::take(&mut cursor)?,
+        };
+        validate_retire(&retire)?;
+        Some(retire)
+    } else {
+        None
+    };
     cursor.finish()?;
     for part in candidate.parts() {
         crate::shell::content::validation::validate(&part)?;
     }
-    Ok(candidate)
+    Ok((candidate, retire))
 }
 
 fn table_count(cursor: &mut Cursor<'_>, maximum: usize) -> Result<usize, ValueError> {

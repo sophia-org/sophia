@@ -909,3 +909,10 @@ producer-completed LINEAR XRGB8888 DMA source custody and shell adapter APIs.
 The optional r10 contract comes from Sophia `b47a6a094b3cc5a4da0c1a720d32040dbe05dd8d`.
 See API-PARITY.md for descriptor ownership, paired C work and unclosed native
 evidence gates. Current owned-ring CPU uploads and the lock ISB plane remain.
+# W2 integration contract input
+
+The shell file KDL, lifecycle prose and
+`spec/golden/sophia-shell-retire-v1.tsv` are copied byte-for-byte from Sophia
+`f96437181bb4cd135d24b91bbde69c04c31a07ed` on `cpu/w2-integration`.
+This is an unreleased integration input, not a production W2 qualification.
+The allocation is r12 / bit 17; r11 / bit 16 remains assigned to draw.

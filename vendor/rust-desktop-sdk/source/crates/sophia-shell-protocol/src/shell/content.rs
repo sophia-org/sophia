@@ -26,6 +26,36 @@ pub const SOPHIA_SHELL_CONTENT_REVISION: u16 = 5;
 /// Shell revision whose CPU image source is the owned ring
 /// (`docs/sophia-owned-ring.md`), negotiated with capability bit 15.
 pub const SOPHIA_SHELL_OWNED_RING_REVISION: u16 = 10;
+/// Shell r12 / capability bit 17: a whole candidate may name one predecessor
+/// to retire once it is presented. Only a connection that selected this
+/// revision and was granted the capability may send the intent.
+pub const SOPHIA_SHELL_RETIRE_ON_PRESENT_REVISION: u16 = 12;
+pub const SOPHIA_SHELL_CAPABILITY_CONTENT_RETIRE_ON_PRESENT: u64 = 1 << 17;
+
+/// Whether a negotiated connection may carry a candidate's retire intent.
+pub const fn retire_on_present_enabled(selected_revision: u16, capabilities: u64) -> bool {
+    selected_revision == SOPHIA_SHELL_RETIRE_ON_PRESENT_REVISION
+        && capabilities & SOPHIA_SHELL_CAPABILITY_CONTENT_RETIRE_ON_PRESENT != 0
+}
+
+/// The image mapping for allocated shell revisions 10, 11 and 12 when bit 15
+/// is granted. Draw and retirement are independent capabilities; no mapping
+/// is established for an unallocated later shell revision.
+pub const fn owned_ring_image_revision(selected_revision: u16, capabilities: u64) -> Option<u16> {
+    const OWNED_RING: u64 = 1 << 15;
+    match selected_revision {
+        10..=12 if capabilities & OWNED_RING != 0 => Some(SOPHIA_SHELL_OWNED_RING_REVISION),
+        _ => None,
+    }
+}
+
+/// The W2 intent a whole candidate carries: retire `resource` on its own
+/// grant, at this exact generation, under `retire_transaction`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ContentCandidateRetire {
+    pub retire_transaction: crate::TransactionId,
+    pub resource: ContentResourceId,
+}
 
 /// Connection identity and the independently issued content permission epoch.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]

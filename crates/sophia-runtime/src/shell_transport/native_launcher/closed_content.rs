@@ -44,7 +44,8 @@ impl ShellComponentTransport {
             // Conservatively reserve one possible terminal before removing its
             // request. Tails/cancel consume no new response; resources use their
             // actual existing store credit rule.
-            let credit = closed_native_content_credit(epochs, self.store_grant, &record)?;
+            let credit =
+                closed_native_content_credit(epochs, self.store_grant, transaction, &record)?;
             if !self.control_capacity_available(epochs, credit) {
                 break;
             }
@@ -117,13 +118,14 @@ impl ShellComponentTransport {
 fn closed_native_content_credit(
     epochs: &crate::ContentEpochRegistry,
     store_grant: ContentGrant,
+    transaction: TransactionId,
     record: &NativeContentRecord,
 ) -> Result<usize, ShellTransportError> {
     Ok(match record {
         NativeContentRecord::Resource(v) => epochs
             .resources(store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
-            .additional_response_credit(v),
+            .additional_response_credit(transaction, v),
         NativeContentRecord::Chunk(_)
         | NativeContentRecord::End(_)
         | NativeContentRecord::Cancel(_) => 0,

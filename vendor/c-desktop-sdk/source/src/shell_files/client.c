@@ -549,6 +549,13 @@ int sophia_sf_client_submit_bytes(struct sophia_sf_client *c, const void *record
     if (kind == SOPHIA_SF_KIND_IMAGE_BEGIN) {
         if (!sf_session_image_begin_valid(c, c->tx_storage, bytes))
             return SOPHIA_9P_INVALID;
+    } else if (kind == SOPHIA_SF_CANDIDATE) {
+        struct sophia_sf_candidate_retire retire;
+        int present;
+        if (sophia_sf_candidate_decode_with_retire(c->tx_storage, bytes,
+            sophia_sf_retire_on_present_enabled(c->welcome.selected_revision, c->welcome.capabilities),
+            &value, &retire, &present))
+            return SOPHIA_9P_INVALID;
     } else if (sophia_sf_decode(c->tx_storage, bytes, &value))
         return SOPHIA_9P_INVALID;
     submission_arm(c, bytes);

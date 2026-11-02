@@ -48,15 +48,18 @@ struct Transfer {
 }
 
 mod backing;
+mod retire_on_present;
 #[cfg(feature = "experimental-shell-capture")]
 pub use backing::ContentCapturedImage;
 pub use backing::{ContentCpuResourceLease, ContentResourceLease};
+pub use retire_on_present::{ContentRetireOnPresent, ContentRetireOwner, ContentRetireToken};
 
 struct Accepted {
     pixels: ContentResourceLease,
     retiring: bool,
     transaction: TransactionId,
     release_pending: bool,
+    intent: Option<retire_on_present::Intent>,
     #[cfg(feature = "experimental-shell-capture")]
     capture_evicted: bool,
 }
@@ -81,6 +84,8 @@ pub struct ContentResourceStore {
     events: VecDeque<ContentResourceEvent>,
     /// Terminal transfer and resource-release credits, excluding queued events.
     response_credits: usize,
+    /// Accepted resources carrying an intent record, held or not.
+    intent_records: usize,
     last_now: u64,
     revoked: bool,
 }
@@ -98,15 +103,20 @@ impl ContentResourceStore {
         value.response_records += self.control_occupancy();
     }
 
-    pub(crate) fn additional_response_credit(&self, record: &ShellContentRecord) -> usize {
+    /// Extra output credit a client control needs if it may be refused.
+    pub fn additional_response_credit(
+        &self,
+        transaction: TransactionId,
+        record: &ShellContentRecord,
+    ) -> usize {
         match record {
             ShellContentRecord::ResourceCancel(value) => {
                 usize::from(!self.transfers.contains_key(&value.resource))
             }
             ShellContentRecord::ResourceRetire(value) => usize::from(
-                self.accepted
-                    .get(&value.resource)
-                    .is_none_or(|resource| resource.retiring),
+                self.accepted.get(&value.resource).is_none_or(|resource| {
+                    resource.retiring || resource.named() || self.refused_by_reservation(resource)
+                }) || self.retire_id_held(transaction),
             ),
             _ => 1,
         }
@@ -129,6 +139,7 @@ impl ContentResourceStore {
             usage: ContentMemoryUsage::default(),
             events: VecDeque::new(),
             response_credits: 0,
+            intent_records: 0,
             last_now: 0,
             revoked: false,
         })
@@ -328,6 +339,7 @@ impl ContentResourceStore {
                 retiring: false,
                 transaction: transfer.transaction,
                 release_pending: false,
+                intent: None,
                 #[cfg(feature = "experimental-shell-capture")]
                 capture_evicted: true,
             },
@@ -450,7 +462,8 @@ impl ContentResourceStore {
             .accepted
             .get(&resource)
             .ok_or(ContentStoreError::Stale)?;
-        if value.retiring {
+        // An admitted retire intent denies every new lease from End.
+        if value.retiring || value.named() {
             return Err(ContentStoreError::Stale);
         }
         Ok(value.pixels.clone())
@@ -462,15 +475,20 @@ impl ContentResourceStore {
         request: &ContentResourceRetire,
     ) -> Result<(), ContentStoreError> {
         self.check(request.grant, transaction)?;
+        // A retire ID W2 holds is refused here too, in either order.
+        if self.retire_id_held(transaction) {
+            return Err(ContentStoreError::Stale);
+        }
+        let reserved = self.reserved_retiring();
         let value = self
             .accepted
             .get_mut(&request.resource)
             .ok_or(ContentStoreError::Stale)?;
-        if value.retiring {
+        if value.retiring || value.named() {
             return Err(ContentStoreError::Stale);
         }
         let bytes = value.pixels.description().total_bytes;
-        if self.usage.retiring + bytes > self.limits.max_retiring_bytes {
+        if self.usage.retiring + reserved + bytes > self.limits.max_retiring_bytes {
             return Err(ContentStoreError::Budget);
         }
         value.retiring = true;
@@ -482,6 +500,7 @@ impl ContentResourceStore {
     }
 
     pub fn collect(&mut self) {
+        self.forget_released_intents();
         let ready: Vec<_> = self
             .accepted
             .iter()
@@ -528,6 +547,7 @@ impl ContentResourceStore {
 
     fn remove_accepted(&mut self, resource: ContentResourceId) {
         let value = self.accepted.remove(&resource).expect("selected resource");
+        self.intent_records -= usize::from(value.intent.is_some());
         let bytes = value.pixels.description().total_bytes;
         if value.retiring {
             self.usage.retiring -= bytes;
@@ -571,6 +591,9 @@ impl ContentResourceStore {
     /// a consumer is retained; the session keeps this owner in its retired pool.
     pub fn revoke(&mut self) {
         self.revoked = true;
+        // Uncommitted intents die with authority; release keeps the transfer's
+        // original transaction.
+        self.cancel_all_retire();
         let incomplete: Vec<_> = self.transfers.keys().copied().collect();
         for key in incomplete {
             self.abort(key, ContentReason::Revoked, None);

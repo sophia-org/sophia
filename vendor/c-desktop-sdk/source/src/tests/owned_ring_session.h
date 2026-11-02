@@ -5,24 +5,26 @@
 #define RING (UINT64_C(1) << 15)
 #define RING_CAPACITY (1u << 20)
 
-static void ring_start_role(struct image_rig *t, enum sophia_sf_profile profile, uint32_t slots,
-                            uint64_t capacity)
+static void ring_start_revision(struct image_rig *t, enum sophia_sf_profile profile, uint32_t slots,
+                                uint64_t capacity, uint16_t revision, uint64_t extra, int deferred)
 {
     struct sophia_ss_image_config c;
     struct sophia_ss_config config = image_config;
     config.profile = profile;
-    config.offer.maximum_revision = 10;
+    config.offer.maximum_revision = revision;
+    config.offer.minimum_revision = revision;
     config.offer.required_capabilities =
-        RING | (profile == SOPHIA_SF_LAUNCHER ? UINT64_C(0x9a0) : CONTENT);
+        RING | extra | (profile == SOPHIA_SF_LAUNCHER ? UINT64_C(0x9a0) : CONTENT);
     memset(t, 0, sizeof(*t));
     listen_dir(t);
     make_set(&t->set, SOPHIA_IC_KIND_BIT_OWNED_RING);
     rig_start(&t->r, &config);
     if (profile == SOPHIA_SF_LAUNCHER)
         t->r.p.api_override = "sophia-shell-files version=1 role=launcher epoch=17 fd_transfer=none\n";
-    t->welcome.selected_revision = 10;
+    t->welcome.selected_revision = revision;
     t->welcome.connection_epoch = PEER_EPOCH;
-    t->welcome.capabilities = config.offer.required_capabilities;
+    t->welcome.capabilities = config.offer.required_capabilities |
+        (extra & SOPHIA_SF_CAP_CONTENT_RETIRE_ON_PRESENT ? UINT64_C(2) : 0);
     t->welcome.max_descriptors = 16;
     t->welcome.max_label_bytes = 128;
     t->welcome.max_pending_activations = 16;
@@ -59,11 +61,21 @@ static void ring_start_role(struct image_rig *t, enum sophia_sf_profile profile,
         t->r.p.object_data[SOPHIA_SF_LIMITS] = t->content_limits;
         t->r.p.object_bytes[SOPHIA_SF_LIMITS] = bytes;
     }
+    if (deferred) {
+        rig_settle(&t->r);
+        assert(sophia_ss_state(&t->r.s) == SOPHIA_SS_READY);
+    }
     c = adapter_config(t);
     c.ring_slots = slots;
     c.ring_capacity = capacity;
     assert(sophia_ss_image_init(&t->img, &c) == SOPHIA_IPR_OK);
     assert(sophia_ss_image_attach(&t->r.s, &t->img) == SOPHIA_IPR_OK);
+}
+
+static void ring_start_role(struct image_rig *t, enum sophia_sf_profile profile, uint32_t slots,
+                            uint64_t capacity)
+{
+    ring_start_revision(t, profile, slots, capacity, 10, 0, 0);
 }
 
 static void ring_start(struct image_rig *t, uint32_t slots, uint64_t capacity)
@@ -179,7 +191,7 @@ static void ring_close(struct image_rig *t, int fd)
     image_close(t);
 }
 
-static void ring_end_to_end(void)
+static void ring_end_to_end(uint16_t revision, uint64_t extra, int deferred)
 {
     struct image_rig t;
     struct sophia_ss_ring_image m = ring_image(41, 16, 16);
@@ -190,7 +202,7 @@ static void ring_end_to_end(void)
     uint64_t offer, word = 0;
     uint8_t *pixels;
     int fd, kind = 0, seals;
-    ring_start(&t, 0, 0);
+    ring_start_revision(&t, SOPHIA_SF_BAR, 0, 0, revision, extra, deferred);
     fd = ring_ready(&t);
     /* Default geometry: one slot at the granted max_resource_bytes. */
     assert(sophia_or_control_decode(t.r.p.ring_bytes[0], SOPHIA_OR_REGISTER_BYTES, &kind, &reg,
@@ -618,6 +630,27 @@ static void ring_attach_arguments(void)
     assert(sophia_ss_image_attach(&t.r.s, &t.img) == SOPHIA_IPR_ARGUMENT);
     assert(sophia_ss_image_ring_offer(&t.img, 0, NULL, 0, NULL) == SOPHIA_IPR_ARGUMENT);
     rig_close(&t.r);
+    {
+        const struct { uint16_t min, max; uint64_t extra; int valid; } cases[] = {
+            {10, 10, 0, 1}, {9, 12, 0, 1}, {11, 11, 0, 1}, {12, 12, 0, 1},
+            {13, 13, 0, 0},
+            {12, 12, SOPHIA_SF_CAP_CONTENT_RETIRE_ON_PRESENT, 1},
+            {10, 12, SOPHIA_SF_CAP_CONTENT_RETIRE_ON_PRESENT, 0},
+            {12, 13, SOPHIA_SF_CAP_CONTENT_RETIRE_ON_PRESENT, 0}
+        };
+        size_t i;
+        for (i = 0; i < sizeof cases / sizeof cases[0]; ++i) {
+            config.offer.minimum_revision = cases[i].min;
+            config.offer.maximum_revision = cases[i].max;
+            config.offer.required_capabilities = RING | CONTENT | cases[i].extra;
+            rig_start(&t.r, &config);
+            assert(sophia_ss_image_init(&t.img, &c) == SOPHIA_IPR_OK);
+            assert(sophia_ss_image_attach(&t.r.s, &t.img) ==
+                (cases[i].valid ? SOPHIA_IPR_OK : SOPHIA_IPR_ARGUMENT));
+            sophia_ss_image_close(&t.img);
+            rig_close(&t.r);
+        }
+    }
     unlisten(&t);
 }
 
@@ -672,7 +705,15 @@ static void owned_ring_session(void)
     ring_retired_sealed_events();
     ring_status_evidence();
     ring_attach_arguments();
-    ring_end_to_end();
+    {
+        int deferred;
+        for (deferred = 0; deferred <= 1; ++deferred) {
+            ring_end_to_end(10, 0, deferred);
+            ring_end_to_end(11, 0, deferred);
+            ring_end_to_end(12, 0, deferred);
+            ring_end_to_end(12, SOPHIA_SF_CAP_CONTENT_RETIRE_ON_PRESENT, deferred);
+        }
+    }
     ring_local_and_control_refusals();
     ring_settlement_barrier();
     ring_refused_and_lost();

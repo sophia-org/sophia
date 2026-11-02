@@ -51,7 +51,7 @@ impl Fixture {
             Instant::now(),
         );
         export
-            .complete_negotiation(Some((vec![], limits.clone())), 0)
+            .complete_negotiation_with_image_revision(Some((vec![], limits.clone())), 0, 0, 0)
             .unwrap();
         let (server, peer) = UnixStream::pair().unwrap();
         transport.wire = Some(Box::new(

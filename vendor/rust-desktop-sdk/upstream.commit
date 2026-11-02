@@ -1,14 +1,14 @@
-tree f75156f68fa08b25bb7be3626f24b82670876469
-parent f587d5d7412fbb38363ea649548ff5e9a69bec27
-author Mason Green <mason@greenm01.net> 1792671206 -0400
-committer Mason Green <mason@greenm01.net> 1792671206 -0400
+tree bc475fbf4ed30f8ce1495c0e44d12595c17e5065
+parent 17fc014fc214d334f4502f8acacc1fa0ea18b419
+author Mason Green <mason@greenm01.net> 1793624690 -0500
+committer Mason Green <mason@greenm01.net> 1793624690 -0500
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatn95hsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJQggD+K5GsXdq8EUGygyLX/XZq
- LjhLv3SI7kaFrSmK7eWlZ+EBAIiwlbOcsHYlTzP+eAwRg1CPmZzrZkTDbcto4cFE
- fMkP
- =HzA5
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCauiKchsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLyPgD+MbQrpES+q3w+CPlR1vlZ
+ KJrqJWLCrg99Lk0LPYh1CEoA/iO0Azs800m30LXlUEzyxxKQh0Uv7r7XqyBYWd51
+ 74sF
+ =aORR
  -----END PGP SIGNATURE-----
 
-Align opaque DMA format checks and paired SDK evidence
+Correct W2 spec digests to the SDK-relative manifest convention

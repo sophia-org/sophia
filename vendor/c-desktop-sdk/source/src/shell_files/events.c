@@ -22,18 +22,22 @@ int sf_session_event_parse(struct sophia_sf_client *c)
             v->selected_revision > c->offer.maximum_revision ||
             (v->capabilities & c->offer.required_capabilities) != c->offer.required_capabilities)
             return SOPHIA_9P_INVALID;
-        /* Sealed exists only at r9 and the owned ring only at r10; DMA-BUF
-         * is r9 legacy or the r10 opt-in beside the ring. The revision is
-         * never inferred. */
+        if (c->offer.required_capabilities & SOPHIA_SF_CAP_CONTENT_RETIRE_ON_PRESENT) {
+            if (v->selected_revision != SOPHIA_SF_REVISION_RETIRE_ON_PRESENT ||
+                v->capabilities != (c->offer.required_capabilities | UINT64_C(2)))
+                return SOPHIA_9P_INVALID;
+        } else if (v->capabilities & SOPHIA_SF_CAP_CONTENT_RETIRE_ON_PRESENT) {
+            return SOPHIA_9P_INVALID;
+        }
+        /* Shell r10-r12 share image protocol r10; sealed remains r9-only. */
         if (c->image_mode &&
             (((v->capabilities & SOPHIA_SF_CAP_SEALED_IMAGE) &&
               v->selected_revision != SOPHIA_SF_REVISION_IMAGE_CHANNEL) ||
              ((v->capabilities & SOPHIA_SF_CAP_DMABUF_IMAGE) &&
               v->selected_revision != SOPHIA_SF_REVISION_IMAGE_CHANNEL &&
-              !(v->selected_revision == SOPHIA_SF_REVISION_OWNED_RING &&
-                (v->capabilities & SOPHIA_SF_CAP_OWNED_RING))) ||
+              !sophia_sf_owned_ring_image_revision(v->selected_revision, v->capabilities)) ||
              ((v->capabilities & SOPHIA_SF_CAP_OWNED_RING) &&
-              v->selected_revision != SOPHIA_SF_REVISION_OWNED_RING)))
+              !sophia_sf_owned_ring_image_revision(v->selected_revision, v->capabilities))))
             return SOPHIA_9P_INVALID;
         if (v->connection_epoch != c->epoch ||
             (c->profile == SOPHIA_SF_DESCRIPTOR && !sf_descriptor_welcome(c, v)))

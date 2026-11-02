@@ -531,6 +531,19 @@ impl FileWire {
                 )?;
                 Ok(self.stage_records(vec![bytes]))
             }
+            Outbound::RetiringContentGroup(transaction, records, retire) => {
+                let candidate = assemble_candidate(&records)?;
+                let header = self.next_header(ShellFileKind::Candidate);
+                let bytes = encode_shell_file_candidate_with_retire(
+                    header,
+                    &ShellFileCandidate {
+                        transaction,
+                        candidate,
+                    },
+                    &retire,
+                )?;
+                Ok(self.stage_records(vec![bytes]))
+            }
             Outbound::IndicatorActivation(transaction, activation) => {
                 let bytes = self.indicator_activate(transaction, activation)?;
                 Ok(self.stage_records(vec![bytes]))

@@ -4,7 +4,7 @@
 /* Encode with the live epoch and submission 0; a stand-in id satisfies
  * validation and hand-off assigns the real one. BUSY: no room. */
 static int encode(const struct sophia_sf_record *record, uint64_t epoch, uint8_t *dst,
-                  size_t capacity, size_t *n)
+                  size_t capacity, const struct sophia_sf_candidate_retire *retire, size_t *n)
 {
     struct sophia_sf_record r;
     int status;
@@ -14,7 +14,8 @@ static int encode(const struct sophia_sf_record *record, uint64_t epoch, uint8_t
     r.header.epoch = epoch;
     r.header.submission = 1;
     r.header.sequence = 0;
-    status = sophia_sf_encode(dst, capacity, &r, n);
+    status = retire ? sophia_sf_candidate_encode_with_retire(dst, capacity, &r, retire, n) :
+        sophia_sf_encode(dst, capacity, &r, n);
     if (status)
         return status == -1 ? SOPHIA_9P_INVALID : SOPHIA_9P_BUSY;
     memset(dst + 16, 0, 8);
@@ -54,7 +55,8 @@ size_t sophia_ss_record_bytes(const struct sophia_sf_record *record)
 /* Encode the whole group into free queue bytes before any state changes.
  * Bytes past queue_used are scratch, so a refused group leaves no trace. */
 static int admit(struct sophia_ss *s, const struct sophia_sf_record *records, size_t count,
-                 size_t slots, size_t room, int reserved, uint64_t *first)
+                 size_t slots, size_t room, int reserved,
+                 const struct sophia_sf_candidate_retire *retire, uint64_t *first)
 {
     size_t i, n, used = 0, sizes[SOPHIA_SS_SLOTS];
     int status;
@@ -69,13 +71,13 @@ static int admit(struct sophia_ss *s, const struct sophia_sf_record *records, si
         if (capacity > s->files.tx_capacity)
             capacity = s->files.tx_capacity;
         status = encode(&records[i], s->files.epoch, s->queue + s->queue_used + used, capacity,
-                        &n);
+                        retire, &n);
         /* Only a record that could never fit, or overruns a reservation, is
          * an argument error; otherwise the queue is merely full now. */
         if (status == SOPHIA_9P_BUSY &&
             (reserved || room - used >= s->files.tx_capacity ||
-             sophia_ss_record_bytes(&records[i]) > s->files.tx_capacity ||
-             sophia_ss_record_bytes(&records[i]) > s->queue_capacity))
+             sophia_ss_record_bytes(&records[i]) + (retire ? 24u : 0u) > s->files.tx_capacity ||
+             sophia_ss_record_bytes(&records[i]) + (retire ? 24u : 0u) > s->queue_capacity))
             status = SOPHIA_9P_ARGUMENT;
         if (status)
             return status;
@@ -105,11 +107,53 @@ int sophia_ss_submit(struct sophia_ss *s, const struct sophia_sf_record *records
     if (count > s->slots || UINT64_MAX - s->next_ticket < (uint64_t)count + s->reserved_slots)
         return SOPHIA_9P_ARGUMENT;
     r = admit(s, records, count, (size_t)(s->slots - s->queued - s->reserved_slots),
-              s->queue_capacity - s->queue_used - s->reserved_bytes, 0, first_ticket);
+              s->queue_capacity - s->queue_used - s->reserved_bytes, 0, NULL, first_ticket);
     if (!r)
         (void)ss_pump(s, 0);
     return r;
 }
+size_t sophia_ss_retiring_candidate_bytes(const struct sophia_sf_record *record,
+    const struct sophia_sf_candidate_retire *retire)
+{
+    size_t i, bytes;
+    if (!record || !retire || record->header.kind != SOPHIA_SF_CANDIDATE ||
+        !retire->transaction || !retire->resource_id || !retire->resource_generation ||
+        retire->transaction == record->value.candidate.transaction)
+        return 0;
+    bytes = sophia_ss_record_bytes(record);
+    if (!bytes || bytes > 8192u - 24u)
+        return 0;
+    for (i = 0; i < record->value.candidate.placement_count; ++i) {
+        const struct sophia_sf_content_placement *p = &record->value.candidate.placements[i];
+        if (p->resource_id == retire->resource_id && p->resource_generation == retire->resource_generation)
+            return 0;
+    }
+    return bytes + 24u;
+}
+
+int sophia_ss_submit_retiring_candidate(struct sophia_ss *s,
+    const struct sophia_sf_record *record, const struct sophia_sf_candidate_retire *retire,
+    uint64_t *ticket)
+{
+    int status;
+    if (!s || !ticket || !sophia_ss_retiring_candidate_bytes(record, retire))
+        return SOPHIA_9P_ARGUMENT;
+    if (ss_final(s))
+        return ss_status(s);
+    if (s->state != SOPHIA_SS_READY)
+        return SOPHIA_9P_BUSY;
+    if (!s->files.negotiated ||
+        !sophia_sf_retire_on_present_enabled(s->files.welcome.selected_revision,
+            s->files.welcome.capabilities) ||
+        s->next_ticket >= UINT64_MAX - s->reserved_slots)
+        return SOPHIA_9P_ARGUMENT;
+    status = admit(s, record, 1, (size_t)(s->slots - s->queued - s->reserved_slots),
+        s->queue_capacity - s->queue_used - s->reserved_bytes, 0, retire, ticket);
+    if (!status)
+        (void)ss_pump(s, 0);
+    return status;
+}
+
 int sophia_ss_reserve(struct sophia_ss *s, uint16_t slots, size_t bytes,
                       struct sophia_ss_reservation *out)
 {
@@ -154,7 +198,7 @@ int sophia_ss_commit(struct sophia_ss *s, struct sophia_ss_reservation *v,
         (void)release(s, v);
         return ss_status(s);
     }
-    r = admit(s, records, count, s->reserved_slots, s->reserved_bytes, 1, first_ticket);
+    r = admit(s, records, count, s->reserved_slots, s->reserved_bytes, 1, NULL, first_ticket);
     if (r)
         return r;
     (void)release(s, v);

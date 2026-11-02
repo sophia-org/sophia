@@ -43,7 +43,30 @@ fn upload() -> RingUpload {
 
 #[test]
 fn ring_offer_runs_end_to_end() {
-    let (mut connection, mut peer, dir, listener) = connect_image("flow");
+    use sophia_shell_protocol::shell::content::SOPHIA_SHELL_CAPABILITY_CONTENT_RETIRE_ON_PRESENT;
+    for (revision, extra) in [
+        (10, 0),
+        (11, 0),
+        (12, 0),
+        (
+            12,
+            SOPHIA_SHELL_CAPABILITY_CONTENT_RETIRE_ON_PRESENT
+                | SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION,
+        ),
+    ] {
+        for deferred in [false, true] {
+            let mut selected = profile();
+            selected.revision = revision;
+            selected.capabilities |= extra;
+            selected.limits_published = deferred;
+            ring_offer_on_revision(selected, deferred);
+        }
+    }
+}
+
+fn ring_offer_on_revision(selected: Profile, deferred: bool) {
+    let (mut connection, mut peer, dir, listener) =
+        connect_role_image("flow", 4096, selected, deferred);
     let accepted = drive_to_channel_ready(&mut connection, &mut peer, &listener);
     // The one registration: default one slot at grant capacity.
     assert_eq!(peer.control_writes.len(), 1);

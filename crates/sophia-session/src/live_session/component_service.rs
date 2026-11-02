@@ -111,12 +111,13 @@ pub(super) fn service_components_with_bar_content(
                             }
                         };
                         crate::session_println!(
-                            "sophia_shell_component schema=1 status=negotiated slot={} role={} connection_epoch={} content_grant_epoch={} revision={} gpu_mode={} gpu_grant_epoch={} device_major={} device_minor={}",
+                            "sophia_shell_component schema=1 status=negotiated slot={} role={} connection_epoch={} content_grant_epoch={} revision={} capabilities={:#x} gpu_mode={} gpu_grant_epoch={} device_major={} device_minor={}",
                             key.slot,
                             role,
                             key.grant.connection_epoch,
                             key.grant.content_grant_epoch,
                             welcome.selected_revision,
+                            welcome.capabilities,
                             if gpu.is_some() { "direct" } else { "denied" },
                             gpu.map_or(0, |g| g.epoch),
                             gpu.map_or(0, |g| g.major),

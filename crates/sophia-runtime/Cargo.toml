@@ -13,6 +13,9 @@ experimental-draw = ["dep:sophia-draw", "rustix/fs"]
 experimental-shell-capture = ["dep:sophia-renderer-image", "sophia-renderer-image/experimental-shell-capture", "rustix/fs"]
 # Opt-in shell-file control-turn observation; absent from default builds.
 experimental-custody-dispatch = []
+# W2 prototype: a component may negotiate r12 with bit 17 when its owner
+# also permits it. Absent from default and release builds.
+experimental-shell-retire-on-present = []
 
 [dependencies]
 sophia-draw = { path = "../sophia-draw", optional = true }

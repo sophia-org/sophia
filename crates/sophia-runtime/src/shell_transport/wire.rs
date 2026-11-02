@@ -123,13 +123,27 @@ impl ShellComponentTransport {
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
         match self.wire.as_mut() {
             None => Ok(None),
-            Some(files) if want == ContentWant::CandidatePart => {
-                Ok(files.export_mut().take_candidate_part())
+            // Candidate parts carry their End's retire intent: take them only
+            // through `take_candidate_part`, so no intent is dropped.
+            Some(_) if want == ContentWant::CandidatePart => {
+                Err(ShellTransportError::WrongContentRecord)
             }
             Some(files) => Ok(files
                 .export_mut()
                 .take_content(|record| want.selects(record))),
         }
+    }
+
+    /// The next part of the oldest whole candidate, the End with its retire
+    /// intent.
+    pub(super) fn take_candidate_part(
+        &mut self,
+    ) -> Option<(
+        TransactionId,
+        ShellContentRecord,
+        Option<sophia_protocol::shell::content::ContentCandidateRetire>,
+    )> {
+        self.files_mut()?.export_mut().take_candidate_part()
     }
 
     /// Drops the rest of a candidate whose earlier part was answered with a

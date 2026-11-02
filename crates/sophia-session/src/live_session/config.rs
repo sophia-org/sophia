@@ -15,12 +15,12 @@ mod output;
 mod output_proof;
 #[path = "config/reload.rs"]
 mod reload;
-#[path = "config/startup.rs"]
-mod startup;
 #[path = "config/session.rs"]
 mod session;
 #[path = "config/session_profile.rs"]
 mod session_profile;
+#[path = "config/startup.rs"]
+mod startup;
 #[path = "config/wm_proof.rs"]
 mod wm_proof;
 #[path = "config/x_groups.rs"]
@@ -36,12 +36,17 @@ enum ControlTransportSelection {
 impl ControlTransportSelection {
     fn from_args(args: &[String]) -> Result<Self, Box<dyn std::error::Error>> {
         if args.iter().any(|arg| arg == "--control-transport") {
-            return Err("use --control-transport=current-ipc or --control-transport=9p2000.L".into());
+            return Err(
+                "use --control-transport=current-ipc or --control-transport=9p2000.L".into(),
+            );
         }
         match arg_value(args, "--control-transport").as_deref() {
             Some("current-ipc") => Ok(Self::Legacy),
             None | Some("9p2000.L") => Ok(Self::NineP2000L),
-            Some(other) => Err(format!("--control-transport expects current-ipc or 9p2000.L, got {other:?}").into()),
+            Some(other) => Err(format!(
+                "--control-transport expects current-ipc or 9p2000.L, got {other:?}"
+            )
+            .into()),
         }
     }
     fn bind(self, runtime: &std::path::Path) -> std::io::Result<sophia_runtime::ControlService> {
@@ -51,7 +56,10 @@ impl ControlTransportSelection {
         }
     }
     const fn name(self) -> &'static str {
-        match self { Self::Legacy => "current-ipc", Self::NineP2000L => "9p2000.L" }
+        match self {
+            Self::Legacy => "current-ipc",
+            Self::NineP2000L => "9p2000.L",
+        }
     }
 }
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -61,7 +69,9 @@ enum WmTransportSelection {
 }
 impl WmTransportSelection {
     const fn wire_name(self) -> &'static str {
-        match self { Self::NineP2000L => "sophia_wm_fs_v1" }
+        match self {
+            Self::NineP2000L => "sophia_wm_fs_v1",
+        }
     }
     const fn socket_env(self) -> &'static str {
         match self {
@@ -74,8 +84,7 @@ use crate::desktop_output_publication::{
 };
 use output::{
     LiveOutputAuthorityBootstrap, PreparedOutputProfile, output_topology_from_engine_outputs,
-    output_topology_from_engine_outputs_at_generation,
-    resolved_output_bounds, wm_output_bounds,
+    output_topology_from_engine_outputs_at_generation, resolved_output_bounds, wm_output_bounds,
     wm_root_bounds,
 };
 use output_proof::{
@@ -161,6 +170,7 @@ struct PersistentXtermSessionConfig {
     shell_content_enabled: bool,
     shell_content_input_enabled: bool,
     shell_capture_destination_reuse: bool,
+    shell_retire_on_present: bool,
     shell_gpu_mode: sophia_config::ShellGpuMode,
     shell_proof_restart_after_visible: Option<u32>,
     wm_interface: sophia_config::ExternalWmInterface,
@@ -299,7 +309,8 @@ impl PersistentXtermSessionConfig {
         &mut self,
         core: &sophia_config::CursorConfig,
     ) -> Result<Option<sophia_engine::CursorAsset>, Box<dyn std::error::Error>> {
-        let (base, shake) = resolve_desktop_cursor(self.input_profile.current().cursor.as_ref(), core)?;
+        let (base, shake) =
+            resolve_desktop_cursor(self.input_profile.current().cursor.as_ref(), core)?;
         if base.asset.digest() == self.cursor_resolution.asset.digest() {
             self.cursor_shake_resolution = shake;
             return Ok(None);
@@ -437,14 +448,18 @@ impl PersistentXtermSessionConfig {
             parse_display_number(&self.display).ok(),
             |display, group| {
                 socket_directories::SocketDirectoryLayout::prepare(display)
-                    .map(|layout| layout.group_directory(socket_directories::ClientGroup::Confined(group)))
+                    .map(|layout| {
+                        layout.group_directory(socket_directories::ClientGroup::Confined(group))
+                    })
                     .map_err(std::io::Error::other)
             },
         )
     }
 
     fn launch_surface_proof_requested(&self) -> bool {
-        self.firefox_proof_requested() || self.exit_after_input_proof || self.expect_physical_text.is_some()
+        self.firefox_proof_requested()
+            || self.exit_after_input_proof
+            || self.expect_physical_text.is_some()
     }
 
     fn firefox_proof_requested(&self) -> bool {

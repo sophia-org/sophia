@@ -220,12 +220,12 @@ impl crate::ShellConnection {
             return Err(ShellClientError::PeerClosed);
         }
         // Shell revision 10's sole CPU image source is the owned ring:
-        // revision 10 with the owned-ring capability and content
-        // surface. Sealed bit 13 is the lock plane and is not a shell
+        // the r10 image protocol (r10, or W2's r12 with bit 17) with the
+        // owned-ring capability and content surface. Sealed bit 13 is the lock plane and is not a shell
         // fallback. DMA capture is selected explicitly by enable_dma_image.
         let required = IMAGE_CAPABILITY_OWNED_RING
             | sophia_shell_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
-        if self.welcome.selected_revision != sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
+        if self.image_revision().is_none()
             || self.welcome.capabilities & required != required
             || self.welcome.capabilities & IMAGE_CAPABILITY_SEALED != 0
         {
@@ -256,8 +256,7 @@ impl crate::ShellConnection {
         let required = IMAGE_CAPABILITY_DMA_BUF
             | IMAGE_CAPABILITY_OWNED_RING
             | sophia_shell_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
-        if self.welcome.selected_revision != 10 || self.welcome.capabilities & required != required
-        {
+        if self.image_revision().is_none() || self.welcome.capabilities & required != required {
             return Err(ShellClientError::MissingCapability);
         }
         let dma = dma::DmaAdapter::new(

@@ -254,20 +254,24 @@ impl ShellComponentTransport {
         };
         match selected {
             Ok((welcome, limits)) => {
-                let image_listener =
-                    if welcome.selected_revision == crate::owned_ring_protocol::REVISION {
-                        let directory = self
-                            .endpoint
-                            .socket_path()
-                            .parent()
-                            .ok_or(ShellTransportError::WrongContentGrant)?;
-                        Some(
-                            crate::image_channel::ImageChannelListener::bind(directory)
-                                .map_err(|error| ShellTransportError::Io(error.to_string()))?,
-                        )
-                    } else {
-                        None
-                    };
+                let image_revision = sophia_protocol::shell::content::owned_ring_image_revision(
+                    welcome.selected_revision,
+                    welcome.capabilities,
+                );
+                let image_listener = if image_revision == Some(crate::owned_ring_protocol::REVISION)
+                {
+                    let directory = self
+                        .endpoint
+                        .socket_path()
+                        .parent()
+                        .ok_or(ShellTransportError::WrongContentGrant)?;
+                    Some(
+                        crate::image_channel::ImageChannelListener::bind(directory)
+                            .map_err(|error| ShellTransportError::Io(error.to_string()))?,
+                    )
+                } else {
+                    None
+                };
                 let limits_object = limits
                     .as_ref()
                     .map(|limits| {
@@ -276,18 +280,14 @@ impl ShellComponentTransport {
                     })
                     .transpose()?;
                 let body = super::files::encode_negotiated(welcome, limits.is_some())?;
-                let completed = if welcome.selected_revision == crate::owned_ring_protocol::REVISION
-                {
-                    wire.export_mut().complete_negotiation_with_image_revision(
+                wire.export_mut()
+                    .complete_negotiation_with_image_revision(
                         limits_object,
                         welcome.capabilities,
+                        image_revision.unwrap_or(0),
                         welcome.selected_revision,
                     )
-                } else {
-                    wire.export_mut()
-                        .complete_negotiation(limits_object, welcome.capabilities)
-                };
-                completed.map_err(|error| ShellTransportError::Io(format!("{error:?}")))?;
+                    .map_err(|error| ShellTransportError::Io(format!("{error:?}")))?;
                 if let Some(listener) = image_listener {
                     let expected = self
                         .endpoint

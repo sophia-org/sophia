@@ -86,6 +86,9 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
             number(16)
         }
         ("sophia_shell_component", "revision") => number(u16::MAX.into()),
+        ("sophia_shell_component", "capabilities") => value
+            .strip_prefix("0x")
+            .is_some_and(|hex| u64::from_str_radix(hex, 16).is_ok()),
         ("sophia_shell_component", "device_major" | "device_minor") => number(u32::MAX.into()),
         (
             "sophia_shell_component",

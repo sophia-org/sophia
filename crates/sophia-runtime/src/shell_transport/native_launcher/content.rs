@@ -57,7 +57,7 @@ impl ShellComponentTransport {
                 NativeContentRecord::Resource(v) => epochs
                     .resources(self.store_grant)
                     .ok_or(ShellTransportError::MissingCapability)?
-                    .additional_response_credit(v),
+                    .additional_response_credit(transaction, v),
                 _ => 0,
             };
             if !self.control_capacity_available(epochs, credit) {

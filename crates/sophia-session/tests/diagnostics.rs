@@ -891,6 +891,7 @@ fn allocation_shutdown_capture_preserves_bounded_disposition_and_reason() {
 fn independent_component_evidence_is_bounded_and_payload_free() {
     for record in [
         "sophia_shell_component schema=1 status=negotiated slot=0 role=bar connection_epoch=1 content_grant_epoch=1 revision=6 gpu_mode=direct gpu_grant_epoch=1 device_major=226 device_minor=129",
+        "sophia_shell_component schema=1 status=negotiated slot=0 role=bar connection_epoch=1 content_grant_epoch=1 revision=12 capabilities=0x28003 gpu_mode=direct gpu_grant_epoch=1 device_major=226 device_minor=129",
         "sophia_shell_component schema=1 status=negotiated slot=1 role=application_launcher connection_epoch=2 content_grant_epoch=2 revision=7 gpu_mode=denied gpu_grant_epoch=0 device_major=0 device_minor=0",
         "sophia_shell_components_shutdown schema=1 status=quiescent",
         "sophia_shell_component schema=1 status=service_failed slot=1",

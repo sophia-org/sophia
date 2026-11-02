@@ -41,6 +41,10 @@ $(BUILD)/%.pc: pkgconfig/%.pc.in GNUmakefile
 FILE_TESTS = shell_session_attached_test sophia_9p_client_test launch_auth_test sophia_shell_files_test sophia_shell_files_roles_test sophia_shell_files_descriptors_test sophia_shell_files_descriptor_candidates_test sophia_shell_files_descriptor_objects_test sophia_shell_files_staging_test desktop_connection_test shell_session_custody_test shell_session_events_test shell_session_descriptors_test shell_session_staging_test native_session_test wm_files_test wm_session_test output_files_test output_session_test lock_files_test lock_client_test lock_image_test
 FILE_TESTS += namespace_test
 FILE_TESTS += image_channel_codec_test owned_ring_codec_test
+FILE_TESTS += shell_revision_mapping_test
+FILE_TESTS += shell_candidate_retire_test
+FILE_TESTS += shell_session_retire_test
+FILE_TESTS += shell_retire_tracker_test
 FILE_TESTS += image_receipt_test
 FILE_TESTS += image_producer_test
 FILE_TESTS += isb_mapped_test

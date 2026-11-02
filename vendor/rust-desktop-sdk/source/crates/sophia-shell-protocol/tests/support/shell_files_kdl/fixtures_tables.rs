@@ -222,6 +222,7 @@ pub fn candidate() -> (
     let surface_count = surfaces.len() as u64;
     let placement_count = placements.len() as u64;
     let target_count = targets.len() as u64;
+    let flags = 0u64;
 
     let candidate = ContentCandidate {
         grant: grant(grant_connection_epoch, grant_content_epoch),
@@ -246,7 +247,8 @@ pub fn candidate() -> (
         interaction_generation,
         surface_count,
         placement_count,
-        target_count
+        target_count,
+        flags
     );
     (
         transaction,

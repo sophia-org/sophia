@@ -1,14 +1,14 @@
-tree f82ef6b86ed449ae93d0c41a6c3e622a6937240f
-parent 7581de969ace5cd048cdd5c97cbc3b609d6bdedf
-author Mason Green <mason@greenm01.net> 1792670523 -0400
-committer Mason Green <mason@greenm01.net> 1792670523 -0400
+tree a58a4dd3986f63ba8598dde1f708e1bedd1155ce
+parent a0e68472687cc444baf690149c1ff17f5b9f4465
+author Mason Green <mason@greenm01.net> 1793625854 -0500
+committer Mason Green <mason@greenm01.net> 1793625854 -0500
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatn7OxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKXiQD/SQnml3PsuRZmaL/ajUT6
- M8x0Qn7UYRsqn33uwy7WVtQA/0uxrIvmtG6SmYVPQhQxwKK3TVvRwWZf2grEdhKd
- i6wC
- =5Oy5
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCauiO/hsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKT5wEAkmXpUBy5VVtk0cof8xhH
+ /YR654nyy1cv9hI2LsfRXMcA+wag/t3G0S3etAMgO0qKhCzD9zyvYUUF33dUjlZI
+ ho0F
+ =cmnW
  -----END PGP SIGNATURE-----
 
-Make r10 DMA-BUF an exclusive producer lifecycle (t339)
+Keep W2 implementation headers relative for independent host builds

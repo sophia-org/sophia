@@ -125,6 +125,8 @@ pub struct ShellComponentTransport {
     authentication: Option<Box<dyn crate::authenticated_files::FileAuthenticationFactory>>,
     authentication_required: bool,
     image_config: Option<files::ShellImageChannelConfig>,
+    /// Owner-local W2 permission; never part of any wire object.
+    retire_on_present_permitted: bool,
     /// The current epoch's protected 9P connection.
     wire: Option<Box<files::ShellFileWire>>,
     /// The component's next logical qid, continued across file epochs.
@@ -172,6 +174,7 @@ impl ShellComponentTransport {
             authentication: None,
             authentication_required: false,
             image_config: None,
+            retire_on_present_permitted: false,
             wire: None,
             file_qids: 1,
             negotiation: None,

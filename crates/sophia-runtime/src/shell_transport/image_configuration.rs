@@ -55,4 +55,15 @@ impl ShellComponentTransport {
         });
         Ok(())
     }
+
+    /// W2 prototype: lets a future file epoch negotiate r12 with bit 17 when
+    /// the component requires it. Owner-local; it changes no discovery bytes.
+    #[cfg(feature = "experimental-shell-retire-on-present")]
+    pub fn permit_retire_on_present(&mut self, permitted: bool) -> Result<(), ShellTransportError> {
+        if self.wire.is_some() || self.negotiation.is_some() || !self.authentication_required {
+            return Err(ShellTransportError::WrongContentGrant);
+        }
+        self.retire_on_present_permitted = permitted;
+        Ok(())
+    }
 }

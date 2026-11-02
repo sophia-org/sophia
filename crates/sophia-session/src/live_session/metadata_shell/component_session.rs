@@ -130,6 +130,14 @@ impl ShellComponentSession {
         let _ = enabled;
     }
 
+    /// W2 prototype: whether the bar may negotiate retire-on-present.
+    pub(crate) fn set_retire_on_present(&mut self, enabled: bool) {
+        #[cfg(feature = "experimental-shell-retire-on-present")]
+        self.processes.set_retire_on_present(enabled);
+        #[cfg(not(feature = "experimental-shell-retire-on-present"))]
+        let _ = enabled;
+    }
+
     pub fn authenticate(
         &mut self,
         launches: &crate::launch_authentication::LaunchCoordinator,

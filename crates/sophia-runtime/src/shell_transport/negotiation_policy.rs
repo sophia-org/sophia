@@ -12,17 +12,32 @@ impl ShellComponentTransport {
         const SEALED: u64 = 1 << 13;
         const DMA: u64 = 1 << 14;
         const OWNED: u64 = crate::owned_ring_protocol::CAPABILITY;
-        if hello.required_capabilities & (SEALED | DMA | OWNED) != 0 {
+        // Compiled off, bit 17 is not an image bit: legacy selection refuses
+        // it exactly as before.
+        let w2 = if cfg!(feature = "experimental-shell-retire-on-present") {
+            hello.required_capabilities
+                & sophia_protocol::shell::content::SOPHIA_SHELL_CAPABILITY_CONTENT_RETIRE_ON_PRESENT
+        } else {
+            0
+        };
+        if hello.required_capabilities & (SEALED | DMA | OWNED) != 0 || w2 != 0 {
+            // A W2 request takes exactly r12, never r10 without bit 17.
+            let target = if w2 != 0 {
+                sophia_protocol::shell::content::SOPHIA_SHELL_RETIRE_ON_PRESENT_REVISION
+            } else {
+                crate::owned_ring_protocol::REVISION
+            };
             if hello.minimum_revision == 0
-                || hello.minimum_revision > 10
-                || hello.maximum_revision < 10
+                || hello.minimum_revision > target
+                || hello.maximum_revision < target
                 || hello.minimum_revision > hello.maximum_revision
             {
                 return Err(ShellTransportError::UnsupportedRevision);
             }
             // DMA-BUF is an additive r10 opt-in only where the owner configured
             // capture; sealed sources stay retired at r10.
-            let dma = if cfg!(feature = "experimental-shell-capture")
+            let dma = if w2 == 0
+                && cfg!(feature = "experimental-shell-capture")
                 && self.image_config.as_ref().is_some_and(|config| {
                     config.discovery.source_kinds
                         & sophia_protocol::shell_files::SHELL_IMAGE_SOURCE_DMA_BUF
@@ -32,7 +47,13 @@ impl ShellComponentTransport {
             } else {
                 0
             };
-            let retired_or_unavailable = hello.required_capabilities & (SEALED | DMA) & !dma;
+            let unpermitted = if self.retire_on_present_permitted {
+                0
+            } else {
+                w2
+            };
+            let retired_or_unavailable =
+                hello.required_capabilities & (SEALED | DMA) & !dma | unpermitted;
             if retired_or_unavailable != 0 {
                 return Err(ShellTransportError::ContentAdmissionRefused(
                     ContentAdmissionRefused {
@@ -58,15 +79,15 @@ impl ShellComponentTransport {
             let base = ShellV1ClientHello {
                 minimum_revision: 1,
                 maximum_revision: 8,
-                required_capabilities: hello.required_capabilities & !(OWNED | DMA),
+                required_capabilities: hello.required_capabilities & !(OWNED | DMA | w2),
             };
             let (mut welcome, limits) =
                 self.select_legacy_negotiation(epochs, connection_epoch, content_policy, base)?;
             if limits.is_none() {
                 return Err(ShellTransportError::MissingCapability);
             }
-            welcome.selected_revision = crate::owned_ring_protocol::REVISION;
-            welcome.capabilities |= OWNED | dma;
+            welcome.selected_revision = target;
+            welcome.capabilities |= OWNED | dma | w2;
             return Ok((welcome, limits));
         }
         self.select_legacy_negotiation(epochs, connection_epoch, content_policy, hello)

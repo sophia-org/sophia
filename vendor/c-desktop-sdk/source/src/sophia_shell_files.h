@@ -153,10 +153,29 @@ int sophia_sf_ack_encode(uint8_t dst[16], uint64_t epoch, uint64_t sequence);
  * 13 stays r9-only; candidate_kind 0x7000 also serves optional r10 DMA-BUF. */
 #define SOPHIA_SF_REVISION_IMAGE_CHANNEL 9u
 #define SOPHIA_SF_REVISION_OWNED_RING 10u
+#define SOPHIA_SF_REVISION_RETIRE_ON_PRESENT 12u
 #define SOPHIA_SF_CAP_CONTENT_SURFACE (UINT64_C(1) << 7)
 #define SOPHIA_SF_CAP_SEALED_IMAGE (UINT64_C(1) << 13)
 #define SOPHIA_SF_CAP_DMABUF_IMAGE (UINT64_C(1) << 14)
 #define SOPHIA_SF_CAP_OWNED_RING (UINT64_C(1) << 15)
+#define SOPHIA_SF_CAP_CONTENT_RETIRE_ON_PRESENT (UINT64_C(1) << 17)
+/* Grammar permission only; the host still enforces the role and source profile. */
+int sophia_sf_retire_on_present_enabled(uint16_t revision, uint64_t capabilities);
+/* Image revision 10 for allocated shell r10/r11/r12 with owned-ring granted;
+ * zero otherwise. Draw and retirement grants are independent of this mapping. */
+uint16_t sophia_sf_owned_ring_image_revision(uint16_t revision, uint64_t capabilities);
+struct sophia_sf_candidate_retire {
+    uint64_t transaction;
+    uint64_t resource_id;
+    uint64_t resource_generation;
+};
+/* Whole Candidate codec. The caller must negotiate retire permission before
+ * encoding; decoding requires its explicit per-connection permission. Old
+ * decode remains strict and rejects flagged records. No output is valid on error. */
+int sophia_sf_candidate_encode_with_retire(void *, size_t, const struct sophia_sf_record *,
+    const struct sophia_sf_candidate_retire *, size_t *);
+int sophia_sf_candidate_decode_with_retire(const void *, size_t, int enabled,
+    struct sophia_sf_record *, struct sophia_sf_candidate_retire *, int *has_retire);
 #define SOPHIA_SF_REASON_IMAGE_CHANNEL_UNAVAILABLE 13u
 #define SOPHIA_SF_KIND_IMAGE_BEGIN 0x7000u
 int sophia_sf_decode_revision(const void *, size_t, uint16_t revision, struct sophia_sf_record *);

@@ -52,11 +52,44 @@ zero-flags fixture value. Initial failures and passing logs are retained under
 `~/.local/state/sophia-w2-integration-01`; this is working evidence, not a sealed
 release. Both SDK parity documents label the integration incomplete.
 
-Next implement C session submission and predecessor tracking, complete both
-handshakes' cumulative revision/capability rules, then forward-integrate host
-admission/lifecycle and qualify the integrated profile. Shared golden bytes do
-not prove those paths. No SDK publication, vendor replacement, default change,
-native launch or performance claim has occurred.
+The SDK work has since advanced to published, signed Rust `d70e77a08d61`
+and C `5d9d1ff79f9a`. C now supplies bounded Candidate submission, unchanged
+EAGAIN retry bytes and a caller-owned predecessor tracker. Both adapters exercise
+owned-ring transfer and exact settlement at shell r10/r11/r12, with and without
+W2 at r12, before negotiation and after readiness. Image protocol remains r10;
+W2 grants require exact r12 and cannot arrive unsolicited. The SDK suites still
+pass (453 Rust tests, strict Clippy and C `make check`).
+
+The host now carries these exact archives through the normal snapshot checks.
+The Rust verifier first refused stale relative-path digest entries alongside
+new prefixed entries; the SDK manifest was corrected, signed and republished
+before retry. The independent C host build then exposed two include-path
+assumptions; those were fixed in the SDK and its signed archive replaced again.
+Neither failure was bypassed by editing a vendor snapshot.
+
+Host lifecycle, whole-Candidate wire decoding and explicit bar owner opt-in are
+forward-integrated from the reviewed prototype. The integration preserves
+reservation at admission, exact-owner commit at Presented, immediate cancellation
+on owner drop and release after the last lease. Real SDK/runtime wire tests cover
+held leases, supersession, expiry and revocation. The control-budget fixture's
+old acceptance of unallocated r13 was corrected to require refusal. A new test
+also demonstrated an unintended W2/DMA-BUF grant when capture was configured;
+the integration now refuses that unqualified combination without disabling the
+existing DMA path. Default runtime checks pass 786 tests; W2/capture/draw checks
+pass 824, each with 41 intentionally ignored tests. The bar owner-setting test
+passes; flag parsing passes with the feature both on and off, and 39 diagnostic
+tests pass. Strict Clippy passes for runtime, Session and CLI with dependency
+linting excluded (the broad run hit an unchanged renderer lint). Layout passes;
+43 touched Rust files pass formatting. The existing 993-line argument parser
+keeps only its two W2 additions: formatting the whole old function would exceed
+the 1000-line layout limit. That pre-existing formatting debt is recorded, not
+refactored into this candidate.
+
+Next finish the integrated source gate, cross-language/protected qualification
+and a fresh matched run package. The feature and owner setting remain default
+off. Draw-plus-W2 and other role/source combinations remain unqualified. No
+native launch or new performance claim has occurred; these implementation and
+correctness checks do not close the CPU gap.
 
 ## Historical attribution checkpoints
 

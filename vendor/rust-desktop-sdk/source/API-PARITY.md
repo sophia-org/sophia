@@ -1555,3 +1555,30 @@ native adoption and CPU compatibility. Final paired revisions belong in Sophia's
 verified snapshot manifests. These checks prove packet shape and custody only.
 Real GPU completion, device identity, immutable capture and performance remain
 t339 native qualification gates.
+# W2 integration checkpoint (unreleased)
+
+Shell r12 / bit 17 follows Sophia's allocation ledger. The candidate codec,
+exact retirement capability gate and r10/r11/r12 owned-ring mapping now have
+matching C entry points and a shared nine-record corpus in
+`spec/golden/sophia-shell-retire-v1.tsv`. Image mapping does not imply draw or
+retirement permission; unallocated later revisions establish no mapping.
+
+This is partial integration, not production qualification. The Rust prototype
+client and its lifecycle helper have been carried forward. C commit `e7d2e18`
+adds bounded Candidate submission with byte-identical EAGAIN retry and a
+caller-owned retirement tracker. Host wiring and protected/native qualification
+remain unfinished. Draw-plus-W2 and other role/source combinations remain
+unqualified. Neither this checkpoint
+nor successful codec tests closes SDK parity. Existing clients keep explicit
+retirement. Do not enable a live W2 profile from this unreleased work.
+
+The paired image-adapter checks now exercise shell r10, r11 and r12 with owned
+ring, plus r12 with W2, both when attached before negotiation and after readiness.
+Every case keeps image protocol r10, transfers a real ISB descriptor through the
+local scripted endpoint, and waits for exact ResourceStatus and SlotReleased
+settlement. Adapter options reject unallocated r13; the W2 image convenience
+path requests exactly r12. Ordinary W2 negotiation can offer a range but accepts
+only selected r12, the requested capabilities plus work-area reservation, and
+never an unsolicited W2 grant. The ordinary revision-specific record codecs
+remain bounded; only the image adapter maps these shell revisions to image r10.
+These are device-free SDK tests, not live-host or performance evidence.

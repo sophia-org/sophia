@@ -109,6 +109,7 @@ impl ContentResourceStore {
                 retiring: false,
                 transaction: transfer.transaction,
                 release_pending: false,
+                intent: None,
                 capture_evicted: false,
             },
         );

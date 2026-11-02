@@ -783,3 +783,344 @@ fn full_file_inbox_refuses_custody_then_retries_the_same_id_without_loss() {
     assert!(t.state.inbound_idle());
     peer.quiet(&mut t.state);
 }
+
+/// W2 prototype: a queued Presented owns its retire intent across a resource
+/// flush and a real prepare failure; its transfer commits it once, so
+/// ResourceReleased can only follow Presented in the FIFO.
+#[test]
+fn a_queued_presented_commits_its_retire_only_at_transfer_and_precedes_released() {
+    let mut fixture = Fixture::new(16);
+    let transport = &mut fixture.transport;
+    let (grant, output, predecessor) = stage_retire_intent(transport);
+    let _bundle = transport.begin_content_submission(output, 1, 2).unwrap();
+    transport
+        .content_prepared(grant, output, 1, 1, 1, 2)
+        .unwrap();
+    // Presented is queued in the store but not transferred, as when a flush
+    // has not run or stopped before it.
+    transport
+        .content_epochs
+        .candidates_mut(grant)
+        .unwrap()
+        .presented(output, 1, 1, 1, 1)
+        .unwrap();
+    let flush_resources = |transport: &mut ShellSessionTransport| {
+        transport.content_epochs.collect();
+        transport
+            .state
+            .flush_content_resource_events(&mut transport.content_epochs)
+            .unwrap();
+    };
+    flush_resources(transport);
+    let reserved = |transport: &ShellSessionTransport| {
+        transport
+            .content_epochs
+            .resources(transport.state.store_grant)
+            .unwrap()
+            .reserved_retiring()
+    };
+    assert_eq!(reserved(transport), 8, "a resource flush cannot commit it");
+    // A real transfer failure: with no record capacity, prepare_content_record
+    // refuses Presented, which stays queued and keeps its intent.
+    let limit = transport
+        .state
+        .content_limits
+        .as_ref()
+        .unwrap()
+        .max_control_records;
+    transport
+        .state
+        .content_limits
+        .as_mut()
+        .unwrap()
+        .max_control_records = 0;
+    assert_eq!(
+        transport
+            .state
+            .flush_content_candidate_events(&mut transport.content_epochs),
+        Err(ShellTransportError::ContentQueueSaturated)
+    );
+    assert!(
+        transport
+            .content_epochs
+            .active_candidates(transport.state.store_grant)
+            .unwrap()
+            .pending_event()
+            .is_some_and(|event| event.retire.is_some())
+    );
+    assert_eq!(reserved(transport), 8, "a failed prepare keeps it reserved");
+    flush_resources(transport);
+    assert_eq!(reserved(transport), 8);
+    transport
+        .state
+        .content_limits
+        .as_mut()
+        .unwrap()
+        .max_control_records = limit;
+    // The retry transfers Presented and commits; repeated flushes add nothing.
+    for _ in 0..3 {
+        transport
+            .state
+            .flush_content_candidate_events(&mut transport.content_epochs)
+            .unwrap();
+        flush_resources(transport);
+    }
+    assert_eq!(reserved(transport), 0);
+    let mut order = Vec::new();
+    while transport.state.output.front().is_some() {
+        if let OutboundRecord::Content(transaction, record) =
+            transport.state.output.pop_front().record
+        {
+            match record {
+                ShellContentRecord::CandidateOutcome(value) if value.kind == 2 => {
+                    order.push(("presented", transaction))
+                }
+                ShellContentRecord::ResourceReleased(value) => {
+                    assert_eq!(value.resource, predecessor);
+                    order.push(("released", transaction))
+                }
+                _ => {}
+            }
+        }
+    }
+    assert_eq!(
+        order,
+        [
+            ("presented", TransactionId::from_raw(2)),
+            ("released", TransactionId::from_raw(50)),
+        ]
+    );
+}
+
+/// W2 prototype: resource 1 accepted under tx 9, and candidate 1 on output 1
+/// ended with an intent to retire it under tx 50.
+fn stage_retire_intent(
+    transport: &mut ShellSessionTransport,
+) -> (ContentGrant, ContentOutputId, ContentResourceId) {
+    let (grant, output, predecessor) = stage_predecessor(transport);
+    let (resources, candidates) = transport
+        .content_epochs
+        .active_pair_mut(transport.state.store_grant)
+        .unwrap();
+    candidates
+        .begin(
+            TransactionId::from_raw(2),
+            ContentCandidateBegin {
+                grant,
+                candidate_generation: 1,
+                output,
+                facts_generation: 1,
+                pacing_permit: 1,
+                interaction_generation: 1,
+                surface_count: 0,
+                placement_count: 0,
+                target_count: 0,
+            },
+            1,
+        )
+        .unwrap();
+    candidates
+        .end_with_retire(
+            TransactionId::from_raw(3),
+            ContentCandidateEnd {
+                grant,
+                candidate_generation: 1,
+                surface_count: 0,
+                placement_count: 0,
+                target_count: 0,
+            },
+            crate::ContentRetireOnPresent {
+                retire_transaction: TransactionId::from_raw(50),
+                resource: predecessor,
+            },
+            crate::ContentCandidateContext {
+                output,
+                facts_generation: 1,
+                interaction_generation: 1,
+                allocations: &[],
+            },
+            resources,
+            1,
+        )
+        .unwrap();
+    (grant, output, predecessor)
+}
+
+/// W2 prototype: an explicit retire reusing an intent's held ID is refused,
+/// and that refusal needs its own credit. With the control budget full the
+/// retire stays queued on the wire; it is consumed only once the credit fits.
+#[test]
+fn a_full_budget_leaves_a_held_id_retire_unconsumed_until_its_refusal_fits() {
+    let mut fixture = Fixture::new(16);
+    let transport = &mut fixture.transport;
+    let mut peer = attach_files(transport);
+    let (grant, _, _) = stage_retire_intent(transport);
+    let other = ContentResourceId {
+        id: 2,
+        generation: 1,
+    };
+    isb::accept(
+        transport
+            .content_epochs
+            .resources_mut(transport.state.store_grant)
+            .unwrap(),
+        TransactionId::from_raw(10),
+        ContentResourceBegin {
+            grant,
+            resource: other,
+            width_px: 2,
+            height_px: 1,
+            rendered_scale_numerator: 1,
+            rendered_scale_denominator: 1,
+            pixel_format: 1,
+            chunk_count: 1,
+            total_bytes: 8,
+        },
+        &[0; 8],
+        1,
+    );
+    // Drop the accept statuses and the queued output, so the budget holds
+    // only what stays reserved; the service would otherwise send them first.
+    let resources = transport
+        .content_epochs
+        .resources_mut(transport.state.store_grant)
+        .unwrap();
+    while resources.take_event().is_some() {}
+    while transport.state.output.front().is_some() {
+        transport.state.output.pop_front();
+    }
+    assert!(peer.try_submit(
+        &mut transport.state,
+        ShellFileKind::ResourceRetire,
+        |header| {
+            encode_shell_file_resource_retire(
+                header,
+                &ShellFileTransactionRecord {
+                    transaction: TransactionId::from_raw(50),
+                    record: ShellContentRecord::ResourceRetire(ContentResourceRetire {
+                        grant,
+                        resource: other,
+                    }),
+                },
+            )
+            .unwrap()
+        }
+    ));
+    peer.quiet(&mut transport.state);
+    let mut full = None;
+    let set_limit = |transport: &mut ShellSessionTransport, records| {
+        transport
+            .state
+            .content_limits
+            .as_mut()
+            .unwrap()
+            .max_control_records = records;
+    };
+    let retiring = |transport: &ShellSessionTransport| {
+        transport
+            .content_epochs
+            .resources(transport.state.store_grant)
+            .unwrap()
+            .usage()
+            .retiring
+    };
+    // Raise the record limit one at a time. Below the first limit that
+    // consumes the retire, the budget had room for a credit-free request
+    // but not for this refusal, and the retire stayed on the wire.
+    // Bounded by the fixture's normal limit, so a regression fails here.
+    let mut consumed = None;
+    for limit in 0..=16 {
+        set_limit(transport, limit);
+        let processed = transport
+            .state
+            .service_content_resources(&mut transport.content_epochs, 1);
+        if processed == Ok(1) {
+            consumed = Some(limit);
+            break;
+        }
+        assert_eq!(processed, Ok(0));
+        assert!(!transport.state.inbound_idle(), "the retire stays queued");
+        assert_eq!(retiring(transport), 0);
+        let room = |additional| {
+            transport
+                .state
+                .control_capacity_available(&transport.content_epochs, additional)
+        };
+        if room(0) {
+            assert!(!room(1));
+            full = Some(limit);
+        }
+    }
+    let limit = consumed.expect("no limit up to 16 consumed the retire");
+    assert_eq!(full, Some(limit - 1), "the full budget held the retire");
+    assert!(transport.state.inbound_idle());
+    assert_eq!(retiring(transport), 0, "neither resource retires");
+    // The refusal is the only response, and it reaches the peer.
+    peer.expect(
+        &mut transport.state,
+        &OutboundRecord::Content(
+            TransactionId::from_raw(50),
+            ShellContentRecord::ResourceStatus(ContentResourceStatus {
+                grant,
+                resource: other,
+                status: 3,
+                reason: ContentReason::Stale as u16,
+                next_ordinal: 0,
+                admitted_bytes: 0,
+            }),
+        ),
+    );
+    peer.quiet(&mut transport.state);
+    assert_eq!(
+        transport
+            .content_epochs
+            .resources(transport.state.store_grant)
+            .unwrap()
+            .reserved_retiring(),
+        8,
+        "the intent keeps its reservation"
+    );
+}
+
+/// W2 prototype: resource 1 accepted under tx 9, and permit 1 granted on
+/// output 1.
+fn stage_predecessor(
+    transport: &mut ShellSessionTransport,
+) -> (ContentGrant, ContentOutputId, ContentResourceId) {
+    let grant = transport.state.content_grant.unwrap();
+    let output = ContentOutputId {
+        id: 1,
+        generation: 1,
+    };
+    let predecessor = ContentResourceId {
+        id: 1,
+        generation: 1,
+    };
+    isb::accept(
+        transport
+            .content_epochs
+            .resources_mut(transport.state.store_grant)
+            .unwrap(),
+        TransactionId::from_raw(9),
+        ContentResourceBegin {
+            grant,
+            resource: predecessor,
+            width_px: 2,
+            height_px: 1,
+            rendered_scale_numerator: 1,
+            rendered_scale_denominator: 1,
+            pixel_format: 1,
+            chunk_count: 1,
+            total_bytes: 8,
+        },
+        &[0; 8],
+        0,
+    );
+    transport
+        .grant_content_permit(TransactionId::from_raw(1), output, 1, 1, 0)
+        .unwrap();
+    (grant, output, predecessor)
+}
+
+#[path = "shell_retire_on_present_wire.rs"]
+mod retire_on_present_wire;

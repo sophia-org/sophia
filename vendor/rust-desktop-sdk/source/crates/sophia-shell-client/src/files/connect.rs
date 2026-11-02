@@ -308,6 +308,7 @@ impl FileWire {
         if welcome.capabilities & options.required_capabilities != options.required_capabilities {
             return Err(ShellClientError::MissingCapability);
         }
+        crate::retire_on_present::validate_w2_welcome(options, &negotiated)?;
         if descriptor {
             super::descriptor::validate_negotiated(options, &negotiated)?;
         }

@@ -104,7 +104,12 @@ impl Fixture {
         )
         .unwrap();
         export
-            .complete_negotiation(Some((bytes, limits)), transport.capabilities)
+            .complete_negotiation_with_image_revision(
+                Some((bytes, limits)),
+                transport.capabilities,
+                0,
+                0,
+            )
             .unwrap();
         transport.wire = Some(Box::new(
             ShellFileWire::adopt(local, export, None, false).unwrap(),

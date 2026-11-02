@@ -5,8 +5,8 @@ use super::codec::u64_at;
 use super::payload::*;
 use super::*;
 use crate::shell::encoding::content::{
-    ShellContentValueKind, decode_content_candidate, decode_shell_content_value,
-    encode_content_candidate, encode_shell_content_value,
+    ShellContentValueKind, decode_content_candidate_with_retire, decode_shell_content_value,
+    encode_content_candidate, encode_content_candidate_with_retire, encode_shell_content_value,
 };
 use crate::*;
 
@@ -115,11 +115,32 @@ pub fn encode_shell_file_candidate(
     header: ShellFileHeader,
     value: &ShellFileCandidate,
 ) -> Result<Vec<u8>, ShellFilePayloadError> {
+    encode_candidate(header, value, None)
+}
+
+/// W2 prototype: the same record carrying one retire intent. Only a
+/// connection for which `retire_on_present_enabled` holds may send it.
+pub fn encode_shell_file_candidate_with_retire(
+    header: ShellFileHeader,
+    value: &ShellFileCandidate,
+    retire: &ContentCandidateRetire,
+) -> Result<Vec<u8>, ShellFilePayloadError> {
+    encode_candidate(header, value, Some(retire))
+}
+
+fn encode_candidate(
+    header: ShellFileHeader,
+    value: &ShellFileCandidate,
+    retire: Option<&ContentCandidateRetire>,
+) -> Result<Vec<u8>, ShellFilePayloadError> {
     header_kind(header, ShellFileKind::Candidate)?;
     if !value.transaction.is_valid() {
         return Err(ShellFilePayloadError::Identity);
     }
-    let candidate = encode_content_candidate(&value.candidate)?;
+    let candidate = match retire {
+        Some(retire) => encode_content_candidate_with_retire(&value.candidate, retire)?,
+        None => encode_content_candidate(&value.candidate)?,
+    };
     let mut body = Vec::with_capacity(8 + candidate.len());
     body.extend(value.transaction.raw().to_le_bytes());
     body.extend_from_slice(&candidate);
@@ -133,6 +154,15 @@ pub fn encode_shell_file_candidate(
 pub fn decode_shell_file_candidate(
     bytes: &[u8],
 ) -> Result<ShellFileCandidate, ShellFilePayloadError> {
+    decode_shell_file_candidate_with_retire(bytes, false).map(|(value, _)| value)
+}
+
+/// `enabled` is `retire_on_present_enabled` for this connection; without it
+/// a flagged candidate is refused exactly as a reserved field.
+pub fn decode_shell_file_candidate_with_retire(
+    bytes: &[u8],
+    enabled: bool,
+) -> Result<(ShellFileCandidate, Option<ContentCandidateRetire>), ShellFilePayloadError> {
     if bytes.len() > SHELL_FILE_MAX_CANDIDATE_BYTES {
         return Err(ShellFileCodecError::Length.into());
     }
@@ -141,14 +171,53 @@ pub fn decode_shell_file_candidate(
     if !transaction.is_valid() {
         return Err(ShellFilePayloadError::Identity);
     }
-    Ok(ShellFileCandidate {
-        transaction,
-        candidate: decode_content_candidate(&r.body[8..])?,
-    })
+    let (candidate, retire) = decode_content_candidate_with_retire(&r.body[8..], enabled)?;
+    Ok((
+        ShellFileCandidate {
+            transaction,
+            candidate,
+        },
+        retire,
+    ))
 }
+
+/// W2 prototype: [`shell_file_candidate_bytes`] for the record carrying
+/// `retire`, validated as [`encode_shell_file_candidate_with_retire`] does:
+/// the intent's 24 bytes count against the complete-record cap.
+pub fn shell_file_candidate_with_retire_bytes(
+    header: ShellFileHeader,
+    value: &ShellFileCandidate,
+    retire: &ContentCandidateRetire,
+) -> Result<usize, ShellFilePayloadError> {
+    crate::shell::encoding::content::validate_retire(retire)?;
+    let plain = shell_file_candidate_length(header, value)?;
+    let length = plain
+        .checked_add(RETIRE_INTENT_BYTES)
+        .ok_or(ShellFileCodecError::Length)?;
+    if length > SHELL_FILE_MAX_CANDIDATE_BYTES {
+        return Err(ShellFileCodecError::Length.into());
+    }
+    Ok(length)
+}
+
+/// The intent a flagged candidate appends: transaction, resource id and
+/// generation.
+const RETIRE_INTENT_BYTES: usize = 24;
 
 /// Validated complete candidate length without cloning or allocating rows.
 pub fn shell_file_candidate_bytes(
+    header: ShellFileHeader,
+    value: &ShellFileCandidate,
+) -> Result<usize, ShellFilePayloadError> {
+    let length = shell_file_candidate_length(header, value)?;
+    if length > SHELL_FILE_MAX_CANDIDATE_BYTES {
+        return Err(ShellFileCodecError::Length.into());
+    }
+    Ok(length)
+}
+
+/// The validated plain record length, before the complete-record cap.
+fn shell_file_candidate_length(
     header: ShellFileHeader,
     value: &ShellFileCandidate,
 ) -> Result<usize, ShellFilePayloadError> {
@@ -157,12 +226,8 @@ pub fn shell_file_candidate_bytes(
         return Err(ShellFilePayloadError::Identity);
     }
     let payload = crate::shell::encoding::content::content_candidate_bytes(&value.candidate)?;
-    let length = SHELL_FILE_HEADER_BYTES
+    SHELL_FILE_HEADER_BYTES
         .checked_add(8)
         .and_then(|n| n.checked_add(payload))
-        .ok_or(ShellFileCodecError::Length)?;
-    if length > SHELL_FILE_MAX_CANDIDATE_BYTES {
-        return Err(ShellFileCodecError::Length.into());
-    }
-    Ok(length)
+        .ok_or(ShellFileCodecError::Length.into())
 }

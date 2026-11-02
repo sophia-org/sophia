@@ -51,8 +51,12 @@ impl ShellFiles {
                 if !self.negotiated || !self.content {
                     return Err(Errno::EACCES);
                 }
-                let candidate = decode_shell_file_candidate(bytes).map_err(|_| Errno::EINVAL)?;
-                Inbound::Candidate(Box::new(candidate))
+                // Without the negotiated W2 permission a flagged candidate is
+                // refused here, before custody, as a reserved field.
+                let (candidate, retire) =
+                    decode_shell_file_candidate_with_retire(bytes, self.retire_on_present)
+                        .map_err(|_| Errno::EINVAL)?;
+                Inbound::Candidate(Box::new(candidate), retire)
             }
             ShellFileKind::NativeAllocationRequest => {
                 if !self.negotiated || !self.content || !self.supports_native_launcher() {

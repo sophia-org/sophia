@@ -28,7 +28,9 @@ fn export(role: &str, caps: u64) -> ShellFiles {
         100,
         Instant::now(),
     );
-    export.complete_negotiation(None, caps).unwrap();
+    export
+        .complete_negotiation_with_image_revision(None, caps, 0, 0)
+        .unwrap();
     export
 }
 
@@ -192,7 +194,9 @@ fn content_role_snapshot_bounds_keep_their_own_feeds() {
             100,
             Instant::now(),
         );
-        files.complete_negotiation(None, caps).unwrap();
+        files
+            .complete_negotiation_with_image_revision(None, caps, 0, 0)
+            .unwrap();
         assert_eq!(files.snapshot_accounting(), (expected, 0), "{role}");
         assert!(
             !files

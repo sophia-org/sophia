@@ -47,8 +47,13 @@ fn draw_requires_admission_bounds_epoch_and_exact_retry() {
             .any(|(n, _)| *n == b"experimental-draw-v1")
     );
     assert_eq!(f.write_draw(&bytes), Err(Errno::EACCES));
-    f.complete_negotiation(Some((vec![], ContentLimits::prototype(b.grant))), 0)
-        .unwrap();
+    f.complete_negotiation_with_image_revision(
+        Some((vec![], ContentLimits::prototype(b.grant))),
+        0,
+        0,
+        0,
+    )
+    .unwrap();
     assert!(
         f.root_entries()
             .iter()
@@ -91,8 +96,13 @@ fn draw_requires_admission_bounds_epoch_and_exact_retry() {
 fn cancellation_waits_for_draw_admission_but_other_resources_progress() {
     let mut f = export();
     let b = batch();
-    f.complete_negotiation(Some((vec![], ContentLimits::prototype(b.grant))), 0)
-        .unwrap();
+    f.complete_negotiation_with_image_revision(
+        Some((vec![], ContentLimits::prototype(b.grant))),
+        0,
+        0,
+        0,
+    )
+    .unwrap();
     f.write_draw(&b.encode().unwrap()).unwrap();
     let cancel = |id| {
         Inbound::Content(
