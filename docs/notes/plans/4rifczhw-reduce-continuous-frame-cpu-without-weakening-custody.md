@@ -43,6 +43,14 @@ candidate. No optimization is promoted, and t344 remains open. S1, single-submit
 and empty-owner-work remain parked. No native/GPU timing or Mini worker-isolation
 action was performed in this lane; the qualified iGPU evidence below remains held.
 
+The protected full-bar-pass follow-up at `26d2fd1f7` closes the supplied-owner
+and manual-driver coverage gaps device-free. Its identities and exact counts
+pass root and independent audits, but the combined observer-versus-stub gate
+fails one +5.187571% CPU comparison against 5%. Preserve that refusal; observer
+implementation and requalification precede any Session candidate. The
+[result and sealed identities](../../session-frame-attribution.md#protected-full-pass-result-observer-qualification-refused)
+record the limits. Other physical-owner phases and native pacing remain open.
+
 ## October 31: bounded CPU dirty updates landed; GPU qualification resumes
 
 **November 1 GPU qualification closeout:** the six-arm fresh-DMA GPU comparison has passed its

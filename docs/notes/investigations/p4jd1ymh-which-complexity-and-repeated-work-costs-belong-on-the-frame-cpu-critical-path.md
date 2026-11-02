@@ -65,13 +65,15 @@ fill pump. The oracle stays off the owner thread, with release ordering intact.
 The 1063-test Session suite and 14 runtime diagnostic tests pass; these are
 correctness checks, not protected performance measurements.
 
-Next replace the manual content driver with the complete production component
-pass, supplying only the native admission/completion edge. Keep the actual
-launch coordinator and readiness observations through that pass. Requalify
-combined instrumentation against the compiled stub on that workload before
-selecting a mechanism.
-No candidate or performance claim follows from this fixture; the original
-attribution baseline and binary remain held separately.
+The complete protected bar component pass now runs at signed `26d2fd1f7`,
+with only native admission/completion supplied by the fixture. Root and
+independent saved-record audits pass all 32 workload blocks and prove actual
+readiness consumption. Its [combined-observer reference](../../session-frame-attribution.md#protected-full-pass-result-observer-qualification-refused)
+failed one predeclared comparison: phase 129 h24 is +5.187571% CPU against
+5%, with stable controls and visit counts. Keep the refusal untolerated.
+No Session candidate is promoted. Next reduce observer work and requalify
+against the compiled stub; other physical-owner phases and native pacing
+remain outside the fixture. The original attribution baseline stays separate.
 
 ## Evidence
 

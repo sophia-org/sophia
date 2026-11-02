@@ -444,3 +444,39 @@ Clippy, and the protected smoke in both observer and compiled-stub builds.
 Both smoke traces contain no graphics, compute or input-device opens. Source
 logs are retained in `~/.local/state/sophia-session-component-pass-source-01`.
 These checks establish behavior and accounting, not performance.
+
+### Protected full-pass result: observer qualification refused
+
+Signed source `26d2fd1f7` completed all sixteen release processes: 32 workload
+blocks, 256,000 measured frames and 3,840 warmup frames. Root reduction and the
+independent audit pass identities and exact counts, including all 519,680
+prepared/presented records, 80 snapshots and 3,120 diagnostic rows. Eleven
+root mutation checks refuse. All normal visits consumed current readiness;
+the paired-fill pump accounts for the fallback turns.
+
+The predeclared combined-observer gate **fails**. Run 10, phase 129, h24 is
++5.187571% owner CPU versus its two compiled-stub endpoints, exceeding 5%.
+Its visits differ by -0.205775%; stub CPU agreement is 3.074773% and visit
+agreement 0.177616%. All eight endpoint-agreement checks and the other fifteen
+comparisons pass. The refusal is retained without tolerance, exclusion or
+rerun. Total observer overhead remains unqualified; no Session optimization
+or native fixed-cost claim follows.
+
+Raw outer owner CPU spans 227.73–237.52 us/completion for the h24 stub and
+236.53–243.29 for its observer; h512 spans 332.36–348.89 and 336.85–351.77.
+The sparse scope table is retained in REPORT.md as unqualified diagnostic
+observations. Do not add, subtract or extrapolate inclusive clocks. These
+protected full-pass results are not paired with older supplied-owner runs.
+The target and completion remain simulated; other physical owner-loop work,
+native pacing and protected-child CPU are outside the claim.
+
+Evidence: `~/.local/state/sophia-session-component-attribution-01`, manifest
+`1ec259df71223fcde5dc0ce5bf8b9fe76dd6289d31d9f23cbd55acc66c2e46ea`
+(55 files). Independent sibling audit:
+`~/.local/state/sophia-session-component-attribution-audit-claude-01`, manifest
+`1cea49cd2ca4b7716b3b59c9612482254b97374a01eb1fff9477f243fea91c08`.
+The correctness source gate manifest is
+`86c92653cbd9470cd81c7f99a80def63a3fb47cde73f7fe064a23e483a373750`.
+The next bounded step is observer implementation work before requalification;
+production mechanisms remain parked. The measurement window is closed and
+Mini's CPU-build hold released; its GPU worker remains disabled.
