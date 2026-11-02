@@ -102,8 +102,9 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
     'session: loop {
         // Before any producer is inspected, so a ring that lands during this
         // pass stays readable and ends the pass's wait at once. Idle waits
-        // are bounded by authority_wait_timeout (at most 25 ms).
-        owner_wake.begin_pass()?;
+        // are bounded by authority_wait_timeout (at most 25 ms). The clear is
+        // skipped only after a completed wait that found the wake quiet.
+        owner_wake.begin_pass_observed()?;
         // Runs before seat paths that can continue early, including while
         // ordinary frame service is quarantined. A removed native owner must
         // settle old clock bindings even if there are no more DRM events.

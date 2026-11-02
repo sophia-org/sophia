@@ -3,8 +3,11 @@
 //! Producers publish into their own queues, then ring this. The owner clears
 //! it at the top of every pass, before it inspects any queue, so a ring that
 //! lands after an inspection stays readable and the following wait returns at
-//! once. A ring is only a reason to look again: it carries no work, no
-//! decision and no authority.
+//! once. The owner loop skips that clear only when the wait that ended the
+//! previous pass completed and found the wake quiet: a ring that lands after
+//! such a wait stays readable and ends the next wait at once, so nothing is
+//! lost; the pass inspects its queues either way. A ring is only a reason to
+//! look again: it carries no work, no decision and no authority.
 //!
 //! Sockets the owner serves inline, which no producer can ring for, join the
 //! same wait as borrowed descriptors. Their readiness is a reason to look
@@ -29,6 +32,9 @@ pub(super) struct OwnerWake {
     native_progress_before_wait: Cell<Option<(u64, u64)>>,
     wait_plan: Cell<Option<WaitPlan>>,
     wait_attribution: Cell<attribution::WaitAttribution>,
+    /// True only between a completed wait that found the wake quiet and the
+    /// next pass start or wait entry, whichever comes first.
+    ring_quiet: Cell<bool>,
 }
 
 /// Owner-thread observations, not scheduler wakeups or per-producer attribution.
@@ -59,6 +65,7 @@ impl OwnerWake {
             native_progress_before_wait: Cell::new(None),
             wait_plan: Cell::new(None),
             wait_attribution: Cell::default(),
+            ring_quiet: Cell::new(false),
         })
     }
 
@@ -80,12 +87,31 @@ impl OwnerWake {
 
     /// Consumes the rings delivered so far. Call before inspecting any
     /// producer; never between an inspection and the wait that follows it.
+    /// Lifecycle waits use this unconditional form; it also discards any
+    /// quiet observation a completed wait left behind.
     pub(super) fn begin_pass(&self) -> io::Result<()> {
+        self.ring_quiet.set(false);
         self.wake.clear()?;
+        self.count_pass();
+        Ok(())
+    }
+
+    /// [`Self::begin_pass`] for the owner loop: the clear is skipped only when
+    /// the wait that ended the previous pass completed and found the wake
+    /// quiet. That observation is consumed here, once; a pass that ended
+    /// without a completed wait clears as before.
+    pub(super) fn begin_pass_observed(&self) -> io::Result<()> {
+        if !self.ring_quiet.take() {
+            self.wake.clear()?;
+        }
+        self.count_pass();
+        Ok(())
+    }
+
+    fn count_pass(&self) {
         let mut stats = self.statistics.get();
         stats.passes = stats.passes.saturating_add(1);
         self.statistics.set(stats);
-        Ok(())
     }
 
     /// Takes one item, or sleeps until any producer rings or `timeout` ends.
@@ -143,6 +169,8 @@ impl OwnerWake {
         progress: Option<(u64, u64)>,
         observed: impl FnOnce(&[PollFd<'a>]),
     ) -> io::Result<Result<T, RecvTimeoutError>> {
+        // An earlier quiet wait says nothing about this pass's end.
+        self.ring_quiet.set(false);
         match receiver.try_recv() {
             Ok(item) => {
                 self.wait_plan.set(None);
@@ -231,6 +259,8 @@ impl OwnerWake {
         progress: Option<(u64, u64)>,
         observed: impl FnOnce(&[PollFd<'a>]),
     ) -> io::Result<()> {
+        // Reset before anything fallible: a failed wait leaves no observation.
+        self.ring_quiet.set(false);
         let now = Instant::now();
         let plan = self
             .wait_plan
@@ -245,6 +275,7 @@ impl OwnerWake {
         let ring_index = fds.len();
         fds.push(PollFd::new(&self.wake, PollFlags::IN));
         let ready = sophia_wake::wait(&mut fds, Some(now.checked_add(timeout).unwrap_or(now)))?;
+        self.ring_quiet.set(fds[ring_index].revents().is_empty());
         observed(&fds[..native_start]);
         let mut stats = self.statistics.get();
         stats.waits = stats.waits.saturating_add(1);

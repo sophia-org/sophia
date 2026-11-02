@@ -619,3 +619,107 @@ fn stalled_native_descriptor_sleeps_until_the_watchdog_budget() {
     assert_eq!(owner.statistics().native_ready, 0);
     assert_eq!(owner.statistics().wait_deadlines, 1);
 }
+
+/// Zero-timeout readiness of the wake itself, without consuming it.
+fn ring_readable(owner: &OwnerWake) -> bool {
+    owner.wake.wait(Some(Instant::now())).unwrap()
+}
+
+/// A completed wait that found the wake quiet.
+fn quiet_wait(owner: &OwnerWake, queue: &Receiver<u32>) {
+    assert_eq!(
+        owner
+            .receive_with_fds(queue, Duration::ZERO, Vec::new())
+            .unwrap(),
+        Err(RecvTimeoutError::Timeout)
+    );
+    assert!(!ring_readable(owner));
+}
+
+#[test]
+fn an_observed_begin_after_a_quiet_wait_leaves_a_late_ring_readable() {
+    let owner = OwnerWake::new().unwrap();
+    let (_authority, queue) = sync_channel::<u32>(1);
+    let slot = attached(&owner);
+    owner.begin_pass().unwrap();
+    quiet_wait(&owner, &queue);
+    // The ring lands after the quiet wait: the observed begin skips its
+    // clear, so the ring is still there for the next wait.
+    slot.notify();
+    owner.begin_pass_observed().unwrap();
+    assert!(ring_readable(&owner), "the late ring was consumed");
+    assert_eq!(
+        owner
+            .receive_with_fds(&queue, Duration::ZERO, Vec::new())
+            .unwrap(),
+        Err(RecvTimeoutError::Timeout)
+    );
+    // That wait found the wake ready, so the next observed begin clears.
+    owner.begin_pass_observed().unwrap();
+    assert!(!ring_readable(&owner));
+}
+
+#[test]
+fn a_quiet_observation_is_consumed_by_one_begin() {
+    let owner = OwnerWake::new().unwrap();
+    let (_authority, queue) = sync_channel::<u32>(1);
+    let slot = attached(&owner);
+    owner.begin_pass().unwrap();
+    quiet_wait(&owner, &queue);
+    owner.begin_pass_observed().unwrap();
+    // No wait in between: the second begin has no observation and clears.
+    slot.notify();
+    owner.begin_pass_observed().unwrap();
+    assert!(!ring_readable(&owner));
+}
+
+#[test]
+fn an_immediate_item_or_a_disconnection_discards_an_old_quiet_observation() {
+    let owner = OwnerWake::new().unwrap();
+    let (authority, queue) = sync_channel::<u32>(1);
+    let slot = attached(&owner);
+    owner.begin_pass().unwrap();
+    quiet_wait(&owner, &queue);
+    authority.send(1).unwrap();
+    assert_eq!(
+        owner
+            .receive_with_fds(&queue, Duration::ZERO, Vec::new())
+            .unwrap(),
+        Ok(1)
+    );
+    slot.notify();
+    owner.begin_pass_observed().unwrap();
+    assert!(
+        !ring_readable(&owner),
+        "an immediate item kept an old quiet"
+    );
+    quiet_wait(&owner, &queue);
+    drop(authority);
+    assert_eq!(
+        owner
+            .receive_with_fds(&queue, Duration::ZERO, Vec::new())
+            .unwrap(),
+        Err(RecvTimeoutError::Disconnected)
+    );
+    slot.notify();
+    owner.begin_pass_observed().unwrap();
+    assert!(!ring_readable(&owner), "a disconnection kept an old quiet");
+}
+
+#[test]
+fn the_unconditional_begin_clears_and_discards_a_quiet_observation() {
+    let owner = OwnerWake::new().unwrap();
+    let (_authority, queue) = sync_channel::<u32>(1);
+    let slot = attached(&owner);
+    owner.begin_pass().unwrap();
+    quiet_wait(&owner, &queue);
+    slot.notify();
+    owner.begin_pass().unwrap();
+    assert!(!ring_readable(&owner));
+    // The lifecycle begin also consumed the observation.
+    quiet_wait(&owner, &queue);
+    owner.begin_pass().unwrap();
+    slot.notify();
+    owner.begin_pass_observed().unwrap();
+    assert!(!ring_readable(&owner));
+}
