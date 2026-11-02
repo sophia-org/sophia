@@ -23,7 +23,6 @@ use std::time::{Duration, Instant};
 
 #[path = "component_reconnect/budget.rs"]
 mod budget;
-#[cfg(feature = "diagnostic-frame-cost")]
 #[path = "component_reconnect/frame_cost.rs"]
 mod frame_cost;
 use crate::test_sdk_image as sdk_image;

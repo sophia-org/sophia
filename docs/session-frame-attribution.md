@@ -305,3 +305,30 @@ is the next measurement gap, followed by real protected-peer authentication,
 consumed readiness observations and full component orchestration. Sampled
 scope clocks remain raw and inclusive. No optimization or native fixed-cost
 claim is promoted.
+
+### Counter-only reference against the compiled stub
+
+The next reference uses the same exact ignored test,
+`live_session::metadata_shell::component_session::reconnect_tests::frame_cost::frame_attribution_counter_reference`,
+in two release builds of one signed source: `native-session` alone, and
+`native-session,diagnostic-frame-cost`. Both run four blocks per height, each
+with 120 warmup and 8000 measured completions, the six-ID ledger and identical
+paired uploads. Timers stay disabled throughout. The peer loop is shared;
+its pixel oracle remains on the peer thread before resource retirement.
+
+Two outer CPU/monotonic clock readings bracket the same workload in both
+builds: after the warmup boundary and before releasing the peer, through peer
+join and completion checks, ending before diagnostic snapshot or teardown.
+Feature-off runs retain protocol, pixel, completion and release assertions;
+they have no diagnostic snapshots or fabricated stage counts. Counter runs
+also retain every existing diagnostic count invariant. Both keep ordinary
+Session logging in the measured window. The comparison includes any compiler
+code-layout effect of enabling the feature; it is not an isolated instruction
+cost estimate.
+
+Run the binaries in stub/counter/counter/stub order with saved stdout. For each
+matching height and block, require the two stub endpoints to agree within 5%
+for owner CPU and visits. Compare each counter block to their mean, requiring
+an absolute difference of at most 5% in both quantities. Keep every block and
+refusal. This gate bounds counter-path perturbation in this fixture; it does
+not replace the protected-owner, production-readiness or orchestration work.
