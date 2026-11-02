@@ -20,9 +20,32 @@ It does not reopen their completed exits or replace `todo.md` as the task ledger
 The exit is a separately qualified improvement, or a documented no-change result
 for each selected mechanism. A profile share is not a savings target.
 
+## Current resumption: device-free fixed-frame attribution
+
+On November 1, niltempus directed the critical path toward Session's fixed
+per-frame work before another candidate. The size-dependent mechanisms remain
+closed to the extent recorded below. The isolated diagnostic implementation
+(`aa1cd9000`, accounting correction `aacb8dfbe`) now has an audited device-free
+owned-ring run: eight off/on/on/off blocks at h24/h512, 16,000 measured frames,
+exact pixel/protocol/job counts, and four timer controls. Root reduction and
+independent saved-record audit pass. The
+[attribution report](../../session-frame-attribution.md#audited-result-november-1)
+records the sealed evidence and limits; the
+[fixed-work investigation](../investigations/p4jd1ymh-which-complexity-and-repeated-work-costs-belong-on-the-frame-cpu-critical-path.md#current-resumption)
+owns the interpretation.
+
+Repeated service and transport work lead the named h24 owner scopes, but timing
+instrumentation materially changes CPU and visit counts. Report raw inclusive
+scopes and off-block outer references; infer neither savings nor a native fixed
+cost from this fixture. Next split the unpartitioned 9P authorization/custody
+and account for owner-loop work outside the fixture before proposing a bounded
+candidate. No optimization is promoted, and t344 remains open. S1, single-submit
+and empty-owner-work remain parked. No native/GPU timing or Mini worker-isolation
+action was performed in this lane; the qualified iGPU evidence below remains held.
+
 ## October 31: bounded CPU dirty updates landed; GPU qualification resumes
 
-**November 1 resumption:** the six-arm fresh-DMA GPU comparison has passed its
+**November 1 GPU qualification closeout:** the six-arm fresh-DMA GPU comparison has passed its
 independent audit. The dGPU attribution package is owned by another session.
 The attended iGPU package 04 completed colour, delayed-release and invalid-import
 arms at an observed 60000 mHz. Signed helper shutdown fix `32e6f616` passed

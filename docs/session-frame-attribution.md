@@ -1,6 +1,7 @@
 # Device-free Session frame attribution
 
-Implementation in progress from Sophia `134e74df931665834cfacadb9e088ddcb519f924`.
+Implemented from Sophia `134e74df931665834cfacadb9e088ddcb519f924` in signed
+`aa1cd9000`, with reservation-attempt accounting corrected in `aacb8dfbe`.
 This is a diagnostic, not an optimization or a native performance comparison.
 
 ## Measurement contract
@@ -107,7 +108,65 @@ h24 and 1050–1061 at h512. They describe those windows, not a fixed-cost lower
 bound. Their worker windows must not be subtracted from process CPU or joined
 to owner frames by overlap alone.
 
-## Exit
+## Audited result, November 1
+
+All eight release blocks completed: 16,000 measured frames plus 960 warmup
+frames, four timer controls, and matching pixels/protocol outcomes throughout.
+Root reduction passed 12 groups, 644 diagnostic records and eight mutation
+refusals; the independent audit passed with zero findings. There are 33,920
+ordinary Session records. Each enabled block has 2000 worker jobs, source releases, submissions
+and supplied completions, and 4000 projection scopes and log calls.
+
+These ranges cover the two enabled blocks in CPU µs/completion; scopes are
+inclusive and cannot be added or subtracted:
+
+| Scope | h24 | h512 |
+| --- | ---: | ---: |
+| OwnerService | 85.11–85.88 | 102.04–104.01 |
+| Transport | 46.61–47.11 | 54.25–55.37 |
+| Candidates | 14.84–15.16 | 16.45–16.92 |
+| Submission | 14.63–14.97 | 16.59–17.24 |
+| Logging | 5.96–6.08 | 7.18–7.41 |
+| FixtureTarget, supplied work | 9.45–10.57 | 99.46–104.15 |
+
+Enabled h24 blocks made 8.472–8.588 service visits/completion; h512 made 10.504.
+Service CPU per visit was 9.91–10.14 µs and 9.72–9.90 µs respectively. Both
+heights had roughly 2000 extra fill-phase wire turns per block. Reservation and
+allocation-authority attempts were 2000 at h24 and 5000 at h512, including 3000
+backpressure retries. These are repetition counts, not evidence of redundant
+authority checks or empty visits.
+
+Instrumentation is material: owner outer CPU at h24 was 162.77–167.12 µs/frame
+off versus 295.49–297.28 on; h512 was 270.74–282.07 off versus 445.29–457.37 on.
+The empty timer's outer loop cost 1.044–1.045 µs/iteration enabled, while its
+inner scope recorded 0.519–0.521 µs. Owner blocks contained 263k–323k scopes.
+Use off-block outer windows as the untimed fixture references; do not subtract
+timer controls or on/off differences to invent uninstrumented stage timings.
+Elapsed submission/logging outliers reached 1.4–2.4 ms with CPU maxima below
+60 µs, so those delays are not CPU costs.
+
+Evidence and the full scope table are in
+`~/.local/state/sophia-session-frame-attribution-02/REPORT.md`.
+The root `RECEIPT.json` hashes to
+`1db655551a7023615f5a481697e047a076833d4f38c8503bd467b3b6fb619f55`;
+`SHA256SUMS` hashes to
+`62dd9389124b031fbfacc2e1b5eeb96561d55feb3ef51e94513df9c4d2685d1e`.
+The independent audit is
+`~/.local/state/sophia-session-frame-attribution-audit-claude-01`, manifest
+`7a9b4e4ba3b59e1e9d424a248f66161cb7d53b1487357208fb64d68e0cc1aae5`.
+Source gates passed 1063 Session and 163 runtime tests, strict Clippy for the
+changed crates, formatting/layout, and feature-off/draw compilation. The final
+release smoke and full run passed with devices hidden. Broader initial sandbox
+refusals and the unrelated dependency Clippy warning remain documented in the
+receipt rather than being reported as passing checks.
+
+The fixture attribution step is complete; no optimization candidate is promoted.
+The next evidence gaps are fresh 9P authorization/custody work still grouped
+inside Transport, and full owner-loop/native scheduling work outside this
+fixture. These results do not explain the whole historical native Session
+fixed cost. S1, single-submit and empty-owner-work remain parked.
+
+## Exit contract
 
 Retain source/build/fixture identities, raw records, instrumentation controls,
 scope nesting and independent review. Rank measured costs and repetition; list

@@ -13,6 +13,31 @@ Mason asked for quadratic loops and other optimization footguns during W2
 qualification. This is a bounded read-only source review, not a repository-wide
 complexity audit. Keep W2's frozen experiment isolated from any new candidate.
 
+## Current resumption
+
+November 1: niltempus requested device-free attribution of Session's fixed
+per-frame work before another candidate. The isolated implementation at signed
+`aacb8dfbe` completes that fixture step: eight release blocks, 16,000 measured
+frames, exact pixels/protocol/job counts, four timer controls, and independent
+saved-record audit with zero findings. The
+[report and evidence identities](../../session-frame-attribution.md#audited-result-november-1)
+are authoritative for the new run; older native windows below remain separate.
+
+At h24, inclusive OwnerService is 85.11–85.88 µs/completion and Transport is
+46.61–47.11, at 8.472–8.588 service visits/completion. Instrumentation is large:
+owner outer CPU is 162.77–167.12 off versus 295.49–297.28 on. These are raw
+diagnostic scopes and fixture references, not an optimization budget. h512 has
+3000 reservation retries beyond 2000 accepted jobs per enabled block, caused by
+paired offers under backpressure; retry counts are not extra completed frames.
+
+Keep the next investigation at the attribution boundary: separate fresh 9P
+authorization/custody from its Transport scope and account for full owner-loop
+work absent from the fixture. The Authority row measures allocation-description
+lookup during ring reservation, not all 9P authority work. Do not infer empty
+visits, cache freshness, subtract overlapping clocks, or propose a candidate
+from the owner outer window. S1, single-submit and empty-owner-work remain parked;
+the historical disposition below does not override this current sequencing.
+
 ## Evidence
 
 The source-file hashes and reviewed checkout HEAD are retained in
