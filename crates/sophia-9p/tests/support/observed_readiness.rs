@@ -154,6 +154,28 @@ fn wake_pipe_is_empty(server: &Server<StaticExport>) -> bool {
     rustix::io::read(&server.reader, &mut [0; 8]) == Err(rustix::io::Errno::AGAIN)
 }
 
+/// The wake pipe is readable, observed without consuming the wakeup.
+fn wake_ready(server: &Server<StaticExport>) -> bool {
+    let mut fds = [PollFd::new(&server.reader, PollFlags::IN)];
+    poll(&mut fds, Some(&Timespec::default())).unwrap() == 1
+}
+
+/// An owner flushing its own publication pays no wake-pipe syscalls, and a
+/// wakeup another thread wrote meanwhile is neither lost nor consumed by the
+/// flush: it stays level-ready for the turn it is meant to wake.
+#[test]
+fn flush_leaves_a_foreign_wake_for_the_next_turn() {
+    let (mut server, _peer) = server();
+    assert!(server.flush().unwrap());
+    assert!(!wake_ready(&server));
+    server.wake().wake();
+    assert!(server.flush().unwrap());
+    assert!(wake_ready(&server), "flush consumed a foreign wakeup");
+    assert!(server.turn(Some(Duration::ZERO)).unwrap());
+    assert!(!wake_ready(&server));
+    assert!(wake_pipe_is_empty(&server));
+}
+
 /// An interrupted wait returns at once with nothing ready and nothing closed;
 /// the socket and the wake pipe then make ordinary progress.
 fn interrupted_wait_then_progress(mut server: Server<StaticExport>, mut peer: UnixStream) {

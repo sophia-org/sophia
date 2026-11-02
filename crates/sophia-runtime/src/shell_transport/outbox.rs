@@ -20,6 +20,17 @@ pub(super) struct Queued {
     pub(super) charge: usize,
 }
 
+/// Whether the next owner pass has output work. A blocked journal holds
+/// queued records back, but not a direct publication already in the export.
+pub(super) const fn pending_output(
+    peer_closed: bool,
+    blocked: bool,
+    records: usize,
+    publication: bool,
+) -> bool {
+    !peer_closed && ((records != 0 && !blocked) || publication)
+}
+
 impl ShellOutbox {
     /// Total queue charge of every retained record, control and bulk.
     pub(super) fn charged(&self) -> usize {

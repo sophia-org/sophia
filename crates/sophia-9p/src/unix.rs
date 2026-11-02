@@ -300,10 +300,12 @@ impl<E: Export> Server<E> {
     }
 
     /// Flush a local export change without accepting or reading new requests.
-    /// Readable sockets stay level-ready for the owner's next input pass.
+    /// Readable sockets stay level-ready for the owner's next input pass, and
+    /// so does the wake pipe: the owner's own change needs no wakeup, and a
+    /// wakeup another thread wrote is drained by the turn it wakes.
     pub fn flush(&mut self) -> io::Result<bool> {
         self.invalidate();
-        if !self.service_wake()? {
+        if !self.retry_after_wake()? {
             return Ok(false);
         }
         self.write_ready();
@@ -312,6 +314,10 @@ impl<E: Export> Server<E> {
 
     fn service_wake(&mut self) -> io::Result<bool> {
         self.drain_wake()?;
+        self.retry_after_wake()
+    }
+
+    fn retry_after_wake(&mut self) -> io::Result<bool> {
         if self.wake.inner.stop.load(Ordering::SeqCst) {
             for slot in &mut self.slots {
                 slot.connection.close(&mut self.export);

@@ -249,8 +249,10 @@ impl ShellFileWire {
             .poll(Instant::now())
             .map_err(|_| ShellTransportError::NotConnected)?;
         self.turns = self.turns.saturating_add(1);
-        self.publication_pending = false;
         if flush_only {
+            // Only the flush answers waiting reads, so only the flush clears
+            // the pending mark: an input turn leaves a late publication due.
+            self.publication_pending = false;
             self.server.flush()
         } else {
             // Observer cost: record the owner's readiness decision ahead of the
@@ -278,17 +280,19 @@ impl ShellFileWire {
         self.publication_pending
     }
 
+    // Publications made by the owner thread itself need no wake: the pass's
+    // flush retries waiting reads, and `output_pending` keeps the next wait
+    // short when a publication lands after the pass's last turn.
     pub(super) fn image_publication_pending(&mut self) {
         self.publication_pending = true;
-        self.server.wake().wake();
     }
 
     pub(super) const fn turn_count(&self) -> u64 {
         self.turns
     }
 
-    /// Appends one queued event if the journal has room for its class, and
-    /// wakes waiting reads. `Ok(false)` leaves the event queued.
+    /// Appends one queued event if the journal has room for its class; the
+    /// pass's flush answers waiting reads. `Ok(false)` leaves the event queued.
     pub(super) fn append(
         &mut self,
         kind: ShellFileKind,
@@ -300,7 +304,6 @@ impl ShellFileWire {
         }) {
             Ok(_) => {
                 self.publication_pending = true;
-                self.server.wake().wake();
                 Ok(true)
             }
             Err(sophia_9p::Errno::EAGAIN) => Ok(false),
@@ -336,8 +339,8 @@ impl ShellFileWire {
         }
     }
 
-    /// Publishes one snapshot object with its journaled announcement, and
-    /// wakes waiting reads. `Ok(false)` leaves it queued.
+    /// Publishes one snapshot object with its journaled announcement; the
+    /// pass's flush answers waiting reads. `Ok(false)` leaves it queued.
     pub(super) fn publish(
         &mut self,
         kind: ShellFileKind,
@@ -350,7 +353,6 @@ impl ShellFileWire {
             .map_err(|error| ShellTransportError::Io(format!("shell object: {error:?}")))?;
         if published {
             self.publication_pending = true;
-            self.server.wake().wake();
         }
         Ok(published)
     }

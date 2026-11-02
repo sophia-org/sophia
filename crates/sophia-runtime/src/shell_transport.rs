@@ -489,10 +489,16 @@ impl ShellComponentTransport {
     /// Records held behind a full journal are not counted: the peer frees
     /// that room by acknowledging, and its socket reports that.
     pub fn output_pending(&self) -> bool {
-        self.wire.is_some()
-            && !self.peer_closed
-            && !self.output_blocked
-            && self.output.records() != 0
+        // A publication after the pass's last turn is flushed by the next
+        // pass; it has no descriptor, so it keeps the owner's wait short.
+        self.wire.as_ref().is_some_and(|wire| {
+            outbox::pending_output(
+                self.peer_closed,
+                self.output_blocked,
+                self.output.records(),
+                wire.publication_pending(),
+            )
+        })
     }
 
     /// Moves queued records into the journal, or publishes queued objects, in

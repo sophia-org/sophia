@@ -69,3 +69,13 @@ fn disconnect_clears_the_exact_retained_inventory() {
     outbox.push(record(3, true, 16));
     assert_eq!(transaction(outbox.front().unwrap()), 3);
 }
+
+#[test]
+fn a_blocked_journal_holds_records_but_not_a_direct_publication() {
+    assert!(pending_output(false, false, 1, false));
+    assert!(!pending_output(false, true, 1, false));
+    assert!(pending_output(false, true, 1, true));
+    assert!(pending_output(false, true, 0, true));
+    assert!(!pending_output(false, false, 0, false));
+    assert!(!pending_output(true, false, 1, true));
+}

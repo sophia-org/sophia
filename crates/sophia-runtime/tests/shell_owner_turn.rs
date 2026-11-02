@@ -56,7 +56,8 @@ fn roles_share_input_but_new_publications_and_late_input_still_progress() {
                 minimum_revision: 5,
                 maximum_revision: 6,
                 required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
-                    | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE,
+                    | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+                    | SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS,
             },
         )
         .unwrap();
@@ -87,6 +88,22 @@ fn roles_share_input_but_new_publications_and_late_input_still_progress() {
         assert_eq!(kind, 117);
         let object = decode_shell_file_object_published(&bytes[4..]).unwrap();
         assert_eq!(object.object, ShellFileKind::Outputs);
+        assert_eq!(object.generation, 1);
+        signal.send(()).unwrap();
+        proceed.recv_timeout(WAIT).unwrap();
+        let offset = offset + (bytes.len() - 4) as u64;
+        let body = [
+            2u32.to_le_bytes().as_slice(),
+            &offset.to_le_bytes(),
+            &65500u32.to_le_bytes(),
+        ]
+        .concat();
+        let (kind, bytes) = peer
+            .rpc_with_prefix(116, &body, 7 + body.len(), || signal.send(()).unwrap())
+            .unwrap();
+        assert_eq!(kind, 117);
+        let object = decode_shell_file_object_published(&bytes[4..]).unwrap();
+        assert_eq!(object.object, ShellFileKind::Indicators);
         assert_eq!(object.generation, 1);
         signal.send(()).unwrap();
         proceed.recv_timeout(WAIT).unwrap();
@@ -178,8 +195,69 @@ fn roles_share_input_but_new_publications_and_late_input_still_progress() {
             }],
         )
         .unwrap();
+    // The owner's own publication writes no wakeup: the wake descriptor stays
+    // quiet and the pass's flush answers the waiting read.
+    let mut fds = transport.poll_fds();
+    rustix::event::poll(&mut fds, Some(&rustix::event::Timespec::default())).unwrap();
+    assert!(
+        fds[0].revents().is_empty(),
+        "a self-publication woke the wire"
+    );
+    drop(fds);
     transport.poll_io(&mut epochs).unwrap();
     assert_eq!(transport.wire_turn_count(), before + 1);
+    arrived.recv_timeout(WAIT).unwrap();
+
+    // A direct publication after the pass's last turn. The input turn that
+    // parked the read must not clear the pending flush; with no socket input
+    // and no wakeup, the next owner pass still flushes and answers the read.
+    go.send(()).unwrap();
+    arrived.recv_timeout(WAIT).unwrap();
+    transport.service_owner_turn(&mut epochs).unwrap();
+    assert!(!transport.output_pending());
+    let before = transport.wire_turn_count();
+    transport
+        .publish_indicators(
+            &epochs,
+            TransactionId::from_raw(10),
+            &ShellIndicatorSnapshot {
+                connection_epoch: 1,
+                generation: 1,
+                active_output: Some(OutputId::from_raw(3)),
+                statuses: vec![ShellOutputStatus {
+                    output: OutputId::from_raw(3),
+                    focus_bits: 1,
+                    layout: "single".to_owned(),
+                }],
+                indicators: vec![ShellIndicator {
+                    output: OutputId::from_raw(3),
+                    indicator: 1,
+                    action: 2,
+                    slot: 0,
+                    state_bits: 1,
+                    label: "clock".to_owned(),
+                }],
+            },
+        )
+        .unwrap();
+    assert!(
+        transport.output_pending(),
+        "a late direct publication left the next wait uninformed"
+    );
+    let mut fds = transport.poll_fds();
+    assert_eq!(
+        rustix::event::poll(&mut fds, Some(&rustix::event::Timespec::default())).unwrap(),
+        0,
+        "a late self-publication woke the wire or the peer sent input"
+    );
+    drop(fds);
+    transport.service_owner_turn(&mut epochs).unwrap();
+    assert_eq!(
+        transport.wire_turn_count(),
+        before + 2,
+        "input turn then flush"
+    );
+    assert!(!transport.output_pending());
     arrived.recv_timeout(WAIT).unwrap();
 
     go.send(()).unwrap();

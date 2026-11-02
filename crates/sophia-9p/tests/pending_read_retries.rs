@@ -152,6 +152,17 @@ fn a_request_can_publish_to_a_waiting_read_without_a_wake() {
 }
 
 #[test]
+fn a_publication_flush_answers_a_waiting_read_without_a_wake() {
+    let (mut server, mut client, _) = opened();
+    client.write_all(&tread(4, 1, 0, 64)).unwrap();
+    turn(&mut server);
+    server.export().push_event(b"flushed");
+    assert!(server.flush().unwrap());
+    let event = reply(&mut client);
+    assert_eq!((event.tag, event.data()), (4, b"flushed".to_vec()));
+}
+
+#[test]
 fn socket_backpressure_preserves_a_publication_and_flush_cancels_a_waiter() {
     let (mut server, mut client, mut fill) = opened();
     client.write_all(&tread(4, 1, 0, 64)).unwrap();
