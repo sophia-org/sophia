@@ -51,6 +51,14 @@ implementation and requalification precede any Session candidate. The
 [result and sealed identities](../../session-frame-attribution.md#protected-full-pass-result-observer-qualification-refused)
 record the limits. Other physical-owner phases and native pacing remain open.
 
+The masked observer at `4b204fdbb` also fails combined overhead qualification
+(two h512 comparisons above 5%); exact counts and independent audit pass.
+No candidate follows. The next prepared step is owner-attended external perf
+sampling of the same compiled stub, because kernel sampling is permission-
+restricted on this host. Its separate 5% gate and saved-data limits remain
+open; [handoff details](../../session-frame-attribution.md#masked-observer-result-and-external-sampling-handoff)
+record the sudo boundary without changing system policy.
+
 ## October 31: bounded CPU dirty updates landed; GPU qualification resumes
 
 **November 1 GPU qualification closeout:** the six-arm fresh-DMA GPU comparison has passed its

@@ -71,9 +71,21 @@ independent saved-record audits pass all 32 workload blocks and prove actual
 readiness consumption. Its [combined-observer reference](../../session-frame-attribution.md#protected-full-pass-result-observer-qualification-refused)
 failed one predeclared comparison: phase 129 h24 is +5.187571% CPU against
 5%, with stable controls and visit counts. Keep the refusal untolerated.
-No Session candidate is promoted. Next reduce observer work and requalify
-against the compiled stub; other physical-owner phases and native pacing
-remain outside the fixture. The original attribution baseline stays separate.
+No Session candidate is promoted. The observer-only power-of-two sampling
+fast path at `4b204fdbb` preserves all ordinals/counts, but its new reference
+also fails: two h512 comparisons exceed 5% (+5.718584% and +5.774361%). Both
+refusals remain sealed, with independent audit agreement. The
+[masked result and next handoff](../../session-frame-attribution.md#masked-observer-result-and-external-sampling-handoff)
+record the exact evidence.
+
+Next qualify external user+kernel sampling of the held compiled-stub workload.
+Unprivileged perf probes refuse recording on this host; default stat silently
+falls back to user-only. The owner-attended package at
+`~/.local/state/sophia-session-perf-reference-01` needs sudo for the profiler,
+then drops the workload to niltempus with no capabilities before bubblewrap.
+It changes no system policy. Its first privileged smoke, recording quality
+and overhead gate are still unproved. Other physical-owner phases and native
+pacing remain outside this fixture; the original baseline stays separate.
 
 ## Evidence
 

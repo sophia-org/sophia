@@ -493,3 +493,46 @@ for periods 1, 3, 8, 17, 64 and 256 over two complete cycles.
 Requalification uses a new sealed identity and the same protected full-pass
 plan and 5% limits. The prior refusal remains intact, and independent runs are
 not paired to claim savings. This is observer work, not a Session candidate.
+
+### Masked observer result and external-sampling handoff
+
+The observer-only mask change at signed `4b204fdbb` preserves every sampled
+ordinal and count, as confirmed by real-measure tests and the independent
+saved-record audit. Its combined-observer reference still **fails**: h512
+phase 65 run 5 is +5.718584% CPU and phase 193 run 13 is +5.774361%, against
+5%. All control agreements pass (maximum 4.689102% CPU); the other fourteen
+comparisons pass. No saving is inferred between these independent experiments.
+The threshold and both earlier refusals remain unchanged.
+
+All sixteen processes completed, with the same 32 workload blocks, 256,000
+measured frames, 3,840 warmup frames, 519,680 prepared/presented records and
+3,120 diagnostic rows. Root and independent counts/identities pass; all eleven
+root mutations refuse. Evidence `~/.local/state/sophia-session-component-attribution-02`
+is sealed by manifest
+`ae812442059f9e5d1a5c7292d3aa62378e262d1e7951830df4ed2a918af21768`
+(55 files). Its independent audit manifest is
+`e6b4554769cc1551afae9c4a6d6abe7182add99c03b47758de22c5a02c3da806`.
+The observer source-gate manifest is
+`8fc52cba9dfc3aaf0c2372641fed8bf8d7fc6f2c6a0c9cf3c18c4c1e6fa0099c`.
+No production mechanism is promoted.
+
+External sampling is the next measurement method to qualify. This host has
+`perf_event_paranoid=2` and `kptr_restrict=1`: explicit kernel-only stat and the
+tested user-only recording command refuse without privilege. Default stat
+silently changed its event to user-only; that is not evidence of kernel access.
+The device-free feasibility probes are retained under
+`~/.local/state/sophia-session-perf-feasibility-01`, manifest
+`9f50e8274f90df7b45a6f0b378856859bea91bf8b6298cfcc6aeb7bd5a6ce5e4`.
+
+The owner-attended preparation lives at
+`~/.local/state/sophia-session-perf-reference-01`. Its fixed control/profile/
+profile/control sequence uses the held compiled stub, explicit user+kernel
+99 Hz samples and DWARF stacks. A privileged smoke precedes measurement;
+recording and saved kernel symbols remain private. Both control and profile
+workloads drop uid/capabilities before the device-hidden namespace. There are
+no sysctl, sudoers, installed-capability or service changes. The whole launched
+process tree is sampled, including setup and warmup; owner-thread and window
+attribution require saved-data validation. The same 5% outer-CPU/visit gates
+apply. Actual privileged capture, symbol/unwind quality and overhead remain
+unproved; the next launch requires the owner at sudo. No GPU or native display
+qualification is part of this step.
