@@ -43,7 +43,10 @@ work. Report both processes and their combined bounds.
 | 3 | One distinct ready-work scheduling candidate | Identify concrete unrelated work to omit or bounded ready work to drain; preserve required freshness checks, deadlines and fairness. Prove the mechanism and measure combined CPU. No broader S1 predicate. |
 | 4 | Cumulative matched comparison | Compare the accepted stack to a contemporaneous matched niri reference; record remaining gap and next architectural decision. |
 
-### W2 integration is the next executable gate
+### W2 integration prerequisites (completed)
+
+The integration requirements below are retained for provenance. The accepted
+experimental result and the next W3 gate are recorded immediately afterward.
 
 Use the existing demonstrated mechanism, not another prototype investigation.
 The isolated confirmations resolved combined benefits of 52.5–132.5 and
@@ -61,6 +64,44 @@ the integrated candidate default-off until matched qualification and acceptance
 of the observed submit-to-completion latency tradeoff. The old prototype's
 repeatable benefit needs no fourth confirmation; the integrated product does
 need its own qualification. Do not bundle W3 into this comparison.
+
+### W2 accepted experimental baseline, November 2
+
+Mason's `proceed` after the audited iGPU result accepts W2's measured
+CPU/latency tradeoff for the next experimental baseline. This closes the
+integrated W2 effect gate; it does not enable W2 by default or authorize a
+general rollout. Keep W2 enabled identically in W3's control and candidate.
+
+The connected display required a new iGPU HDMI-A-2, 1920×1080 at 60 Hz
+baseline. `cpu-w2-igpu-02` completed the four-arm ABBA with the same host
+`892bd1436` and peer/runner `263dea1` in every arm. Mean combined
+Session+peer accounting bounds were **1095–1135 us/frame without W2** and
+**1030–1070 us/frame with W2**. Candidate-minus-baseline bounds were
+**-105 to -25 us/frame**, midpoint **-65 us/frame (-5.83%)**. These are
+accounting bounds, not statistical confidence intervals.
+
+All 8000 counted completion gaps were 16666–16668 us. Baseline median
+submit-to-completion latency was 16786.5/16787 us; W2 was 16839/16854 us
+(about 0.05–0.07 ms higher). Explicit retire messages fell from 2119 to
+zero per arm, while predecessor releases remained exactly 2119. All
+custody/postflight and PAM/VT cleanup gates passed; the temporary iGPU
+seat override was removed and seat1 restored. Independent audit passed.
+
+Retain `cpu-w2-igpu-01` alongside this result: its second candidate had
+one 33334 us completion gap following late observation of a terminal
+outcome at the peer, and the final baseline never ran. Its cause is
+unresolved. Mason authorized one identical repeat; the refusal and its
+unchanged gate are not erased by the passing repeat.
+
+Root receipt: `~/.local/state/sophia-w2-igpu-result-02/RECEIPT.json`;
+result seal `06d5ec4d5ce621a6c8c04cd660ef584f946a83e0d622cf4ea7d25e30d70fb06e`.
+Independent audit:
+`~/.local/state/sophia-w2-igpu-native-02-audit-claude-01/AUDIT.md`, SHA-256
+`42fffc941f139a7912b5498423e79ac75041f5455c696ae54073929831c840a3`.
+The earlier refusal remains under `sophia-w2-igpu-native-01-audit-claude-01`.
+This result does not re-establish the historical dGPU/niri 3x comparison;
+a fresh matched external reference is still required. External kernel-worker
+CPU and native visual correctness were not measured by this timing run.
 
 ### W3 is promoted to a bounded experiment
 

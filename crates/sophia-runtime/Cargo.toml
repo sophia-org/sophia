@@ -16,6 +16,8 @@ experimental-custody-dispatch = []
 # W2 prototype: a component may negotiate r12 with bit 17 when its owner
 # also permits it. Absent from default and release builds.
 experimental-shell-retire-on-present = []
+# W3 credit lifecycle only; no wire negotiation or Session enablement yet.
+experimental-shell-standing-credit = []
 
 [dependencies]
 sophia-draw = { path = "../sophia-draw", optional = true }

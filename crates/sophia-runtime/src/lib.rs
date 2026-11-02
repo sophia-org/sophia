@@ -16,6 +16,8 @@ mod control;
 pub mod developer_launch;
 mod error;
 pub mod frame_cost;
+#[cfg(feature = "experimental-shell-standing-credit")]
+pub mod frame_credits;
 #[cfg(target_os = "linux")]
 mod host_domain;
 #[cfg(target_os = "linux")]

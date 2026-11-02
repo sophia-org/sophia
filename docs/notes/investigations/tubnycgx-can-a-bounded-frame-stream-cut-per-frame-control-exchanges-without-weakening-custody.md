@@ -7,7 +7,83 @@ tags: [investigation, 9p, performance, architecture]
 ---
 # Can a bounded frame stream cut per-frame control exchanges without weakening custody
 
-## Question
+## Current contract and ledger gate, November 2
+
+W2's iGPU effect comparison passed and Mason accepted its measured tradeoff
+for the next experimental baseline. W3 keeps W2 enabled in both arms. The
+qualified workload is the same trusted, serial, reason-1 bar producer; two
+credits do not create concurrency in that producer. The concrete target is
+its 2120 demand/permit pairs per run, replaced by one stream-open pair if
+no expiry or reopen occurs. No wake-count or CPU saving follows from that
+logical count alone.
+
+The decisions here supersede conflicting wording in the earlier design below:
+
+1. **No new rate gate in this experiment.** Runtime advertises
+   `max_candidate_rate_millihz` but does not enforce a temporal rate limit.
+   Outstanding-credit bounds are structural, not temporal: fast terminal
+   rejections can cycle at the same instant. Both arms retain the same
+   trusted producer cadence. There is no rate-enforcement claim.
+2. **Open reserves two responses:** its reply and one lifetime close notice.
+   Begin reserves Prepared plus terminal capacity before spending credit or
+   removing pending work. With the serial producer, one lifetime close plus
+   one candidate's two responses uses three records, as today's permit path
+   does. The close notice has a reserved control record; publication may still
+   wait on separate journal capacity and is retried, never lost or duplicated.
+3. **Supersession needs an available credit.** With no credit, Begin returns
+   Budget even if pending work could be superseded; this differs from the
+   permit path and is outside the serial workload's exercised behavior.
+   With credit, preflight all response capacity, admit the successor, cancel
+   the pending predecessor and its W2 intent through the existing path, then
+   commit its Superseded terminal/replenishment before another admission.
+   Failed admission must leave the predecessor intact. In the existing store's
+   accounting, subtract the replaced pending candidate's two reservations and
+   require `2 + replacing` records (Prepared, terminal, and any Superseded
+   event), not the old `3 + replacing` which also included FramePermit.
+4. **Budget is not revocation.** A valid stream without credit or response
+   capacity returns Budget, consumes candidate identity, consumes no credit,
+   cancels no W2 intent and renews no deadline. Wrong stream/tuple is Stale.
+5. **Modes are exclusive per output.** Open must refuse a standing demand,
+   permit or assembly, and a second open. Demand/cancel on an open stream is
+   Stale. Explicit close prevents admission; prior terminal outcomes and the
+   reserved close notice drain before reopen. Reason-3 withdrawal is outside
+   this experiment; roles needing it keep the demand path.
+6. **Server commit anchors credit expiry.** Prepared returns no credit.
+   Terminal publication returns at most one, with the existing permit TTL
+   starting at server commit, never receipt or ACK. Spend oldest first.
+   The existing expiry sweep closes on an expired available credit and emits
+   one reserved close notice; no new timer or idle wake is introduced.
+   With all credits outstanding there is no available-credit expiry: the
+   existing candidate/assembly timeout and lifecycle paths still apply.
+
+Bind the complete connection/content grant, output id/generation, explicit
+allocation id/generation, output **facts_generation**, and stream id. Facts
+changes include mode/scale/formats, not only topology. Unlike FrameDemand's
+optional allocation, StreamOpen must name the real allocation from the
+candidate's surfaces. The server computes one or two credits from its limits
+and ring slots; a client request is only a ceiling. IDs cannot replay across
+reopen or a replacement connection.
+
+The first implementation is `sophia-runtime::frame_credits`, compiled only
+with the default-off `experimental-shell-standing-credit` feature. It is a
+reusable pacing ledger with reservation and publication callbacks. It has no
+Session/transport caller and defines no wire record or capability. Focused
+tests cover binding, exhaustion, spent refusal identities, callback failures,
+oldest-first expiry, close/drain/reopen, duplicate terminal refusal, clock
+regression, overflow, and the absence of a temporal rate gate.
+
+**Next gate is the candidate-store adapter, not native timing.** The ledger
+tests do not prove Prepared filtering, actual journal reservations, pending
+supersession/W2 cancellation, candidate timeout, or revocation/partner-exit
+handling. Prove those against `ContentCandidateStore`, including its existing
+small control-budget tests and synchronized candidate high-water marks, before
+wire negotiation or producer changes. Allocate the exact wire grammar in the
+protocol ledger before codec work; r13/bit18 remains a proposed assignment
+until that decision. C/Rust parity and the old-protocol refusal matrix remain
+required before production adoption. No general rollout or native run is
+authorized by a passing ledger test.
+
+## Question and earlier design
 
 **November 2 disposition:** niltempus promoted this mechanism to a bounded
 experiment after W2 integration under the [revised critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md#current-resumption-close-the-matched-cpu-gap).
