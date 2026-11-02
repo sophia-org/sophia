@@ -9,6 +9,16 @@ tags: [investigation, 9p, performance, architecture]
 
 ## Question
 
+**November 2 disposition:** niltempus promoted this mechanism to a bounded
+experiment after W2 integration under the [revised critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md#current-resumption-close-the-matched-cpu-gap).
+The design below is a retained proposal, not a completed source contract.
+Resolve rate enforcement, response-reservation timing, supersession/W2
+cancellation, exhausted-credit semantics, cancellation/withdrawal and expiry
+notification before wiring. References below to an existing enforced rate gate
+must be reconciled with the source finding that an advertised limit alone
+provides no such gate. Protocol allocation and C/Rust parity remain mandatory;
+this note assigns no public identifier.
+
 Can a bounded standing frame stream, designed now rather than after
 every small candidate, cut per-frame control exchanges while keeping
 immutable generations, exact grant/generation settlement, bounded
@@ -294,26 +304,21 @@ decides nothing: a demand drained inside another turn still costs
 decode and permit production, and removing it can shift wake
 scheduling for everything after it.
 
-What can falsify the prototype, in order:
+The November 2 sequence replaces the per-class attribution prerequisite:
 
-1. Per-class work on the baseline: attribute demand-decode,
-   permit-production, and outcome-encoding CPU (or stage time) per
-   completed interval, with the thread and window named for every
-   clock. If that attributed share is below noise for the harness,
-   the design has nothing to remove and should not be prototyped
-   for CPU reasons.
-2. Dependency traces: show which turns a demand actually gated
-   (candidate could not be admitted before it, nothing else pending)
-   versus turns where admission was already available. This
-   distinguishes scheduling serialization from flat per-record cost,
-   which the A1 result ([−62.5, +22.5] µs, inconclusive) could not.
-3. Only then a bounded prototype, whose pre-registered prediction
-   is stated in turns per interval and attributed per-class CPU —
-   not in total CPU alone — and is falsified if those counters do
-   not move as predicted while joins, settlements, and cleanup
-   receipts stay identical. Total-CPU comparison follows the plan's
-   existing threshold and ABBA rules, never before the mechanism
-   counters move.
+1. Resolve the contract gaps and prove the bounded state machine with the
+   failure cases below. State which logical demand/permit exchanges disappear;
+   do not assume each exchange was a separate owner wake.
+2. Implement an isolated negotiated prototype with its old-protocol control,
+   retaining custody, response reservations, exact outcomes and cleanup.
+   End-of-run logical counts prove that the intended path ran; no per-frame
+   diagnostic clocks are needed in the performance build.
+3. Compare uninstrumented combined Session + producer CPU on the matched
+   workload under the owning plan's accounting and ABBA rules. Correctness
+   failure, regression or unresolved CPU benefit rejects promotion. Confirm
+   promising results before adoption. Dependency traces or external sampling
+   may resolve a named decision; they are not a mandatory attribution project.
+   No post-hoc threshold relaxation or repeat-until-pass.
 
 ### Authority amortization: separate sketch only
 

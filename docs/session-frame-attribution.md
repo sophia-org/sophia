@@ -590,8 +590,11 @@ Corrected independent audit:
 `6c5d46c41df281d4a1c12d6480a49b8f10f6ef7c67410dd62403a8d1d0791e2b`.
 The original audit and its manifest remain retained.
 
-Next close missing callers and window partitioning with a separately declared
-observation plan before selecting a production candidate. Native target and
+The November 2 [critical-path reset](notes/plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md#current-resumption-close-the-matched-cpu-gap)
+supersedes the sealed report's proposed next attribution step. Missing callers
+and window partitioning remain limits, but do not block bounded production
+experiments measured directly against matched controls. Freeze this measurement
+machinery; use it only for a named experiment decision. Native target and
 completion remain simulated, other physical-owner phases remain absent, and
 no native fixed-cost or savings claim follows. Private kernel maps and raw
 instruction-address decodes stay local. The CPU quiet hold is released; the

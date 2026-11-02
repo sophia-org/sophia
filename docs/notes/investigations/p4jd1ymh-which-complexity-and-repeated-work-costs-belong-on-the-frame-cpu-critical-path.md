@@ -15,6 +15,21 @@ complexity audit. Keep W2's frozen experiment isolated from any new candidate.
 
 ## Current resumption
 
+November 2: niltempus approved the [performance-led critical path](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md#current-resumption-close-the-matched-cpu-gap):
+W2 integration and matched qualification, bounded W3 frame-stream credits,
+then one distinct ready-work scheduling experiment. Combined Session + producer
+CPU is the outcome; process breakdowns guard against cost shifting. t344 remains
+open. Each mechanism ends in adopt, reject or a named contract blocker.
+
+Attribution has supplied enough evidence to attempt bounded mechanisms. Missing
+callers and window partitioning remain report limits, not implementation or
+measurement prerequisites. Freeze instrumentation; use the qualified external
+profiler only for a named blocked decision. Preserve all refusals and unknown
+memcpy callers. S1, single-submit and collection stay parked. Required fresh
+custody checks cannot be treated as redundant work without a separate proof.
+
+## Historical attribution checkpoints
+
 November 1: niltempus requested device-free attribution of Session's fixed
 per-frame work before another candidate. The isolated implementation at signed
 `aacb8dfbe` completes that fixture step: eight release blocks, 16,000 measured

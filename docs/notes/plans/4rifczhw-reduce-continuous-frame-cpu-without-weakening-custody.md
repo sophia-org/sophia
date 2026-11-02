@@ -20,7 +20,107 @@ It does not reopen their completed exits or replace `todo.md` as the task ledger
 The exit is a separately qualified improvement, or a documented no-change result
 for each selected mechanism. A profile share is not a savings target.
 
-## Current resumption: device-free fixed-frame attribution
+## Current resumption: close the matched CPU gap
+
+On November 2, niltempus approved replacing attribution-led work with the
+following performance-led sequence. This section supersedes every earlier
+ordering in this note, including the historical Immediate critical path.
+t344 stays open; its task ID and queue position are unchanged.
+
+The outcome is combined Session + producer CPU per completed frame on the
+matched CPU producer workload. The held reference is Sophia 1027.5–1070
+us/frame versus niri 305–347.5, a gap of 680–765 us/frame. Session contributes
+825–847.5 and the Sophia peer 202.5–222.5. These are historical accounting
+bounds, not a current-build comparison or interchangeable native/fixture costs.
+Track fresh matched results toward 2x, 1.5x and near parity; do not mark the
+gap closed from an intermediate milestone, a GPU-mode substitution or shifted
+work. Report both processes and their combined bounds.
+
+| Order | Deliverable | Exit |
+| --- | --- | --- |
+| 1 | Integrate W2 predecessor retirement | C/Rust parity, cumulative r12/bit-17 negotiation and public SDK provenance; integrated matched CPU/cadence/cleanup qualification and explicit disposition of the known latency tradeoff. |
+| 2 | Prototype bounded frame-stream credits (W3) | Resolve the six contract gaps, prove bounded state transitions, then compare the isolated negotiated implementation against its fixed control. Adopt or reject from combined CPU and correctness. |
+| 3 | One distinct ready-work scheduling candidate | Identify concrete unrelated work to omit or bounded ready work to drain; preserve required freshness checks, deadlines and fairness. Prove the mechanism and measure combined CPU. No broader S1 predicate. |
+| 4 | Cumulative matched comparison | Compare the accepted stack to a contemporaneous matched niri reference; record remaining gap and next architectural decision. |
+
+### W2 integration is the next executable gate
+
+Use the existing demonstrated mechanism, not another prototype investigation.
+The isolated confirmations resolved combined benefits of 52.5–132.5 and
+30–112.5 us/frame on their own workload. They do not price W2 on the matched
+CPU reference. The identifier decision is already closed: shell r12 / bit 17,
+preserving draw r11 / bit 16. Finish the canonical byte contract and C/Rust
+goldens, exact negotiation/coexistence and unsupported-combination refusals,
+upstream-reachable SDK revisions, then normal xtask vendoring and host wiring.
+Do not edit vendored SDK snapshots directly or rewrite frozen experiment trees.
+
+Preserve explicit mode for existing clients and exact predecessor release after
+the last consumer. Test cancellation, supersession, disconnect, revocation,
+wrong/stale generation and delayed consumers in both SDKs and the host. Keep
+the integrated candidate default-off until matched qualification and acceptance
+of the observed submit-to-completion latency tradeoff. The old prototype's
+repeatable benefit needs no fourth confirmation; the integrated product does
+need its own qualification. Do not bundle W3 into this comparison.
+
+### W3 is promoted to a bounded experiment
+
+Resolve rate enforcement, response-reservation timing, supersession/W2
+cancellation, exhausted-credit semantics, cancellation/withdrawal and expiry
+notification against the canonical standing-credit design. The advertised
+rate limit is not evidence of an enforced Session rate gate. Contract decisions
+and failure tests precede wiring; a complete per-stage cost decomposition does
+not. Negotiate new protocol behavior explicitly, retain the old path, and
+implement equivalent C/Rust capabilities before production adoption. No wire
+number is assigned by this plan; use the allocation ledger at implementation.
+
+The mechanism removes the steady-state demand/permit exchange with bounded
+credits, exact tuple binding and exactly-once terminal replenishment. Prepared
+does not replenish; expiry, revocation and backpressure remain fail-closed.
+Fresh authority and immutable-image custody stay mandatory. Its experiment
+asks whether fewer exchanges reduce combined CPU while preserving outcomes
+and pacing. Logical exchange counts prove the path, not an assumed wake or
+CPU saving. Hold W2 mode constant in W3's baseline and candidate.
+
+### Experiment budget and stop rules
+
+Reuse matched producers, uninstrumented CPU accounting, existing pixel/custody
+checks and the attended SSH/PAM/VT launcher. Pin source, dependencies, mode,
+workload, CPU window and latency/cadence limits before each attempt. Use the
+matched reference's actual output mode and completion anchors; do not silently
+mix the later 60 Hz Lom runs with the 119.88 Hz matched CPU reference.
+
+Each candidate gets focused device-free correctness and negative tests, one
+isolated baseline/candidate screen, and a confirmation only for a resolved
+promising result. Promote only when the combined CPU difference excludes zero,
+the mechanism is demonstrated and all declared correctness/cadence/latency
+gates pass. Preserve failures and close inconclusive or regressing candidates.
+A repeated attempt requires a named invalidating condition or a materially
+different mechanism, not a hoped-for answer. No unqualified mechanisms are
+stacked. Refresh the external matched reference for cumulative claims; a
+stale niri result cannot qualify a new ratio.
+
+Every candidate ends in adopt, reject or a named contract blocker. If the
+three mechanism lanes do not approach parity, make an explicit architectural
+decision about the remaining per-frame transport/custody cost. Do not replace
+that decision with another series of micro-optimizations.
+
+### Attribution is supporting evidence, not a prerequisite
+
+Freeze the qualified measurement machinery. External perf may answer a
+specific question that blocks an experiment; it is not a mandatory gate for
+every candidate. Complete callchains, per-height stack partitioning and further
+inline-observer tuning are not critical-path deliverables. A diagnostic must
+name the blocked decision and end in that decision or a documented limitation.
+Do not change the 5% observer qualification threshold or retry until it passes.
+
+S1, collection guards and single-submit stay parked with their existing
+results. Unidentified memcpy leaves do not authorize a copy-path change.
+Fresh authority checks cannot be removed or cached as incidental optimization.
+No reduction in workload, frame rate, image correctness or custody counts as
+closing the CPU gap. Native launches remain owner-attended; GPU-worker resume
+and unrelated source changes are outside this lane.
+
+## Historical checkpoint: device-free fixed-frame attribution
 
 On November 1, niltempus directed the critical path toward Session's fixed
 per-frame work before another candidate. The size-dependent mechanisms remain
@@ -675,8 +775,8 @@ alone. The exact mechanism must receive its own custody review.
 
 ## Immediate critical path
 
-The October 30 CPU redraw priority above supersedes this ordering. The table
-retains prior dispositions; it does not reopen completed or regressed candidates.
+Historical ordering, superseded by the November 2 Current resumption above.
+Retained dispositions do not reopen completed or regressed candidates.
 
 The task ledger is `todo.md` t344. Mason's October 29 priority is the
 [matched-producer benchmark](../investigations/iq4zf50w-how-do-we-compare-sophia-xlibre-and-niri-with-matched-pixel-producers.md):
