@@ -43,6 +43,7 @@ fn fixture() -> (HeadlessOutput, CommittedSurfaceState, CompositorDisplayList) {
 
 fn upload(scene: &mut LiveProductionCpuScene, generation: u64, value: u8, production: bool) {
     let updates = [LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+        pixel_version: None,
         handle: 7,
         size: Size {
             width: 4,

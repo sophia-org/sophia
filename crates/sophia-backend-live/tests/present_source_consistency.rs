@@ -224,6 +224,7 @@ fn parked_present_released_after_a_late_admission() -> (
     let mut scene = LiveProductionCpuScene::new(SIZE);
     scene
         .apply_updates(vec![LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            pixel_version: None,
             handle: BROWSER_HANDLE,
             size: SIZE,
             stride: SIZE.width as u32 * 4,

@@ -1,3 +1,4 @@
+use super::{LiveCpuBufferSource, LiveCpuBufferSourceRef, LiveSharedCpuBufferSource};
 use std::sync::Arc;
 
 /// Immutable bytes with their actual allocation owner. A shell source carries
@@ -14,6 +15,14 @@ pub enum LiveCpuPixelStorage {
 }
 
 impl LiveCpuPixelStorage {
+    pub fn pixel_version(&self) -> Option<std::num::NonZeroU64> {
+        match self {
+            Self::Content(lease) => lease.pixel_version(),
+            Self::Lock(pixels) => pixels.pixel_version(),
+            Self::Shared(_) | Self::Bytes(_) => None,
+        }
+    }
+
     pub fn as_slice(&self) -> &[u8] {
         self
     }
@@ -82,3 +91,66 @@ pub fn lock_image_handle(identity: sophia_engine::SessionLockImageIdentity) -> u
         ^ identity.resource_generation;
     (0b11 << 62) | (mixed & ((1 << 62) - 1))
 }
+
+impl PartialEq for LiveCpuBufferSource {
+    fn eq(&self, other: &Self) -> bool {
+        (
+            self.handle,
+            self.size,
+            self.stride,
+            self.format,
+            self.generation,
+            &self.bytes,
+        ) == (
+            other.handle,
+            other.size,
+            other.stride,
+            other.format,
+            other.generation,
+            &other.bytes,
+        )
+    }
+}
+impl Eq for LiveCpuBufferSource {}
+
+impl PartialEq for LiveSharedCpuBufferSource {
+    fn eq(&self, other: &Self) -> bool {
+        (
+            self.handle,
+            self.size,
+            self.stride,
+            self.format,
+            self.generation,
+            &self.bytes,
+        ) == (
+            other.handle,
+            other.size,
+            other.stride,
+            other.format,
+            other.generation,
+            &other.bytes,
+        )
+    }
+}
+impl Eq for LiveSharedCpuBufferSource {}
+
+impl PartialEq for LiveCpuBufferSourceRef<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        (
+            self.handle,
+            self.size,
+            self.stride,
+            self.format,
+            self.generation,
+            &self.bytes,
+        ) == (
+            other.handle,
+            other.size,
+            other.stride,
+            other.format,
+            other.generation,
+            &other.bytes,
+        )
+    }
+}
+impl Eq for LiveCpuBufferSourceRef<'_> {}

@@ -163,6 +163,7 @@ fn cpu_backdrop() -> LiveSharedCpuBufferSource {
         }
     }
     LiveSharedCpuBufferSource {
+        pixel_version: None,
         handle: 9,
         size: sophia_protocol::Size {
             width: width as i32,
@@ -500,6 +501,7 @@ fn journal_sequence(node: &std::path::Path, damage_enabled: bool) -> Run {
             image_reads: Default::default(),
             layers: vec![LiveOwnedMixedCompositionLayer::Cpu {
                 buffer: LiveSharedCpuBufferSource {
+                    pixel_version: None,
                     handle: 1,
                     size,
                     stride: (WIDTH * 4) as u32,

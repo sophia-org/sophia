@@ -5,6 +5,7 @@ use super::*;
 pub use sophia_renderer_image::CapturedImage as ContentCapturedImage;
 
 struct CpuPixels {
+    version: Option<std::num::NonZeroU64>,
     description: ContentResourceBegin,
     bytes: super::super::isb_pixels::ImmutableCpuPixels,
 }
@@ -33,6 +34,7 @@ pub struct ContentResourceLease(Backing);
 pub struct ContentCpuResourceLease(Arc<CpuPixels>);
 
 impl ContentCpuResourceLease {
+    pub fn pixel_version(&self) -> Option<std::num::NonZeroU64> { self.0.version }
     pub fn bytes(&self) -> &[u8] {
         self.0.bytes.bytes()
     }
@@ -46,7 +48,7 @@ impl ContentResourceLease {
         description: ContentResourceBegin,
         bytes: super::super::isb_pixels::ImmutableCpuPixels,
     ) -> Self {
-        Self(Backing::Cpu(Arc::new(CpuPixels { description, bytes })))
+        Self(Backing::Cpu(Arc::new(CpuPixels { description, bytes, version: crate::next_cpu_pixel_version() })))
     }
 
     #[cfg(feature = "experimental-shell-capture")]

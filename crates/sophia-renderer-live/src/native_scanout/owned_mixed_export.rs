@@ -145,6 +145,7 @@ where
                 LiveOwnedMixedCompositionLayer::Cpu { buffer, placement } => {
                     LiveMixedCompositionLayer::Cpu {
                         buffer: LiveCpuBufferSourceRef {
+                            pixel_version: buffer.pixel_version,
                             handle: buffer.handle,
                             size: buffer.size,
                             stride: buffer.stride,

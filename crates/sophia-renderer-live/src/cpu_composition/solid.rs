@@ -72,6 +72,7 @@ pub(super) fn compose_solid_rect_clipped(
 pub fn solid_color_buffer(color: CompositorRgb8) -> LiveSharedCpuBufferSource {
     let packed = u64::from(color.red) << 16 | u64::from(color.green) << 8 | u64::from(color.blue);
     LiveSharedCpuBufferSource {
+        pixel_version: sophia_runtime::next_cpu_pixel_version(),
         handle: 0x8300_0000_0000_0000 | packed,
         size: Size {
             width: 1,

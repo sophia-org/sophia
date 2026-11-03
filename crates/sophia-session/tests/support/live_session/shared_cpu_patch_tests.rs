@@ -121,6 +121,7 @@ fn shared_cpu_patch_application_keeps_generations_and_releases_payload() {
         let lifetime = Arc::downgrade(shared);
         let mut registry = LiveCpuBufferRegistry::new();
         let base = LiveCpuBufferSource {
+            pixel_version: None,
             handle: 17,
             size: Size {
                 width: 2,

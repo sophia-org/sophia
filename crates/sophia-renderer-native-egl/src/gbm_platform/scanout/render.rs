@@ -552,6 +552,7 @@ fn render_native_target_composition(
             frame.layers.len(),
         );
     }
+    target.pipeline.begin_cpu_composition();
     let mut draw_result = Ok(());
     for pass in &passes {
         if draw_result.is_err() {
@@ -576,7 +577,8 @@ fn render_native_target_composition(
                     trace_native_lifecycle("composition_cpu_layer_started");
                     let result = target
                         .pipeline
-                        .draw_cpu_layer(
+                        .draw_cached_cpu_layer(
+                            layer_index, layer.format, layer.pixel_version,
                             GlCpuLayer {
                                 width: layer.width,
                                 height: layer.height,
@@ -832,6 +834,7 @@ fn render_native_target_composition(
             buffer._frame_surface = Some(surface.clone());
             Ok((buffer, evidence))
         });
+    if result.is_err() { target.pipeline.invalidate_cpu_composition(); }
     finish_snapshot_batch(egl, display, snapshot_uses, snapshots.fences, snapshots.quarantine);
     let _ = egl.make_current(display, None, None, None);
     result

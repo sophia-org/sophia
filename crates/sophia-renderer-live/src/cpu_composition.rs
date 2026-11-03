@@ -22,8 +22,10 @@ use crate::{LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888, LIVE_RENDERER_SCANOUT_FORMAT_
 ///
 /// Equality compares contents rather than allocations. Two allocations may hold
 /// identical pixels, and a source is compared for what it says.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct LiveCpuBufferSource {
+    /// Trusted immutable pixel revision; None always uploads.
+    pub pixel_version: Option<std::num::NonZeroU64>,
     pub handle: u64,
     pub size: Size,
     pub stride: u32,
@@ -36,8 +38,10 @@ pub struct LiveCpuBufferSource {
 ///
 /// Cloning this record preserves one pixel allocation so a frame can be
 /// projected onto multiple scanout heads without cloning its bytes per head.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct LiveSharedCpuBufferSource {
+    /// Trusted immutable pixel revision; None always uploads.
+    pub pixel_version: Option<std::num::NonZeroU64>,
     pub handle: u64,
     pub size: Size,
     pub stride: u32,
@@ -54,6 +58,7 @@ impl From<LiveCpuBufferSource> for LiveSharedCpuBufferSource {
     /// already cloned the registry's bytes to have a `Vec` to give away.
     fn from(buffer: LiveCpuBufferSource) -> Self {
         Self {
+            pixel_version: buffer.pixel_version,
             handle: buffer.handle,
             size: buffer.size,
             stride: buffer.stride,
@@ -70,8 +75,10 @@ pub struct LiveCpuCompositionLayer {
     pub buffer: LiveCpuBufferSource,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug)]
 pub struct LiveCpuBufferSourceRef<'a> {
+    /// Trusted immutable pixel revision; None always uploads.
+    pub pixel_version: Option<std::num::NonZeroU64>,
     pub handle: u64,
     pub size: Size,
     pub stride: u32,
@@ -259,6 +266,7 @@ pub fn compose_live_cpu_frame(
         .map(|layer| LiveCpuCompositionLayerRef {
             geometry: layer.geometry,
             buffer: LiveCpuBufferSourceRef {
+                pixel_version: layer.buffer.pixel_version,
                 handle: layer.buffer.handle,
                 size: layer.buffer.size,
                 stride: layer.buffer.stride,

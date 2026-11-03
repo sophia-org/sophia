@@ -48,6 +48,7 @@ where
                     }
                     Ok(sophia_renderer_native_egl::NativeCompositionLayer::Cpu(
                         sophia_renderer_native_egl::NativeCpuCompositionLayer {
+                            pixel_version: buffer.pixel_version,
                             width: buffer.size.width as u32,
                             height: buffer.size.height as u32,
                             stride: buffer.stride,

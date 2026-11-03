@@ -108,10 +108,11 @@ impl LiveCpuBufferRegistry {
             return Ok(false);
         }
         match update {
-            LiveCpuBufferUpdate::Replace(buffer) => {
+            LiveCpuBufferUpdate::Replace(mut buffer) => {
                 if !valid_buffer(&buffer) {
                     return Err(LiveCpuBufferRegistryError::InvalidBufferMetadata);
                 }
+                buffer.pixel_version = sophia_runtime::next_cpu_pixel_version();
                 self.buffers.insert(buffer.handle, buffer);
             }
             LiveCpuBufferUpdate::Patch(patch) => self.apply_patch(patch)?,
@@ -194,6 +195,7 @@ impl LiveCpuBufferRegistry {
             bytes: patch.bytes,
         };
         apply_patch_region(buffer, &region, splits)?;
+        buffer.pixel_version = sophia_runtime::next_cpu_pixel_version();
         buffer.generation = patch.generation;
         Ok(())
     }
@@ -223,6 +225,7 @@ impl LiveCpuBufferRegistry {
         for patch in &batch.patches {
             apply_patch_region(buffer, patch, splits)?;
         }
+        buffer.pixel_version = sophia_runtime::next_cpu_pixel_version();
         buffer.generation = batch.generation;
         Ok(())
     }

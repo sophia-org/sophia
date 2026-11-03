@@ -303,6 +303,7 @@ fn native_worker_capture_keeps_pixels_with_the_exact_exported_owner() {
             frame.layers = vec![LiveOwnedMixedCompositionLayer::Cpu {
                 placement,
                 buffer: LiveSharedCpuBufferSource {
+                    pixel_version: None,
                     handle: 9,
                     size: Size {
                         width: 16,

@@ -55,6 +55,8 @@ impl From<NativeCompositionRect> for GlCompositionRect {
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativeCpuCompositionLayer<'a> {
+    /// Trusted immutable pixel revision; None always uploads.
+    pub pixel_version: Option<std::num::NonZeroU64>,
     pub width: u32,
     pub height: u32,
     pub stride: u32,
@@ -232,6 +234,7 @@ pub struct NativeGbmPersistentRenderStats {
     pub snapshot_live_entries: usize,
     pub snapshot_live_bytes: u64,
     pub import_cache: NativeDmaBufImportCacheStats,
+    pub cpu_upload: crate::NativeCpuUploadStats,
     pub sampling: crate::NativeCompositionSamplingStats,
     pub max_target_create: Duration,
     pub max_frame_surface_create: Duration,

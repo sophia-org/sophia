@@ -3,6 +3,8 @@ use glow::HasContext;
 
 mod context_probe;
 #[cfg(feature = "gbm-platform")]
+mod cpu_cache;
+#[cfg(feature = "gbm-platform")]
 mod sampling_program;
 #[cfg(feature = "gbm-platform")]
 mod shaders;
@@ -35,6 +37,8 @@ const FULLSCREEN_QUAD_VERTICES: [f32; 16] = [
 
 #[cfg(feature = "gbm-platform")]
 pub(crate) struct PersistentXrgb8888GlPipeline {
+    cpu_upload_stats: Cell<crate::NativeCpuUploadStats>,
+    cpu_cache: std::cell::RefCell<cpu_cache::CpuTextureCache>,
     gl: glow::Context,
     program: glow::NativeProgram,
     reconstruction_program: Option<glow::NativeProgram>,
@@ -225,6 +229,8 @@ impl PersistentXrgb8888GlPipeline {
             texture,
             texture_width: Cell::new(0),
             texture_height: Cell::new(0),
+            cpu_upload_stats: Cell::new(Default::default()),
+            cpu_cache: Default::default(),
             cpu_layer_texture,
             cpu_layer_texture_width: Cell::new(0),
             cpu_layer_texture_height: Cell::new(0),
@@ -400,92 +406,6 @@ impl PersistentXrgb8888GlPipeline {
             self.gl.clear_color(0.0, 0.0, 0.0, alpha);
             self.gl.clear(glow::COLOR_BUFFER_BIT);
         }
-    }
-
-    pub(crate) fn draw_cpu_layer(
-        &self,
-        layer: GlCpuLayer<'_>,
-        target: GlCompositionRect,
-        clip: Option<GlCompositionRect>,
-        sampling: NativeCompositionSampling,
-        trace: Option<NativeCompositionTrace>,
-    ) -> Result<(), NativeEglDrawSmokeStatus> {
-        let GlCpuLayer {
-            width,
-            height,
-            stride,
-            pixels,
-            alpha,
-            alpha_mode,
-        } = layer;
-        let expected_stride = width
-            .checked_mul(4)
-            .ok_or(NativeEglDrawSmokeStatus::GlUnavailable)?;
-        let expected = usize::try_from(stride)
-            .ok()
-            .and_then(|stride| stride.checked_mul(usize::try_from(height).ok()?))
-            .ok_or(NativeEglDrawSmokeStatus::GlUnavailable)?;
-        if width == 0 || height == 0 || stride != expected_stride || pixels.len() != expected {
-            return Err(NativeEglDrawSmokeStatus::GlUnavailable);
-        }
-        let upload = native_cpu_texture_upload(
-            self.cpu_layer_texture_width.get(),
-            self.cpu_layer_texture_height.get(),
-            width,
-            height,
-        );
-        // Per draw, not once at creation: filter state lives on the texture object
-        // and this one texture is reused for layers at different scales. The
-        // filter comes from the same resolution that picks the program, so a
-        // reconstructed draw is guaranteed the unfiltered texels its kernel
-        // gathers rather than a hardware blend of them.
-        let filter = self.draw_plan(sampling).texture_filter;
-        unsafe {
-            self.gl.active_texture(glow::TEXTURE0);
-            self.gl
-                .bind_texture(glow::TEXTURE_2D, Some(self.cpu_layer_texture));
-            self.gl
-                .tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, filter as i32);
-            self.gl
-                .tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, filter as i32);
-            match upload {
-                NativeCpuTextureUpload::Update => self.gl.tex_sub_image_2d(
-                    glow::TEXTURE_2D,
-                    0,
-                    0,
-                    0,
-                    width as i32,
-                    height as i32,
-                    glow::BGRA,
-                    glow::UNSIGNED_BYTE,
-                    glow::PixelUnpackData::Slice(Some(pixels)),
-                ),
-                NativeCpuTextureUpload::Reallocate => self.gl.tex_image_2d(
-                    glow::TEXTURE_2D,
-                    0,
-                    glow::RGBA as i32,
-                    width as i32,
-                    height as i32,
-                    0,
-                    glow::BGRA,
-                    glow::UNSIGNED_BYTE,
-                    glow::PixelUnpackData::Slice(Some(pixels)),
-                ),
-            }
-            if upload == NativeCpuTextureUpload::Reallocate {
-                self.cpu_layer_texture_width.set(width);
-                self.cpu_layer_texture_height.set(height);
-            }
-        }
-        self.draw_bound_texture(
-            target,
-            clip,
-            alpha,
-            alpha_mode,
-            (width, height),
-            sampling,
-            trace,
-        )
     }
 
     pub(crate) fn draw_solid_layer(
@@ -695,6 +615,7 @@ impl PersistentXrgb8888GlPipeline {
             self.gl.disable(glow::BLEND);
             self.gl.disable(glow::SCISSOR_TEST);
             if self.gl.get_error() != glow::NO_ERROR {
+                self.invalidate_cpu_composition();
                 return Err(NativeEglDrawSmokeStatus::GlUnavailable);
             }
         }

@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 fn buffer(handle: u64, generation: u64) -> LiveCpuBufferSource {
     LiveCpuBufferSource {
+        pixel_version: None,
         handle,
         size: Size {
             width: 2,
@@ -487,4 +488,34 @@ fn a_warmed_registry_neither_grows_nor_reallocates() {
     // sampled bound a statement about the whole run rather than its end.
     assert_eq!(registry.peak_buffers(), settled_len);
     assert_eq!(registry.peak_bytes(), settled_bytes);
+}
+
+#[test]
+fn equal_generation_patch_changes_pixel_version_without_changing_old_lease() {
+    let mut registry = LiveCpuBufferRegistry::new();
+    registry
+        .apply(LiveCpuBufferUpdate::Replace(buffer(7, 2)))
+        .unwrap();
+    let before = registry.get(7).unwrap().clone();
+    registry
+        .apply(LiveCpuBufferUpdate::Patch(LiveCpuBufferPatch {
+            handle: 7,
+            size: before.size,
+            stride: before.stride,
+            format: before.format,
+            generation: 2,
+            rect: Rect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+            bytes: Arc::new(vec![1, 2, 3, 255]),
+        }))
+        .unwrap();
+    let after = registry.get(7).unwrap();
+    assert!(before.pixel_version.is_some());
+    assert_ne!(before.pixel_version, after.pixel_version);
+    assert_eq!(&before.bytes[..4], &[0; 4]);
+    assert_eq!(&after.bytes[..4], &[1, 2, 3, 255]);
 }

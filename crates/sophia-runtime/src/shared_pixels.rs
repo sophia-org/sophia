@@ -14,7 +14,7 @@ enum Backing {
 /// enter through a completed `ValidatedIsbPixels` scan; the mapping remains
 /// alive until the last consumer drops its handle.
 #[derive(Clone)]
-pub struct SharedPixels(Backing);
+pub struct SharedPixels(Backing, Option<std::num::NonZeroU64>);
 
 /// Observes final consumer release without retaining pixel storage. Once
 /// released, the backing cannot be resurrected through this watch.
@@ -38,11 +38,12 @@ impl SharedPixelsWatch {
 
 impl From<Arc<[u8]>> for SharedPixels {
     fn from(bytes: Arc<[u8]>) -> Self {
-        Self(Backing::Bytes(bytes))
+        Self(Backing::Bytes(bytes), crate::next_cpu_pixel_version())
     }
 }
 
 impl SharedPixels {
+    pub fn pixel_version(&self) -> Option<std::num::NonZeroU64> { self.1 }
     pub fn watch(&self) -> SharedPixelsWatch {
         SharedPixelsWatch(match &self.0 {
             Backing::Bytes(bytes) => WeakBacking::Bytes(Arc::downgrade(bytes)),
@@ -53,11 +54,11 @@ impl SharedPixels {
 
     // Keep the Box allocation intact: Arc<[u8]>::from(Box) would copy pixels.
     pub(crate) fn owned(bytes: Box<[u8]>) -> Self {
-        Self(Backing::Owned(Arc::new(bytes)))
+        Self(Backing::Owned(Arc::new(bytes)), crate::next_cpu_pixel_version())
     }
 
     pub(crate) fn isb(mapping: sophia_linux_peer::SealedMapping) -> Self {
-        Self(Backing::Isb(Arc::new(mapping)))
+        Self(Backing::Isb(Arc::new(mapping)), crate::next_cpu_pixel_version())
     }
 }
 

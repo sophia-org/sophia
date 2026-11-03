@@ -685,6 +685,7 @@ fn chrome_follows_the_displayed_view_while_a_present_is_in_flight() {
             transaction,
             surface,
             LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                pixel_version: None,
                 handle,
                 size: size_of(geometry),
                 stride: u32::try_from(geometry.width * 4).unwrap(),
@@ -928,6 +929,7 @@ fn the_software_frame_frames_only_the_authorised_surfaces() {
             transaction,
             surface,
             LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                pixel_version: None,
                 handle,
                 size: size_of(geometry),
                 stride: u32::try_from(geometry.width * 4).unwrap(),

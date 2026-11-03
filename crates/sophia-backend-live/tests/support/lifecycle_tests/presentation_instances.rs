@@ -21,6 +21,7 @@ pub(super) fn commit_cpu_surface(
     let byte_len = usize::try_from(size.width * size.height * 4).unwrap();
     scene
         .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            pixel_version: None,
             handle,
             generation,
             size,
@@ -599,6 +600,7 @@ fn preview_only_instances_share_a_source_until_copy_and_backings_until_retiremen
         source_weak = Some(Arc::downgrade(&bytes));
         scene
             .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                pixel_version: None,
                 handle: 55,
                 generation,
                 size: source_size,
@@ -801,6 +803,7 @@ fn a_missing_source_refuses_the_presentation_whole_and_removal_revokes_it_whole(
     let mut commit = |runtime: &mut LiveProductionVisualRuntime, generation: u64| {
         scene
             .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                pixel_version: None,
                 handle: 55,
                 generation,
                 size,

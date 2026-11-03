@@ -195,6 +195,7 @@ fn test_committed_cpu_surface(
 
 fn test_cpu_buffer(handle: u64, bytes: [u8; 8]) -> sophia_backend_live::LiveCpuBufferSource {
     sophia_backend_live::LiveCpuBufferSource {
+        pixel_version: None,
         handle,
         size: Size {
             width: 2,

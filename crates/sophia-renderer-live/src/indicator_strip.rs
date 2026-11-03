@@ -280,6 +280,7 @@ impl IndicatorStripRasterCache {
             bytes.extend_from_slice(&[pixel.b, pixel.g, pixel.r, 0xff]);
         }
         Ok(LiveSharedCpuBufferSource {
+            pixel_version: sophia_runtime::next_cpu_pixel_version(),
             handle,
             size: Size {
                 width: i32::from(width),

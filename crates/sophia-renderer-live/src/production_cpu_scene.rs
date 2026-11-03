@@ -445,6 +445,7 @@ impl LiveProductionCpuScene {
                         LiveCpuCompositionLayerRef {
                             geometry: committed.geometry,
                             buffer: LiveCpuBufferSourceRef {
+                                pixel_version: None,
                                 handle: buffer.handle,
                                 size: buffer.size,
                                 stride: buffer.stride,
@@ -473,6 +474,7 @@ impl LiveProductionCpuScene {
                         layer: LiveCpuCompositionLayerRef {
                             geometry: instance.destination,
                             buffer: LiveCpuBufferSourceRef {
+                                pixel_version: None,
                                 handle: buffer.handle,
                                 size: buffer.size,
                                 stride: buffer.stride,
@@ -514,6 +516,7 @@ impl LiveProductionCpuScene {
                         LiveCpuCompositionLayerRef {
                             geometry: text.geometry,
                             buffer: LiveCpuBufferSourceRef {
+                                pixel_version: None,
                                 handle: buffer.handle,
                                 size: buffer.size,
                                 stride: buffer.stride,
@@ -533,6 +536,7 @@ impl LiveProductionCpuScene {
                         LiveCpuCompositionLayerRef {
                             geometry: strip.strip.geometry,
                             buffer: LiveCpuBufferSourceRef {
+                                pixel_version: None,
                                 handle: buffer.handle,
                                 size: buffer.size,
                                 stride: buffer.stride,
@@ -561,6 +565,7 @@ impl LiveProductionCpuScene {
                         LiveCpuCompositionLayerRef {
                             geometry: content.geometry_px,
                             buffer: LiveCpuBufferSourceRef {
+                                pixel_version: None,
                                 handle: match &content.resource {
                                     sophia_engine::CompositorImageSource::Shell(lease) => {
                                         lease.description().resource.id
@@ -705,6 +710,7 @@ impl LiveProductionCpuScene {
                 Some(LiveCpuCompositionLayerRef {
                     geometry: surface.geometry,
                     buffer: LiveCpuBufferSourceRef {
+                        pixel_version: None,
                         handle: buffer.handle,
                         size: buffer.size,
                         stride: buffer.stride,
@@ -904,6 +910,7 @@ impl LiveProductionCpuScene {
                     height: marker_size.height,
                 },
                 buffer: LiveCpuBufferSource {
+                    pixel_version: None,
                     handle: 0x5350_4800u64.saturating_add(index as u64),
                     size: marker_size,
                     stride: u32::try_from(marker_stride)?,

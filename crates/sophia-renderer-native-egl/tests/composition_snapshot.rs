@@ -59,10 +59,144 @@ mod native {
 
     #[test]
     #[ignore = "requires SOPHIA_TEST_RENDER_NODE; render node only"]
+    fn damage_rectangles_share_one_upload_for_changing_pixels() {
+        let mut renderer = context();
+        let damage = NativeCompositionRepaintTable::from_ages(vec![
+            Some(vec![
+                NativeCompositionDamageRect {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 2
+                },
+                NativeCompositionDamageRect {
+                    x: 1,
+                    y: 0,
+                    width: 1,
+                    height: 2
+                },
+            ]);
+            8
+        ]);
+        for blue in 1..=12u8 {
+            let pixels = [blue, 0, 0, 255].repeat(4);
+            let layers = [NativeCompositionLayer::Cpu(NativeCpuCompositionLayer {
+                pixel_version: None,
+                width: 2,
+                height: 2,
+                stride: 8,
+                format: 0x3432_5258,
+                pixels: &pixels,
+                target: rect(),
+                clip: None,
+                alpha: 1.0,
+                sampling: NativeCompositionSampling::ExactNearest,
+            })];
+            let mut frame = frame(&layers);
+            frame.repaint = Some(&damage);
+            let (report, snapshot) = renderer
+                .export_composed_with_snapshot(frame, NativeCompositionOutputRequest::default())
+                .unwrap();
+            drop(report);
+            assert_eq!(snapshot.rgba(), [0, 0, blue, 255].repeat(4));
+            assert_eq!(
+                renderer.persistent_render_stats().cpu_upload.uploads,
+                u64::from(blue)
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "requires SOPHIA_TEST_RENDER_NODE; render node only"]
+    fn cpu_texture_limit_falls_back_without_aliasing_equal_sized_layers() {
+        let mut renderer = context();
+        let pixels: Vec<_> = (1..=33u8).map(|v| [v, 0, 0, 255].repeat(4)).collect();
+        let layers: Vec<_> = pixels
+            .iter()
+            .enumerate()
+            .map(|(i, bytes)| {
+                NativeCompositionLayer::Cpu(NativeCpuCompositionLayer {
+                    pixel_version: std::num::NonZeroU64::new(i as u64 + 1),
+                    width: 2,
+                    height: 2,
+                    stride: 8,
+                    format: 0x3432_5258,
+                    pixels: bytes,
+                    target: rect(),
+                    clip: None,
+                    alpha: 1.0,
+                    sampling: NativeCompositionSampling::ExactNearest,
+                })
+            })
+            .collect();
+        for uploads in [33, 34] {
+            let (report, snapshot) = renderer
+                .export_composed_with_snapshot(
+                    frame(&layers),
+                    NativeCompositionOutputRequest::default(),
+                )
+                .unwrap();
+            drop(report);
+            assert_eq!(snapshot.rgba(), [0, 0, 33, 255].repeat(4));
+            let stats = renderer.persistent_render_stats().cpu_upload;
+            assert_eq!(stats.uploads, uploads);
+            assert_eq!(stats.retained_bytes, 32 * 16);
+        }
+        // No layer may resurrect another context's texture name.
+        let mut second = context();
+        let (report, snapshot) = second
+            .export_composed_with_snapshot(
+                frame(&layers[..1]),
+                NativeCompositionOutputRequest::default(),
+            )
+            .unwrap();
+        drop(report);
+        assert_eq!(snapshot.rgba(), [0, 0, 1, 255].repeat(4));
+        assert_eq!(second.persistent_render_stats().cpu_upload.uploads, 1);
+    }
+
+    #[test]
+    #[ignore = "requires SOPHIA_TEST_RENDER_NODE; render node only"]
+    fn retained_cpu_revision_reuses_upload_and_changed_revision_updates_pixels() {
+        let mut renderer = context();
+        for (version, blue, expected_uploads) in
+            [(1, 12, 1), (1, 12, 1), (2, 99, 2), (0, 42, 3), (0, 77, 4)]
+        {
+            let pixels = [blue, 0, 0, 255].repeat(4);
+            let layers = [NativeCompositionLayer::Cpu(NativeCpuCompositionLayer {
+                pixel_version: std::num::NonZeroU64::new(version),
+                width: 2,
+                height: 2,
+                stride: 8,
+                format: 0x3432_5258,
+                pixels: &pixels,
+                target: rect(),
+                clip: None,
+                alpha: 1.0,
+                sampling: NativeCompositionSampling::ExactNearest,
+            })];
+            let (report, snapshot) = renderer
+                .export_composed_with_snapshot(
+                    frame(&layers),
+                    NativeCompositionOutputRequest::default(),
+                )
+                .unwrap();
+            drop(report);
+            assert_eq!(snapshot.rgba(), [0, 0, blue, 255].repeat(4));
+            let stats = renderer.persistent_render_stats().cpu_upload;
+            assert_eq!(stats.uploads, expected_uploads);
+            assert_eq!(stats.allocations, 1);
+            assert_eq!(stats.retained_bytes, 16);
+        }
+    }
+
+    #[test]
+    #[ignore = "requires SOPHIA_TEST_RENDER_NODE; render node only"]
     fn cpu_and_gpu_compositions_return_exact_top_down_pixels_without_storage_aliases() {
         let mut renderer = context();
         let pixels = [0, 0, 255, 0, 0, 0, 255, 0, 255, 0, 0, 0, 255, 0, 0, 0];
         let cpu = [NativeCompositionLayer::Cpu(NativeCpuCompositionLayer {
+            pixel_version: None,
             width: 2,
             height: 2,
             stride: 8,

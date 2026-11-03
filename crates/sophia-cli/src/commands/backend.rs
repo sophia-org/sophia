@@ -805,6 +805,7 @@ fn compose_terminal_cpu_buffers(
             Some(sophia_backend_live::LiveCpuCompositionLayer {
                 geometry,
                 buffer: sophia_backend_live::LiveCpuBufferSource {
+                    pixel_version: None,
                     handle: buffer.handle,
                     size: buffer.size,
                     stride: buffer.stride,

@@ -609,6 +609,7 @@ fn renderer_cpu_buffer_update(
         sophia_x_authority::XAuthorityCpuBufferUpdate::Replace(buffer) => {
             sophia_backend_live::LiveCpuBufferUpdate::Replace(
                 sophia_backend_live::LiveCpuBufferSource {
+                    pixel_version: None,
                     handle: buffer.handle,
                     size: buffer.size,
                     stride: buffer.stride,

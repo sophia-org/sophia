@@ -172,6 +172,7 @@ fn compose_over(
                 layer: LiveCpuCompositionLayerRef {
                     geometry: destination,
                     buffer: LiveCpuBufferSourceRef {
+                        pixel_version: None,
                         handle: 1,
                         size: Size {
                             width: source_size.0 as i32,

@@ -211,6 +211,7 @@ fn provisional_extended_topology_composes_each_head_from_one_committed_scene() {
     let mut scene = LiveProductionCpuScene::new(output().size);
     scene
         .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            pixel_version: None,
             handle: 1,
             size: output().size,
             stride: 640 * 4,

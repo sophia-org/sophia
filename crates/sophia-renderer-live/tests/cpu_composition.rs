@@ -23,6 +23,7 @@ fn shared_cpu_source_moves_pixels_once_and_clones_the_arc() {
     let bytes = Arc::new(vec![0x5a; 16]);
     let allocation = bytes.as_ptr();
     let source: LiveSharedCpuBufferSource = LiveCpuBufferSource {
+        pixel_version: None,
         handle: 7,
         size: Size {
             width: 2,
@@ -129,6 +130,7 @@ fn production_scene_discards_late_patch_but_reports_missing_committed_base() {
 #[test]
 fn cpu_composition_blits_clipped_xrgb_layers() {
     let source = LiveCpuBufferSource {
+        pixel_version: None,
         handle: 1,
         size: Size {
             width: 2,
@@ -257,6 +259,7 @@ fn cpu_display_list_preserves_solid_order_and_clips_to_output() {
                     height: 2,
                 },
                 buffer: LiveCpuBufferSourceRef {
+                    pixel_version: None,
                     handle: 21,
                     size,
                     stride: 12,
@@ -307,6 +310,7 @@ fn borrowed_fullscreen_composition_preserves_pixels_and_metrics() {
                 height: 720,
             },
             buffer: LiveCpuBufferSourceRef {
+                pixel_version: None,
                 handle: 7,
                 size: Size {
                     width: 1280,
@@ -341,6 +345,7 @@ fn borrowed_composition_clips_negative_geometry_by_rows() {
                 height: 4,
             },
             buffer: LiveCpuBufferSourceRef {
+                pixel_version: None,
                 handle: 9,
                 size: Size {
                     width: 4,
@@ -378,6 +383,7 @@ fn cpu_composition_identity_changes_with_an_immutable_generation() {
                 height: 1,
             },
             buffer: LiveCpuBufferSourceRef {
+                pixel_version: None,
                 handle: 13,
                 size,
                 stride: 8,
@@ -398,6 +404,7 @@ fn cpu_composition_identity_changes_with_an_immutable_generation() {
                 height: 1,
             },
             buffer: LiveCpuBufferSourceRef {
+                pixel_version: None,
                 handle: 13,
                 size,
                 stride: 8,
@@ -428,6 +435,7 @@ fn borrowed_composition_draws_a_high_contrast_software_cursor() {
             height: 20,
         },
         buffer: LiveCpuBufferSourceRef {
+            pixel_version: None,
             handle: 17,
             size,
             stride: 16 * 4,
@@ -517,6 +525,7 @@ fn production_scene_composes_only_the_visible_surface_order() {
     let mut scene = LiveProductionCpuScene::new(size);
     scene
         .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            pixel_version: None,
             handle: 1,
             size,
             stride: 8,
@@ -645,6 +654,7 @@ fn production_scene_reconfiguration_preserves_buffers_and_invalidates_frames() {
     let mut scene = LiveProductionCpuScene::new(original.size);
     scene
         .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            pixel_version: None,
             handle: 41,
             size: Size {
                 width: 1,
@@ -1047,6 +1057,7 @@ fn production_scene_uses_snapshot_damage_for_changed_surface_only() {
     scene
         .apply_updates([
             LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                pixel_version: None,
                 handle: 1,
                 size: Size {
                     width: 2,
@@ -1058,6 +1069,7 @@ fn production_scene_uses_snapshot_damage_for_changed_surface_only() {
                 bytes: Arc::new(vec![0x11; 8]),
             }),
             LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                pixel_version: None,
                 handle: 2,
                 size: Size {
                     width: 2,
@@ -1077,6 +1089,7 @@ fn production_scene_uses_snapshot_damage_for_changed_surface_only() {
     committed[0].committed_generation = 2;
     scene
         .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            pixel_version: None,
             handle: 1,
             size: Size {
                 width: 2,

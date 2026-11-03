@@ -102,6 +102,7 @@ fn generation_with_owner(
                         image_reads: Default::default(),
                         layers: vec![LiveOwnedMixedCompositionLayer::Cpu {
                             buffer: LiveSharedCpuBufferSource {
+                                pixel_version: None,
                                 handle: description.resource.id,
                                 size,
                                 stride: 16,

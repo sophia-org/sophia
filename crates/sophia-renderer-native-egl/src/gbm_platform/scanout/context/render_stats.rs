@@ -56,6 +56,7 @@ where
         stats.transfer_failures = self.transfer_stats.failures;
         if let Some(persistent) = self.composition_target.as_ref() {
             accumulate_import_cache_stats(&mut stats.import_cache, persistent.import_cache.stats());
+            stats.cpu_upload = stats.cpu_upload.saturating_add(persistent.target.pipeline.cpu_upload_stats());
             stats.sampling = stats
                 .sampling
                 .saturating_add(persistent.target.pipeline.sampling_stats());
@@ -66,11 +67,13 @@ where
             .flat_map(|set| set.targets.iter().flatten())
         {
             accumulate_import_cache_stats(&mut stats.import_cache, persistent.import_cache.stats());
+            stats.cpu_upload = stats.cpu_upload.saturating_add(persistent.target.pipeline.cpu_upload_stats());
             stats.sampling = stats
                 .sampling
                 .saturating_add(persistent.target.pipeline.sampling_stats());
         }
         for cached in self.capture_targets.iter().flatten() {
+            stats.cpu_upload = stats.cpu_upload.saturating_add(cached.target.pipeline.cpu_upload_stats());
             stats.sampling = stats
                 .sampling
                 .saturating_add(cached.target.pipeline.sampling_stats());

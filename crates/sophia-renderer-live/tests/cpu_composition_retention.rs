@@ -53,6 +53,7 @@ fn production_scene_reuses_a_retired_frame_while_latest_pixels_are_shared() {
     let mut scene = LiveProductionCpuScene::new(output.size);
     scene
         .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            pixel_version: None,
             handle: 1,
             size: Size {
                 width: 1,
@@ -75,6 +76,7 @@ fn production_scene_reuses_a_retired_frame_while_latest_pixels_are_shared() {
     committed[0].committed_generation = 2;
     scene
         .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            pixel_version: None,
             handle: 1,
             size: Size {
                 width: 1,
@@ -98,6 +100,7 @@ fn production_scene_reuses_a_retired_frame_while_latest_pixels_are_shared() {
     committed[0].committed_generation = 3;
     scene
         .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            pixel_version: None,
             handle: 1,
             size: Size {
                 width: 1,
@@ -342,6 +345,7 @@ fn gpu_only_updates_reuse_cpu_pixels_but_source_transitions_repaint() {
 
     scene
         .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            pixel_version: None,
             handle: 3,
             size,
             stride: 8,
@@ -365,6 +369,7 @@ fn gpu_only_updates_reuse_cpu_pixels_but_source_transitions_repaint() {
     // authority generation. The backing must still reflect its new bytes.
     scene
         .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            pixel_version: None,
             handle: 3,
             size,
             stride: 8,

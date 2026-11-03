@@ -873,6 +873,9 @@ where
             &mut self.stats.import_cache,
             persistent.import_cache.stats(),
         );
+        let mut cpu = persistent.target.pipeline.cpu_upload_stats();
+        cpu.retained_bytes = 0;
+        self.stats.cpu_upload = self.stats.cpu_upload.saturating_add(cpu);
         self.stats.sampling = self
             .stats
             .sampling

@@ -322,6 +322,7 @@ fn recent_cpu_update_residency_bridges_patch_gaps_and_remains_bounded() {
         &mut runtime,
         &mut scene,
         vec![LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            pixel_version: None,
             handle: 72,
             size,
             stride: 8,
@@ -362,6 +363,7 @@ fn recent_cpu_update_residency_bridges_patch_gaps_and_remains_bounded() {
             &mut runtime,
             &mut scene,
             vec![LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                pixel_version: None,
                 handle,
                 size,
                 stride: 8,
@@ -435,6 +437,7 @@ fn software_present_during_seat_lifetime(suspended: bool) {
                 transaction,
                 surface,
                 LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                    pixel_version: None,
                     handle: 72,
                     size,
                     stride: 8,
@@ -989,6 +992,7 @@ fn a_focused_popup_does_not_unfocus_the_window_it_belongs_to() {
                 transaction,
                 window,
                 LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                    pixel_version: None,
                     handle: 92,
                     size,
                     stride: 32,

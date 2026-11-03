@@ -363,6 +363,7 @@ impl LivePresentationResourceSession {
             let size = background.size;
             layers.push(LiveOwnedMixedCompositionLayer::Cpu {
                 buffer: LiveSharedCpuBufferSource {
+                    pixel_version: None,
                     handle: 0,
                     size,
                     stride: background.stride,

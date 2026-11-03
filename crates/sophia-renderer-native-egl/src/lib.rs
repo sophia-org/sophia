@@ -23,3 +23,6 @@ pub use gl::{NativeCpuTextureUpload, native_cpu_texture_upload};
 pub use pixel_evidence::*;
 pub use sampling::*;
 pub use status::*;
+
+mod cpu_upload_stats;
+pub use cpu_upload_stats::NativeCpuUploadStats;

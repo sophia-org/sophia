@@ -251,6 +251,7 @@ impl CompositorTextRasterCache {
             bytes.extend_from_slice(&[pixel.b, pixel.g, pixel.r, pixel.a]);
         }
         Ok(LiveSharedCpuBufferSource {
+            pixel_version: sophia_runtime::next_cpu_pixel_version(),
             handle,
             size: Size {
                 width: i32::from(width),

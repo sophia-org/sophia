@@ -147,6 +147,7 @@ fn source(handle: u64) -> LiveCpuPresentationLayer {
             height: 600,
         },
         buffer: LiveCpuBufferSource {
+            pixel_version: None,
             handle,
             size: Size {
                 width: 600,
@@ -289,6 +290,7 @@ fn cpu_source_of_the_wrong_size_is_still_refused() {
         source: BufferSource::CpuBuffer { handle: 42 },
         kind: LiveOwnedHeadCompositionSourceKind::Cpu(
             LiveCpuBufferSource {
+                pixel_version: None,
                 handle: 42,
                 size: Size {
                     width: 300,
@@ -371,6 +373,7 @@ fn production_scene_resolves_all_resident_cpu_variants_by_handle() {
         height: 600,
     });
     let buffer = |handle, width, height, generation| LiveCpuBufferSource {
+        pixel_version: None,
         handle,
         size: Size { width, height },
         stride: u32::try_from(width * 4).unwrap(),

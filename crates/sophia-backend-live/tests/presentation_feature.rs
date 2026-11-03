@@ -315,6 +315,7 @@ fn mixed_frame_clone_shares_immutable_cpu_pixels() {
         image_reads: Default::default(),
         layers: vec![LiveOwnedMixedCompositionLayer::Cpu {
             buffer: LiveSharedCpuBufferSource {
+                pixel_version: None,
                 handle: 17,
                 size: Size {
                     width: 4,

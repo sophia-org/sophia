@@ -520,6 +520,7 @@ fn an_admitted_window_composes_its_pixels_and_an_unmapped_one_does_not() {
     scene
         .apply_updates([sophia_backend_live::LiveCpuBufferUpdate::Replace(
             sophia_backend_live::LiveCpuBufferSource {
+                pixel_version: None,
                 handle: 11,
                 size: Size {
                     width: 2,

@@ -40,6 +40,7 @@ fn native_cpu_cycle_frames_software_present_before_retirement() {
                 transaction.transaction,
                 surface,
                 LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                    pixel_version: None,
                     handle: 51,
                     generation: 1,
                     size,

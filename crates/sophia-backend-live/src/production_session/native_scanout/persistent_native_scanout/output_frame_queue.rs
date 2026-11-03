@@ -84,6 +84,7 @@ impl LiveProductionNativeScanout {
             .ok()?;
         let frame_id = self.allocate_frame_id();
         let source = sophia_renderer_live::LiveSharedCpuBufferSource {
+            pixel_version: None,
             handle: 0,
             size: frame.frame.size,
             stride: frame.frame.stride,

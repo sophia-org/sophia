@@ -313,6 +313,7 @@ pub fn lower_head_composition_plan_with_caches(
                     match crate::LiveCpuPixelStorage::try_from(content.image.resource.clone()) {
                         Ok(bytes) => layers.push(LiveOwnedMixedCompositionLayer::Cpu {
                             buffer: LiveSharedCpuBufferSource {
+                                pixel_version: bytes.pixel_version(),
                                 handle,
                                 size: content.image.size_px,
                                 stride: content.image.stride,

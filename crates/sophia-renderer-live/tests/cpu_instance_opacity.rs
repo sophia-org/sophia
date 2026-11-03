@@ -37,6 +37,7 @@ fn layer(bytes: &[u8], size: Size, format: u32, geometry: Rect) -> LiveCpuCompos
     LiveCpuCompositionLayerRef {
         geometry,
         buffer: LiveCpuBufferSourceRef {
+            pixel_version: None,
             handle: 3,
             size,
             stride: u32::try_from(size.width * 4).unwrap(),

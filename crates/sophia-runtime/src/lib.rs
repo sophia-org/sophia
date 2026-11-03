@@ -116,3 +116,6 @@ mod test_content_isb;
 #[cfg(all(test, target_os = "linux"))]
 #[path = "../tests/support/owned_ring_races.rs"]
 mod owned_ring_races;
+
+mod cpu_pixel_version;
+pub use cpu_pixel_version::next_cpu_pixel_version;

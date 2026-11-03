@@ -63,6 +63,7 @@ fn in_flight_renderer_source_keeps_cpu_content_variants() {
             height: 48,
         },
         buffer: sophia_renderer_live::LiveCpuBufferSource {
+            pixel_version: None,
             handle: cpu_handle,
             size: Size {
                 width: 64,

@@ -119,6 +119,7 @@ fn production_group_matches_cpu_updates_to_every_content_variant() {
                 transaction,
                 surface,
                 LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                    pixel_version: None,
                     handle,
                     size,
                     stride: u32::try_from(size.width * 4).unwrap(),
@@ -142,6 +143,7 @@ fn production_group_rejects_every_mismatched_cpu_update_owner_field() {
         transaction,
         surface,
         LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            pixel_version: None,
             handle: transaction.raw(),
             size: Size {
                 width: 1,
@@ -198,6 +200,7 @@ fn in_flight_present_defers_only_later_work_for_the_same_surface() {
             later_firefox.transaction,
             firefox,
             LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                pixel_version: None,
                 handle: 800,
                 size: sophia_protocol::Size {
                     width: 1,
