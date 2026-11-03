@@ -286,7 +286,10 @@ fn reconstruction_ringing_encodes_to_black_rather_than_to_not_a_number() {
 /// invisibly -- the evidence would still say `sharp_downscale status=active`.
 #[test]
 fn reconstructed_draws_sample_unfiltered_texels() {
-    let renderer = include_str!("../src/gl.rs");
+    let renderer = concat!(
+        include_str!("../src/gl.rs"),
+        include_str!("../src/gl/cpu_cache.rs")
+    );
     let program = include_str!("../src/gl/sampling_program.rs");
 
     // The filter is no longer derived at the call site from the requested

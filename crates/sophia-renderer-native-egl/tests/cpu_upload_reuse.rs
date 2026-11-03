@@ -36,11 +36,18 @@ fn render(
     renderer: &mut NativeGbmRenderedScanoutContext<File>,
     layers: &[NativeCompositionLayer<'_>],
 ) -> Vec<u8> {
+    render_size(renderer, layers, 2)
+}
+fn render_size(
+    renderer: &mut NativeGbmRenderedScanoutContext<File>,
+    layers: &[NativeCompositionLayer<'_>],
+    extent: u32,
+) -> Vec<u8> {
     let (report, snapshot) = renderer
         .export_composed_with_snapshot(
             NativeCompositionFrame {
-                width: 2,
-                height: 2,
+                width: extent,
+                height: extent,
                 layers,
                 trace: None,
                 repaint: None,
@@ -129,4 +136,67 @@ fn static_overlay_stays_cached_above_a_changing_layer() {
         assert_eq!(stats.uploads, u64::from(blue) + 1);
         assert_eq!(stats.allocations, 2);
     }
+}
+
+#[test]
+#[ignore = "requires SOPHIA_TEST_RENDER_NODE; render node only"]
+fn retained_scene_changes_match_fresh_uploads_across_resize_and_reappearance() {
+    let mut cached = context();
+    let mut fresh = context();
+    let red = [0, 0, 255, 255].repeat(4);
+    let green = [0, 128, 0, 128].repeat(4);
+    let blue = [255, 0, 0, 255].repeat(2);
+    let mut final_image = Vec::new();
+    for step in 0..8 {
+        let extent = if step >= 5 { 4 } else { 2 };
+        let mut backdrop = layer(&red, 2, 2, 1);
+        let NativeCompositionLayer::Cpu(ref mut cpu) = backdrop else {
+            unreachable!()
+        };
+        cpu.target.width = extent as i32;
+        cpu.target.height = extent as i32;
+        let mut overlay = if step >= 6 {
+            layer(&blue, 1, 2, 3)
+        } else {
+            layer(&green, 2, 2, 2)
+        };
+        let NativeCompositionLayer::Cpu(ref mut cpu) = overlay else {
+            unreachable!()
+        };
+        cpu.format = u32::from_le_bytes(*b"AR24");
+        cpu.target.x = if step == 1 { 1 } else { 0 };
+        if step == 2 {
+            cpu.alpha = 0.5;
+            cpu.clip = Some(NativeCompositionRect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 2,
+            });
+        }
+        let mut layers = vec![backdrop, overlay];
+        if step == 3 || step == 4 {
+            layers.pop();
+        }
+        let actual = render_size(&mut cached, &layers, extent);
+        for layer in &mut layers {
+            let NativeCompositionLayer::Cpu(cpu) = layer else {
+                unreachable!()
+            };
+            cpu.pixel_version = None;
+        }
+        let expected = render_size(&mut fresh, &layers, extent);
+        assert_eq!(actual, expected, "scene step {step}");
+        if step == 0 {
+            assert_eq!(actual, [127, 128, 0, 255].repeat(4));
+        }
+        if step == 3 || step == 4 {
+            assert_eq!(actual, [255, 0, 0, 255].repeat(4));
+        }
+        final_image = actual;
+    }
+    assert!(cached.persistent_render_stats().cpu_upload.hits > 0);
+    drop(cached);
+    drop(fresh);
+    assert_eq!(&final_image[..4], &[0, 0, 255, 255]);
 }
