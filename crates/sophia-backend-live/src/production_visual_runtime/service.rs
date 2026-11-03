@@ -1,5 +1,12 @@
 use super::*;
 
+pub(super) fn retained_projection_retry_ready(mut protected: impl Iterator<Item = bool>) -> bool {
+    match protected.next() {
+        None => true,
+        Some(first) => !first || protected.any(|protected| !protected),
+    }
+}
+
 pub(super) fn native_service_phase(
     runtime: (bool, bool),
     all_heads: (bool, bool),
@@ -370,7 +377,14 @@ impl LiveProductionVisualRuntime {
                 retired_present = Some(retired);
             }
         }
-        if self.retained_projection_pending {
+        // Admission suppresses every protected output; rebuild only when one can use it.
+        if self.retained_projection_pending
+            && retained_projection_retry_ready(
+                self.outputs
+                    .logical_viewports()
+                    .map(|(output, _)| native_scanout.output_retirement_protected(output)),
+            )
+        {
             self.queue_retained_projection(scene, native_scanout)?;
         }
         self.service_ordinary_repaints(scene, native_scanout)?;

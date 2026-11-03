@@ -1,8 +1,9 @@
-use super::super::service::native_service_phase;
+use super::super::service::{native_service_phase, retained_projection_retry_ready};
 use super::*;
 
 #[test]
 fn protected_mirror_sibling_is_polled_before_waiting_present() {
+    assert!(!retained_projection_retry_ready([true].into_iter()));
     let output = OutputId::from_raw(1);
     let mut request = OutputFrameServiceRequest {
         outputs: [OutputFrameServiceObservation {
@@ -31,11 +32,21 @@ fn protected_mirror_sibling_is_polled_before_waiting_present() {
     assert_eq!(reducer.next_effect(&request).unwrap(), None);
     request.outputs[0].native_phase =
         native_service_phase((false, false), (false, false), Some((false, false)), false);
+    assert!(retained_projection_retry_ready([false].into_iter()));
     let mut reducer = OutputFrameServiceReducer::begin(&request).unwrap();
     assert_eq!(
         reducer.next_effect(&request).unwrap(),
         Some(OutputFrameServiceEffect::SubmitQueuedPresentation { output })
     );
+}
+
+#[test]
+fn retained_retry_preserves_empty_and_mixed_output_service() {
+    assert!(retained_projection_retry_ready(std::iter::empty()));
+    assert!(!retained_projection_retry_ready([true, true].into_iter()));
+    assert!(retained_projection_retry_ready([true, false].into_iter()));
+    assert!(retained_projection_retry_ready([false, true].into_iter()));
+    assert!(retained_projection_retry_ready([false, false].into_iter()));
 }
 
 #[test]
