@@ -72,16 +72,56 @@ tests cover binding, exhaustion, spent refusal identities, callback failures,
 oldest-first expiry, close/drain/reopen, duplicate terminal refusal, clock
 regression, overflow, and the absence of a temporal rate gate.
 
-**Next gate is the candidate-store adapter, not native timing.** The ledger
-tests do not prove Prepared filtering, actual journal reservations, pending
-supersession/W2 cancellation, candidate timeout, or revocation/partner-exit
-handling. Prove those against `ContentCandidateStore`, including its existing
-small control-budget tests and synchronized candidate high-water marks, before
-wire negotiation or producer changes. Allocate the exact wire grammar in the
-protocol ledger before codec work; r13/bit18 remains a proposed assignment
-until that decision. C/Rust parity and the old-protocol refusal matrix remain
-required before production adoption. No general rollout or native run is
-authorized by a passing ledger test.
+The next implementation connects the ledger to `ContentCandidateStore`, under
+the same default-off feature. Open/close notices and ordinary outcomes share
+one FIFO; either typed reader stops at the other kind of record. The close
+obligation counts against the real control-record budget from open onward.
+Candidate refusal reporting uses the queue-length change, so a stream notice
+at the head cannot hide an outcome queued behind it.
+
+Stream terminals require `presented_at` / `renderer_failed_at` with the
+owner's current commit time. Untimed terminal calls refuse a stream-owned
+candidate without removing it. Prepared never replenishes credit; store clock
+regression closes the ledger, and accepted work can still settle without new
+credit. Revocation discards stream ownership and undelivered notices, retaining
+the existing untimed backend-drop cleanup for the dead connection.
+
+The store tests exercise budgets 3/4/5/6, failed and successful supersession,
+W2 intent cancellation and last-renderer-lease release, tuple invalidation,
+candidate timeout, FIFO ordering, replay refusal, clock faults and overflow.
+These are local control-record and lifecycle proofs, **not a journal delivery
+or wire interoperability proof**. Until codecs exist, no transport caller can
+open a stream; feature-on legacy traffic creates no stream FIFO elements.
+The eventual wire drain must service both record kinds in order during the
+same pass, including a Presented outcome whose retirement intent waits behind
+a stream notice.
+
+One `max_open_candidates_total` ceiling covers streams and legacy
+permits/assemblies: a stream holds one slot until its close and outcomes drain,
+and its own assembly uses that slot. A Begin while that output is assembling,
+or after stream closure/expiry, is Stale before spending candidate identity.
+A valid Open-stream Budget refusal still spends identity without spending
+credit. Closing again after a Timeout notice is Stale. A clock-poisoned stream
+store stays failed until revocation; accepted terminals may drain without
+credit, but no future admission can revive the poisoned authority.
+
+**Wire blocker discovered by the adapter review:** an unreported candidate
+error currently propagates to Session recovery, stopping the shell. There is
+no synthetic candidate refusal and no candidate equivalent of the resource
+store's `additional_response_credit`. Before exposing any stream opener, add
+a Begin-aware reservation for a nonfatal refusal **before consuming input**,
+publish the appropriate refusal, and discard the rejected candidate's trailing
+parts. Exhausted credit and a Begin racing close/expiry must not kill the shell.
+A blanket extra slot for every part would deadlock chunks under a fully
+reserved budget; use a Begin-aware peek/admission path. Test this at capacity,
+with no-credit Begin, trailing chunks, and close/expiry races. Store tests do
+not discharge this gate.
+
+**Next gate is the wire contract and codec integration, not native timing.**
+Allocate the exact grammar in the protocol ledger before codec work; r13/bit18
+remains proposed until that decision. C/Rust parity and the old-protocol refusal
+matrix remain required before production adoption. No general rollout or
+native run is authorized by these store tests.
 
 ## Question and earlier design
 

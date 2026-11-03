@@ -127,6 +127,7 @@ impl ShellComponentTransport {
             let (resources, candidates) = epochs
                 .active_parts_mut(self.store_grant)
                 .ok_or(ShellTransportError::MissingCapability)?;
+            let events_before = candidates.pending_event_count();
             let result = match part {
                 CatalogCandidatePart::Begin(value) => {
                     candidates.begin_persistent_catalog(transaction, value, catalog, now)
@@ -143,7 +144,7 @@ impl ShellComponentTransport {
                     now,
                 ),
             };
-            let reported = candidates.pending_event().is_some();
+            let reported = candidates.pending_event_count() > events_before;
             if result.is_err() && reported {
                 self.discard_candidate_rest(super::files::CandidateFamily::Catalog);
             }

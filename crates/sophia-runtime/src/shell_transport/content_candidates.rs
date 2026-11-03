@@ -184,6 +184,7 @@ impl ShellComponentTransport {
                 let (resources, candidates) = epochs
                     .active_pair_mut(self.store_grant)
                     .ok_or(ShellTransportError::MissingCapability)?;
+                let events_before = candidates.pending_event_count();
                 let outcome = match record {
                     ShellContentRecord::CandidateBegin(value) => {
                         candidates.begin(transaction, value, now_msec)
@@ -211,7 +212,7 @@ impl ShellComponentTransport {
                     }
                     _ => return Err(ShellTransportError::WrongContentRecord),
                 };
-                (outcome, candidates.pending_event().is_some())
+                (outcome, candidates.pending_event_count() > events_before)
             };
             if std::env::var_os("SOPHIA_SHELL_CONTENT_TRACE").is_some()
                 && let Err(error) = &outcome

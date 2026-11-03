@@ -19,6 +19,8 @@ impl ContentCandidateStore {
         allocations: &[ContentAllocationSnapshot],
     ) -> Result<(), ContentCandidateError> {
         self.check_grant(request.grant)?;
+        #[cfg(feature = "experimental-shell-standing-credit")]
+        self.require_demand_mode(request.output)?;
         if !transaction.is_valid()
             || request.output.id == 0
             || request.output.generation == 0
@@ -100,6 +102,8 @@ impl ContentCandidateStore {
         cancel: ContentFrameDemandCancel,
     ) -> Result<(), ContentCandidateError> {
         self.check_grant(cancel.grant)?;
+        #[cfg(feature = "experimental-shell-standing-credit")]
+        self.require_demand_mode(cancel.output)?;
         if !transaction.is_valid() {
             return Err(ContentCandidateError::Stale);
         }

@@ -122,6 +122,13 @@ asks whether fewer exchanges reduce combined CPU while preserving outcomes
 and pacing. Logical exchange counts prove the path, not an assumed wake or
 CPU saving. Hold W2 mode constant in W3's baseline and candidate.
 
+The default-off store adapter now connects pacing credit to candidate admission,
+control-record accounting, supersession and W2 retirement. The next concrete
+wire gate is a reserved, nonfatal Begin refusal: today an unreported candidate
+error stops the shell. No stream opener may be exposed until exhausted-credit
+and close-race refusals preserve the connection and discard trailing parts.
+Keep this gate with codec integration; do not start another attribution lane.
+
 ### Experiment budget and stop rules
 
 Reuse matched producers, uninstrumented CPU accounting, existing pixel/custody
