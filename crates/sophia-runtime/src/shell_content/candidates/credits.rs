@@ -2,7 +2,9 @@
 use super::*;
 use crate::frame_credits::{FrameCredits, FrameStreamClose, FrameStreamKey, FrameStreamPhase};
 
+mod copy;
 mod events;
+pub(crate) use copy::{FrameCopyBinding, FrameCopyState};
 mod intake;
 pub(super) use events::CandidateEvents;
 pub use intake::ContentFrameBeginAdmission;
@@ -211,6 +213,17 @@ impl ContentCandidateStore {
         invalid: Option<ContentCandidateError>,
         now: u64,
     ) -> Result<(), ContentCandidateError> {
+        self.begin_frame_stream_with(transaction, begin, invalid, now, || Ok(None))
+    }
+
+    pub(super) fn begin_frame_stream_with(
+        &mut self,
+        transaction: TransactionId,
+        begin: ContentCandidateBegin,
+        invalid: Option<ContentCandidateError>,
+        now: u64,
+        reserve_copy: impl FnOnce() -> Result<Option<u64>, ContentCandidateError>,
+    ) -> Result<(), ContentCandidateError> {
         let key = self.streams.entries[&begin.output]
             .ledger
             .key()
@@ -248,6 +261,7 @@ impl ContentCandidateStore {
                 None
             }
         });
+        let mut copy_job = None;
         let result = self
             .streams
             .entries
@@ -255,7 +269,9 @@ impl ContentCandidateStore {
             .expect("stream selected")
             .ledger
             .admit(key, begin.candidate_generation, now, || {
-                refusal.map_or(Ok(()), Err)
+                refusal.map_or(Ok(()), Err)?;
+                copy_job = reserve_copy()?;
+                Ok(())
             });
         self.observe_stream_generation();
         result?;
@@ -280,6 +296,7 @@ impl ContentCandidateStore {
             Assembly {
                 native_launcher: None,
                 persistent_catalog: None,
+                copy: copy_job.map(|job| FrameCopyState { job, stopped: None }),
                 transaction,
                 begin,
                 deadline: deadline.expect("admission checked deadline"),

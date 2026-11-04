@@ -27,6 +27,27 @@ impl ContentCandidateStore {
         response_room: usize,
         consume: impl FnOnce(),
     ) -> Result<ContentFrameBeginAdmission, ContentCandidateError> {
+        self.admit_frame_begin_with(
+            transaction,
+            begin,
+            now,
+            response_room,
+            None,
+            || Ok(None),
+            consume,
+        )
+    }
+
+    pub(crate) fn admit_frame_begin_with(
+        &mut self,
+        transaction: TransactionId,
+        begin: ContentCandidateBegin,
+        now: u64,
+        response_room: usize,
+        input_error: Option<ContentCandidateError>,
+        reserve_copy: impl FnOnce() -> Result<Option<u64>, ContentCandidateError>,
+        consume: impl FnOnce(),
+    ) -> Result<ContentFrameBeginAdmission, ContentCandidateError> {
         self.check_grant(begin.grant)?;
         if self.profile != ContentStoreProfile::Legacy || !transaction.is_valid() {
             return Err(ContentCandidateError::Stale);
@@ -47,13 +68,16 @@ impl ContentCandidateStore {
         let output = begin.output;
         let stream_id = begin.pacing_permit;
         let generation = begin.candidate_generation;
-        consume();
-        let result = if known_stream {
-            self.begin_inner(transaction, begin, None, None, invalid, now)
+        let result = if let Some(error) = input_error {
+            Err(error)
+        } else if known_stream {
+            self.begin_frame_stream_with(transaction, begin, invalid, now, reserve_copy)
         } else {
             // Never reinterpret a stale FrameCommit as a legacy pacing permit.
             Err(ContentCandidateError::Stale)
         };
+        // All accepted work is reserved before removing the peeked input.
+        consume();
         match result {
             Ok(()) => Ok(ContentFrameBeginAdmission::Accepted),
             Err(error) => {

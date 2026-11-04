@@ -6,6 +6,9 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
+#[cfg(feature = "experimental-native-frame-transaction")]
+mod frame;
+
 /// Non-cloneable Session reservation. The ring's shared source owner retains it
 /// until the descriptor and every possible worker read have gone away. An epoch
 /// with this charge cannot become quiescent merely because its peer disconnected.
@@ -54,46 +57,23 @@ impl ContentEpochRegistry {
         now: u64,
         deadline: std::time::Instant,
     ) -> Result<crate::OwnedCopyImageAdmission, crate::IsbImageAdmissionError> {
-        use crate::IsbImageAdmissionError as Error;
-        ring.check_offer(request.slot)
-            .map_err(|_| Error::Resource(ContentStoreError::Malformed))?;
-        let grant = ring.grant();
         let epoch = self
             .active
             .iter_mut()
-            .find(|e| e.resources.grant() == grant)
-            .ok_or(Error::Resource(ContentStoreError::Stale))?;
-        if !ring.is_charged_to(&epoch.source_bytes) {
-            return Err(Error::Resource(ContentStoreError::Stale));
-        }
-        let description = epoch
-            .allocations
-            .owned_copy_description(&request)
-            .map_err(Error::Allocation)?;
-        let bytes = usize::try_from(description.total_bytes)
-            .map_err(|_| Error::Resource(ContentStoreError::Malformed))?;
-        if bytes > ring.geometry().pixel_bytes() || request.slot.offer == 0 {
-            return Err(Error::Resource(ContentStoreError::Malformed));
-        }
-        let job = worker.reserve(bytes, deadline).map_err(Error::Worker)?;
-        if let Err(error) = epoch.resources.begin_isb(
-            sophia_protocol::TransactionId::from_raw(request.slot.offer),
-            description.clone(),
+            .find(|e| e.resources.grant() == ring.grant())
+            .ok_or(crate::IsbImageAdmissionError::Resource(
+                ContentStoreError::Stale,
+            ))?;
+        reserve_copy(
+            &epoch.allocations,
+            &mut epoch.resources,
+            &epoch.source_bytes,
+            worker,
+            ring,
+            request,
             now,
-        ) {
-            worker.release_reserved(job);
-            return Err(Error::Resource(error));
-        }
-        Ok(crate::OwnedCopyImageAdmission {
-            metadata: crate::OwnedCopyImageMetadata {
-                request,
-                binding: ring.binding(),
-                description,
-            },
-            worker_job: job,
-            grant,
             deadline,
-        })
+        )
     }
 
     /// Reserve from the same aggregate source/backing envelopes as resource and
@@ -135,4 +115,52 @@ impl ContentEpochRegistry {
             used,
         })
     }
+}
+
+fn reserve_copy(
+    allocations: &ContentAllocationStore,
+    resources: &mut ContentResourceStore,
+    source_bytes: &Arc<AtomicU64>,
+    worker: &mut crate::IsbValidationWorker,
+    ring: &crate::OwnedRing,
+    request: crate::OwnedCopyImageRequest,
+    now: u64,
+    deadline: std::time::Instant,
+) -> Result<crate::OwnedCopyImageAdmission, crate::IsbImageAdmissionError> {
+    use crate::IsbImageAdmissionError as Error;
+    ring.check_offer(request.slot)
+        .map_err(|_| Error::Resource(ContentStoreError::Malformed))?;
+    let grant = ring.grant();
+    if !ring.is_charged_to(source_bytes) {
+        return Err(Error::Resource(ContentStoreError::Stale));
+    }
+    let description = allocations
+        .owned_copy_description(&request)
+        .map_err(Error::Allocation)?;
+    let bytes = usize::try_from(description.total_bytes)
+        .map_err(|_| Error::Resource(ContentStoreError::Malformed))?;
+    if bytes > ring.geometry().pixel_bytes() || request.slot.offer == 0 {
+        return Err(Error::Resource(ContentStoreError::Malformed));
+    }
+    let job = worker.reserve(bytes, deadline).map_err(Error::Worker)?;
+    if let Err(error) = resources.begin_isb(
+        sophia_protocol::TransactionId::from_raw(request.slot.offer),
+        description.clone(),
+        now,
+    ) {
+        worker.release_reserved(job);
+        return Err(Error::Resource(error));
+    }
+    Ok(crate::OwnedCopyImageAdmission {
+        metadata: crate::OwnedCopyImageMetadata {
+            request,
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            frame: None,
+            binding: ring.binding(),
+            description,
+        },
+        worker_job: job,
+        grant,
+        deadline,
+    })
 }

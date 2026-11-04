@@ -4,6 +4,23 @@ The model-only checkpoints did not change production protocol or runtime source.
 The subsequent default-off Rust foundation is described below. The design is not
 yet eligible for enablement; see the explicit exclusions and wire gate.
 
+## Copy-worker join follow-up
+
+The default-off SFT store now joins its admission reservation to the existing
+owned-ring worker/resource owners. Expiry records a stop but retains the
+candidate until exact resource reconciliation and copy handoff; closing a stream
+prevents credit replenishment. Seven new tests exercise real owned-ring jobs,
+including refusal rollback, wrong job/grant identity, close/cancellation and
+replacement epochs. All-feature runtime tests pass: 862 tests, 42 ignored,
+zero failures.
+
+Removing the hold in `reject_assembly` makes the expiry test observe a premature
+terminal before owner handoff. The mutation script restores the source exactly.
+This is implementation regression evidence, not a new TLC run or full runtime
+trace conformance. Evidence lives under `~/.local/state/sophia-frame-copy-join-01`.
+The wire opener, complete-scene/predecessor ownership across copy, SDKs and real
+producer path remain integration gates; no native launch or speedup is claimed.
+
 ## Reused Rust credit foundation
 
 ### Subsequent store adapter

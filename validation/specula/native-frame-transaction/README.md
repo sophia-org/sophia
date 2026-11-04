@@ -111,6 +111,14 @@ connection-wide byte/record capacity, wire decoding/trailing discard and physica
 copy admission are still separate integration gates. There is no wire opener or
 runtime trace-conformance claim.
 
+The copy-worker join now reserves the existing resource and worker owners before
+consuming a copy-bearing frame header. Candidate expiry retains the frame credit
+until the exact job settlement is handed back. Tests use the real owned ring and
+validation worker, including resource/worker refusal, cancellation, close and
+replacement epochs. Complete scene/predecessor ownership across copy and the
+actual wire admission still need integration; this is not a full runtime trace
+validation of the model.
+
 ## Model checks
 
 See [modeling brief](modeling-brief.md) for requirements, assumptions and exclusions,

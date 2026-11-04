@@ -4,6 +4,10 @@ use std::fs::File;
 use std::os::unix::fs::FileExt;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "experimental-native-frame-transaction")]
+#[path = "shell_frame_copy_jobs.rs"]
+mod frame_tests;
+
 fn ring(registry: &mut ContentEpochRegistry) -> (File, OwnedRing) {
     let geometry = OwnedRingGeometry::new(1, 16000).unwrap();
     let file = File::from(

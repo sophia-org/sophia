@@ -19,6 +19,8 @@ mod presentation;
 #[cfg(feature = "experimental-native-frame-transaction")]
 use credits::CandidateEvents;
 #[cfg(feature = "experimental-native-frame-transaction")]
+pub(crate) use credits::FrameCopyBinding;
+#[cfg(feature = "experimental-native-frame-transaction")]
 pub use credits::{
     ContentFrameBeginAdmission, ContentFrameCreditReturn, ContentFrameStreamEvent,
     ContentFrameStreamRecord,
@@ -48,6 +50,7 @@ pub enum ContentCandidateError {
     AllocationLost,
     RendererFailed,
     ClockRegression,
+    Cancelled,
 }
 
 impl ContentCandidateError {
@@ -61,6 +64,7 @@ impl ContentCandidateError {
             Self::AllocationLost => ContentReason::AllocationLost,
             Self::RendererFailed => ContentReason::RendererFailed,
             Self::ClockRegression => ContentReason::Malformed,
+            Self::Cancelled => ContentReason::Cancelled,
         }
     }
 }
@@ -107,6 +111,8 @@ struct Permit {
 }
 
 struct Assembly {
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    copy: Option<credits::FrameCopyState>,
     native_launcher: Option<NativeLauncherCandidateBinding>,
     persistent_catalog: Option<PersistentCatalogCandidateBinding>,
     transaction: TransactionId,
@@ -512,6 +518,10 @@ impl ContentCandidateStore {
             })
             .ok_or(ContentCandidateError::Stale)?;
         let assembly = self.assemblies.get_mut(&output).expect("selected assembly");
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if let Some(error) = assembly.copy.as_ref().and_then(|copy| copy.stopped) {
+            return Err(error);
+        }
         let next_surfaces = assembly.surfaces.len() + chunk.surfaces.len();
         let next_placements = assembly.placements.len() + chunk.placements.len();
         let next_targets = assembly.targets.len() + chunk.targets.len();
@@ -584,6 +594,10 @@ impl ContentCandidateStore {
                 (assembly.begin.candidate_generation == end.candidate_generation).then_some(*output)
             })
             .ok_or(ContentCandidateError::Stale)?;
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if self.assemblies[&output].copy.is_some() {
+            return Err(ContentCandidateError::Budget);
+        }
         let result = self.validate_end(transaction, &end, context, authority, resources, output);
         match result {
             Ok(candidate) => {
@@ -677,6 +691,15 @@ impl ContentCandidateStore {
     }
 
     fn reject_assembly(&mut self, output: ContentOutputId, error: ContentCandidateError) {
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if let Some(copy) = self
+            .assemblies
+            .get_mut(&output)
+            .and_then(|assembly| assembly.copy.as_mut())
+        {
+            copy.stopped.get_or_insert(error);
+            return;
+        }
         if let Some(assembly) = self.assemblies.remove(&output) {
             self.response_credits -= 2;
             self.outcome(

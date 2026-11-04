@@ -29,6 +29,8 @@ impl OwnedCopyImageRequest {
 
 #[derive(Debug)]
 pub struct OwnedCopyImageMetadata {
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub(crate) frame: Option<crate::shell_content::candidates::FrameCopyBinding>,
     pub(crate) request: OwnedCopyImageRequest,
     pub(crate) binding: OwnedRingBinding,
     pub(crate) description: sophia_protocol::ContentResourceBegin,
@@ -56,6 +58,104 @@ impl CpuImageMetadata for OwnedCopyImageMetadata {
 pub type OwnedCopyImageJobs = CpuImageJobs<OwnedCopyImageMetadata>;
 pub type OwnedCopyImageAdmission = CpuImageAdmission<OwnedCopyImageMetadata>;
 pub type OwnedCopyImageSettlement = CpuImageSettlement<OwnedCopyImageMetadata>;
+
+/// Copy-bearing frame header; scene rows remain in the existing candidate store.
+#[cfg(feature = "experimental-native-frame-transaction")]
+#[derive(Clone, Debug)]
+pub struct OwnedFrameCopyRequest {
+    pub transaction: sophia_protocol::TransactionId,
+    pub begin: sophia_protocol::ContentCandidateBegin,
+    pub image: OwnedCopyImageRequest,
+}
+
+#[cfg(feature = "experimental-native-frame-transaction")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OwnedFrameAdmission {
+    Deferred,
+    Accepted { job: u64 },
+    Refused(crate::ContentCandidateError),
+}
+
+#[cfg(feature = "experimental-native-frame-transaction")]
+impl OwnedCopyImageJobs {
+    /// Reserve the existing worker, resource and frame owners before consuming input.
+    /// The caller retains source-release journal capacity and freshly checks custody.
+    /// `response_room` includes all connection-wide record and byte limits.
+    pub fn reserve_frame_copy(
+        &mut self,
+        registry: &mut ContentEpochRegistry,
+        worker: &mut IsbValidationWorker,
+        ring: &OwnedRing,
+        frame: OwnedFrameCopyRequest,
+        response_room: usize,
+        now: u64,
+        deadline: Instant,
+        consume: impl FnOnce(),
+    ) -> Result<OwnedFrameAdmission, crate::ContentCandidateError> {
+        let slot = self.pending.iter_mut().find(|slot| slot.is_none());
+        let (decision, admission) = registry.reserve_owned_frame_copy(
+            worker,
+            ring,
+            frame,
+            response_room,
+            slot.is_some(),
+            now,
+            deadline,
+            consume,
+        )?;
+        Ok(match decision {
+            crate::ContentFrameBeginAdmission::Deferred => OwnedFrameAdmission::Deferred,
+            crate::ContentFrameBeginAdmission::Refused(error) => {
+                OwnedFrameAdmission::Refused(error)
+            }
+            crate::ContentFrameBeginAdmission::Accepted => {
+                let admission = admission.expect("accepted frame reserved a copy");
+                let job = admission.worker_job;
+                *slot.expect("accepted frame reserved a job slot") = Some(Pending {
+                    admission,
+                    result: None,
+                    failure: None,
+                    submitted: false,
+                    stopped: None,
+                });
+                OwnedFrameAdmission::Accepted { job }
+            }
+        })
+    }
+}
+
+#[cfg(feature = "experimental-native-frame-transaction")]
+impl OwnedCopyImageSettlement {
+    /// Release the exact frame's copy gate after resource reconciliation.
+    /// Errors preserve this settlement for retry; a replacement epoch is never used.
+    pub fn finish_frame_copy(
+        &mut self,
+        registry: &mut ContentEpochRegistry,
+        now: u64,
+    ) -> Result<(), crate::ContentCandidateError> {
+        let Some(binding) = self.admission.metadata.frame.as_ref() else {
+            return Ok(());
+        };
+        if binding.key.grant != self.admission.grant {
+            return Err(crate::ContentCandidateError::Stale);
+        }
+        if let Some(candidates) = registry.candidates_mut(self.admission.grant) {
+            let failure = self
+                .stopped
+                .map(|reason| match reason {
+                    ContentReason::Timeout => crate::ContentCandidateError::Timeout,
+                    ContentReason::Cancelled => crate::ContentCandidateError::Cancelled,
+                    ContentReason::AllocationLost => crate::ContentCandidateError::AllocationLost,
+                    _ => crate::ContentCandidateError::Stale,
+                })
+                .or_else(|| self.outcome.as_ref().err().copied().map(Into::into));
+            candidates.finish_frame_copy(binding, self.admission.worker_job, failure, now)?;
+        }
+        // A missing retired epoch owes no peer record and cannot be retargeted.
+        self.admission.metadata.frame = None;
+        Ok(())
+    }
+}
 
 impl OwnedCopyImageJobs {
     /// Reserve destination and worker credits against the ring's actual grant.

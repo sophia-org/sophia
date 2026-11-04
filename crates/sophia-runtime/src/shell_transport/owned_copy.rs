@@ -27,6 +27,13 @@ struct ActiveRing {
 
 /// A successful reservation owns one table slot until its release is journaled
 /// or its old journal is gone. Preserve full ring identity across reconnects.
+#[cfg_attr(
+    feature = "experimental-native-frame-transaction",
+    expect(
+        clippy::large_enum_variant,
+        reason = "four inline settlement slots avoid a per-frame allocation"
+    )
+)]
 enum Work {
     Working {
         identity: Identity,
@@ -141,7 +148,7 @@ impl OwnedCopyOwner {
         self.jobs.observe_store_stops(epochs, worker, now)?;
         self.jobs.expire(epochs, worker, instant, now)?;
         self.reconcile(epochs, now);
-        self.publish_releases(transport, current)?;
+        self.publish_releases(transport, current, epochs, now)?;
         self.propose_offer(transport, epochs, worker, now, instant, other_pending)
     }
 
@@ -175,6 +182,8 @@ impl OwnedCopyOwner {
         &mut self,
         transport: &mut ShellComponentTransport,
         current: Option<Identity>,
+        epochs: &mut ContentEpochRegistry,
+        now: u64,
     ) -> Result<(), ShellTransportError> {
         for entry in &mut self.work {
             let Some(Work::Releasing {
@@ -185,6 +194,10 @@ impl OwnedCopyOwner {
             else {
                 continue;
             };
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            settlement.finish_frame_copy(epochs, now)?;
+            #[cfg(not(feature = "experimental-native-frame-transaction"))]
+            let _ = (&epochs, now);
             if Some(*identity) != current {
                 // Reconciliation consumed the exact retired resource result.
                 // A replacement journal never inherits its release event.

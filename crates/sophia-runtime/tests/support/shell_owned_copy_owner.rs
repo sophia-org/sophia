@@ -297,7 +297,7 @@ fn old_settlement_cannot_release_a_successor_rings_matching_slot() {
         ring: next_ring,
     });
     owner
-        .publish_releases(&mut transport(), Some(successor))
+        .publish_releases(&mut transport(), Some(successor), &mut registry, 1)
         .unwrap();
     assert_eq!(owner.pending(), 0);
     assert_eq!(

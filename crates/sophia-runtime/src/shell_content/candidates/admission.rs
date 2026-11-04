@@ -71,6 +71,8 @@ impl ContentCandidateStore {
         self.assemblies.insert(
             begin.output,
             Assembly {
+                #[cfg(feature = "experimental-native-frame-transaction")]
+                copy: None,
                 native_launcher,
                 persistent_catalog,
                 transaction,

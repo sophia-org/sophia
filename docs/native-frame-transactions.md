@@ -232,10 +232,38 @@ Chunk/End continuations use their existing reservations even at a full budget.
 This checkpoint does **not** establish transport admission. Its caller must
 provide connection-wide record and encoded-byte capacity, consume exactly the
 peeked input and discard its trailing parts on refusal. Actual FrameCommit
-capture/worker reservations, complete-record decoding, ring/slot binding, codec,
-SDKs and producer integration remain unwired. No stream opener is exposed by
+wire admission, complete-record decoding, codec, SDKs and producer integration
+remain unwired. No stream opener is exposed by
 Session or the wire. Store tests do not substitute for composed-path tests or
 runtime trace validation.
+
+### Copy-worker join checkpoint
+
+`OwnedCopyImageJobs::reserve_frame_copy` joins frame credit and response reservations
+to the existing owned-ring resource/worker reservation before consuming the
+peeked header. The caller must also hold the source-release journal reservation
+and freshly check custody. A copy-bearing admission needs four additional
+control records (Prepared, terminal, resource status and eventual resource
+release), besides existing lifetime and journal obligations. Refusal leaves
+frame credit available and rolls back an unused worker slot. Stale stream/source
+tuples fail before spending the frame identity; an invalid resource reference
+under a valid frame identity is Malformed and spends that identity.
+
+The candidate retains an exact job binding during copying. Expiry marks it
+stopped but cannot queue its terminal or return credit; End cannot admit the
+scene while that binding remains. The real job settlement releases the binding
+only after resource reconciliation. Cancellation keeps its original cause;
+closure suppresses replenishment. Wrong job/grant completions refuse without
+discarding the settlement, and disconnected completions never target a new
+grant. Existing ring/slot identity checks and private-byte validation are reused.
+This adds fixed metadata to the existing four job slots, not a second queue,
+thread or per-frame allocation.
+
+This is still below the wire boundary. Complete scene intake, predecessor-intent
+reservation across copy, cleanup of a new resource when subsequent scene
+validation refuses, the real codec/opener and C/Rust/Lom integration remain
+required before enablement. The one-credit native profile must be enforced by
+that opener; the reused general ledger still supports two for its existing tests.
 
 The [modeling brief](../validation/specula/native-frame-transaction/modeling-brief.md)
 defines the finite scope; [results](../validation/specula/native-frame-transaction/results.md)
