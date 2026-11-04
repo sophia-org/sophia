@@ -61,54 +61,13 @@ impl OwnedCopyOwner {
                     waiting.deadline,
                 ) {
                     Ok(job) => {
-                        // Reservation checks fixed geometry, slot ownership and
-                        // allocation against authority; only then take the read
-                        // ticket. No source bytes are read on this owner thread.
-                        let source = offer
-                            .request
-                            .pixel_bytes()
-                            .ok_or_else(|| {
-                                std::io::Error::new(
-                                    std::io::ErrorKind::InvalidInput,
-                                    "slot payload extent",
-                                )
-                            })
-                            .and_then(|bytes| active.ring.offer(offer.request.slot, bytes));
-                        *self
-                            .work
-                            .iter_mut()
-                            .find(|entry| entry.is_none())
-                            .expect("global owner credit") = Some(Work::Working {
-                            identity: offer.identity,
-                            job,
-                            withdrawn: false,
-                            handed_off: source.is_ok(),
-                        });
                         transport
                             .files_mut()
                             .expect("offer export remains current")
                             .export_mut()
                             .owned_take_offer();
                         self.waiting = None;
-                        let submitted = match source {
-                            Ok(source) => match self.jobs.submit(worker, job, source) {
-                                Ok(()) => true,
-                                Err((_, source)) => {
-                                    drop(source);
-                                    false
-                                }
-                            },
-                            Err(_) => false,
-                        };
-                        if !submitted {
-                            self.jobs.withdraw(
-                                epochs,
-                                worker,
-                                job,
-                                IsbImageWithdrawal::Cancelled,
-                                now,
-                            )?;
-                        }
+                        self.submit_reserved_copy(offer, job, epochs, worker, now)?;
                         return Ok(());
                     }
                     Err(IsbImageAdmissionError::Worker(IsbSubmitFailure::Capacity))
@@ -141,6 +100,50 @@ impl OwnedCopyOwner {
                 Err(sophia_9p::Errno::EAGAIN) => {}
                 Err(error) => return Err(export_error("offer refusal", error)),
             }
+        }
+        Ok(())
+    }
+
+    pub(super) fn submit_reserved_copy(
+        &mut self,
+        offer: Offer,
+        job: u64,
+        epochs: &mut ContentEpochRegistry,
+        worker: &mut IsbValidationWorker,
+        now: u64,
+    ) -> Result<(), ShellTransportError> {
+        // Admission owns response, worker and source slots before this read ticket.
+        let active = self.active.as_mut().expect("matching admitted ring");
+        let source = offer
+            .request
+            .pixel_bytes()
+            .ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "slot payload extent")
+            })
+            .and_then(|bytes| active.ring.offer(offer.request.slot, bytes));
+        *self
+            .work
+            .iter_mut()
+            .find(|entry| entry.is_none())
+            .expect("copy admission reserved a work slot") = Some(Work::Working {
+            identity: offer.identity,
+            job,
+            withdrawn: false,
+            handed_off: source.is_ok(),
+        });
+        let submitted = match source {
+            Ok(source) => match self.jobs.submit(worker, job, source) {
+                Ok(()) => true,
+                Err((_, source)) => {
+                    drop(source);
+                    false
+                }
+            },
+            Err(_) => false,
+        };
+        if !submitted {
+            self.jobs
+                .withdraw(epochs, worker, job, IsbImageWithdrawal::Cancelled, now)?;
         }
         Ok(())
     }

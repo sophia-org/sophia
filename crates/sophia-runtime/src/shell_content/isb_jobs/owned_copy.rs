@@ -96,6 +96,29 @@ impl OwnedCopyImageJobs {
         now: u64,
         deadline: Instant,
     ) -> Result<crate::ContentFrameAdmission, crate::ContentCandidateError> {
+        self.admit_frame_commit_with_source(
+            registry,
+            worker,
+            ring,
+            input,
+            response_room,
+            None,
+            now,
+            deadline,
+        )
+    }
+
+    pub(crate) fn admit_frame_commit_with_source(
+        &mut self,
+        registry: &mut ContentEpochRegistry,
+        worker: &mut IsbValidationWorker,
+        ring: Option<&OwnedRing>,
+        input: &mut Option<crate::ContentFrameCommit>,
+        response_room: usize,
+        source_error: Option<crate::ContentCandidateError>,
+        now: u64,
+        deadline: Instant,
+    ) -> Result<crate::ContentFrameAdmission, crate::ContentCandidateError> {
         let slot = self.pending.iter_mut().find(|slot| slot.is_none());
         let (decision, admission) = registry.reserve_frame_commit(
             worker,
@@ -103,6 +126,7 @@ impl OwnedCopyImageJobs {
             input,
             response_room,
             slot.is_some(),
+            source_error,
             now,
             deadline,
         )?;

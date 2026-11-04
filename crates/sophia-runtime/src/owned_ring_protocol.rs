@@ -91,6 +91,44 @@ pub struct Offer {
     pub identity: Identity,
     pub request: OwnedCopyImageRequest,
 }
+#[cfg(feature = "experimental-native-frame-transaction")]
+impl From<sophia_protocol::shell_files::RingOffer> for Offer {
+    fn from(value: sophia_protocol::shell_files::RingOffer) -> Self {
+        Self {
+            identity: Identity {
+                grant: ContentGrant {
+                    connection_epoch: value.identity.connection_epoch,
+                    content_grant_epoch: value.identity.content_grant_epoch,
+                },
+                channel: value.identity.channel_generation,
+                ring: value.identity.ring,
+                generation: value.identity.generation,
+            },
+            request: OwnedCopyImageRequest {
+                slot: OwnedSlotIdentity {
+                    offer: value.offer_id,
+                    slot: value.slot as usize,
+                    generation: value.slot_generation,
+                },
+                resource: ContentResourceId {
+                    id: value.resource,
+                    generation: value.resource_generation,
+                },
+                allocation: ContentAllocationId {
+                    id: value.allocation,
+                    generation: value.allocation_generation,
+                },
+                output: ContentOutputId {
+                    id: value.output,
+                    generation: value.output_generation,
+                },
+                topology_generation: value.topology_generation,
+                width: value.width,
+                height: value.height,
+            },
+        }
+    }
+}
 impl Offer {
     pub fn encode(self) -> Vec<u8> {
         let mut w = self.identity.words(2).to_vec();

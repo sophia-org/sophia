@@ -279,3 +279,9 @@ fn legacy_file_negotiation_cannot_submit_frame_requests() {
         assert!(files.accepted.is_none());
     }
 }
+
+#[path = "shell_frame_source_reservation.rs"]
+mod source_reservation;
+
+#[path = "shell_frame_copy_owner.rs"]
+mod copy_owner;

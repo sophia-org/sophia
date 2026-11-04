@@ -380,3 +380,108 @@ fn controls_obey_the_existing_per_service_tick_limit() {
         },
     );
 }
+
+#[test]
+fn retained_complete_scene_uses_no_ring_or_worker_and_keeps_the_stream_credit() {
+    let mut f = fixture::Fixture::new(64);
+    let mut t = Transport::take(&mut f);
+    let mut peer = Peer::attach_frame(&mut t.transport.state);
+    request(
+        &mut peer,
+        &mut t,
+        ShellFrameRecord::Open {
+            transaction: fixture::tx(100),
+            key: key(1),
+        },
+    );
+    assert_eq!(service(&mut t, &f, true, 1), Ok(1));
+    expect(&mut peer, &mut t, opened(100));
+    let allocation = &f.allocations[0];
+    let scene = sophia_protocol::ContentCandidate {
+        grant: fixture::grant(),
+        candidate_generation: 1,
+        output: fixture::output(),
+        facts_generation: 6,
+        pacing_permit: 1,
+        interaction_generation: 8,
+        surfaces: vec![sophia_protocol::ContentSurface {
+            allocation: allocation.allocation,
+            scale_generation: allocation.scale_generation,
+            role: allocation.role,
+            edge: allocation.edge,
+            margins: allocation.margins,
+            reservation_extent: allocation.allowed_reservation_extent,
+            parent_surface_index: u16::MAX,
+            anchor_parent_rect: allocation.anchor_parent_rect,
+        }],
+        placements: vec![sophia_protocol::ContentPlacement {
+            resource: fixture::resource(2),
+            surface_index: 0,
+            destination_x_px: 0,
+            destination_y_px: 0,
+        }],
+        targets: vec![],
+    };
+    request(
+        &mut peer,
+        &mut t,
+        ShellFrameRecord::Commit(ShellFrameCommit {
+            transaction: fixture::tx(101),
+            candidate: scene,
+            image: None,
+            retire: None,
+        }),
+    );
+    let mut owner = crate::shell_transport::owned_copy::OwnedCopyOwner::default();
+    let mut worker = crate::IsbValidationWorker::new(1, 8).unwrap();
+    owner
+        .service(
+            &mut t.transport.state,
+            &mut t.transport.content_epochs,
+            &mut worker,
+            2,
+            std::time::Instant::now(),
+            0,
+        )
+        .unwrap();
+    assert_eq!(owner.pending(), 0);
+    assert_eq!(worker.pending(), 0);
+    assert_eq!(
+        t.candidates().ready_frame_commit(),
+        Some((fixture::output(), 1))
+    );
+    assert!(
+        t.transport
+            .state
+            .files_mut()
+            .unwrap()
+            .export()
+            .peek_frame_request()
+            .is_none()
+    );
+    assert!(
+        t.transport.state.output.front().is_none(),
+        "admission is not terminal or Prepared"
+    );
+    let (resources, candidates) = t
+        .transport
+        .content_epochs
+        .active_pair_mut(fixture::grant())
+        .unwrap();
+    candidates
+        .finish_frame_commit(
+            fixture::output(),
+            1,
+            crate::ContentCandidateContext {
+                output: fixture::output(),
+                facts_generation: 6,
+                interaction_generation: 8,
+                allocations: &f.allocations,
+            },
+            resources,
+            3,
+        )
+        .unwrap();
+    assert_eq!(candidates.pending_candidate_count(), 1);
+    peer.quiet(&mut t.transport.state);
+}

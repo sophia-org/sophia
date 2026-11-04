@@ -463,9 +463,35 @@ limit. Real 9P tests cover receipt ACK, deferred input, retry without spending a
 stream identity, expiry/Close ordering and journal responses. Evidence:
 `~/.local/state/sophia-frame-control-wire-01`.
 
-This entry point is not yet selected by production Session negotiation. Complete
-frame/copy admission and timed native completion routing must be connected before
-an opener is enabled; owning clients and real producers remain subsequent gates.
+This entry point is not yet selected by production Session negotiation. Fresh-context
+scene finishing and timed native completion routing remain necessary before an opener
+is enabled; owning clients and real producers remain subsequent gates.
+
+### Complete-frame source handoff
+
+The existing persistent copy owner now accepts a whole decoded FrameCommit from
+file custody. Scene vectors move into the candidate store without cloning. A
+retained-only frame needs no ring or worker job. A copy-bearing frame reserves
+both ResourceStatus and SlotReleased journal records before taking its source
+read ticket, then uses the same bounded worker and release path as an ordinary
+owned-ring offer.
+
+The source reservation is provisional until frame admission succeeds. Deferral
+leaves the complete input queued; refusal returns both journal holds without
+advancing the offer or slot generation. Stream/frame identity and frame credit
+remain governed by the existing admission ledger. Exact source ownership errors
+fail closed. No embedded offer is fabricated as a separate legacy request.
+
+Device-free checks cover real file staging, a registered memfd and worker,
+retained-only admission, response/worker backpressure, stale stream identity and
+ResourceStatus before SlotReleased. The copied image remains private until the
+existing terminal-transfer boundary. Evidence:
+`~/.local/state/sophia-frame-source-reservation-01`.
+
+This is the input/copy handoff, not the Session integration gate. Fresh-context
+scene finishing, timed native completion callers, production opt-in negotiation
+and owning clients/producers remain to be connected. r13 stays unavailable from
+production negotiation; no native run or performance claim follows from these tests.
 
 ### Model and remaining integration gates
 

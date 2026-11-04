@@ -13,6 +13,8 @@ use sophia_protocol::ContentReason;
 use std::time::Instant;
 
 mod admission;
+#[cfg(feature = "experimental-native-frame-transaction")]
+mod frame;
 #[cfg(test)]
 #[path = "../../tests/support/shell_owned_copy_owner.rs"]
 mod tests;
@@ -149,7 +151,10 @@ impl OwnedCopyOwner {
         self.jobs.expire(epochs, worker, instant, now)?;
         self.reconcile(epochs, now);
         self.publish_releases(transport, current, epochs, now)?;
-        self.propose_offer(transport, epochs, worker, now, instant, other_pending)
+        self.propose_offer(transport, epochs, worker, now, instant, other_pending)?;
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        self.propose_frame_commit(transport, epochs, worker, now, instant, other_pending)?;
+        Ok(())
     }
 
     fn reconcile(&mut self, epochs: &mut ContentEpochRegistry, now: u64) {

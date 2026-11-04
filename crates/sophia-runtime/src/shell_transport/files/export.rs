@@ -28,6 +28,8 @@ mod capture_offers;
 #[cfg(feature = "experimental-draw")]
 mod draw;
 mod frame;
+#[cfg(feature = "experimental-native-frame-transaction")]
+mod frame_input;
 mod image;
 pub(super) mod image_offers;
 mod image_topology;

@@ -12,6 +12,7 @@ impl ContentEpochRegistry {
         input: &mut Option<crate::ContentFrameCommit>,
         response_room: usize,
         job_slot_available: bool,
+        source_error: Option<Error>,
         now: u64,
         deadline: std::time::Instant,
     ) -> Result<(Admission, Option<crate::OwnedCopyImageAdmission>), Error> {
@@ -61,6 +62,9 @@ impl ContentEpochRegistry {
             input_error,
             || {
                 shape?;
+                if let Some(error) = source_error {
+                    return Err(error);
+                }
                 if frame.image.is_some()
                     && ring.expect("copy source checked").geometry().slot_count() != 2
                 {

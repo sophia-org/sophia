@@ -10,6 +10,7 @@ use crate::{
 use sophia_protocol::{ContentReason, ContentResourceStatus};
 use std::os::fd::OwnedFd;
 
+mod offer;
 mod release;
 mod setup;
 
@@ -103,6 +104,14 @@ impl ShellFiles {
         worker_pending: usize,
     ) -> Result<bool, Errno> {
         let (offer, _) = self.owned.pending.ok_or(Errno::ESTALE)?;
+        self.owned_offer_available(offer, epochs, worker_pending)
+    }
+    pub(in crate::shell_transport) fn owned_offer_available(
+        &self,
+        offer: Offer,
+        epochs: &ContentEpochRegistry,
+        worker_pending: usize,
+    ) -> Result<bool, Errno> {
         if self.owned_current_identity() != Some(offer.identity) {
             return Err(Errno::ESTALE);
         }
@@ -198,55 +207,8 @@ impl ShellFiles {
                 });
             }
             Control::Offer(offer) => {
-                if self.owned_current_identity() != Some(identity) {
-                    return Err(Errno::ESTALE);
-                }
-                if self.owned.pending.is_some() {
-                    return Err(Errno::EAGAIN);
-                }
-                let request = self
-                    .owned
-                    .registration
-                    .as_ref()
-                    .ok_or(Errno::ESTALE)?
-                    .request;
-                let r = offer.request;
-                if r.slot.slot >= request.slots
-                    || r.width > image.config.limits.max_width
-                    || r.height > image.config.limits.max_height
-                    || r.pixel_bytes().is_none_or(|bytes| bytes > request.pixels)
-                {
-                    return Err(Errno::EINVAL);
-                }
-                if matches!(self.owned.last, Some(Control::Offer(old)) if r.slot.offer <= old.request.slot.offer)
-                    || r.slot.generation <= self.owned.generations[r.slot.slot]
-                {
-                    return Err(EALREADY);
-                }
-                if self.owned.live.iter().flatten().any(|c| {
-                    c.offer.request.slot.slot == r.slot.slot
-                        || c.offer.request.resource == r.resource
-                }) {
-                    return Err(Errno::EAGAIN);
-                }
-                let slot = self.owned.live[..image.config.limits.max_offers.min(4) as usize]
-                    .iter_mut()
-                    .find(|s| s.is_none())
-                    .ok_or(Errno::EAGAIN)?;
-                let status = self
-                    .journal
-                    .hold_reservation(SHELL_FILE_HEADER_BYTES + 56)
-                    .ok_or(Errno::EAGAIN)?;
-                let Some(release) = self.journal.hold_reservation(EVENT_BYTES) else {
-                    self.journal.release_reservation(status);
-                    return Err(Errno::EAGAIN);
-                };
-                *slot = Some(Credits {
-                    offer,
-                    status: Some(status),
-                    release,
-                });
-                self.owned.generations[r.slot.slot] = r.slot.generation;
+                let reservation = self.reserve_owned_offer(offer)?.ok_or(Errno::EAGAIN)?;
+                self.commit_owned_offer(reservation);
                 self.owned.pending = Some((offer, deadline));
             }
         }

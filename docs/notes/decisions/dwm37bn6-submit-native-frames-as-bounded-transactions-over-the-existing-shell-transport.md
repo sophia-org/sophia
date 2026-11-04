@@ -131,7 +131,10 @@ deadline and resource settlement once. Production negotiation still cannot expos
 r13. The [Open/Close owner entry point](../../native-frame-transactions.md#open-and-close-owner-entry-point)
 now reserves before taking real file input, refuses absent owner context without
 spending the stream identity, and leaves an earlier FrameCommit ahead of Close.
-Complete-frame/copy input service, timed native completion integration, owning clients,
+The [complete-frame source handoff](../../native-frame-transactions.md#complete-frame-source-handoff)
+now moves whole scenes into the existing copy owner, with provisional source
+response reservations and unchanged status-before-release ordering. Scene finishing
+against fresh owner context, timed native completion integration, owning clients,
 real producers, runtime traces and native qualification remain
 required; these device-free checks establish no speedup.
 
