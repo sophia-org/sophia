@@ -57,11 +57,13 @@ impl FileWire {
                 let bytes = output
                     .front()
                     .expect("pending mirrors the outbox one-for-one");
-                let header = if self.image_enabled {
+                let header = if self.image_enabled
+                    || self.revision == sophia_shell_protocol::shell_files::SHELL_FRAME_REVISION
+                {
                     sophia_shell_protocol::shell_files::decode_shell_file_record_at_revision(
                         bytes,
                         ShellFileClass::Candidate,
-                        sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION,
+                        self.revision,
                     )?
                     .header
                 } else {

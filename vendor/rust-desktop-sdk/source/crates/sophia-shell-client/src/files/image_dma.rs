@@ -129,6 +129,9 @@ impl DmaAdapter {
             };
             while let Some(routed) = wire.image_routed.pop_front() {
                 let result = match routed {
+                    Routed::FrameRefused(_) | Routed::FrameAdmitted { .. } => {
+                        return Err(ShellClientError::Protocol("SFT event on DMA adapter"));
+                    }
                     Routed::Event(event) => producer.record(wire_epoch(wire), event, now_ms),
                     Routed::Status(route) => {
                         // Only the offer the status names, with the

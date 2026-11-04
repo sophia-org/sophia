@@ -1,16 +1,28 @@
-tree f5f02337efc2e25fd4fae0169dfc48793140c2cc
-parent 6825d018c26b60a580130a904d8b29d58ed1386d
-author Mason Green <mason@greenm01.net> 1793822351 -0500
-committer Mason Green <mason@greenm01.net> 1793822351 -0500
+tree eb719d5b9b3b8f4d4763480f2ba334722a3a3bba
+parent 813af715c32c701bfe34e8e5f2cef54021297b6c
+author Mason Green <mason@greenm01.net> 1793834407 -0500
+committer Mason Green <mason@greenm01.net> 1793834407 -0500
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCauuOjxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKSJgEA6KonePpWYaLkz2G42C/Z
- cq/cCrDJXheiazewuUGi6swBAMGGWuEnxxZEMJQQ6qq2CFJLbXsW/it/tEuZdzzm
- wZsI
- =esTY
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCauu9pxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKOSgEA3LqynS1yC4PtkF1qqyo0
+ v8iy2D+uiy5iq5RYKza9nRQA/3oOEJ01YqJ/PgFyzw0psME9ooI/RVAQXgrPowOx
+ dB4E
+ =y6zR
  -----END PGP SIGNATURE-----
 
-Synchronize authoritative shell prose before SFT import
+Join SFT copied-source custody to frame admission
 
-Copy Sophia da653bd3d68c25c3357db0008d9d401143ce8732: allocated default-off SFT pointer and current host role-limit prose. No code, wire bytes or defaults changed.
+Reserve the complete frame queue, copied-source slot and stream credit as one
+local admission. Reuse the r10 source channel at explicit r13 with two slots;
+embed its offer in FrameCommit instead of sending a separate control Offer.
+Keep pixels owned across Prepared/terminal and release only on exact source
+evidence or a proved pre-admission refusal. Contradictory refusals and unknown
+custody fail closed. Existing negotiation defaults remain unchanged.
+
+Paired independent SDK checks: 968 Rust workspace tests, full C make check,
+strict clippy/rustdoc, C ASan/UBSan, four mutation failures and regressions for
+Prepared-before-refusal. Evidence: sophia-frame-client-source-join-01, seal
+4e5583b9f9a3018bca46d257f569f245cf98cf642166db2701be38daad8833f1.
+
+No host pin import, real producer adoption, native or performance claim.

@@ -27,6 +27,10 @@ fn caller_driven_startup_matches_all_profiles_on_both_paths() {
             ("launcher", 7, 0x9a0),
             ("dock", 8, 0x11a2),
             ("descriptor", 8, 3),
+            ("bar", 13, 0x48081),
+            ("launcher", 13, 0x489a0),
+            ("dock", 13, 0x491a2),
+            ("descriptor", 13, 0x48083),
         ] {
             let path = std::env::temp_dir().join(format!(
                 "shell-connecting-{role}-{attached}-{}",
@@ -37,7 +41,7 @@ fn caller_driven_startup_matches_all_profiles_on_both_paths() {
                 role,
                 revision,
                 capabilities,
-                limits_published: role != "descriptor",
+                limits_published: role != "descriptor" || revision == 13,
             };
             let (stop, done) = mpsc::channel();
             let thread = std::thread::spawn(move || {

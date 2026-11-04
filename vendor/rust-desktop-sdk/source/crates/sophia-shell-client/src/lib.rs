@@ -8,7 +8,10 @@ mod batch;
 mod candidate;
 pub use batch::{ContentBatchItem, ShellBatchItem};
 mod custody;
+mod frame_stream;
+mod frames;
 pub use custody::{Admission, Custody, CustodyLookupError, Ticket};
+pub use frame_stream::{FrameStream, FrameStreamState};
 mod catalog;
 pub use catalog::{CatalogInbox, CatalogObservation};
 mod descriptor;
@@ -82,6 +85,8 @@ pub enum ShellClientError {
     /// detected in a reply).
     Pipeline(sophia_9p_client::pipeline::PipelineError),
     AdmissionRefused(ContentAdmissionRefused),
+    /// Image source admission failed before the frame entered the queue.
+    Image(ImageAdapterError),
     Lifecycle(ContentLifecycleError),
     UnsupportedRevision,
     MissingCapability,
@@ -1101,8 +1106,17 @@ fn validate_image_options(
     options: &ShellClientOptions,
     image: &ShellImageConfig,
 ) -> Result<(), ShellClientError> {
-    if options.minimum_revision > sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
-        || options.maximum_revision < sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
+    let frame = options.required_capabilities
+        & sophia_shell_protocol::shell_files::SHELL_FRAME_CAPABILITY
+        != 0;
+    let revision = if frame {
+        sophia_shell_protocol::shell_files::SHELL_FRAME_REVISION
+    } else {
+        sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
+    };
+    if options.minimum_revision > revision
+        || options.maximum_revision < revision
+        || (frame && image.ring_slots != 2)
         || options.required_capabilities & IMAGE_CAPABILITY_OWNED_RING == 0
         || image.transfer_timeout_ms == 0
         || image.formats_capacity < 64

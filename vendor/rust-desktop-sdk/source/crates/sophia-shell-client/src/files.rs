@@ -43,6 +43,7 @@ pub use connecting::Connecting;
 mod descriptor;
 mod drive;
 mod events;
+mod frames;
 mod native_launcher;
 mod opening;
 mod submission;
@@ -202,6 +203,8 @@ pub(crate) struct FileWire {
     epoch: u64,
     /// The negotiated capabilities: which snapshot feeds may be announced.
     capabilities: u64,
+    revision: u16,
+    frame_max_bytes: usize,
     /// Session's pre-admitted API role; bit 0 on a content bar is not enough.
     descriptor: bool,
     native_launcher: bool,

@@ -1,7 +1,7 @@
 /* Shell r9 and r10 seams for the image adapter: the negotiated event codec,
  * image and owned-ring event headers, whole-file reads of the image
- * discovery files and owned-ring-v1 control writes. With image_mode clear
- * every path here is unused. */
+ * discovery files and owned-ring-v1 control writes. The event decoder also
+ * admits explicit SFT records without requiring an image adapter. */
 #include "session_internal.h"
 #include "../sophia_image_channel.h"
 #include "../sophia_owned_ring.h"
@@ -17,7 +17,7 @@ int sf_session_image_r9(const struct sophia_sf_client *c)
 int sf_session_image_r10(const struct sophia_sf_client *c)
 {
     return c->image_mode && c->negotiated &&
-           c->welcome.selected_revision == SOPHIA_SF_REVISION_OWNED_RING &&
+           (c->welcome.selected_revision == SOPHIA_SF_REVISION_OWNED_RING || sf_session_frame(c)) &&
            (c->welcome.capabilities & SOPHIA_SF_CAP_OWNED_RING);
 }
 
@@ -67,7 +67,8 @@ int sf_session_event_decode(const struct sophia_sf_client *c, const uint8_t *b, 
         }
         if (sophia_sf_decode_revision(b, n, c->welcome.selected_revision, r))
             return -1;
-    } else if (sophia_sf_decode(b, n, r))
+    } else if (sf_session_frame(c) ? sophia_sf_decode_revision(b, n, SOPHIA_SFT_REVISION, r)
+                                   : sophia_sf_decode(b, n, r))
         return -1;
     if (r->header.epoch != c->epoch || r->header.kind < 16 || r->header.kind >= 256 ||
         !sf_session_event_allowed(c, r))

@@ -611,6 +611,7 @@ impl Handshake {
                 {
                     return Err(ShellClientError::MissingCapability);
                 }
+                super::frames::validate_negotiated(&self.options, &n)?;
                 if self.descriptor {
                     super::descriptor::validate_negotiated(&self.options, &n)?;
                 }
@@ -633,6 +634,8 @@ impl Handshake {
             pipeline: self.pipeline,
             epoch: self.epoch,
             capabilities: welcome.capabilities,
+            revision: welcome.selected_revision,
+            frame_max_bytes: super::frames::frame_max_bytes(&self.inbox),
             descriptor: self.descriptor,
             native_launcher: self.native,
             root: self.root,

@@ -17,6 +17,7 @@ pub struct JournalEvent<'a> {
 pub enum JournalRecord<'a> {
     ObjectPublished(&'a ShellFileObjectPublished),
     Content(TransactionId, &'a ShellContentRecord),
+    Frame(&'a sophia_shell_protocol::shell_files::ShellFrameRecord),
     Native(&'a ShellFileNativeLauncherRecord),
     Descriptor(&'a ShellFileDescriptorRecord),
     IndicatorOutcome(TransactionId, &'a ShellIndicatorActivationOutcome),

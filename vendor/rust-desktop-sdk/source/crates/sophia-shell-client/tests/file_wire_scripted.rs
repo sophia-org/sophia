@@ -26,6 +26,8 @@ const EAGAIN: u32 = 11;
 mod admission;
 #[path = "support/file_wire_batch.rs"]
 mod batch;
+#[path = "support/file_wire_frames.rs"]
+mod frames;
 #[path = "support/file_wire_journal.rs"]
 mod journal;
 #[path = "support/transaction_reuse.rs"]

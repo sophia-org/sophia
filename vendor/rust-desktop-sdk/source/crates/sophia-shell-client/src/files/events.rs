@@ -84,6 +84,7 @@ impl FileWire {
             Event::Published(value, _) => JournalRecord::ObjectPublished(value),
             Event::Inbound(value) | Event::ResourceStatus(_, _, _, value) => match value {
                 Inbound::Content(tx, value) => JournalRecord::Content(*tx, value),
+                Inbound::Frame(value) => JournalRecord::Frame(value),
                 Inbound::Native(value) => JournalRecord::Native(value),
                 Inbound::Descriptor(value) => JournalRecord::Descriptor(value),
                 Inbound::IndicatorOutcome(tx, value) => JournalRecord::IndicatorOutcome(*tx, value),
@@ -229,12 +230,12 @@ impl FileWire {
         let ring_record = self.image_enabled && self.event_buf.get(4..8) == Some(b"D4E1");
         let header = if ring_record {
             None
-        } else if self.image_enabled {
+        } else if self.image_enabled || self.revision == SHELL_FRAME_REVISION {
             Some(
                 decode_shell_file_record_at_revision(
                     &self.event_buf[..size],
                     ShellFileClass::Event,
-                    sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION,
+                    self.revision,
                 )?
                 .header,
             )
@@ -338,11 +339,8 @@ impl FileWire {
             return Ok((event.sequence, Event::Image(ImageEvent::Ring(event))));
         }
         if self.image_enabled
-            && let Ok(parsed) = decode_shell_file_record_at_revision(
-                record,
-                ShellFileClass::Event,
-                sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION,
-            )
+            && let Ok(parsed) =
+                decode_shell_file_record_at_revision(record, ShellFileClass::Event, self.revision)
             && matches!(
                 parsed.header.kind,
                 ShellFileKind::ChannelReady
@@ -431,7 +429,18 @@ impl FileWire {
             }
             return Ok((parsed.header.sequence, Event::Image(image)));
         }
-        let header = decode_shell_file_record(record, ShellFileClass::Event)?.header;
+        let header =
+            decode_shell_file_record_at_revision(record, ShellFileClass::Event, self.revision)?
+                .header;
+        if matches!(
+            header.kind,
+            ShellFileKind::FrameStreamOpened
+                | ShellFileKind::FrameStreamClosed
+                | ShellFileKind::FrameRefused
+                | ShellFileKind::FrameOutcome
+        ) {
+            return self.decode_frame_event(header, record);
+        }
         if header.connection_epoch != self.epoch {
             return Err(ShellClientError::Protocol(
                 "event from another connection epoch",
@@ -459,10 +468,10 @@ impl FileWire {
         }
         let event = match header.kind {
             ShellFileKind::Submitted => {
-                let value = if self.image_enabled {
+                let value = if self.image_enabled || self.revision == SHELL_FRAME_REVISION {
                     sophia_shell_protocol::shell_files::decode_shell_file_submitted_at_revision(
                         record,
-                        sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION,
+                        self.revision,
                     )?
                 } else {
                     decode_shell_file_submitted(record)?
@@ -623,6 +632,9 @@ impl FileWire {
                     .push_back(super::image_adapter::Routed::Event(event));
             }
             Event::Inbound(item) => {
+                if self.image_enabled {
+                    super::image_adapter::route_frame_source(&item, &mut self.image_routed);
+                }
                 if deliver {
                     inbox.push_back(item);
                 }

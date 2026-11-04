@@ -16,7 +16,7 @@ Then replace `source/` from `git archive <exact revision>`, save
 SHA-256 file manifest with that revision, and run the snapshot check and C gates.
 Do not edit the snapshot or use a moving branch as its identity.
 
-The 0.8.0 pin keeps 0.4.0's strict WM API naming the independent 9P output
+The current pin keeps 0.4.0's strict WM API naming the independent 9P output
 transport, refusing the retired `current_ipc` API, the chord lifecycle
 (`action_lifecycle`), the ChordAction cause (`chord_actions`) and the held
 capture (`held_capture`). It adds the experimental lock provider codec and
@@ -26,3 +26,8 @@ the lock golden records and neutral WM rows; socket schemas, bindings and
 corpora have retired. `crates/sophia-runtime/tests/lock_client_c_sdk.rs` runs
 the pinned lock client against the production lock export.
 The snapshot and its checks require no network access.
+
+The experimental SFT client includes explicit r13 transport, one-credit stream
+ownership and joined owned-ring submission. Rebuild consumers against the pinned
+headers: its passive record union and image-slot bookkeeping have grown. This
+import does not select r13 in Sophia or change the default client revision.

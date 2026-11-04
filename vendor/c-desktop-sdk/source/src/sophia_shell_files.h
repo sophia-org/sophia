@@ -1,6 +1,7 @@
 #ifndef SOPHIA_SHELL_FILES_H
 #define SOPHIA_SHELL_FILES_H
 #include "sophia_shell_files_content.h"
+#include "sophia_shell_frame_types.h"
 #include "sophia_shell_files_roles.h"
 #include "sophia_shell_files_descriptors.h"
 #include <stddef.h>
@@ -73,6 +74,7 @@ struct sophia_sf_header {
 struct sophia_sf_record {
     struct sophia_sf_header header;
     union {
+        union sophia_sft_value frame;
         struct sophia_sf_limits limits;
         struct sophia_sf_outputs outputs;
         struct sophia_sf_negotiated negotiated;
@@ -144,13 +146,15 @@ int sophia_sf_ack_encode(uint8_t dst[16], uint64_t epoch, uint64_t sequence);
 /* Negotiated shell revision 9 adds ResourceStatus Rejected reason 13,
  * image_channel_unavailable, and Submitted receipts naming ImageBegin
  * (0x7000). sophia_sf_decode/encode keep the r<=8 bounds and refuse both. The
- * _revision variants take the negotiated revision (1-10) and admit reason 13
- * only for status 3 at revision 9. Submitted candidate_kind 0x7000 is valid
+ * _revision variants take the negotiated revision (1-10, or explicit SFT 13)
+ * and admit reason 13 only for status 3 at revision 9. Submitted candidate_kind 0x7000 is valid
  * at revisions 9 and 10; other bounds are unchanged. Selecting a revision does not
  * advertise it.
  * Revision 10 (spec/sophia-owned-ring.md) replaces the shell CPU image path
  * with owned rings (capability bit 15). It retires sealed ingress, so reason
- * 13 stays r9-only; candidate_kind 0x7000 also serves optional r10 DMA-BUF. */
+ * 13 stays r9-only; candidate_kind 0x7000 also serves optional r10 DMA-BUF.
+ * Explicit revision 13 additionally uses value.frame for SFT requests/events
+ * and admits their Submitted kinds. The ordinary codecs still refuse them. */
 #define SOPHIA_SF_REVISION_IMAGE_CHANNEL 9u
 #define SOPHIA_SF_REVISION_OWNED_RING 10u
 #define SOPHIA_SF_CAP_CONTENT_SURFACE (UINT64_C(1) << 7)

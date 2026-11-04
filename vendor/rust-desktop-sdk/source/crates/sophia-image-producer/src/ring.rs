@@ -464,6 +464,7 @@ impl RingProducer {
                 .copy_from_slice(pixels);
         }
         self.commit_slot(slot_index, upload, bytes, now_ms)
+            .map(|offer| (offer.offer_id, offer.encode()))
     }
 
     fn free_slot_index(&self) -> Option<usize> {
@@ -476,13 +477,12 @@ impl RingProducer {
     /// pixels are already in the slot; validate the offer, assign the
     /// next even generation, write the generation word last, and mark
     /// the slot busy until its exact `SlotReleased`.
-    fn commit_slot(
+    fn check_offer(
         &mut self,
         slot_index: usize,
         upload: RingUpload,
         byte_len: u64,
-        now_ms: u64,
-    ) -> Result<(u64, Vec<u8>), ProducerError> {
+    ) -> Result<(usize, RingOffer), ProducerError> {
         let bytes = u64::from(upload.width)
             .checked_mul(u64::from(upload.height))
             .and_then(|bytes| bytes.checked_mul(4))
@@ -530,7 +530,37 @@ impl RingProducer {
             self.fail(CloseCause::Exhausted);
             return Err(ProducerError::Exhausted);
         };
-        let offer_id = self.next_offer;
+        Ok((
+            offer_index,
+            RingOffer {
+                identity: self.config.identity,
+                offer_id: self.next_offer,
+                slot: slot_index as u32,
+                slot_generation: generation,
+                resource: upload.resource,
+                resource_generation: upload.resource_generation,
+                allocation: upload.allocation,
+                allocation_generation: upload.allocation_generation,
+                output: upload.output,
+                output_generation: upload.output_generation,
+                topology_generation: upload.topology_generation,
+                width: upload.width,
+                height: upload.height,
+            },
+        ))
+    }
+
+    fn commit_slot(
+        &mut self,
+        slot_index: usize,
+        upload: RingUpload,
+        byte_len: u64,
+        now_ms: u64,
+    ) -> Result<RingOffer, ProducerError> {
+        self.clock(now_ms)?;
+        let (offer_index, offer) = self.check_offer(slot_index, upload, byte_len)?;
+        let offer_id = offer.offer_id;
+        let generation = offer.slot_generation;
         {
             let ring = self.ring.as_mut().ok_or(ProducerError::Closed)?;
             let extent = usize::try_from(self.registration.slot_extent()).unwrap();
@@ -555,22 +585,7 @@ impl RingProducer {
             deadline_ms: now_ms.saturating_add(u64::from(self.config.transfer_timeout_ms)),
             deadline_passed: false,
         };
-        let offer = RingOffer {
-            identity: self.config.identity,
-            offer_id,
-            slot: slot_index as u32,
-            slot_generation: generation,
-            resource: upload.resource,
-            resource_generation: upload.resource_generation,
-            allocation: upload.allocation,
-            allocation_generation: upload.allocation_generation,
-            output: upload.output,
-            output_generation: upload.output_generation,
-            topology_generation: upload.topology_generation,
-            width: upload.width,
-            height: upload.height,
-        };
-        Ok((offer_id, offer.encode()))
+        Ok(offer)
     }
 
     /// The control file definitively refused an offer write (EINVAL,
@@ -818,21 +833,46 @@ impl RingSlotFill<'_> {
     /// Commit exactly `byte_len` filled bytes as one offer. The byte
     /// count must equal `width * height * 4` and fit the capacity.
     pub fn commit(
-        mut self,
+        self,
         upload: RingUpload,
         byte_len: usize,
         now_ms: u64,
     ) -> Result<(u64, Vec<u8>), ProducerError> {
-        let result = self.producer.commit_slot(
-            self.slot as usize,
-            upload,
-            u64::try_from(byte_len).map_err(|_| ProducerError::Argument)?,
-            now_ms,
-        );
-        if result.is_ok() {
-            self.committed = true;
-        }
-        result
+        self.commit_offer(upload, byte_len, now_ms)
+            .map(|offer| (offer.offer_id, offer.encode()))
+    }
+
+    /// Preview the exact typed offer for a surrounding transaction reservation.
+    /// This spends no identity and publishes no generation. Do not send it until
+    /// `commit_offer` succeeds; dropping this exclusively borrowed slot cancels it.
+    /// # Errors
+    /// Refuses invalid geometry, capacity, duplicate resources or exhausted ids.
+    pub fn offer(
+        &mut self,
+        upload: RingUpload,
+        byte_len: usize,
+    ) -> Result<RingOffer, ProducerError> {
+        self.producer
+            .check_offer(self.slot as usize, upload, byte_len as u64)
+            .map(|(_, offer)| offer)
+    }
+
+    /// Publish filled pixels and return their typed offer without allocating.
+    /// The caller must reserve its complete transaction before publishing, then
+    /// enqueue it without any further fallible step or I/O in between.
+    /// # Errors
+    /// Returns the same validation failures as `offer`, or a backwards clock.
+    pub fn commit_offer(
+        mut self,
+        upload: RingUpload,
+        byte_len: usize,
+        now_ms: u64,
+    ) -> Result<RingOffer, ProducerError> {
+        let offer =
+            self.producer
+                .commit_slot(self.slot as usize, upload, byte_len as u64, now_ms)?;
+        self.committed = true;
+        Ok(offer)
     }
 
     /// Free the slot without offering it.

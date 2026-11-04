@@ -5,22 +5,23 @@
 #define RING (UINT64_C(1) << 15)
 #define RING_CAPACITY (1u << 20)
 
-static void ring_start_role(struct image_rig *t, enum sophia_sf_profile profile, uint32_t slots,
-                            uint64_t capacity)
+static void ring_start_revision(struct image_rig *t, enum sophia_sf_profile profile, uint32_t slots,
+                            uint64_t capacity, uint16_t revision)
 {
     struct sophia_ss_image_config c;
     struct sophia_ss_config config = image_config;
     config.profile = profile;
-    config.offer.maximum_revision = 10;
+    config.offer.minimum_revision = config.offer.maximum_revision = revision;
     config.offer.required_capabilities =
         RING | (profile == SOPHIA_SF_LAUNCHER ? UINT64_C(0x9a0) : CONTENT);
+    if (revision == 13) config.offer.required_capabilities |= (UINT64_C(1) << 18);
     memset(t, 0, sizeof(*t));
     listen_dir(t);
     make_set(&t->set, SOPHIA_IC_KIND_BIT_OWNED_RING);
     rig_start(&t->r, &config);
     if (profile == SOPHIA_SF_LAUNCHER)
         t->r.p.api_override = "sophia-shell-files version=1 role=launcher epoch=17 fd_transfer=none\n";
-    t->welcome.selected_revision = 10;
+    t->welcome.selected_revision = revision;
     t->welcome.connection_epoch = PEER_EPOCH;
     t->welcome.capabilities = config.offer.required_capabilities;
     t->welcome.max_descriptors = 16;
@@ -28,7 +29,7 @@ static void ring_start_role(struct image_rig *t, enum sophia_sf_profile profile,
     t->welcome.max_pending_activations = 16;
     t->welcome.limits_published = 1;
     t->r.p.welcome_override = &t->welcome;
-    t->r.p.revision = 10;
+    t->r.p.revision = revision;
     t->r.p.image_data[0] = (const uint8_t *)t->set.text;
     t->r.p.image_bytes[0] = t->set.text_bytes;
     t->r.p.image_data[1] = t->set.limits;
@@ -55,6 +56,7 @@ static void ring_start_role(struct image_rig *t, enum sophia_sf_profile profile,
         record.value.limits.max_frame_payload = 4096;
         record.value.limits.max_input_queue_bytes = 8192;
         record.value.limits.transfer_timeout_ms = 2000;
+        if (revision == 13) record.value.limits.max_candidate_bytes = 8192;
         assert(!sophia_sf_encode(t->content_limits, sizeof(t->content_limits), &record, &bytes));
         t->r.p.object_data[SOPHIA_SF_LIMITS] = t->content_limits;
         t->r.p.object_bytes[SOPHIA_SF_LIMITS] = bytes;
@@ -64,6 +66,11 @@ static void ring_start_role(struct image_rig *t, enum sophia_sf_profile profile,
     c.ring_capacity = capacity;
     assert(sophia_ss_image_init(&t->img, &c) == SOPHIA_IPR_OK);
     assert(sophia_ss_image_attach(&t->r.s, &t->img) == SOPHIA_IPR_OK);
+}
+
+static void ring_start_role(struct image_rig *t, enum sophia_sf_profile profile, uint32_t slots, uint64_t capacity)
+{
+    ring_start_revision(t, profile, slots, capacity, 10);
 }
 
 static void ring_start(struct image_rig *t, uint32_t slots, uint64_t capacity)

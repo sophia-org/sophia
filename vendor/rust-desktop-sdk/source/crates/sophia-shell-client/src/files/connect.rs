@@ -308,6 +308,7 @@ impl FileWire {
         if welcome.capabilities & options.required_capabilities != options.required_capabilities {
             return Err(ShellClientError::MissingCapability);
         }
+        super::frames::validate_negotiated(options, &negotiated)?;
         if descriptor {
             super::descriptor::validate_negotiated(options, &negotiated)?;
         }
@@ -382,6 +383,8 @@ impl FileWire {
             pipeline,
             epoch: connection_epoch,
             capabilities: welcome.capabilities,
+            revision: welcome.selected_revision,
+            frame_max_bytes: super::frames::frame_max_bytes(&inbox),
             descriptor,
             native_launcher,
             root,

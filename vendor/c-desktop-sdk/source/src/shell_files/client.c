@@ -65,8 +65,8 @@ static int initialize(struct sophia_sf_client *c, struct sophia_9p_client *wire,
             revision = 9;
             mask |= SOPHIA_SF_CAP_SEALED_IMAGE;
         } else if (offer.required_capabilities & SOPHIA_SF_CAP_OWNED_RING) {
-            revision = 10;
-            mask |= SOPHIA_SF_CAP_OWNED_RING;
+            revision = offer.required_capabilities & SOPHIA_SFT_CAPABILITY ? 13 : 10;
+            mask |= SOPHIA_SF_CAP_OWNED_RING | (offer.required_capabilities & SOPHIA_SFT_CAPABILITY);
             /* The r10 DMA-BUF opt-in is part of the exact native mask
              * only when the caller requested it. */
             if (offer.required_capabilities & SOPHIA_SF_CAP_DMABUF_IMAGE)
@@ -499,7 +499,10 @@ int sf_session_queue(struct sophia_sf_client *c, const struct sophia_sf_record *
     r.header.epoch = c->epoch;
     r.header.submission = c->next_submission;
     r.header.sequence = 0;
-    status = sophia_sf_encode(c->tx_storage, c->tx_capacity, &r, &n);
+    status = sophia_sf_encode_revision(c->tx_storage, c->tx_capacity,
+                                       c->negotiated ? c->welcome.selected_revision : 8, &r, &n);
+    if (!status && r.header.kind >= SOPHIA_SFT_OPEN && r.header.kind <= SOPHIA_SFT_COMMIT &&
+        (!c->have_limits || n > c->limits.max_candidate_bytes)) return SOPHIA_9P_ARGUMENT;
     if (status)
         return status;
     submission_arm(c, n);
@@ -549,8 +552,10 @@ int sophia_sf_client_submit_bytes(struct sophia_sf_client *c, const void *record
     if (kind == SOPHIA_SF_KIND_IMAGE_BEGIN) {
         if (!sf_session_image_begin_valid(c, c->tx_storage, bytes))
             return SOPHIA_9P_INVALID;
-    } else if (sophia_sf_decode(c->tx_storage, bytes, &value))
+    } else if (sophia_sf_decode_revision(c->tx_storage, bytes, c->welcome.selected_revision, &value))
         return SOPHIA_9P_INVALID;
+    if (kind >= SOPHIA_SFT_OPEN && kind <= SOPHIA_SFT_COMMIT &&
+        (!c->have_limits || bytes > c->limits.max_candidate_bytes)) return SOPHIA_9P_ARGUMENT;
     submission_arm(c, bytes);
     return 0;
 }

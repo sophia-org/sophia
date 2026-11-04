@@ -2,6 +2,9 @@
 #define SOPHIA_SF_SESSION_INTERNAL_H
 #include "../sophia_shell_files_client.h"
 #include "internal.h"
+#include "../sophia_shell_frames.h"
+int sf_session_frame(const struct sophia_sf_client *);
+int sf_frame_welcome(const struct sophia_sf_negotiate *, const struct sophia_sf_negotiated *);
 int sf_api_epoch(const uint8_t *, size_t, uint64_t *);
 int sf_api_profile(const uint8_t *, size_t, enum sophia_sf_profile);
 int sf_descriptor_offer(const struct sophia_sf_negotiate *);

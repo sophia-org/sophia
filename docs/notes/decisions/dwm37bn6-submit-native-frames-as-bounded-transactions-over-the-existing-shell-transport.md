@@ -137,9 +137,13 @@ response reservations and unchanged status-before-release ordering. The
 [owner completion path](../../native-frame-transactions.md#fresh-context-finishing-and-timed-completion)
 now finishes copied scenes against fresh context and routes timed native completions
 through the shared FIFO, preserving full-budget retry and exact retired-grant
-settlement. Production opt-in negotiation, owning clients, real producers, runtime
-traces and native qualification remain required; these device-free checks establish
-no speedup.
+settlement. The [owning SDK import](../../native-frame-transactions.md#owning-sdk-import)
+now brings paired C/Rust stream owners and atomic copied-source queue admission
+into Sophia's verified snapshots. A real Rust client/file-owner test covers a
+retained frame's credit lifecycle with supplied negotiation and completion.
+Production opt-in negotiation, copied-source host/client interoperability, real
+producers, runtime traces and native qualification remain required; these
+device-free checks establish no speedup.
 
 The [continuous-frame CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 and t289 own the next implementation/qualification work. The

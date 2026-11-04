@@ -1,4 +1,4 @@
-//! Shell r10 image adapters: owned-ring CPU uploads by default, or explicit DMA capture.
+//! Owned-ring adapters for r10 and explicit SFT; optional DMA capture remains r10.
 //!
 //! Both modes share bounded staged discovery over the session's 9P connection.
 //! DMA mode submits ordinary ImageBegin tickets and sends a source only after
@@ -15,6 +15,9 @@
 
 #[path = "image_dma.rs"]
 mod dma;
+#[path = "frame_images.rs"]
+mod frame_images;
+pub(super) use frame_images::route_frame_source;
 
 use std::os::fd::OwnedFd;
 use std::path::PathBuf;
@@ -48,7 +51,7 @@ pub struct ShellImageConfig {
     /// never widened past the contract maximum.
     pub formats_capacity: usize,
     /// Owned-ring slots for the one registration: 0 means one slot,
-    /// at most 4. The per-slot capacity is the discovered grant's
+    /// at most 4; explicit SFT requires exactly 2. The per-slot capacity is the discovered grant's
     /// `max_resource_bytes`, fixed at registration.
     pub ring_slots: u8,
     /// Fixed per-slot capacity in bytes: 0 means the grant's
@@ -113,6 +116,12 @@ const NAMES: [&[u8]; 3] = [b"image-channel", b"image-limits", b"image-formats"];
 pub(crate) enum Routed {
     Event(sophia_image_producer::ImageEvent),
     Status(StatusRoute),
+    FrameRefused(frame_images::FrameRefusal),
+    FrameAdmitted {
+        request: frame_images::FrameRefusal,
+        allocation: sophia_shell_protocol::ContentAllocationId,
+        facts: u64,
+    },
 }
 
 /// One routed `ResourceStatus` outcome for the producer. Ring
@@ -219,13 +228,22 @@ impl crate::ShellConnection {
         if self.wire.peer_closed() {
             return Err(ShellClientError::PeerClosed);
         }
-        // Shell revision 10's sole CPU image source is the owned ring:
-        // revision 10 with the owned-ring capability and content
-        // surface. Sealed bit 13 is the lock plane and is not a shell
-        // fallback. DMA capture is selected explicitly by enable_dma_image.
+        // SFT reuses the r10 source channel, but joins offers to whole frames.
         let required = IMAGE_CAPABILITY_OWNED_RING
             | sophia_shell_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
-        if self.welcome.selected_revision != sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
+        let frame = self.welcome.selected_revision
+            == sophia_shell_protocol::shell_files::SHELL_FRAME_REVISION;
+        if frame {
+            self.wire.require_frame()?;
+            if image.ring_slots != 2 {
+                return Err(ShellClientError::InvalidArgument(
+                    "SFT requires two image slots",
+                ));
+            }
+        }
+        if (!frame
+            && self.welcome.selected_revision
+                != sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION)
             || self.welcome.capabilities & required != required
             || self.welcome.capabilities & IMAGE_CAPABILITY_SEALED != 0
         {
@@ -653,6 +671,7 @@ pub struct ImageAdapter {
     discovery_text: Vec<u8>,
     lost: bool,
     final_notified: bool,
+    frame_sources: [Option<frame_images::FrameSource>; 2],
 }
 
 impl ImageAdapter {
@@ -687,6 +706,7 @@ impl ImageAdapter {
             discovery_text: Vec::new(),
             lost: false,
             final_notified: false,
+            frame_sources: [None; 2],
         })
     }
 
@@ -752,11 +772,18 @@ impl ImageAdapter {
             let result = match routed {
                 Routed::Event(event) => self.on_event(event, now_ms),
                 Routed::Status(route) => self.on_status(route, now_ms),
+                Routed::FrameRefused(route) => self.frame_refused(route, now_ms),
+                Routed::FrameAdmitted {
+                    request,
+                    allocation,
+                    facts,
+                } => self.frame_admitted(request, allocation, facts),
             };
             if let Err(ProducerError::Argument) = result {
                 return Err(ShellClientError::InvalidArgument("image clock"));
             }
         }
+        self.frame_custody(ledger, now_ms);
         if self.lost {
             if let Some(ring) = &mut self.ring {
                 ring.journal_lost();
@@ -1089,6 +1116,9 @@ impl ImageAdapter {
         pixels: &[u8],
         now: Instant,
     ) -> Result<u64, ImageAdapterError> {
+        if wire.require_frame().is_ok() {
+            return Err(ImageAdapterError::NotEnabled);
+        }
         let now_ms = self.advance_clock(now)?;
         if wire.peer_closed() {
             return Err(ImageAdapterError::Closed);
@@ -1127,6 +1157,9 @@ impl ImageAdapter {
         now: Instant,
         fill: impl FnOnce(&mut [u8]),
     ) -> Result<u64, ImageAdapterError> {
+        if wire.require_frame().is_ok() {
+            return Err(ImageAdapterError::NotEnabled);
+        }
         let now_ms = self.advance_clock(now)?;
         if wire.peer_closed() {
             return Err(ImageAdapterError::Closed);

@@ -20,6 +20,10 @@ mod fixture;
 #[path = "shell_frame_controls_wire.rs"]
 mod controls;
 
+#[cfg(target_os = "linux")]
+#[path = "shell_frame_sdk.rs"]
+mod sdk;
+
 struct Transport {
     transport: ShellSessionTransport,
     path: std::path::PathBuf,

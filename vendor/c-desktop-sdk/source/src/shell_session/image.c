@@ -3,6 +3,7 @@
 #include "internal.h"
 #include "../shell_files/session_internal.h"
 #include "../sophia_shell_image.h"
+#include "../sophia_shell_frames.h"
 #include "../image_producer/internal.h"
 #include <errno.h>
 #include <poll.h>
@@ -31,7 +32,7 @@ int sophia_ss_image_init(struct sophia_ss_image *img, const struct sophia_ss_ima
  * other image bits must be absent. */
 static uint64_t image_bit(uint16_t revision)
 {
-    return revision == SOPHIA_SF_REVISION_OWNED_RING ? RING_BIT : SEALED_BIT;
+    return revision == SOPHIA_SF_REVISION_OWNED_RING || revision == SOPHIA_SFT_REVISION ? RING_BIT : SEALED_BIT;
 }
 
 static int image_mask(uint64_t capabilities, uint16_t revision, int dma_buf)
@@ -52,8 +53,9 @@ int sophia_ss_image_attach(struct sophia_ss *s, struct sophia_ss_image *img)
     if (!s || !img || img->session)
         return SOPHIA_IPR_ARGUMENT;
     o = &s->files.offer;
-    revision = o->required_capabilities & RING_BIT ? SOPHIA_SF_REVISION_OWNED_RING
+    revision = o->required_capabilities & SOPHIA_SFT_CAPABILITY ? SOPHIA_SFT_REVISION : o->required_capabilities & RING_BIT ? SOPHIA_SF_REVISION_OWNED_RING
                                                    : SOPHIA_SF_REVISION_IMAGE_CHANNEL;
+    if (revision == SOPHIA_SFT_REVISION && img->config.ring_slots != 2) return SOPHIA_IPR_ARGUMENT;
     if (o->minimum_revision > revision || o->maximum_revision < revision ||
         !image_mask(o->required_capabilities, revision, img->config.dma_buf))
         return SOPHIA_IPR_ARGUMENT;
@@ -124,7 +126,7 @@ static int start_producer(struct sophia_ss_image *img, uint64_t now)
     const struct sophia_sf_negotiated *w = &img->session->files.welcome;
     struct sophia_ip_config c = img->config.producer;
     c.role = SOPHIA_IC_ROLE_SHELL;
-    c.revision = w->selected_revision;
+    c.revision = w->selected_revision == SOPHIA_SFT_REVISION ? SOPHIA_SF_REVISION_OWNED_RING : w->selected_revision;
     c.connection_epoch = img->session->files.epoch;
     c.granted_kinds = ((w->capabilities & SEALED_BIT) ? SOPHIA_IC_KIND_BIT_SEALED : 0u) |
                       ((w->capabilities & DMA_BIT) ? SOPHIA_IC_KIND_BIT_DMABUF : 0u) |
@@ -345,9 +347,12 @@ void ss_image_status(struct sophia_ss *s)
     struct sophia_ip_offer_info info;
     enum sophia_ip_status status;
     if (!img || !img->started || sophia_sf_client_event(&s->files, &e) ||
-        e->header.kind != SOPHIA_SF_RESOURCE_STATUS || e->header.sequence <= img->status_seen)
+        e->header.sequence <= img->status_seen)
         return;
     img->status_seen = e->header.sequence;
+    if (e->header.kind == SOPHIA_SFT_OUTCOME) { ss_ring_frame_outcome(img, e); return; }
+    if (e->header.kind == SOPHIA_SFT_REFUSED) { ss_ring_frame_refused(img, e); return; }
+    if (e->header.kind != SOPHIA_SF_RESOURCE_STATUS) return;
     /* Ring slots claim their own statuses. A DMA-BUF producer offer in
      * the same mixed connection is not a ring slot: its status belongs
      * to the producer, never to the RingProducer. */

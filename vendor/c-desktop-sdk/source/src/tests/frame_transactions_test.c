@@ -102,6 +102,9 @@ static void goldens_and_envelopes(void)
         assert(!sophia_sft_encode(encoded, sizeof encoded, 13, &record, &written));
         assert(written == v->count && !memcmp(encoded, v->bytes, written));
         assert(sophia_sf_decode(v->bytes, v->count, &old) != 0);
+        assert(!sophia_sf_decode_revision(v->bytes, v->count, 13, &old));
+        assert(!sophia_sf_encode_revision(encoded, sizeof encoded, 13, &old, &written));
+        assert(written == v->count && !memcmp(encoded, v->bytes, written));
         for (j = 0; j < sizeof revisions / sizeof *revisions; j++) {
             assert(sophia_sft_decode(v->bytes, v->count, class, revisions[j], 8192, &record) != 0);
             assert(sophia_sft_encode(encoded, sizeof encoded, revisions[j], &record, &written) !=

@@ -20,3 +20,8 @@ Never edit `source/` or pin a moving branch.
 
 The SDK is published at sophia-org/sophia-desktop-sdk-rs; pin only revisions
 reachable there, so consumers and this archive name fetchable commits.
+
+The experimental SFT client includes explicit r13 transport, `FrameStream`
+ownership and joined owned-ring submission. This import does not select r13 in
+Sophia or change the default client revision; production integration remains a
+separate gate in `docs/native-frame-transactions.md`.

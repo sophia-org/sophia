@@ -10,8 +10,9 @@ transport or rendering API. The name makes no performance claim.
 **Status: default-off implementation, 2026-11-04.** The operator authorized protocol
 design changes and TLA+ modeling to reduce native CPU/frame while retaining
 security and atomic tear-free rendering. The initial wire contract is allocated
-for integration; passive C/Rust codecs now agree, while owning clients, host
-exposure and qualification remain incomplete. This
+for integration; paired C/Rust owning clients and their source-admission joins
+are imported, while production exposure, real producers and qualification
+remain incomplete. This
 is not implementation acceptance or a measured speedup. See
 [ADR dwm37bn6](notes/decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md).
 The [shell files contract](sophia-shell-files.md),
@@ -519,6 +520,37 @@ fail for stale-stream reconciliation and completion before capacity. Evidence:
 r13 remains unavailable from production negotiation. Owning clients, real producers,
 implementation traces and native qualification are still required; this checkpoint
 establishes no native behavior or performance improvement.
+
+### Owning SDK import
+
+Sophia now imports the signed Rust SDK revision
+`2c12c66b09af9c73743b9bbec67402608e73702c` and C SDK revision
+`1fe1b929a6c2e01e3c8598981a8fb7e2732dcf9c`. The immutable snapshots retain
+their upstream commit/tree and contract checks. These revisions add explicit r13
+transport, a one-credit stream owner and joined copied-source submission to the
+existing clients; they introduce no new transport or default negotiation mode.
+
+Both clients reserve a whole submission before publishing the ring generation
+and spending frame credit. A pre-admission queue refusal leaves those identities
+unspent. After publication, source custody and frame credit remain separate:
+Prepared and terminal frame events cannot release a source slot, while matching
+ResourceStatus and SlotReleased settle it. A definitive refusal can release only
+an unadmitted source; conflicting admission evidence or uncertain transport
+closure keeps it unavailable. The paired SDK evidence records the independent
+tests, sanitizer checks and guard-removal failures:
+`~/.local/state/sophia-frame-client-source-join-01`.
+
+The host's real file server and owner lifecycle are exercised with the imported
+Rust `FrameStream` for a retained scene through Open, Prepared, Presented and
+Close. That test supplies negotiation and renderer completion; it does not prove
+protected launch, copied-source interoperability, production selection or native
+presentation. Host-import evidence is in
+`~/.local/state/sophia-frame-owning-sdk-import-01`.
+
+Real Lom/reference producers still must join these owners to their presentation
+and resource lifetimes, including drain-before-fallback. Production r13 selection
+remains unavailable. Runtime trace validation and matched native qualification
+remain required; importing tested clients makes no performance claim.
 
 ### Model and remaining integration gates
 

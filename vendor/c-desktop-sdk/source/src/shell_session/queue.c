@@ -3,7 +3,7 @@
 
 /* Encode with the live epoch and submission 0; a stand-in id satisfies
  * validation and hand-off assigns the real one. BUSY: no room. */
-static int encode(const struct sophia_sf_record *record, uint64_t epoch, uint8_t *dst,
+static int encode(const struct sophia_sf_record *record, uint16_t revision, uint64_t epoch, uint8_t *dst,
                   size_t capacity, size_t *n)
 {
     struct sophia_sf_record r;
@@ -14,7 +14,7 @@ static int encode(const struct sophia_sf_record *record, uint64_t epoch, uint8_t
     r.header.epoch = epoch;
     r.header.submission = 1;
     r.header.sequence = 0;
-    status = sophia_sf_encode(dst, capacity, &r, n);
+    status = sophia_sf_encode_revision(dst, capacity, revision, &r, n);
     if (status)
         return status == -1 ? SOPHIA_9P_INVALID : SOPHIA_9P_BUSY;
     memset(dst + 16, 0, 8);
@@ -49,6 +49,13 @@ size_t sophia_ss_record_bytes(const struct sophia_sf_record *record)
         r.header.epoch = r.value.descriptor_launcher_activation_ack.grant.connection_epoch;
         break;
     }
+    if (r.header.kind >= SOPHIA_SFT_OPEN && r.header.kind <= SOPHIA_SFT_COMMIT) {
+        struct sophia_sft_record frame = {r.header, r.value.frame};
+        frame.header.epoch = r.header.kind == SOPHIA_SFT_COMMIT
+                                ? frame.value.commit.candidate.grant_connection_epoch
+                                : frame.value.stream.key.connection_epoch;
+        return sophia_sft_record_bytes(&frame, SOPHIA_SFT_REVISION);
+    }
     return sophia_sf_record_bytes(&r);
 }
 /* Encode the whole group into free queue bytes before any state changes.
@@ -68,7 +75,7 @@ static int admit(struct sophia_ss *s, const struct sophia_sf_record *records, si
             return SOPHIA_9P_ARGUMENT;
         if (capacity > s->files.tx_capacity)
             capacity = s->files.tx_capacity;
-        status = encode(&records[i], s->files.epoch, s->queue + s->queue_used + used, capacity,
+        status = encode(&records[i], s->files.welcome.selected_revision, s->files.epoch, s->queue + s->queue_used + used, capacity,
                         &n);
         /* Only a record that could never fit, or overruns a reservation, is
          * an argument error; otherwise the queue is merely full now. */
@@ -79,6 +86,8 @@ static int admit(struct sophia_ss *s, const struct sophia_sf_record *records, si
             status = SOPHIA_9P_ARGUMENT;
         if (status)
             return status;
+        if (records[i].header.kind >= SOPHIA_SFT_OPEN && records[i].header.kind <= SOPHIA_SFT_COMMIT &&
+            (!s->files.have_limits || n > s->files.limits.max_candidate_bytes)) return SOPHIA_9P_ARGUMENT;
         sizes[i] = n;
         used += n;
     }

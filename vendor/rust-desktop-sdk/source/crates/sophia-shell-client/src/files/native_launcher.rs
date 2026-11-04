@@ -19,9 +19,14 @@ pub(super) fn validate_negotiated(
         let image = options.required_capabilities & crate::IMAGE_CAPABILITY_SEALED != 0;
         let (revision, capabilities) = if ring {
             (
-                sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION,
+                if options.required_capabilities & SHELL_FRAME_CAPABILITY != 0 {
+                    SHELL_FRAME_REVISION
+                } else {
+                    sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
+                },
                 NATIVE_CAPS
                     | crate::IMAGE_CAPABILITY_OWNED_RING
+                    | (options.required_capabilities & SHELL_FRAME_CAPABILITY)
                     | (options.required_capabilities & crate::IMAGE_CAPABILITY_DMA_BUF),
             )
         } else if image {

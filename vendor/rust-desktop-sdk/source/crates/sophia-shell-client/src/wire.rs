@@ -98,6 +98,7 @@ pub(crate) enum Inbound {
         sophia_shell_protocol::ShellApplicationCatalog,
     ),
     Content(TransactionId, ShellContentRecord),
+    Frame(sophia_shell_protocol::shell_files::ShellFrameRecord),
     Indicators(TransactionId, ShellIndicatorSnapshot),
     IndicatorOutcome(TransactionId, ShellIndicatorActivationOutcome),
     Catalog(TransactionId, ShellPersistentCatalog),

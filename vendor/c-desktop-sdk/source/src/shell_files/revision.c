@@ -53,6 +53,18 @@ int sophia_sf_decode_revision(const void *src, size_t bytes, uint16_t revision,
     if (!src || !out || !revision ||
         (revision > SOPHIA_SF_REVISION_OWNED_RING && revision != SOPHIA_SFT_REVISION))
         return -4;
+    if (revision == SOPHIA_SFT_REVISION && bytes >= SOPHIA_SF_HEADER_BYTES &&
+        ((sf_get(b + 6, 2) >= SOPHIA_SFT_OPENED && sf_get(b + 6, 2) <= SOPHIA_SFT_OUTCOME) ||
+         (sf_get(b + 6, 2) >= SOPHIA_SFT_OPEN && sf_get(b + 6, 2) <= SOPHIA_SFT_COMMIT))) {
+        struct sophia_sft_record frame;
+        if (sophia_sft_decode(src, bytes, sf_get(b + 6, 2) < 256 ? SOPHIA_SFT_EVENT : SOPHIA_SFT_REQUEST,
+                              revision, SOPHIA_SFT_MAX_BYTES, &frame)) return -1;
+        memset(&v, 0, sizeof(v));
+        v.header = frame.header;
+        v.value.frame = frame.value;
+        *out = v;
+        return 0;
+    }
     if (bytes == STATUS_BYTES &&
         r9_rejection(revision, (uint16_t)sf_get(b + 6, 2), (uint16_t)sf_get(b + STATUS_AT, 2),
                      (uint16_t)sf_get(b + REASON_AT, 2))) {
@@ -82,6 +94,12 @@ int sophia_sf_encode_revision(void *dst, size_t capacity, uint16_t revision,
     if (!dst || !r || !written || !revision ||
         (revision > SOPHIA_SF_REVISION_OWNED_RING && revision != SOPHIA_SFT_REVISION))
         return -4;
+    if (revision == SOPHIA_SFT_REVISION &&
+        ((r->header.kind >= SOPHIA_SFT_OPENED && r->header.kind <= SOPHIA_SFT_OUTCOME) ||
+         (r->header.kind >= SOPHIA_SFT_OPEN && r->header.kind <= SOPHIA_SFT_COMMIT))) {
+        const struct sophia_sft_record frame = {r->header, r->value.frame};
+        return sophia_sft_encode(dst, capacity, revision, &frame, written);
+    }
     copy = *r;
     if (r->header.kind == SOPHIA_SF_RESOURCE_STATUS &&
         r9_rejection(revision, r->header.kind, r->value.resource_status.status,

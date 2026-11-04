@@ -3,6 +3,8 @@
 #include "internal.h"
 #include "../shell_files/session_internal.h"
 #include "../sophia_shell_image.h"
+#include "../sophia_shell_frame_stream.h"
+#include "../sophia_shell_frames.h"
 #include "../image_producer/internal.h"
 #include <errno.h>
 
@@ -156,12 +158,68 @@ static void send_source(struct sophia_ss_image *img)
     }
 }
 
+static void refused_source(struct sophia_ss_image_ring *r, struct sophia_ss_ring_slot *s)
+{
+    if (!live(s) || s->status || s->frame_admitted) fail(r);
+    else s->state = SOPHIA_SS_SLOT_REFUSED;
+}
+void ss_ring_frame_refused(struct sophia_ss_image *img, const struct sophia_sf_record *record)
+{
+    const struct sophia_sft_refused *v = &record->value.frame.refused;
+    unsigned i;
+    if (!ss_ring_active(img) || v->request_kind != SOPHIA_SFT_COMMIT) return;
+    for (i = 0; i < img->ring.registration.slots; i++) {
+        struct sophia_ss_ring_slot *s = &img->ring.slots[i];
+        const struct sophia_or_offer *o = &s->offer;
+        if (!s->frame_ticket || s->frame_transaction != v->transaction) continue;
+        if (o->identity.connection_epoch != v->connection_epoch || o->identity.content_epoch != v->content_epoch ||
+            o->output_id != v->output_id || o->output_generation != v->output_generation ||
+            s->frame_stream != v->stream_id || s->frame_generation != v->candidate_generation) fail(&img->ring);
+        else refused_source(&img->ring, s);
+        return;
+    }
+}
+void ss_ring_frame_outcome(struct sophia_ss_image *img, const struct sophia_sf_record *record)
+{
+    const struct sophia_sft_outcome *v = &record->value.frame.outcome;
+    const struct sophia_sf_candidate_outcome *c = &v->candidate;
+    unsigned i;
+    if (!ss_ring_active(img)) return;
+    for (i = 0; i < img->ring.registration.slots; i++) {
+        struct sophia_ss_ring_slot *s = &img->ring.slots[i];
+        const struct sophia_or_offer *o = &s->offer;
+        if (!s->frame_ticket || s->frame_transaction != c->transaction) continue;
+        if (o->identity.connection_epoch != c->grant_connection_epoch || o->identity.content_epoch != c->grant_content_epoch ||
+            o->output_id != c->output_id || o->output_generation != c->output_generation ||
+            s->frame_generation != c->candidate_generation || s->frame_stream != v->stream_id ||
+            o->allocation_id != v->allocation_id || o->allocation_generation != v->allocation_generation ||
+            o->topology_generation != v->facts_generation || s->state == SOPHIA_SS_SLOT_REFUSED) fail(&img->ring);
+        else s->frame_admitted = 1;
+        return;
+    }
+}
+
+static void frame_custody(struct sophia_ss_image *img)
+{
+    unsigned i;
+    for (i = 0; i < img->ring.registration.slots; i++) {
+        struct sophia_ss_ring_slot *s = &img->ring.slots[i];
+        enum sophia_ss_outcome outcome;
+        uint32_t error;
+        if (!s->frame_ticket || !live(s)) continue;
+        if (sophia_ss_outcome(img->session, s->frame_ticket, &outcome, &error)) { fail(&img->ring); return; }
+        if (outcome == SOPHIA_SS_REFUSED || outcome == SOPHIA_SS_DROPPED_UNSENT) refused_source(&img->ring, s);
+        else if (outcome == SOPHIA_SS_UNKNOWN_DISCONNECTED || outcome == SOPHIA_SS_UNAVAILABLE) fail(&img->ring);
+    }
+}
+
 void ss_ring_drive(struct sophia_ss_image *img, uint64_t now)
 {
     struct sophia_ss_image_ring *r = &img->ring;
     unsigned i;
     if (final(r))
         return;
+    frame_custody(img);
     control_result(img, now);
     if (final(r))
         return;
@@ -345,16 +403,14 @@ void *sophia_ss_image_ring_pixels(struct sophia_ss_image *img, uint32_t slot)
     return r->memory.base + (size_t)slot * r->memory.extent + SOPHIA_OR_SLOT_HEADER_BYTES;
 }
 
-int sophia_ss_image_ring_offer(struct sophia_ss_image *img, uint32_t slot,
-                               const struct sophia_ss_ring_image *m, uint64_t now_ms,
-                               uint64_t *offer)
+static int prepare_offer(struct sophia_ss_image *img, uint32_t slot,
+                         const struct sophia_ss_ring_image *m, struct sophia_or_offer *out,
+                         uint8_t encoded[SOPHIA_OR_OFFER_BYTES])
 {
     struct sophia_ss_image_ring *r;
-    struct sophia_ss_ring_slot *s;
     struct sophia_or_offer o;
-    uint8_t *word;
     unsigned i;
-    if (!ss_ring_active(img) || !m || !offer)
+    if (!ss_ring_active(img) || !m || !out)
         return SOPHIA_IPR_ARGUMENT;
     r = &img->ring;
     if (ss_final(img->session) || final(r))
@@ -386,27 +442,97 @@ int sophia_ss_image_ring_offer(struct sophia_ss_image *img, uint32_t slot,
     o.topology_generation = m->topology_generation;
     o.width = m->width;
     o.height = m->height;
-    if (sophia_or_offer_encode(r->control_bytes, &o) != SOPHIA_IC_OK)
+    if (sophia_or_offer_encode(encoded, &o) != SOPHIA_IC_OK)
         return SOPHIA_IPR_REFUSED;
+    *out = o;
+    return SOPHIA_IPR_OK;
+}
+static void publish_offer(struct sophia_ss_image *img, const struct sophia_or_offer *o, uint64_t now_ms)
+{
+    struct sophia_ss_image_ring *r = &img->ring;
+    struct sophia_ss_ring_slot *s;
+    uint32_t slot = o->slot;
+    uint8_t *word;
+    unsigned i;
     /* The generation word precedes the Offer; the slot is then untouched. */
     word = r->memory.base + (size_t)slot * r->memory.extent;
     for (i = 0; i < 8; i++)
-        word[i] = (uint8_t)(o.slot_generation >> (8 * i));
+        word[i] = (uint8_t)(o->slot_generation >> (8 * i));
     r->next_offer++;
-    r->generation[slot] = o.slot_generation;
+    r->generation[slot] = o->slot_generation;
     s = &r->slots[slot];
     memset(s, 0, sizeof *s);
-    s->offer = o;
+    s->offer = *o;
     s->state = SOPHIA_SS_SLOT_OFFERING;
     s->deadline_ms = now_ms + img->producer.config.transfer_timeout_ms;
     if (s->deadline_ms < now_ms)
         s->deadline_ms = UINT64_MAX;
-    r->control_used = SOPHIA_OR_OFFER_BYTES;
-    r->control = (uint8_t)(CONTROL_OFFER + slot);
-    r->retry_at = 0;
+}
+int sophia_ss_image_ring_offer(struct sophia_ss_image *img, uint32_t slot,
+                               const struct sophia_ss_ring_image *m, uint64_t now_ms, uint64_t *offer)
+{
+    struct sophia_or_offer o;
+    int status;
+    if (!img || !img->session || !offer || sf_session_frame(&img->session->files)) return SOPHIA_IPR_ARGUMENT;
+    status = prepare_offer(img, slot, m, &o, img->ring.control_bytes);
+    if (status) return status;
+    publish_offer(img, &o, now_ms);
+    img->ring.control_used = SOPHIA_OR_OFFER_BYTES;
+    img->ring.control = (uint8_t)(CONTROL_OFFER + slot);
+    img->ring.retry_at = 0;
     *offer = o.offer;
     (void)ss_pump(img->session, 0);
     return SOPHIA_IPR_OK;
+}
+
+int sophia_ss_frame_submit_ring(struct sophia_ss_image *img, struct sophia_ss_frame_stream *f,
+                               uint32_t slot, const struct sophia_ss_ring_image *m,
+                               struct sophia_sf_record *record, uint64_t now_ms,
+                               uint64_t *ticket, uint64_t *offer)
+{
+    struct sophia_ss *session;
+    struct sophia_or_offer o, saved_image;
+    struct sophia_sf_header saved_header;
+    struct sophia_ss_ring_slot *source;
+    uint8_t bytes[8192], encoded_offer[SOPHIA_OR_OFFER_BYTES];
+    size_t n;
+    int status;
+    if (!img || !(session = img->session) || !record || !ticket || !offer ||
+        !sf_session_frame(&session->files) || img->config.ring_slots != 2 ||
+        now_ms < session->now_ms || now_ms < img->producer.last_now) return SOPHIA_9P_ARGUMENT;
+    if (ss_final(session)) return ss_status(session);
+    status = ss_frame_check(f, record);
+    if (status) return status;
+    if (record->value.frame.commit.has_image) return SOPHIA_9P_ARGUMENT;
+    status = prepare_offer(img, slot, m, &o, encoded_offer);
+    if (status) return status == SOPHIA_IPR_AGAIN || status == SOPHIA_IPR_BUSY ? SOPHIA_9P_BUSY : SOPHIA_9P_ARGUMENT;
+    saved_header = record->header;
+    saved_image = record->value.frame.commit.image;
+    record->header.epoch = session->files.epoch;
+    record->header.submission = 1;
+    record->header.sequence = 0;
+    record->value.frame.commit.image = o;
+    record->value.frame.commit.has_image = 1;
+    status = sophia_sf_encode_revision(bytes, sizeof bytes, SOPHIA_SFT_REVISION, record, &n);
+    record->header = saved_header;
+    record->value.frame.commit.image = saved_image;
+    record->value.frame.commit.has_image = 0;
+    if (status || !session->files.have_limits || n > session->files.limits.max_candidate_bytes)
+        return SOPHIA_9P_ARGUMENT;
+    status = ss_admit_encoded(session, bytes, n, ticket);
+    if (status) return status;
+    /* No I/O or fallible step between queue admission and publication. */
+    publish_offer(img, &o, now_ms);
+    source = &img->ring.slots[slot];
+    source->frame_ticket = *ticket;
+    source->frame_transaction = record->value.frame.commit.candidate.transaction;
+    source->frame_generation = record->value.frame.commit.candidate.candidate_generation;
+    source->frame_stream = f->key.stream_id;
+    ss_frame_submitted(f, record);
+    img->producer.last_now = now_ms;
+    *offer = o.offer;
+    (void)ss_pump(session, 0);
+    return 0;
 }
 
 static struct sophia_ss_ring_slot *by_offer(const struct sophia_ss_image *img, uint64_t offer)

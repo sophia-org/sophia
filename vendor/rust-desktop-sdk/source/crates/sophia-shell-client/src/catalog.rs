@@ -38,6 +38,7 @@ impl ShellConnection {
             SOPHIA_SHELL_PERSISTENT_CATALOG_REVISION
                 | 9
                 | sophia_shell_protocol::SOPHIA_SHELL_OWNED_RING_REVISION
+                | sophia_shell_protocol::shell_files::SHELL_FRAME_REVISION
         ) || self.welcome.capabilities & SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG == 0
         {
             return Err(ShellClientError::MissingCapability);
@@ -96,6 +97,7 @@ impl ShellConnection {
             }
             Inbound::NativePublication(_)
             | Inbound::Native(_)
+            | Inbound::Frame(_)
             | Inbound::Indicators(_, _)
             | Inbound::IndicatorOutcome(_, _)
             | Inbound::Descriptor(_)

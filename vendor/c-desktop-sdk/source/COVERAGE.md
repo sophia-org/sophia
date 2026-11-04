@@ -173,3 +173,23 @@ There is no ambient sibling SDK checkout in the build inputs.
 submission receipts against the shared wire corpus and Rust implementation.
 See [API parity](API-PARITY.md#sft-passive-codec-parity-2026-11-04) for
 ownership, refusal coverage and the still-open owning-session/producer gates.
+
+## SFT typed transport
+
+Explicit r13 requests/events now pass through the owning file session's bounded
+queue and shared journal. Stream-credit ownership, embedded-image adapter
+reservation/settlement, real producers and production exports remain open;
+see [the paired checkpoint](API-PARITY.md#sft-typed-client-transport-2026-11-04).
+
+## SFT owning stream control
+
+`sophia_shell_frame_stream.h` adds a fixed-size one-credit owner with queue
+admission, exact terminal correlation and complete close draining. The image
+source ownership join and actual producers are still pending;
+[paired contract](API-PARITY.md#sft-owning-stream-credit-2026-11-04).
+
+SFT source join: `shell_image_test` includes `frame_image_session.h`, covering
+r13/D4 registration, whole-frame source/queue/credit admission, exact refusal,
+Prepared/status contradiction, two busy slots, slot release, wire refusal and
+unknown disconnect. Existing r9/r10 image and DMA tests remain in the same binary.
+No native or performance qualification is inferred.

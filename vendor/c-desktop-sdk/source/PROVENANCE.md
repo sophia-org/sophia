@@ -1,5 +1,31 @@
 # Extraction and contract provenance
 
+## SFT owning stream credit, 2026-11-04
+
+Paired bases: Rust `a5481d1df3bee9851e181ec84dfb04ab340b4d32`,
+C `14e751d3b541056d080b8363a1dec66ebb2a64c8`. Fixed-size one-credit stream
+owners now join local queue acceptance with exact lifecycle correlation.
+The allocated wire grammar and low-level transport remain unchanged.
+See [stream parity](API-PARITY.md#sft-owning-stream-credit-2026-11-04) for
+close/expiry races, custody limits and the pending source/producer joins.
+Evidence and exact publication identities are recorded in
+`~/.local/state/sophia-frame-client-stream-01` and its publication receipt.
+No host SDK pin or production enablement changes in this checkpoint.
+
+## SFT typed client transport, 2026-11-04
+
+Paired source bases: Rust `bf8dc0142f5ee305779c78916edc3a960db19cc0`,
+C `1d4ab9db683c055914846d36dbaeb2f73fd21bd9`. The pinned SFT wire contract
+and goldens are unchanged. Typed whole requests and events now use the
+existing owning connection's bounded transaction and journal paths under
+explicit r13/bit-18 negotiation. Defaults remain unchanged.
+
+See [API parity](API-PARITY.md#sft-typed-client-transport-2026-11-04) for
+ownership, compatibility and the still-open stream/source/producer gates.
+`~/.local/state/sophia-frame-client-transport-01` records checks and source
+trees; its separate publication receipt records exact signed commits before
+any host import. No vendored source or product pins are changed here.
+
 ## Shell r10 DMA-BUF GPU source (t339), 2026-10-22
 
 Adds the opt-in DMA-BUF producer and shell adapter on the r10 owned-ring
@@ -1081,3 +1107,10 @@ Shell prose synchronized from signed Sophia `da653bd3d68c25c3357db0008d9d401143c
 import: the SFT pointer now names its allocated, default-off contract, and the
 existing role-limit paragraph reflects the host grants. No wire layout, SDK
 limit value, owning-client behavior or negotiation default changes in this sync.
+
+## SFT owning copied-source join, 2026-11-04
+
+The owning image path now joins the pinned SFT FrameCommit with the existing
+D4 two-slot source protocol. No schema, authority or negotiation default changes.
+See API-PARITY.md for paired ownership, refusal and unknown-custody rules. Host
+pin import, concrete producers, model traces and native qualification remain open.

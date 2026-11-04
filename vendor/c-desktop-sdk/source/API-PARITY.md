@@ -1841,3 +1841,139 @@ This is passive wire-codec parity only. It is not owning-session/producer parity
 production-export admission, fragmented-write/backpressure qualification, model
 trace validation, or native performance/security acceptance. Those gates remain
 open before host exposure or default enablement. No SDK vendor pin changes here.
+
+## SFT typed client transport, 2026-11-04
+
+Both owning connections can explicitly negotiate r13 with content authority,
+owned-ring bit 15 and SFT bit 18. Neither default negotiation changes. Both
+refuse missing authority or Limits, unsolicited SFT, and the incompatible
+sealed-image, DMA-BUF, draw-list and W2 bits. Bar, dock, launcher and descriptor
+startup use their existing role policy as well as this SFT gate.
+
+Rust exposes `ShellConnection::reserve_frame`, `enqueue_frame` and `take_frame`;
+manual delivery exposes `JournalRecord::Frame`. C uses the existing
+`sophia_ss_reserve`/`commit`/`submit` and `sophia_ss_event`/`consume` with
+`sophia_sf_record.value.frame`. The explicit `_revision` C codecs also accept
+these values at r13; the default codecs still refuse them. Passive C types now
+live in `sophia_shell_frame_types.h`, shared by the codecs and file client.
+Rebuild C consumers and bindings against matching headers and libraries: the
+public record union has grown. Rust exhaustive matches on journal records must
+handle the new variant.
+
+Open, Close and Commit each occupy one whole transaction in the existing
+bounded queue. A Commit's embedded image is not separately submitted as a
+legacy image offer. Requests must fit both the absolute 8192-byte ceiling and
+the granted candidate-byte limit. Caller input remains owned by the caller on
+refusal; a cancelled reservation sends nothing. Queue admission and Submitted
+custody do not grant frame credit. EAGAIN retries the same submit identity and
+staged bytes without rewriting the transaction. Disconnect keeps the existing
+unknown-custody rule; never replay an uncertain request into another connection.
+
+Frame events use the shared journal sequence and ACK boundary. Manual delivery
+keeps an event until consumed; automatic delivery queues a typed event once.
+Malformed or wrong-epoch events fail closed before any later buffered event.
+The low-level typed API does not correlate a terminal with an owning stream:
+the caller must match the full stream key and candidate generation before
+using a returned credit, whose owner-clock deadline is opaque to the client.
+
+Evidence: `~/.local/state/sophia-frame-client-transport-01`. Independent scripted
+9P tests cover exact negotiation, all four Commit layouts, whole custody,
+reservation cancellation, retry without restaging, granted-byte refusals,
+manual ACK retention, queue-full refusal and malformed-event quarantine.
+Existing queue/custody suites also run on both implementations.
+
+This is a typed transport checkpoint, not a complete owning SFT producer.
+Stream-credit/key tracking and the embedded-image adapter ownership join are
+still pending; the image adapter remains restricted to its existing revisions.
+There is no production export enablement, SDK pin update, native run, trace
+validation or performance claim in this checkpoint.
+
+## SFT owning stream credit, 2026-11-04
+
+Rust `FrameStream` and C `sophia_ss_frame_stream` now own one frame credit and
+completion correlation for a stream binding. Open/Commit/Close use the existing
+connection and queue; their owners change only after queue admission succeeds.
+No new socket, thread, timer, allocation or independently renewed credit is added
+by this state machine. The caller supplies grant-wide monotonically increasing
+stream/candidate identities; separate owners do not allocate identities globally.
+
+Open starts without credit. Only the matching Opened grants it. Commit reserves
+it after queue acceptance; neither Submitted nor Prepared returns it. A matching
+terminal returns at most one provisional credit when its owner-clock deadline is
+nonzero and the stream is still Open. The deadline is never compared with client
+time. A typed Commit refusal releases the local reservation, since the host did
+not spend credit, but the local candidate generation stays spent. A refused Open
+does not spend its proposed stream id. Shape/binding/queue refusals leave the
+owner unchanged; malformed, duplicate or mismatched observations enter Unknown
+and preserve outstanding work without admitting more.
+
+Close stops admissions immediately after its queue acceptance. Closed may arrive
+before or after an accepted frame's terminal; both must drain before reopening.
+An automatic Closed uses the opening transaction and can race a queued explicit
+Close. The outstanding close reply must drain too, normally via FrameRefused.
+A refused Close is retryable but never reopens admissions. Close uses a transaction
+distinct from Open, so automatic expiry stays distinguishable. Reopening retains
+local identity high-waters and stays within the same grant. Disconnect/revocation
+enters Unknown permanently; never recreate or reset an owner to evade custody.
+
+Route SFT events in journal order exactly once; this API does not consume or ACK
+them, update native presentation targets, render, or retire resources. C fields
+are SDK-owned and initialized once to zero; do not copy a live owner. Rust is
+owned and non-Clone. These are frame-control obligations only: source-slot and
+resource owners remain independent, and `frame_work_drained`/`frame_drained` do
+not establish source release or resource reclamation. Embedded-image reservation,
+stream/source atomic queue admission, real producer integration and model trace
+validation remain the next gates. The transport's low-level APIs remain available
+for conformance; they do not inherit this owner automatically.
+
+Evidence: `~/.local/state/sophia-frame-client-stream-01`. Paired scripted 9P tests
+cover single credit, queue rollback, Prepared, duplicate and wrong-tuple terminals,
+refusals, both close/terminal orders, automatic-close/explicit-close races,
+reopening and authority loss. No host pin update, default enablement, native
+launch or performance claim. This extends the typed transport checkpoint; it
+does not declare the complete SFT owning producer ready.
+
+## SFT copied-source admission join, 2026-11-04
+
+Explicit r13 clients can now attach the existing owned-ring image adapter with
+exactly two slots. Negotiation remains opt-in: content, owned-ring and SFT must
+be requested and granted; sealed, DMA, draw and retire-on-present capabilities
+remain excluded. Discovery, D4 registration and the descriptor handoff retain
+the r10 image-channel mapping. Separate legacy Offer submission is refused on
+this connection; the whole FrameCommit contains its single copied-source offer.
+
+Rust `FrameStream::submit_ring` takes a Commit without an image and fills a free
+mapped slot directly through a closure. It validates the binding and exact
+embedded offer, reserves the existing queue, then publishes the generation word,
+queues the frame and reserves credit without intervening I/O or fallible work.
+A refused queue or unwinding fill spends no offer, slot generation, candidate or
+credit; the supplied record is restored before the fill runs. The lower-level
+`RingSlotFill::offer` preview and allocation-free `commit_offer` support this
+join; a preview must never be sent before publication succeeds.
+
+C `sophia_ss_frame_submit_ring` joins the same ownership using a caller-filled
+free slot from `sophia_ss_image_ring_pixels`. It restores the supplied record,
+queues validated bytes without pumping, publishes the slot and reserves credit,
+then runs the existing nonblocking pump. All validation/capacity failures precede
+publication. The public image state grew; rebuild C clients with matching headers. Rust
+source failures use the added `ShellClientError::Image(ImageAdapterError)` variant;
+exhaustive error matches must handle it.
+Both APIs return the ordinary custody ticket and an offer id. Caller storage
+must not be modified while owned, including after local timeout.
+
+Submitted proves transport custody only. Prepared or a terminal proves frame
+admission but never releases pixels. Only matching ResourceStatus followed by
+exact SlotReleased settles an admitted source. A matching FrameRefused before
+admission, or a definitive transport refusal, can release a source that has no
+admission/status evidence; its offer and generation remain spent. A contradictory
+refusal after Prepared/status, wrong correlation, unavailable custody or journal
+loss fails closed and preserves Unknown source ownership. A semantic refusal
+may restore frame credit; a transport failure does not. Continue routing every
+frame event to the stream owner and retain source/resource owners separately.
+
+Independent scripted 9P peers with real SEQPACKET/mapped-ring handoff cover
+queue rollback, exact embedded bytes/no legacy Offer, credit reservation, both
+busy slots, exact release, refusal/retry identities, Prepared-before-refusal,
+wrong correlation and disconnect. Rust also checks fill unwind. These are
+SDK conformance checks, not host import, real Lom/reference producer adoption,
+model trace validation, native qualification or a performance result.

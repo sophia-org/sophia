@@ -113,13 +113,14 @@ struct sophia_ss_image_ticket {
 struct sophia_ss_ring_slot {
     struct sophia_or_offer offer;
     uint64_t deadline_ms;
+    uint64_t frame_ticket, frame_transaction, frame_generation, frame_stream;
     uint32_t control_error;
     /* Terminal ResourceStatus kinds seen, never cleared. Failed control
      * replies are Rejected too, so only SlotReleased picks the outcome, and
      * it must match a kind seen here. */
     uint16_t reason;
     uint8_t state, status, accepted, rejected, cancelled_seen, changed, cancelled,
-        deadline_passed;
+        deadline_passed, frame_admitted;
 };
 struct sophia_ss_image_ring {
     struct sophia_ip_ring memory;

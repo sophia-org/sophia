@@ -39,5 +39,10 @@ void ss_ring_event(struct sophia_ss_image *, const uint8_t *, size_t);
 int ss_ring_status(struct sophia_ss_image *, const struct sophia_sf_record *);
 int ss_ring_poll_out(const struct sophia_ss_image *);
 int64_t ss_ring_timeout(const struct sophia_ss_image *, uint64_t now_ms);
+struct sophia_ss_frame_stream;
+int ss_frame_check(const struct sophia_ss_frame_stream *, const struct sophia_sf_record *);
+void ss_frame_submitted(struct sophia_ss_frame_stream *, const struct sophia_sf_record *);
+void ss_ring_frame_outcome(struct sophia_ss_image *, const struct sophia_sf_record *);
+void ss_ring_frame_refused(struct sophia_ss_image *, const struct sophia_sf_record *);
 int ss_handoff(struct sophia_ss *);
 #endif

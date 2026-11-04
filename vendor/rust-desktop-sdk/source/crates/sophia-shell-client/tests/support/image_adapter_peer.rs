@@ -167,6 +167,8 @@ pub(super) fn connect_role_image(
     let listener = UnixListener::bind(&socket_path).unwrap();
     let mut offered = options();
     offered.required_capabilities = profile.capabilities;
+    offered.minimum_revision = profile.revision;
+    offered.maximum_revision = profile.revision;
     let thread = std::thread::spawn(move || Peer::handshake(listener, profile));
     // The endpoint listener the producer will connect to.
     let endpoint_path = dir.join("image.sock");
@@ -187,6 +189,9 @@ pub(super) fn connect_role_image(
     let origin = Instant::now();
     let mut config = image_config(dir.clone());
     config.formats_capacity = formats_capacity;
+    if profile.revision == 13 {
+        config.ring_slots = 2;
+    }
     let dma = profile.capabilities & IMAGE_CAPABILITY_DMA_BUF != 0;
     let connection = if deferred || dma {
         ShellConnection::connect_files(&socket_path, offered)

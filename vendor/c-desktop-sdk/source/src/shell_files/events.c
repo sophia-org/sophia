@@ -22,7 +22,8 @@ int sf_session_event_parse(struct sophia_sf_client *c)
             v->selected_revision > c->offer.maximum_revision ||
             (v->capabilities & c->offer.required_capabilities) != c->offer.required_capabilities)
             return SOPHIA_9P_INVALID;
-        /* Sealed exists only at r9 and the owned ring only at r10; DMA-BUF
+        if (!sf_frame_welcome(&c->offer, v)) return SOPHIA_9P_INVALID;
+        /* Sealed exists only at r9; owned rings serve r10 and explicit SFT. DMA-BUF
          * is r9 legacy or the r10 opt-in beside the ring. The revision is
          * never inferred. */
         if (c->image_mode &&
@@ -33,13 +34,15 @@ int sf_session_event_parse(struct sophia_sf_client *c)
               !(v->selected_revision == SOPHIA_SF_REVISION_OWNED_RING &&
                 (v->capabilities & SOPHIA_SF_CAP_OWNED_RING))) ||
              ((v->capabilities & SOPHIA_SF_CAP_OWNED_RING) &&
-              v->selected_revision != SOPHIA_SF_REVISION_OWNED_RING)))
+              v->selected_revision != SOPHIA_SF_REVISION_OWNED_RING &&
+              v->selected_revision != SOPHIA_SFT_REVISION)))
             return SOPHIA_9P_INVALID;
         if (v->connection_epoch != c->epoch ||
             (c->profile == SOPHIA_SF_DESCRIPTOR && !sf_descriptor_welcome(c, v)))
             return SOPHIA_9P_INVALID;
         if (c->profile == SOPHIA_SF_LAUNCHER || c->profile == SOPHIA_SF_DOCK) {
-            unsigned revision = c->offer.required_capabilities & SOPHIA_SF_CAP_SEALED_IMAGE ? 9
+            unsigned revision = c->offer.required_capabilities & SOPHIA_SFT_CAPABILITY ? 13
+                                : c->offer.required_capabilities & SOPHIA_SF_CAP_SEALED_IMAGE ? 9
                                 : c->offer.required_capabilities & SOPHIA_SF_CAP_OWNED_RING ? 10
                                 : c->profile == SOPHIA_SF_LAUNCHER                        ? 7
                                                                                           : 8;
