@@ -88,7 +88,9 @@ close/reopen, codec/SDK parity and runtime trace conformance still need work.
 
 **Proposed, not adopted.** Mason's authorization permits design and modeling; it
 does not establish a final wire grammar, implementation acceptance or speedup.
-No revision, opcode or capability bit is allocated by this record.
+The [separate allocation ledger](../../../protocol/sophia-shell-allocations.md)
+now assigns r13 / bit 18 and the initial SFT record kinds for default-off
+integration; this is not enablement or acceptance.
 
 The default-off runtime store now accepts complete scene intent with optional
 owned-ring copying and predecessor retirement, reserving before input transfer
@@ -103,6 +105,12 @@ now fixes one outstanding credit and rejects non-two-slot copying or GPU-backed
 scene/predecessor resources before reserving work. Legacy composition remains
 available; producer drain/fallback and the wire opener are still unimplemented.
 Evidence: `~/.local/state/sophia-frame-native-profile-01`.
+
+The [wire contract](../../sophia-frame-transactions-wire.md) reuses neutral
+Candidate, D4C1 Offer and CandidateOutcome bytes inside bounded SFT records.
+The [contract checkpoint](../../native-frame-transactions.md#wire-contract-checkpoint)
+pins its layouts and literal vectors without exposing an opener or changing
+SDK pins. C/Rust implementation parity and production admission remain required.
 
 The [continuous-frame CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 and t289 own the next implementation/qualification work. The

@@ -7,10 +7,11 @@ capture and completion make up the rest of SFT's contract. SFT uses the existing
 9P control transport, registered pixel path and native renderer; it is not a new
 transport or rendering API. The name makes no performance claim.
 
-**Status: proposed architecture, 2026-11-04.** The operator authorized protocol
+**Status: default-off implementation, 2026-11-04.** The operator authorized protocol
 design changes and TLA+ modeling to reduce native CPU/frame while retaining
-security and atomic tear-free rendering. This is not a shipped wire contract,
-protocol allocation, implementation acceptance or measured speedup. See
+security and atomic tear-free rendering. The initial wire contract is allocated
+for integration; SDKs, host exposure and qualification remain incomplete. This
+is not implementation acceptance or a measured speedup. See
 [ADR dwm37bn6](notes/decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md).
 The [shell files contract](sophia-shell-files.md),
 [image channel](sophia-image-channel.md) and
@@ -35,7 +36,7 @@ must use this contract; benchmark-only implementation is insufficient.
 
 **9P remains the control plane.** Admission, grants, metadata, frame intent,
 acknowledgements and lifecycle events continue through the existing authenticated
-shell files transport. `FrameCommit` is a proposed record on that transport, not
+shell files transport. `FrameCommit` is an allocated record on that transport, not
 a new socket protocol or a replacement for 9P. Other desktop roles retain their
 existing interfaces.
 
@@ -362,6 +363,30 @@ The pre-change regression admitted a GPU layer; removing each of four eligibilit
 guards also fails its check. Evidence: `~/.local/state/sophia-frame-native-profile-01`.
 No opcode, SDK pin, wire opener or native enablement changes here.
 
+### Wire contract checkpoint
+
+The [initial SFT wire contract](sophia-frame-transactions-wire.md) and
+[KDL layouts](../protocol/sophia-frame-transactions-v1.kdl) now assign r13 / bit 18,
+three submitted kinds and four event kinds through the allocation ledger.
+FrameCommit embeds the existing neutral Candidate and optional complete D4C1
+RingOffer, followed by an optional predecessor intent. FrameOutcome retains the
+existing outcome body and adds its exact stream binding and optional credit
+deadline. No existing record changes bytes and no new transport is introduced.
+
+Sixteen literal vectors cover fixed control events, all four image/retirement
+flag combinations, and terminal credit/no-credit outcomes. Contract checks pin
+identifier disjointness, field extents, the existing 256-byte control budget,
+and byte equality with the currently pinned candidate/offer/outcome codecs.
+Legacy decoders continue to refuse every new kind. These are specification
+checks, not implementation of the SFT codec or proof of fragmented transport
+admission. Evidence: `~/.local/state/sophia-frame-wire-contract-01`.
+
+Independent C/Rust codec/refusal parity is next, followed by host admission and
+producer integration. The SDK worktrees start from the exact current vendored
+revisions; no vendored snapshot is edited directly. Negotiation must explicitly
+grant SFT and owned-ring authority and choose exactly r13. The new contract does
+not grant draw, GPU or the ordinary W2 Candidate trailer.
+
 The [modeling brief](../validation/specula/native-frame-transaction/modeling-brief.md)
 defines the finite scope; [results](../validation/specula/native-frame-transaction/results.md)
 record three safety configurations, one fair-progress configuration and seven
@@ -373,8 +398,8 @@ Before implementation enablement, finish the input/refusal reservation and
 resource-lifetime proof seams, including close/drain/reopen, fragmented input,
 byte limits, exact callback identities and predecessor-intent conflicts. Reuse
 the W3 credit and W2 retirement foundations rather than create duplicate engines;
-their composed FrameCommit path is new and unproved. Allocate grammar/revision
-only after that contract is complete. Keep C/Rust parity and the generic path.
+their composed FrameCommit path is new and unproved end to end. Implement the
+allocated grammar with C/Rust parity and keep the generic path.
 Integrate the real Lom producer as well as the reference peer. Runtime traces,
 adversarial tests, then a matched native comparison are separate gates under the
 [continuous-frame CPU plan](notes/plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md).

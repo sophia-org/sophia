@@ -12,6 +12,7 @@ vendored snapshots retain their historical contracts and evidence.
 | 10 | 15 (`OWNED_RING`, `0x8000`) | Owned-ring CPU source | Existing mainline contract |
 | 11 | 16 (`DRAW`, `0x10000`) | t341 bounded drawing | Adopt the identifier assignment from the unmerged t341 contract; integration remains deferred |
 | 12 | 17 (`CONTENT_RETIRE_ON_PRESENT`, `0x20000`) | W2 predecessor retirement on presentation | Allocated here; production integration pending |
+| 13 | 18 (`FRAME_TRANSACTIONS`, `0x40000`) | Sophia Frame Transactions (SFT), native CPU profile | Allocated for default-off integration; codecs, owner/producer integration and qualification pending |
 
 Revision 11 / bit 16 remains owned by draw even while t341 is deferred. Its
 DrawSettled event kind 54 also remains assigned to draw. Deferral does not make
@@ -20,8 +21,9 @@ it does not assert that mainline already implements that branch's protocol.
 
 The parked overview proposal has **no allocation**. The older “currently
 r11/bit 16” and t341's “next available candidate is r12/bit17” text are superseded
-by this ledger. Revival requires a fresh later allocation. W3's standing-credit
-design is also unallocated. Neither r13 nor bit 18 is assigned by this decision.
+by this ledger. Revival requires a fresh later allocation. The earlier W3
+standing-credit proposal has no independent allocation. The SFT amendment below
+assigns r13/bit 18 to the complete frame protocol, not the parked W3 wire sketch.
 Capability masks are scoped to their protocol: WM/policy bit 17 for output launch
 context is unrelated to shell bit 17 and is not a collision.
 
@@ -60,6 +62,7 @@ These are explicit target rows for integration, not a `>=` rule:
 | 10 | Image revision 10, source kind 4, existing D4 layouts | Not available | Not available |
 | 11 | Image revision 10, source kind 4, existing D4 layouts | t341 draw-v1 and DrawSettled 54 | Not available |
 | 12 | Image revision 10, source kind 4, existing D4 layouts | Same t341 draw vocabulary; optional explicit grant | Candidate flag/trailer above |
+| 13 | Image revision 10, source kind 4, existing D4 layouts | Existing r11 assignment; optional explicit grant | Existing r12 assignment; optional explicit grant, separate from SFT's own predecessor field |
 | Unallocated later revision | No mapping established | No mapping established | No mapping established |
 
 No bit 15 means no owned-ring source, including on a draw-only connection.
@@ -116,6 +119,24 @@ This ledger is separate from the SDK-mirrored byte contracts so the allocation
 can be settled without editing immutable vendor archives or making their current
 contract checks inconsistent. During coordinated SDK integration, carry this
 assignment into the authoritative byte contracts and their checked SDK copies.
+
+## SFT assignment, November 4
+
+The approved native frame architecture owns r13 / bit 18. Its exact initial
+grammar is [sophia-frame-transactions-v1.kdl](sophia-frame-transactions-v1.kdl),
+with lifecycle/admission rules in [the SFT wire contract](../docs/sophia-frame-transactions-wire.md).
+Candidate kinds 279/280/281 are FrameStreamOpen, FrameStreamClose and FrameCommit;
+event kinds 55/56/57/58 are FrameStreamOpened, FrameStreamClosed, FrameRefused and
+FrameOutcome. DrawSettled 54 is untouched. Shell envelope api_version remains 1;
+there is no new transport or source kind.
+
+SFT requires explicit bit 18 and owned-ring bit 15 with the existing content-role
+authority, selecting exactly r13. It grants neither draw nor W2. Its integrated
+predecessor intent reuses W2 ownership semantics, but does not authorize a W2
+trailer on ordinary Candidate. An unsupported combination refuses. Neither
+knowing r13 grammar nor accepting a required range authorizes silently dropping
+a required capability. First integration remains default-off; this assignment
+alone changes no offered revision, client default, SDK pin or launch profile.
 
 The [CPU critical path](../docs/notes/plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 tracks implementation order. The frozen W2 note is
