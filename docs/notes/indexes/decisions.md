@@ -5,6 +5,7 @@ Current contracts are identified in the [documentation map](../../README.md).
 
 | Record | Status | Scope |
 | --- | --- | --- |
+| [Submit native frames as bounded transactions](../decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md) | Proposed 2026-11-04 | Keep 9P control and owned-ring pixels; combine frame intent with bounded capture/admission; TLA+ design checkpoint, no allocated wire or measured saving |
 | [Admit shell content through a negotiated descriptor channel](../decisions/qujwzrdz-admit-shell-content-through-a-negotiated-descriptor-channel-beside-the-9p-wire.md) | Accepted 2026-10-17 | Shared shell/lock custody and layouts; sealed memfd first in t338, DMA-BUF capture behind renderer proof; current runtime remains byte-only |
 | [Pipeline shell writes with bounded recovery](../decisions/s5msyyv2-pipeline-shell-writes-with-bounded-recovery-and-unchanged-custody.md) | Accepted 2026-10-17 | Queued final-fragment submit and up to four pixel writes; first-slice capture precedes implementation; native gates remain open |
 | [Separate desktop readiness from application proofs](../decisions/adr0001-separate-desktop-readiness-from-application-proofs.md) | Accepted, recorded retrospectively | Ordinary session lifecycle; physical acceptance remains pending |

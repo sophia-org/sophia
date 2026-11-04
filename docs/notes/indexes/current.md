@@ -26,6 +26,11 @@ and the [decision to separate desktop readiness from application proofs](../deci
 
 ## Desktop composition
 
+The [bounded FrameCommit proposal](../decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md)
+targets repeated frame coordination after the fresh iGPU CPU comparison. It keeps
+9P for control and the image path for pixels; the linked architecture diagram and
+TLA+ checkpoint separate a 350 µs/frame target from unmeasured implementation gains.
+
 The [X11 readback and operator capture investigation](../investigations/id869143-x11-drawable-readback-and-an-operator-capture-path.md)
 separates the missing XkbBell request from CPU drawable readback, scoped desktop
 capture and the independently admitted XTEST input path.

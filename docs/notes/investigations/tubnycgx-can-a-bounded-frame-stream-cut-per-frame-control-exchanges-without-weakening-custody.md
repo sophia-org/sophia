@@ -9,6 +9,12 @@ tags: [investigation, 9p, performance, architecture]
 
 ## Question
 
+**November 4 follow-up:** the [FrameCommit proposal](../decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md)
+composes bounded credit with asynchronous capture and complete scene intent on
+the existing 9P control plane. Its separate TLA+ design checkpoint does not enable
+this earlier W3 proposal or prove the combined wire/resource path. Current native
+CPU sequencing is in the [continuous-frame plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md#november-4-native-framecommit-design-checkpoint).
+
 Can a bounded standing frame stream, designed now rather than after
 every small candidate, cut per-frame control exchanges while keeping
 immutable generations, exact grant/generation settlement, bounded

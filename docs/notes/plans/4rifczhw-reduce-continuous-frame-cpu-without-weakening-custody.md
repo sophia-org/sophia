@@ -20,6 +20,33 @@ It does not reopen their completed exits or replace `todo.md` as the task ledger
 The exit is a separately qualified improvement, or a documented no-change result
 for each selected mechanism. A profile share is not a savings target.
 
+## November 4: native FrameCommit design checkpoint
+
+The refreshed matched CPU reference is complete: Sophia 1032.5–1075, Niri
+415–455 and XLibre 180–220 combined µs/frame on the changing 1920×24 iGPU/60 Hz
+lane. These accounting bounds and their workload limits are recorded in the
+[FrameCommit architecture](../../native-frame-transactions.md). This dated update
+owns the native CPU lane's next step; earlier sequencing below is retained history.
+
+Mason authorized protocol redesign and TLA+ modeling first. The
+[proposed decision](../decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md)
+keeps 9P control and owned-ring pixels, while combining capture/admission intent
+into a bounded transaction. Its finite model passes; no runtime protocol changed
+and no saving is measured. The target is 350 combined µs/frame, not a forecast.
+
+Under t289, finish the input/refusal reservation and resource-lifetime gates
+before opening the new wire path. Then integrate the negotiated adapter and real
+Lom producer with C/Rust parity, runtime trace conformance and adversarial tests.
+Qualification needs a fresh matched Niri comparison, candidate upper CPU bound
+below reference lower bound, preserved cadence/security/pixels and explicit latency
+acceptance. Retained multilayer content needs its own qualification. Existing
+W2/W3 foundations are reusable inputs, not an already proved FrameCommit path.
+
+Implementation follows the [Rust optimization criteria](../../native-frame-transactions.md#rust-implementation-and-optimization-criteria):
+ownership and bounded buffer reuse, compile-time fixed work, inspection of hot
+kernel code, and evidence-driven SIMD with correctness/fallback coverage. Build
+profile changes are isolated treatments; native CPU/frame remains the exit.
+
 ## October 31: bounded CPU dirty updates landed; GPU qualification resumes
 
 **November 1 resumption:** the six-arm fresh-DMA GPU comparison has passed its

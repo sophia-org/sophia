@@ -1,0 +1,50 @@
+# Design-model checkpoint, 2026-11-04
+
+No production protocol or runtime source changed. The design is not yet eligible
+for enablement; see the modeling brief's explicit exclusions and wire gate.
+
+TLC used the repository-pinned jar SHA256
+`e22f8ffb4bacdea0a871f444dd94fe5fb0d8013b3388ae39e82e26f852c735d5`.
+Full bounded enumeration, no depth/state constraint or simulation cutoff:
+
+| Configuration | Distinct states | Result |
+|---|---:|---|
+| MC: two frames, one credit/worker/head | 554,527 | All 13 invariants pass |
+| TwoCredits: two frames, two credits/workers, one head | 2,159,654 | All 13 invariants pass |
+| Mirror: one frame, two heads | 12,440 | All 13 invariants pass |
+| Liveness: one frame/head | 4,076 | Invariants and both fair-progress properties pass |
+
+These finite configurations overlap; summing their states does not establish
+coverage of a larger configuration. TLC uses probabilistic fingerprints, not a
+machine-checked unbounded theorem. Syntax and variable-assignment analysis pass.
+
+All seven mutation controls fail the intended invariant:
+
+| Removed guard | Counterexample |
+|---|---|
+| Credit debit at admission | Admit immediately violates credit conservation |
+| Source read-ticket completion before release | Admit → PublishSource → Deliver while the reader remains active |
+| Whole-scene preparation before submission | Admit → CopyDone → Validate → Submit |
+| Current authority at submission | Admit → copy/validate/handoff/prepare → Revoke → Submit |
+| Remaining predecessor head lease | Primary flips → Presented transfers → free while secondary still displays predecessor |
+| Worker handoff before cancelled terminal | Admit → Cancel → Terminal while copying |
+| Facts-bound stream closure | ChangeFacts leaves the old stream Open |
+
+Review also corrected the distinction between closing a stream and revoking
+authority: Close stops new admission and credit replenishment, but already
+accepted work may finish. Facts changes invalidate its tuple; revocation replaces
+its epoch. Cancellation is forbidden after renderer handoff. The bounded
+read-only re-review accepted these corrections; the reviewer did not rerun TLC.
+
+Raw logs, exact spec/config snapshots, mutation traces, tool checks and the
+reproduction log live at `~/.local/state/sophia-native-frame-model-01`.
+Earlier exploratory outputs are retained separately and are not the results
+above. Specula's background wrapper writes a combined log through two writers,
+which produced NUL padding/duplicate lines; normalized mutation-log copies remove
+only that padding and make the JSON trace path absolute for the trace parser.
+Original logs and counterexample JSON remain intact.
+
+No runtime traces exist for FrameCommit. No claim of native conformance, GPU
+fence correctness, cross-monitor simultaneous flipping or CPU improvement is
+made. This checkpoint justifies the next narrow protocol/resource proof and
+implementation step; it does not justify a performance claim or adoption.

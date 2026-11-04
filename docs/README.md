@@ -109,6 +109,10 @@ candidates that role may exchange.
 
 ## Architecture Rationale
 
+- [Bounded native frame transactions](native-frame-transactions.md) proposes
+  `FrameCommit` over the existing 9P control plane and owned-ring pixel path.
+  It records the measured CPU gap, performance target, ASCII design and bounded
+  TLA+ evidence; wire implementation and performance acceptance remain open.
 - [Architectural Alignment And Evidence Policy](architectural-alignment.md)
   assigns temporal, relational, arithmetic, and executable claims to their
   active validation gates and records what those gates do not prove.

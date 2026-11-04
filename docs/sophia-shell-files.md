@@ -15,6 +15,11 @@ contract in the [control bus](sophia-9p-control-bus.md).
 
 ## Current owners, versions and grants
 
+The [bounded native frame transaction proposal](native-frame-transactions.md)
+explores `FrameCommit` over this same 9P transport, with pixels retained on the
+owned-ring/image path. It has bounded design-model evidence, not an allocated
+wire format or implementation. It does not amend the current rules below.
+
 ### Request ordering on a shell connection
 
 The shell export executes synchronous requests in wire order on each
