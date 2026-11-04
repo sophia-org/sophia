@@ -132,6 +132,12 @@ ResourceReleased and native buffer retirement retain their distinct meanings.
 
 ## Input, output and backpressure
 
+The one-surface profile requires every placement and target to name surface
+index zero. An embedded offer's checked `width * height * 4` must fit the
+owned-ring protocol maximum of 4 MiB before contextual admission. The actual
+registered capacity, allocation bounds and negotiated limits may be smaller
+and remain fresh owner checks; these shape bounds do not authorize a source.
+
 The existing per-submission file assembler accepts fragmented writes only within
 its declared length and timeout. A prefix, missing suffix, duplicate fragment or
 failed submission never admits half a scene. Decode a complete bounded record
