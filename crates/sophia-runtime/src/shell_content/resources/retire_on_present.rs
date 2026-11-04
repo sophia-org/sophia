@@ -116,7 +116,7 @@ impl ContentResourceStore {
             .accepted
             .get(&intent.resource)
             .ok_or(ContentStoreError::Stale)?;
-        if value.retiring || value.named() {
+        if value.retiring || value.named() || value.frame.is_some() {
             return Err(ContentStoreError::Stale);
         }
         let bytes = value.pixels.description().total_bytes;

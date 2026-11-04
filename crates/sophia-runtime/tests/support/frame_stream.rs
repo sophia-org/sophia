@@ -265,10 +265,7 @@ impl Fixture {
                 let (resources, candidates) = self.pool.active_pair_mut().unwrap();
                 assert!(
                     candidates
-                        .transfer_frame_event_at(now, |published| {
-                            if let Some(owner) = published.retire {
-                                resources.commit_retire(&owner);
-                            }
+                        .transfer_frame_event_at(resources, now, |published| {
                             events.push(published.clone());
                             Ok(())
                         })

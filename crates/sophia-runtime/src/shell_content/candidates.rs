@@ -587,17 +587,7 @@ impl ContentCandidateStore {
         self.check_grant(end.grant)?;
         self.time(now)?;
         self.expire(now)?;
-        let output = self
-            .assemblies
-            .iter()
-            .find_map(|(output, assembly)| {
-                (assembly.begin.candidate_generation == end.candidate_generation).then_some(*output)
-            })
-            .ok_or(ContentCandidateError::Stale)?;
-        #[cfg(feature = "experimental-native-frame-transaction")]
-        if self.assemblies[&output].copy.is_some() {
-            return Err(ContentCandidateError::Budget);
-        }
+        let output = self.end_output(end.candidate_generation)?;
         let result = self.validate_end(transaction, &end, context, authority, resources, output);
         match result {
             Ok(candidate) => {
@@ -610,6 +600,22 @@ impl ContentCandidateStore {
                 Err(error)
             }
         }
+    }
+
+    fn end_output(&self, generation: u64) -> Result<ContentOutputId, ContentCandidateError> {
+        let (output, assembly) = self
+            .assemblies
+            .iter()
+            .find(|(_, assembly)| assembly.begin.candidate_generation == generation)
+            .ok_or(ContentCandidateError::Stale)?;
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if assembly.copy.is_some() {
+            // Waiting for handoff must not reject or poison the assembly.
+            return Err(ContentCandidateError::Budget);
+        }
+        #[cfg(not(feature = "experimental-native-frame-transaction"))]
+        let _ = assembly;
+        Ok(*output)
     }
 
     fn validate_end(
@@ -660,16 +666,30 @@ impl ContentCandidateStore {
         )?;
         validate_surfaces(&assembly.surfaces, context.allocations, output)?;
         validate_targets(&assembly.targets, &assembly.surfaces, context.allocations)?;
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        let frame_owner = self
+            .frame_terminal_key(output, assembly.begin.candidate_generation)
+            .map(|_| self.retire_owner(output, assembly.begin.candidate_generation));
+        let lease = |resource| {
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            if let Some(owner) = frame_owner {
+                return resources.lease_frame_image(owner, resource);
+            }
+            resources.lease(self.limits.grant, resource)
+        };
         let resource_ids = validate_placements(
             &assembly.placements,
             &assembly.surfaces,
             context.allocations,
-            resources,
-            self.limits.grant,
+            lease,
         )?;
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if let Some(owner) = frame_owner {
+            resources.validate_frame_images(owner, &resource_ids)?;
+        }
         let mut leases = Vec::with_capacity(resource_ids.len());
         for resource in resource_ids {
-            leases.push((resource, resources.lease(self.limits.grant, resource)?));
+            leases.push((resource, lease(resource)?));
         }
         Ok(Candidate {
             native_launcher: assembly.native_launcher,

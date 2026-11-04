@@ -119,6 +119,14 @@ replacement epochs. Complete scene/predecessor ownership across copy and the
 actual wire admission still need integration; this is not a full runtime trace
 validation of the model.
 
+The resource join now keeps a copied destination private to its exact frame
+until successful Presented transfer. Terminal transfer also commits predecessor
+retirement; failed frames retain their private storage charge until the last
+lease and release publication. Ordinary leases cannot bypass that ownership.
+Device-free tests and guard-removal controls cover these implementation rules;
+they are not runtime trace validation. Complete scene/predecessor reservation at
+input and the codec/producer paths remain required.
+
 ## Model checks
 
 See [modeling brief](modeling-brief.md) for requirements, assumptions and exclusions,

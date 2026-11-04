@@ -260,10 +260,34 @@ This adds fixed metadata to the existing four job slots, not a second queue,
 thread or per-frame allocation.
 
 This is still below the wire boundary. Complete scene intake, predecessor-intent
-reservation across copy, cleanup of a new resource when subsequent scene
-validation refuses, the real codec/opener and C/Rust/Lom integration remain
+reservation across copy, the real codec/opener and C/Rust/Lom integration remain
 required before enablement. The one-credit native profile must be enforced by
 that opener; the reused general ledger still supports two for its existing tests.
+
+### Private frame-image ownership
+
+A joined copy now reserves its destination for the exact grant, output and
+candidate generation. Resource acceptance alone does not make it available to
+ordinary leases, explicit retirement or another frame. Scene admission can lease
+its own private image and ordinary retained images, and must include the new
+image. Both End paths wait for the exact copy handoff without rejecting the
+assembly merely because copying is still in progress.
+
+`transfer_frame_event_at` owns resource settlement as well as credit settlement.
+Only a successful Presented transfer promotes the private image to an ordinary
+retained resource and commits the predecessor intent. A refused publication
+changes neither. A rejected, expired or superseded frame abandons its private
+image; the original resident/backing charge remains until the last renderer
+lease ends and ResourceReleased is published. Cleanup does not require new
+retiring headroom. Revocation drains old storage without delivering into a new
+grant. These are fixed fields in the existing resource owners, not another pool.
+
+Device-free tests exercise real copying, blocked publication, exact frame
+identity, omitted-image refusal, expiry, failed rendering with a full retiring
+budget, combined promotion/retirement and disconnect. This closes the private
+image cleanup gap; it does not yet reserve predecessor intent at FrameCommit
+intake or consume a complete scene there. No wire opener or native claim is
+introduced. Evidence: `~/.local/state/sophia-frame-image-ownership-01`.
 
 The [modeling brief](../validation/specula/native-frame-transaction/modeling-brief.md)
 defines the finite scope; [results](../validation/specula/native-frame-transaction/results.md)

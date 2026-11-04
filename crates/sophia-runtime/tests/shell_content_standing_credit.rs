@@ -29,14 +29,18 @@ fn queued_terminal_does_not_return_credit_before_output_transfer() {
     );
     let held = f.candidates().pending_event().cloned();
     assert_eq!(
-        f.candidates()
-            .transfer_frame_event_at(150, |_| Err(Error::Budget)),
+        {
+            let (resources, candidates) = f.pool.active_pair_mut().unwrap();
+            candidates.transfer_frame_event_at(resources, 150, |_| Err(Error::Budget))
+        },
         Err(Error::Budget)
     );
     assert_eq!(f.candidates().pending_event().cloned(), held);
     assert_eq!(
-        f.candidates()
-            .transfer_frame_event_at(175, |_| Err(Error::Malformed)),
+        {
+            let (resources, candidates) = f.pool.active_pair_mut().unwrap();
+            candidates.transfer_frame_event_at(resources, 175, |_| Err(Error::Malformed))
+        },
         Err(Error::Malformed)
     );
     assert!(f.candidates().pending_frame_stream_event().is_none());

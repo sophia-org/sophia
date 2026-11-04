@@ -4,6 +4,26 @@ The model-only checkpoints did not change production protocol or runtime source.
 The subsequent default-off Rust foundation is described below. The design is not
 yet eligible for enablement; see the explicit exclusions and wire gate.
 
+## Private frame-image ownership follow-up
+
+The default-off resource join holds a copied image for its exact grant, output
+and frame generation. Only its own scene may lease it before Presented transfer;
+the scene must include it. Successful terminal transfer settles both the image
+and predecessor intent, while rejected images retain their original charge
+until the last renderer lease and release publication. Full retiring capacity
+does not block failed-image cleanup.
+
+The real-worker tests cover blocked output, another frame's image reference,
+omitted-image refusal, expiry, renderer failure, combined promotion/retirement
+and epoch replacement. A regression also catches the old End-with-retirement
+path bypassing the copy gate. Removing the exact-owner check or abandoned-image
+collection makes the corresponding test fail; the mutation script restores the
+source exactly. Evidence: `~/.local/state/sophia-frame-image-ownership-01`.
+
+This is implementation evidence, not a new model-checking or trace-validation
+result. Complete FrameCommit intake and predecessor reservation before copying,
+the wire/SDK/producer integration and native qualification remain open.
+
 ## Copy-worker join follow-up
 
 The default-off SFT store now joins its admission reservation to the existing

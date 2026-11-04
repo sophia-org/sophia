@@ -343,12 +343,13 @@ impl ContentCandidateStore {
     /// Transfer a stream terminal to the output before returning its credit.
     ///
     /// The publisher must either transfer the whole event or leave output
-    /// untouched on error. It must commit any retirement intent in the same
-    /// successful transfer. Queued outcomes are not replenishment, and an
+    /// untouched on error. A successful transfer also settles the new image
+    /// and commits predecessor retirement. Queued outcomes are not replenishment, and an
     /// ordinary `take_event` cannot consume them. `now` is the owner's current
     /// monotonic time, not the time of the earlier native completion.
     pub fn transfer_frame_event_at(
         &mut self,
+        resources: &mut ContentResourceStore,
         now: u64,
         publish: impl FnOnce(&ContentCandidateEvent) -> Result<(), ContentCandidateError>,
     ) -> Result<bool, ContentCandidateError> {
@@ -361,6 +362,9 @@ impl ContentCandidateStore {
         let ShellContentRecord::CandidateOutcome(outcome) = &event.record else {
             return Err(ContentCandidateError::Malformed);
         };
+        if resources.grant() != self.limits.grant {
+            return Err(ContentCandidateError::Stale);
+        }
         let generation = outcome.candidate_generation;
         // Clock poisoning closes admission but cannot strand existing terminals.
         let clock = self.time(now);
@@ -397,6 +401,13 @@ impl ContentCandidateStore {
         }
         self.queue_stream_closes();
         result?;
+        let ShellContentRecord::CandidateOutcome(outcome) = &event.record else {
+            unreachable!("validated terminal");
+        };
+        resources.finish_frame_images(outcome);
+        if let Some(owner) = event.retire {
+            resources.commit_retire(&owner);
+        }
         let transferred = self
             .events
             .pop_front()

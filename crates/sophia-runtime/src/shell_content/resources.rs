@@ -43,11 +43,15 @@ struct Transfer {
     deadline: u64,
     // A stopped worker retains its mapping and charge until completion.
     stopped: Option<(ContentReason, TransactionId)>,
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    frame: Option<ContentRetireOwner>,
     #[cfg(feature = "experimental-shell-capture")]
     capture: Option<Arc<()>>,
 }
 
 mod backing;
+#[cfg(feature = "experimental-native-frame-transaction")]
+mod frame;
 #[cfg(feature = "experimental-native-frame-transaction")]
 mod retire_on_present;
 #[cfg(feature = "experimental-shell-capture")]
@@ -63,11 +67,21 @@ struct Accepted {
     release_pending: bool,
     #[cfg(feature = "experimental-native-frame-transaction")]
     intent: Option<retire_on_present::Intent>,
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    frame: Option<frame::FrameImage>,
     #[cfg(feature = "experimental-shell-capture")]
     capture_evicted: bool,
 }
 
 impl Accepted {
+    fn reclaimable(&self, revoked: bool) -> bool {
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if self.frame == Some(frame::FrameImage::Abandoned) {
+            return true;
+        }
+        self.retiring || revoked
+    }
+
     fn releasable(&self) -> bool {
         #[cfg(feature = "experimental-shell-capture")]
         if !self.capture_evicted {
@@ -123,6 +137,7 @@ impl ContentResourceStore {
                     usize::from(
                         self.accepted.get(&value.resource).is_none_or(|resource| {
                             resource.retiring
+                                || resource.frame.is_some()
                                 || resource.named()
                                 || self.refused_by_reservation(resource)
                         }) || self.retire_id_held(transaction),
@@ -292,6 +307,8 @@ impl ContentResourceStore {
                 transaction,
                 deadline,
                 stopped: None,
+                #[cfg(feature = "experimental-native-frame-transaction")]
+                frame: None,
                 #[cfg(feature = "experimental-shell-capture")]
                 capture: None,
             },
@@ -362,6 +379,8 @@ impl ContentResourceStore {
                 release_pending: false,
                 #[cfg(feature = "experimental-native-frame-transaction")]
                 intent: None,
+                #[cfg(feature = "experimental-native-frame-transaction")]
+                frame: transfer.frame.map(frame::FrameImage::Held),
                 #[cfg(feature = "experimental-shell-capture")]
                 capture_evicted: true,
             },
@@ -474,6 +493,19 @@ impl ContentResourceStore {
         grant: ContentGrant,
         resource: ContentResourceId,
     ) -> Result<ContentResourceLease, ContentStoreError> {
+        let value = self.leaseable(grant, resource)?;
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if value.frame.is_some() {
+            return Err(ContentStoreError::Stale);
+        }
+        Ok(value.pixels.clone())
+    }
+
+    fn leaseable(
+        &self,
+        grant: ContentGrant,
+        resource: ContentResourceId,
+    ) -> Result<&Accepted, ContentStoreError> {
         if self.revoked {
             return Err(ContentStoreError::Revoked);
         }
@@ -484,7 +516,6 @@ impl ContentResourceStore {
             .accepted
             .get(&resource)
             .ok_or(ContentStoreError::Stale)?;
-        // An admitted retire intent denies every new lease from End.
         if value.retiring {
             return Err(ContentStoreError::Stale);
         }
@@ -492,7 +523,7 @@ impl ContentResourceStore {
         if value.named() {
             return Err(ContentStoreError::Stale);
         }
-        Ok(value.pixels.clone())
+        Ok(value)
     }
 
     pub fn retire(
@@ -518,7 +549,7 @@ impl ContentResourceStore {
             return Err(ContentStoreError::Stale);
         }
         #[cfg(feature = "experimental-native-frame-transaction")]
-        if value.named() {
+        if value.named() || value.frame.is_some() {
             return Err(ContentStoreError::Stale);
         }
         let bytes = value.pixels.description().total_bytes;
@@ -539,7 +570,7 @@ impl ContentResourceStore {
         let ready: Vec<_> = self
             .accepted
             .iter()
-            .filter(|(_, v)| !v.release_pending && (v.retiring || self.revoked) && v.releasable())
+            .filter(|(_, v)| !v.release_pending && v.reclaimable(self.revoked) && v.releasable())
             .map(|(key, _)| *key)
             .collect();
         for resource in ready {

@@ -3,6 +3,9 @@ use super::*;
 use sophia_runtime::frame_credits::FrameStreamKey;
 use std::cell::Cell;
 
+#[path = "shell_frame_images.rs"]
+mod images;
+
 fn begin(generation: u64) -> ContentCandidateBegin {
     ContentCandidateBegin {
         grant: grant(),
@@ -98,36 +101,40 @@ fn end(registry: &mut ContentEpochRegistry, now: u64) -> Result<(), ContentCandi
 }
 
 fn scene(registry: &mut ContentEpochRegistry) {
+    scene_with_resource(registry, request(1).resource, 1);
+}
+
+fn scene_with_resource(registry: &mut ContentEpochRegistry, resource: ContentResourceId, now: u64) {
     registry
         .active_candidates_mut(grant())
         .unwrap()
-        .chunk(
-            tx(12),
-            ContentCandidateChunk {
-                grant: grant(),
-                candidate_generation: 1,
-                chunk_ordinal: 0,
-                surfaces: vec![ContentSurface {
-                    allocation: request(1).allocation,
-                    scale_generation: 1,
-                    role: 1,
-                    edge: 1,
-                    margins: ContentMargins::default(),
-                    reservation_extent: 20,
-                    parent_surface_index: u16::MAX,
-                    anchor_parent_rect: ContentPixelRect::default(),
-                }],
-                placements: vec![ContentPlacement {
-                    resource: request(1).resource,
-                    surface_index: 0,
-                    destination_x_px: 0,
-                    destination_y_px: 0,
-                }],
-                targets: vec![],
-            },
-            1,
-        )
+        .chunk(tx(12), scene_record(resource), now)
         .unwrap();
+}
+
+fn scene_record(resource: ContentResourceId) -> ContentCandidateChunk {
+    ContentCandidateChunk {
+        grant: grant(),
+        candidate_generation: 1,
+        chunk_ordinal: 0,
+        surfaces: vec![ContentSurface {
+            allocation: request(1).allocation,
+            scale_generation: 1,
+            role: 1,
+            edge: 1,
+            margins: ContentMargins::default(),
+            reservation_extent: 20,
+            parent_surface_index: u16::MAX,
+            anchor_parent_rect: ContentPixelRect::default(),
+        }],
+        placements: vec![ContentPlacement {
+            resource,
+            surface_index: 0,
+            destination_x_px: 0,
+            destination_y_px: 0,
+        }],
+        targets: vec![],
+    }
 }
 
 #[test]
@@ -255,11 +262,11 @@ fn timed_out_frame_retains_credit_until_exact_copy_handoff() {
     );
     settlement.finish_frame_copy(&mut registry, now).unwrap();
     settlement.finish_frame_copy(&mut registry, now).unwrap();
-    let candidates = registry.active_candidates_mut(grant()).unwrap();
+    let (resources, candidates) = registry.active_pair_mut(grant()).unwrap();
     assert_eq!(candidates.pending_event_count(), 1);
     assert!(
         candidates
-            .transfer_frame_event_at(now, |event| {
+            .transfer_frame_event_at(resources, now, |event| {
                 let ShellContentRecord::CandidateOutcome(outcome) = &event.record else {
                     panic!();
                 };
@@ -294,7 +301,45 @@ fn successful_copy_must_handoff_before_the_complete_scene_can_be_admitted() {
     assert!(jobs.receive(completed(&mut worker)).is_ok());
     let mut settlement = jobs.reconcile(&mut registry, 2).unwrap();
     assert_eq!(settlement.outcome, Ok(()));
+    assert!(
+        matches!(
+            registry
+                .resources(grant())
+                .unwrap()
+                .lease(grant(), request(1).resource),
+            Err(ContentStoreError::Stale)
+        ),
+        "copied frame image escaped before Presented transfer"
+    );
     assert_eq!(end(&mut registry, 2), Err(ContentCandidateError::Budget));
+    let allocations = registry.allocations(grant()).unwrap().snapshots();
+    let (resources, store) = registry.active_pair_mut(grant()).unwrap();
+    assert_eq!(
+        store.end_with_retire(
+            tx(13),
+            ContentCandidateEnd {
+                grant: grant(),
+                candidate_generation: 1,
+                surface_count: 1,
+                placement_count: 1,
+                target_count: 0,
+            },
+            ContentRetireOnPresent {
+                retire_transaction: tx(99),
+                resource: request(99).resource,
+            },
+            ContentCandidateContext {
+                output: output(),
+                facts_generation: 1,
+                interaction_generation: 1,
+                allocations: &allocations,
+            },
+            resources,
+            2,
+        ),
+        Err(ContentCandidateError::Budget),
+        "End with retirement bypassed the copy handoff"
+    );
     settlement.admission.worker_job += 1;
     assert_eq!(
         settlement.finish_frame_copy(&mut registry, 2),
@@ -309,18 +354,84 @@ fn successful_copy_must_handoff_before_the_complete_scene_can_be_admitted() {
     settlement.admission.grant.connection_epoch -= 1;
     settlement.finish_frame_copy(&mut registry, 2).unwrap();
     end(&mut registry, 2).unwrap();
-    let candidates = registry.active_candidates_mut(grant()).unwrap();
+    let (resources, candidates) = registry.active_pair_mut(grant()).unwrap();
     assert_eq!(candidates.pending_candidate_count(), 1);
     let _bundle = candidates.begin_submission(output(), 1, 3).unwrap();
     candidates.prepared(output(), 1, 1, 1, 3).unwrap();
     candidates.take_event().unwrap();
     candidates.presented_at(output(), 1, 1, 1, 1, 4).unwrap();
+    assert!(matches!(
+        resources.lease(grant(), request(1).resource),
+        Err(ContentStoreError::Stale)
+    ));
+    let retire = ContentResourceRetire {
+        grant: grant(),
+        resource: request(1).resource,
+    };
+    assert_eq!(
+        resources.additional_response_credit(
+            tx(30),
+            &ShellContentRecord::ResourceRetire(retire.clone())
+        ),
+        1
+    );
+    assert_eq!(
+        resources.retire(tx(30), &retire),
+        Err(ContentStoreError::Stale)
+    );
+    assert_eq!(
+        resources.reserve_retire(
+            ContentRetireOwner {
+                grant: grant(),
+                output: output(),
+                candidate_generation: 2
+            },
+            ContentRetireOnPresent {
+                retire_transaction: tx(30),
+                resource: request(1).resource
+            },
+            &ContentRetireToken::default()
+        ),
+        Err(ContentStoreError::Stale)
+    );
+    assert_eq!(
+        candidates.transfer_frame_event_at(resources, 5, |_| Err(ContentCandidateError::Budget)),
+        Err(ContentCandidateError::Budget)
+    );
+    assert!(matches!(
+        resources.lease(grant(), request(1).resource),
+        Err(ContentStoreError::Stale)
+    ));
+    let mut foreign = ContentResourceStore::new(ContentLimits::prototype(ContentGrant {
+        connection_epoch: 2,
+        content_grant_epoch: 2,
+    }))
+    .unwrap();
+    assert_eq!(
+        candidates.transfer_frame_event_at(&mut foreign, 5, |_| panic!(
+            "published to wrong resource owner"
+        )),
+        Err(ContentCandidateError::Stale)
+    );
     assert!(
         candidates
-            .transfer_frame_event_at(5, |event| {
+            .transfer_frame_event_at(resources, 5, |event| {
                 assert!(event.frame_credit.unwrap().expires_msec.is_some());
                 Ok(())
             })
+            .unwrap()
+    );
+    assert_eq!(
+        resources
+            .lease(grant(), request(1).resource)
+            .unwrap()
+            .cpu_bytes()
+            .unwrap(),
+        vec![1; 16000]
+    );
+    assert!(
+        !candidates
+            .transfer_frame_event_at(resources, 5, |_| panic!("duplicate transfer"))
             .unwrap()
     );
 }
@@ -490,10 +601,10 @@ fn unsent_cancellation_settles_once_and_close_forbids_replenishment() {
         );
         let mut settlement = jobs.reconcile(&mut registry, 2).unwrap();
         settlement.finish_frame_copy(&mut registry, 2).unwrap();
-        let store = registry.active_candidates_mut(grant()).unwrap();
+        let (resources, store) = registry.active_pair_mut(grant()).unwrap();
         assert!(
             store
-                .transfer_frame_event_at(2, |event| {
+                .transfer_frame_event_at(resources, 2, |event| {
                     let ShellContentRecord::CandidateOutcome(outcome) = &event.record else {
                         panic!();
                     };

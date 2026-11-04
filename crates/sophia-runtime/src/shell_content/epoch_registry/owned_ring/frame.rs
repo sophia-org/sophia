@@ -46,6 +46,11 @@ impl ContentEpochRegistry {
             .map(|_| ContentCandidateError::Stale);
         let mut admission = None;
         let output = begin.output;
+        let owner = crate::ContentRetireOwner {
+            grant: begin.grant,
+            output,
+            candidate_generation: begin.candidate_generation,
+        };
         let decision = epoch.candidates.admit_frame_begin_with(
             transaction,
             begin,
@@ -68,6 +73,7 @@ impl ContentEpochRegistry {
                     deadline,
                 )
                 .map_err(frame_error)?;
+                epoch.resources.bind_frame_copy(request.resource, owner);
                 let job = reserved.worker_job;
                 admission = Some(reserved);
                 Ok(Some(job))

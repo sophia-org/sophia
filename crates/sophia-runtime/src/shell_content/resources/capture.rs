@@ -111,6 +111,8 @@ impl ContentResourceStore {
                 release_pending: false,
                 #[cfg(feature = "experimental-native-frame-transaction")]
                 intent: None,
+                #[cfg(feature = "experimental-native-frame-transaction")]
+                frame: None,
                 capture_evicted: false,
             },
         );

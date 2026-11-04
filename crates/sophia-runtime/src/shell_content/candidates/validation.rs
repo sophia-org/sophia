@@ -135,8 +135,7 @@ pub(super) fn validate_placements(
     placements: &[ContentPlacement],
     surfaces: &[ContentSurface],
     allocations: &[ContentAllocationSnapshot],
-    resources: &ContentResourceStore,
-    grant: ContentGrant,
+    lease: impl Fn(ContentResourceId) -> Result<ContentResourceLease, ContentStoreError>,
 ) -> Result<BTreeSet<ContentResourceId>, ContentCandidateError> {
     let mut resource_ids = BTreeSet::new();
     for placement in placements {
@@ -144,7 +143,7 @@ pub(super) fn validate_placements(
             return Err(ContentCandidateError::Malformed);
         };
         let actual = allocation(allocations, surface.allocation)?;
-        let lease = resources.lease(grant, placement.resource)?;
+        let lease = lease(placement.resource)?;
         let description = lease.description();
         if description.rendered_scale_numerator != actual.scale_numerator
             || description.rendered_scale_denominator != actual.scale_denominator

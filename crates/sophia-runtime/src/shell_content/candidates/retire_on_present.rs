@@ -33,13 +33,7 @@ impl ContentCandidateStore {
         self.check_grant(end.grant)?;
         self.time(now)?;
         self.expire(now)?;
-        let output = self
-            .assemblies
-            .iter()
-            .find_map(|(output, assembly)| {
-                (assembly.begin.candidate_generation == end.candidate_generation).then_some(*output)
-            })
-            .ok_or(ContentCandidateError::Stale)?;
+        let output = self.end_output(end.candidate_generation)?;
         let owner = self.retire_owner(output, end.candidate_generation);
         let result = self
             .validate_end(
