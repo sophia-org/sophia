@@ -107,6 +107,7 @@ impl ContentCandidateStore {
 
     /// Validate complete intent against the owner's current facts and allocations.
     /// Copy settlement only removes the read gate; it never supplies this context.
+    /// An absent output context rejects the ready scene with AllocationLost.
     ///
     /// # Errors
     /// Returns Budget while copying, Stale for a missing/non-complete input,
@@ -116,7 +117,7 @@ impl ContentCandidateStore {
         &mut self,
         output: ContentOutputId,
         generation: u64,
-        context: ContentCandidateContext<'_>,
+        context: Option<ContentCandidateContext<'_>>,
         resources: &ContentResourceStore,
         now: u64,
     ) -> Result<(), ContentCandidateError> {
@@ -133,6 +134,14 @@ impl ContentCandidateStore {
             surface_count: assembly.begin.surface_count,
             placement_count: assembly.begin.placement_count,
             target_count: assembly.begin.target_count,
+        };
+        let Some(context) = context else {
+            self.check_grant(end.grant)?;
+            self.time(now)?;
+            self.expire(now)?;
+            let output = self.end_output(generation)?;
+            self.reject_assembly(output, ContentCandidateError::AllocationLost);
+            return Err(ContentCandidateError::AllocationLost);
         };
         self.end_inner(
             assembly.transaction,

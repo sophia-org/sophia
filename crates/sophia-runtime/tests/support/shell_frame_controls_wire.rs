@@ -381,8 +381,7 @@ fn controls_obey_the_existing_per_service_tick_limit() {
     );
 }
 
-#[test]
-fn retained_complete_scene_uses_no_ring_or_worker_and_keeps_the_stream_credit() {
+fn admitted_retained() -> (fixture::Fixture, Transport, Peer) {
     let mut f = fixture::Fixture::new(64);
     let mut t = Transport::take(&mut f);
     let mut peer = Peer::attach_frame(&mut t.transport.state);
@@ -463,25 +462,172 @@ fn retained_complete_scene_uses_no_ring_or_worker_and_keeps_the_stream_credit() 
         t.transport.state.output.front().is_none(),
         "admission is not terminal or Prepared"
     );
-    let (resources, candidates) = t
+    (f, t, peer)
+}
+
+#[test]
+fn retained_complete_scene_uses_no_ring_or_worker_and_keeps_the_stream_credit() {
+    let (f, mut t, mut peer) = admitted_retained();
+    assert_eq!(finish_ready(&mut t, &f.allocations, 6, 8, true, 3), Ok(1));
+    assert_eq!(t.candidates().pending_candidate_count(), 1);
+    let _display = t
         .transport
-        .content_epochs
-        .active_pair_mut(fixture::grant())
+        .begin_content_submission(fixture::output(), 1, 4)
         .unwrap();
-    candidates
-        .finish_frame_commit(
-            fixture::output(),
-            1,
-            crate::ContentCandidateContext {
-                output: fixture::output(),
-                facts_generation: 6,
-                interaction_generation: 8,
-                allocations: &f.allocations,
-            },
-            resources,
-            3,
-        )
+    t.transport
+        .content_prepared(fixture::grant(), fixture::output(), 1, 20, 30, 5)
         .unwrap();
-    assert_eq!(candidates.pending_candidate_count(), 1);
+    let OutboundRecord::Frame(prepared) = &t.transport.state.output.front().unwrap().record else {
+        panic!()
+    };
+    assert!(
+        matches!(prepared, ShellFrameRecord::Outcome { outcome, credit_expires_msec: 0, .. } if outcome.kind == 1)
+    );
+    let prepared = prepared.clone();
+    expect(&mut peer, &mut t, prepared);
+    t.transport
+        .content_presented_at(fixture::grant(), fixture::output(), 1, 40, 20, 30, 50)
+        .unwrap();
+    let OutboundRecord::Frame(presented) = &t.transport.state.output.front().unwrap().record else {
+        panic!()
+    };
+    assert!(
+        matches!(presented, ShellFrameRecord::Outcome { outcome, credit_expires_msec, .. }
+        if outcome.kind == 2 && *credit_expires_msec == 50 + u64::from(ContentLimits::prototype(fixture::grant()).permit_timeout_ms))
+    );
+    let presented = presented.clone();
+    expect(&mut peer, &mut t, presented);
     peer.quiet(&mut t.transport.state);
+}
+
+fn finish_ready(
+    t: &mut Transport,
+    allocations: &[crate::ContentAllocationSnapshot],
+    facts: u64,
+    interaction: u64,
+    present: bool,
+    now: u64,
+) -> Result<usize, ShellTransportError> {
+    let contexts = [crate::ContentCandidateContext {
+        output: fixture::output(),
+        facts_generation: facts,
+        interaction_generation: interaction,
+        allocations,
+    }];
+    t.transport.state.service_content_candidates(
+        &mut t.transport.content_epochs,
+        if present { &contexts } else { &[] },
+        now,
+    )
+}
+
+#[test]
+fn ready_scene_rechecks_facts_allocations_interaction_and_output_presence() {
+    for fault in 0..4 {
+        let (f, mut t, _peer) = admitted_retained();
+        let allocations = if fault == 1 {
+            &[][..]
+        } else {
+            &f.allocations[..]
+        };
+        assert_eq!(
+            finish_ready(
+                &mut t,
+                allocations,
+                if fault == 0 { 7 } else { 6 },
+                if fault == 2 { 9 } else { 8 },
+                fault != 3,
+                3
+            ),
+            Ok(1)
+        );
+        assert_eq!(t.candidates().pending_candidate_count(), 0);
+        assert!(t.candidates().ready_frame_commit().is_none());
+        if fault != 2 {
+            assert!(
+                matches!(t.take_record(), ShellFrameRecord::Closed { reason, .. }
+                if reason == ContentReason::AllocationLost as u16)
+            );
+        }
+        let ShellFrameRecord::Outcome {
+            outcome,
+            credit_expires_msec,
+            ..
+        } = t.take_record()
+        else {
+            panic!()
+        };
+        assert_eq!(outcome.kind, 3);
+        assert_eq!(
+            outcome.reason,
+            if fault == 3 {
+                ContentReason::AllocationLost
+            } else {
+                ContentReason::Stale
+            } as u16
+        );
+        assert_eq!(credit_expires_msec != 0, fault == 2);
+        assert_eq!(
+            finish_ready(&mut t, allocations, 6, 8, fault != 3, 4),
+            Ok(0)
+        );
+        assert!(t.transport.state.output.front().is_none());
+    }
+}
+
+#[test]
+fn ready_scene_waits_for_output_capacity_and_shares_the_control_service_bound() {
+    let (f, mut t, mut peer) = admitted_retained();
+    t.transport
+        .state
+        .content_limits
+        .as_mut()
+        .unwrap()
+        .max_control_records = 0;
+    assert_eq!(finish_ready(&mut t, &f.allocations, 6, 8, true, 3), Ok(0));
+    assert_eq!(
+        t.candidates().ready_frame_commit(),
+        Some((fixture::output(), 1))
+    );
+    t.transport
+        .state
+        .content_limits
+        .as_mut()
+        .unwrap()
+        .max_control_records = 64;
+    t.transport
+        .state
+        .content_limits
+        .as_mut()
+        .unwrap()
+        .max_frames_per_service_tick = 1;
+    request(
+        &mut peer,
+        &mut t,
+        ShellFrameRecord::Close {
+            transaction: fixture::tx(102),
+            key: key(1),
+        },
+    );
+    assert_eq!(finish_ready(&mut t, &f.allocations, 6, 8, true, 4), Ok(1));
+    assert_eq!(
+        t.candidates().ready_frame_commit(),
+        Some((fixture::output(), 1)),
+        "Close used this pass's service slot"
+    );
+    expect(
+        &mut peer,
+        &mut t,
+        ShellFrameRecord::Closed {
+            transaction: fixture::tx(102),
+            key: key(1),
+            reason: ContentReason::Cancelled as u16,
+        },
+    );
+    assert_eq!(finish_ready(&mut t, &f.allocations, 6, 8, true, 5), Ok(1));
+    assert_eq!(
+        t.candidates().pending_candidate_count(),
+        1,
+        "Close does not discard previously admitted work"
+    );
 }

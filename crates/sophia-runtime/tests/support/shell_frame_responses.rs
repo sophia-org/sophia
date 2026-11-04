@@ -287,3 +287,6 @@ fn close_and_terminal_keep_fifo_order_and_do_not_replenish_a_closed_stream() {
     assert!(t.transport.state.output.front().is_none());
     assert_eq!(t.candidates().control_occupancy(), 0);
 }
+
+#[path = "shell_frame_owner_completion.rs"]
+mod completion;

@@ -109,6 +109,10 @@ impl ShellComponentTransport {
         contexts: &[ContentCandidateContext<'_>],
         now_msec: u64,
     ) -> Result<usize, ShellTransportError> {
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if self.capabilities & sophia_protocol::shell_files::SHELL_FRAME_CAPABILITY != 0 {
+            return self.service_ready_frame_commits(epochs, contexts, now_msec);
+        }
         let limits = self
             .content_limits
             .clone()
@@ -311,6 +315,58 @@ impl ShellComponentTransport {
         work_area_generation: u64,
         wm_commit_generation: u64,
     ) -> Result<(), ShellTransportError> {
+        self.content_presented_with_clock(
+            epochs,
+            grant,
+            output,
+            candidate_generation,
+            presentation_epoch,
+            work_area_generation,
+            wm_commit_generation,
+            None,
+        )
+    }
+
+    /// Settle the exact native result using the current owner clock.
+    /// Existing response capacity is checked before mutating the submitted candidate.
+    ///
+    /// # Errors
+    /// Returns wrong grant/identity, clock regression or full output.
+    /// Capacity refusal leaves the candidate unchanged; clock regression closes SFT streams.
+    pub fn content_presented_at(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+        grant: sophia_protocol::ContentGrant,
+        output: ContentOutputId,
+        candidate_generation: u64,
+        presentation_epoch: u64,
+        work_area_generation: u64,
+        wm_commit_generation: u64,
+        now_msec: u64,
+    ) -> Result<(), ShellTransportError> {
+        self.content_presented_with_clock(
+            epochs,
+            grant,
+            output,
+            candidate_generation,
+            presentation_epoch,
+            work_area_generation,
+            wm_commit_generation,
+            Some(now_msec),
+        )
+    }
+
+    fn content_presented_with_clock(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+        grant: sophia_protocol::ContentGrant,
+        output: ContentOutputId,
+        candidate_generation: u64,
+        presentation_epoch: u64,
+        work_area_generation: u64,
+        wm_commit_generation: u64,
+        now_msec: Option<u64>,
+    ) -> Result<(), ShellTransportError> {
         self.validate_completion_grant(epochs, grant)?;
         let connected = self.content_grant == Some(grant);
         // The already-owned response credit must still fit before the native
@@ -322,21 +378,41 @@ impl ShellComponentTransport {
         let native_presented = epochs.candidates_mut(grant).and_then(|s| {
             s.native_presented_metadata(output, candidate_generation, presentation_epoch)
         });
-        epochs
+        let candidates = epochs
             .candidates_mut(grant)
-            .ok_or(ShellTransportError::MissingCapability)?
-            .presented(
+            .ok_or(ShellTransportError::MissingCapability)?;
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if let Some(now) = now_msec {
+            candidates.presented_at(
+                output,
+                candidate_generation,
+                presentation_epoch,
+                work_area_generation,
+                wm_commit_generation,
+                now,
+            )?;
+        } else {
+            candidates.presented(
                 output,
                 candidate_generation,
                 presentation_epoch,
                 work_area_generation,
                 wm_commit_generation,
             )?;
+        }
+        #[cfg(not(feature = "experimental-native-frame-transaction"))]
+        candidates.presented(
+            output,
+            candidate_generation,
+            presentation_epoch,
+            work_area_generation,
+            wm_commit_generation,
+        )?;
         if connected {
             if let Some(shown) = native_presented {
                 self.native_control.presented = Some(shown);
             }
-            self.flush_content_candidate_events(epochs)?;
+            self.flush_content_completion_events(epochs, now_msec)?;
         }
         epochs.collect();
         Ok(())
@@ -349,6 +425,40 @@ impl ShellComponentTransport {
         output: ContentOutputId,
         candidate_generation: u64,
     ) -> Result<(), ShellTransportError> {
+        self.content_renderer_failed_with_clock(epochs, grant, output, candidate_generation, None)
+    }
+
+    /// Settle the exact native result using the current owner clock.
+    /// Existing response capacity is checked before mutating the submitted candidate.
+    ///
+    /// # Errors
+    /// Returns wrong grant/identity, clock regression or full output.
+    /// Capacity refusal leaves the candidate unchanged; clock regression closes SFT streams.
+    pub fn content_renderer_failed_at(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+        grant: sophia_protocol::ContentGrant,
+        output: ContentOutputId,
+        candidate_generation: u64,
+        now_msec: u64,
+    ) -> Result<(), ShellTransportError> {
+        self.content_renderer_failed_with_clock(
+            epochs,
+            grant,
+            output,
+            candidate_generation,
+            Some(now_msec),
+        )
+    }
+
+    fn content_renderer_failed_with_clock(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+        grant: sophia_protocol::ContentGrant,
+        output: ContentOutputId,
+        candidate_generation: u64,
+        now_msec: Option<u64>,
+    ) -> Result<(), ShellTransportError> {
         self.validate_completion_grant(epochs, grant)?;
         let connected = self.content_grant == Some(grant);
         // The already-owned response credit must still fit before the native
@@ -357,15 +467,39 @@ impl ShellComponentTransport {
         if connected && !self.control_capacity_available(epochs, 0) {
             return Err(ShellTransportError::ContentQueueSaturated);
         }
-        epochs
+        let candidates = epochs
             .candidates_mut(grant)
-            .ok_or(ShellTransportError::MissingCapability)?
-            .renderer_failed(output, candidate_generation)?;
+            .ok_or(ShellTransportError::MissingCapability)?;
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if let Some(now) = now_msec {
+            candidates.renderer_failed_at(output, candidate_generation, now)?;
+        } else {
+            candidates.renderer_failed(output, candidate_generation)?;
+        }
+        #[cfg(not(feature = "experimental-native-frame-transaction"))]
+        candidates.renderer_failed(output, candidate_generation)?;
         if connected {
-            self.flush_content_candidate_events(epochs)?;
+            self.flush_content_completion_events(epochs, now_msec)?;
         }
         epochs.collect();
         Ok(())
+    }
+
+    fn flush_content_completion_events(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+        now_msec: Option<u64>,
+    ) -> Result<(), ShellTransportError> {
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if self.capabilities & sophia_protocol::shell_files::SHELL_FRAME_CAPABILITY != 0 {
+            return self.flush_content_frame_events(
+                epochs,
+                now_msec.ok_or(ShellTransportError::WrongContentRecord)?,
+            );
+        }
+        #[cfg(not(feature = "experimental-native-frame-transaction"))]
+        let _ = now_msec;
+        self.flush_content_candidate_events(epochs)
     }
 
     // Disconnected completion may settle its exact retained epoch, but a
@@ -547,6 +681,28 @@ macro_rules! transport_facade {
                 )
             }
 
+            pub fn content_presented_at(
+                &mut self,
+                grant: sophia_protocol::ContentGrant,
+                output: ContentOutputId,
+                candidate_generation: u64,
+                presentation_epoch: u64,
+                work_area_generation: u64,
+                wm_commit_generation: u64,
+                now_msec: u64,
+            ) -> Result<(), ShellTransportError> {
+                self.state.content_presented_at(
+                    &mut self.content_epochs,
+                    grant,
+                    output,
+                    candidate_generation,
+                    presentation_epoch,
+                    work_area_generation,
+                    wm_commit_generation,
+                    now_msec,
+                )
+            }
+
             pub fn content_presented(
                 &mut self,
                 grant: sophia_protocol::ContentGrant,
@@ -564,6 +720,22 @@ macro_rules! transport_facade {
                     presentation_epoch,
                     work_area_generation,
                     wm_commit_generation,
+                )
+            }
+
+            pub fn content_renderer_failed_at(
+                &mut self,
+                grant: sophia_protocol::ContentGrant,
+                output: ContentOutputId,
+                candidate_generation: u64,
+                now_msec: u64,
+            ) -> Result<(), ShellTransportError> {
+                self.state.content_renderer_failed_at(
+                    &mut self.content_epochs,
+                    grant,
+                    output,
+                    candidate_generation,
+                    now_msec,
                 )
             }
 

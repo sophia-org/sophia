@@ -421,9 +421,10 @@ submission retries, receipt backpressure and all request/event shapes are tested
 A submission receipt or its ACK transfers no stream credit and does not consume
 the owner's queued input. Embedded offers are never separately admitted.
 
-Production negotiation still cannot select r13. Complete-frame input still needs
-its registered-copy owner connection, preserving fresh custody, source-slot release
-and terminal-credit-retirement atomicity. Owning C/Rust
+Production negotiation still cannot select r13. At the file-custody checkpoint,
+complete-frame input still needed its registered-copy owner connection; that join
+is described below, preserving fresh custody, source-slot release and
+terminal-credit-retirement atomicity. Owning C/Rust
 clients, real Lom/reference producers, runtime traces and native qualification
 remain open. Evidence: `~/.local/state/sophia-frame-prepared-routing-01`,
 `~/.local/state/sophia-frame-control-admission-01` and
@@ -445,8 +446,8 @@ close-before-terminal cases. Golden event bytes/charges and full-budget transfer
 are checked without native execution. Evidence:
 `~/.local/state/sophia-frame-response-transfer-01`.
 
-This does not expose production r13 or connect the registered-copy owner,
-timed native completion callers or owning clients.
+This response-custody checkpoint alone does not expose production r13 or connect
+the registered-copy owner, timed native completion callers or owning clients.
 
 ### Open and Close owner entry point
 
@@ -463,9 +464,9 @@ limit. Real 9P tests cover receipt ACK, deferred input, retry without spending a
 stream identity, expiry/Close ordering and journal responses. Evidence:
 `~/.local/state/sophia-frame-control-wire-01`.
 
-This entry point is not yet selected by production Session negotiation. Fresh-context
-scene finishing and timed native completion routing remain necessary before an opener
-is enabled; owning clients and real producers remain subsequent gates.
+This entry point is not yet selected by production Session negotiation. The
+fresh-context finishing and timed completion joins are described below; owning
+clients and real producers remain subsequent gates.
 
 ### Complete-frame source handoff
 
@@ -488,10 +489,36 @@ ResourceStatus before SlotReleased. The copied image remains private until the
 existing terminal-transfer boundary. Evidence:
 `~/.local/state/sophia-frame-source-reservation-01`.
 
-This is the input/copy handoff, not the Session integration gate. Fresh-context
-scene finishing, timed native completion callers, production opt-in negotiation
-and owning clients/producers remain to be connected. r13 stays unavailable from
-production negotiation; no native run or performance claim follows from these tests.
+This establishes the input/copy handoff. The following checkpoint connects scene
+finishing and completion; production opt-in negotiation and owning clients/producers
+remain separate gates.
+
+### Fresh-context finishing and timed completion
+
+The existing candidate service now finishes ready SFT scenes against the owner's
+current output, allocation, facts and interaction context. Copy completion only
+removes the read gate; it does not supply authority. Missing output context rejects
+the ready scene without bypassing a pending copy. Open/Close and scene finishing
+share the existing per-service bound; output backpressure preserves queued work.
+
+Native completion callers now pass current owner time through the existing
+transport facades. The owner samples the next service timestamp after draining
+presentation results, so a completion cannot make the subsequent service timestamp
+regress. Presented and renderer failure keep exact grant/generation checks and
+reserve response capacity before changing submitted state. Terminal transfer uses
+the shared FIFO to settle credit and resources once. Closed or clock-poisoned
+streams can drain admitted work without returning credit; disconnected completions
+settle only their retained epoch, never a successor's journal.
+
+Device-free tests exercise a real 9P retained scene through Prepared and Presented,
+changed/missing context, copy handoff, full-budget retry, completion before Prepared,
+close/clock-fault draining and exact retired-grant routing. Guard-removal mutations
+fail for stale-stream reconciliation and completion before capacity. Evidence:
+`~/.local/state/sophia-frame-owner-completion-01`.
+
+r13 remains unavailable from production negotiation. Owning clients, real producers,
+implementation traces and native qualification are still required; this checkpoint
+establishes no native behavior or performance improvement.
 
 ### Model and remaining integration gates
 

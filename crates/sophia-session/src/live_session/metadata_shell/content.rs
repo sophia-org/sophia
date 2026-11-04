@@ -211,9 +211,9 @@ impl LiveContentSession {
         if transport.content_grant().is_none() {
             return Ok(());
         }
-        let now = self.now_msec();
         let mut native_scanout = native_scanout;
         while self.observe_presentation(transport, runtime)? {}
+        let now = self.now_msec();
         let presented_allocations = self
             .presented
             .values()
@@ -307,7 +307,7 @@ impl LiveContentSession {
                         .iter()
                         .any(|allocation| allocation.allocation == surface.allocation)
             }) {
-                transport.content_renderer_failed(bundle.grant, output, generation)?;
+                transport.content_renderer_failed_at(bundle.grant, output, generation, now)?;
                 continue;
             }
             self.submit_bundle(
@@ -353,13 +353,14 @@ impl LiveContentSession {
             return Ok(false);
         };
         let pending = &self.pending[index];
-        let publication = transport.content_presented(
+        let publication = transport.content_presented_at(
             pending.grant,
             pending.output,
             pending.candidate_generation,
             epoch,
             1,
             1,
+            self.now_msec(),
         );
         if publication == Err(ShellTransportError::ContentQueueSaturated) {
             return Ok(false);

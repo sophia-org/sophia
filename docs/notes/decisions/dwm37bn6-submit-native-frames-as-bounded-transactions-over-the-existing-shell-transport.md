@@ -133,10 +133,13 @@ now reserves before taking real file input, refuses absent owner context without
 spending the stream identity, and leaves an earlier FrameCommit ahead of Close.
 The [complete-frame source handoff](../../native-frame-transactions.md#complete-frame-source-handoff)
 now moves whole scenes into the existing copy owner, with provisional source
-response reservations and unchanged status-before-release ordering. Scene finishing
-against fresh owner context, timed native completion integration, owning clients,
-real producers, runtime traces and native qualification remain
-required; these device-free checks establish no speedup.
+response reservations and unchanged status-before-release ordering. The
+[owner completion path](../../native-frame-transactions.md#fresh-context-finishing-and-timed-completion)
+now finishes copied scenes against fresh context and routes timed native completions
+through the shared FIFO, preserving full-budget retry and exact retired-grant
+settlement. Production opt-in negotiation, owning clients, real producers, runtime
+traces and native qualification remain required; these device-free checks establish
+no speedup.
 
 The [continuous-frame CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 and t289 own the next implementation/qualification work. The

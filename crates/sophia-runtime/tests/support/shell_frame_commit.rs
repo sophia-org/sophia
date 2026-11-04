@@ -102,12 +102,12 @@ impl Fixture {
         candidates.finish_frame_commit(
             output(),
             generation,
-            ContentCandidateContext {
+            Some(ContentCandidateContext {
                 output: output(),
                 facts_generation: facts,
                 interaction_generation: 1,
                 allocations: &allocations,
-            },
+            }),
             resources,
             now,
         )
@@ -619,4 +619,35 @@ fn changed_facts_at_scene_handoff_cancel_retirement_and_abandon_the_new_image() 
     resources.confirm_isb_release(request(3).resource).unwrap();
     assert_eq!(resources.usage().resident, 32000);
     assert_eq!(resources.usage().retiring, 0);
+}
+
+#[test]
+fn absent_context_cannot_bypass_copy_handoff_and_rejects_only_the_ready_scene() {
+    let mut f = Fixture::new();
+    let mut input = Some(frame(1, true));
+    let job = job(f.admit(&mut input, 64, 1));
+    let (resources, candidates) = f.registry.active_pair_mut(grant()).unwrap();
+    let backing = resources.usage().backing;
+    assert_eq!(
+        candidates.finish_frame_commit(output(), 1, None, resources, 2),
+        Err(ContentCandidateError::Budget)
+    );
+    assert_eq!(resources.usage().backing, backing);
+    assert!(candidates.ready_frame_commit().is_none());
+    assert_eq!(f.worker.pending(), 1);
+    assert!(candidates.pending_event().is_none());
+    f.copy(job);
+    let (resources, candidates) = f.registry.active_pair_mut(grant()).unwrap();
+    assert_eq!(
+        candidates.finish_frame_commit(output(), 1, None, resources, 3),
+        Err(ContentCandidateError::AllocationLost)
+    );
+    assert_eq!(candidates.pending_candidate_count(), 0);
+    assert!(candidates.ready_frame_commit().is_none());
+    let event = candidates.pending_event().unwrap();
+    assert!(
+        matches!(&event.record, ShellContentRecord::CandidateOutcome(outcome)
+        if outcome.kind == 3 && outcome.reason == ContentReason::AllocationLost as u16)
+    );
+    assert!(event.frame_credit.is_some());
 }

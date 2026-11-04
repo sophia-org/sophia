@@ -95,4 +95,51 @@ impl ShellComponentTransport {
         }
         Ok(processed)
     }
+
+    pub(super) fn service_ready_frame_commits(
+        &mut self,
+        epochs: &mut ContentEpochRegistry,
+        contexts: &[ContentCandidateContext<'_>],
+        now_msec: u64,
+    ) -> Result<usize, ShellTransportError> {
+        let mut processed = self.service_content_frame_controls(epochs, contexts, now_msec)?;
+        let maximum = self
+            .content_limits
+            .as_ref()
+            .expect("control service checked limits")
+            .max_frames_per_service_tick as usize;
+        epochs
+            .active_candidates_mut(self.store_grant)
+            .ok_or(ShellTransportError::MissingCapability)?
+            .reconcile_frame_streams(contexts, now_msec)?;
+        self.flush_content_frame_events(epochs, now_msec)?;
+        while processed < maximum && self.control_capacity_available(epochs, 0) {
+            let (resources, candidates) = epochs
+                .active_pair_mut(self.store_grant)
+                .ok_or(ShellTransportError::MissingCapability)?;
+            let Some((output, generation)) = candidates.ready_frame_commit() else {
+                break;
+            };
+            let before = candidates.pending_event_count();
+            let result = candidates.finish_frame_commit(
+                output,
+                generation,
+                contexts
+                    .iter()
+                    .find(|context| context.output == output)
+                    .copied(),
+                resources,
+                now_msec,
+            );
+            let reported = candidates.pending_event_count() > before;
+            self.flush_content_frame_events(epochs, now_msec)?;
+            if let Err(error) = result
+                && !reported
+            {
+                return Err(error.into());
+            }
+            processed += 1;
+        }
+        Ok(processed)
+    }
 }
