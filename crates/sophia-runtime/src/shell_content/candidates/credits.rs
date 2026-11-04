@@ -65,6 +65,18 @@ impl CreditStreams {
 }
 
 impl ContentCandidateStore {
+    /// Open the native CPU profile with exactly one outstanding-frame credit.
+    /// The owner supplies fresh context and must separately admit the wire reply.
+    pub fn open_native_frame_stream(
+        &mut self,
+        transaction: TransactionId,
+        key: FrameStreamKey,
+        context: ContentCandidateContext<'_>,
+        now: u64,
+    ) -> Result<(), ContentCandidateError> {
+        self.open_frame_stream(transaction, key, 1, context, now)
+    }
+
     /// Open a stream after the owner has selected the server's credit allowance.
     /// The caller supplies current output facts and allocations, not peer claims.
     pub fn open_frame_stream(

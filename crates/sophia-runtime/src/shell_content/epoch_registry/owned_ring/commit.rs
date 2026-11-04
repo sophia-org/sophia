@@ -61,6 +61,17 @@ impl ContentEpochRegistry {
             input_error,
             || {
                 shape?;
+                if frame.image.is_some()
+                    && ring.expect("copy source checked").geometry().slot_count() != 2
+                {
+                    return Err(Error::Malformed);
+                }
+                epoch.resources.validate_frame_cpu_layers(
+                    owner,
+                    &frame.scene.placements,
+                    frame.image.map(|image| image.resource),
+                    frame.retire.map(|retire| retire.resource),
+                )?;
                 if frame.image.is_some() && (!job_slot_available || response_room < 4) {
                     return Err(Error::Budget);
                 }

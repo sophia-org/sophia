@@ -198,8 +198,8 @@ The first Rust foundation reuses the reviewed W3 `FrameCredits` ledger from
 `33ff35990`, behind runtime-only `experimental-native-frame-transaction`.
 Its credit algorithm is unchanged; additional tests check each ledger key field,
 owner refusal of reopening before external drain, and old completion replay.
-The initial profile will request one credit. The ledger's existing two-credit
-capacity does not authorize the native adapter to issue two.
+The native store opener fixes its allowance at one credit. The ledger's existing
+two-credit capacity does not authorize the native adapter to issue two.
 
 This is not a FrameCommit implementation or an enablement switch: no wire
 opener, Session/CLI flag, C/Rust codec or producer calls it. Ring/slot/callback
@@ -262,8 +262,8 @@ thread or per-frame allocation.
 This header-only seam remains below the wire boundary. The complete-record path
 below adds scene intake and predecessor ownership across copying. The real
 codec/opener and C/Rust/Lom integration remain required before enablement. The
-one-credit native profile must be enforced by that opener; the reused general
-ledger still supports two for its existing tests.
+wire opener must call the fixed one-credit native entry point below; the reused
+general ledger still supports two for its existing tests.
 
 ### Private frame-image ownership
 
@@ -324,10 +324,43 @@ guards produce the expected failures. Evidence:
 `~/.local/state/sophia-frame-complete-intake-01`.
 
 This is a composed runtime-store path, not a shipped protocol. Connection-wide
-encoded-byte admission, fragmentation/codec and negotiation, the one-credit
+encoded-byte admission, fragmentation/codec and negotiation, the wire
 opener, owner-loop wiring, C/Rust SDKs, real Lom/reference producers, runtime
 trace conformance and native qualification remain required. No performance
 claim follows from moving vectors or passing these tests.
+
+### Native CPU profile admission
+
+`open_native_frame_stream` reuses the existing context, lifecycle and reply
+reservation checks with exactly one credit; it takes no peer-selected allowance.
+The general `open_frame_stream` and ledger remain available as lower-level
+reusable mechanisms, not as native wire entry points. Prepared, native completion
+and blocked terminal publication do not release that credit. Only successful
+terminal transfer permits the next frame.
+
+Complete input with a new image now requires a two-slot source. Before reserving
+copy work or predecessor retirement, the store checks that every retained layer
+and optional predecessor is an ordinary CPU-backed resource accessible to that
+frame. It borrows resource metadata without acquiring extra leases. The image
+captured for this frame is validated by the existing private-copy path, and scene
+handoff checks CPU backing again through the frame lease boundary. Missing reply
+room still leaves input pending. Unsupported ring geometry or GPU backing gets a
+reserved Malformed refusal for this profile, without changing the existing
+display, taking a source read ticket or holding predecessor retirement.
+
+This does not make those resources invalid on the legacy path: tests compose the
+same GPU-backed resource through the ordinary candidate API after SFT refusal.
+Retained-only SFT input needs no ring and is independent of a registered ring's
+geometry. The future producer must still drain/close and select legacy when an
+update does not fit, retaining legacy selection for that output binding; this
+checkpoint does not implement that switching policy or negotiation.
+
+Four device-free tests cover native opening/current context, credit through
+publication backpressure, ring geometry and GPU rejection at both intake and
+handoff. The GPU fixture supplies retained storage, not proof of GPU execution.
+The pre-change regression admitted a GPU layer; removing each of four eligibility
+guards also fails its check. Evidence: `~/.local/state/sophia-frame-native-profile-01`.
+No opcode, SDK pin, wire opener or native enablement changes here.
 
 The [modeling brief](../validation/specula/native-frame-transaction/modeling-brief.md)
 defines the finite scope; [results](../validation/specula/native-frame-transaction/results.md)

@@ -1,6 +1,9 @@
 //! Complete input uses real copy/lease owners and never asks the peer for End.
 use super::*;
 
+#[path = "shell_frame_native_profile.rs"]
+mod native_profile;
+
 struct Fixture {
     registry: ContentEpochRegistry,
     jobs: OwnedCopyImageJobs,
@@ -41,8 +44,8 @@ impl Fixture {
             );
         }
         while resources.take_event().is_some() {}
-        open(&mut registry);
-        let (file, ring) = ring(&mut registry);
+        native_profile::open(&mut registry);
+        let (file, ring) = native_profile::ring(&mut registry, 2);
         Self {
             registry,
             jobs: OwnedCopyImageJobs::default(),

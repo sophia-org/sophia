@@ -98,6 +98,12 @@ wire/SDK/Lom integration, runtime traces and native qualification remain open.
 The [current implementation gates](../../native-frame-transactions.md#complete-record-intake)
 and `~/.local/state/sophia-frame-complete-intake-01` record its scope.
 
+The [native CPU profile entry](../../native-frame-transactions.md#native-cpu-profile-admission)
+now fixes one outstanding credit and rejects non-two-slot copying or GPU-backed
+scene/predecessor resources before reserving work. Legacy composition remains
+available; producer drain/fallback and the wire opener are still unimplemented.
+Evidence: `~/.local/state/sophia-frame-native-profile-01`.
+
 The [continuous-frame CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 and t289 own the next implementation/qualification work. The
 [bounded-credit investigation](../investigations/tubnycgx-can-a-bounded-frame-stream-cut-per-frame-control-exchanges-without-weakening-custody.md)

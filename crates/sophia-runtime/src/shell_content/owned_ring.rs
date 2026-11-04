@@ -46,6 +46,9 @@ impl OwnedRingGeometry {
     pub fn pixel_bytes(self) -> usize {
         self.pixels
     }
+    pub const fn slot_count(self) -> usize {
+        self.slots
+    }
     pub fn slot_extent(self) -> usize {
         self.extent
     }
