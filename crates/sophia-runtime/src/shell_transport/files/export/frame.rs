@@ -1,6 +1,26 @@
 use super::*;
 
 impl ShellFiles {
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub(in crate::shell_transport) fn peek_frame_request(&self) -> Option<&ShellFrameRecord> {
+        self.inbound.iter().find_map(|item| match item {
+            Inbound::Frame(record) => Some(record.as_ref()),
+            _ => None,
+        })
+    }
+
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub(in crate::shell_transport) fn take_frame_request(&mut self) -> Option<ShellFrameRecord> {
+        let at = self
+            .inbound
+            .iter()
+            .position(|item| matches!(item, Inbound::Frame(_)))?;
+        match self.inbound.remove(at) {
+            Some(Inbound::Frame(record)) => Some(*record),
+            _ => unreachable!("selected the first SFT request"),
+        }
+    }
+
     pub(super) fn frame_negotiation(
         &self,
         limits: Option<&ContentLimits>,

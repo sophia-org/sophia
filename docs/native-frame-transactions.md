@@ -421,9 +421,9 @@ submission retries, receipt backpressure and all request/event shapes are tested
 A submission receipt or its ACK transfers no stream credit and does not consume
 the owner's queued input. Embedded offers are never separately admitted.
 
-Production negotiation still cannot select r13. The next gate connects queued
-input to owner admission, preserving fresh custody, source-slot release and
-terminal-credit-retirement atomicity. Owning C/Rust
+Production negotiation still cannot select r13. Complete-frame input still needs
+its registered-copy owner connection, preserving fresh custody, source-slot release
+and terminal-credit-retirement atomicity. Owning C/Rust
 clients, real Lom/reference producers, runtime traces and native qualification
 remain open. Evidence: `~/.local/state/sophia-frame-prepared-routing-01`,
 `~/.local/state/sophia-frame-control-admission-01` and
@@ -445,8 +445,27 @@ close-before-terminal cases. Golden event bytes/charges and full-budget transfer
 are checked without native execution. Evidence:
 `~/.local/state/sophia-frame-response-transfer-01`.
 
-This does not expose production r13 or connect wire request consumption, the
-registered-copy owner, timed native completion callers or owning clients.
+This does not expose production r13 or connect the registered-copy owner,
+timed native completion callers or owning clients.
+
+### Open and Close owner entry point
+
+Open/Close now have a real-file owner entry point. It services the existing wire,
+reserves connection-wide response room before removing the exact queued request,
+and publishes through the shared response FIFO. Zero room defers without consuming
+input; one room can carry an Open refusal, while successful Open reserves its reply
+and lifetime close. Close also reserves room for a refusal if expiry won the race.
+
+Only fresh owner-supplied output context can admit Open. An absent context produces
+a typed Stale refusal, while a foreign grant fails before consumption. Controls
+cannot overtake an earlier whole FrameCommit and obey the existing per-service
+limit. Real 9P tests cover receipt ACK, deferred input, retry without spending a
+stream identity, expiry/Close ordering and journal responses. Evidence:
+`~/.local/state/sophia-frame-control-wire-01`.
+
+This entry point is not yet selected by production Session negotiation. Complete
+frame/copy admission and timed native completion routing must be connected before
+an opener is enabled; owning clients and real producers remain subsequent gates.
 
 ### Model and remaining integration gates
 

@@ -128,7 +128,10 @@ The [response-custody path](../../native-frame-transactions.md#response-custody)
 now transfers whole responses into the shared FIFO under existing capacity checks;
 Prepared returns no credit, and terminal transfer commits the owner's current
 deadline and resource settlement once. Production negotiation still cannot expose
-r13. Wire input service, timed native completion integration, owning clients,
+r13. The [Open/Close owner entry point](../../native-frame-transactions.md#open-and-close-owner-entry-point)
+now reserves before taking real file input, refuses absent owner context without
+spending the stream identity, and leaves an earlier FrameCommit ahead of Close.
+Complete-frame/copy input service, timed native completion integration, owning clients,
 real producers, runtime traces and native qualification remain
 required; these device-free checks establish no speedup.
 

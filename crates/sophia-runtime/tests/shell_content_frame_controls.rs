@@ -26,12 +26,12 @@ fn open(
     f.pool.active_candidates_mut().unwrap().admit_frame_open(
         tx(10),
         requested,
-        ContentCandidateContext {
+        Some(ContentCandidateContext {
             output: output(),
             facts_generation: 6,
             interaction_generation: 8,
             allocations: &f.allocations,
-        },
+        }),
         now,
         room,
         || taken.set(taken.get() + 1),

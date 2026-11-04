@@ -18,7 +18,7 @@ mod admission;
 mod tests;
 #[cfg(all(test, target_os = "linux"))]
 #[path = "../../tests/support/owned_ring_transport.rs"]
-mod wire_tests;
+pub(in crate::shell_transport) mod wire_tests;
 
 struct ActiveRing {
     identity: Identity,

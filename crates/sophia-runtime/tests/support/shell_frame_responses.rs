@@ -16,6 +16,10 @@ use sophia_protocol::shell_files::*;
 )]
 mod fixture;
 
+#[cfg(target_os = "linux")]
+#[path = "shell_frame_controls_wire.rs"]
+mod controls;
+
 struct Transport {
     transport: ShellSessionTransport,
     path: std::path::PathBuf,
@@ -46,7 +50,10 @@ impl Transport {
         std::mem::swap(candidates, old_candidates);
         transport.state.store_grant = fixture::grant();
         transport.state.content_grant = Some(fixture::grant());
-        transport.state.capabilities = SHELL_FRAME_CAPABILITY;
+        transport.state.connection_epoch = fixture::grant().connection_epoch;
+        transport.state.capabilities = SHELL_FRAME_CAPABILITY
+            | crate::owned_ring_protocol::CAPABILITY
+            | sophia_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
         transport.state.content_limits = Some(limits);
         Self { transport, path }
     }

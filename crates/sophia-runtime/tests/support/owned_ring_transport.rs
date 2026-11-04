@@ -85,7 +85,7 @@ fn offer(
     }
 }
 
-fn config() -> (
+pub(in crate::shell_transport) fn config() -> (
     ShellImageDiscovery,
     ShellImageLimits,
     ShellImageFormats,

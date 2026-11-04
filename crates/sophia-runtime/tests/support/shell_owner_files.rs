@@ -14,10 +14,24 @@ pub struct Peer {
     raw: raw::Peer,
     epoch: u64,
     submission: u64,
+    revision: u16,
 }
 
 impl Peer {
     pub fn attach(t: &mut ShellComponentTransport, profile: Option<ContentStoreProfile>) -> Self {
+        Self::attach_revision(t, profile, 8)
+    }
+
+    #[cfg(all(feature = "experimental-native-frame-transaction", target_os = "linux"))]
+    pub fn attach_frame(t: &mut ShellComponentTransport) -> Self {
+        Self::attach_revision(t, Some(ContentStoreProfile::Legacy), 13)
+    }
+
+    fn attach_revision(
+        t: &mut ShellComponentTransport,
+        profile: Option<ContentStoreProfile>,
+        revision: u16,
+    ) -> Self {
         let (local, remote) = UnixStream::pair().unwrap();
         let (role, bounds) = role_bounds(profile);
         let mut export = ShellFiles::awaiting_negotiation(
@@ -44,7 +58,29 @@ impl Peer {
             .unwrap();
             (bytes, limits)
         });
-        export.complete_negotiation(limits, t.capabilities).unwrap();
+        #[cfg(all(feature = "experimental-native-frame-transaction", target_os = "linux"))]
+        if revision == 13 {
+            let (mut discovery, limits, formats, role_bounds) =
+                crate::shell_transport::owned_copy::wire_tests::config();
+            discovery.connection_epoch = t.connection_epoch;
+            export
+                .configure_image_channel(Some(
+                    crate::shell_transport::files::ShellImageChannelConfig {
+                        discovery,
+                        limits,
+                        formats,
+                        role_bounds,
+                    },
+                ))
+                .unwrap();
+        }
+        if revision == 13 {
+            export
+                .complete_negotiation_with_image_revision(limits, t.capabilities, revision)
+                .unwrap();
+        } else {
+            export.complete_negotiation(limits, t.capabilities).unwrap();
+        }
         t.wire = Some(Box::new(
             ShellFileWire::adopt(local, export, None, false).unwrap(),
         ));
@@ -52,7 +88,9 @@ impl Peer {
             raw: raw::Peer::from_stream(remote),
             epoch: t.connection_epoch,
             submission: 0,
+            revision,
         };
+        peer.raw.set_revision(revision);
         peer.drive(t, raw::Peer::setup);
         peer
     }
@@ -101,6 +139,7 @@ impl Peer {
             submission_id: id,
             sequence: 0,
         });
+        let revision = self.revision;
         let accepted = self.drive(t, |raw| {
             let reply = raw.submit(&bytes);
             if reply.0 == 7 {
@@ -111,7 +150,9 @@ impl Peer {
             assert_eq!(reply.0, 119);
             let receipt = raw.next_event();
             assert_eq!(
-                decode_shell_file_submitted(&receipt).unwrap().submission_id,
+                decode_shell_file_submitted_at_revision(&receipt, revision)
+                    .unwrap()
+                    .submission_id,
                 id
             );
             raw.ack(&receipt);
@@ -148,6 +189,7 @@ impl Peer {
     /// retention. Objects are read through EOF and clunked before their ACK.
     pub fn expect(&mut self, t: &mut ShellComponentTransport, record: &OutboundRecord) {
         let (kind, body) = record.native().unwrap();
+        let revision = self.revision;
         self.drive(t, |raw| {
             let event = raw.next_event();
             if shell_file_class(kind) == ShellFileClass::Object {
@@ -168,11 +210,15 @@ impl Peer {
                     assert!(bytes.len() <= 1024 * 1024);
                 }
                 raw.clunk(7);
-                let object = decode_shell_file_record(&bytes, ShellFileClass::Object).unwrap();
+                let object =
+                    decode_shell_file_record_at_revision(&bytes, ShellFileClass::Object, revision)
+                        .unwrap();
                 assert_eq!(object.header.kind, kind);
                 assert_eq!(object.body, body);
             } else {
-                let value = decode_shell_file_record(&event, ShellFileClass::Event).unwrap();
+                let value =
+                    decode_shell_file_record_at_revision(&event, ShellFileClass::Event, revision)
+                        .unwrap();
                 assert_eq!(value.header.kind, kind);
                 assert_eq!(value.body, body);
             }

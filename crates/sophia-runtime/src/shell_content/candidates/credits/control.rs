@@ -8,6 +8,7 @@ impl ContentCandidateStore {
     /// `consume` must take exactly the peeked input without I/O or failure.
     /// No input is consumed without room for a reply; successful Open needs
     /// both its reply and its lifetime close reservation.
+    /// No current owner context is a typed Stale refusal after reserving its reply.
     /// Owner-clock expiry still progresses while input is deferred.
     ///
     /// # Errors
@@ -17,7 +18,7 @@ impl ContentCandidateStore {
         &mut self,
         transaction: TransactionId,
         key: FrameStreamKey,
-        context: ContentCandidateContext<'_>,
+        context: Option<ContentCandidateContext<'_>>,
         now: u64,
         response_room: usize,
         consume: impl FnOnce(),
@@ -30,7 +31,9 @@ impl ContentCandidateStore {
         if room == 0 {
             return Ok(ContentFrameRequestAdmission::Deferred);
         }
-        let result = self.open_frame_stream_with_room(transaction, key, 1, context, now, room);
+        let result = context.map_or(Err(ContentCandidateError::Stale), |context| {
+            self.open_frame_stream_with_room(transaction, key, 1, context, now, room)
+        });
         consume();
         Ok(self.finish_frame_control(transaction, key, ShellFileKind::FrameStreamOpen, result))
     }
