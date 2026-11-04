@@ -63,3 +63,5 @@ established. Installation and a normal desktop smoke are separate steps.
 The [continuous-frame CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 owns subsequent work; use the saved service/IPC profiles rather than restarting
 a per-pixel fill or damage-cache redesign.
+
+Follow-up candidate: [plan only the selected native buffer age](../investigations/u6nz8qka-plan-only-the-selected-native-buffer-age.md). No further native saving is claimed.

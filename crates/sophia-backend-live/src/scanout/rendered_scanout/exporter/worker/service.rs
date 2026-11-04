@@ -619,10 +619,8 @@ where
             None,
         ),
         PendingRenderedFrame::Mixed(frame, _) => {
-            // What the slot's buffer would owe at each age it might report. The
-            // age is only knowable inside the render, so every answer travels
-            // with the frame and the renderer picks the one that applies.
-            let repaint = state.slot_damage.repaint_table(
+            // EGL selects the real buffer age before this borrowed planner runs.
+            let repaint = state.slot_damage.repaint_source(
                 slot_token.slot_id(),
                 frame.output_damage_snapshot.as_ref(),
                 target.size,
@@ -653,9 +651,10 @@ where
                     target,
                     &frame,
                     request,
-                    repaint.as_ref(),
+                    Some(&repaint),
                 )
             };
+            drop(repaint);
             let report = match result {
                 Ok(report) => report,
                 Err(LiveMixedCompositionError::Renderer(detail)) => {

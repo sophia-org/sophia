@@ -42,6 +42,7 @@ fn reusable_cpu_buffer_damage(
 /// and nothing here crosses threads. It owns the history, the bundle identity
 /// each slot last rendered against, and whether damage-limited repaint is
 /// switched on at all.
+#[derive(Debug)]
 pub struct WorkerSlotDamage {
     history: LiveRendererSlotDamageHistory,
     target_generations: [Option<u64>; LIVE_RENDERER_FRAME_SLOT_CAPACITY],
@@ -93,6 +94,21 @@ impl WorkerSlotDamage {
         slot_repaint_table(&mut self.history, slot, snapshot, size)
     }
 
+    /// Borrow the history for one synchronous render, without planning unused ages.
+    pub fn repaint_source<'a>(
+        &'a mut self,
+        slot: LiveRendererFrameSlotId,
+        snapshot: Option<&'a sophia_engine::OutputFrameDamageSnapshot>,
+        size: sophia_protocol::Size,
+    ) -> impl sophia_renderer_live::NativeCompositionRepaintSource + 'a {
+        SelectedAgeRepaint {
+            owner: std::cell::RefCell::new(self),
+            slot,
+            snapshot,
+            size,
+        }
+    }
+
     /// Settle what a completed export means for the slot's retained content.
     pub fn settle(
         &mut self,
@@ -140,7 +156,6 @@ fn slot_repaint_table(
 ) -> Option<sophia_renderer_live::NativeCompositionRepaintTable> {
     use sophia_renderer_live::{
         NativeCompositionRepaintTable as Table, NativeFullRepaintReason as R,
-        NativeRepaintPlan as Plan,
     };
     let depth = history.depth(slot);
     let Some(snapshot) = snapshot else {
@@ -158,28 +173,7 @@ fn slot_repaint_table(
                 Some(snapshot),
                 size,
             );
-            let plan = match plan {
-                LiveRendererSlotRepaint::Partial { damage } => Plan::Partial(
-                    damage
-                        .into_iter()
-                        .map(|rect| sophia_renderer_live::NativeCompositionDamageRect {
-                            x: rect.x,
-                            y: rect.y,
-                            width: rect.width,
-                            height: rect.height,
-                        })
-                        .collect(),
-                ),
-                LiveRendererSlotRepaint::Full { reason } => Plan::Full(match reason {
-                    LiveRendererSlotFullRepaintReason::UnknownBufferAge => R::UnknownAge,
-                    LiveRendererSlotFullRepaintReason::NoHistory => R::NoHistory,
-                    LiveRendererSlotFullRepaintReason::BeyondHistoryDepth => R::BeyondHistory,
-                    LiveRendererSlotFullRepaintReason::DamageUnavailable => R::DamageUnavailable,
-                    LiveRendererSlotFullRepaintReason::PlanDamageCapacity => R::PlanDamageCapacity,
-                    LiveRendererSlotFullRepaintReason::PlanRectLimit => R::PlanRectLimit,
-                    LiveRendererSlotFullRepaintReason::PlanCoverage => R::PlanCoverage,
-                }),
-            };
+            let plan = native_repaint_plan(plan);
             (plan, native_damage_causes(causes))
         })
         .collect();
@@ -248,4 +242,84 @@ fn native_damage_causes(
         }
     }
     result
+}
+
+fn native_repaint_plan(plan: LiveRendererSlotRepaint) -> sophia_renderer_live::NativeRepaintPlan {
+    use sophia_renderer_live::{NativeFullRepaintReason as R, NativeRepaintPlan as Plan};
+    match plan {
+        LiveRendererSlotRepaint::Partial { damage } => Plan::Partial(
+            damage
+                .into_iter()
+                .map(|rect| sophia_renderer_live::NativeCompositionDamageRect {
+                    x: rect.x,
+                    y: rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                })
+                .collect(),
+        ),
+        LiveRendererSlotRepaint::Full { reason } => Plan::Full(match reason {
+            LiveRendererSlotFullRepaintReason::UnknownBufferAge => R::UnknownAge,
+            LiveRendererSlotFullRepaintReason::NoHistory => R::NoHistory,
+            LiveRendererSlotFullRepaintReason::BeyondHistoryDepth => R::BeyondHistory,
+            LiveRendererSlotFullRepaintReason::DamageUnavailable => R::DamageUnavailable,
+            LiveRendererSlotFullRepaintReason::PlanDamageCapacity => R::PlanDamageCapacity,
+            LiveRendererSlotFullRepaintReason::PlanRectLimit => R::PlanRectLimit,
+            LiveRendererSlotFullRepaintReason::PlanCoverage => R::PlanCoverage,
+        }),
+    }
+}
+
+#[derive(Debug)]
+struct SelectedAgeRepaint<'a> {
+    owner: std::cell::RefCell<&'a mut WorkerSlotDamage>,
+    slot: LiveRendererFrameSlotId,
+    snapshot: Option<&'a sophia_engine::OutputFrameDamageSnapshot>,
+    size: sophia_protocol::Size,
+}
+
+impl sophia_renderer_live::NativeCompositionRepaintSource for SelectedAgeRepaint<'_> {
+    fn select(&self, age: u32) -> sophia_renderer_live::NativeRepaintSelection {
+        use sophia_renderer_live::{
+            NativeFullRepaintReason as R, NativeRepaintPlan as P, NativeRepaintSelection as S,
+        };
+        let full = |reason| S {
+            plan: P::Full(reason),
+            causes: Default::default(),
+            stable_geometry: false,
+        };
+        let mut owner = self.owner.borrow_mut();
+        if !owner.enabled {
+            return full(R::Disabled);
+        }
+        let Some(snapshot) = self.snapshot else {
+            return full(R::DamageUnavailable);
+        };
+        let depth = owner.history.depth(self.slot);
+        if depth == 0 {
+            return full(R::NoHistory);
+        }
+        let stable_geometry = owner.history.stable_geometry(self.slot, snapshot);
+        if age == 0 || age as usize > depth {
+            return S {
+                stable_geometry,
+                ..full(if age == 0 {
+                    R::UnknownAge
+                } else {
+                    R::BeyondHistory
+                })
+            };
+        }
+        let (plan, causes) = owner.history.plan_with_causes(
+            self.slot,
+            LiveRendererSlotBufferAge::new(age),
+            Some(snapshot),
+            self.size,
+        );
+        S {
+            plan: native_repaint_plan(plan),
+            causes: native_damage_causes(causes),
+            stable_geometry,
+        }
+    }
 }

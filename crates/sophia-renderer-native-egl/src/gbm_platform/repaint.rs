@@ -23,6 +23,34 @@ pub enum NativeRepaintPlan {
     Partial(Vec<NativeCompositionDamageRect>),
 }
 
+/// One plan selected using the age of the actual current EGL buffer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeRepaintSelection {
+    pub plan: NativeRepaintPlan,
+    pub causes: NativeDamageCauses,
+    pub stable_geometry: bool,
+}
+
+/// Synchronous, render-local planning; the renderer calls this once before drawing.
+pub trait NativeCompositionRepaintSource: std::fmt::Debug {
+    fn select(&self, age: u32) -> NativeRepaintSelection;
+}
+
+impl NativeCompositionRepaintSource for NativeCompositionRepaintTable {
+    fn select(&self, age: u32) -> NativeRepaintSelection {
+        NativeRepaintSelection {
+            plan: match self.full_reason_for_age(age) {
+                Some(reason) => NativeRepaintPlan::Full(reason),
+                None => NativeRepaintPlan::Partial(
+                    self.damage_for_age(age).unwrap_or_default().to_vec(),
+                ),
+            },
+            causes: self.causes_for_age(age),
+            stable_geometry: self.stable_geometry(),
+        }
+    }
+}
+
 /// A bounded caller-supplied plan for each possible age. Even an all-full
 /// table carries evidence; omitting it would erase why partial repaint was
 /// unavailable. This metadata never makes a full plan partial.

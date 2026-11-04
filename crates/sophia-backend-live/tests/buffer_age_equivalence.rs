@@ -20,6 +20,18 @@ use sophia_renderer_live::{
     NativeGbmRenderedScanoutContext,
 };
 
+#[derive(Debug)]
+struct CountedRepaint<'a> {
+    source: &'a dyn sophia_renderer_live::NativeCompositionRepaintSource,
+    calls: std::cell::Cell<usize>,
+}
+impl sophia_renderer_live::NativeCompositionRepaintSource for CountedRepaint<'_> {
+    fn select(&self, age: u32) -> sophia_renderer_live::NativeRepaintSelection {
+        self.calls.set(self.calls.get() + 1);
+        self.source.select(age)
+    }
+}
+
 const WIDTH: i32 = 320;
 const HEIGHT: i32 = 200;
 const FRAMES: usize = 12;
@@ -279,7 +291,11 @@ fn render_sequence(node: &std::path::Path, damage_enabled: bool) -> Run {
         let slot = LiveRendererFrameSlotId::from_index(slot_index).expect("slot index");
         let frame = frame_for(generations_at(step));
         let table =
-            slot_damage.repaint_table(slot, frame.output_damage_snapshot.as_ref(), target.size);
+            slot_damage.repaint_source(slot, frame.output_damage_snapshot.as_ref(), target.size);
+        let counted = CountedRepaint {
+            source: &table,
+            calls: Default::default(),
+        };
         let report = context
             .export_owned_mixed_frame_with_modifiers_in_frame_slot(
                 NativeFrameTargetSetId::DEFAULT,
@@ -287,9 +303,15 @@ fn render_sequence(node: &std::path::Path, damage_enabled: bool) -> Run {
                 target,
                 &frame,
                 &[],
-                table.as_ref(),
+                Some(&counted),
             )
             .expect("mixed export on a live node");
+        assert_eq!(
+            counted.calls.get(),
+            1,
+            "EGL selects exactly once per render"
+        );
+        drop(table);
         assert!(
             report.buffer.is_some(),
             "frame {step} did not export: {:?}",
@@ -395,7 +417,9 @@ fn a_lying_damage_table_is_caught_by_the_checksum() {
                 target,
                 &frame,
                 &[],
-                table,
+                table.map(|table| {
+                    table as &dyn sophia_renderer_live::NativeCompositionRepaintSource
+                }),
             )
             .expect("mixed export on a live node");
         assert!(report.buffer.is_some());
@@ -517,7 +541,7 @@ fn journal_sequence(node: &std::path::Path, damage_enabled: bool) -> Run {
         };
         let slot_index = index % SLOTS;
         let slot = LiveRendererFrameSlotId::from_index(slot_index).unwrap();
-        let table = slots.repaint_table(slot, frame.output_damage_snapshot.as_ref(), size);
+        let table = slots.repaint_source(slot, frame.output_damage_snapshot.as_ref(), size);
         let report = context
             .export_owned_mixed_frame_with_modifiers_in_frame_slot(
                 NativeFrameTargetSetId::DEFAULT,
@@ -525,9 +549,10 @@ fn journal_sequence(node: &std::path::Path, damage_enabled: bool) -> Run {
                 target,
                 &frame,
                 &[],
-                table.as_ref(),
+                Some(&table),
             )
             .unwrap();
+        drop(table);
         assert!(report.buffer.is_some(), "{:?}", report.detail);
         if matches!(
             report.repaint,

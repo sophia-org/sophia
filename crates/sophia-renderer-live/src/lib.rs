@@ -13,9 +13,9 @@ pub use sophia_protocol::{BufferSource, Size};
 #[cfg(feature = "gbm-probe")]
 pub use sophia_renderer_native_egl::{
     NATIVE_IMAGE_IMPORT_DEVICE_CAPACITY, NativeCompositionDamageRect, NativeCompositionDamageStats,
-    NativeCompositionRepaintTable, NativeDamageCause, NativeDamageCauses, NativeFrameTargetSetId,
-    NativeFullRepaintReason, NativeGlIdentity, NativeGlIdentityState, NativeImageTransferStats,
-    NativeRepaintPlan,
+    NativeCompositionRepaintSource, NativeCompositionRepaintTable, NativeDamageCause,
+    NativeDamageCauses, NativeFrameTargetSetId, NativeFullRepaintReason, NativeGlIdentity,
+    NativeGlIdentityState, NativeImageTransferStats, NativeRepaintPlan, NativeRepaintSelection,
 };
 #[cfg(feature = "gbm-probe")]
 pub use sophia_renderer_native_egl::{

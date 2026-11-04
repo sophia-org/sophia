@@ -38,7 +38,7 @@ where
         target: LiveGbmEglFrameTargetRecord,
         frame: &LiveOwnedMixedCompositionFrame,
         preferred_modifiers: &[u64],
-        repaint: Option<&sophia_renderer_native_egl::NativeCompositionRepaintTable>,
+        repaint: Option<&dyn sophia_renderer_native_egl::NativeCompositionRepaintSource>,
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         self.export_owned_mixed_frame_in_frame_slot(
             set,
@@ -67,7 +67,12 @@ where
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         *snapshot = None;
         self.export_owned_mixed_frame_with_modifiers_and_frame_slot(
-            target, frame, request, Some((set, frame_slot)), None, Some((snapshot, reservation)),
+            target,
+            frame,
+            request,
+            Some((set, frame_slot)),
+            None,
+            Some((snapshot, reservation)),
         )
     }
 
@@ -78,7 +83,7 @@ where
         target: LiveGbmEglFrameTargetRecord,
         frame: &LiveOwnedMixedCompositionFrame,
         request: LiveCompositionOutputRequest<'_>,
-        repaint: Option<&sophia_renderer_native_egl::NativeCompositionRepaintTable>,
+        repaint: Option<&dyn sophia_renderer_native_egl::NativeCompositionRepaintSource>,
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         self.export_owned_mixed_frame_with_modifiers_and_frame_slot(
             target,
@@ -96,8 +101,11 @@ where
         frame: &LiveOwnedMixedCompositionFrame,
         request: LiveCompositionOutputRequest<'_>,
         frame_slot: Option<(sophia_renderer_native_egl::NativeFrameTargetSetId, usize)>,
-        repaint: Option<&sophia_renderer_native_egl::NativeCompositionRepaintTable>,
-        snapshot: Option<(&mut Option<sophia_renderer_native_egl::NativeCompositionSnapshot>, sophia_renderer_native_egl::SnapshotReservation)>,
+        repaint: Option<&dyn sophia_renderer_native_egl::NativeCompositionRepaintSource>,
+        snapshot: Option<(
+            &mut Option<sophia_renderer_native_egl::NativeCompositionSnapshot>,
+            sophia_renderer_native_egl::SnapshotReservation,
+        )>,
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         if !request.is_valid() {
             return Err(LiveMixedCompositionError::InvalidOutput);
@@ -141,59 +149,61 @@ where
         let layers = frame
             .layers
             .iter()
-            .filter_map(|layer| Some(match layer {
-                LiveOwnedMixedCompositionLayer::Cpu { buffer, placement } => {
-                    LiveMixedCompositionLayer::Cpu {
-                        buffer: LiveCpuBufferSourceRef {
-                            pixel_version: buffer.pixel_version,
-                            handle: buffer.handle,
-                            size: buffer.size,
-                            stride: buffer.stride,
-                            format: buffer.format,
-                            generation: buffer.generation,
-                            bytes: buffer.bytes.as_slice(),
-                        },
+            .filter_map(|layer| {
+                Some(match layer {
+                    LiveOwnedMixedCompositionLayer::Cpu { buffer, placement } => {
+                        LiveMixedCompositionLayer::Cpu {
+                            buffer: LiveCpuBufferSourceRef {
+                                pixel_version: buffer.pixel_version,
+                                handle: buffer.handle,
+                                size: buffer.size,
+                                stride: buffer.stride,
+                                format: buffer.format,
+                                generation: buffer.generation,
+                                bytes: buffer.bytes.as_slice(),
+                            },
+                            placement: *placement,
+                        }
+                    }
+                    LiveOwnedMixedCompositionLayer::DmaBuf {
+                        image_id,
+                        placement,
+                        ..
+                    } => LiveMixedCompositionLayer::RendererImage {
+                        image_id: *image_id,
                         placement: *placement,
-                    }
-                }
-                LiveOwnedMixedCompositionLayer::DmaBuf {
-                    image_id,
-                    placement,
-                    ..
-                } => LiveMixedCompositionLayer::RendererImage {
-                    image_id: *image_id,
-                    placement: *placement,
-                },
-                LiveOwnedMixedCompositionLayer::RendererImage {
-                    image_id,
-                    placement,
-                    ..
-                } => LiveMixedCompositionLayer::RendererImage {
-                    image_id: *image_id,
-                    placement: *placement,
-                },
-                LiveOwnedMixedCompositionLayer::Snapshot {
-                    snapshot,
-                    placement,
-                } => LiveMixedCompositionLayer::Snapshot {
-                    snapshot,
-                    placement: *placement,
-                },
-                #[cfg(feature = "experimental-shell-capture")]
-                LiveOwnedMixedCompositionLayer::ManagedCapture { lease, placement } => {
-                    let image_id = self.inner.managed_shell_capture_image(lease)?;
-                    LiveMixedCompositionLayer::RendererImage {
-                        image_id: LiveRendererImageId::from_raw(image_id.raw()),
+                    },
+                    LiveOwnedMixedCompositionLayer::RendererImage {
+                        image_id,
+                        placement,
+                        ..
+                    } => LiveMixedCompositionLayer::RendererImage {
+                        image_id: *image_id,
                         placement: *placement,
+                    },
+                    LiveOwnedMixedCompositionLayer::Snapshot {
+                        snapshot,
+                        placement,
+                    } => LiveMixedCompositionLayer::Snapshot {
+                        snapshot,
+                        placement: *placement,
+                    },
+                    #[cfg(feature = "experimental-shell-capture")]
+                    LiveOwnedMixedCompositionLayer::ManagedCapture { lease, placement } => {
+                        let image_id = self.inner.managed_shell_capture_image(lease)?;
+                        LiveMixedCompositionLayer::RendererImage {
+                            image_id: LiveRendererImageId::from_raw(image_id.raw()),
+                            placement: *placement,
+                        }
                     }
-                }
-                LiveOwnedMixedCompositionLayer::Solid { geometry, color } => {
-                    LiveMixedCompositionLayer::Solid {
-                        geometry: *geometry,
-                        color: *color,
+                    LiveOwnedMixedCompositionLayer::Solid { geometry, color } => {
+                        LiveMixedCompositionLayer::Solid {
+                            geometry: *geometry,
+                            color: *color,
+                        }
                     }
-                }
-            }))
+                })
+            })
             .collect::<Vec<_>>();
         self.export_mixed_owned_scanout_buffer_with_modifiers_and_trace(
             target,

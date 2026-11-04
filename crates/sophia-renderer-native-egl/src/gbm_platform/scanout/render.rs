@@ -501,9 +501,13 @@ fn render_native_target_composition(
     // only be read here -- and only before anything is drawn into it.
     let buffer_age =
         query_native_surface_buffer_age(egl, display, egl_surface, buffer_age_supported);
-    let damage = frame
+    let selected = frame
         .repaint
-        .and_then(|table| table.damage_for_age(buffer_age.unwrap_or(0)));
+        .map(|source| source.select(buffer_age.unwrap_or(0)));
+    let damage = selected.as_ref().and_then(|selected| match &selected.plan {
+        crate::NativeRepaintPlan::Partial(rects) => Some(rects.as_slice()),
+        crate::NativeRepaintPlan::Full(_) => None,
+    });
     // A full repaint is one unconfined pass. A damage-limited repaint is one
     // pass per rectangle, each clearing and redrawing only inside itself, so
     // the pixels the buffer is being reused for survive between them.
@@ -578,7 +582,9 @@ fn render_native_target_composition(
                     let result = target
                         .pipeline
                         .draw_cached_cpu_layer(
-                            layer_index, layer.format, layer.pixel_version,
+                            layer_index,
+                            layer.format,
+                            layer.pixel_version,
                             GlCpuLayer {
                                 width: layer.width,
                                 height: layer.height,
@@ -616,7 +622,13 @@ fn render_native_target_composition(
                 NativeCompositionLayer::DmaBuf(layer) => {
                     trace_native_lifecycle("composition_dmabuf_layer_started");
                     let result = import_cache
-                        .texture(egl, display, &target.pipeline, *layer, snapshots.import_timing_enabled)
+                        .texture(
+                            egl,
+                            display,
+                            &target.pipeline,
+                            *layer,
+                            snapshots.import_timing_enabled,
+                        )
                         .and_then(|texture| {
                             target
                                 .pipeline
@@ -657,7 +669,8 @@ fn render_native_target_composition(
                 NativeCompositionLayer::RendererImage(layer) => {
                     trace_native_lifecycle("composition_renderer_image_layer_started");
                     let result = (|| {
-                        let image = snapshots.images
+                        let image = snapshots
+                            .images
                             .get(&layer.image_id)
                             .ok_or(NativeGbmScanoutBufferExportDetail::InvalidRendererImageId)?;
                         let plane_count = image.buffer.plane_count();
@@ -691,9 +704,22 @@ fn render_native_target_composition(
                             sampling: layer.sampling,
                         };
                         let texture = if let Some(captured) = &image.pooled {
-                            import_cache.snapshot_texture(egl, display, &target.pipeline, captured, imported, snapshots.import_reuse)?
+                            import_cache.snapshot_texture(
+                                egl,
+                                display,
+                                &target.pipeline,
+                                captured,
+                                imported,
+                                snapshots.import_reuse,
+                            )?
                         } else {
-                            import_cache.texture(egl, display, &target.pipeline, imported, snapshots.import_timing_enabled)?
+                            import_cache.texture(
+                                egl,
+                                display,
+                                &target.pipeline,
+                                imported,
+                                snapshots.import_timing_enabled,
+                            )?
                         };
                         target
                             .pipeline
@@ -746,15 +772,28 @@ fn render_native_target_composition(
     // Validation and pixel capture read the whole target, so the confinement
     // ends with the last pass rather than with the render.
     target.pipeline.set_ambient_clip(None);
-    let mut evidence = NativeCompositionRenderEvidence {
-        buffer_age,
-        repaint,
-        repaint_pixels,
-        full_reason: frame.repaint.map_or(Some(NativeFullRepaintReason::NoTable), |table| table.full_reason_for_age(buffer_age.unwrap_or(0))),
-        damage_causes: frame.repaint.map_or_else(crate::NativeDamageCauses::default, |table| table.causes_for_age(buffer_age.unwrap_or(0))),
-        stable_geometry: frame.repaint.is_some_and(NativeCompositionRepaintTable::stable_geometry),
-        ..NativeCompositionRenderEvidence::default()
-    };
+    let mut evidence =
+        NativeCompositionRenderEvidence {
+            buffer_age,
+            repaint,
+            repaint_pixels,
+            full_reason: selected.as_ref().map_or(
+                Some(NativeFullRepaintReason::NoTable),
+                |selected| match selected.plan {
+                    crate::NativeRepaintPlan::Full(reason) => Some(reason),
+                    crate::NativeRepaintPlan::Partial(_) => None,
+                },
+            ),
+            damage_causes: selected
+                .as_ref()
+                .map_or_else(crate::NativeDamageCauses::default, |selected| {
+                    selected.causes
+                }),
+            stable_geometry: selected
+                .as_ref()
+                .is_some_and(|selected| selected.stable_geometry),
+            ..NativeCompositionRenderEvidence::default()
+        };
     let result = draw_result
         .and_then(|()| {
             target
@@ -834,8 +873,16 @@ fn render_native_target_composition(
             buffer._frame_surface = Some(surface.clone());
             Ok((buffer, evidence))
         });
-    if result.is_err() { target.pipeline.invalidate_cpu_composition(); }
-    finish_snapshot_batch(egl, display, snapshot_uses, snapshots.fences, snapshots.quarantine);
+    if result.is_err() {
+        target.pipeline.invalidate_cpu_composition();
+    }
+    finish_snapshot_batch(
+        egl,
+        display,
+        snapshot_uses,
+        snapshots.fences,
+        snapshots.quarantine,
+    );
     let _ = egl.make_current(display, None, None, None);
     result
 }

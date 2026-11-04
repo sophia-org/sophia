@@ -296,7 +296,7 @@ fn worker_slot_damage_disabled_records_a_full_reason() {
     damage.settle(slot(0), true, Some(7), Some(snapshot.clone()));
 
     let table = damage
-        .repaint_table(slot(0), Some(&snapshot), SLOT_DAMAGE_OUTPUT)
+        .checked_repaint_table(slot(0), Some(&snapshot), SLOT_DAMAGE_OUTPUT)
         .unwrap();
     assert_eq!(
         table.full_reason_for_age(1),
@@ -312,7 +312,7 @@ fn worker_slot_damage_preserves_missing_history_in_the_table() {
     let second = slot_damage_snapshot([2, 1, 1, 1]);
 
     let table = damage
-        .repaint_table(slot(0), Some(&first), SLOT_DAMAGE_OUTPUT)
+        .checked_repaint_table(slot(0), Some(&first), SLOT_DAMAGE_OUTPUT)
         .unwrap();
     assert_eq!(
         table.full_reason_for_age(1),
@@ -322,7 +322,7 @@ fn worker_slot_damage_preserves_missing_history_in_the_table() {
 
     damage.settle(slot(0), true, Some(7), Some(first.clone()));
     let table = damage
-        .repaint_table(slot(0), Some(&second), SLOT_DAMAGE_OUTPUT)
+        .checked_repaint_table(slot(0), Some(&second), SLOT_DAMAGE_OUTPUT)
         .expect("one recorded write yields an age-one plan");
     assert!(table.damage_for_age(1).is_some());
     assert!(table.damage_for_age(2).is_none());
@@ -335,7 +335,7 @@ fn worker_slot_damage_forgets_a_rebuilt_bundle() {
     damage.settle(slot(0), true, Some(7), Some(snapshot.clone()));
     assert!(
         damage
-            .repaint_table(slot(0), Some(&snapshot), SLOT_DAMAGE_OUTPUT)
+            .checked_repaint_table(slot(0), Some(&snapshot), SLOT_DAMAGE_OUTPUT)
             .is_some()
     );
 
@@ -345,7 +345,7 @@ fn worker_slot_damage_forgets_a_rebuilt_bundle() {
     assert_eq!(damage.metrics().invalidations, 1);
     assert!(
         damage
-            .repaint_table(slot(0), Some(&snapshot), SLOT_DAMAGE_OUTPUT)
+            .checked_repaint_table(slot(0), Some(&snapshot), SLOT_DAMAGE_OUTPUT)
             .is_some(),
         "the new write itself is recorded after the invalidation"
     );
@@ -364,7 +364,7 @@ fn worker_slot_damage_invalidates_a_failed_write() {
     damage.settle(slot(0), false, Some(7), Some(snapshot.clone()));
 
     let table = damage
-        .repaint_table(slot(0), Some(&snapshot), SLOT_DAMAGE_OUTPUT)
+        .checked_repaint_table(slot(0), Some(&snapshot), SLOT_DAMAGE_OUTPUT)
         .unwrap();
     assert_eq!(
         table.full_reason_for_age(1),
@@ -383,7 +383,7 @@ fn stable_geometry_cohort_is_independent_of_client_damage_and_buffer_age() {
     let current = slot_damage_snapshot([2, 1, 1, 1]);
     damage.settle(slot(0), true, Some(7), Some(first));
     let table = damage
-        .repaint_table(slot(0), Some(&current), SLOT_DAMAGE_OUTPUT)
+        .checked_repaint_table(slot(0), Some(&current), SLOT_DAMAGE_OUTPUT)
         .unwrap();
     assert!(table.stable_geometry());
     assert!(table.damage_for_age(0).is_none());
@@ -405,7 +405,7 @@ fn stable_geometry_cohort_is_independent_of_client_damage_and_buffer_age() {
         }
         assert!(
             !damage
-                .repaint_table(slot(0), Some(&changed), SLOT_DAMAGE_OUTPUT)
+                .checked_repaint_table(slot(0), Some(&changed), SLOT_DAMAGE_OUTPUT)
                 .unwrap()
                 .stable_geometry()
         );
@@ -550,7 +550,7 @@ fn slot_damage_attribution_preserves_threshold_and_selected_age_causes() {
     worker.settle(slot(0), true, Some(1), Some(first.clone()));
     let changed = slot_damage_snapshot([2, 1, 1, 1]);
     let table = worker
-        .repaint_table(slot(0), Some(&changed), SLOT_DAMAGE_OUTPUT)
+        .checked_repaint_table(slot(0), Some(&changed), SLOT_DAMAGE_OUTPUT)
         .unwrap();
     assert!(table.damage_for_age(1).is_some());
     assert!(table.causes_for_age(1).contains(C::MissingIdentity));
@@ -573,9 +573,139 @@ fn slot_damage_attribution_preserves_threshold_and_selected_age_causes() {
     }
     worker.settle(slot(1), true, Some(1), Some(old));
     let table = worker
-        .repaint_table(slot(1), Some(&new), SLOT_DAMAGE_OUTPUT)
+        .checked_repaint_table(slot(1), Some(&new), SLOT_DAMAGE_OUTPUT)
         .unwrap();
     assert_eq!(table.full_reason_for_age(1), Some(R::PlanCoverage));
     assert!(table.damage_for_age(1).is_none());
     assert!(table.causes_for_age(1).contains(C::Sampling));
+}
+
+#[test]
+fn selected_age_matches_eager_planning_without_evaluating_unused_ages() {
+    use sophia_renderer_live::NativeCompositionRepaintSource;
+    for enabled in [false, true] {
+        for depth in 0..=6 {
+            for missing in [false, true] {
+                for age in 0..=7 {
+                    for failed in [false, true] {
+                        let mut eager = WorkerSlotDamage::with_enabled(enabled);
+                        let mut lazy = WorkerSlotDamage::with_enabled(enabled);
+                        for step in 0..depth {
+                            let snapshot = slot_damage_snapshot([step + 1, 1, 1, 1]);
+                            for owner in [&mut eager, &mut lazy] {
+                                owner.settle(slot(0), true, Some(7), Some(snapshot.clone()));
+                            }
+                        }
+                        if failed {
+                            eager.settle(slot(0), false, Some(7), None);
+                            lazy.settle(slot(0), false, Some(7), None);
+                        }
+                        let current = slot_damage_snapshot([99, 2, 1, 1]);
+                        let snapshot = (!missing).then_some(&current);
+                        let expected = eager
+                            .repaint_table(slot(0), snapshot, SLOT_DAMAGE_OUTPUT)
+                            .unwrap()
+                            .select(age);
+                        let before = lazy.metrics();
+                        let actual = lazy
+                            .repaint_source(slot(0), snapshot, SLOT_DAMAGE_OUTPUT)
+                            .select(age);
+                        assert_eq!(
+                            actual, expected,
+                            "enabled={enabled} depth={depth} missing={missing} age={age} failed={failed}"
+                        );
+                        let after = lazy.metrics();
+                        let evaluations = after.partial_repaints + after.full_repaints
+                            - before.partial_repaints
+                            - before.full_repaints;
+                        let usable = enabled
+                            && !missing
+                            && !failed
+                            && age > 0
+                            && age as usize <= (depth as usize).min(4);
+                        assert_eq!(
+                            evaluations,
+                            usize::from(usable),
+                            "only the selected usable age is reduced"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "local stage benchmark, not a native CPU/frame qualification"]
+fn selected_age_planning_cost() {
+    use sophia_renderer_live::NativeCompositionRepaintSource;
+    let mut history = WorkerSlotDamage::with_enabled(true);
+    for generation in 1..=4 {
+        history.settle(
+            slot(0),
+            true,
+            Some(7),
+            Some(slot_damage_snapshot([generation, 1, 1, 1])),
+        );
+    }
+    let current = slot_damage_snapshot([8, 2, 1, 1]);
+    for round in 0..4 {
+        for lazy in if round % 2 == 0 {
+            [false, true]
+        } else {
+            [true, false]
+        } {
+            let started = std::time::Instant::now();
+            for iteration in 0..10_000 {
+                let age = iteration % 4 + 1;
+                if lazy {
+                    std::hint::black_box(
+                        history
+                            .repaint_source(slot(0), Some(&current), SLOT_DAMAGE_OUTPUT)
+                            .select(age),
+                    );
+                } else {
+                    let table = history
+                        .repaint_table(slot(0), Some(&current), SLOT_DAMAGE_OUTPUT)
+                        .unwrap();
+                    std::hint::black_box(table.damage_for_age(age));
+                    std::hint::black_box(table.full_reason_for_age(age));
+                    std::hint::black_box(table.causes_for_age(age));
+                    std::hint::black_box(table.stable_geometry());
+                }
+            }
+            eprintln!(
+                "selected_age_stage round={round} lazy={lazy} iterations=10000 elapsed_ns={}",
+                started.elapsed().as_nanos()
+            );
+        }
+    }
+}
+
+trait CheckedRepaint {
+    fn checked_repaint_table(
+        &mut self,
+        slot: LiveRendererFrameSlotId,
+        snapshot: Option<&sophia_engine::OutputFrameDamageSnapshot>,
+        size: sophia_protocol::Size,
+    ) -> Option<sophia_renderer_live::NativeCompositionRepaintTable>;
+}
+impl CheckedRepaint for WorkerSlotDamage {
+    fn checked_repaint_table(
+        &mut self,
+        slot: LiveRendererFrameSlotId,
+        snapshot: Option<&sophia_engine::OutputFrameDamageSnapshot>,
+        size: sophia_protocol::Size,
+    ) -> Option<sophia_renderer_live::NativeCompositionRepaintTable> {
+        use sophia_renderer_live::NativeCompositionRepaintSource;
+        let table = self.repaint_table(slot, snapshot, size)?;
+        for age in 0..=6 {
+            assert_eq!(
+                self.repaint_source(slot, snapshot, size).select(age),
+                table.select(age),
+                "existing damage fixture, age {age}"
+            );
+        }
+        Some(table)
+    }
 }

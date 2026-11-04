@@ -1,7 +1,7 @@
 use std::os::fd::BorrowedFd;
 use std::time::Duration;
 
-use super::super::{NativeCompositionDamageStats, NativeCompositionRepaintTable};
+use super::super::{NativeCompositionDamageStats, NativeCompositionRepaintSource};
 use super::import_cache::{NativeDmaBufImportCacheStats, NativeRendererImageId};
 use crate::gl::GlCompositionRect;
 
@@ -142,10 +142,10 @@ pub struct NativeCompositionFrame<'a> {
     pub height: u32,
     pub layers: &'a [NativeCompositionLayer<'a>],
     pub trace: Option<NativeCompositionTrace>,
-    /// What this frame may repaint instead of the whole target, indexed by the
-    /// age its surface reports. The caller cannot select the entry itself: the
+    /// What this frame may repaint instead of the whole target. The renderer
+    /// selects once using the current buffer age. The caller cannot guess it: the
     /// age is only knowable after the context is current, which happens here.
-    pub repaint: Option<&'a NativeCompositionRepaintTable>,
+    pub repaint: Option<&'a dyn NativeCompositionRepaintSource>,
 }
 
 /// A damage rectangle in top-left output coordinates, as Engine reduces them.
