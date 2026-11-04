@@ -110,6 +110,25 @@ proved. Safety runs make no fairness assumption.
 
 ## Explicitly outside this first model
 
+### Resource lifetime slice
+
+`Resources.tla` separately checks the resource-store boundary at
+`resources.rs:270-306,436-560`: reservations include old-epoch physical work;
+cancellation keeps a worker's charge until completion; retirement forbids new
+leases; backing remains while any consumer holds a lease; live-epoch release
+must reach the journal before freeing, while revocation discards that logical
+publication obligation but retains physical ownership. Two one-shot resource
+identities, two consumers and byte sizes 1/2 under a total bound of 3 exercise
+capacity contention. The progress run assumes worker completion, consumer lease
+drop and release publication eventually progress.
+
+Four negative controls free on cancellation, free with a live lease, treat queued
+release as journal publication, or publish an old epoch into the current journal.
+This slice abstracts integer arithmetic, callback identity and the backing object;
+it is not a proof of the memory copier or an unbounded resource allocator.
+It is checked separately from the frame model: their composition with wire
+admission is still an integration gate, not implied by passing both models.
+
 Same-epoch close/drain/reopen is now checked in `Reopen.cfg`: the close notice
 must be delivered, queued output and source obligations drained, and every
 accepted transaction terminal before issuing the next stream's credits. Stream

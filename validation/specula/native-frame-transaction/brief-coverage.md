@@ -38,3 +38,13 @@ specific invariant; parser errors or another failure do not count as a pass.
 This table does not extend the modeling brief's scope. In particular, there is
 no unbounded stream-reuse proof, no general accepted-backing reclamation proof, no
 wire/parser refinement and no physical GPU/display correctness proof.
+
+## Separate bounded resource slice
+
+`Resources.cfg` checks `BudgetSafe`, `ChargedUse`, `FreeSafe`,
+`PublicationSafe` and `EpochSafe`. `ResourceProgress.cfg` adds fair
+`RetiredDrains`. The bounds are two resource identities and consumers, sizes 1/2,
+three total byte units and two epochs. Negative configurations independently
+remove cancellation charge retention, lease retention, live-journal publication,
+and epoch checking. The checker requires the specific expected violation for
+each. These are not a composed proof of FrameCommit's resource/wire adapter.

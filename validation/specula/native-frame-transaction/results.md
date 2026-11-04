@@ -3,7 +3,29 @@
 No production protocol or runtime source changed. The design is not yet eligible
 for enablement; see the modeling brief's explicit exclusions and wire gate.
 
+## Resource-store boundary follow-up
+
+`Resources.tla` adds a separate finite resource-store model: two resources and
+consumers, byte sizes 1/2, total byte budget 3 and two epochs. It checks physical
+charge retention during cancellation, leases after retirement/revocation, and
+the distinction between queueing ResourceReleased and publishing it to the live
+journal. The base safety search visits 5,693 distinct states; fair progress and
+four negative controls are included in the repository checker.
+
+The stale-publication negative control initially exposed an unspecified-variable
+error in a TLA+ Boolean expression. Parenthesizing the assigned expression fixed
+the model; a parser/evaluation failure is not accepted as an invariant failure.
+The before-log is retained. Evidence is under
+`~/.local/state/sophia-frame-resource-model-01`.
+
+This is a resource-store slice, not proof that the new FrameCommit adapter joins
+the frame ledger, byte accounting and wire admission correctly. That integration
+and actual callback/identity handling remain required before enablement.
+
 ## Implementation-plan follow-up: close/drain/reopen
+
+The design checkpoint is signed commit `903c5b434`; the separately checked
+reopen extension is signed commit `2298229e4`.
 
 The additional `Reopen.cfg` enumerated 3,083,753 distinct states without an
 invariant violation. It retains physical ownership while requiring delivery of
