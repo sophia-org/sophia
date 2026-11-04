@@ -7,6 +7,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
+# Ledger only until FrameCommit wire admission and producer parity are complete.
+experimental-native-frame-transaction = []
 experimental-draw = ["dep:sophia-draw", "rustix/fs"]
 experimental-shell-capture = ["dep:sophia-renderer-image", "sophia-renderer-image/experimental-shell-capture", "rustix/fs"]
 # Opt-in shell-file control-turn observation; absent from default builds.

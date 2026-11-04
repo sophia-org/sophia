@@ -1,7 +1,26 @@
 # Design-model checkpoint, 2026-11-04
 
-No production protocol or runtime source changed. The design is not yet eligible
-for enablement; see the modeling brief's explicit exclusions and wire gate.
+The model-only checkpoints did not change production protocol or runtime source.
+The subsequent default-off Rust foundation is described below. The design is not
+yet eligible for enablement; see the explicit exclusions and wire gate.
+
+## Reused Rust credit foundation
+
+The runtime-only `experimental-native-frame-transaction` feature imports the W3
+ledger from signed checkpoint `33ff35990`. Non-comment source is identical; no
+new credit algorithm or dependency was added. The original 13 tests plus two
+new tests pass. New checks cover every ledger key field, an owner rejecting
+reopen until external drain, and old completion/candidate replay after reopen.
+They do not test ring/slot identities, which are not fields of this ledger.
+
+Runtime tests with the feature enabled: 778 passed, 41 ignored, zero failures.
+Strict Clippy over all runtime targets/features, feature-off library check,
+rustdoc and formatting checks pass. Evidence lives at
+`~/.local/state/sophia-frame-ledger-reuse-01`.
+
+No Session/CLI enablement, wire opener, codec, producer integration, runtime trace
+validation or native launch is included. The ledger is a foundation for the
+adapter, not a completed FrameCommit implementation or a CPU improvement claim.
 
 ## Intake boundary follow-up
 

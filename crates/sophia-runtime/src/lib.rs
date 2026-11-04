@@ -15,6 +15,8 @@ mod control;
 #[cfg(target_os = "linux")]
 pub mod developer_launch;
 mod error;
+#[cfg(feature = "experimental-native-frame-transaction")]
+pub mod frame_credits;
 #[cfg(target_os = "linux")]
 mod host_domain;
 #[cfg(target_os = "linux")]

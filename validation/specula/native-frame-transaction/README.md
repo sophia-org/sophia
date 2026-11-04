@@ -1,6 +1,7 @@
 # Native FrameCommit: remove rendezvous from the hot path
 
-Status: design model; no production wire change or protocol allocation.
+Status: design model and default-off Rust credit foundation; no production wire
+change or protocol allocation.
 
 The maintained [architecture proposal](../../../docs/native-frame-transactions.md)
 and [zk decision](../../../docs/notes/decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md)
@@ -91,6 +92,13 @@ observed Niri interval; XLibre's 180–220 is a separate stretch target.
 
 No benchmark-only authorization shortcut, new transport stack, Vulkan rewrite,
 timer deletion or general-purpose scene framework is part of this proposal.
+
+The runtime-only `experimental-native-frame-transaction` feature now compiles
+the existing W3 ledger, imported from `33ff35990` with its original tests.
+Two further tests cover all eight ledger key fields and the external drain gate
+before reopening, including rejection of old completions and candidate replay.
+No FrameCommit codec or opener exists yet. The ledger does not check ring/slot
+identity or implement physical resource ownership; those remain adapter duties.
 
 ## Model checks
 

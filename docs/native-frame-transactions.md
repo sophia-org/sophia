@@ -187,6 +187,19 @@ hot loops where the evidence supports it.
 
 ## Design evidence and implementation gates
 
+The first Rust foundation reuses the reviewed W3 `FrameCredits` ledger from
+`33ff35990`, behind runtime-only `experimental-native-frame-transaction`.
+Its credit algorithm is unchanged; additional tests check each ledger key field,
+owner refusal of reopening before external drain, and old completion replay.
+The initial profile will request one credit. The ledger's existing two-credit
+capacity does not authorize the native adapter to issue two.
+
+This is not a FrameCommit implementation or an enablement switch: no wire
+opener, Session/CLI flag, C/Rust codec or producer calls it. Ring/slot/callback
+identity, copy/resource reservations and typed wire refusals must be joined to
+it before the adapter can be exposed. Passing the ledger tests alone does not
+discharge those gates.
+
 The [modeling brief](../validation/specula/native-frame-transaction/modeling-brief.md)
 defines the finite scope; [results](../validation/specula/native-frame-transaction/results.md)
 record three safety configurations, one fair-progress configuration and seven
