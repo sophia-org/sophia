@@ -254,6 +254,23 @@ impl FrameCredits {
         self.pending_close
     }
 
+    pub(crate) fn key(&self) -> Option<FrameStreamKey> {
+        self.key
+    }
+
+    pub(crate) fn owns(&self, candidate: u64) -> bool {
+        self.outstanding.contains(&candidate)
+    }
+
+    pub(crate) fn observe_generation(&mut self, generation: u64) {
+        self.last_candidate = self.last_candidate.max(generation);
+    }
+
+    pub(crate) fn poison(&mut self) {
+        self.poisoned = true;
+        self.start_close(ContentReason::Malformed);
+    }
+
     fn deadline(&self, now: u64) -> Result<u64, ContentCandidateError> {
         now.checked_add(u64::from(self.ttl_ms))
             .ok_or(ContentCandidateError::Malformed)

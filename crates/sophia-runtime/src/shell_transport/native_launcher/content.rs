@@ -57,7 +57,7 @@ impl ShellComponentTransport {
                 NativeContentRecord::Resource(v) => epochs
                     .resources(self.store_grant)
                     .ok_or(ShellTransportError::MissingCapability)?
-                    .additional_response_credit(v),
+                    .additional_response_credit(transaction, v),
                 _ => 0,
             };
             if !self.control_capacity_available(epochs, credit) {
@@ -157,6 +157,7 @@ impl ShellComponentTransport {
                 let (resources, candidates) = epochs
                     .active_parts_mut(self.store_grant)
                     .ok_or(ShellTransportError::MissingCapability)?;
+                let events_before = candidates.pending_event_count();
                 let result = match record {
                     NativeContentRecord::Begin(v) => {
                         candidates.begin_native_launcher(transaction, v, current, now_msec)
@@ -177,7 +178,7 @@ impl ShellComponentTransport {
                     | NativeContentRecord::Demand(_)
                     | NativeContentRecord::Cancel(_) => unreachable!(),
                 };
-                let reported = candidates.pending_event().is_some();
+                let reported = candidates.pending_event_count() > events_before;
                 if result.is_err() && reported {
                     self.discard_candidate_rest(super::super::files::CandidateFamily::Native);
                 }

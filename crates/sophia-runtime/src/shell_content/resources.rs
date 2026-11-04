@@ -48,15 +48,21 @@ struct Transfer {
 }
 
 mod backing;
+#[cfg(feature = "experimental-native-frame-transaction")]
+mod retire_on_present;
 #[cfg(feature = "experimental-shell-capture")]
 pub use backing::ContentCapturedImage;
 pub use backing::{ContentCpuResourceLease, ContentResourceLease};
+#[cfg(feature = "experimental-native-frame-transaction")]
+pub use retire_on_present::{ContentRetireOnPresent, ContentRetireOwner, ContentRetireToken};
 
 struct Accepted {
     pixels: ContentResourceLease,
     retiring: bool,
     transaction: TransactionId,
     release_pending: bool,
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    intent: Option<retire_on_present::Intent>,
     #[cfg(feature = "experimental-shell-capture")]
     capture_evicted: bool,
 }
@@ -81,6 +87,9 @@ pub struct ContentResourceStore {
     events: VecDeque<ContentResourceEvent>,
     /// Terminal transfer and resource-release credits, excluding queued events.
     response_credits: usize,
+    /// Accepted resources carrying an intent record, held or not.
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    intent_records: usize,
     last_now: u64,
     revoked: bool,
 }
@@ -98,16 +107,37 @@ impl ContentResourceStore {
         value.response_records += self.control_occupancy();
     }
 
-    pub(crate) fn additional_response_credit(&self, record: &ShellContentRecord) -> usize {
+    /// Extra output credit a client control needs if it may be refused.
+    pub fn additional_response_credit(
+        &self,
+        transaction: TransactionId,
+        record: &ShellContentRecord,
+    ) -> usize {
         match record {
             ShellContentRecord::ResourceCancel(value) => {
                 usize::from(!self.transfers.contains_key(&value.resource))
             }
-            ShellContentRecord::ResourceRetire(value) => usize::from(
-                self.accepted
-                    .get(&value.resource)
-                    .is_none_or(|resource| resource.retiring),
-            ),
+            ShellContentRecord::ResourceRetire(value) => {
+                #[cfg(feature = "experimental-native-frame-transaction")]
+                {
+                    usize::from(
+                        self.accepted.get(&value.resource).is_none_or(|resource| {
+                            resource.retiring
+                                || resource.named()
+                                || self.refused_by_reservation(resource)
+                        }) || self.retire_id_held(transaction),
+                    )
+                }
+                #[cfg(not(feature = "experimental-native-frame-transaction"))]
+                {
+                    let _ = transaction;
+                    usize::from(
+                        self.accepted
+                            .get(&value.resource)
+                            .is_none_or(|resource| resource.retiring),
+                    )
+                }
+            }
             _ => 1,
         }
     }
@@ -129,6 +159,8 @@ impl ContentResourceStore {
             usage: ContentMemoryUsage::default(),
             events: VecDeque::new(),
             response_credits: 0,
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            intent_records: 0,
             last_now: 0,
             revoked: false,
         })
@@ -328,6 +360,8 @@ impl ContentResourceStore {
                 retiring: false,
                 transaction: transfer.transaction,
                 release_pending: false,
+                #[cfg(feature = "experimental-native-frame-transaction")]
+                intent: None,
                 #[cfg(feature = "experimental-shell-capture")]
                 capture_evicted: true,
             },
@@ -450,7 +484,12 @@ impl ContentResourceStore {
             .accepted
             .get(&resource)
             .ok_or(ContentStoreError::Stale)?;
+        // An admitted retire intent denies every new lease from End.
         if value.retiring {
+            return Err(ContentStoreError::Stale);
+        }
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if value.named() {
             return Err(ContentStoreError::Stale);
         }
         Ok(value.pixels.clone())
@@ -462,6 +501,15 @@ impl ContentResourceStore {
         request: &ContentResourceRetire,
     ) -> Result<(), ContentStoreError> {
         self.check(request.grant, transaction)?;
+        // A retire ID W2 holds is refused here too, in either order.
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if self.retire_id_held(transaction) {
+            return Err(ContentStoreError::Stale);
+        }
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        let reserved = self.reserved_retiring();
+        #[cfg(not(feature = "experimental-native-frame-transaction"))]
+        let reserved = 0;
         let value = self
             .accepted
             .get_mut(&request.resource)
@@ -469,8 +517,12 @@ impl ContentResourceStore {
         if value.retiring {
             return Err(ContentStoreError::Stale);
         }
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if value.named() {
+            return Err(ContentStoreError::Stale);
+        }
         let bytes = value.pixels.description().total_bytes;
-        if self.usage.retiring + bytes > self.limits.max_retiring_bytes {
+        if self.usage.retiring + reserved + bytes > self.limits.max_retiring_bytes {
             return Err(ContentStoreError::Budget);
         }
         value.retiring = true;
@@ -482,6 +534,8 @@ impl ContentResourceStore {
     }
 
     pub fn collect(&mut self) {
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        self.forget_released_intents();
         let ready: Vec<_> = self
             .accepted
             .iter()
@@ -528,6 +582,10 @@ impl ContentResourceStore {
 
     fn remove_accepted(&mut self, resource: ContentResourceId) {
         let value = self.accepted.remove(&resource).expect("selected resource");
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        {
+            self.intent_records -= usize::from(value.intent.is_some());
+        }
         let bytes = value.pixels.description().total_bytes;
         if value.retiring {
             self.usage.retiring -= bytes;
@@ -571,6 +629,10 @@ impl ContentResourceStore {
     /// a consumer is retained; the session keeps this owner in its retired pool.
     pub fn revoke(&mut self) {
         self.revoked = true;
+        // Uncommitted intents die with authority; release keeps the transfer's
+        // original transaction.
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        self.cancel_all_retire();
         let incomplete: Vec<_> = self.transfers.keys().copied().collect();
         for key in incomplete {
             self.abort(key, ContentReason::Revoked, None);

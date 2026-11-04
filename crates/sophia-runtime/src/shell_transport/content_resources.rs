@@ -155,7 +155,7 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
         self.poll_io(epochs)?;
-        let Some((_, record)) = self.peek_content(ContentWant::Resource)? else {
+        let Some((transaction, record)) = self.peek_content(ContentWant::Resource)? else {
             return self.nothing_inbound();
         };
         if !content_admission::client_record(&record) {
@@ -167,7 +167,7 @@ impl ShellComponentTransport {
         let needed = epochs
             .resources(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
-            .additional_response_credit(&record);
+            .additional_response_credit(transaction, &record);
         if !self.control_capacity_available(epochs, needed) {
             return Ok(None);
         }

@@ -109,6 +109,8 @@ impl ContentResourceStore {
                 retiring: false,
                 transaction: transfer.transaction,
                 release_pending: false,
+                #[cfg(feature = "experimental-native-frame-transaction")]
+                intent: None,
                 capture_evicted: false,
             },
         );

@@ -93,12 +93,23 @@ observed Niri interval; XLibre's 180–220 is a separate stretch target.
 No benchmark-only authorization shortcut, new transport stack, Vulkan rewrite,
 timer deletion or general-purpose scene framework is part of this proposal.
 
+The protocol is named **Sophia Frame Transactions (SFT)**; `FrameCommit` is its
+per-frame submission. See the [canonical contract](../../../docs/native-frame-transactions.md).
+
 The runtime-only `experimental-native-frame-transaction` feature now compiles
 the existing W3 ledger, imported from `33ff35990` with its original tests.
 Two further tests cover all eight ledger key fields and the external drain gate
 before reopening, including rejection of old completions and candidate replay.
 No FrameCommit codec or opener exists yet. The ledger does not check ring/slot
 identity or implement physical resource ownership; those remain adapter duties.
+
+The subsequent default-off store adapter reuses W2 retirement and W3 candidate
+lifecycle code, with credit return moved to successful terminal output transfer.
+Its typed input seam reserves a nonfatal refusal before consuming a Begin;
+continuations use the accepted reservation. This is a store boundary only:
+connection-wide byte/record capacity, wire decoding/trailing discard and physical
+copy admission are still separate integration gates. There is no wire opener or
+runtime trace-conformance claim.
 
 ## Model checks
 

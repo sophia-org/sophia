@@ -183,6 +183,7 @@ impl ShellComponentTransport {
                 let (resources, candidates) = epochs
                     .active_parts_mut(self.store_grant)
                     .ok_or(ShellTransportError::MissingCapability)?;
+                let events_before = candidates.pending_event_count();
                 let outcome = match record {
                     ShellContentRecord::CandidateBegin(value) => {
                         candidates.begin(transaction, value, now_msec)
@@ -199,7 +200,7 @@ impl ShellComponentTransport {
                     ),
                     _ => return Err(ShellTransportError::WrongContentRecord),
                 };
-                (outcome, candidates.pending_event().is_some())
+                (outcome, candidates.pending_event_count() > events_before)
             };
             if std::env::var_os("SOPHIA_SHELL_CONTENT_TRACE").is_some()
                 && let Err(error) = &outcome
@@ -405,6 +406,10 @@ impl ShellComponentTransport {
             let Some(event) = event else {
                 return Ok(());
             };
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            if event.frame_credit.is_some() {
+                return Ok(());
+            }
             let admitted =
                 self.prepare_content_record(epochs, event.transaction, &event.record, true)?;
             let Some(store) = epochs.active_candidates_mut(self.store_grant) else {
@@ -414,6 +419,15 @@ impl ShellComponentTransport {
                 return Err(ShellTransportError::WrongContentRecord);
             }
             self.transfer_record(admitted);
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            if let Some(owner) = event.retire {
+                let (resources, store) = epochs
+                    .active_pair_mut(self.store_grant)
+                    .expect("grant retained through output transfer");
+                resources.commit_retire(&owner);
+                store.take_event();
+                continue;
+            }
             store.take_event();
         }
     }

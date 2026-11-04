@@ -1,4 +1,6 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+#[cfg(not(feature = "experimental-native-frame-transaction"))]
+use std::collections::VecDeque;
+use std::collections::{BTreeMap, BTreeSet};
 
 use sophia_protocol::*;
 
@@ -6,10 +8,28 @@ use super::{
     ContentAllocationSnapshot, ContentResourceLease, ContentResourceStore, ContentStoreError,
 };
 
+#[cfg(feature = "experimental-native-frame-transaction")]
+use super::{ContentRetireOnPresent, ContentRetireOwner, ContentRetireToken};
+
+mod admission;
+#[cfg(feature = "experimental-native-frame-transaction")]
+mod credits;
 mod demands;
+mod presentation;
+#[cfg(feature = "experimental-native-frame-transaction")]
+use credits::CandidateEvents;
+#[cfg(feature = "experimental-native-frame-transaction")]
+pub use credits::{
+    ContentFrameBeginAdmission, ContentFrameCreditReturn, ContentFrameStreamEvent,
+    ContentFrameStreamRecord,
+};
+#[cfg(not(feature = "experimental-native-frame-transaction"))]
+type CandidateEvents = VecDeque<ContentCandidateEvent>;
 mod native;
 mod native_close;
 mod persistent;
+#[cfg(feature = "experimental-native-frame-transaction")]
+mod retire_on_present;
 mod validation;
 use super::ContentStoreProfile;
 use demands::StandingDemand;
@@ -69,6 +89,14 @@ pub struct ContentCandidateContext<'a> {
 pub struct ContentCandidateEvent {
     pub transaction: TransactionId,
     pub record: ShellContentRecord,
+    /// The retire intent a queued Presented owns. A clone neither holds nor
+    /// commits it: the store keeps the token until the event is taken, and
+    /// commit is by owner identity, once, in the store.
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub retire: Option<ContentRetireOwner>,
+    /// Wire-neutral W3 terminal metadata; absent from Prepared and legacy outcomes.
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub frame_credit: Option<ContentFrameCreditReturn>,
 }
 
 struct Permit {
@@ -101,6 +129,9 @@ struct Candidate {
     resources: Vec<(ContentResourceId, ContentResourceLease)>,
     deadline: u64,
     prepared: bool,
+    /// Reserved in the resource store under this candidate's owner identity.
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    retire: Option<(ContentRetireOnPresent, ContentRetireToken)>,
 }
 
 /// Renderer-facing immutable candidate. Its resource leases remain real owners
@@ -141,7 +172,12 @@ pub struct ContentCandidateStore {
     assemblies: BTreeMap<ContentOutputId, Assembly>,
     pending: BTreeMap<ContentOutputId, Candidate>,
     submitted: BTreeMap<ContentOutputId, Candidate>,
-    events: VecDeque<ContentCandidateEvent>,
+    events: CandidateEvents,
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    streams: credits::CreditStreams,
+    /// Retire tokens owned by queued Presented events.
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    presented_retire: Vec<(ContentRetireOwner, ContentRetireToken)>,
     /// Reserved output records for obligations which have not settled yet.
     response_credits: usize,
     last_candidate_generation: u64,
@@ -169,6 +205,18 @@ impl ContentCandidateStore {
         self.events.len() + self.response_credits
     }
 
+    fn open_candidate_slots(&self) -> usize {
+        let open = self.permits.len() + self.assemblies.len();
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        let open = open + self.streams.entries.len()
+            - self
+                .assemblies
+                .keys()
+                .filter(|output| self.streams.entries.contains_key(output))
+                .count();
+        open
+    }
+
     pub fn new(limits: ContentLimits) -> Result<Self, ContentCandidateError> {
         Self::with_profile(limits, ContentStoreProfile::Legacy)
     }
@@ -188,7 +236,11 @@ impl ContentCandidateStore {
             assemblies: BTreeMap::new(),
             pending: BTreeMap::new(),
             submitted: BTreeMap::new(),
-            events: VecDeque::new(),
+            events: CandidateEvents::default(),
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            streams: credits::CreditStreams::default(),
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            presented_retire: Vec::new(),
             response_credits: 0,
             last_candidate_generation: 0,
             last_demand_id: 0,
@@ -198,12 +250,30 @@ impl ContentCandidateStore {
         })
     }
 
+    /// Taking a queued Presented ends its hold on any retire intent; only a
+    /// commit before the take applies it.
     pub fn take_event(&mut self) -> Option<ContentCandidateEvent> {
-        self.events.pop_front()
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if self.events.front()?.frame_credit.is_some() {
+            return None;
+        }
+        let event = self.events.pop_front()?;
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if let Some(owner) = event.retire {
+            self.presented_retire.retain(|(held, _)| *held != owner);
+        }
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        self.prune_closed_streams();
+        Some(event)
     }
 
     pub fn pending_event(&self) -> Option<&ContentCandidateEvent> {
         self.events.front()
+    }
+
+    /// All queued control records, including an experimental stream head.
+    pub fn pending_event_count(&self) -> usize {
+        self.events.len()
     }
 
     pub fn pending_candidate_count(&self) -> usize {
@@ -236,6 +306,10 @@ impl ContentCandidateStore {
     }
 
     pub fn quiescent(&self) -> bool {
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if !self.streams.quiescent() {
+            return false;
+        }
         self.permits.is_empty()
             && self.demands.is_empty()
             && self.assemblies.is_empty()
@@ -245,6 +319,8 @@ impl ContentCandidateStore {
 
     fn time(&mut self, now: u64) -> Result<(), ContentCandidateError> {
         if now < self.last_now {
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            self.poison_frame_streams(now);
             return Err(ContentCandidateError::ClockRegression);
         }
         self.last_now = now;
@@ -263,6 +339,10 @@ impl ContentCandidateStore {
         self.events.push_back(ContentCandidateEvent {
             transaction,
             record,
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            retire: None,
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            frame_credit: None,
         });
     }
 
@@ -277,6 +357,16 @@ impl ContentCandidateStore {
         work_area_generation: u64,
         wm_commit_generation: u64,
     ) {
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        let frame_credit = if matches!(kind, 2..=4) {
+            self.frame_terminal_key(output, generation)
+                .map(|key| ContentFrameCreditReturn {
+                    key,
+                    expires_msec: None,
+                })
+        } else {
+            None
+        };
         self.push(
             transaction,
             ShellContentRecord::CandidateOutcome(ContentCandidateOutcome {
@@ -290,6 +380,10 @@ impl ContentCandidateStore {
                 wm_commit_generation,
             }),
         );
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        {
+            self.events.back_mut().expect("outcome queued").frame_credit = frame_credit;
+        }
     }
 
     /// Install one Engine-issued, one-use permit. The caller owns demand
@@ -305,6 +399,8 @@ impl ContentCandidateStore {
         self.check_grant(self.limits.grant)?;
         self.time(now)?;
         self.expire(now)?;
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        self.require_demand_mode(output)?;
         if !transaction.is_valid()
             || output.id == 0
             || output.generation == 0
@@ -317,7 +413,7 @@ impl ContentCandidateStore {
         {
             return Err(ContentCandidateError::Stale);
         }
-        let open = self.permits.len() + self.assemblies.len();
+        let open = self.open_candidate_slots();
         if open >= self.limits.max_open_candidates_total as usize {
             return Err(ContentCandidateError::Budget);
         }
@@ -384,81 +480,6 @@ impl ContentCandidateStore {
             return Err(ContentCandidateError::Malformed);
         }
         self.begin_inner(transaction, begin, None, None, None, now)
-    }
-
-    fn begin_inner(
-        &mut self,
-        transaction: TransactionId,
-        begin: ContentCandidateBegin,
-        native_launcher: Option<NativeLauncherCandidateBinding>,
-        persistent_catalog: Option<PersistentCatalogCandidateBinding>,
-        invalid_native: Option<ContentCandidateError>,
-        now: u64,
-    ) -> Result<(), ContentCandidateError> {
-        self.check_grant(begin.grant)?;
-        self.time(now)?;
-        self.expire(now)?;
-        let permit = self
-            .permits
-            .get(&begin.output)
-            .ok_or(ContentCandidateError::Stale)?;
-        if !transaction.is_valid() || permit.permit_id != begin.pacing_permit {
-            return Err(ContentCandidateError::Stale);
-        }
-        let invalid = if let Some(error) = invalid_native {
-            Some(error)
-        } else if now >= permit.deadline
-            || begin.candidate_generation <= self.last_candidate_generation
-        {
-            Some(ContentCandidateError::Stale)
-        } else if begin.facts_generation == 0
-            || begin.interaction_generation == 0
-            || begin.surface_count > self.limits.max_candidate_surfaces
-            || begin.placement_count > self.limits.max_candidate_placements
-            || begin.target_count > self.limits.max_candidate_targets
-        {
-            Some(ContentCandidateError::Malformed)
-        } else {
-            None
-        };
-        self.permits.remove(&begin.output);
-        // A consumed Begin owns this generation even when its contents refuse.
-        // Retrying under a fresh permit must not recycle that terminal identity.
-        self.last_candidate_generation = self
-            .last_candidate_generation
-            .max(begin.candidate_generation);
-        if let Some(error) = invalid {
-            self.response_credits -= 2;
-            self.outcome(
-                transaction,
-                begin.candidate_generation,
-                begin.output,
-                3,
-                error.reason(),
-                0,
-                0,
-                0,
-            );
-            return Err(error);
-        }
-        let deadline = now
-            .checked_add(u64::from(self.limits.candidate_timeout_ms))
-            .ok_or(ContentCandidateError::Malformed)?;
-        self.assemblies.insert(
-            begin.output,
-            Assembly {
-                native_launcher,
-                persistent_catalog,
-                transaction,
-                begin,
-                deadline,
-                next_ordinal: 0,
-                surfaces: Vec::new(),
-                placements: Vec::new(),
-                targets: Vec::new(),
-            },
-        );
-        Ok(())
     }
 
     pub fn chunk(
@@ -587,6 +608,8 @@ impl ContentCandidateStore {
         output: ContentOutputId,
     ) -> Result<Candidate, ContentCandidateError> {
         let assembly = self.assemblies.get(&output).expect("selected assembly");
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        self.validate_stream_assembly(assembly, &context)?;
         if !transaction.is_valid()
             || context.output != output
             || assembly.begin.facts_generation != context.facts_generation
@@ -648,6 +671,8 @@ impl ContentCandidateStore {
                 .checked_add(u64::from(self.limits.preparation_timeout_ms))
                 .ok_or(ContentCandidateError::Malformed)?,
             prepared: false,
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            retire: None,
         })
     }
 
@@ -717,117 +742,10 @@ impl ContentCandidateStore {
         Ok(bundle)
     }
 
-    /// `prepared` means the complete bundle was actually handed to rendering.
-    pub fn prepared(
-        &mut self,
-        output: ContentOutputId,
-        candidate_generation: u64,
-        work_area_generation: u64,
-        wm_commit_generation: u64,
-        now: u64,
-    ) -> Result<(), ContentCandidateError> {
-        self.time(now)?;
-        let candidate = self
-            .submitted
-            .get_mut(&output)
-            .ok_or(ContentCandidateError::Stale)?;
-        if candidate.begin.candidate_generation != candidate_generation
-            || candidate.prepared
-            || work_area_generation == 0
-            || wm_commit_generation == 0
-        {
-            return Err(ContentCandidateError::Stale);
-        }
-        candidate.prepared = true;
-        candidate.deadline = now
-            .checked_add(u64::from(self.limits.presentation_timeout_ms))
-            .ok_or(ContentCandidateError::Malformed)?;
-        let transaction = candidate.transaction;
-        if !self.revoked {
-            self.response_credits -= 1;
-            self.outcome(
-                transaction,
-                candidate_generation,
-                output,
-                1,
-                ContentReason::None,
-                0,
-                work_area_generation,
-                wm_commit_generation,
-            );
-        }
-        Ok(())
-    }
-
-    /// Emit Presented only after the caller has observed native retirement.
-    pub fn presented(
-        &mut self,
-        output: ContentOutputId,
-        candidate_generation: u64,
-        presentation_epoch: u64,
-        work_area_generation: u64,
-        wm_commit_generation: u64,
-    ) -> Result<(), ContentCandidateError> {
-        let candidate = self
-            .submitted
-            .remove(&output)
-            .ok_or(ContentCandidateError::Stale)?;
-        if candidate.begin.candidate_generation != candidate_generation
-            || !candidate.prepared
-            || presentation_epoch == 0
-            || work_area_generation == 0
-            || wm_commit_generation == 0
-        {
-            self.submitted.insert(output, candidate);
-            return Err(ContentCandidateError::Stale);
-        }
-        if !self.revoked {
-            self.response_credits -= 1;
-            self.outcome(
-                candidate.transaction,
-                candidate_generation,
-                output,
-                2,
-                ContentReason::None,
-                presentation_epoch,
-                work_area_generation,
-                wm_commit_generation,
-            );
-        }
-        Ok(())
-    }
-
-    pub fn renderer_failed(
-        &mut self,
-        output: ContentOutputId,
-        candidate_generation: u64,
-    ) -> Result<(), ContentCandidateError> {
-        let candidate = self
-            .submitted
-            .remove(&output)
-            .ok_or(ContentCandidateError::Stale)?;
-        if candidate.begin.candidate_generation != candidate_generation {
-            self.submitted.insert(output, candidate);
-            return Err(ContentCandidateError::Stale);
-        }
-        if !self.revoked {
-            self.response_credits -= if candidate.prepared { 1 } else { 2 };
-            self.outcome(
-                candidate.transaction,
-                candidate_generation,
-                output,
-                3,
-                ContentReason::RendererFailed,
-                0,
-                0,
-                0,
-            );
-        }
-        Ok(())
-    }
-
     pub fn expire(&mut self, now: u64) -> Result<(), ContentCandidateError> {
         self.time(now)?;
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        self.expire_frame_streams(now)?;
         let expired_permits: Vec<_> = self
             .permits
             .iter()
@@ -889,6 +807,12 @@ impl ContentCandidateStore {
         self.assemblies.clear();
         self.pending.clear();
         self.events.clear();
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        self.presented_retire.clear();
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        {
+            self.streams = credits::CreditStreams::default();
+        }
         // Submitted work remains non-cancellable, but a dead peer is owed no
         // wire record. Its renderer leases still drain through `presented` or
         // `renderer_failed` without reusing old authority.

@@ -6,6 +6,35 @@ yet eligible for enablement; see the explicit exclusions and wire gate.
 
 ## Reused Rust credit foundation
 
+### Subsequent store adapter
+
+The SFT adapter reuses W3 candidate lifecycle (`f639d21d2`) and W2 retirement
+ownership (`892bd1436`) behind the same default-off feature. Current resource
+pixel versions and renderer code are preserved. Terminal credit now returns on
+successful output transfer, not outcome queueing; a one-credit regression fails
+when queue-time return is deliberately restored. The mutation source is restored
+byte-for-byte after the test.
+
+The typed Begin seam tests zero reply capacity without consumption, a reserved
+Budget refusal, close/reopen identity behavior, continuations at the full
+reservation limit, invalid authority and stale stream/legacy permit separation.
+These six tests, 22 store lifecycle tests, 12 retirement tests and the 15 ledger
+tests pass. Full runtime suites pass with 818 tests enabled and 763 disabled,
+both with 41 ignored and zero failures. Evidence is under
+`~/.local/state/sophia-frame-store-adapter-01`.
+
+Two earlier regression logs used a fixture that opened two credits when the
+assertion required one; those failures are not negative-control evidence. The
+corrected fixture explicitly requests one credit, and the separate
+`terminal-mutation.log` records the intended early-return failure.
+
+This is store-local evidence, not composed-path conformance. Connection-wide
+response/byte admission, complete-input decoding and trailing discard, physical
+copy/worker reservation and runtime trace validation remain unwired. There is no
+wire opener, codec allocation, producer integration or native performance claim.
+
+### Earlier ledger-only checkpoint
+
 The runtime-only `experimental-native-frame-transaction` feature imports the W3
 ledger from signed checkpoint `33ff35990`. Non-comment source is identical; no
 new credit algorithm or dependency was added. The original 13 tests plus two

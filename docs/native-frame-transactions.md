@@ -1,4 +1,11 @@
-# Bounded native frame transactions
+# Sophia Frame Transactions (SFT)
+
+**Sophia Frame Transactions (SFT)** names the bounded native frame protocol.
+`FrameCommit` is its per-frame submission: complete scene intent, an optional
+new CPU image and optional predecessor retirement. Stream admission, credits,
+capture and completion make up the rest of SFT's contract. SFT uses the existing
+9P control transport, registered pixel path and native renderer; it is not a new
+transport or rendering API. The name makes no performance claim.
 
 **Status: proposed architecture, 2026-11-04.** The operator authorized protocol
 design changes and TLA+ modeling to reduce native CPU/frame while retaining
@@ -199,6 +206,36 @@ opener, Session/CLI flag, C/Rust codec or producer calls it. Ring/slot/callback
 identity, copy/resource reservations and typed wire refusals must be joined to
 it before the adapter can be exposed. Passing the ledger tests alone does not
 discharge those gates.
+
+### Store adapter checkpoint
+
+The default-off store adapter now reuses W3's candidate lifecycle and W2's
+retirement ownership on the current resource store. Existing pixel versions,
+GL cache/damage behavior and the legacy wire path remain in place. The W2
+retirement payload is an internal Rust type here, not a new wire allocation.
+
+Terminal queueing does not replenish credit. `transfer_frame_event_at` uses the
+owner's current time and returns credit only after its publisher successfully
+transfers the complete terminal; that same transfer commits any predecessor
+intent. Backpressure preserves both obligations. Ordinary outcome readers cannot
+silently consume a terminal that carries stream credit. Prepared remains a
+nonterminal and returns none. This intentionally tightens the older W3 adapter,
+which settled the ledger while queueing an outcome.
+
+`admit_frame_begin` is the store's typed input boundary. With no available reply
+slot it leaves input and identity untouched. With a slot, exhausted credit or a
+closed/stale stream produces a bounded request refusal, distinct from an accepted
+candidate's terminal; it never fabricates credit or retirement. Valid Budget
+refusals spend the candidate identity, while Stale refusals do not. Accepted
+Chunk/End continuations use their existing reservations even at a full budget.
+
+This checkpoint does **not** establish transport admission. Its caller must
+provide connection-wide record and encoded-byte capacity, consume exactly the
+peeked input and discard its trailing parts on refusal. Actual FrameCommit
+capture/worker reservations, complete-record decoding, ring/slot binding, codec,
+SDKs and producer integration remain unwired. No stream opener is exposed by
+Session or the wire. Store tests do not substitute for composed-path tests or
+runtime trace validation.
 
 The [modeling brief](../validation/specula/native-frame-transaction/modeling-brief.md)
 defines the finite scope; [results](../validation/specula/native-frame-transaction/results.md)

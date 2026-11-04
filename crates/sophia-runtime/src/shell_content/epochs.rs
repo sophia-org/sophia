@@ -77,6 +77,12 @@ impl ContentEpochPool {
         self.epochs.active_parts_mut(self.grant)
     }
 
+    pub fn active_pair_mut(
+        &mut self,
+    ) -> Option<(&mut ContentResourceStore, &mut ContentCandidateStore)> {
+        self.epochs.active_pair_mut(self.grant)
+    }
+
     pub fn candidates_mut(&mut self, grant: ContentGrant) -> Option<&mut ContentCandidateStore> {
         self.epochs.candidates_mut(grant)
     }

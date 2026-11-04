@@ -21,6 +21,11 @@ keeping the existing image and transport foundations.
 
 ## Decision
 
+Name the protocol **Sophia Frame Transactions (SFT)**. `FrameCommit` names the
+per-frame submission, not the whole protocol. SFT also defines stream admission,
+finite credits, private capture and completion. This name refers to the proposed
+architecture; it does not imply enablement, a new renderer or a measured speedup.
+
 Propose one bounded `FrameCommit` on the existing authenticated shell files
 transport. **Keep 9P for non-pixel control, metadata, admission, intent and events.**
 For the first CPU path, pixels stay in the registered owned ring/image path and
@@ -34,7 +39,7 @@ demand/permit exchange and separate predecessor-retirement request. Source
 release remains independent of presentation and resource release.
 
 The proposed contract, ASCII path, performance budget and remaining gates live in
-[bounded native frame transactions](../../native-frame-transactions.md). It is
+[Sophia Frame Transactions (SFT)](../../native-frame-transactions.md). It is
 the design document; current shell/image specifications remain authoritative
 until an explicit negotiated amendment is accepted.
 

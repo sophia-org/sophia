@@ -277,6 +277,17 @@ impl ContentEpochRegistry {
             .map(|epoch| (&epoch.resources, &mut epoch.candidates))
     }
 
+    /// Both stores of one active grant, for admitting a retire intent.
+    pub fn active_pair_mut(
+        &mut self,
+        grant: ContentGrant,
+    ) -> Option<(&mut ContentResourceStore, &mut ContentCandidateStore)> {
+        self.active
+            .iter_mut()
+            .find(|epoch| epoch.resources.grant() == grant)
+            .map(|epoch| (&mut epoch.resources, &mut epoch.candidates))
+    }
+
     /// Native completions can settle the exact disconnected store. New peer
     /// requests must use active_candidates_mut instead.
     pub fn candidates_mut(&mut self, grant: ContentGrant) -> Option<&mut ContentCandidateStore> {
