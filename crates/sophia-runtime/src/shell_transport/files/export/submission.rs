@@ -20,6 +20,10 @@ impl ShellFiles {
             Ok(Inbound::Content(value.transaction, Box::new(value.record)))
         };
         let inbound = match kind {
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            ShellFileKind::FrameStreamOpen
+            | ShellFileKind::FrameStreamClose
+            | ShellFileKind::FrameCommit => self.decode_sft_input(bytes)?,
             kind if shell_file_descriptor_max_bytes(kind).is_some() => {
                 if !self.supports_descriptor_kind(kind) {
                     return Err(Errno::EACCES);
@@ -259,7 +263,7 @@ impl ShellFiles {
         if staging.bytes.len() != submit.candidate_bytes as usize {
             return Err(Errno::EINVAL);
         }
-        let revision = if self.image_disclosed() { 9 } else { 8 };
+        let revision = self.submission_revision();
         let record = decode_shell_file_record_at_revision(
             &staging.bytes,
             ShellFileClass::Candidate,

@@ -120,6 +120,14 @@ The [contract checkpoint](../../native-frame-transactions.md#wire-contract-check
 pins its layouts and literal vectors without exposing an opener or changing
 SDK pins. C/Rust implementation parity and production admission remain required.
 
+The [file-custody checkpoint](../../native-frame-transactions.md#file-custody-and-owner-admission)
+preserves the distinction between submission custody and owner admission:
+whole SFT requests and events retain their identity through the export, Prepared
+returns no credit, and Open/Close refusal room is reserved before owner admission.
+Production negotiation still cannot expose r13. Owner service/publication,
+owning clients, real producers, runtime traces and native qualification remain
+required; these device-free checks establish no speedup.
+
 The [continuous-frame CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 and t289 own the next implementation/qualification work. The
 [bounded-credit investigation](../investigations/tubnycgx-can-a-bounded-frame-stream-cut-per-frame-control-exchanges-without-weakening-custody.md)

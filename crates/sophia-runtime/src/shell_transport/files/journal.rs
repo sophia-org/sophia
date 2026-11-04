@@ -62,6 +62,10 @@ impl Journal {
         self.revision = crate::owned_ring_protocol::REVISION;
     }
 
+    pub(super) fn enable_frame_revision(&mut self) {
+        self.revision = sophia_protocol::shell_files::SHELL_FRAME_REVISION;
+    }
+
     /// Unsolicited records leave the terminal reserve (records and bytes)
     /// free for credited responses.
     fn limits(&self, credited: bool) -> Limits {

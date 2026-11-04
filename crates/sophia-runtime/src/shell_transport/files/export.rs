@@ -27,6 +27,7 @@ mod authentication;
 mod capture_offers;
 #[cfg(feature = "experimental-draw")]
 mod draw;
+mod frame;
 mod image;
 pub(super) mod image_offers;
 mod image_topology;
@@ -174,6 +175,8 @@ pub(in crate::shell_transport) use super::super::wire::{
 /// A submission whose custody the export has taken; the owners decide it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::shell_transport) enum Inbound {
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    Frame(Box<ShellFrameRecord>),
     Negotiate(ShellV1ClientHello),
     ImageBegin(ShellImageMetadata),
     Content(TransactionId, Box<ShellContentRecord>),
@@ -376,6 +379,16 @@ impl ShellFiles {
         if self.negotiated {
             return Err(EALREADY);
         }
+        let frame = self.frame_negotiation(
+            limits.as_ref().map(|(_, limits)| limits),
+            capabilities,
+            image_revision,
+        )?;
+        let image_revision = if frame {
+            crate::owned_ring_protocol::REVISION
+        } else {
+            image_revision
+        };
         let image_objects = if self.image.is_some()
             && image_revision == crate::owned_ring_protocol::REVISION
             && capabilities & crate::owned_ring_protocol::CAPABILITY != 0
@@ -393,7 +406,9 @@ impl ShellFiles {
         }
         self.capabilities = capabilities;
         self.image_revision = image_revision;
-        if image_revision == crate::owned_ring_protocol::REVISION {
+        if frame {
+            self.journal.enable_frame_revision();
+        } else if image_revision == crate::owned_ring_protocol::REVISION {
             self.journal.enable_image_revision();
         }
         self.negotiated = true;

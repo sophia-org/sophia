@@ -405,13 +405,31 @@ link/markup warnings in unchanged files. Evidence:
 `~/.local/state/sophia-frame-sdk-codecs-01`, SHA256SUMS
 `ff5a8b8cb6b05fb705bf30511211e249585de49702af02a6d6bd15339215d5ed`.
 
-These codecs establish neither authority nor admission. The next implementation
-must reserve refusal/terminal/resource/journal room before consuming complete
-input, route Prepared as well as terminals through FrameOutcome, and preserve
-fresh custody, source-slot release and atomic terminal-credit-retirement transfer.
-Owning clients, real Lom/reference producers, fragmented-export and backpressure
-tests, runtime model traces and native qualification remain open. No wire opener,
-runtime default, native launch or performance claim follows from this import.
+These codecs establish neither authority nor admission. No wire opener, runtime
+default, native launch or performance claim follows from this import.
+
+### File custody and owner admission
+
+The default-off store now reserves typed Open/Close refusals before consuming
+control input. Prepared retains its SFT identity without returning frame credit;
+only terminal publication can settle credit, private images and retirement.
+
+The file export accepts whole SFT records only with explicit r13/bit-18 selection,
+content and owned-ring capabilities, valid limits, and a CPU-only image channel.
+It retains image revision 10/source kind 4. Fragmented input, granted byte limits,
+submission retries, receipt backpressure and all request/event shapes are tested.
+A submission receipt or its ACK transfers no stream credit and does not consume
+the owner's queued input. Embedded offers are never separately admitted.
+
+Production negotiation still cannot select r13. The next gate connects queued
+input to owner admission and whole response publication, preserving fresh custody,
+source-slot release and terminal-credit-retirement atomicity. Owning C/Rust
+clients, real Lom/reference producers, runtime traces and native qualification
+remain open. Evidence: `~/.local/state/sophia-frame-prepared-routing-01`,
+`~/.local/state/sophia-frame-control-admission-01` and
+`~/.local/state/sophia-frame-file-custody-01`.
+
+### Model and remaining integration gates
 
 The [modeling brief](../validation/specula/native-frame-transaction/modeling-brief.md)
 defines the finite scope; [results](../validation/specula/native-frame-transaction/results.md)

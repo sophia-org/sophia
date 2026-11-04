@@ -196,7 +196,7 @@ impl ShellFiles {
     }
 
     /// Whether the negotiated outcome discloses the image objects:
-    /// configured, shell r10 selected, and owned-ring capability granted.
+    /// configured, image revision 10 selected, and owned-ring capability granted.
     pub(super) fn image_disclosed(&self) -> bool {
         self.image.is_some()
             && self.negotiated

@@ -4,6 +4,32 @@
 //! SOCK_SEQPACKET pair carry every FD; nothing here mutates the
 //! environment.
 use super::*;
+#[cfg(feature = "experimental-native-frame-transaction")]
+#[path = "shell_frame_export.rs"]
+mod frame;
+
+#[cfg(not(feature = "experimental-native-frame-transaction"))]
+#[test]
+fn frame_revision_requires_the_host_feature_before_negotiation_changes_state() {
+    let mut files = fixture();
+    files.negotiated = false;
+    files.capabilities = 0;
+    assert_eq!(
+        files.complete_negotiation_with_image_revision(
+            Some((
+                Vec::new(),
+                sophia_protocol::ContentLimits::prototype(identity().grant)
+            )),
+            SHELL_FRAME_CAPABILITY
+                | crate::owned_ring_protocol::CAPABILITY
+                | sophia_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE,
+            SHELL_FRAME_REVISION,
+        ),
+        Err(Errno::EACCES)
+    );
+    assert!(!files.negotiated);
+    assert_eq!(files.capabilities, 0);
+}
 use crate::owned_ring_protocol::{Event, EventKind, Identity, Offer, Registration};
 use sophia_protocol::{
     ContentAllocationId, ContentGrant, ContentOutputId, ContentReason, ContentResourceId,
