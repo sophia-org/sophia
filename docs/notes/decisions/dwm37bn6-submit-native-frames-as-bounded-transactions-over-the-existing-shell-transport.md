@@ -90,6 +90,14 @@ close/reopen, codec/SDK parity and runtime trace conformance still need work.
 does not establish a final wire grammar, implementation acceptance or speedup.
 No revision, opcode or capability bit is allocated by this record.
 
+The default-off runtime store now accepts complete scene intent with optional
+owned-ring copying and predecessor retirement, reserving before input transfer
+and finishing with fresh owner context. Private-image and retirement ownership
+join at terminal publication. This is device-free implementation progress; the
+wire/SDK/Lom integration, runtime traces and native qualification remain open.
+The [current implementation gates](../../native-frame-transactions.md#complete-record-intake)
+and `~/.local/state/sophia-frame-complete-intake-01` record its scope.
+
 The [continuous-frame CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 and t289 own the next implementation/qualification work. The
 [bounded-credit investigation](../investigations/tubnycgx-can-a-bounded-frame-stream-cut-per-frame-control-exchanges-without-weakening-custody.md)

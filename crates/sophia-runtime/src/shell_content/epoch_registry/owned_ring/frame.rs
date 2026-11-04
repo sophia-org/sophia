@@ -76,7 +76,12 @@ impl ContentEpochRegistry {
                 epoch.resources.bind_frame_copy(request.resource, owner);
                 let job = reserved.worker_job;
                 admission = Some(reserved);
-                Ok(Some(job))
+                Ok(
+                    crate::shell_content::candidates::FrameAdmissionReservation {
+                        copy_job: Some(job),
+                        commit: None,
+                    },
+                )
             },
             consume,
         )?;
@@ -87,7 +92,7 @@ impl ContentEpochRegistry {
     }
 }
 
-fn frame_error(error: IsbImageAdmissionError) -> ContentCandidateError {
+pub(super) fn frame_error(error: IsbImageAdmissionError) -> ContentCandidateError {
     use crate::{ContentAllocationError as Allocation, IsbSubmitFailure as Worker};
     use ContentCandidateError as Frame;
     match error {

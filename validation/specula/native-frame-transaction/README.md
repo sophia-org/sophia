@@ -124,8 +124,14 @@ until successful Presented transfer. Terminal transfer also commits predecessor
 retirement; failed frames retain their private storage charge until the last
 lease and release publication. Ordinary leases cannot bypass that ownership.
 Device-free tests and guard-removal controls cover these implementation rules;
-they are not runtime trace validation. Complete scene/predecessor reservation at
-input and the codec/producer paths remain required.
+they are not runtime trace validation.
+
+The complete-input adapter now reserves predecessor intent and optional copy
+owners before taking an owned `ContentFrameCommit`. It moves the whole scene
+into the existing candidate store and finishes with fresh owner context after
+copying; no peer End is needed. Retained-only scenes work without copy capacity.
+This composes the store seams, but the actual wire/owner-loop/SDK/producer path
+and runtime trace conformance remain unimplemented.
 
 ## Model checks
 

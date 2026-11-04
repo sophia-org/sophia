@@ -2,6 +2,9 @@
 use super::*;
 use crate::frame_credits::{FrameCredits, FrameStreamClose, FrameStreamKey, FrameStreamPhase};
 
+mod commit;
+pub use commit::{ContentFrameAdmission, ContentFrameCommit};
+pub(crate) use commit::{FrameAdmissionReservation, FrameCommitState};
 mod copy;
 mod events;
 pub(crate) use copy::{FrameCopyBinding, FrameCopyState};
@@ -213,7 +216,9 @@ impl ContentCandidateStore {
         invalid: Option<ContentCandidateError>,
         now: u64,
     ) -> Result<(), ContentCandidateError> {
-        self.begin_frame_stream_with(transaction, begin, invalid, now, || Ok(None))
+        self.begin_frame_stream_with(transaction, begin, invalid, now, || {
+            Ok(FrameAdmissionReservation::default())
+        })
     }
 
     pub(super) fn begin_frame_stream_with(
@@ -222,7 +227,7 @@ impl ContentCandidateStore {
         begin: ContentCandidateBegin,
         invalid: Option<ContentCandidateError>,
         now: u64,
-        reserve_copy: impl FnOnce() -> Result<Option<u64>, ContentCandidateError>,
+        reserve_copy: impl FnOnce() -> Result<FrameAdmissionReservation, ContentCandidateError>,
     ) -> Result<(), ContentCandidateError> {
         let key = self.streams.entries[&begin.output]
             .ledger
@@ -261,7 +266,7 @@ impl ContentCandidateStore {
                 None
             }
         });
-        let mut copy_job = None;
+        let mut reservation = FrameAdmissionReservation::default();
         let result = self
             .streams
             .entries
@@ -270,7 +275,7 @@ impl ContentCandidateStore {
             .ledger
             .admit(key, begin.candidate_generation, now, || {
                 refusal.map_or(Ok(()), Err)?;
-                copy_job = reserve_copy()?;
+                reservation = reserve_copy()?;
                 Ok(())
             });
         self.observe_stream_generation();
@@ -296,7 +301,10 @@ impl ContentCandidateStore {
             Assembly {
                 native_launcher: None,
                 persistent_catalog: None,
-                copy: copy_job.map(|job| FrameCopyState { job, stopped: None }),
+                copy: reservation
+                    .copy_job
+                    .map(|job| FrameCopyState { job, stopped: None }),
+                commit: reservation.commit,
                 transaction,
                 begin,
                 deadline: deadline.expect("admission checked deadline"),

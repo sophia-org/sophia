@@ -1,9 +1,6 @@
 //! Frame-owned pixels share the ordinary resource budgets and lease lifetime.
 use super::*;
 
-#[path = "content_isb.rs"]
-mod isb;
-
 fn captured(registry: &mut ContentEpochRegistry) {
     open(registry);
     let (file, mut ring) = ring(registry);

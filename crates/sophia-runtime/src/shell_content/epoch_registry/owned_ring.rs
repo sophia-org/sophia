@@ -7,6 +7,8 @@ use std::sync::{
 };
 
 #[cfg(feature = "experimental-native-frame-transaction")]
+mod commit;
+#[cfg(feature = "experimental-native-frame-transaction")]
 mod frame;
 
 /// Non-cloneable Session reservation. The ring's shared source owner retains it

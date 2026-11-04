@@ -3,8 +3,12 @@ use super::*;
 use sophia_runtime::frame_credits::FrameStreamKey;
 use std::cell::Cell;
 
+#[path = "shell_frame_commit.rs"]
+mod commits;
 #[path = "shell_frame_images.rs"]
 mod images;
+#[path = "content_isb.rs"]
+mod isb;
 
 fn begin(generation: u64) -> ContentCandidateBegin {
     ContentCandidateBegin {

@@ -259,10 +259,11 @@ grant. Existing ring/slot identity checks and private-byte validation are reused
 This adds fixed metadata to the existing four job slots, not a second queue,
 thread or per-frame allocation.
 
-This is still below the wire boundary. Complete scene intake, predecessor-intent
-reservation across copy, the real codec/opener and C/Rust/Lom integration remain
-required before enablement. The one-credit native profile must be enforced by
-that opener; the reused general ledger still supports two for its existing tests.
+This header-only seam remains below the wire boundary. The complete-record path
+below adds scene intake and predecessor ownership across copying. The real
+codec/opener and C/Rust/Lom integration remain required before enablement. The
+one-credit native profile must be enforced by that opener; the reused general
+ledger still supports two for its existing tests.
 
 ### Private frame-image ownership
 
@@ -285,9 +286,48 @@ grant. These are fixed fields in the existing resource owners, not another pool.
 Device-free tests exercise real copying, blocked publication, exact frame
 identity, omitted-image refusal, expiry, failed rendering with a full retiring
 budget, combined promotion/retirement and disconnect. This closes the private
-image cleanup gap; it does not yet reserve predecessor intent at FrameCommit
-intake or consume a complete scene there. No wire opener or native claim is
-introduced. Evidence: `~/.local/state/sophia-frame-image-ownership-01`.
+image cleanup gap. No wire opener or native claim is introduced.
+Evidence: `~/.local/state/sophia-frame-image-ownership-01`.
+
+### Complete-record intake
+
+The internal `ContentFrameCommit` carries the complete existing candidate value,
+zero or one owned-ring image request and an optional predecessor intent.
+`OwnedCopyImageJobs::admit_frame_commit` takes the decoder's owned input only
+after the existing credit/response, predecessor and optional resource/worker
+reservations succeed. Zero reply capacity leaves the input intact; recoverable
+refusal consumes it with a reserved typed response. Foreign source ownership
+refuses without consumption. Worker/resource refusal drops the temporary retire
+token and leaves the predecessor's existing owner intact.
+
+Scene rows move into the existing assembly without cloning. The existing row
+grammar, count limits and candidate byte ceiling apply before copying; the actual
+wire decoder must additionally enforce its complete encoded-record limit.
+The copied image must be referenced, and the scene cannot draw the predecessor
+it retires. Subsequent chunks or a different End retirement intent cannot replace
+accepted intent. Retained-only scenes need no ring and remain admissible when
+the copy worker and all four job slots are full.
+
+Copy handoff makes a complete scene ready for the owner's
+`finish_frame_commit`, which performs existing fresh facts, allocation,
+interaction and resource validation. It does not require a peer End. Validated
+rows move into the candidate instead of the previous End-time vector clones.
+Expiry drops the predecessor token immediately while retaining an active copy's
+terminal debt until handoff. Close still permits accepted work to finish but
+forbids replenishment. Presented transfer remains the joint promotion/retirement
+point described above.
+
+Nine device-free tests cover complete copying and retained-only scenes, input
+backpressure, refusal rollback, missing/foreign source, stale tuples, conflicting
+intents, row/byte bounds, expiry, close and fresh-facts rejection. Three removed
+guards produce the expected failures. Evidence:
+`~/.local/state/sophia-frame-complete-intake-01`.
+
+This is a composed runtime-store path, not a shipped protocol. Connection-wide
+encoded-byte admission, fragmentation/codec and negotiation, the one-credit
+opener, owner-loop wiring, C/Rust SDKs, real Lom/reference producers, runtime
+trace conformance and native qualification remain required. No performance
+claim follows from moving vectors or passing these tests.
 
 The [modeling brief](../validation/specula/native-frame-transaction/modeling-brief.md)
 defines the finite scope; [results](../validation/specula/native-frame-transaction/results.md)

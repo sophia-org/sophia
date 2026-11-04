@@ -73,6 +73,8 @@ impl ContentCandidateStore {
             Assembly {
                 #[cfg(feature = "experimental-native-frame-transaction")]
                 copy: None,
+                #[cfg(feature = "experimental-native-frame-transaction")]
+                commit: None,
                 native_launcher,
                 persistent_catalog,
                 transaction,

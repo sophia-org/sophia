@@ -33,7 +33,7 @@ impl ContentCandidateStore {
             now,
             response_room,
             None,
-            || Ok(None),
+            || Ok(FrameAdmissionReservation::default()),
             consume,
         )
     }
@@ -45,7 +45,7 @@ impl ContentCandidateStore {
         now: u64,
         response_room: usize,
         input_error: Option<ContentCandidateError>,
-        reserve_copy: impl FnOnce() -> Result<Option<u64>, ContentCandidateError>,
+        reserve_copy: impl FnOnce() -> Result<FrameAdmissionReservation, ContentCandidateError>,
         consume: impl FnOnce(),
     ) -> Result<ContentFrameBeginAdmission, ContentCandidateError> {
         self.check_grant(begin.grant)?;

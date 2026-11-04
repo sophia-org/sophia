@@ -78,6 +78,55 @@ pub enum OwnedFrameAdmission {
 
 #[cfg(feature = "experimental-native-frame-transaction")]
 impl OwnedCopyImageJobs {
+    /// Take one complete bounded input only after reserving its scene, intent and copy.
+    /// The caller supplies connection-wide response capacity, source-release journal
+    /// capacity and fresh custody. Deferred/error leaves the input owned by the caller.
+    ///
+    /// # Errors
+    /// Returns Stale for an absent input or foreign grant/source owner, and
+    /// ClockRegression for a regressed owner clock. Recoverable admission
+    /// failures consume the whole input and return a reserved Refused result.
+    pub fn admit_frame_commit(
+        &mut self,
+        registry: &mut ContentEpochRegistry,
+        worker: &mut IsbValidationWorker,
+        ring: Option<&OwnedRing>,
+        input: &mut Option<crate::ContentFrameCommit>,
+        response_room: usize,
+        now: u64,
+        deadline: Instant,
+    ) -> Result<crate::ContentFrameAdmission, crate::ContentCandidateError> {
+        let slot = self.pending.iter_mut().find(|slot| slot.is_none());
+        let (decision, admission) = registry.reserve_frame_commit(
+            worker,
+            ring,
+            input,
+            response_room,
+            slot.is_some(),
+            now,
+            deadline,
+        )?;
+        Ok(match decision {
+            crate::ContentFrameBeginAdmission::Deferred => crate::ContentFrameAdmission::Deferred,
+            crate::ContentFrameBeginAdmission::Refused(error) => {
+                crate::ContentFrameAdmission::Refused(error)
+            }
+            crate::ContentFrameBeginAdmission::Accepted => {
+                let copy_job = admission.as_ref().map(|copy| copy.worker_job);
+                if let Some(admission) = admission {
+                    *slot.expect("copy admission reserved a table slot") = Some(Pending {
+                        admission,
+                        result: None,
+                        failure: None,
+                        submitted: false,
+                        stopped: None,
+                    });
+                }
+                crate::ContentFrameAdmission::Accepted { copy_job }
+            }
+        })
+    }
+
     /// Reserve the existing worker, resource and frame owners before consuming input.
     /// The caller retains source-release journal capacity and freshly checks custody.
     /// `response_room` includes all connection-wide record and byte limits.

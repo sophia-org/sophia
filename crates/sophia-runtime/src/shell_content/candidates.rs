@@ -19,12 +19,12 @@ mod presentation;
 #[cfg(feature = "experimental-native-frame-transaction")]
 use credits::CandidateEvents;
 #[cfg(feature = "experimental-native-frame-transaction")]
-pub(crate) use credits::FrameCopyBinding;
-#[cfg(feature = "experimental-native-frame-transaction")]
 pub use credits::{
-    ContentFrameBeginAdmission, ContentFrameCreditReturn, ContentFrameStreamEvent,
-    ContentFrameStreamRecord,
+    ContentFrameAdmission, ContentFrameBeginAdmission, ContentFrameCommit,
+    ContentFrameCreditReturn, ContentFrameStreamEvent, ContentFrameStreamRecord,
 };
+#[cfg(feature = "experimental-native-frame-transaction")]
+pub(crate) use credits::{FrameAdmissionReservation, FrameCommitState, FrameCopyBinding};
 #[cfg(not(feature = "experimental-native-frame-transaction"))]
 type CandidateEvents = VecDeque<ContentCandidateEvent>;
 mod native;
@@ -113,6 +113,8 @@ struct Permit {
 struct Assembly {
     #[cfg(feature = "experimental-native-frame-transaction")]
     copy: Option<credits::FrameCopyState>,
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    commit: Option<FrameCommitState>,
     native_launcher: Option<NativeLauncherCandidateBinding>,
     persistent_catalog: Option<PersistentCatalogCandidateBinding>,
     transaction: TransactionId,
@@ -122,6 +124,11 @@ struct Assembly {
     surfaces: Vec<ContentSurface>,
     placements: Vec<ContentPlacement>,
     targets: Vec<ContentTarget>,
+}
+
+struct CandidateValidation {
+    resources: Vec<(ContentResourceId, ContentResourceLease)>,
+    deadline: u64,
 }
 
 struct Candidate {
@@ -519,6 +526,10 @@ impl ContentCandidateStore {
             .ok_or(ContentCandidateError::Stale)?;
         let assembly = self.assemblies.get_mut(&output).expect("selected assembly");
         #[cfg(feature = "experimental-native-frame-transaction")]
+        if assembly.commit.is_some() {
+            return Err(ContentCandidateError::Stale);
+        }
+        #[cfg(feature = "experimental-native-frame-transaction")]
         if let Some(error) = assembly.copy.as_ref().and_then(|copy| copy.stopped) {
             return Err(error);
         }
@@ -590,8 +601,8 @@ impl ContentCandidateStore {
         let output = self.end_output(end.candidate_generation)?;
         let result = self.validate_end(transaction, &end, context, authority, resources, output);
         match result {
-            Ok(candidate) => {
-                self.assemblies.remove(&output);
+            Ok(validation) => {
+                let candidate = self.take_validated_candidate(output, validation);
                 self.pending.insert(output, candidate);
                 Ok(())
             }
@@ -626,7 +637,7 @@ impl ContentCandidateStore {
         authority: CandidateAuthority<'_>,
         resources: &ContentResourceStore,
         output: ContentOutputId,
-    ) -> Result<Candidate, ContentCandidateError> {
+    ) -> Result<CandidateValidation, ContentCandidateError> {
         let assembly = self.assemblies.get(&output).expect("selected assembly");
         #[cfg(feature = "experimental-native-frame-transaction")]
         self.validate_stream_assembly(assembly, &context)?;
@@ -691,33 +702,46 @@ impl ContentCandidateStore {
         for resource in resource_ids {
             leases.push((resource, lease(resource)?));
         }
-        Ok(Candidate {
-            native_launcher: assembly.native_launcher,
-            persistent_catalog: assembly.persistent_catalog,
-            transaction: assembly.transaction,
-            begin: assembly.begin.clone(),
-            surfaces: assembly.surfaces.clone(),
-            placements: assembly.placements.clone(),
-            targets: assembly.targets.clone(),
+        Ok(CandidateValidation {
             resources: leases,
             deadline: self
                 .last_now
                 .checked_add(u64::from(self.limits.preparation_timeout_ms))
                 .ok_or(ContentCandidateError::Malformed)?,
+        })
+    }
+
+    fn take_validated_candidate(
+        &mut self,
+        output: ContentOutputId,
+        validation: CandidateValidation,
+    ) -> Candidate {
+        let assembly = self.assemblies.remove(&output).expect("validated assembly");
+        Candidate {
+            native_launcher: assembly.native_launcher,
+            persistent_catalog: assembly.persistent_catalog,
+            transaction: assembly.transaction,
+            begin: assembly.begin,
+            surfaces: assembly.surfaces,
+            placements: assembly.placements,
+            targets: assembly.targets,
+            resources: validation.resources,
+            deadline: validation.deadline,
             prepared: false,
             #[cfg(feature = "experimental-native-frame-transaction")]
-            retire: None,
-        })
+            retire: assembly.commit.and_then(|commit| commit.retire),
+        }
     }
 
     fn reject_assembly(&mut self, output: ContentOutputId, error: ContentCandidateError) {
         #[cfg(feature = "experimental-native-frame-transaction")]
-        if let Some(copy) = self
-            .assemblies
-            .get_mut(&output)
-            .and_then(|assembly| assembly.copy.as_mut())
+        if let Some(assembly) = self.assemblies.get_mut(&output)
+            && let Some(copy) = assembly.copy.as_mut()
         {
             copy.stopped.get_or_insert(error);
+            if let Some(commit) = &mut assembly.commit {
+                commit.retire = None;
+            }
             return;
         }
         if let Some(assembly) = self.assemblies.remove(&output) {

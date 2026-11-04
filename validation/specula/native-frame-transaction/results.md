@@ -4,6 +4,26 @@ The model-only checkpoints did not change production protocol or runtime source.
 The subsequent default-off Rust foundation is described below. The design is not
 yet eligible for enablement; see the explicit exclusions and wire gate.
 
+## Complete-record intake follow-up
+
+The runtime-store adapter now takes an owned complete scene only after reserving
+credit, responses, predecessor intent and optional copy work. Scene rows move
+into the existing assembly and then candidate. A retained-only scene needs no
+copy slot; a copy-bearing scene waits for exact handoff and fresh owner context.
+Expiry cancels its retire intent without settling a live reader. Close permits
+accepted work to finish without replenishment.
+
+Nine real-worker tests cover the composed path, including input backpressure,
+rollback, source identity, conflicting intent, shape/byte limits, retained-only
+admission with full copy capacity, close and fresh-facts refusal. Removing the
+pre-copy retirement reservation, expiry's token cancellation or the byte bound
+fails its corresponding test. The mutation script restores exact source bytes.
+Evidence: `~/.local/state/sophia-frame-complete-intake-01`.
+
+These are implementation tests, not runtime trace validation or a new TLC run.
+The codec/opener, owner-loop/SDK/producer integration and native qualification
+remain open. No CPU saving or production enablement is claimed.
+
 ## Private frame-image ownership follow-up
 
 The default-off resource join holds a copied image for its exact grant, output

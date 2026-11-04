@@ -34,6 +34,9 @@ impl ContentCandidateStore {
         self.time(now)?;
         self.expire(now)?;
         let output = self.end_output(end.candidate_generation)?;
+        if self.assemblies[&output].commit.is_some() {
+            return Err(ContentCandidateError::Stale);
+        }
         let owner = self.retire_owner(output, end.candidate_generation);
         let result = self
             .validate_end(
@@ -44,9 +47,9 @@ impl ContentCandidateStore {
                 resources,
                 output,
             )
-            .and_then(|mut candidate| {
-                if retire.retire_transaction == candidate.transaction
-                    || candidate
+            .and_then(|validation| {
+                if retire.retire_transaction == self.assemblies[&output].transaction
+                    || validation
                         .resources
                         .iter()
                         .any(|(id, _)| *id == retire.resource)
@@ -55,12 +58,12 @@ impl ContentCandidateStore {
                 }
                 let token = ContentRetireToken::default();
                 resources.reserve_retire(owner, retire, &token)?;
-                candidate.retire = Some((retire, token));
-                Ok(candidate)
+                Ok((validation, token))
             });
         match result {
-            Ok(candidate) => {
-                self.assemblies.remove(&output);
+            Ok((validation, token)) => {
+                let mut candidate = self.take_validated_candidate(output, validation);
+                candidate.retire = Some((retire, token));
                 self.pending.insert(output, candidate);
                 Ok(())
             }

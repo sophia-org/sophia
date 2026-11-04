@@ -93,7 +93,23 @@ pub(super) fn valid_chunk_rows(
     max_margin: u32,
     profile: ContentStoreProfile,
 ) -> bool {
-    chunk.surfaces.iter().all(|surface| {
+    valid_rows(
+        &chunk.surfaces,
+        &chunk.placements,
+        &chunk.targets,
+        max_margin,
+        profile,
+    )
+}
+
+pub(super) fn valid_rows(
+    surfaces: &[ContentSurface],
+    placements: &[ContentPlacement],
+    targets: &[ContentTarget],
+    max_margin: u32,
+    profile: ContentStoreProfile,
+) -> bool {
+    surfaces.iter().all(|surface| {
         (if profile == ContentStoreProfile::NativeLauncher {
             surface.role == 3
                 && surface.reservation_extent == 0
@@ -111,12 +127,12 @@ pub(super) fn valid_chunk_rows(
             ]
             .into_iter()
             .all(|margin| i32::from(margin).unsigned_abs() <= max_margin)
-    }) && chunk.placements.iter().all(|placement| {
+    }) && placements.iter().all(|placement| {
         placement.resource.id > 0
             && placement.resource.generation > 0
             && placement.destination_x_px >= 0
             && placement.destination_y_px >= 0
-    }) && chunk.targets.iter().all(|target| {
+    }) && targets.iter().all(|target| {
         target.action_kind
             == match profile {
                 ContentStoreProfile::Legacy => 1,
