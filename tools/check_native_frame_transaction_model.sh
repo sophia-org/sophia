@@ -7,7 +7,8 @@ source "$root_dir/tools/lib/specula_tlc.sh"
 specula_require_tlc
 specula_check_model "$model_dir" MC.tla MC.cfg MC.tla Mirror.cfg \
     MC.tla TwoCredits.cfg MC.tla Liveness.cfg MC.tla Reopen.cfg \
-    Resources.tla Resources.cfg Resources.tla ResourceProgress.cfg
+    Resources.tla Resources.cfg Resources.tla ResourceProgress.cfg \
+    Intake.tla Intake.cfg Intake.tla IntakeProgress.cfg
 
 log_file="$(mktemp)"
 trap 'rm -f "$log_file"' EXIT
@@ -35,4 +36,8 @@ Resources ResourceCancelMutation ChargedUse
 Resources ResourceLeaseMutation ChargedUse
 Resources ResourcePublicationMutation PublicationSafe
 Resources ResourceEpochMutation EpochSafe
+Intake IntakeRefusalMutation BudgetSafe
+Intake IntakeFragmentMutation FragmentsEnabled
+Intake IntakeContinuationMutation ContinuationEnabled
+Intake IntakeStaleMutation AdmissionSafe
 MUTATIONS

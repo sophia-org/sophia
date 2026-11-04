@@ -34,8 +34,9 @@ The current wire poller admits candidate input with zero additional response
 credit (`shell_transport/content_candidates.rs:123`). Unreported candidate errors
 stop the shell (`:228`). **Before any FrameCommit opener:** implement peek/shape-aware
 reservation, nonfatal Budget/close-race refusal, and trailing-input handling. A
-blanket slot per fragment deadlocks a full reserved budget. This model abstracts
-one complete bounded record and does not discharge that wire integration gate.
+blanket slot per fragment deadlocks a full reserved budget. `Intake.tla` now
+checks that admission policy separately; it does not discharge the implementation
+or byte-decoder integration gate.
 
 ## Proposed transaction
 
@@ -109,6 +110,32 @@ the backend/worker/journal eventually respond; no deadline or bounded latency is
 proved. Safety runs make no fairness assumption.
 
 ## Explicitly outside this first model
+
+### Admission boundary slice
+
+`Intake.tla` has two complete bounded input records, each delivered in two
+abstract transport fragments, one accepted frame at a time and capacities 4/5.
+The lifetime close reservation and unrelated queued responses share that budget.
+It joins reply reservations, copy ownership and internal candidate expansion:
+peek/revalidate before consumption; reserve three accepted-frame obligations or
+one nonfatal refusal; never charge transport fragments or already-reserved
+continuations again. Rejected expansion drains only its own remaining parts.
+Closing stops new admissions without discarding accepted copy ownership.
+
+This is not a new fragmented protocol. The initial FrameCommit is one bounded
+complete record; a scene too large for it uses the existing path. The model's
+internal parts stand for any reuse of existing Begin/Chunk/End store operations,
+not independently admissible FrameCommit wire requests. Existing byte parsing,
+exact identity fields and Rust rollback on failed reservations remain executable
+test obligations. No claim that the current candidate poller implements this
+policy is made. Fair progress assumes delivery, copy completion and service.
+
+Mutation controls remove refusal reservation, require a fresh control slot for
+each fragment or continuation, or use a stale admission decision after closure.
+They target `BudgetSafe`, `FragmentsEnabled`, `ContinuationEnabled` and
+`AdmissionSafe`, respectively. `RefusalSafe` is only structural bookkeeping, not
+an independently falsified protocol property. This slice and the frame/resource
+slices still need runtime composition and trace validation.
 
 ### Resource lifetime slice
 

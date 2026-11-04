@@ -48,3 +48,13 @@ three total byte units and two epochs. Negative configurations independently
 remove cancellation charge retention, lease retention, live-journal publication,
 and epoch checking. The checker requires the specific expected violation for
 each. These are not a composed proof of FrameCommit's resource/wire adapter.
+
+## Separate bounded intake slice
+
+`Intake.cfg` and `IntakeProgress.cfg` enable `BudgetSafe`, `CreditSafe`,
+`ReaderSafe`, `AdmissionSafe`, `RefusalSafe`, `SettlementSafe`,
+`FragmentsEnabled` and `ContinuationEnabled`. The latter configuration also
+checks fair `InputDrains` and `AcceptedSettles`. Negative controls independently
+remove refusal reservation, block fragments or continuations on a full budget,
+and admit using a stale pre-close decision. Each must violate its named
+invariant. This is proposed policy, not proof of today's candidate wire poller.

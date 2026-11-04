@@ -3,7 +3,21 @@
 No production protocol or runtime source changed. The design is not yet eligible
 for enablement; see the modeling brief's explicit exclusions and wire gate.
 
+## Intake boundary follow-up
+
+`Intake.cfg` visits 5,285 distinct states at capacity 4;
+`IntakeProgress.cfg` visits 8,646 at capacity 5 and checks both fair-progress
+properties. All four guard-removal controls fail their intended invariant.
+Logs are under `~/.local/state/sophia-frame-intake-model-01`.
+
+This checks proposed reservation and continuation policy, not the current wire
+poller. The input byte parser, identity validation, reservation rollback and
+composition with the frame/resource stores remain implementation gates. No
+runtime FrameCommit opener or codec is enabled.
+
 ## Resource-store boundary follow-up
+
+The resource follow-up is signed commit `01b510a8d`.
 
 `Resources.tla` adds a separate finite resource-store model: two resources and
 consumers, byte sizes 1/2, total byte budget 3 and two epochs. It checks physical
