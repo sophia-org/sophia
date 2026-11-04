@@ -3,6 +3,21 @@
 No production protocol or runtime source changed. The design is not yet eligible
 for enablement; see the modeling brief's explicit exclusions and wire gate.
 
+## Implementation-plan follow-up: close/drain/reopen
+
+The additional `Reopen.cfg` enumerated 3,083,753 distinct states without an
+invariant violation. It retains physical ownership while requiring delivery of
+the close notice, an empty output queue, no remaining source obligations and
+terminal settlement before a second stream opens. Credit replenishment is bound
+to both connection epoch and stream identity. The new `ReopenSafe` invariant is
+enabled in every configuration; the original results below remain the first
+checkpoint's recorded evidence. Follow-up logs are under
+`~/.local/state/sophia-frame-reopen-model-01`.
+
+Removing the drain precondition produces the expected `ReopenSafe` failure:
+`ChangeFacts -> Reopen` opens before even the close notice is delivered. The
+negative control is part of the reproducible checker, not a deployed-code bug.
+
 TLC used the repository-pinned jar SHA256
 `e22f8ffb4bacdea0a871f444dd94fe5fb0d8013b3388ae39e82e26f852c735d5`.
 Full bounded enumeration, no depth/state constraint or simulation cutoff:

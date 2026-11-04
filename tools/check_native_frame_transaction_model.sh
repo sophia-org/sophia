@@ -6,7 +6,7 @@ model_dir="$root_dir/validation/specula/native-frame-transaction/spec"
 source "$root_dir/tools/lib/specula_tlc.sh"
 specula_require_tlc
 specula_check_model "$model_dir" MC.tla MC.cfg MC.tla Mirror.cfg \
-    MC.tla TwoCredits.cfg MC.tla Liveness.cfg
+    MC.tla TwoCredits.cfg MC.tla Liveness.cfg MC.tla Reopen.cfg
 
 log_file="$(mktemp)"
 trap 'rm -f "$log_file"' EXIT
@@ -29,4 +29,5 @@ AuthorityMutation AuthoritySafe
 RetirementMutation RetirementSafe
 CancelMutation PhysicalSettlement
 StreamMutation StreamBound
+ReopenMutation ReopenSafe
 MUTATIONS

@@ -1,15 +1,16 @@
 ------------------------------ MODULE base ------------------------------
 EXTENDS Integers, FiniteSets, Sequences, TLC
 
-CONSTANTS Frames, Heads, CreditLimit, Capacity, WorkerLimit, Fault
+CONSTANTS Frames, Heads, CreditLimit, Capacity, WorkerLimit, Fault, AllowReopen
 VARIABLE s
 vars == <<s>>
 Kinds == {"source", "prepared", "terminal"}
-Empty == [phase |-> "absent", epoch |-> 0, facts |-> 0,
+Empty == [phase |-> "absent", epoch |-> 0, facts |-> 0, stream |-> 0,
           reading |-> FALSE, valid |-> FALSE, released |-> FALSE, handed |-> FALSE, preparedQueued |-> FALSE,
           reused |-> FALSE, prepared |-> {}, submitted |-> {}, flipped |-> {},
           owed |-> {}, terminal |-> "none", charged |-> FALSE]
-Initial == [epoch |-> 1, facts |-> 1, open |-> TRUE, credits |-> CreditLimit,
+Initial == [epoch |-> 1, facts |-> 1, stream |-> 1, streamFacts |-> 1,
+            unsafeReopen |-> FALSE, open |-> TRUE, credits |-> CreditLimit,
             tx |-> [f \in Frames |-> Empty], queue |-> <<>>,
             flight |-> [h \in Heads |-> 0], visible |-> [h \in Heads |-> 0],
             closeDue |-> TRUE, closedNotice |-> FALSE,
@@ -19,7 +20,7 @@ Init == s = Initial
 Current(f) == s.tx[f].epoch = s.epoch /\ s.tx[f].facts = s.facts
 Live(f) == s.tx[f].phase # "absent"
 Held == {f \in Frames : Live(f) /\ s.tx[f].epoch = s.epoch
-                            /\ s.tx[f].terminal = "none"}
+                            /\ s.tx[f].stream = s.stream /\ s.tx[f].terminal = "none"}
 Obligations == {p \in (Frames \X Kinds) : p[2] \in s.tx[p[1]].owed}
 Used == Cardinality(Obligations) + Len(s.queue) + IF s.closeDue THEN 1 ELSE 0
 Event(f, k) == [frame |-> f, kind |-> k, epoch |-> s.tx[f].epoch]
@@ -32,7 +33,7 @@ Admit(f) ==
     /\ (s.credits > 0 \/ Fault = "unreserved-copy") /\ Used + 3 <= Capacity
     /\ s' = [s EXCEPT !.credits = IF Fault = "unreserved-copy" THEN @ ELSE @ - 1,
              !.tx[f] = [Empty EXCEPT !.phase = "copy", !.epoch = s.epoch,
-                        !.facts = s.facts, !.reading = TRUE, !.owed = Kinds,
+                        !.facts = s.facts, !.stream = s.stream, !.reading = TRUE, !.owed = Kinds,
                         !.charged = Fault # "unreserved-copy"]]
 
 \* A refusal needs a slot too; a full budget leaves input untouched.
@@ -102,12 +103,13 @@ Terminal(f) ==
         \/ ~Current(f))
     /\ LET presented == 1 \in s.tx[f].flipped /\ Current(f)
            sameEpoch == s.tx[f].epoch = s.epoch
+           sameStream == sameEpoch /\ s.tx[f].stream = s.stream
            emit == sameEpoch
        IN s' = [s EXCEPT
            !.tx[f].terminal = IF ~emit THEN "discarded"
                              ELSE IF presented THEN "presented" ELSE "rejected",
            !.tx[f].owed = @ \ {"prepared", "terminal"},
-           !.credits = IF s.open /\ sameEpoch THEN @ + 1 ELSE @,
+           !.credits = IF s.open /\ sameStream THEN @ + 1 ELSE @,
            !.retired = @ \/ presented,
            !.queue = IF emit THEN Append(@, Event(f, "terminal")) ELSE @]
 
@@ -120,10 +122,22 @@ CloseNotice ==
     /\ ~s.open /\ s.closeDue
     /\ s' = [s EXCEPT !.closeDue = FALSE,
              !.queue = Append(@, [frame |-> 0, kind |-> "close", epoch |-> s.epoch])]
+StreamDrained ==
+    /\ s.closedNotice /\ ~s.closeDue /\ Len(s.queue) = 0
+    /\ (\A f \in Frames : Live(f) /\ s.tx[f].epoch = s.epoch =>
+            s.tx[f].terminal # "none" /\ NoReader(f) /\ s.tx[f].owed = {})
+Reopen ==
+    /\ AllowReopen /\ ~s.open /\ s.stream = 1
+    /\ (StreamDrained \/ Fault = "early-reopen")
+    /\ s' = [s EXCEPT !.stream = 2, !.streamFacts = s.facts,
+             !.open = TRUE, !.credits = CreditLimit,
+             !.closeDue = TRUE, !.closedNotice = FALSE,
+             !.unsafeReopen = @ \/ ~StreamDrained]
 Revoke ==
     /\ s.epoch = 1
     /\ s' = [s EXCEPT !.epoch = 2, !.facts = 1, !.open = TRUE,
-             !.credits = CreditLimit, !.queue = <<>>, !.closeDue = TRUE,
+             !.credits = CreditLimit, !.stream = 1, !.streamFacts = 1,
+             !.queue = <<>>, !.closeDue = TRUE,
              !.closedNotice = FALSE,
              !.tx = [f \in Frames |-> [s.tx[f] EXCEPT !.owed = {}]]]
 \* Old source tickets still finish physically, but no old notice enters new journal.
@@ -156,7 +170,7 @@ Next == (\E f \in Frames : Admit(f) \/ Refuse(f) \/ CopyDone(f)
          \/ PublishSource(f) \/ Reuse(f) \/ Handoff(f) \/ PublishPrepared(f) \/ Terminal(f)
          \/ DiscardOld(f) \/ (\E h \in Heads : Prepare(f, h) \/ Submit(f, h)))
         \/ (\E h \in Heads : Flip(h) \/ DrainHead(h) \/ RetireBlank(h))
-        \/ ChangeFacts \/ Close \/ CloseNotice \/ Revoke \/ Deliver \/ FreePredecessor
+        \/ ChangeFacts \/ Close \/ CloseNotice \/ Reopen \/ Revoke \/ Deliver \/ FreePredecessor
 Spec == Init /\ [][Next]_vars
 
 TypeOK == /\ s.epoch \in 1..2 /\ s.facts \in 1..2
@@ -165,7 +179,8 @@ TypeOK == /\ s.epoch \in 1..2 /\ s.facts \in 1..2
           /\ s.visible \in [Heads -> (Frames \cup {-1, 0})]
 WorkerSafe == Cardinality({f \in Frames : s.tx[f].reading}) <= WorkerLimit
 PhysicalSettlement == \A f \in Frames : s.tx[f].terminal # "none" => NoReader(f)
-StreamBound == s.open => s.facts = 1
+ReopenSafe == ~s.unsafeReopen
+StreamBound == s.open => s.facts = s.streamFacts
 BudgetSafe == Used <= Capacity
 CreditSafe == s.open => s.credits + Cardinality(Held) = CreditLimit
 SourceSafe == \A f \in Frames : s.tx[f].released => NoReader(f)

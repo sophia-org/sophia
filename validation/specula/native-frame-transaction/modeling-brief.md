@@ -110,7 +110,15 @@ proved. Safety runs make no fairness assumption.
 
 ## Explicitly outside this first model
 
-No same-epoch close/drain/reopen, clock arithmetic/TTL/rate guarantees, fragmented
+Same-epoch close/drain/reopen is now checked in `Reopen.cfg`: the close notice
+must be delivered, queued output and source obligations drained, and every
+accepted transaction terminal before issuing the next stream's credits. Stream
+identities distinguish old settlement from new credit. Renderer/native custody
+may outlive logical settlement; reopening does not erase it or invalidate an
+already accepted scene merely because its stream closed. The model bounds this
+to two stream identities per epoch and retains one-shot frame identities.
+
+Still excluded: clock arithmetic/TTL/rate guarantees, fragmented
 wire decoder, byte/resident budgets, arbitrary resource graphs, supersession,
 predecessor intent conflicts/headroom, general accepted-resource reclamation,
 independent identity-field substitution, stale callback decoder, actual memory

@@ -10,6 +10,7 @@ All configurations enable `PreparedOrder`, `WorkerSafe`, `PhysicalSettlement`,
 | TwoCredits | 2 / 1 / 2 / 2 / 7 | Concurrent accepted copies; independent settlements; exact full reservation capacity |
 | Mirror | 1 / 2 / 1 / 1 / 4 | Prepare-all, independent submits/flips, primary presentation, lagging predecessor |
 | Liveness | 1 / 1 / 1 / 1 / 4 | `FairSpec`; `Settles` and `ResponsesDrain` under explicitly fair progress |
+| Reopen | 2 / 1 / 1 / 1 / 5 | Same-epoch close/drain/reopen, two stream identities; old physical owners remain |
 
 Each has two epochs and one possible facts change per epoch. Close, revoke,
 validation failure, cancellation and arbitrary queue delay remain enabled in
@@ -27,6 +28,7 @@ failure actions for individual hunts.
 | D4 facts-bound stream | StreamBound / ChangeFacts | StreamMutation: silently retarget existing stream |
 | D5 ordering and retirement | PreparedOrder, TerminalSafe, RetirementSafe / Terminal, FreePredecessor | RetirementMutation: free before lagging head drops predecessor |
 | D6 stale completion isolation | JournalSafe, CreditSafe / Revoke, Terminal | Positive replacement-epoch interleavings; physical ownership not cleared on revoke |
+| D6 stream reopening | ReopenSafe / StreamDrained, Reopen | ReopenMutation: issue a new stream before drain |
 | Eventual logical settlement | Settles, ResponsesDrain / FairSpec | Liveness configuration only; no bounded-time claim |
 
 Mutation files select an explicit `Fault` constant; production-correct
@@ -34,5 +36,5 @@ configurations select `"none"`. The runner requires each mutation to fail its
 specific invariant; parser errors or another failure do not count as a pass.
 
 This table does not extend the modeling brief's scope. In particular, there is
-no same-epoch reopen proof, no general accepted-backing reclamation proof, no
+no unbounded stream-reuse proof, no general accepted-backing reclamation proof, no
 wire/parser refinement and no physical GPU/display correctness proof.

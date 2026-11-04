@@ -11,6 +11,21 @@ The [shell files contract](sophia-shell-files.md),
 
 ## Keep 9P; change the frame transaction
 
+### First implementation profile
+
+Mason selected the bounded fast path: one logical output and one outstanding
+frame per stream, zero or one new CPU image plus retained layers in a complete
+scene, at most one predecessor-retirement intent, and the existing two-slot ring.
+Multi-region updates requiring several new images, GPU images and other
+unsupported modes continue through the existing path. No scene is flattened or
+feature disabled to make it eligible. If an update stops fitting, drain and close
+the stream before falling back, preserving current display and live resources;
+keep that output binding on the existing path to avoid repeated mode switching.
+Reconsider eligibility on a new binding. Both real Lom and the reference peer
+must use this contract; benchmark-only implementation is insufficient.
+
+### Transport
+
 **9P remains the control plane.** Admission, grants, metadata, frame intent,
 acknowledgements and lifecycle events continue through the existing authenticated
 shell files transport. `FrameCommit` is a proposed record on that transport, not
