@@ -2,7 +2,7 @@
 use super::frame::frame_error;
 use super::*;
 use crate::shell_content::candidates::{FrameAdmissionReservation, FrameCommitState};
-use crate::{ContentCandidateError as Error, ContentFrameBeginAdmission as Admission};
+use crate::{ContentCandidateError as Error, ContentFrameRequestAdmission as Admission};
 
 impl ContentEpochRegistry {
     pub(crate) fn reserve_frame_commit(

@@ -20,8 +20,8 @@ mod presentation;
 use credits::CandidateEvents;
 #[cfg(feature = "experimental-native-frame-transaction")]
 pub use credits::{
-    ContentFrameAdmission, ContentFrameBeginAdmission, ContentFrameCommit,
-    ContentFrameCreditReturn, ContentFrameStreamEvent, ContentFrameStreamRecord,
+    ContentFrameAdmission, ContentFrameCommit, ContentFrameCreditReturn,
+    ContentFrameRequestAdmission, ContentFrameStreamEvent, ContentFrameStreamRecord,
 };
 #[cfg(feature = "experimental-native-frame-transaction")]
 pub(crate) use credits::{FrameAdmissionReservation, FrameCommitState, FrameCopyBinding};

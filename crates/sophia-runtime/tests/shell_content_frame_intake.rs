@@ -1,7 +1,9 @@
 #![cfg(feature = "experimental-native-frame-transaction")]
 
 use sophia_protocol::*;
-use sophia_runtime::{ContentCandidateError as Error, ContentFrameBeginAdmission as Admission, *};
+use sophia_runtime::{
+    ContentCandidateError as Error, ContentFrameRequestAdmission as Admission, *,
+};
 use std::cell::Cell;
 
 #[path = "support/frame_stream.rs"]
@@ -54,6 +56,7 @@ fn one_slot_reports_budget_without_spending_credit_or_faking_a_terminal() {
     assert!(matches!(
         refused.record,
         ContentFrameStreamRecord::Refused {
+            request_kind: sophia_protocol::shell_files::ShellFileKind::FrameCommit,
             candidate_generation: 1,
             reason: ContentReason::Budget,
             ..
@@ -93,6 +96,7 @@ fn closure_between_peek_and_consume_is_nonfatal_and_preserves_identity() {
     assert!(matches!(
         f.candidates().take_frame_stream_event().unwrap().record,
         ContentFrameStreamRecord::Refused {
+            request_kind: sophia_protocol::shell_files::ShellFileKind::FrameCommit,
             reason: ContentReason::Stale,
             ..
         }

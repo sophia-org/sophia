@@ -107,11 +107,11 @@ impl OwnedCopyImageJobs {
             deadline,
         )?;
         Ok(match decision {
-            crate::ContentFrameBeginAdmission::Deferred => crate::ContentFrameAdmission::Deferred,
-            crate::ContentFrameBeginAdmission::Refused(error) => {
+            crate::ContentFrameRequestAdmission::Deferred => crate::ContentFrameAdmission::Deferred,
+            crate::ContentFrameRequestAdmission::Refused(error) => {
                 crate::ContentFrameAdmission::Refused(error)
             }
-            crate::ContentFrameBeginAdmission::Accepted => {
+            crate::ContentFrameRequestAdmission::Accepted => {
                 let copy_job = admission.as_ref().map(|copy| copy.worker_job);
                 if let Some(admission) = admission {
                     *slot.expect("copy admission reserved a table slot") = Some(Pending {
@@ -153,11 +153,11 @@ impl OwnedCopyImageJobs {
             consume,
         )?;
         Ok(match decision {
-            crate::ContentFrameBeginAdmission::Deferred => OwnedFrameAdmission::Deferred,
-            crate::ContentFrameBeginAdmission::Refused(error) => {
+            crate::ContentFrameRequestAdmission::Deferred => OwnedFrameAdmission::Deferred,
+            crate::ContentFrameRequestAdmission::Refused(error) => {
                 OwnedFrameAdmission::Refused(error)
             }
-            crate::ContentFrameBeginAdmission::Accepted => {
+            crate::ContentFrameRequestAdmission::Accepted => {
                 let admission = admission.expect("accepted frame reserved a copy");
                 let job = admission.worker_job;
                 *slot.expect("accepted frame reserved a job slot") = Some(Pending {

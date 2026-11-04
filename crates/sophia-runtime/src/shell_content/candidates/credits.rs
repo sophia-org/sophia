@@ -5,12 +5,13 @@ use crate::frame_credits::{FrameCredits, FrameStreamClose, FrameStreamKey, Frame
 mod commit;
 pub use commit::{ContentFrameAdmission, ContentFrameCommit};
 pub(crate) use commit::{FrameAdmissionReservation, FrameCommitState};
+mod control;
 mod copy;
 mod events;
 pub(crate) use copy::{FrameCopyBinding, FrameCopyState};
 mod intake;
 pub(super) use events::CandidateEvents;
-pub use intake::ContentFrameBeginAdmission;
+pub use intake::ContentFrameRequestAdmission;
 
 /// Stream outcome identity and optional server-committed terminal replenishment.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,6 +31,7 @@ pub enum ContentFrameStreamRecord {
     Closed(FrameStreamClose),
     /// Refusal of an input request, never a terminal for an accepted candidate.
     Refused {
+        request_kind: sophia_protocol::shell_files::ShellFileKind,
         grant: ContentGrant,
         output: ContentOutputId,
         stream_id: u64,
@@ -87,6 +89,18 @@ impl ContentCandidateStore {
         context: ContentCandidateContext<'_>,
         now: u64,
     ) -> Result<(), ContentCandidateError> {
+        self.open_frame_stream_with_room(transaction, key, credits, context, now, usize::MAX)
+    }
+
+    fn open_frame_stream_with_room(
+        &mut self,
+        transaction: TransactionId,
+        key: FrameStreamKey,
+        credits: u8,
+        context: ContentCandidateContext<'_>,
+        now: u64,
+        response_room: usize,
+    ) -> Result<(), ContentCandidateError> {
         self.check_grant(key.grant)?;
         self.time(now)?;
         self.expire(now)?;
@@ -105,7 +119,8 @@ impl ContentCandidateStore {
         {
             return Err(ContentCandidateError::Stale);
         }
-        if self.open_candidate_slots() >= self.limits.max_open_candidates_total as usize
+        if response_room < 2
+            || self.open_candidate_slots() >= self.limits.max_open_candidates_total as usize
             || self.control_occupancy() + 2 > self.limits.max_control_records as usize
         {
             return Err(ContentCandidateError::Budget);

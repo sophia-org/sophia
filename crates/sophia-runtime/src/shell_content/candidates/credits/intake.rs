@@ -1,11 +1,11 @@
 use super::*;
 
-/// Whether a complete frame input remains queued or has transferred custody.
+/// Whether an SFT request remains queued or has transferred custody.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ContentFrameBeginAdmission {
+pub enum ContentFrameRequestAdmission {
     Deferred,
     Accepted,
-    /// The caller must discard this input's remaining internal candidate parts.
+    /// Discard any remaining internal candidate parts belonging to this input.
     Refused(ContentCandidateError),
 }
 
@@ -26,7 +26,7 @@ impl ContentCandidateStore {
         now: u64,
         response_room: usize,
         consume: impl FnOnce(),
-    ) -> Result<ContentFrameBeginAdmission, ContentCandidateError> {
+    ) -> Result<ContentFrameRequestAdmission, ContentCandidateError> {
         self.admit_frame_begin_with(
             transaction,
             begin,
@@ -47,18 +47,10 @@ impl ContentCandidateStore {
         input_error: Option<ContentCandidateError>,
         reserve_copy: impl FnOnce() -> Result<FrameAdmissionReservation, ContentCandidateError>,
         consume: impl FnOnce(),
-    ) -> Result<ContentFrameBeginAdmission, ContentCandidateError> {
-        self.check_grant(begin.grant)?;
-        if self.profile != ContentStoreProfile::Legacy || !transaction.is_valid() {
-            return Err(ContentCandidateError::Stale);
-        }
-        self.time(now)?;
-        self.expire(now)?;
-        let room = response_room.min(
-            (self.limits.max_control_records as usize).saturating_sub(self.control_occupancy()),
-        );
+    ) -> Result<ContentFrameRequestAdmission, ContentCandidateError> {
+        let room = self.frame_admission_room(transaction, begin.grant, now, response_room)?;
         if room == 0 {
-            return Ok(ContentFrameBeginAdmission::Deferred);
+            return Ok(ContentFrameRequestAdmission::Deferred);
         }
         // No store mutation or I/O can use this reserved refusal slot before
         // the synchronous consume/admit/report operation completes.
@@ -79,11 +71,12 @@ impl ContentCandidateStore {
         // All accepted work is reserved before removing the peeked input.
         consume();
         match result {
-            Ok(()) => Ok(ContentFrameBeginAdmission::Accepted),
+            Ok(()) => Ok(ContentFrameRequestAdmission::Accepted),
             Err(error) => {
                 self.events.push_stream(ContentFrameStreamEvent {
                     transaction,
                     record: ContentFrameStreamRecord::Refused {
+                        request_kind: sophia_protocol::shell_files::ShellFileKind::FrameCommit,
                         grant: self.limits.grant,
                         output,
                         stream_id,
@@ -91,7 +84,7 @@ impl ContentCandidateStore {
                         reason: error.reason(),
                     },
                 });
-                Ok(ContentFrameBeginAdmission::Refused(error))
+                Ok(ContentFrameRequestAdmission::Refused(error))
             }
         }
     }

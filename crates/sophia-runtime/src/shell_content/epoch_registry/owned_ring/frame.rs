@@ -1,6 +1,6 @@
 //! Join the existing frame-credit, resource and copy-worker reservations.
 use super::*;
-use crate::{ContentCandidateError, ContentFrameBeginAdmission, IsbImageAdmissionError};
+use crate::{ContentCandidateError, ContentFrameRequestAdmission, IsbImageAdmissionError};
 
 impl ContentEpochRegistry {
     pub(crate) fn reserve_owned_frame_copy(
@@ -15,7 +15,7 @@ impl ContentEpochRegistry {
         consume: impl FnOnce(),
     ) -> Result<
         (
-            ContentFrameBeginAdmission,
+            ContentFrameRequestAdmission,
             Option<crate::OwnedCopyImageAdmission>,
         ),
         ContentCandidateError,

@@ -25,7 +25,7 @@ pub struct FrameStreamKey {
 }
 
 impl FrameStreamKey {
-    fn valid(self) -> bool {
+    pub(crate) fn valid(self) -> bool {
         self.grant.connection_epoch != 0
             && self.grant.content_grant_epoch != 0
             && self.output.id != 0
