@@ -362,7 +362,11 @@ fn successful_copy_must_handoff_before_the_complete_scene_can_be_admitted() {
     assert_eq!(candidates.pending_candidate_count(), 1);
     let _bundle = candidates.begin_submission(output(), 1, 3).unwrap();
     candidates.prepared(output(), 1, 1, 1, 3).unwrap();
-    candidates.take_event().unwrap();
+    assert!(
+        candidates
+            .transfer_frame_event_at(resources, 3, |_| Ok(()))
+            .unwrap()
+    );
     candidates.presented_at(output(), 1, 1, 1, 1, 4).unwrap();
     assert!(matches!(
         resources.lease(grant(), request(1).resource),

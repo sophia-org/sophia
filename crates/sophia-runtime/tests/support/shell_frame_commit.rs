@@ -298,7 +298,11 @@ fn full_scene_and_predecessor_survive_copy_close_and_native_handoff() {
         assert_eq!(bundle.placements[1].resource, request(2).resource);
         assert!(bundle.resource(request(1).resource).is_none());
         candidates.prepared(output(), 1, 1, 1, 3).unwrap();
-        candidates.take_event().unwrap();
+        assert!(
+            candidates
+                .transfer_frame_event_at(resources, 3, |_| Ok(()))
+                .unwrap()
+        );
         candidates.presented_at(output(), 1, 1, 1, 1, 4).unwrap();
         assert_eq!(
             candidates

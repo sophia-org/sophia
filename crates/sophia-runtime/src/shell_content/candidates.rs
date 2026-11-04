@@ -98,7 +98,7 @@ pub struct ContentCandidateEvent {
     /// commit is by owner identity, once, in the store.
     #[cfg(feature = "experimental-native-frame-transaction")]
     pub retire: Option<ContentRetireOwner>,
-    /// Wire-neutral W3 terminal metadata; absent from Prepared and legacy outcomes.
+    /// Stream identity on every SFT outcome; only terminals can return a credit.
     #[cfg(feature = "experimental-native-frame-transaction")]
     pub frame_credit: Option<ContentFrameCreditReturn>,
 }
@@ -371,15 +371,12 @@ impl ContentCandidateStore {
         wm_commit_generation: u64,
     ) {
         #[cfg(feature = "experimental-native-frame-transaction")]
-        let frame_credit = if matches!(kind, 2..=4) {
-            self.frame_terminal_key(output, generation)
+        let frame_credit =
+            self.frame_candidate_key(output, generation)
                 .map(|key| ContentFrameCreditReturn {
                     key,
                     expires_msec: None,
-                })
-        } else {
-            None
-        };
+                });
         self.push(
             transaction,
             ShellContentRecord::CandidateOutcome(ContentCandidateOutcome {
@@ -679,7 +676,7 @@ impl ContentCandidateStore {
         validate_targets(&assembly.targets, &assembly.surfaces, context.allocations)?;
         #[cfg(feature = "experimental-native-frame-transaction")]
         let frame_owner = self
-            .frame_terminal_key(output, assembly.begin.candidate_generation)
+            .frame_candidate_key(output, assembly.begin.candidate_generation)
             .map(|_| self.retire_owner(output, assembly.begin.candidate_generation));
         let lease = |resource| {
             #[cfg(feature = "experimental-native-frame-transaction")]

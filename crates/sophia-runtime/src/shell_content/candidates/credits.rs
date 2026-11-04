@@ -12,7 +12,7 @@ mod intake;
 pub(super) use events::CandidateEvents;
 pub use intake::ContentFrameBeginAdmission;
 
-/// Server-committed replenishment carried by a stream candidate's terminal.
+/// Stream outcome identity and optional server-committed terminal replenishment.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ContentFrameCreditReturn {
     pub key: FrameStreamKey,
@@ -348,7 +348,7 @@ impl ContentCandidateStore {
         Ok(())
     }
 
-    pub(super) fn frame_terminal_key(
+    pub(super) fn frame_candidate_key(
         &self,
         output: ContentOutputId,
         generation: u64,
@@ -360,10 +360,11 @@ impl ContentCandidateStore {
             .then(|| entry.ledger.key().expect("opened stream key"))
     }
 
-    /// Transfer a stream terminal to the output before returning its credit.
+    /// Transfer stream output, returning credit only with a terminal outcome.
     ///
     /// The publisher must either transfer the whole event or leave output
-    /// untouched on error. A successful transfer also settles the new image
+    /// untouched on error. Prepared carries identity without credit or resource
+    /// settlement. A successful terminal transfer also settles the new image
     /// and commits predecessor retirement. Queued outcomes are not replenishment, and an
     /// ordinary `take_event` cannot consume them. `now` is the owner's current
     /// monotonic time, not the time of the earlier native completion.
@@ -396,6 +397,16 @@ impl ContentCandidateStore {
             .entries
             .get_mut(&credit.key.output)
             .ok_or(ContentCandidateError::Stale)?;
+        if outcome.kind == 1 {
+            if entry.ledger.key() != Some(credit.key) || !entry.ledger.owns(generation) {
+                return Err(ContentCandidateError::Stale);
+            }
+            publish(&event)?;
+            self.events
+                .pop_front()
+                .expect("published Prepared remains owned");
+            return Ok(true);
+        }
         let mut publish = Some(publish);
         let mut result = entry
             .ledger

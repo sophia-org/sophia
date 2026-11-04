@@ -155,7 +155,11 @@ fn presented_transfer_promotes_new_pixels_and_retires_the_predecessor_together()
         .unwrap();
     let bundle = candidates.begin_submission(output(), 1, 3).unwrap();
     candidates.prepared(output(), 1, 1, 1, 3).unwrap();
-    candidates.take_event().unwrap();
+    assert!(
+        candidates
+            .transfer_frame_event_at(resources, 3, |_| Ok(()))
+            .unwrap()
+    );
     candidates.presented_at(output(), 1, 1, 1, 1, 4).unwrap();
     while resources.take_event().is_some() {}
     assert_eq!(

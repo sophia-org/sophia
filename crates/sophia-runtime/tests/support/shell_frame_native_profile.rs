@@ -83,10 +83,14 @@ fn one_native_credit_stays_spent_through_prepared_and_blocked_terminal() {
         ContentFrameAdmission::Accepted { copy_job: None }
     );
     f.finish(1, 1, 1).unwrap();
-    let store = f.registry.active_candidates_mut(grant()).unwrap();
+    let (resources, store) = f.registry.active_pair_mut(grant()).unwrap();
     let _display = store.begin_submission(output(), 1, 1).unwrap();
     store.prepared(output(), 1, 1, 1, 1).unwrap();
-    store.take_event().unwrap();
+    assert!(
+        store
+            .transfer_frame_event_at(resources, 1, |_| Ok(()))
+            .unwrap()
+    );
     let mut next = frame(2, false);
     next.retire = None;
     assert_eq!(

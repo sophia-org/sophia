@@ -87,7 +87,8 @@ fn prepared_does_not_replenish_and_commit_time_is_fresh_and_explicit() {
     let prepared = f.drain_outcomes();
     assert_eq!(prepared.len(), 1);
     assert_eq!(outcome(&prepared[0]).kind, 1);
-    assert_eq!(prepared[0].frame_credit, None);
+    assert_eq!(prepared[0].frame_credit.unwrap().key, key(1));
+    assert_eq!(prepared[0].frame_credit.unwrap().expires_msec, None);
     assert_eq!(
         f.candidates().presented(output(), 1, 40, 20, 30),
         Err(Error::Stale)
@@ -203,7 +204,7 @@ fn full_control_budget_can_queue_close_once_and_fifo_cannot_skip_it() {
     f.candidates().renderer_failed_at(output(), 1, now).unwrap();
     assert_eq!(f.candidates().pending_event_count(), 3);
     assert!(f.candidates().take_frame_stream_event().is_none());
-    assert_eq!(outcome(&f.candidates().take_event().unwrap()).kind, 1);
+    assert_eq!(outcome(&f.drain_outcomes().remove(0)).kind, 1);
     assert!(f.candidates().pending_event().is_none());
     assert!(f.candidates().take_event().is_none());
     let notice = *f.candidates().pending_frame_stream_event().unwrap();
