@@ -15,10 +15,10 @@ contract in the [control bus](sophia-9p-control-bus.md).
 
 ## Current owners, versions and grants
 
-The [bounded native frame transaction proposal](native-frame-transactions.md)
-explores `FrameCommit` over this same 9P transport, with pixels retained on the
-owned-ring/image path. It has bounded design-model evidence, not an allocated
-wire format or implementation. It does not amend the current rules below.
+The [Sophia Frame Transactions contract](sophia-frame-transactions-wire.md)
+allocates explicit r13/bit 18 records over this same 9P transport, with pixels
+retained on the owned-ring/image path. SFT integration remains default-off and
+unqualified; its new records do not change the existing revisions below.
 
 ### Request ordering on a shell connection
 
