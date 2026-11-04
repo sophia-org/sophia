@@ -80,3 +80,7 @@ render-node pixel checks and measured native workload runs. Multi-output behavio
 and a fresh matched external reference are not qualified by this result. Profile
 the adopted baseline before choosing another optimization; this note does not
 reopen W3 or inactive candidates.
+
+The subsequent [protected-retry qualification](r7q2m9xp-skip-protected-retained-projection-retries.md)
+removes repeated frame construction while outputs await retirement; it is a
+separate measured change on this adopted baseline.
