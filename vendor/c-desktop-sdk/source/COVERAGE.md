@@ -166,3 +166,10 @@ Products vendor or otherwise bind an exact SDK source revision and tree. Pins
 are per product: adding WM support for Hagia does not change Bemenu's existing
 SDK pin. Builds verify the vendor manifest and record its digest and revision.
 There is no ambient sibling SDK checkout in the build inputs.
+
+## SFT r13 passive codecs
+
+`sophia_shell_frames.h` covers the seven SFT records and explicit-r13
+submission receipts against the shared wire corpus and Rust implementation.
+See [API parity](API-PARITY.md#sft-passive-codec-parity-2026-11-04) for
+ownership, refusal coverage and the still-open owning-session/producer gates.

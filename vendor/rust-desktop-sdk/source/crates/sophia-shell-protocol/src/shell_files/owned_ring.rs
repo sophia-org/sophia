@@ -197,8 +197,13 @@ impl RingOffer {
 
     /// The 152-byte D4C1 Offer record for the control file.
     pub fn encode(self) -> Vec<u8> {
-        let mut words = self.identity.words(2).to_vec();
-        words.extend([
+        encode(CONTROL_MAGIC, &self.words())
+    }
+
+    fn words(self) -> [u64; 18] {
+        let mut words = [0; 18];
+        words[..6].copy_from_slice(&self.identity.words(2));
+        words[6..].copy_from_slice(&[
             self.offer_id,
             u64::from(self.slot),
             self.slot_generation,
@@ -212,7 +217,19 @@ impl RingOffer {
             u64::from(self.width),
             u64::from(self.height),
         ]);
-        encode(CONTROL_MAGIC, &words)
+        words
+    }
+
+    pub(super) fn validate(self) -> Result<(), ShellImageCodecError> {
+        Self::from_words(&self.words()).map(|_| ())
+    }
+
+    pub(super) fn append(self, bytes: &mut Vec<u8>) {
+        bytes.extend_from_slice(&152u32.to_le_bytes());
+        bytes.extend_from_slice(CONTROL_MAGIC);
+        for word in self.words() {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
     }
 
     fn from_words(words: &[u64]) -> Result<Self, ShellImageCodecError> {

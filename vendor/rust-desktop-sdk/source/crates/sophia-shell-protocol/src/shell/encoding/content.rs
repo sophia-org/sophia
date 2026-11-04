@@ -205,7 +205,7 @@ pub fn content_candidate_bytes(candidate: &ContentCandidate) -> Result<usize, Va
     bytes.finish()
 }
 
-fn put_candidate(candidate: &ContentCandidate, bytes: &mut impl super::ByteSink) {
+pub(crate) fn put_candidate(candidate: &ContentCandidate, bytes: &mut impl super::ByteSink) {
     candidate.grant.put(bytes);
     candidate.candidate_generation.put(bytes);
     candidate.output.put(bytes);
@@ -251,9 +251,7 @@ pub fn decode_content_candidate(bytes: &[u8]) -> Result<ContentCandidate, ValueE
         targets: rows(&mut cursor, targets)?,
     };
     cursor.finish()?;
-    for part in candidate.parts() {
-        crate::shell::content::validation::validate(&part)?;
-    }
+    crate::shell::content::validation::validate_content_candidate(&candidate)?;
     Ok(candidate)
 }
 

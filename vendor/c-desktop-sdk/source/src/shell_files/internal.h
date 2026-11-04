@@ -49,5 +49,7 @@ static inline int sf_rect(int32_t x, int32_t y, uint32_t w, uint32_t h)
            (uint64_t)(uint32_t)y + h <= INT32_MAX;
 }
 int sf_validate(const struct sophia_sf_record *);
+int sf_validate_candidate(const struct sophia_sf_candidate *);
+int sf_validate_candidate_outcome(const struct sophia_sf_candidate_outcome *);
 #include "fields.h"
 #endif

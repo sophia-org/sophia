@@ -144,7 +144,7 @@ fn bad_identities_and_entries_are_refused() {
 #[test]
 fn drift_in_every_contract_pair_and_an_unrecorded_digest_are_refused() {
     // Every pair, including owned-ring's contract, schema and corpus, gets a drift control.
-    assert_eq!(rust_desktop_sdk::CONTRACTS.len(), 16);
+    assert_eq!(rust_desktop_sdk::CONTRACTS.len(), 19);
     for (_, authoritative) in rust_desktop_sdk::CONTRACTS {
         let (root, snapshot) = scratch();
         std::fs::write(root.0.join(authoritative), b"changed contract").unwrap();

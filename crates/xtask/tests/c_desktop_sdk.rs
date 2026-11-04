@@ -131,6 +131,9 @@ fn pinned_source_and_contract_are_both_required() {
     std::fs::write(&manifest_path, manifest_bytes).unwrap();
 
     let contracts = [
+        "docs/sophia-frame-transactions-wire.md".to_owned(),
+        "protocol/sophia-frame-transactions-v1.kdl".to_owned(),
+        "protocol/golden/sophia-frame-transactions-v1.tsv".to_owned(),
         "docs/sophia-image-channel.md".to_owned(),
         "docs/sophia-owned-ring.md".to_owned(),
         "protocol/sophia-owned-ring-v1.kdl".to_owned(),

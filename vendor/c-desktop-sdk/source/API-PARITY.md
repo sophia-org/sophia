@@ -1797,3 +1797,47 @@ its unconsumed-event refill gate. These scheduling differences do not change cus
 Independent window/recovery tests pass locally; exact signed B3 revisions, export
 adoption and performance qualification remain pending. Diagnostic counts belong
 to scripted peers and instrumented captures, not a new production metrics API.
+
+## SFT passive codec parity, 2026-11-04
+
+The independently implemented C and Rust codecs use the signed Sophia r13
+contract and its 16 exact wire vectors. Neither language delegates to the other.
+
+| Operation | Rust | C |
+| --- | --- | --- |
+| Values | `ShellFrameRecord`, `ShellFrameCommit`, `ShellFrameStreamKey` | `sophia_sft_record`, `sophia_sft_commit`, `sophia_sft_key` |
+| Size | `shell_frame_record_bytes` | `sophia_sft_record_bytes` |
+| Encode | `encode_shell_frame_record` | `sophia_sft_encode` |
+| Decode | `decode_shell_frame_record` | `sophia_sft_decode` |
+| Submission receipt | `*_shell_file_submitted_at_revision` | `sophia_sf_*_revision` |
+
+All entry points require explicit revision 13. SFT itself requires negotiated
+content authority, owned-ring bit 15 and bit 18, checked by the connection rather
+than inferred from bytes. The old/default codecs still refuse the new kinds.
+An r13 Submitted receipt preserves the actual Open/Close/Commit kind. Existing
+client negotiation and producer APIs do not enable SFT.
+
+Both codecs check the complete record/granted byte ceiling before reading scene
+rows, the exact one-surface/count/optional-payload layout, zero reserved fields,
+grant/output/allocation/facts coherence, two-slot source shape, the 4 MiB absolute
+image bound, predecessor exclusion, refusal kinds and Prepared/terminal credit
+rules. Registered capacity, fresh authority, allocation limits, admission and
+exactly-once completion remain host duties.
+
+Rust decoding owns its scene vectors; encoding writes into one allocated buffer
+without copying rows or building a temporary candidate. C uses fixed-size,
+caller-owned values/buffers, allocates nothing, and does not borrow decoded input.
+C input/output buffers must not overlap. Invalid input leaves C output unchanged;
+an invalid value or short encode buffer leaves destination and written unchanged.
+
+Evidence: `~/.local/state/sophia-frame-sdk-codecs-01`. Shared goldens and targeted
+refusals cover all seven record kinds and all image/retirement flag combinations;
+12,056 deterministic mutations agree, and accepted cases round-trip canonically.
+Tests also cover maximum row counts and explicit-r13 submission receipts. The C
+parser path passes ASan/UBSan using system Clang. Full SDK checks and exact source
+identities are recorded in the evidence receipt and the separate push receipt.
+
+This is passive wire-codec parity only. It is not owning-session/producer parity,
+production-export admission, fragmented-write/backpressure qualification, model
+trace validation, or native performance/security acceptance. Those gates remain
+open before host exposure or default enablement. No SDK vendor pin changes here.

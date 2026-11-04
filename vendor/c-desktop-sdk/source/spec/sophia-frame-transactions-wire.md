@@ -1,0 +1,184 @@
+# Sophia Frame Transactions: initial wire contract
+
+This is the SFT implementation contract, not enablement or performance acceptance.
+The [architecture](native-frame-transactions.md) owns the security, capture,
+presentation and qualification requirements. The [allocation ledger](../protocol/sophia-shell-allocations.md)
+owns identifiers. The byte layouts below extend the existing shell file envelope;
+9P, afid/custody, submission assembly, journal acknowledgements and image-channel
+registration retain their existing contracts.
+
+## Negotiated scope
+
+SFT is shell revision **13**, capability bit **18** (`FRAME_TRANSACTIONS`,
+`0x40000`). Selecting r13 does not grant it. The initial native profile requires
+the ordinary content role and explicit owned-ring bit 15 as well as bit 18.
+The host build, owner permission and peer request must all opt in. Required bits
+cannot silently disappear. Unknown revisions or unsupported combinations refuse;
+do not implement this as a `revision >= 13` check.
+
+The r13 owned-ring image mapping is image revision 10, source kind 4 and the
+existing D4 records. SFT requires a two-slot registration when a frame copies
+pixels. Retained-only frames need no source. No r9 sealed-upload path, GPU source,
+draw capability or W2 bit 17 is implicitly enabled. SFT's predecessor field uses
+W2's retirement lifetime semantics inside FrameCommit; it does not authorize the
+separate r12 Candidate trailer. r11 draw and r12 W2 identifiers remain reserved
+and retain their allocated meanings. A host may refuse their grants while
+supporting the bounded r13 profile; it must never reinterpret those records.
+
+Each stream binds one output, allocation and output-facts generation. Initially
+it has exactly one credit and one complete base-profile surface with retained
+CPU layers, zero or one new owned-ring image, and zero or one predecessor intent.
+Unsupported updates drain/close before using the legacy path; the producer keeps
+legacy selection for that output binding. It does not flatten content, abandon
+the current display or discard live resources to enter SFT.
+
+## Records and bytes
+
+All integers are little-endian. Offsets below are relative to the body after the
+unchanged 32-byte shell file header. Candidate-class records have a nonzero
+submission id and zero sequence; events have zero submission id and nonzero
+sequence. Every body transaction is nonzero and every body grant connection
+epoch equals the envelope epoch. Exact lengths, reserved zeros, enum bounds and
+cross-field constraints are mandatory; trailing bytes are not extension space.
+
+| Record | Kind | Class | Body bytes |
+|---|---:|---|---:|
+| FrameStreamOpen | 279 | Candidate | 72 |
+| FrameStreamClose | 280 | Candidate | 72 |
+| FrameCommit | 281 | Candidate | Variable; whole record at most 8192 |
+| FrameStreamOpened | 55 | Event | 80 |
+| FrameStreamClosed | 56 | Event | 80 |
+| FrameRefused | 57 | Event | 64 |
+| FrameOutcome | 58 | Event | 116 |
+
+DrawSettled remains kind 54. No existing kind changes its bytes.
+
+`StreamKey` is eight nonzero u64 words in order: grant connection epoch, grant
+content epoch, output id, output generation, allocation id, allocation generation,
+facts generation, stream id. Its size is 64 bytes. Facts generation includes
+mode, scale and format changes, not just topology. The producer proposes a stream
+id strictly greater than every previously accepted stream id in that grant,
+across outputs. Refused opening does not consume it. A new stream cannot inherit
+credit, work or replies from a preceding stream.
+
+Open and Close are transaction u64 at 0, StreamKey at 8. Open has no requested
+credit count. Opened has the same prefix, credits u32 at 72 (exactly 1), ttl_ms
+u32 at 76 (1..250, bounded by the granted permit timeout). Closed has the same
+prefix, reason u16 at 72 (1..12), and six zero bytes at 74. An explicit close
+uses its own transaction; an automatic close notice uses the opening transaction.
+Revocation/disconnect need not deliver a notice after authority ends and must
+never deliver it into a replacement grant.
+
+FrameCommit has this layout:
+
+| Offset | Field |
+|---:|---|
+| 0 | transaction u64, nonzero |
+| 8 | scene_bytes u32, exact size of the following neutral Candidate value |
+| 12 | flags u16: bit 0 image present, bit 1 predecessor present; all others zero |
+| 14 | reserved u16, zero |
+| 16 | neutral Candidate value, `scene_bytes` bytes |
+| 16 + scene_bytes | optional complete 152-byte D4C1 RingOffer |
+| after optional offer | optional 24-byte predecessor: transaction, resource id, generation (u64 each) |
+
+The neutral Candidate is the existing Candidate body **without** its outer
+transaction: a 72-byte fixed prefix followed by 64-byte surface, 32-byte placement
+and 48-byte target rows. The last u16 of that prefix stays zero: the r12 trailer
+is not embedded here. Its `pacing_permit` field carries the stream id. Exactly
+one surface is required; placement/target counts remain bounded by the existing
+grammar (32/64) and granted limits. All legacy row validation still applies.
+Lengths use checked arithmetic, agree with counts and flags, consume the entire
+record, and fit both 8192 and the granted whole-record byte limit before any row
+allocation. The old runtime's internal 40-byte candidate accounting base is not
+a substitute for this complete wire length.
+
+An embedded offer is the existing D4C1 Offer including its length/magic/kind.
+Its connection/grant, output, allocation and facts identities must equal those
+of the scene and its sole surface. Channel/ring/generation must name the current
+registration; slot is 0 or 1, slot generation is even and nonzero. All existing
+offer dimensions, extent and identity checks still apply. The new resource must
+occur in a placement. There is no separate Offer submission for the same frame.
+The host reserves and settles the ordinary source-release obligation internally.
+
+Every predecessor word is nonzero; its transaction differs from the FrameCommit
+transaction, and the scene does not reference that resource. No tuple or slot
+claim is authority. The owner freshly checks custody and its actual registered
+source, allocations, accepted resource backing and stream key.
+
+FrameRefused is transaction u64 at 0, grant epochs at 8/16, output id/generation
+at 24/32, stream id at 40, candidate generation at 48, request kind u16 at 56,
+reason u16 at 58 (1..12), reserved u32 at 60 (zero). All identity words are
+nonzero except candidate generation: it is nonzero for FrameCommit and zero for
+Open/Close. Request kind is exactly 279, 280 or 281. This is a request refusal,
+not a terminal for an admitted candidate; it never carries credit or retires
+anything. It echoes the refused request's identities even if that stream closed.
+
+FrameOutcome starts with the unchanged **76-byte CandidateOutcome body**,
+including its transaction and all existing kind/reason/presentation constraints.
+It appends stream id at 76, allocation id at 84, allocation generation at 92,
+facts generation at 100 and credit_expires_msec at 108 (u64 each). The first four
+are nonzero. The last is zero for no credit, otherwise a nonzero deadline on the
+owner's monotonic-millisecond clock. Prepared (kind 1) must carry zero. Terminal
+kinds 2..4 may carry zero (closing/expired stream) or one renewed credit. Both
+halves name the exact same stream/candidate binding; an ordinary CandidateOutcome
+must never be used to deliver an SFT candidate's Prepared or terminal event.
+
+The deadline is opaque owner time, not permission for the client to infer clock
+offset or renew credit locally. Opening TTL starts when the owner commits Open;
+a renewed deadline starts at whole terminal transfer. Neither starts at peer
+receipt or ACK. Clients must handle a close/expiry race after seeing credit.
+Only one matching terminal can replenish once. SlotReleased, ResourceStatus,
+ResourceReleased and native buffer retirement retain their distinct meanings.
+
+## Input, output and backpressure
+
+The one-surface profile requires every placement and target to name surface
+index zero. An embedded offer's checked `width * height * 4` must fit the
+owned-ring protocol maximum of 4 MiB before contextual admission. The actual
+registered capacity, allocation bounds and negotiated limits may be smaller
+and remain fresh owner checks; these shape bounds do not authorize a source.
+
+The existing per-submission file assembler accepts fragmented writes only within
+its declared length and timeout. A prefix, missing suffix, duplicate fragment or
+failed submission never admits half a scene. Decode a complete bounded record
+once, retain its owned rows until admission, then move them into the existing
+candidate store. Do not split it into ordinary Begin/Chunk/End wire requests.
+An invalid envelope or undecodable body follows the existing file submission
+refusal path, never a fabricated SFT candidate terminal. FrameRefused applies to
+a structurally decoded request whose bounded semantic admission refuses.
+
+Before consuming Open or Close, hold one nonfatal refusal slot. A successful Open
+instead reserves two control records: Opened and its lifetime Closed. A successful
+Close spends the existing lifetime reservation, not another terminal slot.
+Before consuming FrameCommit, hold a refusal slot; acceptance replaces that
+obligation with Prepared and terminal reservations, plus resource status/release
+and slot-release journal capacity if copying. Reserve the predecessor intent
+before any source read. Every fixed SFT control event fits the existing 256-byte
+control credit; actual encoded output, shared FIFO and journal capacities must
+all be checked. No blanket per-fragment response slot is charged.
+
+No reply room leaves input, identity, credit and predecessor untouched. A valid
+frame identity refused for Budget or profile-invalid content is spent, with a
+typed refusal and no credit spend. Stale key/phase/sequence does not spend it.
+Assembly-present, exhausted credit and close/expiry races are nonfatal reported
+refusals on this path; invalid transport authority still fails closed. An open
+stream excludes demand/permit admission on its output. A missing/closed stream
+does not reinterpret FrameCommit as a legacy Candidate.
+
+Source capture, validation, accepted-image privacy, cancellation debt, fresh
+scene handoff and native completion use the existing reviewed runtime owners.
+Prepared has no credit. Queueing a terminal has no credit. Transfer the whole
+FrameOutcome, replenishment and successful predecessor retirement as one owner
+commit; publication backpressure preserves every obligation. Close forbids new
+admissions/replenishment while accepted work drains. Reopen waits for all prior
+work and notices, not merely receipt of Closed. Revocation/disconnect drain old
+physical owners without replaying their events into a successor connection.
+
+## Integration gates
+
+This contract does not enable a host or SDK client. Required before exposure:
+independent C/Rust codecs and golden/refusal parity; exact revision/capability
+negotiation; complete/fragmented production-export admission under full record
+and byte budgets; fresh owner-loop handoff; real Lom and reference producers with
+drain/fallback; implementation trace validation against the model; and matched
+native CPU, cadence and latency qualification. Default-off remains mandatory.

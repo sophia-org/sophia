@@ -86,6 +86,14 @@ close/reopen, codec/SDK parity and runtime trace conformance still need work.
 
 ## Acceptance and connections
 
+The [independent SDK codec checkpoint](../../native-frame-transactions.md#independent-sdk-codecs)
+now imports signed C and Rust implementations of the seven r13 records and
+submission receipts. Sixteen golden vectors and 12,056 mutation cases agree;
+Prepared-credit negative controls fail independently in both implementations.
+This closes passive codec parity only. Host wire admission, owning clients,
+real Lom/reference producers, implementation traces and native qualification
+remain open; no stream is exposed or enabled by importing the codecs.
+
 **Proposed, not adopted.** Mason's authorization permits design and modeling; it
 does not establish a final wire grammar, implementation acceptance or speedup.
 The [separate allocation ledger](../../../protocol/sophia-shell-allocations.md)

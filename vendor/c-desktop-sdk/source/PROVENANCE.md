@@ -1064,3 +1064,20 @@ gates; no B3 performance result is claimed.
 ## t339 optional r10 DMA-BUF record vocabulary
 
 The image-channel contract comes from signed Sophia `b47a6a094b3cc5a4da0c1a720d32040dbe05dd8d`. Revision 10 admits the existing image lifecycle envelopes and exact ImageBegin receipt for optional DMA-BUF capture. CPU upload remains owned-ring only; source admission belongs to the server. This codec checkpoint does not enable the shell GPU producer or establish C/Rust producer parity, native capture, or performance qualification.
+
+## Sophia Frame Transactions wire contract, 2026-11-04
+
+The SFT prose, schema and golden vectors are copied verbatim from signed Sophia
+commit `ced86c71ff001ab4e4130fc0dff40c71261da068`. `spec/SHA256SUMS` pins their bytes.
+This is explicit r13 / bit 18 vocabulary; existing client defaults remain
+unchanged. Codec work does not establish host admission, producer integration,
+C/Rust parity, native qualification or a performance improvement.
+
+The prose includes signed clarification `54c6c8c9107199ca89a8528247c5b552bd203d87`: surface indices
+are zero in the one-surface profile and embedded images fit the 4 MiB protocol
+maximum. Smaller registered capacity and allocation limits remain owner checks.
+
+Shell prose synchronized from signed Sophia `da653bd3d68c25c3357db0008d9d401143ce8732` before
+import: the SFT pointer now names its allocated, default-off contract, and the
+existing role-limit paragraph reflects the host grants. No wire layout, SDK
+limit value, owning-client behavior or negotiation default changes in this sync.

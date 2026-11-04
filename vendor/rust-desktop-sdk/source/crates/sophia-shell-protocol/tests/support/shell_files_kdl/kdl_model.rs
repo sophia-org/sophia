@@ -391,6 +391,13 @@ pub fn kind_name(kind: ShellFileKind) -> &'static str {
         ShellFileKind::ChannelClosed => "ChannelClosed",
         ShellFileKind::ImageLimits => "ImageLimits",
         ShellFileKind::ImageFormats => "ImageFormats",
+        ShellFileKind::FrameStreamOpen => "FrameStreamOpen",
+        ShellFileKind::FrameStreamClose => "FrameStreamClose",
+        ShellFileKind::FrameCommit => "FrameCommit",
+        ShellFileKind::FrameStreamOpened => "FrameStreamOpened",
+        ShellFileKind::FrameStreamClosed => "FrameStreamClosed",
+        ShellFileKind::FrameRefused => "FrameRefused",
+        ShellFileKind::FrameOutcome => "FrameOutcome",
     }
 }
 

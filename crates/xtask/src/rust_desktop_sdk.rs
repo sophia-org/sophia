@@ -18,6 +18,18 @@ const REPOSITORY: &str = "https://github.com/sophia-org/sophia-desktop-sdk-rs";
 /// Each SDK copy, and the Sophia file it must equal byte for byte.
 pub const CONTRACTS: &[(&str, &str)] = &[
     (
+        "spec/sophia-frame-transactions-wire.md",
+        "docs/sophia-frame-transactions-wire.md",
+    ),
+    (
+        "spec/sophia-frame-transactions-v1.kdl",
+        "protocol/sophia-frame-transactions-v1.kdl",
+    ),
+    (
+        "spec/golden/sophia-frame-transactions-v1.tsv",
+        "protocol/golden/sophia-frame-transactions-v1.tsv",
+    ),
+    (
         "spec/sophia-image-channel.md",
         "docs/sophia-image-channel.md",
     ),

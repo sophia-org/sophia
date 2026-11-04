@@ -1,6 +1,13 @@
 #include "internal.h"
 int sf_value_check(const struct sophia_sf_record *);
 
+int sf_validate_candidate_outcome(const struct sophia_sf_candidate_outcome *v)
+{
+    return sf_check_candidate_outcome(v) ||
+                   ((v->kind == 2) != (v->presentation_epoch != 0)) ||
+                   (v->kind <= 2 && v->reason) ? -1 : 0;
+}
+
 static int limits(const struct sophia_sf_limits *v)
 {
     /* Scalar prototype caps have already been checked, so these sums cannot
@@ -23,9 +30,11 @@ static int limits(const struct sophia_sf_limits *v)
         return -1;
     return 0;
 }
-static int candidate(const struct sophia_sf_candidate *v)
+int sf_validate_candidate(const struct sophia_sf_candidate *v)
 {
     size_t i;
+    if (sf_check_candidate(v))
+        return -1;
     for (i = 0; i < v->surface_count; i++) {
         const struct sophia_sf_content_surface *s = &v->surfaces[i];
         if (sf_check_content_surface(s))
@@ -149,7 +158,7 @@ int sf_validate(const struct sophia_sf_record *r)
     case SOPHIA_SF_RESOURCE_STATUS:
         return r->value.resource_status.status <= 2 && r->value.resource_status.reason ? -1 : 0;
     case SOPHIA_SF_CANDIDATE:
-        return candidate(&r->value.candidate);
+        return sf_validate_candidate(&r->value.candidate);
     case SOPHIA_SF_FRAME_DEMAND:
         return sf_pair(r->value.frame_demand.allocation_id,
                        r->value.frame_demand.allocation_generation)
@@ -164,8 +173,7 @@ int sf_validate(const struct sophia_sf_record *r)
     }
     case SOPHIA_SF_CANDIDATE_OUTCOME: {
         const struct sophia_sf_candidate_outcome *v = &r->value.candidate_outcome;
-        return ((v->kind == 2) != (v->presentation_epoch != 0)) || (v->kind <= 2 && v->reason) ? -1
-                                                                                               : 0;
+        return sf_validate_candidate_outcome(v);
     }
     case SOPHIA_SF_ACTION: {
         const struct sophia_sf_action *v = &r->value.action;

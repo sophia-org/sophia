@@ -1,14 +1,16 @@
-tree f75156f68fa08b25bb7be3626f24b82670876469
-parent f587d5d7412fbb38363ea649548ff5e9a69bec27
-author Mason Green <mason@greenm01.net> 1792671206 -0400
-committer Mason Green <mason@greenm01.net> 1792671206 -0400
+tree e024fc850913982d01962c141d8316922df72447
+parent 0d75bee7f998a9448c44c8a86850a11c99046d31
+author Mason Green <mason@greenm01.net> 1793822350 -0500
+committer Mason Green <mason@greenm01.net> 1793822350 -0500
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatn95hsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJQggD+K5GsXdq8EUGygyLX/XZq
- LjhLv3SI7kaFrSmK7eWlZ+EBAIiwlbOcsHYlTzP+eAwRg1CPmZzrZkTDbcto4cFE
- fMkP
- =HzA5
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCauuOjhsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK8pwEAmsleye1xvUCGBMUBWVOP
+ ix14VPZYgev5g4UGdILOE94A/io2bGV1bKWVBukwG7RyFgPF/NmYUaEgC1U0D5QY
+ YcEE
+ =NzlL
  -----END PGP SIGNATURE-----
 
-Align opaque DMA format checks and paired SDK evidence
+Synchronize authoritative shell prose before SFT import
+
+Copy Sophia da653bd3d68c25c3357db0008d9d401143ce8732: allocated default-off SFT pointer and current host role-limit prose. No code, wire bytes or defaults changed.

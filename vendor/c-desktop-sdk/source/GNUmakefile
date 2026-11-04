@@ -42,6 +42,7 @@ FILE_TESTS = shell_session_attached_test sophia_9p_client_test launch_auth_test 
 FILE_TESTS += namespace_test
 FILE_TESTS += image_channel_codec_test owned_ring_codec_test
 FILE_TESTS += image_receipt_test
+FILE_TESTS += frame_transactions_test
 FILE_TESTS += image_producer_test
 FILE_TESTS += isb_mapped_test
 FILE_TESTS += shell_image_test

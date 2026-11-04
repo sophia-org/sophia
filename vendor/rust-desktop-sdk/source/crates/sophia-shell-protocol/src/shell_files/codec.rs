@@ -54,7 +54,10 @@ pub fn shell_file_class(kind: ShellFileKind) -> ShellFileClass {
         | ShellFileKind::ReferenceCandidate
         | ShellFileKind::LauncherCandidate
         | ShellFileKind::LauncherActivationAck
-        | ShellFileKind::ImageBegin => ShellFileClass::Candidate,
+        | ShellFileKind::ImageBegin
+        | ShellFileKind::FrameStreamOpen
+        | ShellFileKind::FrameStreamClose
+        | ShellFileKind::FrameCommit => ShellFileClass::Candidate,
         ShellFileKind::Negotiated
         | ShellFileKind::Refused
         | ShellFileKind::Submitted
@@ -84,7 +87,11 @@ pub fn shell_file_class(kind: ShellFileKind) -> ShellFileClass {
         | ShellFileKind::ImageAdmitted
         | ShellFileKind::SourceReleased
         | ShellFileKind::ChannelReady
-        | ShellFileKind::ChannelClosed => ShellFileClass::Event,
+        | ShellFileKind::ChannelClosed
+        | ShellFileKind::FrameStreamOpened
+        | ShellFileKind::FrameStreamClosed
+        | ShellFileKind::FrameRefused
+        | ShellFileKind::FrameOutcome => ShellFileClass::Event,
     }
 }
 
@@ -259,8 +266,7 @@ pub fn encode_shell_file_record_at_revision(
 }
 
 fn check_revision(revision: u16) -> Result<(), ShellFileCodecError> {
-    (1..=10)
-        .contains(&revision)
+    ((1..=10).contains(&revision) || revision == 13)
         .then_some(())
         .ok_or(ShellFileCodecError::Version)
 }
@@ -273,7 +279,19 @@ pub(super) fn kind_at_revision(
     // ObjectPublished must not acquire new vocabulary through this addition.
     // The same image lifecycle records serve r9 ISB and optional r10 DMA-BUF.
     // Negotiated source-kind admission belongs to the role owner, not the codec.
-    if matches!(revision, 9 | 10) {
+    if revision == 13 {
+        match value {
+            55 => return Ok(ShellFileKind::FrameStreamOpened),
+            56 => return Ok(ShellFileKind::FrameStreamClosed),
+            57 => return Ok(ShellFileKind::FrameRefused),
+            58 => return Ok(ShellFileKind::FrameOutcome),
+            279 => return Ok(ShellFileKind::FrameStreamOpen),
+            280 => return Ok(ShellFileKind::FrameStreamClose),
+            281 => return Ok(ShellFileKind::FrameCommit),
+            _ => {}
+        }
+    }
+    if matches!(revision, 9 | 10 | 13) {
         match value {
             0x7000 => return Ok(ShellFileKind::ImageBegin),
             0x7001 => return Ok(ShellFileKind::ImageAdmitted),

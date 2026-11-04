@@ -10,7 +10,8 @@ transport or rendering API. The name makes no performance claim.
 **Status: default-off implementation, 2026-11-04.** The operator authorized protocol
 design changes and TLA+ modeling to reduce native CPU/frame while retaining
 security and atomic tear-free rendering. The initial wire contract is allocated
-for integration; SDKs, host exposure and qualification remain incomplete. This
+for integration; passive C/Rust codecs now agree, while owning clients, host
+exposure and qualification remain incomplete. This
 is not implementation acceptance or a measured speedup. See
 [ADR dwm37bn6](notes/decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md).
 The [shell files contract](sophia-shell-files.md),
@@ -381,11 +382,36 @@ Legacy decoders continue to refuse every new kind. These are specification
 checks, not implementation of the SFT codec or proof of fragmented transport
 admission. Evidence: `~/.local/state/sophia-frame-wire-contract-01`.
 
-Independent C/Rust codec/refusal parity is next, followed by host admission and
-producer integration. The SDK worktrees start from the exact current vendored
-revisions; no vendored snapshot is edited directly. Negotiation must explicitly
+Independent C/Rust codec/refusal parity is recorded below; host admission and
+producer integration remain next. The SDK worktrees start from the exact prior
+vendored revisions; no vendored snapshot is edited directly. Negotiation must explicitly
 grant SFT and owned-ring authority and choose exactly r13. The new contract does
 not grant draw, GPU or the ordinary W2 Candidate trailer.
+
+### Independent SDK codecs
+
+The verified imports now pin Rust `bf8dc0142f5ee305779c78916edc3a960db19cc0`
+and C `1d4ab9db683c055914846d36dbaeb2f73fd21bd9`. Both implement the seven
+explicit-r13 record shapes and typed submission receipts, without changing
+client defaults. Import checks compare the SFT prose, KDL and shared vectors
+against this repository, in addition to verifying the immutable signed source
+snapshots. The SDKs were changed and signed independently before importing.
+
+Sixteen exact vectors, 12,056 differential mutations, maximum-row cases and
+independent negative controls establish passive codec agreement. Rust's full
+SDK suite has 939 passing tests and strict Clippy passes; C's 75 test executables
+and parser ASan/UBSan pass. Strict SDK rustdoc still reports seven pre-existing
+link/markup warnings in unchanged files. Evidence:
+`~/.local/state/sophia-frame-sdk-codecs-01`, SHA256SUMS
+`ff5a8b8cb6b05fb705bf30511211e249585de49702af02a6d6bd15339215d5ed`.
+
+These codecs establish neither authority nor admission. The next implementation
+must reserve refusal/terminal/resource/journal room before consuming complete
+input, route Prepared as well as terminals through FrameOutcome, and preserve
+fresh custody, source-slot release and atomic terminal-credit-retirement transfer.
+Owning clients, real Lom/reference producers, fragmented-export and backpressure
+tests, runtime model traces and native qualification remain open. No wire opener,
+runtime default, native launch or performance claim follows from this import.
 
 The [modeling brief](../validation/specula/native-frame-transaction/modeling-brief.md)
 defines the finite scope; [results](../validation/specula/native-frame-transaction/results.md)

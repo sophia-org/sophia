@@ -64,6 +64,18 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
     crate::git_tree::verify_commit(&commit, &manifest.revision, &inventory.tree)?;
     for (local, authoritative) in [
         (
+            "spec/sophia-frame-transactions-wire.md",
+            "docs/sophia-frame-transactions-wire.md",
+        ),
+        (
+            "spec/sophia-frame-transactions-v1.kdl",
+            "protocol/sophia-frame-transactions-v1.kdl",
+        ),
+        (
+            "spec/golden/sophia-frame-transactions-v1.tsv",
+            "protocol/golden/sophia-frame-transactions-v1.tsv",
+        ),
+        (
             "spec/sophia-image-channel.md",
             "docs/sophia-image-channel.md",
         ),
