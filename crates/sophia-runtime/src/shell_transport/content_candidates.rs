@@ -292,6 +292,10 @@ impl ShellComponentTransport {
                 now_msec,
             )?;
         if connected {
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            if self.capabilities & sophia_protocol::shell_files::SHELL_FRAME_CAPABILITY != 0 {
+                return self.flush_content_frame_events(epochs, now_msec);
+            }
             self.flush_content_candidate_events(epochs)?;
         }
         Ok(())

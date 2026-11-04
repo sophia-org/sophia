@@ -124,8 +124,12 @@ The [file-custody checkpoint](../../native-frame-transactions.md#file-custody-an
 preserves the distinction between submission custody and owner admission:
 whole SFT requests and events retain their identity through the export, Prepared
 returns no credit, and Open/Close refusal room is reserved before owner admission.
-Production negotiation still cannot expose r13. Owner service/publication,
-owning clients, real producers, runtime traces and native qualification remain
+The [response-custody path](../../native-frame-transactions.md#response-custody)
+now transfers whole responses into the shared FIFO under existing capacity checks;
+Prepared returns no credit, and terminal transfer commits the owner's current
+deadline and resource settlement once. Production negotiation still cannot expose
+r13. Wire input service, timed native completion integration, owning clients,
+real producers, runtime traces and native qualification remain
 required; these device-free checks establish no speedup.
 
 The [continuous-frame CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)

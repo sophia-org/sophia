@@ -39,6 +39,8 @@ mod descriptor;
 mod descriptor_files;
 mod descriptor_state;
 mod files;
+#[cfg(feature = "experimental-native-frame-transaction")]
+mod frame_events;
 pub use files::{ShellPollRole, ShellReadinessObservation, ShellReadinessSubscription};
 #[cfg(feature = "experimental-draw")]
 mod draw;

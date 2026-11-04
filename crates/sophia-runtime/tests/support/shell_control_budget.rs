@@ -7,6 +7,10 @@ use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+#[cfg(feature = "experimental-native-frame-transaction")]
+#[path = "shell_frame_responses.rs"]
+mod frame_responses;
+
 fn attach_files(transport: &mut ShellSessionTransport) -> Peer {
     Peer::attach(
         &mut transport.state,

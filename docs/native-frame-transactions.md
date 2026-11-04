@@ -422,12 +422,31 @@ A submission receipt or its ACK transfers no stream credit and does not consume
 the owner's queued input. Embedded offers are never separately admitted.
 
 Production negotiation still cannot select r13. The next gate connects queued
-input to owner admission and whole response publication, preserving fresh custody,
-source-slot release and terminal-credit-retirement atomicity. Owning C/Rust
+input to owner admission, preserving fresh custody, source-slot release and
+terminal-credit-retirement atomicity. Owning C/Rust
 clients, real Lom/reference producers, runtime traces and native qualification
 remain open. Evidence: `~/.local/state/sophia-frame-prepared-routing-01`,
 `~/.local/state/sophia-frame-control-admission-01` and
 `~/.local/state/sophia-frame-file-custody-01`.
+
+### Response custody
+
+SFT controls and outcomes now share the existing typed output FIFO and its
+control-budget accounting. Each event is validated and charged before transfer;
+backpressure leaves the exact store head and resource obligations intact.
+Prepared carries stream identity without credit. Terminal transfer computes the
+credit deadline from current owner time, then settles credit, private images and
+predecessor retirement through the existing store callback. Queueing a terminal
+in the store is not that transfer; later journal ACKs do not repeat it.
+
+The existing transport `content_prepared` method selects this publisher only for
+an SFT connection. Controls, Prepared and terminals retain one FIFO order, including
+close-before-terminal cases. Golden event bytes/charges and full-budget transfer
+are checked without native execution. Evidence:
+`~/.local/state/sophia-frame-response-transfer-01`.
+
+This does not expose production r13 or connect wire request consumption, the
+registered-copy owner, timed native completion callers or owning clients.
 
 ### Model and remaining integration gates
 

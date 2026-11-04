@@ -19,6 +19,8 @@ use sophia_protocol::{
 };
 
 use super::ShellTransportError;
+#[cfg(feature = "experimental-native-frame-transaction")]
+mod frame;
 
 /// Body prefix and per-output row of the `Outputs` object
 /// (`body-prefix "Outputs" size=40`, one 40-byte row per output).
@@ -28,6 +30,8 @@ const OUTPUT_FACT_BYTES: usize = 40;
 /// One Session-to-client record owed to the component.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum OutboundRecord {
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    Frame(sophia_protocol::shell_files::ShellFrameRecord),
     Descriptor(sophia_protocol::shell_files::ShellFileDescriptorRecord),
     Content(TransactionId, ShellContentRecord),
     NativeLauncher(TransactionId, ShellNativeLauncherRecord),
@@ -51,6 +55,10 @@ impl OutboundRecord {
     /// Validate a content obligation and calculate its queue charge without
     /// allocating the bytes that the export will encode when it takes custody.
     pub(super) fn body_len(&self) -> Result<usize, ShellTransportError> {
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if let Self::Frame(record) = self {
+            return frame::body_len(record);
+        }
         let Self::Content(transaction, record) = self else {
             return self.native().map(|(_, body)| body.len());
         };
@@ -85,6 +93,8 @@ impl OutboundRecord {
     pub(super) fn native(&self) -> Result<(ShellFileKind, Vec<u8>), ShellTransportError> {
         let refused = |_| ShellTransportError::WrongContentRecord;
         match self {
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            Self::Frame(record) => frame::native(record),
             Self::Descriptor(value) => {
                 sophia_protocol::shell_files::encode_shell_file_descriptor_body(value)
                     .map_err(refused)

@@ -1,4 +1,4 @@
-//! Store adapter for W3. No record here is exposed by a wire codec yet.
+//! Stream store adapter; production SFT negotiation remains disabled.
 use super::*;
 use crate::frame_credits::{FrameCredits, FrameStreamClose, FrameStreamKey, FrameStreamPhase};
 
