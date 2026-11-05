@@ -552,6 +552,27 @@ and resource lifetimes, including drain-before-fallback. Production r13 selectio
 remains unavailable. Runtime trace validation and matched native qualification
 remain required; importing tested clients makes no performance claim.
 
+### Retained-scene fallback dispatch
+
+The r13 owner now services buffered legacy candidates after its SFT work, within
+the same per-pass limit. A legacy Candidate cannot consume an open stream's
+credit: it requires demand/permit mode for that output. Once Close and admitted
+work drain, the existing demand/permit path can present retained resources on
+the same connection. It does not reconnect, renegotiate or drop the old display
+lease. The imported SDK/file-owner regression reproduces the former stall
+(permit granted, candidate never serviced), then completes both presentations;
+removing the open-stream guard makes the negative control fail.
+
+This is the retained-scene dispatch seam, not full producer fallback. New image
+uploads on r13 still need an explicit SDK/host join to the drained binding before
+Lom can fall back for multi-image updates. Separate upstream worker-fill merges
+preserve Lom's existing worker-owned ring API and reserve SFT admission before
+publishing its returned fill, without another pixel copy. Their paired evidence
+is `~/.local/state/sophia-frame-worker-fill-01`; those newer SDK revisions are not
+yet imported by this host checkpoint. Retained fallback evidence is
+`~/.local/state/sophia-frame-retained-fallback-01`. Production negotiation,
+real producers, runtime traces and native qualification remain open.
+
 ### Model and remaining integration gates
 
 The [modeling brief](../validation/specula/native-frame-transaction/modeling-brief.md)

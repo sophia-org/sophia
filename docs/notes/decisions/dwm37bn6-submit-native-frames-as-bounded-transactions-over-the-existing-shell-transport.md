@@ -145,6 +145,12 @@ Production opt-in negotiation, copied-source host/client interoperability, real
 producers, runtime traces and native qualification remain required; these
 device-free checks establish no speedup.
 
+The [retained-scene fallback seam](../../native-frame-transactions.md#retained-scene-fallback-dispatch)
+now resumes demand/permit candidates after SFT drains on the same connection,
+preserving accepted resources and display leases. Legacy candidates cannot spend
+an open stream's credit. New-image fallback and the actual producers are still
+unjoined; this closes only the dispatch stall, not the whole fallback gate.
+
 The [continuous-frame CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 and t289 own the next implementation/qualification work. The
 [bounded-credit investigation](../investigations/tubnycgx-can-a-bounded-frame-stream-cut-per-frame-control-exchanges-without-weakening-custody.md)

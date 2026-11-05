@@ -381,22 +381,9 @@ fn controls_obey_the_existing_per_service_tick_limit() {
     );
 }
 
-fn admitted_retained() -> (fixture::Fixture, Transport, Peer) {
-    let mut f = fixture::Fixture::new(64);
-    let mut t = Transport::take(&mut f);
-    let mut peer = Peer::attach_frame(&mut t.transport.state);
-    request(
-        &mut peer,
-        &mut t,
-        ShellFrameRecord::Open {
-            transaction: fixture::tx(100),
-            key: key(1),
-        },
-    );
-    assert_eq!(service(&mut t, &f, true, 1), Ok(1));
-    expect(&mut peer, &mut t, opened(100));
+fn retained_scene(f: &fixture::Fixture) -> sophia_protocol::ContentCandidate {
     let allocation = &f.allocations[0];
-    let scene = sophia_protocol::ContentCandidate {
+    sophia_protocol::ContentCandidate {
         grant: fixture::grant(),
         candidate_generation: 1,
         output: fixture::output(),
@@ -420,7 +407,24 @@ fn admitted_retained() -> (fixture::Fixture, Transport, Peer) {
             destination_y_px: 0,
         }],
         targets: vec![],
-    };
+    }
+}
+
+fn admitted_retained() -> (fixture::Fixture, Transport, Peer) {
+    let mut f = fixture::Fixture::new(64);
+    let mut t = Transport::take(&mut f);
+    let mut peer = Peer::attach_frame(&mut t.transport.state);
+    request(
+        &mut peer,
+        &mut t,
+        ShellFrameRecord::Open {
+            transaction: fixture::tx(100),
+            key: key(1),
+        },
+    );
+    assert_eq!(service(&mut t, &f, true, 1), Ok(1));
+    expect(&mut peer, &mut t, opened(100));
+    let scene = retained_scene(&f);
     request(
         &mut peer,
         &mut t,
@@ -630,4 +634,42 @@ fn ready_scene_waits_for_output_capacity_and_shares_the_control_service_bound() 
         1,
         "Close does not discard previously admitted work"
     );
+}
+
+#[test]
+fn legacy_candidate_cannot_borrow_an_open_frame_stream_credit() {
+    let mut f = fixture::Fixture::new(64);
+    let mut t = Transport::take(&mut f);
+    let mut peer = Peer::attach_frame(&mut t.transport.state);
+    request(
+        &mut peer,
+        &mut t,
+        ShellFrameRecord::Open {
+            transaction: fixture::tx(150),
+            key: key(1),
+        },
+    );
+    assert_eq!(service(&mut t, &f, true, 1), Ok(1));
+    expect(&mut peer, &mut t, opened(150));
+    let occupied = t.candidates().control_occupancy();
+    peer.submit(&mut t.transport.state, ShellFileKind::Candidate, |header| {
+        encode_shell_file_candidate(
+            header,
+            &ShellFileCandidate {
+                transaction: fixture::tx(151),
+                candidate: retained_scene(&f),
+            },
+        )
+        .unwrap()
+    });
+    assert_eq!(
+        finish_ready(&mut t, &f.allocations, 6, 8, true, 2),
+        Err(ShellTransportError::ContentCandidate(
+            ContentCandidateError::Stale
+        ))
+    );
+    assert_eq!(t.candidates().control_occupancy(), occupied);
+    assert_eq!(t.candidates().pending_candidate_count(), 0);
+    assert_eq!(t.candidates().assembling_output(1), None);
+    assert!(t.candidates().pending_event().is_none());
 }

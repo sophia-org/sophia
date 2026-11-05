@@ -23,6 +23,15 @@ fn next(client: &mut ShellConnection, stream: &mut FrameStream) -> ShellFrameRec
 
 #[test]
 fn imported_sdk_owns_credit_through_the_real_retained_scene_and_close() {
+    retained_lifecycle(false);
+}
+
+#[test]
+fn drained_stream_keeps_resources_and_accepts_a_legacy_candidate_on_the_same_connection() {
+    retained_lifecycle(true);
+}
+
+fn retained_lifecycle(fallback: bool) {
     let mut f = fixture::Fixture::new(64);
     let mut t = Transport::take(&mut f);
     let key = fixture::key(1);
@@ -134,12 +143,15 @@ fn imported_sdk_owns_credit_through_the_real_retained_scene_and_close() {
         );
         assert_eq!(stream.state(), FrameStreamState::Closed);
         assert!(stream.frame_work_drained());
+        if fallback {
+            legacy_frame(&mut client, &commit);
+        }
         client
     });
     let until = Instant::now() + Duration::from_secs(5);
     let mut negotiated = false;
-    let mut submitted = false;
-    let mut display = None;
+    let mut submitted = 0;
+    let mut displays = Vec::new();
     let mut owner = crate::shell_transport::owned_copy::OwnedCopyOwner::default();
     let mut worker = crate::IsbValidationWorker::new(1, 8).unwrap();
     while !peer.is_finished() {
@@ -203,31 +215,142 @@ fn imported_sdk_owns_credit_through_the_real_retained_scene_and_close() {
             }];
             t.transport
                 .state
+                .service_content_demands(
+                    &mut t.transport.content_epochs,
+                    &[key.output],
+                    &f.allocations,
+                )
+                .unwrap();
+            if let Some((transaction, demand)) = t
+                .transport
+                .state
+                .next_content_demand(&t.transport.content_epochs)
+            {
+                t.transport
+                    .state
+                    .grant_content_demand(
+                        &mut t.transport.content_epochs,
+                        transaction,
+                        demand.output,
+                        9,
+                        10,
+                    )
+                    .unwrap();
+            }
+            t.transport
+                .state
                 .service_content_candidates(&mut t.transport.content_epochs, &contexts, 10)
                 .unwrap();
-            if !submitted && t.candidates().pending_candidate_count() != 0 {
-                display = Some(
+            if t.candidates().pending_candidate_count() != 0 {
+                let generation = submitted + 1;
+                displays.push(
                     t.transport
-                        .begin_content_submission(key.output, 1, 10)
+                        .begin_content_submission(key.output, generation, 10)
                         .unwrap(),
                 );
                 t.transport
-                    .content_prepared(key.grant, key.output, 1, 20, 30, 10)
+                    .content_prepared(key.grant, key.output, generation, 20, 30, 10)
                     .unwrap();
                 t.transport
-                    .content_presented_at(key.grant, key.output, 1, 40, 20, 30, 10)
+                    .content_presented_at(key.grant, key.output, generation, 40, 20, 30, 10)
                     .unwrap();
-                submitted = true;
+                submitted += 1;
             }
             t.transport.poll_io().unwrap();
         }
         std::thread::yield_now();
     }
     let _client = peer.join().unwrap();
-    assert!(negotiated && submitted);
+    assert!(negotiated);
+    assert_eq!(submitted, if fallback { 2 } else { 1 });
     assert_eq!((owner.pending(), worker.pending()), (0, 0));
     assert!(
-        display.is_some(),
+        displays.len() == submitted as usize,
         "native owner lease is independent of frame credit"
+    );
+}
+
+fn next_content(client: &mut ShellConnection) -> ShellContentRecord {
+    let until = Instant::now() + Duration::from_secs(5);
+    loop {
+        client.poll_io().unwrap();
+        if let Some((_, record)) = client.take_content().unwrap()
+            && matches!(
+                record,
+                ShellContentRecord::FramePermit(_) | ShellContentRecord::CandidateOutcome(_)
+            )
+        {
+            return record;
+        }
+        assert!(
+            Instant::now() < until,
+            "legacy response after SFT drain timed out"
+        );
+        std::thread::yield_now();
+    }
+}
+
+fn legacy_frame(client: &mut ShellConnection, prior: &ShellFrameRecord) {
+    let ShellFrameRecord::Commit(prior) = prior else {
+        panic!("commit")
+    };
+    let scene = &prior.candidate;
+    client
+        .enqueue_content(
+            fixture::tx(110),
+            &ShellContentRecord::FrameDemand(ContentFrameDemand {
+                grant: scene.grant,
+                output: scene.output,
+                allocation: scene.surfaces[0].allocation,
+                demand_id: 1,
+                reason: 1,
+            }),
+        )
+        .unwrap();
+    let ShellContentRecord::FramePermit(permit) = next_content(client) else {
+        panic!("permit")
+    };
+    assert_eq!(permit.state, 1);
+    let records = [
+        ShellContentRecord::CandidateBegin(ContentCandidateBegin {
+            grant: scene.grant,
+            candidate_generation: 2,
+            output: scene.output,
+            facts_generation: scene.facts_generation,
+            pacing_permit: permit.permit_id,
+            interaction_generation: scene.interaction_generation,
+            surface_count: 1,
+            placement_count: 1,
+            target_count: 0,
+        }),
+        ShellContentRecord::CandidateChunk(ContentCandidateChunk {
+            grant: scene.grant,
+            candidate_generation: 2,
+            chunk_ordinal: 0,
+            surfaces: scene.surfaces.clone(),
+            placements: scene.placements.clone(),
+            targets: vec![],
+        }),
+        ShellContentRecord::CandidateEnd(ContentCandidateEnd {
+            grant: scene.grant,
+            candidate_generation: 2,
+            surface_count: 1,
+            placement_count: 1,
+            target_count: 0,
+        }),
+    ];
+    client
+        .enqueue_content_group(fixture::tx(111), &records)
+        .unwrap();
+    for kind in [1, 2] {
+        let ShellContentRecord::CandidateOutcome(outcome) = next_content(client) else {
+            panic!("outcome")
+        };
+        assert_eq!((outcome.kind, outcome.candidate_generation), (kind, 2));
+    }
+    assert_eq!(
+        client.welcome().selected_revision,
+        13,
+        "no reconnect or renegotiation"
     );
 }

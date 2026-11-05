@@ -208,7 +208,7 @@ impl ContentCandidateStore {
         Some(event)
     }
 
-    pub(super) fn require_demand_mode(
+    pub(crate) fn require_demand_mode(
         &self,
         output: ContentOutputId,
     ) -> Result<(), ContentCandidateError> {

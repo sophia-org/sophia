@@ -109,9 +109,13 @@ impl ShellComponentTransport {
         contexts: &[ContentCandidateContext<'_>],
         now_msec: u64,
     ) -> Result<usize, ShellTransportError> {
+        let mut processed = 0;
         #[cfg(feature = "experimental-native-frame-transaction")]
         if self.capabilities & sophia_protocol::shell_files::SHELL_FRAME_CAPABILITY != 0 {
-            return self.service_ready_frame_commits(epochs, contexts, now_msec);
+            processed = self.service_ready_frame_commits(epochs, contexts, now_msec)?;
+            if self.inbound_idle() {
+                return Ok(processed);
+            }
         }
         let limits = self
             .content_limits
@@ -122,7 +126,6 @@ impl ShellComponentTransport {
             .ok_or(ShellTransportError::MissingCapability)?
             .expire(now_msec)?;
         self.flush_content_candidate_events(epochs)?;
-        let mut processed = 0;
         while processed < limits.max_frames_per_service_tick as usize {
             if !self.control_capacity_available(epochs, 0) {
                 break;
@@ -190,6 +193,9 @@ impl ShellComponentTransport {
                 let events_before = candidates.pending_event_count();
                 let outcome = match record {
                     ShellContentRecord::CandidateBegin(value) => {
+                        // Legacy input cannot borrow an active SFT stream's credit.
+                        #[cfg(feature = "experimental-native-frame-transaction")]
+                        candidates.require_demand_mode(value.output)?;
                         candidates.begin(transaction, value, now_msec)
                     }
                     ShellContentRecord::CandidateChunk(value) => {
