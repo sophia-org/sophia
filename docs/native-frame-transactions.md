@@ -11,9 +11,9 @@ transport or rendering API. The name makes no performance claim.
 design changes and TLA+ modeling to reduce native CPU/frame while retaining
 security and atomic tear-free rendering. The initial wire contract is allocated
 for integration; paired C/Rust owning clients and their source-admission joins
-are imported, while production exposure, real producers and qualification
-remain incomplete. This
-is not implementation acceptance or a measured speedup. See
+are imported. Explicit owner/producer startup and real Lom/reference CPU joins
+now pass device-free tests. The Rust client lifecycle trace gate passes; native
+qualification remains incomplete. This is not implementation acceptance or a measured speedup. See
 [ADR dwm37bn6](notes/decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md).
 The [shell files contract](sophia-shell-files.md),
 [image channel](sophia-image-channel.md) and
@@ -678,6 +678,54 @@ has been revoked. The regression failed before that guard. This is device-free
 Session integration with supplied authentication, not native qualification.
 Evidence: `~/.local/state/sophia-frame-session-opt-in-01`.
 
+### Real producers against the Session owner
+
+The published Lom CPU renderer and service now run against the actual Session
+component file owner, owned-ring worker and candidate/resource stores. The same
+four workspace-state changes run at r10 and r13. Every rendered region byte
+matches; unchanged regions retain their identities. Both paths establish the
+initial full image and three-region plan; SFT then removes the two subsequent
+demand/permit exchanges. Lom consumes every Presented record before teardown.
+The fixture supplies authentication verdicts, allocation policy and native
+completion; it does not launch the CLI or qualify physical display behavior.
+Evidence: `~/.local/state/sophia-lom-host-interop-01`, integration commit
+`298acea19ae00e2bf6e6cd4f6d41384218f4f409`.
+
+The independent CPU reference executable is `tools/sft-bar` in the desktop
+integration repository, commit `7e63d141761aa20500ba827aeb4920689ba3ee49`.
+Its r10 and SFT paths keep the same fill, two slots, resource identities, one
+placement and one outstanding frame. Device-free Session joins at heights 24
+and 512 compare every pixel and settle source, predecessor and display events.
+SFT has zero permits and explicit retires; a separately versioned schema-8
+journal records its real events rather than inventing removed permit rows.
+The old GPU/W2 executable is unchanged. Native launch remains separate.
+Evidence: `~/.local/state/sophia-frame-reference-peer-01`.
+
+### Runtime client trace and native runner gates
+
+The actual Rust SDK FrameStream emitted 114 transitions from 23 objects while
+its real scripted transport tests exercised credit, close/drain/reopen, refusal
+and poisoned observations. TLA+ independently computed each projected post-state
+and consumed every event. The bounded client projection has 143 reachable
+states. Three real-code mutations fail trace validation: credit on Prepared,
+early drain, and disconnect forgetting pending work. The last mutation passed
+the existing assertions, demonstrating added coverage. Instrumentation stays in
+a disposable worktree and is never imported into a native build.
+
+This is client lifecycle conformance, not a full host trace proof: wire/tuple
+validation is abstracted to Fault; source slots, resource leases, host concurrency,
+C internals and physical display remain separate evidence. See the external
+integration repository's `tools/sft-trace` at `558bfda137f95b270178cb58b227c21aac75dc12`
+and `~/.local/state/sophia-frame-client-trace-01` (seal `82756bf2…`).
+
+Runner `cf8b9e84e4a92e04e61fe3cd47a35dcab58906d7` accepts only explicitly paired
+CPU SFT requests, diagnostic schema 6 and schema-8 journals. It verifies source,
+Prepared, terminal, predecessor and close obligations without synthesizing
+permit events. Ordinary requests retain their prior argv and schemas. Its 495
+tests, strict clippy and formatting pass; rustdoc retains one parent warning.
+Evidence: `~/.local/state/sophia-frame-native-runner-01`. No native run or CPU/frame
+result is implied by these gates.
+
 ### Model and remaining integration gates
 
 The [modeling brief](../validation/specula/native-frame-transaction/modeling-brief.md)
@@ -687,14 +735,13 @@ guard-removal counterexamples. The model checks bounded lifecycle properties;
 it does not prove CPU savings, a correct implementation, unbounded operation,
 general resource reclamation or physical GL/DRM behavior.
 
-Before implementation enablement, finish the input/refusal reservation and
-resource-lifetime proof seams, including close/drain/reopen, fragmented input,
-byte limits, exact callback identities and predecessor-intent conflicts. Reuse
-the W3 credit and W2 retirement foundations rather than create duplicate engines;
-their composed FrameCommit path is new and unproved end to end. Implement the
-allocated grammar with C/Rust parity and keep the generic path.
-Integrate the real Lom producer as well as the reference peer. Runtime traces,
-adversarial tests, then a matched native comparison are separate gates under the
+The checkpoints above establish bounded device-free lifecycle, wire, SDK and
+producer joins plus client runtime conformance. Finish the pinned native builds
+and package binding before attended measurement. The next comparison uses the same host and
+reference-peer binaries with explicit protocol selection, identical pixel work
+and the existing native cadence/identity/cleanup gates. Count actual exchanges
+outside timing; do not treat fewer records as measured CPU savings. A matched
+native comparison and fresh external reference remain separate gates under the
 [continuous-frame CPU plan](notes/plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md).
 
 Evidence on crunch:

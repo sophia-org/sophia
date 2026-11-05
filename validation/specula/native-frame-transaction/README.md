@@ -1,7 +1,9 @@
 # Native FrameCommit: remove rendezvous from the hot path
 
-Status: design model and default-off Rust credit foundation; no production wire
-change or protocol allocation.
+Status: bounded design models plus default-off r13 implementation and device-free
+producer/owner joins. The Rust client lifecycle runtime trace gate passes; native
+qualification remains open, with no native CPU/frame claim. The historical checkpoint paragraphs below
+record what each stage established, not the current integration status.
 
 The maintained [architecture proposal](../../../docs/native-frame-transactions.md)
 and [zk decision](../../../docs/notes/decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md)
@@ -147,3 +149,18 @@ SOPHIA_SPECULA_TLA2TOOLS_JAR=/absolute/path/to/tla2tools.jar \
 TLC artifacts and counterexamples stay outside the repository. A model result is
 design evidence; implementation trace validation and native performance remain
 separate gates.
+
+## Client runtime projection, November 4
+
+External integration `tools/sft-trace` at `558bfda137f95b270178cb58b227c21aac75dc12`
+checks real SDK b483e1e state mutations, using an isolated instrumentation patch.
+Twenty transport tests yield 23 objects / 114 transitions; all post-states match
+and TraceMatched consumes every line. The bounded client model visits 143 states;
+credit-on-Prepared, early-drain and pending-loss-on-disconnect mutations are
+rejected. Evidence: `~/.local/state/sophia-frame-client-trace-01`, seal
+`82756bf28a278dcd7e232dc4870c73bcd66e524c71107528d2337a264fb78335`.
+
+This is a client lifecycle projection. Identity/codec rejection is abstracted to
+Fault and covered separately by typed tests. It does not discharge host resource
+concurrency, C implementation traces, protected launch or physical scanout.
+Trace instrumentation is excluded from release and timing binaries.

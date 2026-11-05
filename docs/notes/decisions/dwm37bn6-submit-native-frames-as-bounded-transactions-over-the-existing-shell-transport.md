@@ -212,3 +212,17 @@ Evidence: `~/.local/state/sophia-native-frame-model-01`, SHA256SUMS
 `5b212d7c05e6526e44afbdde75b908df77f6a5b53508d2af0cf6bb29e74d094c`;
 matched reference `~/.local/state/sophia-igpu-reference-result-01`, SHA256SUMS
 `2b1d8658c677d414e1007230ec79c131aa77839e5ae23cab9d0a2d02fc077886`.
+
+### Real CPU producers, November 4
+
+Lom's actual CPU service and the separate CPU reference peer now complete their
+SFT path against the real Session file/image/copy/candidate owners in device-free
+tests. Lom retains its three-region plan and uses legacy establishment before
+SFT; the reference uses complete one-image commits from its first frame. r10 and
+r13 outputs match byte for byte. Authentication verdicts, allocation and native
+completion are supplied, so these checks do not establish protected launch,
+physical tear-free rendering or CPU savings. Evidence: `sophia-lom-host-interop-01`
+and `sophia-frame-reference-peer-01` under `~/.local/state/`. The client lifecycle runtime trace gate also passes (114 transitions, three
+real-code negative controls); it does not cover host concurrency or physical
+custody. Matched native qualification remains before enablement; see the current
+[implementation status](../../native-frame-transactions.md).
