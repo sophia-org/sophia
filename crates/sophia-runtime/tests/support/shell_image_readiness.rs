@@ -367,6 +367,31 @@ fn idle_listener_observation_skips_only_the_ready_accept() {
         matches!(join(&image), Join::Pending),
         "the channel stays open"
     );
+    // Publishing in a role visit must not probe the image channel again.
+    // The late connector remains level-ready until the next owner input turn.
+    transport
+        .publish_content_output_facts(&mut epochs, TransactionId::from_raw(9), 1, vec![])
+        .unwrap();
+    transport.poll_io(&mut epochs).unwrap();
+    assert_eq!(transport.wire_turn_count(), before + 2);
+    assert!(
+        matches!(join(&duplicate), Join::Pending),
+        "publication flush re-serviced the image listener"
+    );
+    assert!(matches!(join(&image), Join::Pending));
+    let mut fds = Vec::new();
+    transport.visit_poll_roles(|role, fd| {
+        if role == ShellPollRole::ImageListener {
+            fds.push(fd);
+        }
+    });
+    assert_eq!(fds.len(), 1);
+    assert_eq!(
+        rustix::event::poll(&mut fds, Some(&rustix::event::Timespec::default())).unwrap(),
+        1
+    );
+    assert!(fds[0].revents().contains(rustix::event::PollFlags::IN));
+    drop(fds);
     transport.service_owner_observed(&mut epochs, None).unwrap();
     assert!(matches!(join(&duplicate), Join::Refused));
     assert!(matches!(join(&image), Join::Pending));

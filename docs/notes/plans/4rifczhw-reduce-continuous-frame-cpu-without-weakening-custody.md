@@ -654,6 +654,21 @@ alone. The exact mechanism must receive its own custody review.
 
 ## Immediate critical path
 
+### Measured SFT priority, November 5
+
+niltempus placed all five active profile scopes on t344: component/file-wire
+servicing, native submission/completion service, peer SDK drive, GL composition,
+and peer enqueue including its fill callback, in that order. The
+[measured SFT investigation](../investigations/g4ou09a7-which-measured-sft-hot-paths-should-drive-the-next-cpu-reductions.md)
+records the disjoint sample counts, scope limits, deterministic proofs and
+keep/drop gates for each. Start with one shared service-path reduction; preserve
+the measured control and qualify each candidate separately. No tier bundles,
+cap removal or cached authority follows from a sample share. `todo.md` t344 owns
+this execution order. This priority supersedes the historical ordering below;
+old dispositions remain recorded and are not reopened.
+
+### Historical ordering and dispositions
+
 The October 30 CPU redraw priority above supersedes this ordering. The table
 retains prior dispositions; it does not reopen completed or regressed candidates.
 

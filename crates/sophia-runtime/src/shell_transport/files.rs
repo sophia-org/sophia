@@ -188,11 +188,7 @@ impl ShellFileWire {
     }
 
     pub(super) fn flush(&mut self) -> Result<(), ShellTransportError> {
-        self.service(true, true)
-    }
-
-    #[cfg(feature = "experimental-shell-capture")]
-    pub(super) fn flush_publications(&mut self) -> Result<(), ShellTransportError> {
+        // Image input stays level-ready for the next owner turn, not a publication flush.
         self.service(true, false)
     }
 

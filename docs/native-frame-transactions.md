@@ -7,13 +7,14 @@ capture and completion make up the rest of SFT's contract. SFT uses the existing
 9P control transport, registered pixel path and native renderer; it is not a new
 transport or rendering API. The name makes no performance claim.
 
-**Status: default-off implementation, 2026-11-04.** The operator authorized protocol
-design changes and TLA+ modeling to reduce native CPU/frame while retaining
-security and atomic tear-free rendering. The initial wire contract is allocated
-for integration; paired C/Rust owning clients and their source-admission joins
-are imported. Explicit owner/producer startup and real Lom/reference CPU joins
-now pass device-free tests. The Rust client lifecycle trace gate passes; native
-qualification remains incomplete. This is not implementation acceptance or a measured speedup. See
+**Status: default-off implementation, 2026-11-05.** Explicit owner/producer
+startup, paired C/Rust source admission, real Lom/reference CPU joins and the
+Rust client lifecycle trace gate pass device-free checks. One reference-workload
+native ABBA reports combined r10 [1060,1100] versus SFT [827.5,867.5] us/frame;
+this does not complete Lom/live-desktop acceptance or authorize adoption. The
+separate native profile ranks five active paths for the next reductions; see
+[measured evidence and proof gates](notes/investigations/g4ou09a7-which-measured-sft-hot-paths-should-drive-the-next-cpu-reductions.md).
+See
 [ADR dwm37bn6](notes/decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md).
 The [shell files contract](sophia-shell-files.md),
 [image channel](sophia-image-channel.md) and

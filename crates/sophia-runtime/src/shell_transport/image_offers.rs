@@ -53,7 +53,7 @@ impl ShellComponentTransport {
     pub fn flush_capture_publications(&mut self) -> Result<(), ShellTransportError> {
         let files = self.files_mut().ok_or(ShellTransportError::NotConnected)?;
         if files.publication_pending() {
-            files.flush_publications()?;
+            files.flush()?;
         }
         Ok(())
     }
