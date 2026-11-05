@@ -34,7 +34,6 @@ impl LiveProductionNativeScanout {
             let index = self.primary_head(output)?;
             let group = self.heads[index].group;
             self.arm_singleton_retirement(index, output, runtime);
-            let mut callbacks = crate::LivePageFlipCallbackQueueReport::with_accepted_capacity(1);
             let completion = self.heads[index]
                 .pending_callback
                 .take()
@@ -58,6 +57,10 @@ impl LiveProductionNativeScanout {
                     }
                 }
             };
+            // An unready retirement poll has no callback to store.
+            let mut callbacks = crate::LivePageFlipCallbackQueueReport::with_accepted_capacity(
+                usize::from(completion.is_some()),
+            );
             let mut completion_source = LiveProductionKmsCompletionSource::PageFlipEvent;
             let retire = completion.and_then(|(callback, source)| {
                 completion_source = source;
