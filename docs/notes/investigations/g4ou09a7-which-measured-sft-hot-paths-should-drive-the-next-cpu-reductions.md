@@ -72,15 +72,46 @@ these shares. The metadata-shell R2 seam remains absent from this workload.
 ### Current resumption
 
 All five scopes have separate signed, published source candidates. None is
-merged or adopted. The first native qualification is the publication-only flush:
+merged or adopted. The first native qualification tested the publication-only flush:
 `~/.local/state/t331/sft-flush-01/changing`, one r13-versus-r13 ABBA against its
 exact parent. Only the host changes; the peer, SDK, runner, workload and gates
-stay fixed. The owner must launch it after logging out of the graphical session.
-No additional profiling or combined candidate is needed for this comparison.
+stay fixed. All four arms completed and the final seat check passed. Preliminary
+saved reduction: candidate minus control [-42.5,+37.5] us/frame combined;
+nonregression passes, but the interval includes zero. No demonstrated saving,
+repeat or adoption. Independent result audit agrees, at
+`~/.local/state/sophia-sft-flush-01-audit-claude-01`.
+The next isolated comparison is the SDK buffered-event drive:
+`~/.local/state/t331/sft-sdk-01/changing`, host `29ee6d99f` fixed, peer
+`67fd3f7e` versus pin-only `5d2fcd4`, both r13. Its twelve device-free suites
+pass; owner command paths are checked explicitly. The owner runs the detached
+launcher only after final package review and readiness checks. No other source
+candidate is stacked.
+
+The approved route toward niri's earlier 415–455 us/frame reference is: qualify
+this SDK candidate once, then prove and remove redundant complete owner-service
+passes rather than individual calls. Current SFT controls cost 847.5–887.5
+us/frame; 450 combined is an engineering target, not a fresh comparison. Use
+the real-owner fixture to follow commit, capture completion, renderer completion
+and native completion. Admit one scheduling candidate only when the fixture
+shows a redundant traversal/pass removed within existing work budgets and
+fairness. Preserve independent source/credit/resource release, wake races,
+revocation and all timer fallbacks until actual wake/deadline coverage is proven.
+Re-profile after a material qualified change, then make a fresh matched niri
+comparison near the target. No native repeat, protocol rewrite, Vulkan switch
+or standalone window for tiny cleanup candidates is implied.
+
+Future native packages must use the reviewed completion-status delta in
+`~/.local/state/sophia-native-run-status-01`: arm number/start/pass messages,
+then an explicit `TEST SUCCESS` only after final checks and receipt persistence,
+or `TEST FAILED` on a propagated exception. Both say when to report back and name
+the result path. Check-only is not a completed test, and completion is not proof
+of a performance saving. Preserve the consumed package; integrate the delta into
+the next sealed package. A hard kill or machine failure may prevent any final
+marker, so its absence is not evidence that the test is still running.
 
 | Scope | Candidate | Device-free result and next gate |
 | --- | --- | --- |
-| File-wire service | `93d181434`, `cpu/sft-service-batch` | Duplicate image input removed from publication flushes; progress tests pass. Native CPU effect pending. |
+| File-wire service | `93d181434`, `cpu/sft-service-batch` | Duplicate image input removed from publication flushes; progress tests pass. First native block inconclusive; no adoption or repeat. |
 | Native retirement | `df0e9c1f6`, `cpu/sft-native-retirement` | Allocate callback storage only when a completion exists. Feature suite: 316 passed, one opt-in skipped. Keep as unqualified source work; native call frequency and saving unknown. |
 | SDK drive | SDK `f522b0cff`, peer pin-only integration `5d2fcd4` | Eight-event automatic burst: recvfrom 11 to 4; retained burst: 27 to 12, with sendto unchanged at two. FIFO, ACK and readiness tests pass. Native effect pending, without stacking the flush. |
 | GL texture setup | `0041cc452`, `cpu/sft-texture-setup` | Immutable wrap parameters set on allocation rather than every upload. Renderer suite: 112 passed, 31 opt-in skipped. Two calls avoided per reused upload; native saving unknown. |
