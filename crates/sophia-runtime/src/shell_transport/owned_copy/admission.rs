@@ -45,6 +45,20 @@ impl OwnedCopyOwner {
                 Some(ContentReason::Stale)
             }
             Decision::AwaitingAdmission if available.is_err() => Some(ContentReason::Malformed),
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            Decision::AwaitingAdmission
+                if transport.capabilities
+                    & sophia_protocol::shell_files::SHELL_FRAME_CAPABILITY
+                    != 0
+                    && epochs
+                        .active_candidates(offer.identity.grant)
+                        .is_none_or(|store| {
+                            store.require_demand_mode(offer.request.output).is_err()
+                        }) =>
+            {
+                // Legacy uploads cannot bypass an open or still-draining stream.
+                Some(ContentReason::Stale)
+            }
             Decision::AwaitingAdmission
                 if self.pending() + other_pending >= 4 || available == Ok(false) =>
             {

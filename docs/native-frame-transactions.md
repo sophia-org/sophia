@@ -563,15 +563,22 @@ lease. The imported SDK/file-owner regression reproduces the former stall
 (permit granted, candidate never serviced), then completes both presentations;
 removing the open-stream guard makes the negative control fail.
 
-This is the retained-scene dispatch seam, not full producer fallback. New image
-uploads on r13 still need an explicit SDK/host join to the drained binding before
-Lom can fall back for multi-image updates. Separate upstream worker-fill merges
-preserve Lom's existing worker-owned ring API and reserve SFT admission before
-publishing its returned fill, without another pixel copy. Their paired evidence
-is `~/.local/state/sophia-frame-worker-fill-01`; those newer SDK revisions are not
-yet imported by this host checkpoint. Retained fallback evidence is
-`~/.local/state/sophia-frame-retained-fallback-01`. Production negotiation,
-real producers, runtime traces and native qualification remain open.
+The host also refuses a legacy owned-ring Offer while that output's stream is
+open or still draining, before scheduling any pixel copy. It uses the existing
+bounded ResourceStatus/SlotReleased refusal, so the source is not stranded.
+A regression proves refusal before drain and normal copy admission afterwards.
+Upstream Rust/C clients now provide an explicit same-binding fallback upload
+operation which separately checks frame and source drain; the ordinary legacy
+entry points remain blocked on r13. Neither the client nor host change reconnects,
+drops retained resources or introduces another pixel copy.
+
+Evidence: `~/.local/state/sophia-frame-image-fallback-01` for the paired SDK
+bridge and `~/.local/state/sophia-frame-image-fallback-host-01` for the owner
+admission guard. These newer upstream SDK revisions and the worker-fill merges
+are not yet imported here. Real Lom/reference fallback policy, copied-source
+interop, production negotiation, runtime traces and native qualification remain
+open. Earlier retained dispatch evidence remains in
+`~/.local/state/sophia-frame-retained-fallback-01`.
 
 ### Model and remaining integration gates
 

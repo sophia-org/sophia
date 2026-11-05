@@ -306,6 +306,78 @@ fn complete_file_commit_drives_private_copy_then_status_before_slot_release() {
 }
 
 #[test]
+fn legacy_source_admission_requires_the_stream_close_to_drain() {
+    for phase in 0..3 {
+        let mut f = Fixture::new();
+        let mut request = offer(1, 0, 2);
+        request.request.allocation.generation = 1;
+        if phase != 0 {
+            let store = f.epochs.active_candidates_mut(identity().grant).unwrap();
+            store
+                .close_frame_stream(
+                    TransactionId::from_raw(4),
+                    crate::frame_credits::FrameStreamKey {
+                        grant: identity().grant,
+                        output: request.request.output,
+                        allocation: request.request.allocation,
+                        facts_generation: 12,
+                        stream_id: 1,
+                    },
+                    1,
+                )
+                .unwrap();
+            if phase == 2 {
+                store.take_frame_stream_event().unwrap();
+            }
+        }
+        f.transport
+            .files_mut()
+            .unwrap()
+            .export_mut()
+            .write_owned_ring(&request.encode())
+            .unwrap();
+        f.service();
+        if phase != 2 {
+            assert_eq!(
+                f.worker.pending(),
+                0,
+                "legacy copy admitted in phase {phase}"
+            );
+            assert_eq!(f.owner.pending(), 0);
+            let files = f.transport.files_mut().unwrap().export();
+            assert!(files.owned_pending_offer().is_none());
+            assert!(files.owned.live.iter().all(Option::is_none));
+            assert_eq!(journal_statuses(files).len(), 1);
+            let release = journal_events(files)
+                .into_iter()
+                .find(|event| event.kind == EventKind::SlotReleased)
+                .unwrap();
+            assert_eq!(release.slot, request.request.slot);
+            assert_eq!(release.reason, ContentReason::Stale as u16);
+        } else {
+            assert_eq!(f.worker.pending(), 1, "drained stream permits legacy copy");
+            let until = Instant::now() + Duration::from_secs(5);
+            loop {
+                if let Some(completion) = f.worker.take_completed().unwrap() {
+                    assert!(f.owner.receive(completion).is_ok());
+                    break;
+                }
+                assert!(Instant::now() < until);
+                std::thread::yield_now();
+            }
+            f.service();
+            assert!(
+                f.epochs
+                    .resources(identity().grant)
+                    .unwrap()
+                    .lease(identity().grant, request.request.resource)
+                    .is_ok()
+            );
+        }
+    }
+}
+
+#[test]
 fn refused_stream_key_cancels_source_reservations_without_reading_or_spending_offer() {
     let mut f = Fixture::new();
     f.submit(2);
