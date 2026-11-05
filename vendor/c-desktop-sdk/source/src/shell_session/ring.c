@@ -468,12 +468,11 @@ static void publish_offer(struct sophia_ss_image *img, const struct sophia_or_of
     if (s->deadline_ms < now_ms)
         s->deadline_ms = UINT64_MAX;
 }
-int sophia_ss_image_ring_offer(struct sophia_ss_image *img, uint32_t slot,
-                               const struct sophia_ss_ring_image *m, uint64_t now_ms, uint64_t *offer)
+static int legacy_offer(struct sophia_ss_image *img, uint32_t slot,
+                        const struct sophia_ss_ring_image *m, uint64_t now_ms, uint64_t *offer)
 {
     struct sophia_or_offer o;
     int status;
-    if (!img || !img->session || !offer || sf_session_frame(&img->session->files)) return SOPHIA_IPR_ARGUMENT;
     status = prepare_offer(img, slot, m, &o, img->ring.control_bytes);
     if (status) return status;
     publish_offer(img, &o, now_ms);
@@ -483,6 +482,41 @@ int sophia_ss_image_ring_offer(struct sophia_ss_image *img, uint32_t slot,
     *offer = o.offer;
     (void)ss_pump(img->session, 0);
     return SOPHIA_IPR_OK;
+}
+
+int sophia_ss_image_ring_offer(struct sophia_ss_image *img, uint32_t slot,
+                               const struct sophia_ss_ring_image *m, uint64_t now_ms, uint64_t *offer)
+{
+    if (!img || !img->session || !offer || sf_session_frame(&img->session->files)) return SOPHIA_IPR_ARGUMENT;
+    return legacy_offer(img, slot, m, now_ms, offer);
+}
+
+int sophia_ss_frame_legacy_ring_offer(struct sophia_ss_image *img,
+                                     const struct sophia_ss_frame_stream *f, uint32_t slot,
+                                     const struct sophia_ss_ring_image *m, uint64_t now_ms,
+                                     uint64_t *offer)
+{
+    const struct sophia_sft_key *k;
+    unsigned i;
+    int status;
+    if (!img || !img->session || !m || !offer || !sophia_ss_frame_drained(f) ||
+        !sf_session_frame(&img->session->files)) return SOPHIA_IPR_ARGUMENT;
+    k = &f->key;
+    if (!k->connection_epoch || !same_grant(img, k->connection_epoch, k->content_epoch) ||
+        m->output_id != k->output_id || m->output_generation != k->output_generation ||
+        m->allocation_id != k->allocation_id || m->allocation_generation != k->allocation_generation ||
+        m->topology_generation != k->facts_generation || now_ms < img->session->now_ms ||
+        now_ms < img->producer.last_now) return SOPHIA_IPR_ARGUMENT;
+    for (i = 0; i < SOPHIA_OR_MAX_SLOTS; ++i) {
+        const struct sophia_ss_ring_slot *s = &img->ring.slots[i];
+        if (!s->frame_transaction || s->offer.output_id != k->output_id ||
+            s->offer.output_generation != k->output_generation) continue;
+        if (s->state == SOPHIA_SS_SLOT_UNKNOWN) return SOPHIA_IPR_CLOSED;
+        if (live(s)) return SOPHIA_IPR_BUSY;
+    }
+    status = legacy_offer(img, slot, m, now_ms, offer);
+    if (!status) img->producer.last_now = now_ms;
+    return status;
 }
 
 int sophia_ss_frame_submit_ring(struct sophia_ss_image *img, struct sophia_ss_frame_stream *f,

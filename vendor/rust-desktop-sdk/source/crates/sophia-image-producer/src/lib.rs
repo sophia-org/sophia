@@ -30,7 +30,8 @@ pub use io::connect;
 pub use isb::{IsbSource, create_isb, create_mapped_isb, finish_isb};
 pub use producer::ImageProducer;
 pub use ring::{
-    RingOfferInfo, RingOfferState, RingProducer, RingProducerConfig, RingSlotFill, RingUpload,
+    OwnedRingSlotFill, RingOfferInfo, RingOfferState, RingProducer, RingProducerConfig,
+    RingSlotFill, RingUpload,
 };
 pub use sophia_isb::{IsbError, MappedIsb};
 

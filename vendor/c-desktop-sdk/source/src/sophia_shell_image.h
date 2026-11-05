@@ -225,7 +225,14 @@ enum sophia_ss_ring_state sophia_ss_image_ring_state(const struct sophia_ss_imag
                                                      uint16_t *reason);
 /* The registered geometry, or 0/NULL before memory exists. */
 uint64_t sophia_ss_image_ring_capacity(const struct sophia_ss_image *, uint32_t *slots);
-/* A FREE slot's pixel bytes in a READY ring, else NULL. */
+/* Owner-thread only: a FREE slot's pixels in a READY ring, else NULL. Reserves
+ * nothing. Pointer lifetime ends at image_close, not disconnect/failure.
+ * For a worker, allow one fill per img and no other pixels/offer call until
+ * synchronized completion. Pass only checked width*height*4 <= ring_capacity
+ * bytes; the worker calls no SDK function. Offer exactly the rendered geometry
+ * after revalidating current grant/output/allocation. Never offer a saved result
+ * across close/init. Join before image_close, reinit or destruction, even after
+ * timeout/cancellation. See OWNED-RING-WORKER.md for caller-owned custody. */
 void *sophia_ss_image_ring_pixels(struct sophia_ss_image *, uint32_t slot);
 /* Offers a FREE slot. AGAIN: ring not READY (or the session is not), or a
  * control write is still active. REFUSED: a check failed locally (slot not

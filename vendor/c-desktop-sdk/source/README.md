@@ -1,5 +1,9 @@
 # Sophia desktop SDK for C
 
+Rendering into owned-ring pixels on a CPU worker uses the existing pixels/offer
+pair with [caller-managed custody](OWNED-RING-WORKER.md). Keep the mapping alive
+until the worker stops; disconnect is not permission to unmap it.
+
 CPU images use **Immutable Shared Buffers (ISB)**, currently backed by sealed
 memfds. The buffer builders are `create_isb` / `finish_isb` in Rust and
 `sophia_ip_isb_create` / `sophia_ip_isb_finish` in C. Names changed together;

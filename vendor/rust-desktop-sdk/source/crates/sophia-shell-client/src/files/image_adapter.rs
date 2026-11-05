@@ -19,6 +19,8 @@ mod dma;
 mod frame_images;
 pub(super) use frame_images::route_frame_source;
 
+mod owned_fill;
+
 use std::os::fd::OwnedFd;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};

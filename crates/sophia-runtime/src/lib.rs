@@ -121,3 +121,7 @@ mod owned_ring_races;
 
 mod cpu_pixel_version;
 pub use cpu_pixel_version::next_cpu_pixel_version;
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "../tests/support/image_test_authority.rs"]
+mod image_test_authority;

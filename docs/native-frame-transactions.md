@@ -574,10 +574,18 @@ drops retained resources or introduces another pixel copy.
 
 Evidence: `~/.local/state/sophia-frame-image-fallback-01` for the paired SDK
 bridge and `~/.local/state/sophia-frame-image-fallback-host-01` for the owner
-admission guard. These newer upstream SDK revisions and the worker-fill merges
-are not yet imported here. Real Lom/reference fallback policy, copied-source
-interop, production negotiation, runtime traces and native qualification remain
-open. Earlier retained dispatch evidence remains in
+admission guard. The worker-fill and drained-image APIs are now imported from signed Rust
+`452887f` and C `32ea31a`. The real Rust SDK/file-owner regression submits a
+worker-filled ring image through SFT, verifies the host's immutable copied bytes,
+then closes/drains, uploads another image through legacy Offer and presents it
+on the same r13 connection. Both display leases remain held. It uses real 9P,
+image-channel FD transfer and the copy worker, with supplied authentication
+verdicts and renderer completion. This does not qualify protected launch or
+physical presentation. Import/interop evidence is
+`~/.local/state/sophia-frame-image-sdk-import-01`.
+
+Real Lom/reference fallback policy, C-to-host copied-frame interoperability,
+production negotiation, runtime traces and native qualification remain open. Earlier retained dispatch evidence remains in
 `~/.local/state/sophia-frame-retained-fallback-01`.
 
 ### Model and remaining integration gates

@@ -1108,7 +1108,9 @@ static void cancel_lost_with_session(void)
  * resource differs in ID or only in generation. */
 #include "native_image_adoption.h"
 #include "owned_ring_session.h"
+#include "owned_ring_worker.h"
 #include "frame_image_session.h"
+#include "frame_image_fallback.h"
 #include "dma_buf_session.h"
 
 int main(void)
@@ -1135,6 +1137,11 @@ int main(void)
     frame_image_session();
     frame_image_transport_failure();
     frame_image_two_slots();
+    frame_image_worker();
+    frame_image_fallback();
+    frame_image_fallback_source_first();
+    frame_image_fallback_refusals();
+    owned_ring_worker();
     dma_buf_session();
     assert(fd_count() == base);
     puts("shell_image_test: ok");

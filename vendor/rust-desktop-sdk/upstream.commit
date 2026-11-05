@@ -1,28 +1,14 @@
-tree a91dd7da2419f2f90340d357ee527b67a6313cea
-parent 1d7f46a2d6e1882f8924272c4d51b4ad3c9e6ba8
-author Mason Green <mason@greenm01.net> 1793834406 -0500
-committer Mason Green <mason@greenm01.net> 1793834406 -0500
+tree 73bf1b8aa55e4ce18d523413c614c25bd0c38a5c
+parent 397a94bab26dc7fe459e98d1d574ee3622398519
+author Mason Green <mason@greenm01.net> 1793838100 -0500
+committer Mason Green <mason@greenm01.net> 1793838100 -0500
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCauu9phsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIEzQD/Vd1C/DVXRK6P2AnHegwj
- EzKbRscgPxhmn0oeplArPXgBALZ04C7ssUbhgFGq7klCGlVR5sahtHCLkMsDG3z0
- i9IN
- =VZyo
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCauvMFBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJ1dQD/VZNbGsfUWAX3bPHM7ZGF
+ kb2Zbs4Q1f8xjvFKFc6LMPcA/00EbCHcA7gyGEPMTm5nj2ntqaok+Pczeo4rPxNv
+ jLQG
+ =ahy3
  -----END PGP SIGNATURE-----
 
-Join SFT copied-source custody to frame admission
-
-Reserve the complete frame queue, copied-source slot and stream credit as one
-local admission. Reuse the r10 source channel at explicit r13 with two slots;
-embed its offer in FrameCommit instead of sending a separate control Offer.
-Keep pixels owned across Prepared/terminal and release only on exact source
-evidence or a proved pre-admission refusal. Contradictory refusals and unknown
-custody fail closed. Existing negotiation defaults remain unchanged.
-
-Paired independent SDK checks: 968 Rust workspace tests, full C make check,
-strict clippy/rustdoc, C ASan/UBSan, four mutation failures and regressions for
-Prepared-before-refusal. Evidence: sophia-frame-client-source-join-01, seal
-4e5583b9f9a3018bca46d257f569f245cf98cf642166db2701be38daad8833f1.
-
-No host pin import, real producer adoption, native or performance claim.
+Add explicit drained SFT image fallback

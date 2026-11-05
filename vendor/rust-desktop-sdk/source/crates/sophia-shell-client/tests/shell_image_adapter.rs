@@ -556,3 +556,6 @@ fn deferred_setup_cannot_add_an_unnegotiated_image_grant() {
 
 #[path = "support/frame_images.rs"]
 mod frame_images;
+
+#[path = "support/image_owned_fill.rs"]
+mod image_owned_fill;

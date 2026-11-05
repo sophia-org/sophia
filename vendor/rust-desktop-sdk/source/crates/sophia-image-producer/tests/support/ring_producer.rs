@@ -403,3 +403,6 @@ fn release_before_status_fails_ring_and_makes_live_offers_unknown() {
         RingOfferState::Unknown
     );
 }
+
+#[path = "ring_owned.rs"]
+mod owned;

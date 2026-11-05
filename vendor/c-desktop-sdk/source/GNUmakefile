@@ -89,6 +89,7 @@ ifeq ($(shell uname -s),Linux)
 FILE_TESTS += descriptor_kernel_test descriptor_lifecycle_test descriptor_custody_test
 $(BUILD)/desktop_connection_test: WRAPS = -Wl,--wrap=getsockopt
 endif
+$(BUILD)/shell_image_test: LDLIBS += -pthread
 $(addprefix $(BUILD)/,$(FILE_TESTS)): $(BUILD)/%: src/tests/%.c $(wildcard src/tests/*.h) $(BUILD)/libsophia-desktop.a $(BUILD)/libsophia-9p.a
 	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG $< -L$(BUILD) -lsophia-desktop -lsophia-9p $(WRAPS) $(LDFLAGS) $(LDLIBS) -o $@
 check-files: $(addprefix $(BUILD)/,$(FILE_TESTS))

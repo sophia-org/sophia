@@ -1,5 +1,11 @@
 use super::*;
 
+#[path = "frame_owned_images.rs"]
+mod owned;
+
+#[path = "frame_fallback.rs"]
+mod fallback;
+
 struct Fixture {
     c: ShellConnection,
     p: Peer,

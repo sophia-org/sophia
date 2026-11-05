@@ -225,3 +225,43 @@ static void frame_image_two_slots(void)
     assert(!sophia_ss_image_ring_pixels(&t.img, 1));
     ring_close(&t, fd);
 }
+
+static void frame_image_worker(void)
+{
+    struct image_rig t;
+    struct ring_worker w;
+    struct sophia_ss_frame_stream f = {0};
+    struct sophia_sf_record r = image_frame_record(), before = r;
+    struct sophia_ss_ring_image m = frame_image(&r);
+    struct sophia_ss_reservation held;
+    uint64_t ticket = 0, offer = 0;
+    int fd = frame_image_ready(&t, &f, &r);
+    m.width = m.height = 16;
+    ring_worker_start(&w, &t);
+    ring_steps(&t, 8); /* The owner drives while the worker holds the payload. */
+    assert(sophia_ss_frame_has_credit(&f));
+    ring_worker_join(&w, fd, 0);
+    assert(!sophia_ss_reserve(&t.r.s, t.r.s.slots, t.r.s.queue_capacity, &held));
+    assert(sophia_ss_frame_submit_ring(&t.img, &f, 0, &m, &r, t.r.now, &ticket, &offer) == SOPHIA_9P_BUSY);
+    assert(ticket == 0 && offer == 0 && sophia_ss_frame_has_credit(&f));
+    ring_worker_check(&w, fd, 0);
+    assert(!memcmp(&r, &before, sizeof r));
+    assert(!sophia_ss_cancel(&t.r.s, &held));
+    assert(!sophia_ss_frame_submit_ring(&t.img, &f, 0, &m, &r, t.r.now, &ticket, &offer));
+    assert(offer == 1 && !sophia_ss_frame_has_credit(&f));
+    ring_worker_check(&w, fd, 2);
+    assert(!memcmp(&r, &before, sizeof r));
+    assert(settle_ticket(&t, ticket) == SOPHIA_SS_SUBMITTED);
+    assert(t.r.p.ring_writes == 1);
+    assert(!frame_image_deliver(&t, &f, frame_image_outcome(&f, 1)));
+    assert(!sophia_ss_frame_has_credit(&f));
+    assert(!frame_image_deliver(&t, &f, frame_image_outcome(&f, 2)));
+    assert(sophia_ss_frame_has_credit(&f) && !sophia_ss_image_ring_pixels(&t.img, 0));
+    peer_status(&t.r.p, offer, m.resource_id, 2, 0); ring_steps(&t, 8);
+    assert(app_events(&t, NULL, 0) == 1); ack_all(&t);
+    assert(!sophia_ss_image_ring_pixels(&t.img, 0));
+    ring_event(&t.r.p, SOPHIA_OR_SLOT_RELEASED, offer, 0, 2, m.resource_id, 0, 0);
+    ring_steps(&t, 8);
+    assert(ring_info(&t, offer).adoptable);
+    ring_close(&t, fd);
+}

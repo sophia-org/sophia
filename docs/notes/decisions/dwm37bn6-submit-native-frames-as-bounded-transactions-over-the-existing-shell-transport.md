@@ -141,15 +141,22 @@ settlement. The [owning SDK import](../../native-frame-transactions.md#owning-sd
 now brings paired C/Rust stream owners and atomic copied-source queue admission
 into Sophia's verified snapshots. A real Rust client/file-owner test covers a
 retained frame's credit lifecycle with supplied negotiation and completion.
-Production opt-in negotiation, copied-source host/client interoperability, real
-producers, runtime traces and native qualification remain required; these
+Production opt-in negotiation, independent C-to-host copied-source interoperability,
+real producers, runtime traces and native qualification remain required; these
 device-free checks establish no speedup.
 
 The [retained-scene fallback seam](../../native-frame-transactions.md#retained-scene-fallback-dispatch)
 now resumes demand/permit candidates after SFT drains on the same connection,
 preserving accepted resources and display leases. Legacy candidates cannot spend
-an open stream's credit. New-image fallback and the actual producers are still
-unjoined; this closes only the dispatch stall, not the whole fallback gate.
+an open stream's credit. The paired SDKs now also bridge a worker-filled image
+to ordinary Offer only after frame and source drain. The host independently
+refuses legacy source admission while the stream remains open or draining.
+The imported Rust SDK test now traverses the real file server, image FD channel
+and copy worker, verifies two distinct immutable pixel payloads, and presents
+the second through fallback without reconnecting or dropping the first display
+lease. Authentication verdicts and native completions are supplied. The actual
+producers remain unjoined; this is not the whole fallback or native gate.
+Evidence: `~/.local/state/sophia-frame-image-sdk-import-01`.
 
 The [continuous-frame CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 and t289 own the next implementation/qualification work. The

@@ -24,9 +24,10 @@ pub use files::image_adapter::{
 };
 pub use sophia_image_producer::{
     ChannelState as ImageChannelState, CloseCause as ImageCloseCause, ImagePath, OfferInfo,
-    OfferState, ProducerMetadata, ProducerRoleBounds, ReadyEvents as ImageReadyEvents,
-    RingOfferInfo, RingOfferState, RingUpload,
+    OfferState, OwnedRingSlotFill, ProducerMetadata, ProducerRoleBounds,
+    ReadyEvents as ImageReadyEvents, RingOfferInfo, RingOfferState, RingUpload,
 };
+mod image_owned_fill;
 mod lifecycle;
 mod native_launcher;
 pub use native_launcher::NativeLauncherObservation;

@@ -1,5 +1,5 @@
 //! The imported owning client against the real file/owner path, with supplied negotiation.
-//! No authentication, image-copy, renderer or production-enablement claim.
+//! Supplied authentication and renderer completion; no protected launch or native claim.
 use super::*;
 use crate::shell_transport::files::{Inbound, ShellFileWire, ShellFiles, ShellImageChannelConfig};
 use sophia_9p_client::pipeline::{Pipeline, PipelineLimits, Reply};
@@ -7,6 +7,17 @@ use sophia_protocol::*;
 use sophia_shell_client::{FrameStream, FrameStreamState, ShellClientOptions, ShellConnection};
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
+
+use crate::image_test_authority as authority;
+#[path = "shell_frame_sdk_image.rs"]
+mod image;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Case {
+    Retained,
+    RetainedFallback,
+    CopiedFallback,
+}
 
 fn next(client: &mut ShellConnection, stream: &mut FrameStream) -> ShellFrameRecord {
     let until = Instant::now() + Duration::from_secs(5);
@@ -23,17 +34,27 @@ fn next(client: &mut ShellConnection, stream: &mut FrameStream) -> ShellFrameRec
 
 #[test]
 fn imported_sdk_owns_credit_through_the_real_retained_scene_and_close() {
-    retained_lifecycle(false);
+    lifecycle(Case::Retained);
 }
 
 #[test]
 fn drained_stream_keeps_resources_and_accepts_a_legacy_candidate_on_the_same_connection() {
-    retained_lifecycle(true);
+    lifecycle(Case::RetainedFallback);
 }
 
-fn retained_lifecycle(fallback: bool) {
+#[test]
+fn copied_sdk_frame_drains_then_uploads_and_presents_legacy_image_without_reconnecting() {
+    lifecycle(Case::CopiedFallback);
+}
+
+fn lifecycle(case: Case) {
+    let copied = case == Case::CopiedFallback;
+    let fallback = case != Case::Retained;
     let mut f = fixture::Fixture::new(64);
     let mut t = Transport::take(&mut f);
+    if copied {
+        image::supply_allocation(&mut t, &f);
+    }
     let key = fixture::key(1);
     let key = ShellFrameStreamKey {
         grant: key.grant,
@@ -43,7 +64,7 @@ fn retained_lifecycle(fallback: bool) {
         stream_id: key.stream_id,
     };
     let allocation = &f.allocations[0];
-    let commit = ShellFrameRecord::Commit(ShellFrameCommit {
+    let mut commit = ShellFrameRecord::Commit(ShellFrameCommit {
         transaction: fixture::tx(101),
         candidate: ContentCandidate {
             grant: key.grant,
@@ -63,7 +84,7 @@ fn retained_lifecycle(fallback: bool) {
                 anchor_parent_rect: allocation.anchor_parent_rect,
             }],
             placements: vec![ContentPlacement {
-                resource: fixture::resource(2),
+                resource: fixture::resource(if copied { 10 } else { 2 }),
                 surface_index: 0,
                 destination_x_px: 0,
                 destination_y_px: 0,
@@ -95,17 +116,45 @@ fn retained_lifecycle(fallback: bool) {
         }))
         .unwrap();
     t.transport.state.wire = Some(Box::new(
-        ShellFileWire::adopt(local, export, None, false).unwrap(),
+        ShellFileWire::adopt(
+            local,
+            export,
+            if copied {
+                Some(Box::new(authority::Factory))
+            } else {
+                None
+            },
+            copied,
+        )
+        .unwrap(),
     ));
+    let mut listener =
+        copied.then(|| crate::image_channel::ImageChannelListener::bind(&t.path).unwrap());
+    let image_dir = t.path.clone();
     let capabilities = t.transport.state.capabilities;
     let peer = std::thread::spawn(move || {
         let timeout = Duration::from_secs(5);
         let mut pipeline = Pipeline::over(remote, PipelineLimits::default(), timeout).unwrap();
-        let (tag, root) = pipeline.attach(&[], &[]).unwrap();
+        let mut authentication = None;
+        let (tag, root) = if copied {
+            let (tag, afid) = pipeline.auth(&[], &[]).unwrap();
+            assert!(matches!(
+                pipeline.wait(tag, Instant::now() + timeout).unwrap(),
+                Reply::Auth(_)
+            ));
+            authentication = Some(afid);
+            pipeline.attach_with_afid(afid, &[], &[]).unwrap()
+        } else {
+            pipeline.attach(&[], &[]).unwrap()
+        };
         assert!(matches!(
             pipeline.wait(tag, Instant::now() + timeout).unwrap(),
             Reply::Attach(_)
         ));
+        if let Some(afid) = authentication {
+            let tag = pipeline.clunk(afid).unwrap();
+            pipeline.wait(tag, Instant::now() + timeout).unwrap();
+        }
         let mut client = ShellConnection::from_attached(
             pipeline,
             root,
@@ -118,6 +167,9 @@ fn retained_lifecycle(fallback: bool) {
         )
         .unwrap();
         assert_eq!(client.welcome().selected_revision, 13);
+        if copied {
+            image::enable(&mut client, image_dir, key);
+        }
         let mut stream = FrameStream::new();
         stream.open(&mut client, fixture::tx(100), key).unwrap();
         assert!(!stream.has_credit());
@@ -125,7 +177,12 @@ fn retained_lifecycle(fallback: bool) {
             matches!(next(&mut client, &mut stream), ShellFrameRecord::Opened { key: actual, .. } if actual == key)
         );
         assert!(stream.has_credit());
-        stream.submit(&mut client, &commit).unwrap();
+        let source = if copied {
+            Some(image::submit(&mut client, &mut stream, &mut commit, key))
+        } else {
+            stream.submit(&mut client, &commit).unwrap();
+            None
+        };
         assert!(!stream.has_credit());
         assert!(stream.submit(&mut client, &commit).is_err());
         assert!(
@@ -143,6 +200,10 @@ fn retained_lifecycle(fallback: bool) {
         );
         assert_eq!(stream.state(), FrameStreamState::Closed);
         assert!(stream.frame_work_drained());
+        if let Some(source) = source {
+            image::settle(&mut client, source);
+            image::fallback(&mut client, &stream, &mut commit, key);
+        }
         if fallback {
             legacy_frame(&mut client, &commit);
         }
@@ -194,9 +255,26 @@ fn retained_lifecycle(fallback: bool) {
                 )
                 .unwrap();
                 assert!(wire.append(ShellFileKind::Negotiated, &body, true).unwrap());
+                if let Some(listener) = listener.take() {
+                    wire.install_image_transport(
+                        listener,
+                        crate::PolicyPeerIdentity {
+                            uid: rustix::process::geteuid().as_raw(),
+                            pid: std::process::id(),
+                        },
+                    )
+                    .unwrap();
+                }
                 negotiated = true;
             }
         } else {
+            while let Some(completion) = worker.take_completed().unwrap() {
+                assert!(owner.receive(completion).is_ok());
+            }
+            t.transport
+                .state
+                .service_content_resources(&mut t.transport.content_epochs, 10)
+                .unwrap();
             owner
                 .service(
                     &mut t.transport.state,
@@ -254,6 +332,9 @@ fn retained_lifecycle(fallback: bool) {
                 t.transport
                     .content_presented_at(key.grant, key.output, generation, 40, 20, 30, 10)
                     .unwrap();
+                if copied {
+                    image::assert_pixels(&t.transport.content_epochs, generation);
+                }
                 submitted += 1;
             }
             t.transport.poll_io().unwrap();

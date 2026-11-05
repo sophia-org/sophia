@@ -31,3 +31,8 @@ The experimental SFT client includes explicit r13 transport, one-credit stream
 ownership and joined owned-ring submission. Rebuild consumers against the pinned
 headers: its passive record union and image-slot bookkeeping have grown. This
 import does not select r13 in Sophia or change the default client revision.
+
+This pin also includes worker-fill ownership and explicit same-binding legacy
+image fallback after independent frame/source drain. The host's real copied
+Rust SDK test supplies authentication verdicts and renderer completion; it is
+not a production negotiation or native performance result.

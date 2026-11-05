@@ -18,6 +18,9 @@
 //! time is caller-supplied monotonic milliseconds.
 use std::os::fd::BorrowedFd;
 
+mod owned;
+pub use owned::OwnedRingSlotFill;
+
 use sophia_shell_protocol::shell_files::{
     OWNED_RING_HEADER_BYTES, RingEvent, RingEventKind, RingIdentity, RingOffer, RingRegistration,
 };
@@ -153,6 +156,7 @@ pub struct RingProducer {
     cause: CloseCause,
     control_error: Option<u32>,
     ring: Option<sophia_isb::MappedRing>,
+    owned: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     slots: [RingSlot; 4],
     offers: [Offer; 4],
     next_offer: u64,
@@ -193,6 +197,7 @@ impl RingProducer {
             cause: CloseCause::None,
             control_error: None,
             ring: None,
+            owned: None,
             slots: [RingSlot::default(); 4],
             offers: [Offer::default(); 4],
             next_offer: 1,
@@ -205,6 +210,9 @@ impl RingProducer {
             return Err(ProducerError::Argument);
         }
         self.last_now = now_ms;
+        if self.owned_abandoned() {
+            return Err(self.fault_unknown());
+        }
         Ok(())
     }
 
@@ -400,6 +408,9 @@ impl RingProducer {
         if self.phase != Phase::Ready {
             return Err(ProducerError::Again);
         }
+        if self.owned_outstanding() {
+            return Err(ProducerError::Busy);
+        }
         let Some(slot_index) = self.slots[..self.registration.slots as usize]
             .iter()
             .position(|slot| slot.offer.is_none() && !slot.acquired)
@@ -433,6 +444,9 @@ impl RingProducer {
         }
         if self.phase != Phase::Ready {
             return Err(ProducerError::Again);
+        }
+        if self.owned_outstanding() {
+            return Err(ProducerError::Busy);
         }
         let bytes = u64::from(upload.width)
             .checked_mul(u64::from(upload.height))
@@ -714,7 +728,11 @@ impl RingProducer {
                 width: offer.upload.map_or(0, |upload| upload.width),
                 height: offer.upload.map_or(0, |upload| upload.height),
                 slot: offer.slot,
-                state: offer.state.unwrap_or(RingOfferState::Refused),
+                state: if self.owned_abandoned() && offer.state == Some(RingOfferState::Pending) {
+                    RingOfferState::Unknown
+                } else {
+                    offer.state.unwrap_or(RingOfferState::Refused)
+                },
                 status: reported_status(offer),
                 deadline_passed: offer.deadline_passed,
             })
@@ -732,7 +750,11 @@ impl RingProducer {
                 width: offer.upload.map_or(0, |upload| upload.width),
                 height: offer.upload.map_or(0, |upload| upload.height),
                 slot: offer.slot,
-                state: offer.state.unwrap_or(RingOfferState::Refused),
+                state: if self.owned_abandoned() && offer.state == Some(RingOfferState::Pending) {
+                    RingOfferState::Unknown
+                } else {
+                    offer.state.unwrap_or(RingOfferState::Refused)
+                },
                 status: reported_status(offer),
                 deadline_passed: offer.deadline_passed,
             })
@@ -793,15 +815,19 @@ impl RingProducer {
 
     /// Whether offers may begin.
     pub fn ready(&self) -> bool {
-        self.phase == Phase::Ready
+        self.phase == Phase::Ready && !self.owned_abandoned()
     }
 
     pub fn closed(&self) -> bool {
-        self.phase == Phase::Closed
+        self.phase == Phase::Closed || self.owned_abandoned()
     }
 
     pub fn cause(&self) -> CloseCause {
-        self.cause
+        if self.owned_abandoned() && (self.phase != Phase::Closed || self.cause.is_clean()) {
+            CloseCause::Fault
+        } else {
+            self.cause
+        }
     }
 }
 

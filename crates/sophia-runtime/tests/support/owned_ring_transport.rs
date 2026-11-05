@@ -21,8 +21,7 @@ use std::collections::VecDeque;
 use std::os::fd::AsFd;
 use std::time::{Duration, Instant};
 
-#[path = "image_test_authority.rs"]
-mod authority;
+use crate::image_test_authority as authority;
 
 const GRANT: ContentGrant = ContentGrant {
     connection_epoch: 1,

@@ -1,7 +1,7 @@
 //! Join a complete frame's queue admission to its copied-source reservation.
 use super::{ImageAdapter, ImageAdapterError, Routed};
 use crate::{Admission, Custody, FrameStream, ShellClientError, ShellConnection, Ticket};
-use sophia_image_producer::{ProducerError, RingOfferState, RingUpload};
+use sophia_image_producer::{OwnedRingSlotFill, ProducerError, RingOfferState, RingUpload};
 use sophia_shell_protocol::shell_files::{ShellFileKind, ShellFrameRecord};
 use sophia_shell_protocol::{ContentAllocationId, ContentGrant, ContentOutputId, TransactionId};
 use std::time::Instant;
@@ -74,6 +74,88 @@ fn image_error(error: ProducerError) -> ShellClientError {
 }
 
 impl FrameStream {
+    /// Queue a legacy image offer for this binding after frame and source work drain.
+    /// This reuses the registration and accepted resources; it neither reconnects
+    /// nor grants a frame credit. Follow ordinary image settlement, demand/permit
+    /// and candidate handling. Keep this output binding on that legacy path;
+    /// reconsider SFT only on a new binding. The caller freshly checks render identity.
+    ///
+    /// # Errors
+    /// Refuses an undrained/unknown stream, wrong binding, unsettled SFT source,
+    /// closed connection or invalid loan. Refusal retains the filled bytes.
+    /// Success has the custody rules of [`ShellConnection::image_commit_ring_fill`].
+    pub fn commit_legacy_ring_fill(
+        &self,
+        connection: &mut ShellConnection,
+        fill: &mut OwnedRingSlotFill,
+        upload: RingUpload,
+        now: Instant,
+    ) -> Result<u64, ShellClientError> {
+        connection.wire.require_frame()?;
+        let key = self.key().filter(|_| self.frame_work_drained()).ok_or(
+            ShellClientError::InvalidArgument("frame stream has not drained"),
+        )?;
+        if key.grant.connection_epoch != connection.connection_epoch()
+            || (upload.output, upload.output_generation) != (key.output.id, key.output.generation)
+            || (upload.allocation, upload.allocation_generation)
+                != (key.allocation.id, key.allocation.generation)
+            || upload.topology_generation != key.facts_generation
+        {
+            return Err(ShellClientError::InvalidArgument(
+                "legacy image does not match drained binding",
+            ));
+        }
+        let adapter = connection
+            .image
+            .as_mut()
+            .ok_or(ShellClientError::Image(ImageAdapterError::NotEnabled))?;
+        if adapter.config.content_grant_epoch != key.grant.content_grant_epoch {
+            return Err(ShellClientError::InvalidArgument(
+                "legacy image has a replaced grant",
+            ));
+        }
+        if let Some(ring) = &adapter.ring {
+            for source in adapter.frame_sources.iter().flatten().filter(|source| {
+                source.request.grant == key.grant && source.request.output == key.output
+            }) {
+                match ring.offer(source.offer).map(|offer| offer.state) {
+                    Some(RingOfferState::Pending) => {
+                        return Err(ShellClientError::Image(ImageAdapterError::Busy));
+                    }
+                    Some(RingOfferState::Unknown) => {
+                        return Err(ShellClientError::Image(ImageAdapterError::Closed));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let offer = adapter
+            .commit_returned_fill(&connection.wire, fill, upload, now)
+            .map_err(ShellClientError::Image)?;
+        let _ = connection.poll_io();
+        Ok(offer)
+    }
+
+    /// Queue a frame using a completed worker-owned ring fill without copying pixels.
+    /// The caller must freshly validate its render/output binding before submitting.
+    /// No I/O occurs; source custody is identical to [`Self::submit_ring`].
+    /// # Errors
+    /// Refusal retains the exact loan, record and frame credit for retry or abort.
+    /// Success makes the loan inert. Dropping an unreturned live loan faults the ring.
+    pub fn submit_ring_fill(
+        &mut self,
+        connection: &mut ShellConnection,
+        record: &mut ShellFrameRecord,
+        fill: &mut OwnedRingSlotFill,
+        upload: RingUpload,
+        now: Instant,
+    ) -> Result<(Admission, u64), ShellClientError> {
+        self.check_submit(record)?;
+        let admission = connection.enqueue_frame_ring_fill(record, fill, upload, now)?;
+        self.submitted(record);
+        Ok(admission)
+    }
+
     /// Fill and queue one image-bearing frame, reserving source, queue and credit together.
     /// `record` must be a Commit without an image; its fields are restored before
     /// `fill` runs. Pixels are filled directly in a free slot, with no staging copy.
@@ -99,6 +181,91 @@ impl FrameStream {
 }
 
 impl ShellConnection {
+    fn enqueue_frame_ring_fill(
+        &mut self,
+        record: &mut ShellFrameRecord,
+        fill: &mut OwnedRingSlotFill,
+        upload: RingUpload,
+        now: Instant,
+    ) -> Result<(Admission, u64), ShellClientError> {
+        self.wire.require_frame()?;
+        if self.wire.peer_closed() {
+            return Err(ShellClientError::PeerClosed);
+        }
+        let ShellFrameRecord::Commit(value) = record else {
+            return Err(ShellClientError::WrongDirection);
+        };
+        if value.image.is_some() {
+            return Err(ShellClientError::InvalidArgument(
+                "frame already has an image",
+            ));
+        }
+        let request = FrameRefusal {
+            transaction: value.transaction,
+            grant: value.candidate.grant,
+            output: value.candidate.output,
+            stream: value.candidate.pacing_permit,
+            generation: value.candidate.candidate_generation,
+        };
+        let adapter = self
+            .image
+            .as_mut()
+            .ok_or(ShellClientError::Image(ImageAdapterError::NotEnabled))?;
+        let now_ms = adapter
+            .advance_clock(now)
+            .map_err(ShellClientError::Image)?;
+        if adapter.pending.is_some() {
+            return Err(ShellClientError::Image(ImageAdapterError::Again));
+        }
+        if upload.width > adapter.config.bounds.max_width
+            || upload.height > adapter.config.bounds.max_height
+        {
+            return Err(ShellClientError::Image(ImageAdapterError::Refused));
+        }
+        let ring = adapter
+            .ring
+            .as_mut()
+            .ok_or(ShellClientError::Image(ImageAdapterError::Again))?;
+        let offer = ring
+            .owned_offer(fill, upload, now_ms)
+            .map_err(image_error)?;
+        value.image = Some(offer);
+        let encoded = self.wire.encode_frame(record);
+        let ShellFrameRecord::Commit(value) = record else {
+            unreachable!("frame kind unchanged")
+        };
+        value.image = None;
+        let units = encoded?;
+        self.wire.reserve_encoded()?;
+        let result = self
+            .output
+            .enqueue_after(units, false, &mut self.ledger, || {
+                ring.commit_owned_offer(fill, upload, now_ms)
+                    .map_err(image_error)?;
+                Ok(())
+            });
+        let admission = match result {
+            Ok(admission) => admission,
+            Err(error) => {
+                self.wire.cancel_encoded();
+                return Err(error);
+            }
+        };
+        self.wire.commit_encoded();
+        adapter.frame_sources[offer.slot as usize] = Some(FrameSource {
+            request,
+            ticket: admission.first,
+            offer: offer.offer_id,
+            admitted: false,
+            allocation: ContentAllocationId {
+                id: upload.allocation,
+                generation: upload.allocation_generation,
+            },
+            facts: upload.topology_generation,
+        });
+        Ok((admission, offer.offer_id))
+    }
+
     fn enqueue_frame_ring(
         &mut self,
         record: &mut ShellFrameRecord,

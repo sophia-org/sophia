@@ -347,6 +347,48 @@ each dependent file operation; an update can require many such operations.
 Both I/O servicing and the wait are bounded. Do not wait while application
 work is ready to run.
 
+## Worker-owned CPU ring fills
+
+`ShellConnection::image_acquire_ring_fill(byte_len, now)` returns a non-cloneable,
+worker-safe `OwnedRingSlotFill`. Its `pixels_mut()` exposes exactly the requested
+logical payload within the fixed registration capacity. Acquisition publishes
+nothing and consumes no offer id or slot generation. Only one owned fill may
+exist per connection; other uploads/acquisitions are busy while it owns the
+mapping. Existing offers can still receive journal status and releases.
+
+Keep the connection on its event-loop thread and send the loan to the renderer.
+Continue `poll_io`, typed event handling, image/session readiness and SDK retry
+deadlines while rendering. The application must bound its render job and wake
+the owner on completion, error or worker exit. Transfer the result or drop the
+abandoned loan before signaling that wake. The SDK does not create a thread,
+deadline or completion notifier for that job.
+
+Return the loan together with the render result. After revalidating the current
+grant, allocation, output, scale and other application rendering identities, call
+`image_commit_ring_fill(&mut fill, upload, now)` on the owner thread. Every error
+retains the payload, allowing bounded retry after backpressure without rerendering.
+Success leaves the loan inert and returns an offer id; it means queued publication,
+not adoption. Acceptance and the matching successful `SlotReleased` are still
+required. Resource retirement does not substitute for ring-slot release.
+
+On rendering failure or cancellation, use `image_abort_ring_fill(&mut fill)`.
+It returns the unused mapping without publication and is permitted after closure;
+it never reopens a closed ring. Recover ownership from failed job/completion sends
+and abort explicitly. Dropping a live loan, including worker panic, instead faults
+the ring and makes unsettled offers Unknown. Wake and poll the owner to observe
+that failure. Closure or timeout must never reclaim memory from a worker still
+holding the loan; a late commit refuses.
+
+The existing synchronous `image_upload_ring_fill` and slice `image_upload_ring`
+remain supported. Pixel format/conversion and GPU permission policy are unchanged.
+This API removes no Session custody copy and establishes no performance gain or
+production renderer integration by itself.
+
+[C parity is behavioral under caller ownership](API-PARITY.md#worker-owned-ring-fills-october-30-2026--c-parity-recorded):
+C `9adb3c5` documents and tests the raw-pointer lifetime; Rust enforces it with
+the loan. Consumer, native and default adoption remain open, and no verified
+Sophia pin update follows from this record alone.
+
 ## Provenance
 
 `PROVENANCE.md` records the Sophia commit each crate was extracted from.

@@ -1735,3 +1735,130 @@ busy slots, exact release, refusal/retry identities, Prepared-before-refusal,
 wrong correlation and disconnect. Rust also checks fill unwind. These are
 SDK conformance checks, not host import, real Lom/reference producer adoption,
 model trace validation, native qualification or a performance result.
+
+## Worker-owned ring fills, October 30, 2026 — C parity recorded
+
+Rust source `5d89565266c3a066c32c2eebac6fad40dc1d0a66`, based on
+`0706ea2c78cd16ba59ed209620354f30a2c78906`, adds `OwnedRingSlotFill` and
+shell-client acquire/commit/abort operations. The worker owns the mapping;
+the owner continues protocol dispatch. Failed commits retain the loan, explicit
+abort spends nothing, and abandoned loans fault the ring without reclaiming
+memory from a live worker. Successful commit still requires status plus exact
+SlotReleased before reuse/adoption. README documents the caller's deadline and
+completion-wake obligations. There are no new wire records or capabilities.
+
+Read-only C comparison: signed `3ccc7d04c28309ebed6fd53f399af7c7a5682d80`.
+`src/shell_session/ring.c` already separates `sophia_ss_image_ring_pixels`
+from `sophia_ss_image_ring_offer`. The former returns a raw payload pointer for
+a free slot; it does not reserve that slot. The latter rechecks readiness,
+identity/layout and control capacity before offering. `sophia_ss_image_close`
+unmaps the memory through `sophia_ip_ring_close`.
+
+C counterpart: signed `9adb3c5b83a52baf2a8728cb10fcf821d1d6729b` (tree
+`cd509040abad184ee9afdf1a7d1ee01a77accfa8`, parent `3ccc7d0`). It adds no C
+public API, ABI or production behavior. `sophia_shell_image.h` and
+`OWNED-RING-WORKER.md` document caller-owned custody, and
+`src/tests/owned_ring_worker.h` adds real-pthread scenarios to
+`shell_image_test`. The exact tested tree passed `make check` (74 test
+binaries), including five worker scenarios:
+- owner dispatch with a worker parked mid-fill, then exact SlotReleased,
+  forget and a second real fill;
+- local abort and validation refusal without spending an offer ID or slot
+  generation;
+- control-write backpressure (`AGAIN`) and retry with payload and header
+  unchanged;
+- session loss while the worker still holds the payload;
+- image-channel closure while the worker still holds the payload.
+
+It also passed the Nim binding check. Three source mutations were killed
+(unmap on ring failure, pixels for a non-FREE slot, offer after CLOSED), and the
+source was restored to the base blob. The SIGSEGV kill site of the unmap mutant
+is inferred, not traced.
+
+This is **behavioral parity under documented caller ownership**, not equal
+enforcement. Rust's `OwnedRingSlotFill` excludes competing uploads, binds
+producer instance and byte length, carries the mapping past producer
+destruction, and faults the ring when a live loan is dropped. In C:
+- `ring_pixels` reserves nothing, and the caller enforces one fill per image
+  with no other pixels/offer call meanwhile;
+- the worker calls no SDK function;
+- completion must hand off with a real synchronization edge;
+- the owner offers exactly the rendered geometry after revalidating identity;
+- no saved result is offered across close/init;
+- `sophia_ss_image_close`, reinit and destruction wait for the worker join,
+  because image close unmaps immediately while dispatch and disconnect do not.
+
+The C fixtures prove the valid sequence, not refusal of misuse.
+
+**Still open:** each C or Rust consumer (including Lom) must qualify its own
+completion, stale-result, cancellation, wake and destruction paths. Native
+presentation, default adoption and performance are unqualified. This record
+alone does not update Sophia's verified SDK pins or promote production direct
+fill.
+
+## SFT worker-fill integration, 2026-11-04
+
+The SFT branches now retain the worker-fill contract already used by Lom:
+Rust's signed `99b05e345be34678128733bf0166ded85b06239a` lineage and C's signed
+`9adb3c5b83a52baf2a8728cb10fcf821d1d6729b` caller-ownership proof. Rust offers
+`FrameStream::submit_ring_fill` for a returned `OwnedRingSlotFill`; C uses its
+existing `sophia_ss_frame_submit_ring` after synchronizing with the fill worker.
+Neither path adds a pixel copy or changes the wire grammar.
+
+Rust validates the producer instance and exact loan length before queueing. Both
+reserve the whole frame before publishing the source generation and spending
+credit. Queue pressure retains the completed bytes for retry without rerendering.
+No separate legacy Offer is emitted. Prepared and terminal credit remain separate
+from ResourceStatus/SlotReleased, and conflicting admission/refusal evidence
+keeps the source Unknown. Rust's legacy owned-fill commit is refused on r13, as
+its other legacy upload methods already are. Acquire and explicit abort still
+work; no abandoned worker mapping is reclaimed by protocol dispatch.
+
+The new paired tests drive the real 9P/image-channel fixtures while a worker is
+parked mid-fill, then join it, refuse admission under queue pressure, retry the
+same bytes and require exact source release. Rust also checks foreign and wrong-
+length loans, pre-admission refusal and contradictory Prepared evidence. The C
+worker obeys OWNED-RING-WORKER.md: it calls no SDK function and joins before close.
+Rust enforces unique loan ownership; C caller discipline remains a documented
+requirement, not an equivalent memory-safety guarantee.
+
+Evidence and exact paired revisions: `~/.local/state/sophia-frame-worker-fill-01`
+and its publication receipt. The r13 legacy fallback policy still needs to be
+joined with per-output stream drain during real producer integration; this API
+alone does not enable a legacy offer on an r13 connection. Real Lom/reference
+adoption, host negotiation, trace validation and native qualification remain
+open. No performance or production-enable claim.
+
+## SFT drained-image fallback, 2026-11-04
+
+Rust `FrameStream::commit_legacy_ring_fill` and C
+`sophia_ss_frame_legacy_ring_offer` explicitly resume ordinary owned-ring uploads
+on the same r13 connection after that output stream closes and drains. Both
+require the exact grant, output, allocation and facts binding. No pending or
+Unknown SFT source may remain for the output: frame completion and Closed alone
+do not release pixels. Source status plus exact SlotReleased remains necessary.
+The ordinary legacy entry points still refuse r13; no protocol or ABI layout
+changes are introduced.
+
+Successful admission emits the existing legacy Offer and preserves registered
+ring storage and accepted resources. Follow normal image settlement and then
+FrameDemand/FramePermit/Candidate. This operation grants no frame credit and
+never reconnects. Keep that output binding on legacy submission until a new
+binding is selected; the actual producer owns this policy. It must freshly
+validate render identity, retain the displayed lease, and finish source drain.
+The host independently checks mode at admission; a client check is not authority.
+
+Rust refusal retains the completed `OwnedRingSlotFill`; success makes it inert.
+C returns the existing `SOPHIA_IPR_*` image result codes and preserves its
+caller-owned slot rules: synchronize worker completion before offering and join
+before closing/unmapping. Neither implementation adds a staging pixel copy.
+Paired tests cover Open, Closed with a frame still outstanding, terminal before
+source release, Accepted without release, exact release, the normal legacy
+Offer bytes and settlement, wrong binding, empty/Unknown owner, and connection
+closure without consuming the filled storage.
+
+Paired source bases are Rust `397a94bab26dc7fe459e98d1d574ee3622398519` and
+C `8d1fb091a3407e5bb65a7f484ed29b9154cae8b4`. Evidence and exact publication
+revisions are recorded in `~/.local/state/sophia-frame-image-fallback-01` and
+its adjacent publication receipt. Real producer integration, host import,
+production negotiation, runtime traces and native qualification remain open.

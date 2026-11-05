@@ -1,5 +1,12 @@
 # Extraction and contract provenance
 
+## SFT drained-image fallback, 2026-11-04
+
+Adds the explicit same-binding legacy image bridge after stream and source
+drain. The ordinary r13 entry-point guards, wire grammar and resource custody
+remain unchanged. See API-PARITY.md for paired bases, ownership and evidence.
+No host pins or producer/default negotiation are changed by this SDK checkpoint.
+
 ## SFT owning stream credit, 2026-11-04
 
 Paired bases: Rust `a5481d1df3bee9851e181ec84dfb04ab340b4d32`,
@@ -1114,3 +1121,10 @@ The owning image path now joins the pinned SFT FrameCommit with the existing
 D4 two-slot source protocol. No schema, authority or negotiation default changes.
 See API-PARITY.md for paired ownership, refusal and unknown-custody rules. Host
 pin import, concrete producers, model traces and native qualification remain open.
+
+## SFT worker-fill integration, 2026-11-04
+
+The existing worker-fill lineage is joined with SFT source admission without a
+new wire revision or dependency. API-PARITY.md records the C caller-ownership
+counterpart and remaining real-producer/host gates. Final paired revisions and
+tests are recorded in sophia-frame-worker-fill-01 and its publication receipt.

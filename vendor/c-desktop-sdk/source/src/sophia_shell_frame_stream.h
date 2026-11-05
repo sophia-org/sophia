@@ -57,4 +57,15 @@ int sophia_ss_frame_submit_ring(struct sophia_ss_image *, struct sophia_ss_frame
                                uint32_t slot, const struct sophia_ss_ring_image *,
                                struct sophia_sf_record *, uint64_t now_ms,
                                uint64_t *ticket, uint64_t *offer);
+/* Legacy Offer after frame/close work AND SFT sources for the output have drained.
+ * The metadata must match the drained key. Registration and accepted resources
+ * survive; follow normal image settlement and demand/permit/candidate handling.
+ * Keep this output binding on the legacy path; reconsider SFT only on a new binding.
+ * Returns SOPHIA_IPR_* as sophia_ss_image_ring_offer: wrong phase/binding is ARGUMENT,
+ * pending SFT source is BUSY, uncertain source/closed session is CLOSED.
+ * Failure leaves the pixels and offer result unchanged. Caller synchronizes with
+ * its worker and retains the mapping exactly as for ordinary ring offers. */
+int sophia_ss_frame_legacy_ring_offer(struct sophia_ss_image *, const struct sophia_ss_frame_stream *,
+                                     uint32_t slot, const struct sophia_ss_ring_image *,
+                                     uint64_t now_ms, uint64_t *offer);
 #endif
