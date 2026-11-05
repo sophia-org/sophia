@@ -20,6 +20,8 @@ pub(super) struct PendingNegotiation {
     pub(super) refusal: Option<ContentAdmissionRefused>,
     /// Host-selected metadata role. A bar's compatibility bit 0 cannot select it.
     pub(super) descriptor: bool,
+    /// Owner permission for this one handshake, never inherited by a replacement.
+    pub(super) frame_transactions: bool,
 }
 
 pub(super) enum Stage {
@@ -31,6 +33,35 @@ pub(super) enum Stage {
 }
 
 impl ShellComponentTransport {
+    /// Opt in this epoch to the bounded SFT bar profile. The peer must still
+    /// request r13/bit18; ordinary requests keep their ordinary revision.
+    /// Requires a pre-reserved Legacy content store and authenticated image channel.
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub fn begin_frame_file_negotiation(
+        &mut self,
+        epochs: &crate::ContentEpochRegistry,
+        connection_epoch: u64,
+        timeout: Duration,
+        policy: ShellContentAdmissionPolicy,
+    ) -> Result<(), ShellTransportError> {
+        if !self.authentication_required
+            || self.reserved_limits.is_none()
+            || epochs.profile(self.store_grant) != Some(crate::ContentStoreProfile::Legacy)
+            || self
+                .image_config
+                .as_ref()
+                .is_none_or(|config| config.discovery.connection_epoch != connection_epoch)
+        {
+            return Err(ShellTransportError::WrongContentGrant);
+        }
+        self.begin_file_negotiation(epochs, connection_epoch, timeout, policy)?;
+        self.negotiation
+            .as_mut()
+            .expect("just started")
+            .frame_transactions = true;
+        Ok(())
+    }
+
     /// Admits the descriptor file profile explicitly, before accepting a peer.
     /// Metadata requires no content reservation. Combined content still needs
     /// the normal policy grant; native-launcher and persistent-catalog stores
@@ -86,6 +117,7 @@ impl ShellComponentTransport {
             stage: Stage::Waiting,
             refusal: None,
             descriptor: false,
+            frame_transactions: false,
         });
         Ok(())
     }
@@ -254,20 +286,21 @@ impl ShellComponentTransport {
         };
         match selected {
             Ok((welcome, limits)) => {
-                let image_listener =
-                    if welcome.selected_revision == crate::owned_ring_protocol::REVISION {
-                        let directory = self
-                            .endpoint
-                            .socket_path()
-                            .parent()
-                            .ok_or(ShellTransportError::WrongContentGrant)?;
-                        Some(
-                            crate::image_channel::ImageChannelListener::bind(directory)
-                                .map_err(|error| ShellTransportError::Io(error.to_string()))?,
-                        )
-                    } else {
-                        None
-                    };
+                let owned_image = matches!(welcome.selected_revision, 10 | 13)
+                    && welcome.capabilities & crate::owned_ring_protocol::CAPABILITY != 0;
+                let image_listener = if owned_image {
+                    let directory = self
+                        .endpoint
+                        .socket_path()
+                        .parent()
+                        .ok_or(ShellTransportError::WrongContentGrant)?;
+                    Some(
+                        crate::image_channel::ImageChannelListener::bind(directory)
+                            .map_err(|error| ShellTransportError::Io(error.to_string()))?,
+                    )
+                } else {
+                    None
+                };
                 let limits_object = limits
                     .as_ref()
                     .map(|limits| {
@@ -276,8 +309,7 @@ impl ShellComponentTransport {
                     })
                     .transpose()?;
                 let body = super::files::encode_negotiated(welcome, limits.is_some())?;
-                let completed = if welcome.selected_revision == crate::owned_ring_protocol::REVISION
-                {
+                let completed = if owned_image {
                     wire.export_mut().complete_negotiation_with_image_revision(
                         limits_object,
                         welcome.capabilities,

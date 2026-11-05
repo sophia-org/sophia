@@ -178,6 +178,15 @@ Rust test's supplied authentication, negotiation and renderer completion, not it
 client implementation. No native/performance or actual Lom-to-host claim follows.
 Evidence: `~/.local/state/sophia-frame-c-host-interop-01`.
 
+The [explicit owner negotiation](../../native-frame-transactions.md#explicit-owner-negotiation)
+now joins the default-off runtime build, per-handshake owner permission and exact
+r13 peer request. Both SDK lifecycle tests use real negotiation; no fabricated
+welcome is installed. Ordinary r10 stays r10, other profiles/source combinations
+refuse, and permission expires with the handshake. The Session/CLI has no call
+to this entry point yet. Authentication verdicts and renderer completion remain
+supplied; this is not protected launch or native acceptance.
+Evidence: `~/.local/state/sophia-frame-owner-negotiation-01`.
+
 The [continuous-frame CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 and t289 own the next implementation/qualification work. The
 [bounded-credit investigation](../investigations/tubnycgx-can-a-bounded-frame-stream-cut-per-frame-control-exchanges-without-weakening-custody.md)

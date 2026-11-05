@@ -1,5 +1,5 @@
 /* Independent C SDK against the shared real file owner/copy worker fixture.
- * Authentication and renderer completion are supplied by the Rust owner. */
+ * Authentication verdicts and renderer completion are supplied by the Rust owner. */
 #define _POSIX_C_SOURCE 200809L
 #include "sophia_shell_frame_stream.h"
 #include "sophia_shell_image.h"
@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 static struct sophia_9p_client wire;
@@ -16,6 +18,7 @@ static struct sophia_ss session;
 static struct sophia_ss_image image;
 static struct sophia_ss_frame_stream stream;
 static uint64_t deadline;
+static int fd;
 static int image_enabled;
 static const struct sophia_sft_key key = {7, 9, 2, 3, 2, 1, 6, 1};
 
@@ -30,7 +33,7 @@ static void auth_reply(struct sophia_9p_handle request, uint8_t type)
 {
     for (;;) {
         struct sophia_9p_reply reply;
-        struct pollfd p = {STDIN_FILENO, POLLIN, 0};
+        struct pollfd p = {fd, POLLIN, 0};
         int r;
         assert(now_ms() < deadline);
         if (sophia_9p_wants_write(&wire)) p.events |= POLLOUT;
@@ -174,7 +177,7 @@ static void legacy(struct sophia_sf_candidate candidate)
 int main(int argc, char **argv)
 {
     static uint8_t wire_storage[1u << 20], storage[1u << 20], formats[4096];
-    struct sophia_ss_config config = {{13, 13, (1u << 18) | (1u << 15) | (1u << 7)},
+    struct sophia_ss_config config = {{13, 13, (1u << 18) | (1u << 15) | (1u << 7) | 1u},
                                      SOPHIA_SF_BAR, 8192, 16, 65536, NULL, 0};
     struct sophia_ss_image_config ic = {0};
     struct sophia_9p_handle request;
@@ -183,9 +186,14 @@ int main(int argc, char **argv)
     uint32_t afid, root;
     uint64_t ticket, offer, resource;
     int directory, complete;
-    assert(argc == 2);
+    struct sockaddr_un address = {0};
+    assert(argc == 3);
+    assert(strlen(argv[2]) < sizeof address.sun_path);
+    address.sun_family = AF_UNIX; strcpy(address.sun_path, argv[2]);
+    fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    assert(fd >= 0 && !connect(fd, (struct sockaddr *)&address, sizeof address));
     deadline = now_ms() + 10000;
-    assert(!sophia_9p_init(&wire, STDIN_FILENO, 8192, 16, 32, wire_storage, sizeof wire_storage));
+    assert(!sophia_9p_init(&wire, fd, 8192, 16, 32, wire_storage, sizeof wire_storage));
     assert(!sophia_9p_version(&wire, &request)); auth_reply(request, 101);
     assert(!sophia_9p_auth(&wire, "", "", &request, &afid)); auth_reply(request, 103);
     assert(!sophia_9p_attach_with_afid(&wire, afid, "", "", &request, &root)); auth_reply(request, 105);

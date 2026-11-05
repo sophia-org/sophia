@@ -640,6 +640,24 @@ supplied-negotiation and supplied-renderer fixture. It does not qualify protecte
 launch, actual Lom-to-host operation, native presentation or CPU/frame. Evidence:
 `~/.local/state/sophia-frame-c-host-interop-01`.
 
+### Explicit owner negotiation
+
+`ShellComponentTransport::begin_frame_file_negotiation` now permits SFT for one
+handshake when built with `experimental-native-frame-transaction`. It requires a
+pre-reserved Legacy/bar content store and an authenticated image configuration for
+that epoch. The peer must request exactly r13 and content/owned-ring/SFT bits;
+ordinary role capabilities still pass the existing policy checks. Sealed images,
+DMA, draw, W2, other store profiles and unknown bits refuse. Ordinary requests
+keep their ordinary revision. Permission belongs to the pending handshake and
+does not carry across disconnect into its successor.
+
+The existing Rust and independent C tests now use that entry point and the real
+negotiation exchange instead of installing an artificial welcome. Both traverse
+the image socket, copy worker and same-connection fallback. A removed owner-opt-in
+check fails the default-owner refusal test. Authentication verdicts and renderer
+completion remain supplied; the Session/CLI does not yet call this entry point.
+Evidence: `~/.local/state/sophia-frame-owner-negotiation-01`.
+
 ### Model and remaining integration gates
 
 The [modeling brief](../validation/specula/native-frame-transaction/modeling-brief.md)

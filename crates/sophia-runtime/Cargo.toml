@@ -7,7 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
-# Ledger only until FrameCommit wire admission and producer parity are complete.
+# Default-off SFT store, wire and explicit per-epoch owner negotiation.
 experimental-native-frame-transaction = []
 experimental-draw = ["dep:sophia-draw", "rustix/fs"]
 experimental-shell-capture = ["dep:sophia-renderer-image", "sophia-renderer-image/experimental-shell-capture", "rustix/fs"]

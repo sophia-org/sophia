@@ -1,6 +1,4 @@
 //! Compile the independent pinned C client, sharing the Rust SDK test's owner loop.
-use std::os::fd::OwnedFd;
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
@@ -10,7 +8,7 @@ pub(super) struct Peer {
 }
 
 impl Peer {
-    pub(super) fn spawn(directory: &Path, stream: UnixStream) -> Self {
+    pub(super) fn spawn(directory: &Path, socket: &Path) -> Self {
         let sdk =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/c-desktop-sdk/source/src");
         let binary = directory.join("frame-client-c");
@@ -50,7 +48,8 @@ impl Peer {
         assert!(result.success(), "strict C99 SDK peer build failed");
         let child = Command::new(binary)
             .arg(directory)
-            .stdin(Stdio::from(OwnedFd::from(stream)))
+            .arg(socket)
+            .stdin(Stdio::null())
             .spawn()
             .unwrap();
         Self {

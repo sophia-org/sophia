@@ -11,6 +11,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[path = "shell_frame_responses.rs"]
 mod frame_responses;
 
+#[path = "shell_frame_negotiation.rs"]
+mod frame_negotiation;
+
 fn attach_files(transport: &mut ShellSessionTransport) -> Peer {
     Peer::attach(
         &mut transport.state,

@@ -15,6 +15,8 @@ the ordinary content role and explicit owned-ring bit 15 as well as bit 18.
 The host build, owner permission and peer request must all opt in. Required bits
 cannot silently disappear. Unknown revisions or unsupported combinations refuse;
 do not implement this as a `revision >= 13` check.
+The first opt-in host profile accepts `minimum_revision = maximum_revision = 13`.
+An ordinary r10 request stays r10 even when the owner permits SFT.
 
 The r13 owned-ring image mapping is image revision 10, source kind 4 and the
 existing D4 records. SFT requires a two-slot registration when a frame copies

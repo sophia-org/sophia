@@ -31,6 +31,18 @@ struct Transport {
 
 impl Transport {
     fn take(f: &mut fixture::Fixture) -> Self {
+        let mut t = Self::reserve(f);
+        let limits = t.transport.state.reserved_limits.take().unwrap();
+        t.transport.state.content_grant = Some(fixture::grant());
+        t.transport.state.connection_epoch = fixture::grant().connection_epoch;
+        t.transport.state.capabilities = SHELL_FRAME_CAPABILITY
+            | crate::owned_ring_protocol::CAPABILITY
+            | sophia_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
+        t.transport.state.content_limits = Some(limits);
+        t
+    }
+
+    fn reserve(f: &mut fixture::Fixture) -> Self {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let path = std::env::temp_dir().join(format!(
@@ -44,7 +56,10 @@ impl Transport {
         )
         .unwrap();
         let limits = ContentLimits::prototype(fixture::grant());
-        transport.content_epochs.admit(limits.clone()).unwrap();
+        transport
+            .state
+            .reserve_content(&mut transport.content_epochs, limits)
+            .unwrap();
         let (resources, candidates) = transport
             .content_epochs
             .active_pair_mut(fixture::grant())
@@ -52,13 +67,6 @@ impl Transport {
         let (old_resources, old_candidates) = f.pool.active_pair_mut().unwrap();
         std::mem::swap(resources, old_resources);
         std::mem::swap(candidates, old_candidates);
-        transport.state.store_grant = fixture::grant();
-        transport.state.content_grant = Some(fixture::grant());
-        transport.state.connection_epoch = fixture::grant().connection_epoch;
-        transport.state.capabilities = SHELL_FRAME_CAPABILITY
-            | crate::owned_ring_protocol::CAPABILITY
-            | sophia_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
-        transport.state.content_limits = Some(limits);
         Self { transport, path }
     }
 

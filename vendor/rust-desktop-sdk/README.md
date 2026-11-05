@@ -29,7 +29,8 @@ separate gate in `docs/native-frame-transactions.md`.
 This pin also includes worker-fill ownership and explicit same-binding legacy
 image fallback after independent frame/source drain. The host's real copied
 Rust SDK test supplies authentication verdicts and renderer completion; it is
-not a production negotiation or native performance result.
+not a native performance result. The host test now uses real explicit owner
+negotiation; Session/CLI enablement remains separate.
 
 The initial-image API additionally permits ordinary uploads before the first
 Open. The host test establishes retained images through it before copied-frame

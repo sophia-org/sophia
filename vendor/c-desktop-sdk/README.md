@@ -35,10 +35,11 @@ import does not select r13 in Sophia or change the default client revision.
 This pin also includes worker-fill ownership and explicit same-binding legacy
 image fallback after independent frame/source drain. The host's real copied
 Rust SDK test supplies authentication verdicts and renderer completion; it is
-not a production negotiation or native performance result.
+not a native performance result. Both clients now use the explicit runtime
+owner-negotiation entry point; Session/CLI enablement remains separate.
 
 The paired initial-image API permits ordinary uploads before the first Open.
 Its independent C tests are included. The host's strict-C99 process test now
 exercises initial uploads, a copied/retained SFT scene and drained legacy fallback
-against the real file server/copy worker, with supplied authentication,
-negotiation and renderer completion. Native qualification remains separate.
+against the real file server/copy worker and negotiation, with supplied
+authentication verdicts and renderer completion. Native qualification remains separate.

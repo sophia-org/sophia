@@ -1,7 +1,6 @@
-//! The imported owning client against the real file/owner path, with supplied negotiation.
+//! Imported owning clients against the real opt-in negotiation and file/owner path.
 //! Supplied authentication and renderer completion; no protected launch or native claim.
 use super::*;
-use crate::shell_transport::files::{Inbound, ShellFileWire, ShellFiles, ShellImageChannelConfig};
 use sophia_9p_client::pipeline::{Pipeline, PipelineLimits, Reply};
 use sophia_protocol::*;
 use sophia_shell_client::{FrameStream, FrameStreamState, ShellClientOptions, ShellConnection};
@@ -89,7 +88,7 @@ fn lifecycle(case: Case) {
     let copied = matches!(case, Case::CopiedFallback | Case::CCopiedFallback);
     let fallback = case != Case::Retained;
     let mut f = fixture::Fixture::new(64);
-    let mut t = Transport::take(&mut f);
+    let mut t = Transport::reserve(&mut f);
     if copied {
         image::supply_allocation(&mut t, &f);
     }
@@ -140,70 +139,31 @@ fn lifecycle(case: Case) {
             destination_y_px: 0,
         });
     }
-    let (local, remote) = UnixStream::pair().unwrap();
-    let (role, bounds) = crate::shell_transport::files::role_bounds(None);
-    let mut export = ShellFiles::awaiting_negotiation(
-        key.grant.connection_epoch,
-        role,
-        false,
-        bounds,
-        100,
-        Instant::now(),
-    );
-    let (mut discovery, limits, formats, role_bounds) =
-        crate::shell_transport::owned_copy::wire_tests::config();
-    discovery.connection_epoch = key.grant.connection_epoch;
-    export
-        .configure_image_channel(Some(ShellImageChannelConfig {
-            discovery,
-            limits,
-            formats,
-            role_bounds,
-        }))
-        .unwrap();
-    t.transport.state.wire = Some(Box::new(
-        ShellFileWire::adopt(
-            local,
-            export,
-            if copied {
-                Some(Box::new(authority::Factory))
-            } else {
-                None
-            },
-            copied,
-        )
-        .unwrap(),
-    ));
-    let mut listener =
-        copied.then(|| crate::image_channel::ImageChannelListener::bind(&t.path).unwrap());
+    let path = t.transport.socket_path().to_owned();
     let image_dir = t.path.clone();
-    let capabilities = t.transport.state.capabilities;
+    let capabilities = SHELL_FRAME_CAPABILITY
+        | crate::owned_ring_protocol::CAPABILITY
+        | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+        | SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER;
     let mut peer = if case == Case::CCopiedFallback {
-        Peer::C(c::Peer::spawn(&image_dir, remote))
+        Peer::C(c::Peer::spawn(&image_dir, &path))
     } else {
         Peer::Rust(std::thread::spawn(move || {
             let timeout = Duration::from_secs(5);
+            let remote = UnixStream::connect(path).unwrap();
             let mut pipeline = Pipeline::over(remote, PipelineLimits::default(), timeout).unwrap();
-            let mut authentication = None;
-            let (tag, root) = if copied {
-                let (tag, afid) = pipeline.auth(&[], &[]).unwrap();
-                assert!(matches!(
-                    pipeline.wait(tag, Instant::now() + timeout).unwrap(),
-                    Reply::Auth(_)
-                ));
-                authentication = Some(afid);
-                pipeline.attach_with_afid(afid, &[], &[]).unwrap()
-            } else {
-                pipeline.attach(&[], &[]).unwrap()
-            };
+            let (tag, afid) = pipeline.auth(&[], &[]).unwrap();
+            assert!(matches!(
+                pipeline.wait(tag, Instant::now() + timeout).unwrap(),
+                Reply::Auth(_)
+            ));
+            let (tag, root) = pipeline.attach_with_afid(afid, &[], &[]).unwrap();
             assert!(matches!(
                 pipeline.wait(tag, Instant::now() + timeout).unwrap(),
                 Reply::Attach(_)
             ));
-            if let Some(afid) = authentication {
-                let tag = pipeline.clunk(afid).unwrap();
-                pipeline.wait(tag, Instant::now() + timeout).unwrap();
-            }
+            let tag = pipeline.clunk(afid).unwrap();
+            pipeline.wait(tag, Instant::now() + timeout).unwrap();
             let mut client = ShellConnection::from_attached(
                 pipeline,
                 root,
@@ -264,6 +224,38 @@ fn lifecycle(case: Case) {
             client
         }))
     };
+    t.transport
+        .state
+        .authorize_authenticated_peer(
+            &crate::ProtectionDomainEvidence {
+                backend: crate::ProtectionBackendKind::Bubblewrap,
+                supervisor_pid: peer.pid(),
+                peer_pid: peer.pid(),
+                roles: [crate::ProtectionDomainRole::MetadataShell]
+                    .into_iter()
+                    .collect(),
+            },
+            Box::new(authority::Factory),
+        )
+        .unwrap();
+    let (mut discovery, limits, formats, bounds) =
+        crate::shell_transport::owned_copy::wire_tests::config();
+    discovery.connection_epoch = key.grant.connection_epoch;
+    t.transport
+        .state
+        .configure_image_channel(discovery, limits, formats, bounds)
+        .unwrap();
+    t.transport
+        .state
+        .begin_frame_file_negotiation(
+            &t.transport.content_epochs,
+            key.grant.connection_epoch,
+            Duration::from_secs(5),
+            crate::ShellContentAdmissionPolicy::Granted {
+                discrete_input: false,
+            },
+        )
+        .unwrap();
     let until = Instant::now() + Duration::from_secs(5);
     let mut negotiated = false;
     let mut submitted = 0;
@@ -275,54 +267,19 @@ fn lifecycle(case: Case) {
             Instant::now() < until,
             "SDK/owner handshake or lifecycle hung"
         );
-        t.transport.state.files_mut().unwrap().turn().unwrap();
         if !negotiated {
-            let wire = t.transport.state.files_mut().unwrap();
-            if let Some(request) = wire.export_mut().take_inbound() {
-                let Inbound::Negotiate(hello) = request else {
-                    panic!("expected negotiation")
-                };
-                assert_eq!((hello.minimum_revision, hello.maximum_revision), (13, 13));
-                assert_eq!(hello.required_capabilities, capabilities);
-                let limits = ContentLimits::prototype(key.grant);
-                let bytes = crate::shell_transport::files::encode_limits_object(
-                    key.grant.connection_epoch,
-                    &limits,
-                )
-                .unwrap();
-                wire.export_mut()
-                    .complete_negotiation_with_image_revision(
-                        Some((bytes, limits)),
-                        capabilities,
-                        13,
-                    )
-                    .unwrap();
-                let body = crate::shell_transport::files::encode_negotiated(
-                    ShellV1ServerWelcome {
-                        connection_epoch: key.grant.connection_epoch,
-                        selected_revision: 13,
-                        capabilities,
-                        max_descriptors: SOPHIA_SHELL_MAX_DESCRIPTORS as u16,
-                        max_label_bytes: MAX_CHROME_LABEL_LEN as u16,
-                        max_pending_activations: SOPHIA_SHELL_MAX_PENDING_ACTIVATIONS as u16,
-                    },
-                    true,
-                )
-                .unwrap();
-                assert!(wire.append(ShellFileKind::Negotiated, &body, true).unwrap());
-                if let Some(listener) = listener.take() {
-                    wire.install_image_transport(
-                        listener,
-                        crate::PolicyPeerIdentity {
-                            uid: rustix::process::geteuid().as_raw(),
-                            pid: peer.pid(),
-                        },
-                    )
-                    .unwrap();
-                }
+            if let Some(welcome) = t
+                .transport
+                .state
+                .poll_negotiation(&mut t.transport.content_epochs, 65536)
+                .unwrap()
+            {
+                assert_eq!(welcome.selected_revision, 13);
+                assert_eq!(welcome.capabilities & capabilities, capabilities);
                 negotiated = true;
             }
         } else {
+            t.transport.state.files_mut().unwrap().turn().unwrap();
             while let Some(completion) = worker.take_completed().unwrap() {
                 assert!(owner.receive(completion).is_ok());
             }
