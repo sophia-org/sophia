@@ -71,6 +71,32 @@ these shares. The metadata-shell R2 seam remains absent from this workload.
 
 ### Current resumption
 
+All five scopes have separate signed, published source candidates. None is
+merged or adopted. The first native qualification is the publication-only flush:
+`~/.local/state/t331/sft-flush-01/changing`, one r13-versus-r13 ABBA against its
+exact parent. Only the host changes; the peer, SDK, runner, workload and gates
+stay fixed. The owner must launch it after logging out of the graphical session.
+No additional profiling or combined candidate is needed for this comparison.
+
+| Scope | Candidate | Device-free result and next gate |
+| --- | --- | --- |
+| File-wire service | `93d181434`, `cpu/sft-service-batch` | Duplicate image input removed from publication flushes; progress tests pass. Native CPU effect pending. |
+| Native retirement | `df0e9c1f6`, `cpu/sft-native-retirement` | Allocate callback storage only when a completion exists. Feature suite: 316 passed, one opt-in skipped. Keep as unqualified source work; native call frequency and saving unknown. |
+| SDK drive | SDK `f522b0cff`, peer pin-only integration `5d2fcd4` | Eight-event automatic burst: recvfrom 11 to 4; retained burst: 27 to 12, with sendto unchanged at two. FIFO, ACK and readiness tests pass. Native effect pending, without stacking the flush. |
+| GL texture setup | `0041cc452`, `cpu/sft-texture-setup` | Immutable wrap parameters set on allocation rather than every upload. Renderer suite: 112 passed, 31 opt-in skipped. Two calls avoided per reused upload; native saving unknown. |
+| Peer fill | `fcb1a70d5`, `cpu/sft-fill-vectorization` | Safe fixed-size pixel-slice fill preserves bytes, tail validation and neighbour guards. Release assembly vectorizes the actual enqueue path; eight peer tests pass. Standalone old/new helpers both vectorized and did not measure a saving. Native effect pending. |
+
+Source evidence is in `~/.local/state/sophia-sft-service-batch-01`,
+`sophia-sft-native-retirement-01`, `sophia-sdk-drive-buffered-events-01`,
+`sophia-sft-texture-setup-01` and `sophia-sft-fill-vectorization-01` under the same
+state directory. Each has a SHA256SUMS seal and independent review. Release
+receipts for flush, SDK peer and fill are in `sophia-sft-service-native-build-01`,
+`sophia-sft-drive-peer-build-01` and `sophia-sft-fill-native-build-01`.
+Commands, toolchains and build environment match their controls. No binaries are
+copied into evidence. The retirement target's strict local Clippy passed with
+`--no-deps`; the initial dependency-inclusive run hit an unchanged renderer lint,
+recorded in its receipt. No source fix was bundled to silence it.
+
 The first source candidate is `cpu/sft-service-batch`, based on `29ee6d99f` in
 an isolated worktree. Publication flushes keep the shared custody, expiry,
 parked-read retry and write path, but stop re-serving image input. Ordinary input
