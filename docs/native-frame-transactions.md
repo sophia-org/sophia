@@ -584,8 +584,8 @@ verdicts and renderer completion. This does not qualify protected launch or
 physical presentation. Import/interop evidence is
 `~/.local/state/sophia-frame-image-sdk-import-01`.
 
-At that checkpoint real producer fallback policy remained open. C-to-host
-copied-frame interoperability, production negotiation, runtime traces and native
+At that checkpoint real producer fallback policy and C-to-host copied-frame
+interoperability remained open. Production negotiation, runtime traces and native
 qualification still remain open. Earlier retained dispatch evidence remains in
 `~/.local/state/sophia-frame-retained-fallback-01`.
 
@@ -622,6 +622,23 @@ The ordinary Lom CLI still requests r10; host production r13 selection remains
 unavailable. Reference-producer integration, real producer-to-host controls,
 runtime trace validation and native qualification remain required. No measured
 speedup or native atomic/tear-free acceptance follows from these checkpoints.
+
+### Independent C client against the host
+
+The pinned C SDK now runs the same copied-image lifecycle against Sophia's real
+file server, image socket and copy worker. It compiles as a separate strict-C99
+process and uses only its own public SDK APIs: authenticated attach, image
+registration, three initial uploads, Open, one copied-plus-retained FrameCommit,
+Prepared/Presented, Close, exact source release and ordinary demand/permit fallback
+on the same connection. The shared owner checks all uploaded pixels and retains
+both display leases. A deliberately changed copied payload fails that host check.
+Prepared returns no credit; frame completion alone never makes the C client reuse
+its source slot. The SDK snapshots and production code are unchanged.
+
+This closes copied-source C-to-host interoperability for the supplied-authentication,
+supplied-negotiation and supplied-renderer fixture. It does not qualify protected
+launch, actual Lom-to-host operation, native presentation or CPU/frame. Evidence:
+`~/.local/state/sophia-frame-c-host-interop-01`.
 
 ### Model and remaining integration gates
 

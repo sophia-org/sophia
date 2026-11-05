@@ -38,5 +38,7 @@ Rust SDK test supplies authentication verdicts and renderer completion; it is
 not a production negotiation or native performance result.
 
 The paired initial-image API permits ordinary uploads before the first Open.
-Its independent C tests are included; copied-source C-to-host interoperability
-remains a separate gate.
+Its independent C tests are included. The host's strict-C99 process test now
+exercises initial uploads, a copied/retained SFT scene and drained legacy fallback
+against the real file server/copy worker, with supplied authentication,
+negotiation and renderer completion. Native qualification remains separate.

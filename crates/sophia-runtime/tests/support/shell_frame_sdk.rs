@@ -9,6 +9,8 @@ use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
 
 use crate::image_test_authority as authority;
+#[path = "shell_frame_sdk_c.rs"]
+mod c;
 #[path = "shell_frame_sdk_image.rs"]
 mod image;
 
@@ -17,6 +19,7 @@ enum Case {
     Retained,
     RetainedFallback,
     CopiedFallback,
+    CCopiedFallback,
 }
 
 fn next(client: &mut ShellConnection, stream: &mut FrameStream) -> ShellFrameRecord {
@@ -47,8 +50,43 @@ fn sdk_establishes_images_then_copies_drains_and_presents_legacy_without_reconne
     lifecycle(Case::CopiedFallback);
 }
 
+#[test]
+fn c_sdk_establishes_images_then_copies_drains_and_presents_legacy_without_reconnecting() {
+    lifecycle(Case::CCopiedFallback);
+}
+
+enum Peer {
+    Rust(std::thread::JoinHandle<ShellConnection>),
+    C(c::Peer),
+}
+
+impl Peer {
+    fn pid(&self) -> u32 {
+        match self {
+            Self::Rust(_) => std::process::id(),
+            Self::C(peer) => peer.pid(),
+        }
+    }
+
+    fn is_finished(&mut self) -> bool {
+        match self {
+            Self::Rust(peer) => peer.is_finished(),
+            Self::C(peer) => peer.is_finished(),
+        }
+    }
+
+    fn finish(self) {
+        match self {
+            Self::Rust(peer) => {
+                peer.join().unwrap();
+            }
+            Self::C(mut peer) => peer.finish(),
+        }
+    }
+}
+
 fn lifecycle(case: Case) {
-    let copied = case == Case::CopiedFallback;
+    let copied = matches!(case, Case::CopiedFallback | Case::CCopiedFallback);
     let fallback = case != Case::Retained;
     let mut f = fixture::Fixture::new(64);
     let mut t = Transport::take(&mut f);
@@ -140,88 +178,92 @@ fn lifecycle(case: Case) {
         copied.then(|| crate::image_channel::ImageChannelListener::bind(&t.path).unwrap());
     let image_dir = t.path.clone();
     let capabilities = t.transport.state.capabilities;
-    let peer = std::thread::spawn(move || {
-        let timeout = Duration::from_secs(5);
-        let mut pipeline = Pipeline::over(remote, PipelineLimits::default(), timeout).unwrap();
-        let mut authentication = None;
-        let (tag, root) = if copied {
-            let (tag, afid) = pipeline.auth(&[], &[]).unwrap();
+    let mut peer = if case == Case::CCopiedFallback {
+        Peer::C(c::Peer::spawn(&image_dir, remote))
+    } else {
+        Peer::Rust(std::thread::spawn(move || {
+            let timeout = Duration::from_secs(5);
+            let mut pipeline = Pipeline::over(remote, PipelineLimits::default(), timeout).unwrap();
+            let mut authentication = None;
+            let (tag, root) = if copied {
+                let (tag, afid) = pipeline.auth(&[], &[]).unwrap();
+                assert!(matches!(
+                    pipeline.wait(tag, Instant::now() + timeout).unwrap(),
+                    Reply::Auth(_)
+                ));
+                authentication = Some(afid);
+                pipeline.attach_with_afid(afid, &[], &[]).unwrap()
+            } else {
+                pipeline.attach(&[], &[]).unwrap()
+            };
             assert!(matches!(
                 pipeline.wait(tag, Instant::now() + timeout).unwrap(),
-                Reply::Auth(_)
+                Reply::Attach(_)
             ));
-            authentication = Some(afid);
-            pipeline.attach_with_afid(afid, &[], &[]).unwrap()
-        } else {
-            pipeline.attach(&[], &[]).unwrap()
-        };
-        assert!(matches!(
-            pipeline.wait(tag, Instant::now() + timeout).unwrap(),
-            Reply::Attach(_)
-        ));
-        if let Some(afid) = authentication {
-            let tag = pipeline.clunk(afid).unwrap();
-            pipeline.wait(tag, Instant::now() + timeout).unwrap();
-        }
-        let mut client = ShellConnection::from_attached(
-            pipeline,
-            root,
-            ShellClientOptions {
-                minimum_revision: 13,
-                maximum_revision: 13,
-                required_capabilities: capabilities,
-                handshake_timeout: timeout,
-            },
-        )
-        .unwrap();
-        assert_eq!(client.welcome().selected_revision, 13);
-        if copied {
-            image::enable(&mut client, image_dir, key);
-        }
-        let mut stream = FrameStream::new();
-        if copied {
-            image::establish(&mut client, &stream, key);
-        }
-        stream.open(&mut client, fixture::tx(100), key).unwrap();
-        assert!(!stream.has_credit());
-        assert!(
-            matches!(next(&mut client, &mut stream), ShellFrameRecord::Opened { key: actual, .. } if actual == key)
-        );
-        assert!(stream.has_credit());
-        let source = if copied {
-            Some(image::submit(&mut client, &mut stream, &mut commit, key))
-        } else {
-            stream.submit(&mut client, &commit).unwrap();
-            None
-        };
-        assert!(!stream.has_credit());
-        assert!(stream.submit(&mut client, &commit).is_err());
-        let prepared = next(&mut client, &mut stream);
-        assert!(
-            matches!(&prepared, ShellFrameRecord::Outcome { outcome, credit_expires_msec: 0, .. } if outcome.kind == 1),
-            "{prepared:?}"
-        );
-        assert!(!stream.has_credit(), "Prepared must not return credit");
-        assert!(
-            matches!(next(&mut client, &mut stream), ShellFrameRecord::Outcome { outcome, credit_expires_msec, .. } if outcome.kind == 2 && credit_expires_msec > 10)
-        );
-        assert!(stream.has_credit());
-        stream.close(&mut client, fixture::tx(102)).unwrap();
-        assert!(!stream.has_credit());
-        assert!(
-            matches!(next(&mut client, &mut stream), ShellFrameRecord::Closed { key: actual, .. } if actual == key)
-        );
-        assert_eq!(stream.state(), FrameStreamState::Closed);
-        assert!(stream.frame_work_drained());
-        if let Some(source) = source {
-            image::settle(&mut client, source);
-            image::fallback(&mut client, &stream, &mut commit, key);
-        }
-        if fallback {
-            legacy_frame(&mut client, &commit);
-        }
-        client
-    });
+            if let Some(afid) = authentication {
+                let tag = pipeline.clunk(afid).unwrap();
+                pipeline.wait(tag, Instant::now() + timeout).unwrap();
+            }
+            let mut client = ShellConnection::from_attached(
+                pipeline,
+                root,
+                ShellClientOptions {
+                    minimum_revision: 13,
+                    maximum_revision: 13,
+                    required_capabilities: capabilities,
+                    handshake_timeout: timeout,
+                },
+            )
+            .unwrap();
+            assert_eq!(client.welcome().selected_revision, 13);
+            if copied {
+                image::enable(&mut client, image_dir, key);
+            }
+            let mut stream = FrameStream::new();
+            if copied {
+                image::establish(&mut client, &stream, key);
+            }
+            stream.open(&mut client, fixture::tx(100), key).unwrap();
+            assert!(!stream.has_credit());
+            assert!(
+                matches!(next(&mut client, &mut stream), ShellFrameRecord::Opened { key: actual, .. } if actual == key)
+            );
+            assert!(stream.has_credit());
+            let source = if copied {
+                Some(image::submit(&mut client, &mut stream, &mut commit, key))
+            } else {
+                stream.submit(&mut client, &commit).unwrap();
+                None
+            };
+            assert!(!stream.has_credit());
+            assert!(stream.submit(&mut client, &commit).is_err());
+            let prepared = next(&mut client, &mut stream);
+            assert!(
+                matches!(&prepared, ShellFrameRecord::Outcome { outcome, credit_expires_msec: 0, .. } if outcome.kind == 1),
+                "{prepared:?}"
+            );
+            assert!(!stream.has_credit(), "Prepared must not return credit");
+            assert!(
+                matches!(next(&mut client, &mut stream), ShellFrameRecord::Outcome { outcome, credit_expires_msec, .. } if outcome.kind == 2 && credit_expires_msec > 10)
+            );
+            assert!(stream.has_credit());
+            stream.close(&mut client, fixture::tx(102)).unwrap();
+            assert!(!stream.has_credit());
+            assert!(
+                matches!(next(&mut client, &mut stream), ShellFrameRecord::Closed { key: actual, .. } if actual == key)
+            );
+            assert_eq!(stream.state(), FrameStreamState::Closed);
+            assert!(stream.frame_work_drained());
+            if let Some(source) = source {
+                image::settle(&mut client, source);
+                image::fallback(&mut client, &stream, &mut commit, key);
+            }
+            if fallback {
+                legacy_frame(&mut client, &commit);
+            }
+            client
+        }))
+    };
     let until = Instant::now() + Duration::from_secs(5);
     let mut negotiated = false;
     let mut submitted = 0;
@@ -273,7 +315,7 @@ fn lifecycle(case: Case) {
                         listener,
                         crate::PolicyPeerIdentity {
                             uid: rustix::process::geteuid().as_raw(),
-                            pid: std::process::id(),
+                            pid: peer.pid(),
                         },
                     )
                     .unwrap();
@@ -354,7 +396,7 @@ fn lifecycle(case: Case) {
         }
         std::thread::yield_now();
     }
-    let _client = peer.join().unwrap();
+    peer.finish();
     assert!(negotiated);
     assert_eq!(submitted, if fallback { 2 } else { 1 });
     assert_eq!((owner.pending(), worker.pending()), (0, 0));

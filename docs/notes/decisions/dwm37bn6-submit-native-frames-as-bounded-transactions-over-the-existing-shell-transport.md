@@ -141,9 +141,9 @@ settlement. The [owning SDK import](../../native-frame-transactions.md#owning-sd
 now brings paired C/Rust stream owners and atomic copied-source queue admission
 into Sophia's verified snapshots. A real Rust client/file-owner test covers a
 retained frame's credit lifecycle with supplied negotiation and completion.
-Production opt-in negotiation, independent C-to-host copied-source interoperability,
-real producers, runtime traces and native qualification remain required; these
-device-free checks establish no speedup.
+Production opt-in negotiation, real producers, runtime traces and native
+qualification remain required; these device-free checks establish no speedup.
+Independent C-to-host copied-source interoperability was still open at that checkpoint.
 
 The [retained-scene fallback seam](../../native-frame-transactions.md#retained-scene-fallback-dispatch)
 now resumes demand/permit candidates after SFT drains on the same connection,
@@ -169,6 +169,14 @@ Lom-to-host/native interoperability. The ordinary CLI remains r10. Reference
 producer, production opt-in, trace validation and native qualification are open.
 Evidence: `~/.local/state/sophia-frame-initial-image-import-01` and
 `~/.local/state/sophia-lom-frame-producer-01`.
+
+The [independent C host test](../../native-frame-transactions.md#independent-c-client-against-the-host)
+now exercises the same initial-upload, copied-plus-retained frame and drained
+legacy fallback against the actual file owner and copy worker. Strict C99 and
+host-side pixel/lease checks pass; a changed payload is detected. It shares the
+Rust test's supplied authentication, negotiation and renderer completion, not its
+client implementation. No native/performance or actual Lom-to-host claim follows.
+Evidence: `~/.local/state/sophia-frame-c-host-interop-01`.
 
 The [continuous-frame CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 and t289 own the next implementation/qualification work. The
