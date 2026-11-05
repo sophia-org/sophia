@@ -1,5 +1,87 @@
 use super::*;
 
+#[test]
+fn initial_images_settle_before_open_without_selecting_fallback() {
+    let mut f = Fixture::registered("frame-initial-images");
+    f.upload.width = 2;
+    f.upload.height = 1;
+    for resource in 40..43 {
+        let mut fill = f.c.image_acquire_ring_fill(8, Instant::now()).unwrap();
+        fill.pixels_mut().unwrap().fill(41);
+        let mut upload = f.upload;
+        upload.resource = resource;
+        let mut wrong = f.key;
+        wrong.allocation.generation += 1;
+        assert!(
+            f.stream
+                .commit_initial_ring_fill(&mut f.c, wrong, &mut fill, upload, Instant::now())
+                .is_err()
+        );
+        assert_eq!(fill.pixels_mut().unwrap(), &[41; 8]);
+        let offer = f
+            .stream
+            .commit_initial_ring_fill(&mut f.c, f.key, &mut fill, upload, Instant::now())
+            .unwrap();
+        assert!(fill.pixels_mut().is_err());
+        assert_eq!(f.stream.state(), FrameStreamState::Closed);
+        assert_eq!(f.stream.key(), None);
+        assert!(!f.stream.has_credit());
+        status(&mut f, offer, upload);
+        let sophia_shell_protocol::shell_files::RingControl::Offer(sent) =
+            sophia_shell_protocol::shell_files::RingControl::decode(
+                f.p.control_writes.last().unwrap(),
+            )
+            .unwrap()
+        else {
+            panic!("expected initial Offer")
+        };
+        let bytes = RingEvent {
+            kind: RingEventKind::SlotReleased,
+            identity: RING_IDENTITY,
+            sequence: f.p.take_sequence(),
+            offer_id: offer,
+            slot: sent.slot,
+            slot_generation: sent.slot_generation,
+            resource: upload.resource,
+            resource_generation: upload.resource_generation,
+            reason: 0,
+            changed_generation: false,
+        }
+        .encode();
+        f.p.push(bytes);
+        drive(&mut f.c, &mut f.p, |c, _| {
+            c.image_ring_offer(offer).unwrap().state == RingOfferState::Settled
+        });
+        f.c.image_forget(offer).unwrap();
+    }
+    assert_eq!(
+        f.p.control_writes.len(),
+        4,
+        "registration and three initial Offers"
+    );
+    f.open();
+    assert!(f.stream.has_credit());
+    let mut fill = f.c.image_acquire_ring_fill(8, Instant::now()).unwrap();
+    for closed in [false, true] {
+        if closed {
+            close(&mut f);
+        }
+        assert!(
+            f.stream
+                .commit_initial_ring_fill(&mut f.c, f.key, &mut fill, f.upload, Instant::now())
+                .is_err()
+        );
+    }
+    let mut unknown = FrameStream::new();
+    unknown.disconnect();
+    assert!(
+        unknown
+            .commit_initial_ring_fill(&mut f.c, f.key, &mut fill, f.upload, Instant::now())
+            .is_err()
+    );
+    f.c.image_abort_ring_fill(&mut fill).unwrap();
+}
+
 fn fixture(name: &str) -> Fixture {
     let mut f = Fixture::new(name);
     f.upload.width = 2;

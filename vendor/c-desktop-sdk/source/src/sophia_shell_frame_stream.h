@@ -57,6 +57,15 @@ int sophia_ss_frame_submit_ring(struct sophia_ss_image *, struct sophia_ss_frame
                                uint32_t slot, const struct sophia_ss_ring_image *,
                                struct sophia_sf_record *, uint64_t now_ms,
                                uint64_t *ticket, uint64_t *offer);
+/* Establish retained images before this owner's first Open using ordinary image
+ * settlement. Keep one owner per output binding; settle sources before opening.
+ * This neither grants credit nor selects fallback. The host still checks that no
+ * live stream owns the output. Requires an unused owner and matching key/metadata;
+ * UNKNOWN or any previously queued Open refuses. Returns SOPHIA_IPR_* with the same ownership,
+ * source-custody and failure rules as sophia_ss_frame_legacy_ring_offer. */
+int sophia_ss_frame_initial_ring_offer(struct sophia_ss_image *, const struct sophia_ss_frame_stream *,
+                                      const struct sophia_sft_key *, uint32_t slot,
+                                      const struct sophia_ss_ring_image *, uint64_t now_ms, uint64_t *offer);
 /* Legacy Offer after frame/close work AND SFT sources for the output have drained.
  * The metadata must match the drained key. Registration and accepted resources
  * survive; follow normal image settlement and demand/permit/candidate handling.

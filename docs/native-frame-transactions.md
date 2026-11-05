@@ -584,9 +584,44 @@ verdicts and renderer completion. This does not qualify protected launch or
 physical presentation. Import/interop evidence is
 `~/.local/state/sophia-frame-image-sdk-import-01`.
 
-Real Lom/reference fallback policy, C-to-host copied-frame interoperability,
-production negotiation, runtime traces and native qualification remain open. Earlier retained dispatch evidence remains in
+At that checkpoint real producer fallback policy remained open. C-to-host
+copied-frame interoperability, production negotiation, runtime traces and native
+qualification still remain open. Earlier retained dispatch evidence remains in
 `~/.local/state/sophia-frame-retained-fallback-01`.
+
+### Initial images and Lom producer checkpoint
+
+The paired SDK imports now pin Rust `b483e1ee` and C `0df720b0`. Their explicit
+initial-image API admits ordinary owned-ring Offers before the first stream
+Open, without creating credit or a stream owner. After an owner has opened,
+only the existing exact drain/fallback API permits ordinary image admission.
+Both keep the connection and allocation binding; generic legacy image APIs
+remain blocked on r13.
+
+The real Rust SDK/file-owner test establishes three immutable images, then
+submits a copied SFT image together with a retained placement. After Close and
+source drain it uploads a different ordinary image and presents both placements
+through legacy admission on that same connection. Host bytes and both display
+leases are checked. This still supplies authentication verdicts, negotiation
+and renderer completion; it is not a protected/native run.
+Evidence: `~/.local/state/sophia-frame-initial-image-import-01`.
+
+Lom's default-off producer is published on `protocol/native-frame-transaction`
+at `332c9c4a`. It preserves the region planner: initial multi-upload establishment
+uses ordinary admission, then eligible updates send one FrameCommit with zero
+or one new image. Unsupported active updates close/drain and stay on the legacy
+path for that binding. Source reuse, predecessor release and exact Presented
+input meaning remain separate. Five real CPU-worker/socket tests cover copied,
+retained and full-panel frames, fallback, explicit refusal, delayed releases
+and input ordering; two removed guards fail their tests. The locked repository
+gate passes against the published SDK. The peer in these tests is scripted;
+Lom-to-Sophia interoperation is not established by composing the two test claims.
+Evidence: `~/.local/state/sophia-lom-frame-producer-01`.
+
+The ordinary Lom CLI still requests r10; host production r13 selection remains
+unavailable. Reference-producer integration, real producer-to-host controls,
+runtime trace validation and native qualification remain required. No measured
+speedup or native atomic/tear-free acceptance follows from these checkpoints.
 
 ### Model and remaining integration gates
 

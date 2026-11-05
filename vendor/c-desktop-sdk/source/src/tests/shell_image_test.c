@@ -1139,6 +1139,7 @@ int main(void)
     frame_image_two_slots();
     frame_image_worker();
     frame_image_fallback();
+    frame_initial_images();
     frame_image_fallback_source_first();
     frame_image_fallback_refusals();
     owned_ring_worker();

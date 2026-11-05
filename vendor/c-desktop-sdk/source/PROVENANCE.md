@@ -1128,3 +1128,10 @@ The existing worker-fill lineage is joined with SFT source admission without a
 new wire revision or dependency. API-PARITY.md records the C caller-ownership
 counterpart and remaining real-producer/host gates. Final paired revisions and
 tests are recorded in sophia-frame-worker-fill-01 and its publication receipt.
+
+## SFT initial retained resource establishment, 2026-11-04
+
+The existing ordinary Offer path can establish retained images before an output
+stream opens. The paired explicit initial-upload APIs preserve its source and
+host-admission contracts and leave every negotiation default unchanged. See
+API-PARITY.md; no new record, capability, renderer path or wire value is added.

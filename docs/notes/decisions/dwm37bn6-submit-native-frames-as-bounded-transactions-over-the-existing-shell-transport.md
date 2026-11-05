@@ -155,8 +155,20 @@ The imported Rust SDK test now traverses the real file server, image FD channel
 and copy worker, verifies two distinct immutable pixel payloads, and presents
 the second through fallback without reconnecting or dropping the first display
 lease. Authentication verdicts and native completions are supplied. The actual
-producers remain unjoined; this is not the whole fallback or native gate.
+producers were unjoined at that checkpoint; it was not the whole fallback or native gate.
 Evidence: `~/.local/state/sophia-frame-image-sdk-import-01`.
+
+The [initial-image and Lom checkpoint](../../native-frame-transactions.md#initial-images-and-lom-producer-checkpoint)
+adds paired explicit pre-Open uploads (Rust `b483e1ee`, C `0df720b0`) and tests
+establishment, retained/copied SFT scenes and fallback against the real host
+owner with supplied negotiation/authentication/completion. Lom `332c9c4a` now
+implements default-off whole-frame admission and exact drain/fallback while
+preserving regions, source/resource custody and ordered input. Its real CPU
+worker uses a scripted owner in five device-free controls; that does not prove
+Lom-to-host/native interoperability. The ordinary CLI remains r10. Reference
+producer, production opt-in, trace validation and native qualification are open.
+Evidence: `~/.local/state/sophia-frame-initial-image-import-01` and
+`~/.local/state/sophia-lom-frame-producer-01`.
 
 The [continuous-frame CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 and t289 own the next implementation/qualification work. The

@@ -73,7 +73,82 @@ fn image_error(error: ProducerError) -> ShellClientError {
     ShellClientError::Image(error.into())
 }
 
+fn commit_legacy_for_key(
+    connection: &mut ShellConnection,
+    key: sophia_shell_protocol::shell_files::ShellFrameStreamKey,
+    fill: &mut OwnedRingSlotFill,
+    upload: RingUpload,
+    now: Instant,
+) -> Result<u64, ShellClientError> {
+    connection.wire.require_frame()?;
+    if key.stream_id == 0
+        || key.grant.connection_epoch != connection.connection_epoch()
+        || (upload.output, upload.output_generation) != (key.output.id, key.output.generation)
+        || (upload.allocation, upload.allocation_generation)
+            != (key.allocation.id, key.allocation.generation)
+        || upload.topology_generation != key.facts_generation
+    {
+        return Err(ShellClientError::InvalidArgument(
+            "legacy image does not match binding",
+        ));
+    }
+    let adapter = connection
+        .image
+        .as_mut()
+        .ok_or(ShellClientError::Image(ImageAdapterError::NotEnabled))?;
+    if adapter.config.content_grant_epoch != key.grant.content_grant_epoch {
+        return Err(ShellClientError::InvalidArgument(
+            "legacy image has a replaced grant",
+        ));
+    }
+    if let Some(ring) = &adapter.ring {
+        for source in adapter.frame_sources.iter().flatten().filter(|source| {
+            source.request.grant == key.grant && source.request.output == key.output
+        }) {
+            match ring.offer(source.offer).map(|offer| offer.state) {
+                Some(RingOfferState::Pending) => {
+                    return Err(ShellClientError::Image(ImageAdapterError::Busy));
+                }
+                Some(RingOfferState::Unknown) => {
+                    return Err(ShellClientError::Image(ImageAdapterError::Closed));
+                }
+                _ => {}
+            }
+        }
+    }
+    let offer = adapter
+        .commit_returned_fill(&connection.wire, fill, upload, now)
+        .map_err(ShellClientError::Image)?;
+    let _ = connection.poll_io();
+    Ok(offer)
+}
+
 impl FrameStream {
+    /// Establish retained images before this owner's first Open, without a frame credit.
+    /// This uses ordinary image settlement, not a frame or a fallback transition.
+    /// Keep one owner per output binding and settle these sources before opening it.
+    /// The host independently refuses legacy offers while a stream is live.
+    ///
+    /// # Errors
+    /// Refuses an owner that queued Open or lost custody, a mismatched binding,
+    /// unsettled SFT source, closed connection or invalid loan. Bytes stay owned
+    /// by the caller on refusal, as with [`Self::commit_legacy_ring_fill`].
+    pub fn commit_initial_ring_fill(
+        &self,
+        connection: &mut ShellConnection,
+        key: sophia_shell_protocol::shell_files::ShellFrameStreamKey,
+        fill: &mut OwnedRingSlotFill,
+        upload: RingUpload,
+        now: Instant,
+    ) -> Result<u64, ShellClientError> {
+        if self.key().is_some() || !self.frame_work_drained() {
+            return Err(ShellClientError::InvalidArgument(
+                "initial images require an unused frame owner",
+            ));
+        }
+        commit_legacy_for_key(connection, key, fill, upload, now)
+    }
+
     /// Queue a legacy image offer for this binding after frame and source work drain.
     /// This reuses the registration and accepted resources; it neither reconnects
     /// nor grants a frame credit. Follow ordinary image settlement, demand/permit
@@ -91,49 +166,10 @@ impl FrameStream {
         upload: RingUpload,
         now: Instant,
     ) -> Result<u64, ShellClientError> {
-        connection.wire.require_frame()?;
         let key = self.key().filter(|_| self.frame_work_drained()).ok_or(
             ShellClientError::InvalidArgument("frame stream has not drained"),
         )?;
-        if key.grant.connection_epoch != connection.connection_epoch()
-            || (upload.output, upload.output_generation) != (key.output.id, key.output.generation)
-            || (upload.allocation, upload.allocation_generation)
-                != (key.allocation.id, key.allocation.generation)
-            || upload.topology_generation != key.facts_generation
-        {
-            return Err(ShellClientError::InvalidArgument(
-                "legacy image does not match drained binding",
-            ));
-        }
-        let adapter = connection
-            .image
-            .as_mut()
-            .ok_or(ShellClientError::Image(ImageAdapterError::NotEnabled))?;
-        if adapter.config.content_grant_epoch != key.grant.content_grant_epoch {
-            return Err(ShellClientError::InvalidArgument(
-                "legacy image has a replaced grant",
-            ));
-        }
-        if let Some(ring) = &adapter.ring {
-            for source in adapter.frame_sources.iter().flatten().filter(|source| {
-                source.request.grant == key.grant && source.request.output == key.output
-            }) {
-                match ring.offer(source.offer).map(|offer| offer.state) {
-                    Some(RingOfferState::Pending) => {
-                        return Err(ShellClientError::Image(ImageAdapterError::Busy));
-                    }
-                    Some(RingOfferState::Unknown) => {
-                        return Err(ShellClientError::Image(ImageAdapterError::Closed));
-                    }
-                    _ => {}
-                }
-            }
-        }
-        let offer = adapter
-            .commit_returned_fill(&connection.wire, fill, upload, now)
-            .map_err(ShellClientError::Image)?;
-        let _ = connection.poll_io();
-        Ok(offer)
+        commit_legacy_for_key(connection, key, fill, upload, now)
     }
 
     /// Queue a frame using a completed worker-owned ring fill without copying pixels.

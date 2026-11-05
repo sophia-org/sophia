@@ -1,14 +1,14 @@
-tree c4134746dffd1d432e41c76b90d902d1e864fffd
-parent 8d1fb091a3407e5bb65a7f484ed29b9154cae8b4
-author Mason Green <mason@greenm01.net> 1793838109 -0500
-committer Mason Green <mason@greenm01.net> 1793838109 -0500
+tree 3d2adbae06fa10143d8e62c1028365f95132f979
+parent 32ea31a16e473df453afce0076506700a7a2e90a
+author Mason Green <mason@greenm01.net> 1793841503 -0500
+committer Mason Green <mason@greenm01.net> 1793841503 -0500
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCauvMHRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKIEAD+NWjRCqFOgMakgtA7gIGY
- nWyUldFWLMLc/qfekWKQTl4BAMWpRr18xVeBN/9I0NuHGvQ95i6AC+k2nIRulNnD
- P28P
- =Jy4D
+ iJAEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCauvZXxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJsmgD/Sv4tzofKkytGkvLXr7sw
+ soS7fPFkVm841TaO+Xr5vYYA+Kn1AG9FVN07dHIBzbCXvK6sBXPuE3s0BXJ5q7Yt
+ 6QQ=
+ =B3EJ
  -----END PGP SIGNATURE-----
 
-Add explicit drained SFT image fallback
+Permit initial retained images before opening an SFT stream

@@ -2054,3 +2054,27 @@ C `8d1fb091a3407e5bb65a7f484ed29b9154cae8b4`. Evidence and exact publication
 revisions are recorded in `~/.local/state/sophia-frame-image-fallback-01` and
 its adjacent publication receipt. Real producer integration, host import,
 production negotiation, runtime traces and native qualification remain open.
+
+## SFT initial retained images, 2026-11-04
+
+Rust `FrameStream::commit_initial_ring_fill` and C
+`sophia_ss_frame_initial_ring_offer` establish existing owned-ring resources
+before the output owner's first Open. They require an unused, Closed owner and
+an explicit key matching the upload and current grant. Opening, Open, Closing,
+previously opened Closed, and Unknown owners refuse without spending the source.
+Ordinary r13 image-upload APIs remain disabled; the host independently checks
+that no open/draining stream owns the output before scheduling any legacy copy.
+
+Initial establishment is not an unsupported-frame fallback: it grants no credit
+and selects no frame path. Settle these ordinary uploads before opening SFT;
+then retained layers can coexist with its at-most-one new image per frame.
+Never replace an owner to bypass Unknown or a live stream. Once an active SFT
+update is unsupported, use the separate drain-before-fallback API and keep that
+binding on legacy. Neither API flattens regions, discards resources or reconnects.
+
+Both implementations reuse the fallback upload validation and pending/unknown
+SFT-source checks. Rust returns an inert worker fill only on admission; C retains
+its existing caller-synchronized mapping lifetime. Tests independently upload and
+settle three resources before Open, reject a mismatched key and post-Open/Unknown
+use, and prove that initial uploads do not mint credit or send stream controls.
+This is SDK preparation for the real Lom producer, not native qualification.

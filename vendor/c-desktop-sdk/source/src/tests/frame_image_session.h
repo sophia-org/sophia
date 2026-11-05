@@ -56,14 +56,11 @@ static int frame_image_deliver(struct image_rig *t, struct sophia_ss_frame_strea
     assert(!sophia_ss_consume(&t->r.s)); rig_ack(&t->r);
     return status;
 }
-static int frame_image_ready(struct image_rig *t, struct sophia_ss_frame_stream *f, const struct sophia_sf_record *r)
+static void frame_image_open(struct image_rig *t, struct sophia_ss_frame_stream *f, const struct sophia_sf_record *r)
 {
     const struct sophia_sf_candidate *c = &r->value.frame.commit.candidate;
     struct sophia_sf_record opened = {0};
     uint64_t ticket;
-    int fd;
-    ring_start_revision(t, SOPHIA_SF_BAR, 2, 0, 13);
-    fd = ring_ready(t); ack_all(t);
     opened.header.kind = SOPHIA_SFT_OPENED;
     opened.value.frame.stream.transaction = 10;
     opened.value.frame.stream.ttl_ms = 100;
@@ -72,6 +69,13 @@ static int frame_image_ready(struct image_rig *t, struct sophia_ss_frame_stream 
     assert(!sophia_ss_frame_open(&t->r.s, f, 10, &opened.value.frame.stream.key, &ticket));
     assert(settle_ticket(t, ticket) == SOPHIA_SS_SUBMITTED);
     assert(!frame_image_deliver(t, f, opened));
+}
+static int frame_image_ready(struct image_rig *t, struct sophia_ss_frame_stream *f, const struct sophia_sf_record *r)
+{
+    int fd;
+    ring_start_revision(t, SOPHIA_SF_BAR, 2, 0, 13);
+    fd = ring_ready(t); ack_all(t);
+    frame_image_open(t, f, r);
     return fd;
 }
 static struct sophia_sf_record frame_image_refused(const struct sophia_ss_frame_stream *f, uint64_t generation)

@@ -36,3 +36,7 @@ This pin also includes worker-fill ownership and explicit same-binding legacy
 image fallback after independent frame/source drain. The host's real copied
 Rust SDK test supplies authentication verdicts and renderer completion; it is
 not a production negotiation or native performance result.
+
+The paired initial-image API permits ordinary uploads before the first Open.
+Its independent C tests are included; copied-source C-to-host interoperability
+remains a separate gate.

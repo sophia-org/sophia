@@ -24,6 +24,11 @@ impl Drop for Fixture {
 }
 impl Fixture {
     fn new(name: &str) -> Self {
+        let mut f = Self::registered(name);
+        f.open();
+        f
+    }
+    fn registered(name: &str) -> Self {
         let (mut c, mut p, dir, listener) = connect_role_image(
             name,
             4096,
@@ -86,30 +91,31 @@ impl Fixture {
             width: image.width,
             height: image.height,
         };
-        let mut stream = FrameStream::new();
-        let ticket = stream
-            .open(&mut c, TransactionId::from_raw(10), key)
-            .unwrap()
-            .first;
-        let mut f = Self {
+        Self {
             c,
             p,
-            stream,
+            stream: FrameStream::new(),
             key,
             record: ShellFrameRecord::Commit(value),
             upload,
             dir,
             _socket: socket,
             _source: source,
-        };
-        f.custody(ticket);
-        f.deliver(ShellFrameRecord::Opened {
+        }
+    }
+    fn open(&mut self) {
+        let ticket = self
+            .stream
+            .open(&mut self.c, TransactionId::from_raw(10), self.key)
+            .unwrap()
+            .first;
+        self.custody(ticket);
+        self.deliver(ShellFrameRecord::Opened {
             transaction: TransactionId::from_raw(10),
-            key,
+            key: self.key,
             ttl_millis: 100,
         })
         .unwrap();
-        f
     }
     fn custody(&mut self, ticket: Ticket) {
         drive(&mut self.c, &mut self.p, |_, p| !p.submits.is_empty());

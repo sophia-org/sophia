@@ -43,7 +43,7 @@ fn drained_stream_keeps_resources_and_accepts_a_legacy_candidate_on_the_same_con
 }
 
 #[test]
-fn copied_sdk_frame_drains_then_uploads_and_presents_legacy_image_without_reconnecting() {
+fn sdk_establishes_images_then_copies_drains_and_presents_legacy_without_reconnecting() {
     lifecycle(Case::CopiedFallback);
 }
 
@@ -94,6 +94,14 @@ fn lifecycle(case: Case) {
         image: None,
         retire: None,
     });
+    if copied && let ShellFrameRecord::Commit(frame) = &mut commit {
+        frame.candidate.placements.push(ContentPlacement {
+            resource: fixture::resource(6),
+            surface_index: 0,
+            destination_x_px: 2,
+            destination_y_px: 0,
+        });
+    }
     let (local, remote) = UnixStream::pair().unwrap();
     let (role, bounds) = crate::shell_transport::files::role_bounds(None);
     let mut export = ShellFiles::awaiting_negotiation(
@@ -171,6 +179,9 @@ fn lifecycle(case: Case) {
             image::enable(&mut client, image_dir, key);
         }
         let mut stream = FrameStream::new();
+        if copied {
+            image::establish(&mut client, &stream, key);
+        }
         stream.open(&mut client, fixture::tx(100), key).unwrap();
         assert!(!stream.has_credit());
         assert!(
@@ -185,8 +196,10 @@ fn lifecycle(case: Case) {
         };
         assert!(!stream.has_credit());
         assert!(stream.submit(&mut client, &commit).is_err());
+        let prepared = next(&mut client, &mut stream);
         assert!(
-            matches!(next(&mut client, &mut stream), ShellFrameRecord::Outcome { outcome, credit_expires_msec: 0, .. } if outcome.kind == 1)
+            matches!(&prepared, ShellFrameRecord::Outcome { outcome, credit_expires_msec: 0, .. } if outcome.kind == 1),
+            "{prepared:?}"
         );
         assert!(!stream.has_credit(), "Prepared must not return credit");
         assert!(
@@ -392,34 +405,10 @@ fn legacy_frame(client: &mut ShellConnection, prior: &ShellFrameRecord) {
         panic!("permit")
     };
     assert_eq!(permit.state, 1);
-    let records = [
-        ShellContentRecord::CandidateBegin(ContentCandidateBegin {
-            grant: scene.grant,
-            candidate_generation: 2,
-            output: scene.output,
-            facts_generation: scene.facts_generation,
-            pacing_permit: permit.permit_id,
-            interaction_generation: scene.interaction_generation,
-            surface_count: 1,
-            placement_count: 1,
-            target_count: 0,
-        }),
-        ShellContentRecord::CandidateChunk(ContentCandidateChunk {
-            grant: scene.grant,
-            candidate_generation: 2,
-            chunk_ordinal: 0,
-            surfaces: scene.surfaces.clone(),
-            placements: scene.placements.clone(),
-            targets: vec![],
-        }),
-        ShellContentRecord::CandidateEnd(ContentCandidateEnd {
-            grant: scene.grant,
-            candidate_generation: 2,
-            surface_count: 1,
-            placement_count: 1,
-            target_count: 0,
-        }),
-    ];
+    let mut candidate = scene.clone();
+    candidate.candidate_generation = 2;
+    candidate.pacing_permit = permit.permit_id;
+    let records = candidate.parts();
     client
         .enqueue_content_group(fixture::tx(111), &records)
         .unwrap();

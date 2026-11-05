@@ -11,6 +11,50 @@ static void frame_image_close(struct image_rig *t, struct sophia_ss_frame_stream
     assert(!frame_image_deliver(t, f, closed));
 }
 
+static void frame_initial_images(void)
+{
+    struct image_rig t;
+    struct sophia_ss_frame_stream f = {0}, unknown = {0};
+    struct sophia_sf_record r = image_frame_record();
+    struct sophia_ss_ring_image m = frame_image(&r);
+    struct sophia_sft_key key = {PEER_EPOCH, 3, m.output_id, m.output_generation,
+        m.allocation_id, m.allocation_generation, m.topology_generation, r.value.frame.commit.candidate.pacing_permit};
+    uint64_t offer = 0;
+    unsigned i;
+    int fd;
+    ring_start_revision(&t, SOPHIA_SF_BAR, 2, 0, 13);
+    fd = ring_ready(&t); ack_all(&t);
+    for (i = 0; i < 3; ++i) {
+        struct sophia_sft_key wrong = key;
+        struct sophia_ss_ring_offer_info info;
+        void *pixels = sophia_ss_image_ring_pixels(&t.img, 0);
+        assert(pixels); memset(pixels, 41, 8);
+        m.resource_id = 40 + i;
+        wrong.allocation_generation++;
+        assert(sophia_ss_frame_initial_ring_offer(&t.img, &f, &wrong, 0, &m, t.r.now, &offer) == SOPHIA_IPR_ARGUMENT);
+        assert(*(unsigned char *)pixels == 41);
+        assert(!sophia_ss_frame_initial_ring_offer(&t.img, &f, &key, 0, &m, t.r.now, &offer));
+        assert(!sophia_ss_frame_has_credit(&f) && !f.key.connection_epoch && sophia_ss_frame_drained(&f));
+        peer_status(&t.r.p, offer, m.resource_id, 2, 0); ring_steps(&t, 8);
+        assert(app_events(&t, NULL, 0) == 1); ack_all(&t);
+        info = ring_info(&t, offer);
+        ring_event(&t.r.p, SOPHIA_OR_SLOT_RELEASED, offer, 0, info.offer.slot_generation, m.resource_id, 0, 0);
+        ring_steps(&t, 8);
+        assert(ring_info(&t, offer).adoptable);
+        assert(!sophia_ss_image_ring_forget(&t.img, offer));
+    }
+    assert(t.r.p.ring_writes == 4);
+    frame_image_open(&t, &f, &r);
+    assert(sophia_ss_frame_has_credit(&f));
+    assert(sophia_ss_frame_initial_ring_offer(&t.img, &f, &key, 0, &m, t.r.now, &offer) == SOPHIA_IPR_ARGUMENT);
+    frame_image_close(&t, &f);
+    assert(sophia_ss_frame_initial_ring_offer(&t.img, &f, &key, 0, &m, t.r.now, &offer) == SOPHIA_IPR_ARGUMENT);
+    sophia_ss_frame_disconnect(&unknown);
+    assert(sophia_ss_frame_initial_ring_offer(&t.img, &unknown, &key, 0, &m, t.r.now, &offer) == SOPHIA_IPR_ARGUMENT);
+    assert(sophia_ss_frame_initial_ring_offer(&t.img, NULL, &key, 0, &m, t.r.now, &offer) == SOPHIA_IPR_ARGUMENT);
+    ring_close(&t, fd);
+}
+
 static void frame_image_fallback(void)
 {
     struct image_rig t;

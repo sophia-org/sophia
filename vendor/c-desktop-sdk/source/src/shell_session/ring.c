@@ -491,18 +491,16 @@ int sophia_ss_image_ring_offer(struct sophia_ss_image *img, uint32_t slot,
     return legacy_offer(img, slot, m, now_ms, offer);
 }
 
-int sophia_ss_frame_legacy_ring_offer(struct sophia_ss_image *img,
-                                     const struct sophia_ss_frame_stream *f, uint32_t slot,
+static int frame_legacy_offer(struct sophia_ss_image *img,
+                                     const struct sophia_sft_key *k, uint32_t slot,
                                      const struct sophia_ss_ring_image *m, uint64_t now_ms,
                                      uint64_t *offer)
 {
-    const struct sophia_sft_key *k;
     unsigned i;
     int status;
-    if (!img || !img->session || !m || !offer || !sophia_ss_frame_drained(f) ||
+    if (!img || !img->session || !m || !offer || !k ||
         !sf_session_frame(&img->session->files)) return SOPHIA_IPR_ARGUMENT;
-    k = &f->key;
-    if (!k->connection_epoch || !same_grant(img, k->connection_epoch, k->content_epoch) ||
+    if (!k->stream_id || !k->connection_epoch || !same_grant(img, k->connection_epoch, k->content_epoch) ||
         m->output_id != k->output_id || m->output_generation != k->output_generation ||
         m->allocation_id != k->allocation_id || m->allocation_generation != k->allocation_generation ||
         m->topology_generation != k->facts_generation || now_ms < img->session->now_ms ||
@@ -517,6 +515,25 @@ int sophia_ss_frame_legacy_ring_offer(struct sophia_ss_image *img,
     status = legacy_offer(img, slot, m, now_ms, offer);
     if (!status) img->producer.last_now = now_ms;
     return status;
+}
+
+int sophia_ss_frame_initial_ring_offer(struct sophia_ss_image *img,
+                                      const struct sophia_ss_frame_stream *f,
+                                      const struct sophia_sft_key *key, uint32_t slot,
+                                      const struct sophia_ss_ring_image *m, uint64_t now_ms,
+                                      uint64_t *offer)
+{
+    if (!sophia_ss_frame_drained(f) || f->key.connection_epoch) return SOPHIA_IPR_ARGUMENT;
+    return frame_legacy_offer(img, key, slot, m, now_ms, offer);
+}
+
+int sophia_ss_frame_legacy_ring_offer(struct sophia_ss_image *img,
+                                     const struct sophia_ss_frame_stream *f, uint32_t slot,
+                                     const struct sophia_ss_ring_image *m, uint64_t now_ms,
+                                     uint64_t *offer)
+{
+    if (!sophia_ss_frame_drained(f)) return SOPHIA_IPR_ARGUMENT;
+    return frame_legacy_offer(img, &f->key, slot, m, now_ms, offer);
 }
 
 int sophia_ss_frame_submit_ring(struct sophia_ss_image *img, struct sophia_ss_frame_stream *f,

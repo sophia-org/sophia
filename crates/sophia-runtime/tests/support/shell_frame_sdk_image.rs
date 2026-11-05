@@ -136,6 +136,31 @@ pub(super) fn submit(
     offer
 }
 
+pub(super) fn establish(
+    client: &mut ShellConnection,
+    stream: &FrameStream,
+    key: ShellFrameStreamKey,
+) {
+    // Real ordinary Offers before Open; the last is retained in both later scenes.
+    for resource in 4..7 {
+        let mut fill = acquire(client);
+        fill.pixels_mut().unwrap().fill(resource as u8);
+        let offer = stream
+            .commit_initial_ring_fill(
+                client,
+                key,
+                &mut fill,
+                upload(key, resource),
+                Instant::now(),
+            )
+            .unwrap();
+        settle(client, offer);
+        client.image_forget(offer).unwrap();
+    }
+    assert!(stream.key().is_none());
+    assert!(!stream.has_credit());
+}
+
 pub(super) fn settle(client: &mut ShellConnection, offer: u64) {
     let until = Instant::now() + Duration::from_secs(5);
     loop {
@@ -185,4 +210,12 @@ pub(super) fn assert_pixels(epochs: &crate::ContentEpochRegistry, generation: u6
         lease.cpu_bytes().unwrap(),
         &[if generation == 1 { 41 } else { 73 }; 8]
     );
+    for resource in 4..7 {
+        let lease = epochs
+            .resources(fixture::grant())
+            .unwrap()
+            .lease(fixture::grant(), fixture::resource(resource))
+            .unwrap();
+        assert_eq!(lease.cpu_bytes().unwrap(), &[resource as u8; 8]);
+    }
 }
