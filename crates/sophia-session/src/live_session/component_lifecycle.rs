@@ -135,12 +135,19 @@ pub(super) fn prepare(
                     sophia_runtime::ShellContentAdmissionPolicy::Denied
                 },
                 &config.bubblewrap,
-            );
-            let owner = match prepared {
-                Ok(mut owner) => {
-                    owner.set_capture_destination_reuse(config.shell_capture_destination_reuse);
-                    owner
+            )
+            .and_then(|mut owner| {
+                if config.frame_transactions {
+                    #[cfg(feature = "experimental-native-frame-transaction")]
+                    owner.enable_frame_transactions()?;
+                    #[cfg(not(feature = "experimental-native-frame-transaction"))]
+                    return Err("SFT is not compiled into this Session".into());
                 }
+                owner.set_capture_destination_reuse(config.shell_capture_destination_reuse);
+                Ok(owner)
+            });
+            let owner = match prepared {
+                Ok(owner) => owner,
                 Err(error) => {
                     let _ = std::fs::remove_dir(&directory);
                     return Err(error);

@@ -51,6 +51,12 @@ pub struct ShellComponentProcesses {
     cursor: usize,
 }
 impl ShellComponentProcesses {
+    /// Enable the bar's explicit SFT negotiation before reserving any attempt.
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub fn enable_frame_transactions(&mut self) -> Result<(), ComponentConnectionError> {
+        self.connections.enable_frame_transactions()
+    }
+
     pub fn new() -> Result<Self, ComponentConnectionError> {
         Ok(Self {
             connections: ShellComponentConnections::new()?,

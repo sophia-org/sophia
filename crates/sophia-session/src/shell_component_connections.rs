@@ -154,6 +154,7 @@ pub struct ShellComponentConnections {
     next_content: u64,
     cursor: usize,
     connections_have_dock: bool,
+    frame_transactions: bool,
     #[cfg(feature = "experimental-shell-capture")]
     capture: Option<crate::shell_capture_owner::Owner>,
     #[cfg(feature = "experimental-shell-capture")]
@@ -185,6 +186,7 @@ impl ShellComponentConnections {
             next_content: 1,
             cursor: 0,
             connections_have_dock: false,
+            frame_transactions: false,
             #[cfg(feature = "experimental-shell-capture")]
             capture: None,
             #[cfg(feature = "experimental-shell-capture")]
@@ -195,6 +197,28 @@ impl ShellComponentConnections {
             capture_intake: capture::intake::Intake::default(),
             fd_readiness: Cell::default(),
         })
+    }
+
+    /// Permit SFT for the selected bar's authenticated epochs, before launch.
+    /// Other roles retain ordinary negotiation; each epoch still needs peer opt-in.
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub fn enable_frame_transactions(&mut self) -> Result<(), ComponentConnectionError> {
+        if self
+            .connections
+            .iter()
+            .any(|connection| connection.attempt.is_some())
+        {
+            return Err(ComponentConnectionError::Busy);
+        }
+        if !self
+            .connections
+            .iter()
+            .any(|connection| connection.role == ShellComponentRole::Bar)
+        {
+            return Err(ComponentConnectionError::InvalidSelection);
+        }
+        self.frame_transactions = true;
+        Ok(())
     }
 
     /// Register a selected role before launch. The directory belongs to this
@@ -409,6 +433,17 @@ impl ShellComponentConnections {
         let result = admission.and_then(|()| {
             if authenticated && matches!(policy, ShellContentAdmissionPolicy::Granted { .. }) {
                 images::configure(connection, capture)?;
+            }
+            if self.frame_transactions && connection.role == ShellComponentRole::Bar {
+                #[cfg(feature = "experimental-native-frame-transaction")]
+                return connection.transport.begin_frame_file_negotiation(
+                    &self.epochs,
+                    key.grant.connection_epoch,
+                    timeout,
+                    policy,
+                );
+                #[cfg(not(feature = "experimental-native-frame-transaction"))]
+                return Err(ShellTransportError::UnsupportedRevision);
             }
             connection.transport.begin_file_negotiation(
                 &self.epochs,

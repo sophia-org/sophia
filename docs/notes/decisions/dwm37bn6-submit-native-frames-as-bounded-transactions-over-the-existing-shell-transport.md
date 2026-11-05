@@ -182,10 +182,22 @@ The [explicit owner negotiation](../../native-frame-transactions.md#explicit-own
 now joins the default-off runtime build, per-handshake owner permission and exact
 r13 peer request. Both SDK lifecycle tests use real negotiation; no fabricated
 welcome is installed. Ordinary r10 stays r10, other profiles/source combinations
-refuse, and permission expires with the handshake. The Session/CLI has no call
-to this entry point yet. Authentication verdicts and renderer completion remain
+refuse, and permission expires with the handshake. Authentication verdicts and renderer completion remain
 supplied; this is not protected launch or native acceptance.
 Evidence: `~/.local/state/sophia-frame-owner-negotiation-01`.
+
+The [Session startup opt-in](../../native-frame-transactions.md#session-startup-opt-in)
+now connects that gate to a default-off build feature and explicit native CLI
+flag for an independent CPU bar. Other roles and ordinary r10 remain unchanged.
+Real Session image-socket tests cover r13/r10/r13 epochs and expose a disconnect
+regression: the persistent copy worker must settle old work without accepting
+new input once its content grant is revoked. The guard now enforces that split.
+Lom's matching explicit `--frame-protocol sft` entry keeps the existing CPU
+renderer and scene service; its ordinary entry still requests r10. These are
+device-free startup/integration controls, not protected launch, measured savings
+or native atomic-presentation acceptance. Evidence:
+`~/.local/state/sophia-frame-session-opt-in-01` and
+`~/.local/state/sophia-lom-frame-cli-01`.
 
 The [continuous-frame CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 and t289 own the next implementation/qualification work. The

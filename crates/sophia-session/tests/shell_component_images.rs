@@ -64,7 +64,20 @@ fn attach(peer: &mut raw::Peer) {
 
 #[test]
 fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
-    let directory = std::env::temp_dir().join(format!("session-image-{}", std::process::id()));
+    joined_epochs(false, &[10, 6, 10]);
+}
+
+#[cfg(feature = "experimental-native-frame-transaction")]
+#[test]
+fn sft_opt_in_joins_the_image_socket_and_keeps_ordinary_epochs_ordinary() {
+    joined_epochs(true, &[13, 10, 13]);
+}
+
+fn joined_epochs(frame_transactions: bool, revisions: &[u16]) {
+    let directory = std::env::temp_dir().join(format!(
+        "session-image-{}-{frame_transactions}",
+        std::process::id()
+    ));
     let mut owner = ShellComponentConnections::new().unwrap();
     let slot = owner
         .add(
@@ -74,7 +87,13 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
             rustix::process::geteuid().as_raw(),
         )
         .unwrap();
-    for revision in [10, 6, 10] {
+    if frame_transactions {
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        owner.enable_frame_transactions().unwrap();
+        #[cfg(not(feature = "experimental-native-frame-transaction"))]
+        panic!("SFT not built");
+    }
+    for &revision in revisions {
         let key = owner.reserve_attempt(slot).unwrap();
         owner
             .begin_authenticated_negotiation(
@@ -114,7 +133,12 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
                     maximum_revision: revision,
                     required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
                         | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
-                        | if revision == 10 { 1 << 15 } else { 0 },
+                        | if matches!(revision, 10 | 13) {
+                            1 << 15
+                        } else {
+                            0
+                        }
+                        | if revision == 13 { 1 << 18 } else { 0 },
                 },
             )
             .unwrap();
@@ -128,7 +152,8 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
                 revision
             );
             peer.ack(&event);
-            if revision != 10 {
+            peer.set_revision(revision);
+            if !matches!(revision, 10 | 13) {
                 let reply = peer
                     .rpc(
                         110,
@@ -268,7 +293,9 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
                     .with_connection(key, |transport| image_custody::publish(transport, 2))
                     .unwrap();
             }
-            if revision == 10 && owner.phase(key) == Ok(ComponentConnectionPhase::Connected) {
+            if matches!(revision, 10 | 13)
+                && owner.phase(key) == Ok(ComponentConnectionPhase::Connected)
+            {
                 let now = owner.content_clock_msec();
                 owner
                     .with_connection(key, |transport| {

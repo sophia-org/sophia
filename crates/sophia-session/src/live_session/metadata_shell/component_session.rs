@@ -130,6 +130,19 @@ impl ShellComponentSession {
         let _ = enabled;
     }
 
+    /// The first native SFT profile is an authenticated, CPU-only bar.
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub(crate) fn enable_frame_transactions(&mut self) -> Result<()> {
+        if !self.plans.iter().any(|plan| {
+            plan.selection().role == ShellComponentRole::Bar
+                && plan.selection().gpu == ShellGpuMode::Denied
+        }) {
+            return Err("SFT requires a selected bar with gpu denied".into());
+        }
+        self.processes.enable_frame_transactions()?;
+        Ok(())
+    }
+
     pub fn authenticate(
         &mut self,
         launches: &crate::launch_authentication::LaunchCoordinator,

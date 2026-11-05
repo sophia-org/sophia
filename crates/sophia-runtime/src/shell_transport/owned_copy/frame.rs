@@ -12,7 +12,10 @@ impl OwnedCopyOwner {
         instant: Instant,
         other_pending: usize,
     ) -> Result<(), ShellTransportError> {
-        if transport.capabilities & SHELL_FRAME_CAPABILITY == 0 {
+        // The worker outlives disconnect to settle old jobs, not to admit new input.
+        if transport.capabilities & SHELL_FRAME_CAPABILITY == 0
+            || transport.content_grant().is_none()
+        {
             return Ok(());
         }
         let files = transport

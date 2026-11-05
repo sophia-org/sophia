@@ -618,10 +618,10 @@ gate passes against the published SDK. The peer in these tests is scripted;
 Lom-to-Sophia interoperation is not established by composing the two test claims.
 Evidence: `~/.local/state/sophia-lom-frame-producer-01`.
 
-The ordinary Lom CLI still requests r10; host production r13 selection remains
-unavailable. Reference-producer integration, real producer-to-host controls,
-runtime trace validation and native qualification remain required. No measured
-speedup or native atomic/tear-free acceptance follows from these checkpoints.
+The ordinary Lom CLI still requests r10. Reference-producer integration, real
+producer-to-host controls, runtime trace validation and native qualification
+remain required. No measured speedup or native atomic/tear-free acceptance
+follows from these checkpoints.
 
 ### Independent C client against the host
 
@@ -655,8 +655,28 @@ The existing Rust and independent C tests now use that entry point and the real
 negotiation exchange instead of installing an artificial welcome. Both traverse
 the image socket, copy worker and same-connection fallback. A removed owner-opt-in
 check fails the default-owner refusal test. Authentication verdicts and renderer
-completion remain supplied; the Session/CLI does not yet call this entry point.
+completion remain supplied in this fixture.
 Evidence: `~/.local/state/sophia-frame-owner-negotiation-01`.
+
+### Session startup opt-in
+
+Session and the Sophia CLI forward the default-off
+`experimental-native-frame-transaction` build feature. An operator must also
+pass `--experimental-native-frame-transaction` with `--native-scanout` and select
+an independent bar with `gpu denied`. Missing build support, duplicate/value
+flags, descriptor-only or GPU bar configurations refuse. The owner enables the
+bar before reserving an attempt, then explicitly permits each authenticated
+epoch through the runtime entry above. Other roles and ordinary r10 requests
+keep their existing negotiation. Existing Factotum, custody, admission and
+content completion paths are reused.
+
+The real Session socket test covers r13/r10/r13 reconnects, current image
+discovery, owned source registration and disconnection. It exposed a missing
+disconnect guard in SFT copy admission: the image worker outlives a closed
+wire to settle retained jobs, and now skips new SFT input once the content grant
+has been revoked. The regression failed before that guard. This is device-free
+Session integration with supplied authentication, not native qualification.
+Evidence: `~/.local/state/sophia-frame-session-opt-in-01`.
 
 ### Model and remaining integration gates
 

@@ -4,6 +4,8 @@ mod chrome;
 mod development;
 #[path = "config/firefox_stage.rs"]
 mod firefox_stage;
+#[path = "config/frame_transactions.rs"]
+mod frame_transactions;
 #[path = "config/input_profile.rs"]
 mod input_profile;
 #[path = "config/lock.rs"]
@@ -161,6 +163,7 @@ struct PersistentXtermSessionConfig {
     shell_content_enabled: bool,
     shell_content_input_enabled: bool,
     shell_capture_destination_reuse: bool,
+    frame_transactions: bool,
     shell_gpu_mode: sophia_config::ShellGpuMode,
     shell_proof_restart_after_visible: Option<u32>,
     wm_interface: sophia_config::ExternalWmInterface,
