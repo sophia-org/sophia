@@ -31,6 +31,11 @@ pub fn authenticated_client(
 }
 
 pub fn enable(client: &mut ShellConnection, directory: &std::path::Path, limits: &ContentLimits) {
+    let ring_slots = if client.welcome().selected_revision == 13 {
+        2
+    } else {
+        1
+    };
     client
         .enable_image(
             ShellImageConfig {
@@ -45,8 +50,12 @@ pub fn enable(client: &mut ShellConnection, directory: &std::path::Path, limits:
                 transfer_timeout_ms: limits.transfer_timeout_ms,
                 startup_deadline_ms: 10000,
                 formats_capacity: 65536,
-                ring_slots: 1,
-                ring_capacity: 0,
+                ring_slots,
+                ring_capacity: if ring_slots == 2 {
+                    limits.max_resource_bytes
+                } else {
+                    0
+                },
                 content_grant_epoch: limits.grant.content_grant_epoch,
             },
             Instant::now(),
@@ -63,7 +72,46 @@ pub fn upload(client: &mut ShellConnection, metadata: RingUpload, pixels: &[u8])
         std::thread::yield_now();
     }
     let offer = loop {
-        match client.image_upload_ring(metadata, pixels, Instant::now()) {
+        let offered = if client.welcome().selected_revision == 13 {
+            if client.image_adapter().unwrap().ring_identity().is_none() {
+                client.poll_io().unwrap();
+                assert!(Instant::now() < deadline, "SFT ring registration missing");
+                continue;
+            }
+            match client.image_acquire_ring_fill(pixels.len(), Instant::now()) {
+                Ok(mut fill) => {
+                    fill.pixels_mut().unwrap().copy_from_slice(pixels);
+                    let key = sophia_protocol::shell_files::ShellFrameStreamKey {
+                        grant: sophia_protocol::ContentGrant {
+                            connection_epoch: client.welcome().connection_epoch,
+                            content_grant_epoch: client
+                                .image_adapter()
+                                .unwrap()
+                                .ring_identity()
+                                .unwrap()
+                                .content_grant_epoch,
+                        },
+                        output: sophia_protocol::ContentOutputId {
+                            id: metadata.output,
+                            generation: metadata.output_generation,
+                        },
+                        allocation: sophia_protocol::ContentAllocationId {
+                            id: metadata.allocation,
+                            generation: metadata.allocation_generation,
+                        },
+                        facts_generation: metadata.topology_generation,
+                        stream_id: 1,
+                    };
+                    Ok(FrameStream::new()
+                        .commit_initial_ring_fill(client, key, &mut fill, metadata, Instant::now())
+                        .unwrap())
+                }
+                Err(error) => Err(error),
+            }
+        } else {
+            client.image_upload_ring(metadata, pixels, Instant::now())
+        };
+        match offered {
             Ok(offer) => break offer,
             Err(ImageAdapterError::Again | ImageAdapterError::Busy) => {
                 client.poll_io().unwrap();

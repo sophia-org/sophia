@@ -100,10 +100,19 @@ pub(super) fn send(
 
 /// Shell r9 with sealed images, over an afid-authenticated attach.
 pub(super) fn client(socket: std::path::PathBuf, slot: usize) -> (ShellConnection, ContentLimits) {
+    client_revision(socket, slot, 10)
+}
+
+fn client_revision(
+    socket: std::path::PathBuf,
+    slot: usize,
+    revision: u16,
+) -> (ShellConnection, ContentLimits) {
     assert!(slot <= 2, "role");
     // Bit 13: sealed images, required for every content attach at r9.
     let capabilities = SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
         | (1 << 15)
+        | if revision == 13 { 1 << 18 } else { 0 }
         | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
         | match slot {
             0 => {
@@ -125,8 +134,8 @@ pub(super) fn client(socket: std::path::PathBuf, slot: usize) -> (ShellConnectio
     let mut peer = sdk_image::authenticated_client(
         &socket,
         ShellClientOptions {
-            minimum_revision: 10,
-            maximum_revision: 10,
+            minimum_revision: revision,
+            maximum_revision: revision,
             required_capabilities: capabilities,
             handshake_timeout: Duration::from_secs(3),
         },
@@ -150,10 +159,18 @@ pub(super) fn connect(
     owner: &mut ShellComponentSession,
     slot: usize,
 ) -> (ComponentConnectionKey, ShellConnection) {
+    connect_revision(owner, slot, 10)
+}
+
+pub(super) fn connect_revision(
+    owner: &mut ShellComponentSession,
+    slot: usize,
+    revision: u16,
+) -> (ComponentConnectionKey, ShellConnection) {
     let (key, socket) = owner
         .processes
         .reconnect_fixture_endpoint(slot, owner.policy);
-    let worker = std::thread::spawn(move || client(socket, slot));
+    let worker = std::thread::spawn(move || client_revision(socket, slot, revision));
     let deadline = Instant::now() + Duration::from_secs(5);
     let welcome = loop {
         let visit = owner.poll(65536).unwrap();

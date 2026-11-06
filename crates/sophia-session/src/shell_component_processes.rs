@@ -354,6 +354,11 @@ impl ShellComponentProcesses {
     pub fn accounting(&self) -> ContentEpochAccounting {
         self.connections.accounting()
     }
+
+    #[cfg(all(test, feature = "experimental-native-frame-transaction"))]
+    pub(crate) fn wire_turn_count(&self, key: ComponentConnectionKey) -> u64 {
+        self.connections.wire_turn_count(key)
+    }
     pub fn collect(&mut self) -> ContentEpochAccounting {
         self.connections.collect()
     }

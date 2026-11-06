@@ -23,6 +23,9 @@ use std::time::{Duration, Instant};
 
 #[path = "component_reconnect/budget.rs"]
 mod budget;
+#[cfg(feature = "experimental-native-frame-transaction")]
+#[path = "component_reconnect/bundled_probe.rs"]
+mod bundled_probe;
 use crate::test_sdk_image as sdk_image;
 #[path = "component_reconnect/wire.rs"]
 mod wire;

@@ -727,6 +727,13 @@ impl ShellComponentConnections {
         ))
     }
 
+    #[cfg(all(test, feature = "experimental-native-frame-transaction"))]
+    pub(crate) fn wire_turn_count(&self, key: ComponentConnectionKey) -> u64 {
+        self.require_phase(key, ComponentConnectionPhase::Connected)
+            .unwrap();
+        self.connections[key.slot].transport.wire_turn_count()
+    }
+
     /// Idempotent for this attempt, refusing an old key after replacement.
     /// Disconnection removes authority, not real retained byte consumers.
     pub fn close(&mut self, key: ComponentConnectionKey) -> Result<(), ComponentConnectionError> {
