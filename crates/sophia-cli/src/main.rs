@@ -1,17 +1,20 @@
 mod commands;
 mod scanout_diagnostics;
+mod session_output;
 
 use sophia_runtime::{TraceLevel, init_tracing_with_layer};
 
 fn session_stdout(line: &str) {
     if !sophia_session::diagnostics::capture_line(line) {
-        println!("{line}");
+        session_output::write_line(&mut std::io::stdout().lock(), line)
+            .expect("failed to write Session stdout");
     }
 }
 
 fn session_stderr(line: &str) {
     if !sophia_session::diagnostics::capture_line(line) {
-        eprintln!("{line}");
+        session_output::write_line(&mut std::io::stderr().lock(), line)
+            .expect("failed to write Session stderr");
     }
 }
 
