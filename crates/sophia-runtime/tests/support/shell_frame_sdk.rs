@@ -12,10 +12,13 @@ use crate::image_test_authority as authority;
 mod c;
 #[path = "shell_frame_sdk_image.rs"]
 mod image;
+#[path = "shell_frame_terminal_probe.rs"]
+mod terminal_probe;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Case {
     Retained,
+    Probe { omit_prepared: bool, split: bool },
     RetainedFallback,
     CopiedFallback,
     CCopiedFallback,
@@ -55,7 +58,7 @@ fn c_sdk_establishes_images_then_copies_drains_and_presents_legacy_without_recon
 }
 
 enum Peer {
-    Rust(std::thread::JoinHandle<ShellConnection>),
+    Rust(std::thread::JoinHandle<(ShellConnection, Option<terminal_probe::Pending>)>),
     C(c::Peer),
 }
 
@@ -74,19 +77,26 @@ impl Peer {
         }
     }
 
-    fn finish(self) {
+    fn finish(self) -> Option<(ShellConnection, terminal_probe::Pending)> {
         match self {
             Self::Rust(peer) => {
-                peer.join().unwrap();
+                let (client, pending) = peer.join().unwrap();
+                pending.map(|pending| (client, pending))
             }
-            Self::C(mut peer) => peer.finish(),
+            Self::C(mut peer) => {
+                peer.finish();
+                None
+            }
         }
     }
 }
 
 fn lifecycle(case: Case) {
-    let copied = matches!(case, Case::CopiedFallback | Case::CCopiedFallback);
-    let fallback = case != Case::Retained;
+    let copied = matches!(
+        case,
+        Case::CopiedFallback | Case::CCopiedFallback | Case::Probe { .. }
+    );
+    let fallback = !matches!(case, Case::Retained | Case::Probe { .. });
     let mut f = fixture::Fixture::new(64);
     let mut t = Transport::reserve(&mut f);
     if copied {
@@ -197,6 +207,15 @@ fn lifecycle(case: Case) {
             };
             assert!(!stream.has_credit());
             assert!(stream.submit(&mut client, &commit).is_err());
+            if matches!(case, Case::Probe { .. }) {
+                return (
+                    client,
+                    Some(terminal_probe::Pending {
+                        stream,
+                        source: source.unwrap(),
+                    }),
+                );
+            }
             let prepared = next(&mut client, &mut stream);
             assert!(
                 matches!(&prepared, ShellFrameRecord::Outcome { outcome, credit_expires_msec: 0, .. } if outcome.kind == 1),
@@ -221,7 +240,7 @@ fn lifecycle(case: Case) {
             if fallback {
                 legacy_frame(&mut client, &commit);
             }
-            client
+            (client, None)
         }))
     };
     t.transport
@@ -260,8 +279,7 @@ fn lifecycle(case: Case) {
     let mut negotiated = false;
     let mut submitted = 0;
     let mut displays = Vec::new();
-    let mut owner = crate::shell_transport::owned_copy::OwnedCopyOwner::default();
-    let mut worker = crate::IsbValidationWorker::new(1, 8).unwrap();
+    let mut owner = crate::ShellIsbImageOwner::new(1 << 20, 8).unwrap();
     while !peer.is_finished() {
         assert!(
             Instant::now() < until,
@@ -279,24 +297,16 @@ fn lifecycle(case: Case) {
                 negotiated = true;
             }
         } else {
-            t.transport.state.files_mut().unwrap().turn().unwrap();
-            while let Some(completion) = worker.take_completed().unwrap() {
-                assert!(owner.receive(completion).is_ok());
-            }
-            t.transport
-                .state
-                .service_content_resources(&mut t.transport.content_epochs, 10)
-                .unwrap();
+            t.transport.service_owner_turn().unwrap();
             owner
                 .service(
                     &mut t.transport.state,
                     &mut t.transport.content_epochs,
-                    &mut worker,
                     10,
                     Instant::now(),
-                    0,
                 )
                 .unwrap();
+            t.transport.service_content_resources(10).unwrap();
             let contexts = [crate::ContentCandidateContext {
                 output: key.output,
                 facts_generation: key.facts_generation,
@@ -331,7 +341,8 @@ fn lifecycle(case: Case) {
                 .state
                 .service_content_candidates(&mut t.transport.content_epochs, &contexts, 10)
                 .unwrap();
-            if t.candidates().pending_candidate_count() != 0 {
+            if t.candidates().pending_candidate_count() != 0 && !matches!(case, Case::Probe { .. })
+            {
                 let generation = submitted + 1;
                 displays.push(
                     t.transport
@@ -353,10 +364,28 @@ fn lifecycle(case: Case) {
         }
         std::thread::yield_now();
     }
-    peer.finish();
+    let pending = peer.finish();
     assert!(negotiated);
+    if let Case::Probe {
+        omit_prepared,
+        split,
+    } = case
+    {
+        let (client, pending) = pending.unwrap();
+        terminal_probe::run(
+            &mut t,
+            &mut owner,
+            &f,
+            client,
+            pending,
+            omit_prepared,
+            split,
+        );
+        return;
+    }
+    assert!(pending.is_none());
     assert_eq!(submitted, if fallback { 2 } else { 1 });
-    assert_eq!((owner.pending(), worker.pending()), (0, 0));
+    assert_eq!(owner.pending(), 0);
     assert!(
         displays.len() == submitted as usize,
         "native owner lease is independent of frame credit"
