@@ -71,6 +71,41 @@ these shares. The metadata-shell R2 seam remains absent from this workload.
 
 ### Current resumption
 
+#### November 6: model a terminal-only frame-outcome mode before implementation
+
+Next mechanism gate: an explicitly negotiated SFT mode could omit the
+informational Prepared wire record while keeping internal preparation and its
+presentation deadline. The captured r13 peer logs Prepared but does not require
+it in its completion predicate. The saved profile journal has exactly one
+Prepared and one terminal per generation (2,120 each). That establishes an
+active record target, not a separate ACK, wake, physical pass or CPU budget.
+
+Signed design checkpoint `097a2b4e9`, branch `model/sft-terminal-only` on
+`29ee6d99f`, reuses the unchanged base and intake models. Seven finite
+safety/progress configurations pass, including mirror, two-credit, close/reopen
+and full-budget intake. Three fault controls fail: early frame credit, a
+Prepared wire entry, and submission before the internal Prepared obligation
+settles. Independent review prompted the explicit pre-submit ordering invariant;
+checking only the final Presented state was insufficient to catch that mutation.
+
+Keep conservative admission reservations initially; internal preparation releases
+the unused Prepared response obligation without returning frame credit.
+ResourceStatus, source release, predecessor release, native completion and
+terminal credit stay independent. This deletes a notice under future negotiation;
+it does not delay publication as shelved W1 did. No revision/bit allocation,
+runtime/SDK change, trace-validation claim or native run follows from this model.
+
+Before a native package, use a real copied-frame SDK/owner control to establish
+record, coalesced ACK, wire-wake and service-turn deltas. Pin internal prepared
+state/deadline, exact reservation refunds and failure/backpressure behavior;
+specify C/Rust and runner compatibility. Stop if only an inexpensive buffered
+record disappears. Existing r13 and all other candidates remain unchanged.
+
+Evidence: `~/.local/state/sophia-sft-terminal-only-model-01`, SHA256SUMS digest
+`ac178f5bc4a8bb0c40709d7e70007f7f1c5b4dada9fd781472dac14d511631a5`.
+The source branch's `validation/specula/native-frame-transaction/terminal-only.md`
+records source mapping, scenario coverage, the model-only limit and open gates.
+
 #### November 6: empty second image-owner walk is too small for a native window
 
 Signed candidate `ec93df22a` (`cpu/sft-image-service-once`, parent `29ee6d99f`)
