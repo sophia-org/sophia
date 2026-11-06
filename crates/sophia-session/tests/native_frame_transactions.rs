@@ -88,3 +88,20 @@ fn owner_permission_requires_a_bar_and_precedes_reservation() {
     );
     owner.finish_after_backend_drop(()).unwrap();
 }
+
+#[test]
+fn terminal_only_requires_explicit_sft_and_a_single_valueless_flag() {
+    const FLAG: &str = "--experimental-native-frame-terminal-only";
+    let parse = |args: &[&str], sft| {
+        frame_transactions::parse_terminal_only(
+            &args.iter().map(|arg| (*arg).into()).collect::<Vec<_>>(),
+            sft,
+        )
+    };
+    assert!(!parse(&[], false).unwrap());
+    assert!(!parse(&[], true).unwrap());
+    assert!(parse(&[FLAG], false).is_err());
+    assert!(parse(&[FLAG], true).unwrap());
+    assert!(parse(&[FLAG, FLAG], true).is_err());
+    assert!(parse(&["--experimental-native-frame-terminal-only=true"], true).is_err());
+}

@@ -155,6 +155,8 @@ pub struct ShellComponentConnections {
     cursor: usize,
     connections_have_dock: bool,
     frame_transactions: bool,
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    frame_terminal_only: bool,
     #[cfg(feature = "experimental-shell-capture")]
     capture: Option<crate::shell_capture_owner::Owner>,
     #[cfg(feature = "experimental-shell-capture")]
@@ -187,6 +189,8 @@ impl ShellComponentConnections {
             cursor: 0,
             connections_have_dock: false,
             frame_transactions: false,
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            frame_terminal_only: false,
             #[cfg(feature = "experimental-shell-capture")]
             capture: None,
             #[cfg(feature = "experimental-shell-capture")]
@@ -218,6 +222,14 @@ impl ShellComponentConnections {
             return Err(ComponentConnectionError::InvalidSelection);
         }
         self.frame_transactions = true;
+        Ok(())
+    }
+
+    /// Permit terminal-only notices for SFT bars, before any attempt is reserved.
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub fn enable_terminal_frame_transactions(&mut self) -> Result<(), ComponentConnectionError> {
+        self.enable_frame_transactions()?;
+        self.frame_terminal_only = true;
         Ok(())
     }
 
@@ -436,12 +448,21 @@ impl ShellComponentConnections {
             }
             if self.frame_transactions && connection.role == ShellComponentRole::Bar {
                 #[cfg(feature = "experimental-native-frame-transaction")]
-                return connection.transport.begin_frame_file_negotiation(
-                    &self.epochs,
-                    key.grant.connection_epoch,
-                    timeout,
-                    policy,
-                );
+                return if self.frame_terminal_only {
+                    connection.transport.begin_terminal_frame_file_negotiation(
+                        &self.epochs,
+                        key.grant.connection_epoch,
+                        timeout,
+                        policy,
+                    )
+                } else {
+                    connection.transport.begin_frame_file_negotiation(
+                        &self.epochs,
+                        key.grant.connection_epoch,
+                        timeout,
+                        policy,
+                    )
+                };
                 #[cfg(not(feature = "experimental-native-frame-transaction"))]
                 return Err(ShellTransportError::UnsupportedRevision);
             }

@@ -164,6 +164,7 @@ struct PersistentXtermSessionConfig {
     shell_content_input_enabled: bool,
     shell_capture_destination_reuse: bool,
     frame_transactions: bool,
+    frame_terminal_only: bool,
     shell_gpu_mode: sophia_config::ShellGpuMode,
     shell_proof_restart_after_visible: Option<u32>,
     wm_interface: sophia_config::ExternalWmInterface,

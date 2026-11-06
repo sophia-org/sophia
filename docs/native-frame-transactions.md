@@ -754,3 +754,22 @@ Evidence on crunch:
 The model is based on current source `8359816f0`, experimental W3 checkpoint
 `f639d21d2` and W2 contract `892bd1436`. Those separate checkpoints are not a
 claim that W2/W3 are integrated on the current source.
+
+### Session and reference-producer opt-in
+
+The Session flag `--experimental-native-frame-terminal-only` requires the existing
+`--experimental-native-frame-transaction` permission, native scanout and the SFT
+build feature. It is a single valueless startup flag, not a profile/environment
+default. Only the selected authenticated CPU bar receives this permission; the
+peer must still request bit 19. Ordinary SFT or r10 requests remain ordinary even
+when the owner permits the option. Permission cannot be changed after an attempt
+has been reserved.
+
+The reference `sft-bar` config uses `terminal_only: true` together with
+`frame_transactions: true`. Missing or denied capability fails the connection;
+there is no automatic weaker retry. The existing source/credit/terminal loop is
+unchanged. This activation surface is experimental, not native qualification.
+
+A `sophia_native_frame_negotiated` startup receipt records the actual accepted
+revision, capability mask, terminal-only selection and grant identity for each
+connected SFT epoch. It reports negotiation, not preparation or performance.

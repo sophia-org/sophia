@@ -64,18 +64,28 @@ fn attach(peer: &mut raw::Peer) {
 
 #[test]
 fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
-    joined_epochs(false, &[10, 6, 10]);
+    joined_epochs(false, false, &[(10, false), (6, false), (10, false)]);
 }
 
 #[cfg(feature = "experimental-native-frame-transaction")]
 #[test]
 fn sft_opt_in_joins_the_image_socket_and_keeps_ordinary_epochs_ordinary() {
-    joined_epochs(true, &[13, 10, 13]);
+    joined_epochs(true, false, &[(13, false), (10, false), (13, false)]);
 }
 
-fn joined_epochs(frame_transactions: bool, revisions: &[u16]) {
+#[cfg(feature = "experimental-native-frame-transaction")]
+#[test]
+fn terminal_permission_keeps_unrequested_and_ordinary_epochs_ordinary() {
+    joined_epochs(
+        true,
+        true,
+        &[(13, true), (13, false), (10, false), (13, true)],
+    );
+}
+
+fn joined_epochs(frame_transactions: bool, terminal_only: bool, revisions: &[(u16, bool)]) {
     let directory = std::env::temp_dir().join(format!(
-        "session-image-{}-{frame_transactions}",
+        "session-image-{}-{frame_transactions}-{terminal_only}",
         std::process::id()
     ));
     let mut owner = ShellComponentConnections::new().unwrap();
@@ -89,11 +99,15 @@ fn joined_epochs(frame_transactions: bool, revisions: &[u16]) {
         .unwrap();
     if frame_transactions {
         #[cfg(feature = "experimental-native-frame-transaction")]
-        owner.enable_frame_transactions().unwrap();
+        if terminal_only {
+            owner.enable_terminal_frame_transactions().unwrap();
+        } else {
+            owner.enable_frame_transactions().unwrap();
+        }
         #[cfg(not(feature = "experimental-native-frame-transaction"))]
         panic!("SFT not built");
     }
-    for &revision in revisions {
+    for &(revision, terminal_requested) in revisions {
         let key = owner.reserve_attempt(slot).unwrap();
         owner
             .begin_authenticated_negotiation(
@@ -138,19 +152,16 @@ fn joined_epochs(frame_transactions: bool, revisions: &[u16]) {
                         } else {
                             0
                         }
-                        | if revision == 13 { 1 << 18 } else { 0 },
+                        | if revision == 13 { 1 << 18 } else { 0 }
+                        | if terminal_requested { 1 << 19 } else { 0 },
                 },
             )
             .unwrap();
             peer.submit_acknowledged(&negotiate, 1);
             let event = peer.next_event();
-            assert_eq!(
-                decode_shell_file_negotiated(&event)
-                    .unwrap()
-                    .welcome
-                    .selected_revision,
-                revision
-            );
+            let welcome = decode_shell_file_negotiated(&event).unwrap().welcome;
+            assert_eq!(welcome.selected_revision, revision);
+            assert_eq!(welcome.capabilities & (1 << 19) != 0, terminal_requested);
             peer.ack(&event);
             peer.set_revision(revision);
             if !matches!(revision, 10 | 13) {

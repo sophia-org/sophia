@@ -45,6 +45,20 @@ pub(super) fn service_components(
                             continue;
                         }
                         let (role, gpu) = components.launch_evidence(key)?;
+                        if welcome.capabilities
+                            & sophia_protocol::shell_files::SHELL_FRAME_CAPABILITY
+                            != 0
+                        {
+                            crate::session_println!(
+                                "sophia_native_frame_negotiated schema=1 slot={} connection_epoch={} content_grant_epoch={} revision={} capabilities={:#x} terminal_only={}",
+                                key.slot,
+                                key.grant.connection_epoch,
+                                key.grant.content_grant_epoch,
+                                welcome.selected_revision,
+                                welcome.capabilities,
+                                welcome.capabilities & sophia_protocol::shell_files::SHELL_FRAME_TERMINAL_ONLY_CAPABILITY != 0,
+                            );
+                        }
                         let role = match role {
                             sophia_config::ShellComponentRole::Descriptor => "descriptor",
                             sophia_config::ShellComponentRole::Bar => "bar",

@@ -40,3 +40,23 @@ pub(super) fn validate_selection(
     }
     Ok(())
 }
+
+pub(super) fn parse_terminal_only(
+    args: &[String],
+    frame_transactions: bool,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    const FLAG: &str = "--experimental-native-frame-terminal-only";
+    let count = args.iter().filter(|arg| arg.as_str() == FLAG).count();
+    if count > 1
+        || args.iter().any(|arg| {
+            arg.strip_prefix(FLAG)
+                .is_some_and(|suffix| suffix.starts_with('='))
+        })
+    {
+        return Err(format!("{FLAG} is a single, valueless flag").into());
+    }
+    if count != 0 && !frame_transactions {
+        return Err(format!("{FLAG} requires --experimental-native-frame-transaction").into());
+    }
+    Ok(count == 1)
+}
