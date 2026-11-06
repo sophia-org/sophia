@@ -80,12 +80,17 @@ saved reduction: candidate minus control [-42.5,+37.5] us/frame combined;
 nonregression passes, but the interval includes zero. No demonstrated saving,
 repeat or adoption. Independent result audit agrees, at
 `~/.local/state/sophia-sft-flush-01-audit-claude-01`.
-The next isolated comparison is the SDK buffered-event drive:
+The SDK buffered-event drive comparison also completed:
 `~/.local/state/t331/sft-sdk-01/changing`, host `29ee6d99f` fixed, peer
 `67fd3f7e` versus pin-only `5d2fcd4`, both r13. Its twelve device-free suites
-pass; owner command paths are checked explicitly. The owner runs the detached
-launcher only after final package review and readiness checks. No other source
-candidate is stacked.
+pass; owner command paths are checked explicitly. All four native arms passed,
+cleanup and final seat checks completed, and the log emitted TEST SUCCESS.
+Saved combined control bounds are [850,890], candidate [847.5,887.5] us/frame;
+difference [-42.5,+37.5], pair midpoints +10/-15. Nonregression passes but saving
+is inconclusive. Park this candidate without repeat or adoption; do not stack
+it onto the next control. Root reduction: `~/.local/state/sophia-sft-sdk-result-01`.
+The next admitted work is the deterministic full owner-service pass proof below,
+off the unchanged measured host `29ee6d99f`, peer `67fd3f7e`, SDK `ae473881`.
 
 The approved route toward niri's earlier 415–455 us/frame reference is: qualify
 this SDK candidate once, then prove and remove redundant complete owner-service
@@ -113,7 +118,7 @@ marker, so its absence is not evidence that the test is still running.
 | --- | --- | --- |
 | File-wire service | `93d181434`, `cpu/sft-service-batch` | Duplicate image input removed from publication flushes; progress tests pass. First native block inconclusive; no adoption or repeat. |
 | Native retirement | `df0e9c1f6`, `cpu/sft-native-retirement` | Allocate callback storage only when a completion exists. Feature suite: 316 passed, one opt-in skipped. Keep as unqualified source work; native call frequency and saving unknown. |
-| SDK drive | SDK `f522b0cff`, peer pin-only integration `5d2fcd4` | Eight-event automatic burst: recvfrom 11 to 4; retained burst: 27 to 12, with sendto unchanged at two. FIFO, ACK and readiness tests pass. Native effect pending, without stacking the flush. |
+| SDK drive | SDK `f522b0cff`, peer pin-only integration `5d2fcd4` | Eight-event automatic burst: recvfrom 11 to 4; retained burst: 27 to 12, with sendto unchanged at two. FIFO, ACK and readiness tests pass. Native block inconclusive; parked without repeat or adoption. |
 | GL texture setup | `0041cc452`, `cpu/sft-texture-setup` | Immutable wrap parameters set on allocation rather than every upload. Renderer suite: 112 passed, 31 opt-in skipped. Two calls avoided per reused upload; native saving unknown. |
 | Peer fill | `fcb1a70d5`, `cpu/sft-fill-vectorization` | Safe fixed-size pixel-slice fill preserves bytes, tail validation and neighbour guards. Release assembly vectorizes the actual enqueue path; eight peer tests pass. Standalone old/new helpers both vectorized and did not measure a saving. Native effect pending. |
 
