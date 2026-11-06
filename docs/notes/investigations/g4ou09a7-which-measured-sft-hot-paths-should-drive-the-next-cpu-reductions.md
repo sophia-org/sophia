@@ -71,6 +71,53 @@ these shares. The metadata-shell R2 seam remains absent from this workload.
 
 ### Current resumption
 
+#### November 6: explicit activation, client trace and runner gates
+
+Signed and pushed host `2fa54bd84`, peer `73e250e`, reference SDK `fd9330b`,
+runner `50d7457` and client-trace harness `56f59b1` complete the activation source
+checkpoint. No master merge, install or native launch. Session's separate
+`--experimental-native-frame-terminal-only` flag requires the existing SFT/native
+permission and build; it reaches only the selected authenticated CPU bar, before
+any attempt is reserved. The peer independently requests bit 19 with
+`terminal_only: true` plus `frame_transactions: true`; no weaker retry. The SDK
+pin is a signed child of held `ae473881`, retaining the journal-progress wait fix.
+
+Session emits the actual negotiated grant/capability mask through its existing
+output sink. Replacement-epoch tests alternate terminal-only, ordinary r13 and
+r10. The producer/owner copy test checks identical pixels and drained ownership
+at heights 24/512 in all three modes. For each four-frame SFT case, Prepared is
+four in ordinary mode and zero in terminal-only, while accepted sources, source
+releases and terminals remain four and close/retirement remain complete.
+
+The runner requires paired request/peer permission. Its ordinary collector still
+requires Prepared; only the explicit terminal-only collector rejects Prepared
+while preserving every other lifecycle check. Real producer output supplies the
+fixtures. The guard-removed wrong-mode test fails. Native package postflight must
+also verify the staged `sophia_native_frame_negotiated` receipt; the runner itself
+does not consume that receipt yet. Timing and cleanup gates are unchanged.
+
+Session suites passed 1101 tests (65 opt-in ignored), peer default/feature suites
+7/8, reference SDK 484 and runner 498 (13 opt-in ignored). Strict Clippy passed;
+runner rustdoc has one pre-existing HTML-tag warning in unchanged code. Local
+read-only source review passed, with test-execution/provenance reconstruction
+limits recorded. Evidence: `~/.local/state/sophia-sft-terminal-activation-01`,
+SHA256SUMS `c6ef95c613b9d1153831b51fb806f5c1ef0f9f7cc7ab446d5362cff6875a63ec`.
+
+The unchanged client model validates 25 actual runtime traces/122 post-states,
+plus the isolated terminal-only case. Its finite model has 143 states and the
+early-credit mutation violates TraceMatched. Evidence:
+`~/.local/state/sophia-sft-terminal-client-trace-01`, SHA256SUMS
+`806f8550c391b90c083d29b960145cdd10f4c3c387ba1745bda69a726f0dbcba`.
+This is the Rust client projection, not host/native concurrency or C trace proof.
+Instrumentation is reversed; release sources are clean.
+
+Next: pin common release identities for both arms and prepare a fresh ordinary
+r13 versus terminal-only comparison, changing only the paired option. Require the
+actual capability receipt, Prepared count, combined CPU, cadence, latency,
+identity and cleanup gates. No native CPU saving follows from these device-free
+counts; the previous qualified SFT CPU result is unchanged. Do not pool old runs,
+stack parked candidates, relax thresholds or enable installed defaults.
+
 #### November 6: negotiated terminal-only runtime and SDK checkpoint
 
 Signed host `050a75c04` (`cpu/sft-terminal-only`), Rust SDK `597e81487` and
