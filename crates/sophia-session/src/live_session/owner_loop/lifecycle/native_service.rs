@@ -26,7 +26,7 @@ if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout
                     layout.consume_escaped_present(key);
                 }
             }
-            let service = match runtime.service_native(native_scanout, scene) {
+            let service = match owner_cost.measure(owner_cost::Phase::Native, || runtime.service_native(native_scanout, scene)) {
                 Ok(service) => Some(service),
                 Err(error) => {
                     let Some(execution) = active_output_topology_preparation.as_mut() else {

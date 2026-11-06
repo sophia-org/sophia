@@ -875,7 +875,7 @@
                             }
                         }
                     }
-                    let service = runtime.service_native(native_scanout, scene)?;
+                    let service = owner_cost.measure(owner_cost::Phase::Native, || runtime.service_native(native_scanout, scene))?;
                     last_native_frame_service = Instant::now();
                     record_discarded_presents(&service.discarded_presents);
                     if let Some(retired) = service.retired_present {
