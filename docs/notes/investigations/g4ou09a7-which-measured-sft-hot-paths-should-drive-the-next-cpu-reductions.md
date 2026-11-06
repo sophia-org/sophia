@@ -112,6 +112,17 @@ work item. The bounded source review and evidence pointers are retained in
 `~/.local/state/sophia-sft-service-expiry-review-01`. No new CPU/frame result,
 source candidate, native launch or adoption is claimed by this update.
 
+The follow-up real-component fixture counts actual wire services for prepared,
+submitted, completed and settled states: **1, 1, 2, 1**. Completion has one
+ordinary input turn plus one required publication flush. Suppressing that flush
+strands Presented and its returned credit while only the peer is driven. There
+is no redundant flush to batch in those states. Evidence:
+`~/.local/state/sophia-sft-component-traversal-proof-01`, with a passing restored
+test and a genuine runtime mutation failure. This uses an already-admitted
+resource (`Commit.image = None`), not the changing workload's bundled image-copy
+admission, and does not count physical-owner passes. Do not generalize it to
+that unresolved path or introduce a visit-end batching scope from this result.
+
 All five scopes have separate signed, published source candidates. None is
 merged or adopted. The first native qualification tested the publication-only flush:
 `~/.local/state/t331/sft-flush-01/changing`, one r13-versus-r13 ABBA against its
