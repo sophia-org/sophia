@@ -70,6 +70,38 @@ these shares. The metadata-shell R2 seam remains absent from this workload.
 ## Validation and remaining work
 
 ### Current resumption
+#### November 6: terminal-only full ABBA passes; CPU saving inconclusive
+
+`sft-terminal-02/changing` completed all four arms on the common corrected
+host `39bbc7b500` and peer `d069d4459`, with runner and SDK unchanged.
+All postflights, process identities, 2000 counted native cadence gaps per arm
+and cleanup gates passed. Both controls negotiated `0x48183` and emitted
+2120 Prepared; both candidates negotiated `0xc8183`, terminal-only true, and
+emitted zero Prepared. All arms completed 2120 Presented/2119 predecessor
+releases. No malformed preparation receipt recurred in these four logs.
+
+Combined CPU means (us/completed frame): ordinary SFT [832.5,872.5],
+terminal-only [802.5,842.5], difference [-70,+10]. Nonregression passes;
+**saving remains inconclusive**. The -30 us midpoint (-3.52%) is descriptive,
+not a demonstrated gain. Pair bounds are [-50,+30] and [-90,-10]; control
+and candidate midpoint spreads are 15 and 25 us. Session difference [-40,0]
+and peer difference [-30,+10] do not independently establish savings.
+Submit-to-completion medians remain about 17.1 ms, without a meaningful
+shift in this block. Bounds are accounting bounds, not confidence intervals.
+
+Root raw-data recount and independent audit agree. Result:
+`~/.local/state/sophia-sft-terminal-native-02-result`, SHA256SUMS
+`6efd8b54ac22f6151027bad445c9e7cffdfda8309912a057a735a0b4d92217be`.
+Independent audit: `~/.local/state/sophia-sft-terminal-02-postrun-audit-01`,
+SHA256SUMS `d139707a819fcd6b81eda60ec60441fb1f81b7eae202ef084cc25338ad5b462f`.
+The root cadence recount uses native completion stamps; the independent
+cadence check additionally covers peer-observed terminal stamps.
+
+Park this performance candidate: no automatic repeat, merge, install or
+adoption. Keep refused terminal-01 separate; no pooling and no fresh niri
+comparison. Prepared removal is confirmed, not owner-pass or ACK savings.
+The local Crunch hold is released; permanent seat0 and tty4 getty are restored.
+
 
 #### November 6: first terminal-only run refused; logging boundaries repaired
 
