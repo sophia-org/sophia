@@ -71,6 +71,35 @@ these shares. The metadata-shell R2 seam remains absent from this workload.
 
 ### Current resumption
 
+#### November 6: empty second image-owner walk is too small for a native window
+
+Signed candidate `ec93df22a` (`cpu/sft-image-service-once`, parent `29ee6d99f`)
+keeps the first owned-ring walk and skips the second only when no image work,
+owned deadline or buffered input remains. The first walk must expire jobs before
+receiving worker results; removing it would change late-completion precedence.
+Pending setup, releases, source offers, frame requests and draw work retain the
+second walk. No syscall, complete owner pass, timer or custody check is removed.
+
+The existing SDK lifecycle fixture now drives the real image owner. After a
+copied frame settles, its regression fails on the control's two walks and passes
+with one. Copy/pixel identity, presentation credit, release and Rust/C fallback
+checks remain. The full all-feature runtime suite passed 935 tests; final
+library, strict Clippy, format and layout checks passed. The test-only counter
+has an explicit layout exception; no production counter was introduced.
+
+A device-free release screen of 250,000 settled calls per run measured control
+555–657 ns/call and candidate 530–552 ns/call (five sequential runs each).
+The median difference was about 106 ns/call. This is neither native CPU/frame
+nor a stable effect estimate, and the fixture loop gives no native activation
+count. The complete settled call is already sub-microsecond in this screen:
+retain the source checkpoint as unqualified, with no standalone native package,
+merge or adoption. Target substantial repeated service work next.
+
+Evidence: `~/.local/state/sophia-sft-image-service-once-01`, SHA256SUMS digest
+`06e8156da8c98b1d10a1cccbffcc2fe6f5d27b45994351aaa0e70dca1e9fd630`.
+The report records the rejected first-walk deletion, corrected failing-before,
+screen limits, local independent consult and checks. No native run occurred.
+
 #### November 6: exclude inactive watchdog work and timer substitution
 
 The completion-publication fixture did not prove a complete owner pass removed;
