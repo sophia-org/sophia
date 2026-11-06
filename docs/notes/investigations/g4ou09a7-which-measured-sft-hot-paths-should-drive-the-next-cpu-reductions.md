@@ -71,7 +71,45 @@ these shares. The metadata-shell R2 seam remains absent from this workload.
 
 ### Current resumption
 
-#### November 6: explicit activation, client trace and runner gates
+#### November 6: first terminal-only run refused; logging boundaries repaired
+
+`sft-terminal-01/changing` ran all four arms with clean counted cadence and
+cleanup. Both candidate arms negotiated `0xc8183`, emitted zero Prepared and
+completed 2120 Presented/2119 predecessor releases. The final ordinary-r13
+baseline was refused: a host cadence record split the peer preparation record
+at `generation=`, and another host record appeared before its newline. No
+qualified ABBA aggregate or CPU saving exists. Refusal evidence is sealed at
+`~/.local/state/sophia-sft-terminal-native-01-refusal`, SHA256SUMS
+`cfbd7098557bac8e2e716ffbd99ea7855685ccccc9b66c07b8f12b0ac6618220`.
+
+The bounded repair covers both writers. Peer `d069d4459` (parent `73e250e`)
+formats the entire preparation receipt and newline before writing to stderr;
+host `39bbc7b500` (parent `2fa54bd84`) does the same for Session stdout/stderr
+callbacks. Diagnostics capture, record bytes, protocol, pixels and acceptance
+parsers are unchanged. Both are signed/pushed source branches, not adopted.
+Injected-writer tests fail before and pass after; regular-tmpfs stdio probes
+show peer writes 9 -> 1 and long host stdout/stderr writes 2 -> 1 per record.
+These are device-free mechanism counts, not native CPU measurements or a
+promise of atomicity across partial/failing writes. The logging path inherits
+the runner's shared regular-file output; there is no new pipe, thread or sink.
+
+Peer default/feature tests pass (9/10) with strict Clippy. Host CLI tests pass
+(99, four opt-in ignored) and strict changed-crate Clippy passes; full Clippy
+hits an unchanged renderer lint also reproduced on the exact parent. No
+renderer change was bundled. Source gates:
+`~/.local/state/sophia-sft-prepare-record-01` (`01c5fbb7...`) and
+`~/.local/state/sophia-sft-record-output-01` (`4d313b1f...`). Common release
+builds are sealed in `~/.local/state/sophia-sft-records-native-build-01`
+(`ff3273a5...`).
+
+Next is `sft-terminal-02/changing`: the repaired host and peer are identical in
+both arms; only ordinary versus terminal-only opt-in differs. Runner/SDK,
+workload and gates remain held. Four argument/panel preflights and 14 package
+suites pass without a native launch. Do not pool prior partial results, repair
+the old capture into acceptance, or automatically repeat for a desired outcome.
+
+
+#### Earlier November 6: explicit activation, client trace and runner gates
 
 Signed and pushed host `2fa54bd84`, peer `73e250e`, reference SDK `fd9330b`,
 runner `50d7457` and client-trace harness `56f59b1` complete the activation source
