@@ -71,6 +71,45 @@ these shares. The metadata-shell R2 seam remains absent from this workload.
 
 ### Current resumption
 
+#### November 6: negotiated terminal-only runtime and SDK checkpoint
+
+Signed host `050a75c04` (`cpu/sft-terminal-only`), Rust SDK `597e81487` and
+C SDK `1e3b5a607` are pushed on isolated branches. Required r13 capability bit 19
+is additive, requires existing SFT prerequisites and separate owner permission,
+and must match request and grant. Both independent clients reject a Prepared
+FrameOutcome under that grant. Ordinary Candidate and unopted SFT traffic retain
+Prepared; no record layout or revision changed.
+
+The runtime still validates and performs internal preparation, assigns its
+deadline and releases one response reservation. It omits only the wire notice,
+never returns frame credit early, and preserves FIFO progress of earlier
+responses. Full-output, duplicate-preparation, failure, close, revoke and physical
+ownership cases pass. Real Rust and C copied-ring clients complete/close this
+stream and fall back to ordinary candidates on the same connection, where
+Prepared remains required. Removing each of the host/Rust/C guards makes its
+corresponding test fail.
+
+Final runtime library checks: default 155 passed/one opt-in ignored; all features
+230 passed/one ignored. The preceding full runtime run passed 945/42 ignored;
+final additions were the two independently passing interop cases. Rust client and
+protocol suites passed 483 tests; C check, strict Clippy, docs, SDK imports,
+protocol checks, formatting and layout passed. Local independent source review
+passed; it did not independently execute those suites.
+
+The real negotiated mechanism matches the earlier test-elision result below:
+coalesced records 2 to 1, ACKs 1 to 1, wire services 2 to 2; split records 2 to 1,
+ACKs 2 to 1, services 4 to 2. Both schedules reduce journal pipe writes 2 to 1.
+These are input/flush calls and self-notifications, not native passes or scheduler
+wakeups. No extrapolated CPU saving.
+
+Evidence: `~/.local/state/sophia-sft-terminal-only-implementation-01`, SHA256SUMS
+`706a60105b5e9b0d3679b6214b070e409991f78c6d23c0e40da4a4275d25da2d` (47 entries).
+No Session/producer enablement, native run, install or adoption. Next gate is
+explicit owner/producer activation and runtime trace validation, then a fresh
+matched native comparison. The earlier model is finite proof, not runtime trace
+validation or an unbounded performance claim. Earlier candidate dispositions
+remain unchanged; no stacking or default change follows from this checkpoint.
+
 #### November 6: terminal-only notice mechanism, conditional on delivery schedule
 
 Signed test checkpoint `f935eaa8c` on `model/sft-terminal-only` follows the
