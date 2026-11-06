@@ -1,3 +1,5 @@
+#[path = "owner_loop/owner_cost.rs"]
+mod owner_cost;
 struct SessionLoopChannels<'a> {
     portal_fence: &'a sophia_portal::execution_fence::PortalExecutionFence,
     authority: &'a Receiver<XAuthorityObservedTransactionBatch>,

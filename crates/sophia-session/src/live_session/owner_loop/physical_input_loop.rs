@@ -98,8 +98,10 @@ let mut next_surface_sample = started + Duration::from_secs(1);
 let mut surface_samples = 0_u32;
 // Handed to producers the owner replaces while it runs.
 let owner_notifier = owner_wake.notifier();
+let mut owner_cost = owner_cost::Recorder::new(owner_wake.statistics().passes);
 let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
     'session: loop {
+        owner_cost.begin_pass();
         // Before any producer is inspected, so a ring that lands during this
         // pass stays readable and ends the pass's wait at once. Idle waits
         // are bounded by authority_wait_timeout (at most 25 ms).
@@ -582,9 +584,9 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 component_bounds = wm_output_bounds(&outputs);
                 component_bounds_outputs.clone_from(&outputs);
             }
-            component_service::service_components(components, component_catalog, runtime, scene, native_scanout.as_mut(),
+            owner_cost.measure(owner_cost::Phase::Components, || component_service::service_components(components, component_catalog, runtime, scene, native_scanout.as_mut(),
                 &outputs, &component_bounds, wm_session, shell_presentation_available, session_launches, secondary_children, config, xauthority, &mut launch_admission_started_at,
-                authenticated_launches, owner_wake, application_launches)?;
+                authenticated_launches, owner_wake, application_launches))?;
             components.write_work_area_bands(&mut shell_band_scratch);
             shell_work_area_bands = Some(std::mem::take(&mut shell_band_scratch));
         }
@@ -669,7 +671,9 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             Instant::now(),
         )?;
         *failure_phase = crate::diagnostics::SessionFailurePhase::Authority;
+        owner_cost.phase(owner_cost::Phase::Authority);
         include!("authority.rs");
+        owner_cost.phase(owner_cost::Phase::Other);
         *failure_phase = crate::diagnostics::SessionFailurePhase::InputProof;
         include!("input_proof.rs");
         *failure_phase = crate::diagnostics::SessionFailurePhase::Control;
@@ -800,6 +804,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 })();
+owner_cost.finish(session_loop_result.is_ok(), owner_wake.statistics().passes);
 if let Err(error) = session_loop_result {
     present_evidence.flush();
     sophia_x_authority::flush_present_evidence();
