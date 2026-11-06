@@ -71,6 +71,43 @@ these shares. The metadata-shell R2 seam remains absent from this workload.
 
 ### Current resumption
 
+#### November 6: terminal-only notice mechanism, conditional on delivery schedule
+
+Signed test checkpoint `f935eaa8c` on `model/sft-terminal-only` follows the
+model gate. The real Rust SDK copied-frame fixture invokes internal preparation
+and presentation, then compares publishing both notices with removing only the
+queued Prepared notice through the existing test helper. Production r13,
+negotiation, codecs, SDKs, timers and custody remain unchanged.
+
+| Delivery / variant | Outcome records | ACK exchanges | 9P wire services | Journal self-notification pipe writes |
+| --- | ---: | ---: | ---: | ---: |
+| Coalesced control / elided | 2 / 1 | 1 / 1 | 2 / 2 | 2 / 1 |
+| Prepared fully ACKed before completion: control / elided | 2 / 1 | 2 / 1 | 4 / 2 | 2 / 1 |
+
+The bracketed syscall trace corroborates ACK writes/replies and exact-pipe
+one-byte writes. Wire services include input and publication flushes; they are
+not native physical owner passes. Pipe writes are not scheduler wakeups.
+Credits return only on the terminal; copied pixels remain intact. Existing
+Rust/C lifecycle tests pass, but the new elision probe uses Rust only.
+
+Saved untraced `sft-01` candidate journals have Prepared-to-terminal receipt
+medians 15.280 and 15.299 ms over 2,000 frames each. This supports testing
+separated delivery; it does not establish native ACK/read boundaries or CPU
+savings. The coalesced control explicitly prevents a one-ACK-per-record claim.
+
+Validation: final all-feature runtime lib 221 passed, 1 ignored; four probe
+cases pass under tracing; strict runtime Clippy, docs, formatting and layout
+checks pass. Evidence `~/.local/state/sophia-sft-terminal-only-mechanism-01`,
+SHA256SUMS digest
+`dcb3480761947465a92dfa52df24ea9c73409d9c9a5e623edac468dfc3cc7c2a`.
+No native run, protocol allocation, adoption or CPU saving claim.
+
+Disposition: continue to the negotiated contract/accounting gate. Pin exact
+response-credit refunds, failure/backpressure, C/Rust compatibility and the
+internal preparation deadline before any opener or native package. Test-only
+outbox deletion does not discharge those implementation obligations. Keep
+conservative admission reservations and existing r13 behavior.
+
 #### November 6: model a terminal-only frame-outcome mode before implementation
 
 Next mechanism gate: an explicitly negotiated SFT mode could omit the
