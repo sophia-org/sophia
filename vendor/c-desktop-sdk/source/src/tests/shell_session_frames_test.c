@@ -203,15 +203,37 @@ static void complete_commits_use_the_same_lane(void)
     rig_close(&r);
 }
 
-int main(void)
+static void terminal_only_negotiation(void)
 {
     for (unsigned i = 0; i < 4; ++i) {
+        struct rig r;
+        struct sophia_ss_config cfg = config;
+        struct sophia_sf_negotiated v = welcome;
+        cfg.offer.required_capabilities |= SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY;
+        v.capabilities |= SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY;
+        if (i == 1) v.capabilities &= ~SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY;
+        if (i == 2) cfg.offer.required_capabilities &= ~SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY;
+        if (i == 3) { cfg.offer.required_capabilities &= ~SOPHIA_SFT_CAPABILITY; v.capabilities &= ~SOPHIA_SFT_CAPABILITY; }
+        start_as(&r, &v, &cfg);
+        assert((sophia_ss_state(&r.s) == SOPHIA_SS_READY) == (i == 0));
+        rig_close(&r);
+    }
+}
+
+int main(void)
+{
+    terminal_only_negotiation();
+    for (unsigned i = 0; i < 8; ++i) {
         const enum sophia_sf_profile roles[] = {SOPHIA_SF_BAR, SOPHIA_SF_LAUNCHER, SOPHIA_SF_DOCK, SOPHIA_SF_DESCRIPTOR};
         const uint64_t caps[] = {0x48081, 0x489a0, 0x491a2, 0x48083};
         struct rig r;
         struct sophia_ss_config cfg = config;
         struct sophia_sf_negotiated v = welcome;
-        cfg.profile = roles[i]; cfg.offer.required_capabilities = v.capabilities = caps[i];
+        cfg.profile = roles[i % 4]; cfg.offer.required_capabilities = v.capabilities = caps[i % 4];
+        if (i >= 4) {
+            cfg.offer.required_capabilities |= SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY;
+            v.capabilities |= SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY;
+        }
         start_as(&r, &v, &cfg);
         assert(sophia_ss_state(&r.s) == SOPHIA_SS_READY);
         rig_close(&r);

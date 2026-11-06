@@ -26,7 +26,8 @@ pub(super) fn validate_negotiated(
                 },
                 NATIVE_CAPS
                     | crate::IMAGE_CAPABILITY_OWNED_RING
-                    | (options.required_capabilities & SHELL_FRAME_CAPABILITY)
+                    | (options.required_capabilities
+                        & (SHELL_FRAME_CAPABILITY | SHELL_FRAME_TERMINAL_ONLY_CAPABILITY))
                     | (options.required_capabilities & crate::IMAGE_CAPABILITY_DMA_BUF),
             )
         } else if image {

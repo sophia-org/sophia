@@ -271,3 +271,41 @@ fn sft_owner_cannot_borrow_other_profiles_or_replace_a_live_handshake() {
     );
     assert!(owner.select(13, CAPS, GRANTED).is_err());
 }
+
+#[cfg(feature = "experimental-native-frame-transaction")]
+#[test]
+fn terminal_only_requires_a_separate_owner_permission_and_exact_peer_request() {
+    use sophia_protocol::shell_files::SHELL_FRAME_TERMINAL_ONLY_CAPABILITY as OPTION;
+    let mut owner = Owner::new(ContentStoreProfile::Legacy);
+    owner.opt_in();
+    assert!(owner.select(13, CAPS | OPTION, GRANTED).is_err());
+    let mut owner = Owner::new(ContentStoreProfile::Legacy);
+    owner
+        .state
+        .begin_terminal_frame_file_negotiation(&owner.epochs, 1, Duration::from_secs(2), GRANTED)
+        .unwrap();
+    assert_eq!(
+        owner.select(13, CAPS, GRANTED).unwrap().capabilities & OPTION,
+        0
+    );
+    assert_eq!(
+        owner
+            .select(13, CAPS | OPTION, GRANTED)
+            .unwrap()
+            .capabilities
+            & OPTION,
+        OPTION
+    );
+    assert!(
+        owner
+            .select(13, (CAPS | OPTION) & !SHELL_FRAME_CAPABILITY, GRANTED)
+            .is_err()
+    );
+    assert!(owner.select(10, CAPS | OPTION, GRANTED).is_err());
+    owner.state.negotiation = None;
+    owner.opt_in();
+    assert!(
+        owner.select(13, CAPS | OPTION, GRANTED).is_err(),
+        "permission must not survive a replacement handshake"
+    );
+}

@@ -1,8 +1,8 @@
 # Proposed terminal-only SFT: model checkpoint
 
-Status: design experiment, not implemented or negotiated. The r13 wire contract
-and all existing models remain unchanged. No revision or capability is allocated.
-This follows the approved protocol/model-first investigation, not an enablement.
+Status: the finite model checkpoint below is retained. The November 6 implementation
+adds explicitly negotiated r13 capability bit 19; see the checkpoint at the end.
+Existing base models are unchanged. Session and producer enablement remain open.
 
 ## 1. Source and scope
 
@@ -115,3 +115,28 @@ CPU saving or extrapolation from record count; no native launch at this gate.
 This is different from shelved W1 delayed publication: no remaining event is
 held or its failure ordering delayed. It is also not a standing-credit rewrite;
 SFT's existing credit and source/retirement separation remain.
+
+## November 6: negotiated implementation checkpoint
+
+Required r13 capability bit 19 (`FRAME_TERMINAL_ONLY`) now requires both the
+existing SFT prerequisites and separate owner permission. The ordinary SFT
+handshake cannot grant it. The runtime preserves internal preparation and its
+deadline, releases one response obligation there, and omits only the opted-in
+stream's Prepared event. Pre-existing responses retain FIFO progress before
+preparation; terminal publication and credit commit still wait for capacity.
+
+Independent Rust and C clients enforce exact option agreement and reject a
+Prepared FrameOutcome under this grant. Real copied-frame host/client tests
+cover terminal-only completion, close and ordinary candidate fallback on the
+same connection, where the legacy Prepared notice remains required. Accounting
+tests cover a full outbox, duplicate preparation, failure before/after prepare,
+close, revoke, and submitted physical work surviving elapsed deadlines.
+
+The implementation evidence is
+`~/.local/state/sophia-sft-terminal-only-implementation-01`. Guard-removed tests
+fail for host notice suppression and both client rejection checks. This is
+protocol/accounting/interoperability evidence, not implementation-trace
+validation against TLA+, native owner-pass attribution or CPU qualification.
+No Session CLI or producer calls the new owner handshake yet. Next: explicit
+Session/producer activation, runtime trace validation, then a separately pinned
+matched comparison; default-off and all admission/custody checks remain.

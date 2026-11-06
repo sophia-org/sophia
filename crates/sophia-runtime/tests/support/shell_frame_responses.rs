@@ -302,3 +302,6 @@ fn close_and_terminal_keep_fifo_order_and_do_not_replenish_a_closed_stream() {
 
 #[path = "shell_frame_owner_completion.rs"]
 mod completion;
+
+#[path = "shell_frame_terminal_accounting.rs"]
+mod terminal_accounting;

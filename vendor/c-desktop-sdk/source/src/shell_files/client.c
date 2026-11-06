@@ -66,7 +66,8 @@ static int initialize(struct sophia_sf_client *c, struct sophia_9p_client *wire,
             mask |= SOPHIA_SF_CAP_SEALED_IMAGE;
         } else if (offer.required_capabilities & SOPHIA_SF_CAP_OWNED_RING) {
             revision = offer.required_capabilities & SOPHIA_SFT_CAPABILITY ? 13 : 10;
-            mask |= SOPHIA_SF_CAP_OWNED_RING | (offer.required_capabilities & SOPHIA_SFT_CAPABILITY);
+            mask |= SOPHIA_SF_CAP_OWNED_RING | (offer.required_capabilities &
+                (SOPHIA_SFT_CAPABILITY | SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY));
             /* The r10 DMA-BUF opt-in is part of the exact native mask
              * only when the caller requested it. */
             if (offer.required_capabilities & SOPHIA_SF_CAP_DMABUF_IMAGE)

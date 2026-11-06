@@ -10,6 +10,48 @@ impl ContentCandidateStore {
         wm_commit_generation: u64,
         now: u64,
     ) -> Result<(), ContentCandidateError> {
+        self.prepare(
+            output,
+            candidate_generation,
+            work_area_generation,
+            wm_commit_generation,
+            now,
+            true,
+        )
+    }
+
+    /// The transport has checked the explicitly negotiated terminal-only mode.
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub(crate) fn prepared_without_notice(
+        &mut self,
+        output: ContentOutputId,
+        candidate_generation: u64,
+        work_area_generation: u64,
+        wm_commit_generation: u64,
+        now: u64,
+    ) -> Result<(), ContentCandidateError> {
+        if !self.stream_owns(output, candidate_generation) {
+            return Err(ContentCandidateError::Stale);
+        }
+        self.prepare(
+            output,
+            candidate_generation,
+            work_area_generation,
+            wm_commit_generation,
+            now,
+            false,
+        )
+    }
+
+    fn prepare(
+        &mut self,
+        output: ContentOutputId,
+        candidate_generation: u64,
+        work_area_generation: u64,
+        wm_commit_generation: u64,
+        now: u64,
+        publish_notice: bool,
+    ) -> Result<(), ContentCandidateError> {
         self.time(now)?;
         let candidate = self
             .submitted
@@ -29,16 +71,18 @@ impl ContentCandidateStore {
         let transaction = candidate.transaction;
         if !self.revoked {
             self.response_credits -= 1;
-            self.outcome(
-                transaction,
-                candidate_generation,
-                output,
-                1,
-                ContentReason::None,
-                0,
-                work_area_generation,
-                wm_commit_generation,
-            );
+            if publish_notice {
+                self.outcome(
+                    transaction,
+                    candidate_generation,
+                    output,
+                    1,
+                    ContentReason::None,
+                    0,
+                    work_area_generation,
+                    wm_commit_generation,
+                );
+            }
         }
         Ok(())
     }

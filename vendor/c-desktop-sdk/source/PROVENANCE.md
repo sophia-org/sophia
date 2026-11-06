@@ -1,5 +1,26 @@
 # Extraction and contract provenance
 
+## Terminal-only SFT, 2026-11-06
+
+Paired bases: Rust `b483e1ee9d79730705d372ffcebd47c7b12c4514`,
+C `0df720b0b1af7dd793f55b2bceac867bc1261b6b`.
+Required capability bit 19 opts an r13 SFT connection into terminal-only
+notices; bit 18 and existing image/content prerequisites remain mandatory.
+Both SDKs require an exact matching grant, refuse unsolicited/missing grants,
+accept terminal credit without a Prepared notice and reject Prepared under
+this option. Ordinary r13 behavior and all byte layouts remain unchanged.
+Caller-owned stream credit, source-release ownership and ACK batching are
+unchanged; there is no automatic retry with a weaker capability request.
+The bar, launcher, dock and descriptor negotiation masks preserve this option
+without granting any role or image authority it does not already require.
+
+Matching scripted negotiation and real journal tests cover the option,
+missing/unsolicited grant, missing SFT, terminal credit and illegal Prepared.
+Existing golden vectors and legacy lifecycle tests remain applicable. This
+checkpoint is device-free, not native qualification or default enablement.
+Host evidence: `~/.local/state/sophia-sft-terminal-only-implementation-01`.
+
+
 ## SFT drained-image fallback, 2026-11-04
 
 Adds the explicit same-binding legacy image bridge after stream and source

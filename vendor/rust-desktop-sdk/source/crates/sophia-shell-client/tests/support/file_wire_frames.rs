@@ -408,3 +408,47 @@ fn all_complete_frame_variants_reuse_the_one_submission_lane() {
 
 #[path = "frame_stream.rs"]
 mod stream;
+
+#[test]
+fn terminal_only_requires_matching_grant_and_sft_prerequisites() {
+    for (requested, granted, sft) in [
+        (true, false, true),
+        (false, true, true),
+        (true, true, false),
+    ] {
+        let mut options = frame_options();
+        let mut offered = profile();
+        if requested {
+            options.required_capabilities |= SHELL_FRAME_TERMINAL_ONLY_CAPABILITY;
+        }
+        if granted {
+            offered.capabilities |= SHELL_FRAME_TERMINAL_ONLY_CAPABILITY;
+        }
+        if !sft {
+            options.required_capabilities &= !SHELL_FRAME_CAPABILITY;
+            offered.capabilities &= !SHELL_FRAME_CAPABILITY;
+        }
+        assert!(frame_connect(offered, options, 8192).is_err());
+    }
+}
+
+#[test]
+fn terminal_only_uses_the_existing_role_negotiation() {
+    for (role, caps) in [
+        ("bar", 0x48081),
+        ("launcher", 0x489a0),
+        ("dock", 0x491a2),
+        ("descriptor", 0x48083),
+    ] {
+        let caps = caps | SHELL_FRAME_TERMINAL_ONLY_CAPABILITY;
+        let offered = Profile {
+            role,
+            revision: 13,
+            capabilities: caps,
+            limits_published: true,
+        };
+        let mut options = frame_options();
+        options.required_capabilities = caps;
+        assert!(frame_connect(offered, options, 8192).is_ok());
+    }
+}

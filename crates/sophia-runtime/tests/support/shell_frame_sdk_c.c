@@ -187,7 +187,10 @@ int main(int argc, char **argv)
     uint64_t ticket, offer, resource;
     int directory, complete;
     struct sockaddr_un address = {0};
-    assert(argc == 3);
+    assert(argc == 4);
+    const int terminal_only = strcmp(argv[3], "terminal-only") == 0;
+    assert(terminal_only || strcmp(argv[3], "prepared") == 0);
+    if (terminal_only) config.offer.required_capabilities |= SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY;
     assert(strlen(argv[2]) < sizeof address.sun_path);
     address.sun_family = AF_UNIX; strcpy(address.sun_path, argv[2]);
     fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
@@ -225,8 +228,10 @@ int main(int argc, char **argv)
     memset(sophia_ss_image_ring_pixels(&image, 0), 41, 8); m = metadata(10);
     assert(!sophia_ss_frame_submit_ring(&image, &stream, 0, &m, &r, now_ms(), &ticket, &offer));
     assert(!sophia_ss_frame_has_credit(&stream) && !sophia_ss_image_ring_pixels(&image, 0));
-    outcome = next(SOPHIA_SFT_OUTCOME);
-    assert(outcome.value.frame.outcome.candidate.kind == 1 && !sophia_ss_frame_has_credit(&stream));
+    if (!terminal_only) {
+        outcome = next(SOPHIA_SFT_OUTCOME);
+        assert(outcome.value.frame.outcome.candidate.kind == 1 && !sophia_ss_frame_has_credit(&stream));
+    }
     outcome = next(SOPHIA_SFT_OUTCOME);
     assert(outcome.value.frame.outcome.candidate.kind == 2 && sophia_ss_frame_has_credit(&stream));
     assert(!sophia_ss_frame_close(&session, &stream, 102, &ticket));

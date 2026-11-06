@@ -248,8 +248,41 @@ static void no_credit_after_closed(void)
     assert(deliver(&r, &f, opened()) == SOPHIA_9P_INVALID);
     assert(f.state == SOPHIA_SS_FRAME_UNKNOWN); rig_close(&r);
 }
+static void terminal_only_profile(void)
+{
+    for (unsigned prepared = 0; prepared < 2; ++prepared) {
+        struct rig r; struct sophia_ss_frame_stream f = {0}; uint64_t ticket;
+        struct sophia_sf_negotiated v = welcome;
+        struct sophia_ss_config cfg = config;
+        cfg.offer.required_capabilities |= SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY;
+        v.capabilities |= SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY;
+        start_as(&r, &v, &cfg);
+        assert(sophia_ss_state(&r.s) == SOPHIA_SS_READY);
+        rig_ack(&r);
+        struct sophia_sf_record request = open_record();
+        assert(!sophia_ss_frame_open(&r.s, &f, 10, &request.value.frame.stream.key, &ticket));
+        accepted(&r, ticket);
+        assert(!deliver(&r, &f, opened()));
+        submit_one(&r, &f);
+        if (prepared) {
+            const struct sophia_sf_record *event;
+            struct sophia_sf_record record = outcome(1, 1, 0);
+            peer_record(&r.p, &record);
+            rig_run(&r, 16);
+            assert(sophia_ss_state(&r.s) == SOPHIA_SS_FAILED);
+            assert(sophia_ss_event(&r.s, &event) == SOPHIA_9P_INVALID);
+            assert(!sophia_ss_frame_has_credit(&f));
+        } else {
+            assert(!deliver(&r, &f, outcome(1, 2, 123)));
+            assert(sophia_ss_frame_has_credit(&f));
+        }
+        rig_close(&r);
+    }
+}
+
 int main(void)
 {
+    terminal_only_profile();
     credit_once(); drain_orders(); automatic_close_race(); refused_frame_and_close(); wrong_tuples();
     queue_refusal(); opening_refusal_and_disconnect(); invalid_after_prepared();
     local_binding_and_open_capacity(); no_credit_after_closed();

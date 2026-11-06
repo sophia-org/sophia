@@ -22,6 +22,7 @@ pub(super) struct PendingNegotiation {
     pub(super) descriptor: bool,
     /// Owner permission for this one handshake, never inherited by a replacement.
     pub(super) frame_transactions: bool,
+    pub(super) frame_terminal_only: bool,
 }
 
 pub(super) enum Stage {
@@ -33,6 +34,23 @@ pub(super) enum Stage {
 }
 
 impl ShellComponentTransport {
+    /// Permit the required bit-19 option for this one SFT handshake.
+    /// Ordinary r13 requests still receive Prepared notices.
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub fn begin_terminal_frame_file_negotiation(
+        &mut self,
+        epochs: &crate::ContentEpochRegistry,
+        connection_epoch: u64,
+        timeout: Duration,
+        policy: ShellContentAdmissionPolicy,
+    ) -> Result<(), ShellTransportError> {
+        self.begin_frame_file_negotiation(epochs, connection_epoch, timeout, policy)?;
+        self.negotiation
+            .as_mut()
+            .expect("just started")
+            .frame_terminal_only = true;
+        Ok(())
+    }
     /// Opt in this epoch to the bounded SFT bar profile. The peer must still
     /// request r13/bit18; ordinary requests keep their ordinary revision.
     /// Requires a pre-reserved Legacy content store and authenticated image channel.
@@ -118,6 +136,7 @@ impl ShellComponentTransport {
             refusal: None,
             descriptor: false,
             frame_transactions: false,
+            frame_terminal_only: false,
         });
         Ok(())
     }

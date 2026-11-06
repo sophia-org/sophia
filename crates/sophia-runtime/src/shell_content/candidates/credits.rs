@@ -221,7 +221,7 @@ impl ContentCandidateStore {
         Ok(())
     }
 
-    pub(super) fn stream_owns(&self, output: ContentOutputId, generation: u64) -> bool {
+    pub(crate) fn stream_owns(&self, output: ContentOutputId, generation: u64) -> bool {
         self.streams
             .entries
             .get(&output)

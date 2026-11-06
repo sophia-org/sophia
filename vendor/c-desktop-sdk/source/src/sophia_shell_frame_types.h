@@ -6,6 +6,8 @@
 
 #define SOPHIA_SFT_REVISION 13u
 #define SOPHIA_SFT_CAPABILITY (UINT64_C(1) << 18)
+/* Required r13 option; internal preparation remains mandatory. */
+#define SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY (UINT64_C(1) << 19)
 #define SOPHIA_SFT_MAX_BYTES 8192u
 enum sophia_sft_kind {
     SOPHIA_SFT_OPENED = 55,

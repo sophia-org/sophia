@@ -27,15 +27,22 @@ impl ShellFiles {
         capabilities: u64,
         revision: u16,
     ) -> Result<bool, Errno> {
-        if revision != SHELL_FRAME_REVISION && capabilities & SHELL_FRAME_CAPABILITY == 0 {
+        if revision != SHELL_FRAME_REVISION
+            && capabilities
+                & (SHELL_FRAME_CAPABILITY
+                    | sophia_protocol::shell_files::SHELL_FRAME_TERMINAL_ONLY_CAPABILITY)
+                == 0
+        {
             return Ok(false);
         }
         let required = SHELL_FRAME_CAPABILITY
             | crate::owned_ring_protocol::CAPABILITY
             | sophia_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
         // Keep native-launcher/catalog, image/draw extensions and unknown bits out of this profile.
-        let supported =
-            ((1 << 11) - 1) | crate::owned_ring_protocol::CAPABILITY | SHELL_FRAME_CAPABILITY;
+        let supported = ((1 << 11) - 1)
+            | crate::owned_ring_protocol::CAPABILITY
+            | SHELL_FRAME_CAPABILITY
+            | sophia_protocol::shell_files::SHELL_FRAME_TERMINAL_ONLY_CAPABILITY;
         if !cfg!(feature = "experimental-native-frame-transaction")
             || revision != SHELL_FRAME_REVISION
             || capabilities & required != required

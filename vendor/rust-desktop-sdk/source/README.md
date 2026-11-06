@@ -1,5 +1,8 @@
 # Sophia desktop SDK for Rust
 
+Experimental terminal-only SFT uses explicitly required r13 capability bit 19;
+no default changes. See [API parity](API-PARITY.md#terminal-only-sft-2026-11-06).
+
 CPU images use **Immutable Shared Buffers (ISB)**, currently backed by sealed
 memfds. The buffer builders are `create_isb` / `finish_isb` in Rust and
 `sophia_ip_isb_create` / `sophia_ip_isb_finish` in C. Names changed together;

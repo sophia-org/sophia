@@ -1,14 +1,14 @@
-tree 3d2adbae06fa10143d8e62c1028365f95132f979
-parent 32ea31a16e473df453afce0076506700a7a2e90a
-author Mason Green <mason@greenm01.net> 1793841503 -0500
-committer Mason Green <mason@greenm01.net> 1793841503 -0500
+tree 79c3dd171b1a00f1ca1e51b97ece00c0126d68f3
+parent 0df720b0b1af7dd793f55b2bceac867bc1261b6b
+author Mason Green <mason@greenm01.net> 1793981634 -0500
+committer Mason Green <mason@greenm01.net> 1793981634 -0500
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJAEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCauvZXxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJsmgD/Sv4tzofKkytGkvLXr7sw
- soS7fPFkVm841TaO+Xr5vYYA+Kn1AG9FVN07dHIBzbCXvK6sBXPuE3s0BXJ5q7Yt
- 6QQ=
- =B3EJ
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCau38whsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJzVgEA7phl5TVQ9jU+0oFmHy6Y
+ BLjxRmO4o2V2yN9ng7ho7DIA/jUz0q0oScXxYAVhz3VG8WY2HvlzWv9iGE1sVKdz
+ 0hsP
+ =RQNS
  -----END PGP SIGNATURE-----
 
-Permit initial retained images before opening an SFT stream
+protocol: match terminal-only SFT negotiation and outcome policy

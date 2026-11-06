@@ -19,9 +19,12 @@ mod terminal_probe;
 enum Case {
     Retained,
     Probe { omit_prepared: bool, split: bool },
+    TerminalOnly { split: bool },
     RetainedFallback,
     CopiedFallback,
     CCopiedFallback,
+    TerminalCopiedFallback,
+    CTerminalCopiedFallback,
 }
 
 fn next(client: &mut ShellConnection, stream: &mut FrameStream) -> ShellFrameRecord {
@@ -94,9 +97,17 @@ impl Peer {
 fn lifecycle(case: Case) {
     let copied = matches!(
         case,
-        Case::CopiedFallback | Case::CCopiedFallback | Case::Probe { .. }
+        Case::CopiedFallback
+            | Case::CCopiedFallback
+            | Case::TerminalCopiedFallback
+            | Case::CTerminalCopiedFallback
+            | Case::Probe { .. }
+            | Case::TerminalOnly { .. }
     );
-    let fallback = !matches!(case, Case::Retained | Case::Probe { .. });
+    let fallback = !matches!(
+        case,
+        Case::Retained | Case::Probe { .. } | Case::TerminalOnly { .. }
+    );
     let mut f = fixture::Fixture::new(64);
     let mut t = Transport::reserve(&mut f);
     if copied {
@@ -151,12 +162,20 @@ fn lifecycle(case: Case) {
     }
     let path = t.transport.socket_path().to_owned();
     let image_dir = t.path.clone();
-    let capabilities = SHELL_FRAME_CAPABILITY
+    let terminal_only = matches!(
+        case,
+        Case::TerminalOnly { .. } | Case::TerminalCopiedFallback | Case::CTerminalCopiedFallback
+    );
+    let capabilities = if terminal_only {
+        SHELL_FRAME_TERMINAL_ONLY_CAPABILITY
+    } else {
+        0
+    } | SHELL_FRAME_CAPABILITY
         | crate::owned_ring_protocol::CAPABILITY
         | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
         | SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER;
-    let mut peer = if case == Case::CCopiedFallback {
-        Peer::C(c::Peer::spawn(&image_dir, &path))
+    let mut peer = if matches!(case, Case::CCopiedFallback | Case::CTerminalCopiedFallback) {
+        Peer::C(c::Peer::spawn(&image_dir, &path, terminal_only))
     } else {
         Peer::Rust(std::thread::spawn(move || {
             let timeout = Duration::from_secs(5);
@@ -207,7 +226,7 @@ fn lifecycle(case: Case) {
             };
             assert!(!stream.has_credit());
             assert!(stream.submit(&mut client, &commit).is_err());
-            if matches!(case, Case::Probe { .. }) {
+            if matches!(case, Case::Probe { .. } | Case::TerminalOnly { .. }) {
                 return (
                     client,
                     Some(terminal_probe::Pending {
@@ -216,12 +235,14 @@ fn lifecycle(case: Case) {
                     }),
                 );
             }
-            let prepared = next(&mut client, &mut stream);
-            assert!(
-                matches!(&prepared, ShellFrameRecord::Outcome { outcome, credit_expires_msec: 0, .. } if outcome.kind == 1),
-                "{prepared:?}"
-            );
-            assert!(!stream.has_credit(), "Prepared must not return credit");
+            if !terminal_only {
+                let prepared = next(&mut client, &mut stream);
+                assert!(
+                    matches!(&prepared, ShellFrameRecord::Outcome { outcome, credit_expires_msec: 0, .. } if outcome.kind == 1),
+                    "{prepared:?}"
+                );
+                assert!(!stream.has_credit(), "Prepared must not return credit");
+            }
             assert!(
                 matches!(next(&mut client, &mut stream), ShellFrameRecord::Outcome { outcome, credit_expires_msec, .. } if outcome.kind == 2 && credit_expires_msec > 10)
             );
@@ -264,17 +285,21 @@ fn lifecycle(case: Case) {
         .state
         .configure_image_channel(discovery, limits, formats, bounds)
         .unwrap();
-    t.transport
-        .state
-        .begin_frame_file_negotiation(
-            &t.transport.content_epochs,
-            key.grant.connection_epoch,
-            Duration::from_secs(5),
-            crate::ShellContentAdmissionPolicy::Granted {
-                discrete_input: false,
-            },
-        )
-        .unwrap();
+    let begin = if terminal_only {
+        crate::ShellComponentTransport::begin_terminal_frame_file_negotiation
+    } else {
+        crate::ShellComponentTransport::begin_frame_file_negotiation
+    };
+    begin(
+        &mut t.transport.state,
+        &t.transport.content_epochs,
+        key.grant.connection_epoch,
+        Duration::from_secs(5),
+        crate::ShellContentAdmissionPolicy::Granted {
+            discrete_input: false,
+        },
+    )
+    .unwrap();
     let until = Instant::now() + Duration::from_secs(5);
     let mut negotiated = false;
     let mut submitted = 0;
@@ -341,7 +366,8 @@ fn lifecycle(case: Case) {
                 .state
                 .service_content_candidates(&mut t.transport.content_epochs, &contexts, 10)
                 .unwrap();
-            if t.candidates().pending_candidate_count() != 0 && !matches!(case, Case::Probe { .. })
+            if t.candidates().pending_candidate_count() != 0
+                && !matches!(case, Case::Probe { .. } | Case::TerminalOnly { .. })
             {
                 let generation = submitted + 1;
                 displays.push(
@@ -366,21 +392,9 @@ fn lifecycle(case: Case) {
     }
     let pending = peer.finish();
     assert!(negotiated);
-    if let Case::Probe {
-        omit_prepared,
-        split,
-    } = case
-    {
+    if matches!(case, Case::Probe { .. } | Case::TerminalOnly { .. }) {
         let (client, pending) = pending.unwrap();
-        terminal_probe::run(
-            &mut t,
-            &mut owner,
-            &f,
-            client,
-            pending,
-            omit_prepared,
-            split,
-        );
+        terminal_probe::run(&mut t, &mut owner, &f, client, pending, case);
         return;
     }
     assert!(pending.is_none());
@@ -451,4 +465,14 @@ fn legacy_frame(client: &mut ShellConnection, prior: &ShellFrameRecord) {
         13,
         "no reconnect or renegotiation"
     );
+}
+
+#[test]
+fn rust_terminal_only_stream_copies_closes_and_falls_back_without_reconnecting() {
+    lifecycle(Case::TerminalCopiedFallback);
+}
+
+#[test]
+fn c_terminal_only_stream_copies_closes_and_falls_back_without_reconnecting() {
+    lifecycle(Case::CTerminalCopiedFallback);
 }

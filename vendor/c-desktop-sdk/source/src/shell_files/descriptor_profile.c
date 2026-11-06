@@ -11,7 +11,8 @@ int sf_descriptor_offer(const struct sophia_sf_negotiate *offer)
         if (offer->minimum_revision > SOPHIA_SFT_REVISION || offer->maximum_revision < SOPHIA_SFT_REVISION ||
             (caps & (SOPHIA_SF_CAP_OWNED_RING | (UINT64_C(1) << 7))) != (SOPHIA_SF_CAP_OWNED_RING | (UINT64_C(1) << 7))) return 0;
         ordinary.minimum_revision = ordinary.maximum_revision = 8;
-        ordinary.required_capabilities &= ~(SOPHIA_SFT_CAPABILITY | SOPHIA_SF_CAP_OWNED_RING);
+        ordinary.required_capabilities &= ~(SOPHIA_SFT_CAPABILITY | SOPHIA_SF_CAP_OWNED_RING |
+                                            SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY);
         return sf_descriptor_offer(&ordinary);
     }
     if (!offer->minimum_revision || offer->minimum_revision > revision || !(caps & 1) ||
@@ -40,7 +41,9 @@ int sf_session_candidate_allowed(const struct sophia_sf_client *c, uint16_t kind
 int sf_session_event_allowed(const struct sophia_sf_client *c, const struct sophia_sf_record *r)
 {
     if (r->header.kind >= SOPHIA_SFT_OPENED && r->header.kind <= SOPHIA_SFT_OUTCOME)
-        return sf_session_frame(c);
+        return sf_session_frame(c) &&
+            !(r->header.kind == SOPHIA_SFT_OUTCOME && r->value.frame.outcome.candidate.kind == 1 &&
+              (c->welcome.capabilities & SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY));
     if (c->profile != SOPHIA_SF_DESCRIPTOR)
         return !((r->header.kind >= SOPHIA_SF_DESCRIPTOR_OUTCOME &&
                   r->header.kind <= SOPHIA_SF_DESCRIPTOR_LAUNCH_OUTCOME) ||

@@ -1,5 +1,5 @@
-//! Device-free notice-elision experiment, not an implemented negotiation mode.
-//! Keep the real preparation transition; remove only its queued test notice.
+//! Compare test-only notice elision with the explicitly negotiated implementation.
+//! Both keep real preparation, native ownership and terminal-credit handling.
 use super::*;
 use std::io::Write;
 use std::os::fd::{AsFd, AsRawFd};
@@ -157,9 +157,16 @@ pub(super) fn run(
     f: &fixture::Fixture,
     mut client: ShellConnection,
     mut pending: Pending,
-    omit_prepared: bool,
-    split: bool,
+    case: Case,
 ) {
+    let (omit_prepared, split, negotiated) = match case {
+        Case::Probe {
+            omit_prepared,
+            split,
+        } => (omit_prepared, split, false),
+        Case::TerminalOnly { split } => (true, split, true),
+        _ => unreachable!(),
+    };
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut setup = Counts::default();
     loop {
@@ -190,7 +197,7 @@ pub(super) fn run(
     std::io::stderr()
         .write_all(
             format!(
-                "TERMINAL_PROBE_BEGIN omit={omit_prepared} split={split} wake={}\n",
+                "TERMINAL_PROBE_BEGIN omit={omit_prepared} split={split} negotiated={negotiated} wake={}\n",
                 wake.display()
             )
             .as_bytes(),
@@ -198,10 +205,39 @@ pub(super) fn run(
         .unwrap();
     let before = t.transport.state.wire_turn_count();
     let mut counts = Counts::default();
+    let reserved = t.candidates().control_occupancy();
+    if negotiated {
+        assert!(
+            t.transport
+                .content_presented_at(key.grant, key.output, 1, 40, 20, 30, 10)
+                .is_err()
+        );
+        t.transport
+            .state
+            .content_limits
+            .as_mut()
+            .unwrap()
+            .max_control_records = 0;
+    }
     t.transport
         .content_prepared(key.grant, key.output, 1, 20, 30, 10)
         .unwrap();
-    if omit_prepared {
+    if negotiated {
+        assert_eq!(t.candidates().control_occupancy(), reserved - 1);
+        assert_eq!(t.transport.state.output.records(), 0);
+        assert!(
+            t.transport
+                .content_prepared(key.grant, key.output, 1, 20, 30, 10)
+                .is_err()
+        );
+        assert_eq!(t.candidates().control_occupancy(), reserved - 1);
+        t.transport
+            .state
+            .content_limits
+            .as_mut()
+            .unwrap()
+            .max_control_records = 64;
+    } else if omit_prepared {
         // Test-only elision after real preparation and reservation transfer. This
         // is not a production API or proof of a future mode's refund arithmetic.
         assert_eq!(t.transport.state.output.records(), 1);
@@ -251,8 +287,18 @@ pub(super) fn run(
         2 * u64::try_from(exchanges).unwrap()
     );
     std::io::stderr().write_all(format!(
-        "TERMINAL_PROBE_END omit={omit_prepared} split={split} records={} acks={} input_visits={} wire_services={} wake_ready={}\n",
+        "TERMINAL_PROBE_END omit={omit_prepared} split={split} negotiated={negotiated} records={} acks={} input_visits={} wire_services={} wake_ready={}\n",
         counts.outcomes.len(), counts.acknowledgements, counts.input_visits,
         t.transport.state.wire_turn_count() - before, counts.wake_ready,
     ).as_bytes()).unwrap();
+}
+
+#[test]
+fn negotiated_terminal_only_coalesced() {
+    lifecycle(Case::TerminalOnly { split: false });
+}
+
+#[test]
+fn negotiated_terminal_only_split() {
+    lifecycle(Case::TerminalOnly { split: true });
 }

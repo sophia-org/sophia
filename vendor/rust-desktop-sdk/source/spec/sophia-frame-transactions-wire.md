@@ -15,6 +15,8 @@ the ordinary content role and explicit owned-ring bit 15 as well as bit 18.
 The host build, owner permission and peer request must all opt in. Required bits
 cannot silently disappear. Unknown revisions or unsupported combinations refuse;
 do not implement this as a `revision >= 13` check.
+The first opt-in host profile accepts `minimum_revision = maximum_revision = 13`.
+An ordinary r10 request stays r10 even when the owner permits SFT.
 
 The r13 owned-ring image mapping is image revision 10, source kind 4 and the
 existing D4 records. SFT requires a two-slot registration when a frame copies
@@ -182,3 +184,40 @@ negotiation; complete/fragmented production-export admission under full record
 and byte budgets; fresh owner-loop handoff; real Lom and reference producers with
 drain/fallback; implementation trace validation against the model; and matched
 native CPU, cadence and latency qualification. Default-off remains mandatory.
+
+## Terminal-only notices (r13, required capability bit 19)
+
+`FRAME_TERMINAL_ONLY` (`0x80000`) is an additive option, not a new layout.
+The request and grant must both include bit 19, bit 18, owned-ring bit 15 and
+all existing content-role prerequisites, at exactly revision 13. A separate owner permission for this option is required in addition to SFT
+authentication and build support. Unsupported
+required bits, bit 19 without SFT, and unsolicited or missing bit 19 grants
+refuse negotiation. Without bit 19 the existing r13 behavior is unchanged.
+The selected option is immutable for the connection and bound to each opened
+stream; close, expiry and replacement cannot transfer it to another grant.
+
+An opted-in stream emits no Prepared FrameOutcome (kind 1). Both SDKs reject
+one if received under this grant. All record sizes, sequence numbering, ACK
+policy, source status/releases and terminal layouts stay unchanged. Clients
+must not infer preparation, presentation or source reuse from silence. A
+terminal may arrive without Prepared; terminal validation and exactly-once
+credit still apply. Refused describes a request that was not admitted; an
+admitted frame must settle through its terminal outcome, never a later Refused.
+
+Admission retains the existing two-response reservation (Prepared + terminal).
+The internal preparation transition still validates identity, marks the
+submitted frame prepared and starts the presentation deadline. At that point
+it releases exactly one reserved control record without enqueueing an event,
+consuming journal capacity, writing a wire wake or returning frame credit.
+This is an obligation release, not a larger admission allowance. Presentation
+before internal preparation remains invalid. Renderer failure before preparation
+releases both reservations; after preparation it releases the remaining one.
+Close/expiry retain outstanding physical work and the lifetime close notice;
+revocation drops response obligations as before. A full outbox cannot delay
+internal preparation merely to publish an omitted notice. Terminal publication
+still waits for capacity and commits credit only on transfer, not on creation.
+
+Ordinary Candidate traffic and unopted SFT streams retain their existing
+Prepared records. Default-off SFT policy, native completion and custody checks
+are unchanged. Protocol compatibility and device-free accounting proofs are
+separate from native CPU/latency qualification.

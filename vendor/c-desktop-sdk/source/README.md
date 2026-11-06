@@ -1,5 +1,8 @@
 # Sophia desktop SDK for C
 
+Experimental terminal-only SFT uses explicitly required r13 capability bit 19;
+no default changes. See [API parity](API-PARITY.md#terminal-only-sft-2026-11-06).
+
 Rendering into owned-ring pixels on a CPU worker uses the existing pixels/offer
 pair with [caller-managed custody](OWNED-RING-WORKER.md). Keep the mapping alive
 until the worker stops; disconnect is not permission to unmap it.

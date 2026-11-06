@@ -1110,6 +1110,15 @@ fn validate_image_options(
     let frame = options.required_capabilities
         & sophia_shell_protocol::shell_files::SHELL_FRAME_CAPABILITY
         != 0;
+    if options.required_capabilities
+        & sophia_shell_protocol::shell_files::SHELL_FRAME_TERMINAL_ONLY_CAPABILITY
+        != 0
+        && !frame
+    {
+        return Err(ShellClientError::InvalidArgument(
+            "terminal-only requires SFT",
+        ));
+    }
     let revision = if frame {
         sophia_shell_protocol::shell_files::SHELL_FRAME_REVISION
     } else {

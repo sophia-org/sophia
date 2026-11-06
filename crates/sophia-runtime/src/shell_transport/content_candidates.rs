@@ -285,6 +285,36 @@ impl ShellComponentTransport {
     ) -> Result<(), ShellTransportError> {
         self.validate_completion_grant(epochs, grant)?;
         let connected = self.content_grant == Some(grant);
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if connected
+            && self.capabilities
+                & sophia_protocol::shell_files::SHELL_FRAME_TERMINAL_ONLY_CAPABILITY
+                != 0
+            && epochs
+                .active_candidates(grant)
+                .is_some_and(|store| store.stream_owns(output, candidate_generation))
+        {
+            // Preserve publication of unrelated responses; the omitted notice
+            // itself needs no FIFO room or I/O.
+            if epochs
+                .active_candidates(grant)
+                .is_some_and(|store| store.pending_event_count() != 0)
+            {
+                self.flush_content_frame_events(epochs, now_msec)?;
+            }
+            // Releasing an unused response reservation needs no FIFO room or I/O.
+            return epochs
+                .candidates_mut(grant)
+                .ok_or(ShellTransportError::MissingCapability)?
+                .prepared_without_notice(
+                    output,
+                    candidate_generation,
+                    work_area_generation,
+                    wm_commit_generation,
+                    now_msec,
+                )
+                .map_err(Into::into);
+        }
         // The already-owned response credit must still fit before the native
         // result changes reducer state. No I/O occurs during the subsequent
         // credit-to-FIFO transfer, so backpressure cannot strand a retry.

@@ -417,3 +417,32 @@ fn closed_stream_cannot_return_new_credit_or_reaccept_old_events() {
     assert!(delivered(&mut c, &mut p, &mut s, opened(key())).is_err());
     assert_eq!(s.state(), FrameStreamState::Unknown);
 }
+
+#[test]
+fn terminal_only_accepts_terminal_without_prepared_and_rejects_prepared() {
+    for prepared in [false, true] {
+        let mut offered = profile();
+        let mut options = frame_options();
+        offered.capabilities |= SHELL_FRAME_TERMINAL_ONLY_CAPABILITY;
+        options.required_capabilities |= SHELL_FRAME_TERMINAL_ONLY_CAPABILITY;
+        let (mut c, mut p) = frame_connect(offered, options, 8192).unwrap();
+        let mut s = FrameStream::new();
+        let a = s.open(&mut c, tx(10), key()).unwrap();
+        custody(&mut c, &mut p, a.first);
+        delivered(&mut c, &mut p, &mut s, opened(key())).unwrap();
+        submit_one(&mut c, &mut p, &mut s);
+        if prepared {
+            let bytes = event(&mut p, &result(1, 1, 0));
+            p.push(bytes);
+            assert!(matches!(
+                drive(&mut c, &mut p, |_, _| false),
+                Err(ShellClientError::Protocol("Prepared in terminal-only mode"))
+            ));
+            assert!(!s.has_credit());
+        } else {
+            delivered(&mut c, &mut p, &mut s, result(1, 2, 123)).unwrap();
+            assert!(s.has_credit());
+            assert!(s.observe(&result(1, 2, 123)).is_err());
+        }
+    }
+}

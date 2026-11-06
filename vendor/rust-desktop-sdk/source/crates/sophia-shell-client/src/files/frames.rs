@@ -9,7 +9,9 @@ pub(super) fn validate_negotiated(
     value: &ShellFileNegotiated,
 ) -> Result<(), ShellClientError> {
     let caps = value.welcome.capabilities;
-    if (caps | options.required_capabilities) & SHELL_FRAME_CAPABILITY == 0
+    if (caps | options.required_capabilities)
+        & (SHELL_FRAME_CAPABILITY | SHELL_FRAME_TERMINAL_ONLY_CAPABILITY)
+        == 0
         && value.welcome.selected_revision != SHELL_FRAME_REVISION
     {
         return Ok(());
@@ -23,6 +25,7 @@ pub(super) fn validate_negotiated(
         || options.required_capabilities & required != required
         || caps & required != required
         || caps & unsupported != 0
+        || (caps ^ options.required_capabilities) & SHELL_FRAME_TERMINAL_ONLY_CAPABILITY != 0
         || !value.limits_published
     {
         return Err(ShellClientError::MissingCapability);
@@ -69,6 +72,11 @@ impl FileWire {
             self.revision,
             SHELL_FILE_MAX_CANDIDATE_BYTES,
         )?;
+        if self.capabilities & SHELL_FRAME_TERMINAL_ONLY_CAPABILITY != 0
+            && matches!(&value, ShellFrameRecord::Outcome { outcome, .. } if outcome.kind == 1)
+        {
+            return Err(ShellClientError::Protocol("Prepared in terminal-only mode"));
+        }
         Ok((
             header.sequence,
             super::events::Event::Inbound(Inbound::Frame(value)),

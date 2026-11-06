@@ -40,6 +40,9 @@ static int image_mask(uint64_t capabilities, uint16_t revision, int dma_buf)
     uint64_t image = image_bit(revision) |
                      (dma_buf && revision == SOPHIA_SF_REVISION_OWNED_RING ? DMA_BIT : 0);
     uint64_t want = image | CONTENT_BIT;
+    if ((capabilities & SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY) &&
+        !(capabilities & SOPHIA_SFT_CAPABILITY))
+        return 0;
     if (dma_buf && revision != SOPHIA_SF_REVISION_OWNED_RING)
         return 0;
     return (capabilities & want) == want &&

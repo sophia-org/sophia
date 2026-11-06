@@ -8,7 +8,7 @@ pub(super) struct Peer {
 }
 
 impl Peer {
-    pub(super) fn spawn(directory: &Path, socket: &Path) -> Self {
+    pub(super) fn spawn(directory: &Path, socket: &Path, terminal_only: bool) -> Self {
         let sdk =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/c-desktop-sdk/source/src");
         let binary = directory.join("frame-client-c");
@@ -49,6 +49,11 @@ impl Peer {
         let child = Command::new(binary)
             .arg(directory)
             .arg(socket)
+            .arg(if terminal_only {
+                "terminal-only"
+            } else {
+                "prepared"
+            })
             .stdin(Stdio::null())
             .spawn()
             .unwrap();
