@@ -71,6 +71,47 @@ these shares. The metadata-shell R2 seam remains absent from this workload.
 
 ### Current resumption
 
+#### November 6: exclude inactive watchdog work and timer substitution
+
+The completion-publication fixture did not prove a complete owner pass removed;
+its production hooks were withdrawn. Evidence remains in
+`~/.local/state/sophia-sft-completion-proof-01` (seal
+`2ffc1ea00db5c5398fd8647b31f427f5ec596026fdb92ec8a86b564501b19a3f`).
+The separate signed service-clock correction `4803177f6` records successful
+lifecycle service against the watchdog, but the exact-parent activation check
+does not support its native performance trial. Four control windows each have
+equal owner-pass and wait counts, with 1800 positive-duration Service expiries
+per 1800 completions. The corrected immediate watchdog path skips the wait and
+is not that counted expiry. `sft-clock-01/changing` stays sealed, unconsumed and
+parked; its earlier readiness receipt is not a launch instruction. See
+`~/.local/state/sophia-sft-service-clock-activation-01` (seal
+`7e2aec1806df23d0b26b42b61360ba9d9f0a72776418bd0fa1511cd221f9a673`).
+
+The bounded follow-up found that native completion waits combine renderer
+in-flight work, pending/prepared content, callbacks, cleanup and runtime service
+requests into one `short_service` flag. The renderer returns through an mpsc
+channel without a pollable result notification on this base. That makes renderer
+polling a plausible source of the recurring expiry, but periodic totals do not
+identify the state present at each wait. No exact-cause claim follows.
+
+Before adding another probe, reuse the
+[renderer notification experiment](../plans/7habxzm4-next-sophia-cpu-reductions-under-real-animated-workloads.md#renderer-completion-notification-experiment-2026-10-04):
+`4dc7f40f1` reduced expired timers without demonstrating reduced Sophia CPU or
+total owner work. That older virtio workload does not predict SFT performance;
+it demonstrates why a wake replacing a timeout is insufficient evidence for a
+CPU candidate. Renderer result consumption and KMS completion still require
+owner work. Do not revive that branch, remove the cap, or add a native
+attribution package merely to rename the wake source. The proposed wait-cause
+probe is deferred before any code or build.
+
+The next admission gate remains the existing real-owner fixture: show a whole
+redundant service traversal removed while preserving same-pass publication,
+fresh custody, deadlines and fairness. If a change only replaces a timed wait
+with an earlier notification, close it as a latency proposal, outside this CPU
+work item. The bounded source review and evidence pointers are retained in
+`~/.local/state/sophia-sft-service-expiry-review-01`. No new CPU/frame result,
+source candidate, native launch or adoption is claimed by this update.
+
 All five scopes have separate signed, published source candidates. None is
 merged or adopted. The first native qualification tested the publication-only flush:
 `~/.local/state/t331/sft-flush-01/changing`, one r13-versus-r13 ABBA against its
