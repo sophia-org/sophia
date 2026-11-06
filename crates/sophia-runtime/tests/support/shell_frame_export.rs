@@ -285,3 +285,6 @@ mod source_reservation;
 
 #[path = "shell_frame_copy_owner.rs"]
 mod copy_owner;
+
+#[path = "shell_frame_combined_submit_proof.rs"]
+mod combined_submit_proof;
