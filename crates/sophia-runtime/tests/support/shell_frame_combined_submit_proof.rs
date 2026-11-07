@@ -1,48 +1,8 @@
-//! Test-only combined-call proof. No file node, SDK discovery, or wire change.
-//! Transport authentication and a negotiated single-Twrite size limit are outside this seam.
+//! Combined node custody checks. Authenticated socket coverage is separate.
 use super::*;
 
-fn combined(files: &mut ShellFiles, writer: &mut Handle, bytes: &[u8]) -> Result<u32, Errno> {
-    let Handle::ReusableTransaction(id) = *writer else {
-        return Err(Errno::ESTALE);
-    };
-    // Expire and validate the existing token even for an accepted retry.
-    files.read_reusable_transaction(id, 0, 0)?;
-    if files.submission_revision() != SHELL_FRAME_REVISION {
-        return Err(Errno::EACCES);
-    }
-    let record = decode_shell_file_record_at_revision(
-        bytes,
-        ShellFileClass::Candidate,
-        SHELL_FRAME_REVISION,
-    )
-    .map_err(|_| Errno::EINVAL)?;
-    if record.header.connection_epoch != files.epoch {
-        return Err(Errno::ESTALE);
-    }
-    if record.header.kind != ShellFileKind::FrameCommit {
-        return Err(Errno::EINVAL);
-    }
-    let submit = encode_shell_file_submit(ShellFileSubmit {
-        connection_epoch: record.header.connection_epoch,
-        submission_id: record.header.submission_id,
-        candidate_bytes: u32::try_from(bytes.len()).map_err(|_| Errno::EINVAL)?,
-    })
-    .map_err(|_| Errno::EINVAL)?;
-    if let Some(accepted) = &files.accepted {
-        // The submit header alone cannot distinguish a changed payload of equal length.
-        if accepted.handle != id || accepted.bytes != bytes {
-            return Err(EBUSY);
-        }
-    } else if !files
-        .staging
-        .as_ref()
-        .is_some_and(|staging| staging.handle == id && staging.bytes == bytes)
-    {
-        files.write_reusable_transaction(id, 0, bytes)?;
-    }
-    files.submit_transaction(&submit)?;
-    Ok(bytes.len() as u32)
+fn combined(files: &mut ShellFiles, _writer: &mut Handle, bytes: &[u8]) -> Result<u32, Errno> {
+    files.write(&Node::FrameSubmit, &mut Handle::Plain, 0, bytes)
 }
 
 fn acknowledge(files: &mut ShellFiles, sequence: u64) {
@@ -318,4 +278,70 @@ fn combined_call_requires_the_live_token_after_clunk_revoke_or_expiry() {
         );
         assert!(files.accepted.is_none() && files.inbound.is_empty());
     }
+}
+
+#[test]
+fn combined_node_is_r13_only_write_only_and_does_not_own_a_writer() {
+    let mut files = unnegotiated();
+    assert!(
+        !files
+            .root_entries()
+            .iter()
+            .any(|(_, n)| *n == Node::FrameSubmit)
+    );
+    assert!(matches!(
+        files.open(&Node::FrameSubmit, OpenFlags(1)),
+        Err(Errno::ENOENT)
+    ));
+    negotiate(&mut files, CAPS, SHELL_FRAME_REVISION).unwrap();
+    assert!(
+        files
+            .root_entries()
+            .iter()
+            .any(|(_, n)| *n == Node::FrameSubmit)
+    );
+    for flags in [0, 2, 1 | 512, 1 | 1024] {
+        assert!(matches!(
+            files.open(&Node::FrameSubmit, OpenFlags(flags)),
+            Err(Errno::EACCES)
+        ));
+    }
+    let mut handle = files.open(&Node::FrameSubmit, OpenFlags(1)).unwrap();
+    assert!(matches!(handle, Handle::Plain));
+    let bytes = golden("commit-copy-retire");
+    assert_eq!(
+        files.write(&Node::FrameSubmit, &mut handle, 0, &bytes),
+        Err(Errno::ESTALE)
+    );
+    let mut writer = files.open(&Node::TransactionReuse, OpenFlags(2)).unwrap();
+    assert!(files.read(&Node::FrameSubmit, &mut handle, 0, 32).is_err());
+    assert!(
+        files
+            .write(&Node::FrameSubmit, &mut handle, 1, &bytes)
+            .is_err()
+    );
+    assert!(files.accepted.is_none() && files.staging.is_none());
+    files.release(Node::FrameSubmit, Some(handle));
+    combined(&mut files, &mut writer, &bytes).unwrap();
+}
+
+#[test]
+fn combined_write_uses_the_same_attach_and_epoch_request_gate() {
+    let mut files = export();
+    files.connection = Some(ConnectionId(1));
+    files.attached = true;
+    let access = |connection, epoch| Access {
+        connection: ConnectionId(connection),
+        epoch: Epoch(epoch),
+        node: &Node::FrameSubmit,
+        operation: sophia_9p::Operation::Write,
+    };
+    assert_eq!(files.check(&access(1, 1)), Ok(()));
+    assert_eq!(files.check(&access(2, 1)), Err(Errno::ESTALE));
+    assert_eq!(files.check(&access(1, 2)), Err(Errno::ESTALE));
+    files.attached = false;
+    assert_eq!(files.check(&access(1, 1)), Err(Errno::ESTALE));
+    files.attached = true;
+    files.revoke();
+    assert_eq!(files.check(&access(1, 1)), Err(Errno::ESTALE));
 }

@@ -9,6 +9,47 @@ pub(super) struct ReusableWriter {
 }
 
 impl ShellFiles {
+    pub(super) fn submit_frame_record(&mut self, bytes: &[u8]) -> Result<u32, Errno> {
+        let id = self.reuse_writer.as_ref().ok_or(Errno::ESTALE)?.id;
+        // Expire and validate the existing token even for an accepted retry.
+        self.read_reusable_transaction(id, 0, 0)?;
+        if self.submission_revision() != SHELL_FRAME_REVISION {
+            return Err(Errno::EACCES);
+        }
+        let record = decode_shell_file_record_at_revision(
+            bytes,
+            ShellFileClass::Candidate,
+            SHELL_FRAME_REVISION,
+        )
+        .map_err(|_| Errno::EINVAL)?;
+        if record.header.connection_epoch != self.epoch {
+            return Err(Errno::ESTALE);
+        }
+        if record.header.kind != ShellFileKind::FrameCommit {
+            return Err(Errno::EINVAL);
+        }
+        let submit = encode_shell_file_submit(ShellFileSubmit {
+            connection_epoch: record.header.connection_epoch,
+            submission_id: record.header.submission_id,
+            candidate_bytes: u32::try_from(bytes.len()).map_err(|_| Errno::EINVAL)?,
+        })
+        .map_err(|_| Errno::EINVAL)?;
+        if let Some(accepted) = &self.accepted {
+            // The submit header alone cannot distinguish a changed payload of equal length.
+            if accepted.handle != id || accepted.bytes != bytes {
+                return Err(EBUSY);
+            }
+        } else if !self
+            .staging
+            .as_ref()
+            .is_some_and(|staging| staging.handle == id && staging.bytes == bytes)
+        {
+            self.write_reusable_transaction(id, 0, bytes)?;
+        }
+        self.submit_transaction(&submit)?;
+        Ok(bytes.len() as u32)
+    }
+
     pub(super) fn open_reusable_transaction(&mut self) -> Result<Handle, Errno> {
         self.expire();
         if self.reuse_writer.is_some() || self.staging.is_some() || self.accepted.is_some() {

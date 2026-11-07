@@ -34,6 +34,49 @@ Unsupported updates drain/close before using the legacy path; the producer keeps
 legacy selection for that output binding. It does not flatten content, abandon
 the current display or discard live resources to enter SFT.
 
+## Optional complete-write submission
+
+An r13 SFT export may expose the write-only `frame-submit` file. Its absence
+(`ENOENT` on lookup) selects the existing `transaction-reuse` plus `submit`
+path. Other discovery/open failures are errors, not permission to downgrade.
+There is no new record, capability bit, negotiation default or 9P operation.
+Open/Close and non-FrameCommit candidates still use the existing path.
+
+A client first opens its ordinary reusable transaction writer, after the
+covering bootstrap ACK. `frame-submit` owns no second writer: every write uses
+that attach's current live reusable writer. Opening or clunking this plain fid
+does not acquire, release or replace that token. The export, authenticated
+attach, epoch and request-level custody checks are unchanged; the node is not
+visible before explicit r13 negotiation. It has no readable content or stored
+file length.
+
+One offset-zero Twrite must contain one complete, valid FrameCommit, including
+its ordinary header, submission id and entire body. The client selects this
+route only if the record fits `msize - 23` and the node's `iounit` when it is nonzero;
+otherwise it uses the existing transaction path (including fragmentation or
+local size refusal) **before** sending bytes. This extension does not expand a
+client's existing record-size support.
+A partial assembly cannot be continued through this node. The server reuses the
+ordinary bounded assembly, decoding, inbound capacity and journal reservation
+checks, then retains the same bytes under accepted custody and emits the same
+Submitted record. Rwrite's count is the complete record length. It establishes
+file custody, never frame admission, credit, source release or presentation.
+
+EAGAIN retains the same staged bytes, submission identity and original assembly
+deadline. Retry sends exactly those complete bytes to the same node, under the
+same live token and existing bounded backoff. A successful retry of accepted
+bytes is idempotent; matching just the header and length is insufficient.
+Different bytes while accepted are EBUSY. The covering cumulative journal ACK
+still controls buffer reuse. Writer clunk, expiry and revocation keep their
+existing semantics; accepted custody is not cancelled by clunk. A plain
+frame-submit fid may serve a newly opened writer after a definitive refusal,
+but cannot make the former writer or its staging live again.
+
+Submitted and Rwrite may arrive in either order. The existing refusal and
+unknown-custody rules apply, including EALREADY and disconnect. Never fall back,
+change submission id or replay on a new connection after unknown custody.
+Prepared/terminal notices, ACK policy and owned-ring registration are unchanged.
+
 ## Records and bytes
 
 All integers are little-endian. Offsets below are relative to the body after the

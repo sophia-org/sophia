@@ -73,6 +73,9 @@ impl ShellFiles {
         {
             entries.push((b"catalog", Node::Catalog));
         }
+        if self.submission_revision() == SHELL_FRAME_REVISION {
+            entries.push((b"frame-submit", Node::FrameSubmit));
+        }
         if self.supports_indicators() {
             entries.push((b"indicators", Node::Indicators));
         }

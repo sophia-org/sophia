@@ -115,3 +115,33 @@ custody. No new opcode, revision, node name or capability is allocated here.
 The evidence receipt records tests, guard-removal failures, formatting,
 Clippy and layout. Production behavior, SDKs and native packages are unchanged.
 No performance candidate, adoption or new native comparison is qualified.
+
+## Optional complete-write implementation, November 6
+
+The next source checkpoint promotes that helper to the optional r13
+`frame-submit` node under the existing export and request checks. The
+[wire contract](../../sophia-frame-transactions-wire.md#optional-complete-write-submission)
+now specifies discovery, one complete write, writer ownership, exact retry,
+ACK reuse, and pre-send fallback. The SDK changes retain ordinary Submitted
+and all frame/resource events; they do not select terminal-only notices.
+
+The new bounded [custody model](../../../validation/tla/frame-submit/README.md)
+checks paired and complete-write routes, changed-byte retry, token loss and
+ACK-gated reuse. It does not modify the higher SFT Client abstraction, which
+has no transport-write actions. Both SDKs may use the old route for an eligible
+record; Rust currently does so for the first record after a refused writer
+was clunked. That route choice is not a custody difference.
+
+Export tests now exercise the production node. Independent Rust/C scripted
+peers check one-write payload identity, discovery refusal, size fallback,
+EAGAIN and short/error replies. The actual producer fixture subsequently passed all six cases. Its 16 SFT
+FrameCommits have byte-identical payloads and the same frame-event kind order
+as the held pair-path capture; each eliminates one Twrite/Rwrite and 58 bytes.
+Both legacy cases retain their submission bytes and never probe the new node.
+The local C/Rust host fixture passes all 12 cases. These use supplied authority
+and completion, not a protected native session.
+
+Evidence: `~/.local/state/sophia-sft-combined-submit-01`. The pre-signing proof
+uses recorded temporary dependency paths, restored after each build; it does
+not edit or relabel either verified SDK snapshot. Signed commits/imports remain
+pending the signing cache. Native CPU benefit remains unmeasured.

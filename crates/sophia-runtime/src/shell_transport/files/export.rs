@@ -73,6 +73,7 @@ pub(in crate::shell_transport) enum Node {
     Events,
     Transaction,
     TransactionReuse,
+    FrameSubmit,
     Submit,
     Ack,
     /// The launcher/dock application catalog, plain or with r8 identities.
@@ -114,6 +115,7 @@ impl Node {
             #[cfg(feature = "experimental-draw")]
             Self::Draw => 22,
             Self::OwnedRing => 23,
+            Self::FrameSubmit => 24,
         }
     }
 
@@ -606,7 +608,7 @@ impl Export for ShellFiles {
             permissions: match node {
                 Node::Root => 0o500,
                 Node::Transaction | Node::TransactionReuse => 0o600,
-                Node::Submit | Node::Ack => 0o200,
+                Node::Submit | Node::Ack | Node::FrameSubmit => 0o200,
                 #[cfg(feature = "experimental-draw")]
                 Node::Draw => 0o200,
                 Node::OwnedRing => 0o200,
@@ -620,7 +622,7 @@ impl Export for ShellFiles {
         let access = flags.access().ok_or(Errno::EINVAL)?;
         let valid = match node {
             Node::Transaction | Node::TransactionReuse => access == OpenAccess::ReadWrite,
-            Node::Submit | Node::Ack => access == OpenAccess::Write,
+            Node::Submit | Node::Ack | Node::FrameSubmit => access == OpenAccess::Write,
             #[cfg(feature = "experimental-draw")]
             Node::Draw => access == OpenAccess::Write,
             Node::OwnedRing => access == OpenAccess::Write,
@@ -630,6 +632,9 @@ impl Export for ShellFiles {
             return Err(Errno::EACCES);
         }
         match node {
+            Node::FrameSubmit if self.submission_revision() != SHELL_FRAME_REVISION => {
+                Err(Errno::ENOENT)
+            }
             Node::Limits if self.limits.is_none() => Err(Errno::EAGAIN),
             Node::OwnedRing if !self.owned_disclosed() => Err(Errno::ENOENT),
             Node::ImageChannel if self.image_disclosed() => Ok(Handle::ImageDiscovery(
@@ -746,6 +751,7 @@ impl Export for ShellFiles {
             #[cfg(feature = "experimental-draw")]
             (Node::Draw, _) if offset == 0 => self.write_draw(data),
             (Node::OwnedRing, _) if offset == 0 => self.write_owned_ring(data),
+            (Node::FrameSubmit, Handle::Plain) if offset == 0 => self.submit_frame_record(data),
             (Node::Submit, _) if offset == 0 => {
                 self.submit(data)?;
                 Ok(data.len() as u32)
