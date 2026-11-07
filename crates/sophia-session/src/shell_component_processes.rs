@@ -275,6 +275,10 @@ impl ShellComponentProcesses {
         self.connections.image_worker_cpu_ns()
     }
 
+    pub(crate) fn component_turns(&self) -> [u64; 2] {
+        self.connections.component_turns()
+    }
+
     pub(crate) fn fd_readiness(&self) -> crate::shell_component_connections::ComponentFdReadiness {
         self.connections.fd_readiness()
     }

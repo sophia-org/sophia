@@ -547,6 +547,10 @@ impl ShellComponentSession {
         self.processes.image_worker_cpu_ns()
     }
 
+    pub(crate) fn component_turns(&self) -> [u64; 2] {
+        self.processes.component_turns()
+    }
+
     pub fn discard_readiness(&self) {
         self.processes.discard_readiness();
     }

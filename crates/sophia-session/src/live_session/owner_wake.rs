@@ -35,6 +35,8 @@ pub(super) struct OwnerWake {
     /// Component cause bits noted by this wait's `observed` callback.
     noted_causes: Cell<u8>,
     service_reasons: Cell<ServiceReasons>,
+    /// Cause bits of the wait that ended most recently, for the owner cost rows.
+    last_cause: Cell<u8>,
 }
 
 /// Owner-thread observations, not scheduler wakeups or per-producer attribution.
@@ -68,6 +70,7 @@ impl OwnerWake {
             wait_causes: Cell::default(),
             noted_causes: Cell::new(0),
             service_reasons: Cell::default(),
+            last_cause: Cell::new(0),
         })
     }
 
@@ -101,6 +104,11 @@ impl OwnerWake {
 
     pub(super) fn service_reasons(&self) -> ServiceReasons {
         self.service_reasons.get()
+    }
+
+    /// Cause bits of the most recent wait; zero before the first wait.
+    pub(super) fn last_wait_cause(&self) -> u8 {
+        self.last_cause.get()
     }
 
     /// From an `observed` callback: which component descriptors ended this wait.
@@ -315,6 +323,7 @@ impl OwnerWake {
         let mut wait_causes = self.wait_causes.get();
         wait_causes.add(cause);
         self.wait_causes.set(wait_causes);
+        self.last_cause.set(cause);
         Ok(())
     }
 }

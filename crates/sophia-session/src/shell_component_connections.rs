@@ -640,6 +640,16 @@ impl ShellComponentConnections {
         }
     }
 
+    /// Cumulative connected wire turns and turns with observed readiness,
+    /// for the owner's diagnostic cost rows; not a scheduling input.
+    pub fn component_turns(&self) -> [u64; 2] {
+        let turns = self.fd_readiness.get();
+        [
+            turns.turns_observed + turns.turns_blind,
+            turns.turns_observed,
+        ]
+    }
+
     /// Cumulative image-worker thread CPU over every connection, for the
     /// owner's diagnostic cost rows; not a scheduling input.
     pub fn image_worker_cpu_ns(&self) -> u64 {
