@@ -54,6 +54,9 @@ struct sophia_sf_client {
     uint8_t bootstrap_custody_consumed, welcome_consumed;
     /* 0: discovery pending, 1: reusable writer, 2: legacy ENOENT fallback. */
     uint8_t transaction_mode;
+    /* Optional r13 complete-write node: 0 unprobed, 1 available, 2 absent. */
+    uint8_t frame_submit_mode, combined_submit;
+    uint32_t frame_submit_fid, frame_submit_iounit;
     uint8_t submit_stage, submitted, submit_replied, object_stage, refused;
     /* stale: ESTALE answered transaction, events, submit or ack (not object).
      * object_probe: the exact object was read; the next read must be EOF. */

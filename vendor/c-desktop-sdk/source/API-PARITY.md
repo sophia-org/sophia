@@ -1,5 +1,38 @@
 # C and Rust SDK API parity
 
+## Optional complete-write SFT transport, 2026-11-06
+
+Paired bases: Rust `fd9330b64fb415dab8daacb769bcca835b546661`,
+C `1e3b5a607a7d891d127dd996a3cf466539f660ec`.
+Both clients probe write-only `frame-submit` after acquiring the reusable writer
+on an explicitly negotiated r13 connection. Only lookup ENOENT selects absence;
+other lookup/open errors terminate startup. A complete FrameCommit fitting
+msize minus 23 and iounit (zero means unbounded) uses one Twrite at offset zero.
+Other candidate kinds retain the existing pair path. Oversized records never
+enter the complete-write node. Existing size behavior is preserved: C fragments
+staging writes; Rust's ordinary queued lane refuses a record larger than msize
+before any record write, with DroppedUnsent custody. This existing capability
+difference is not fixed or hidden by the optimization; matching small-msize tests
+pin the two behaviors. Node-iounit fallback is exercised in both clients.
+
+No function signature, new opcode, automatic r13 opt-in, credit or ACK-policy
+change. C's caller-allocated private state grows; rebuild consumers and foreign
+bindings against the matching header and library before integrating this SDK.
+The complete bytes stay owned by the pending submission through EAGAIN retries.
+Full Rwrite and Submitted preserve existing custody semantics and reply-order
+handling; short/contradictory replies or unknown disconnect never switch routes.
+Definitive refusal still clunks staging, ESTALE ends the connection, and accepted
+custody still requires its covering journal ACK before another record.
+
+The caller's buffers and lifetimes are unchanged (Rust owned outbox, C bounded
+caller storage). After definitive refusal C reopens the writer before the next
+record; Rust opens it with that record, which may use the old pair once. Both
+routes are allowed and neither repeats an uncertain submission. Independent
+scripted peer tests cover payload identity, absent/iounit fallback, discovery
+errors, backoff, both reply orders, refusal and uncertain custody. Host tests and
+real-producer counting are separate gates, not a CPU performance claim.
+
+
 ## Terminal-only SFT, 2026-11-06
 
 Paired bases: Rust `b483e1ee9d79730705d372ffcebd47c7b12c4514`,

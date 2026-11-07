@@ -124,6 +124,18 @@ struct HeldRead {
     count: u32,
 }
 
+#[derive(Clone, Copy, Default)]
+pub struct FrameSubmitOptions {
+    pub lookup_error: Option<u32>,
+    pub open_error: Option<u32>,
+    pub iounit: u32,
+}
+
+struct WriterSettings {
+    reuse_error: Option<u32>,
+    frame_submit: Option<FrameSubmitOptions>,
+}
+
 pub struct Peer {
     pub attaches: usize,
     stream: UnixStream,
@@ -205,6 +217,8 @@ pub struct Peer {
     /// [`Peer::end_batch`].
     batch: Option<Vec<u8>>,
     reuse_error: Option<u32>,
+    frame_submit: Option<FrameSubmitOptions>,
+    pub frame_writes: VecDeque<Held>,
     /// Walk errno per node name, for absent/discovery-error scripting.
     pub error_nodes: HashMap<String, u32>,
 }
@@ -266,7 +280,10 @@ impl Peer {
             edit_bootstrap,
             edit_limits,
             false,
-            Some(2),
+            WriterSettings {
+                reuse_error: Some(2),
+                frame_submit: None,
+            },
         )
     }
 
@@ -276,7 +293,18 @@ impl Peer {
             connection_epoch: EPOCH,
             content_grant_epoch: CONTENT_GRANT_EPOCH,
         });
-        Self::handshake_settings(listener, profile, limits, |_| {}, |_| {}, true, Some(2))
+        Self::handshake_settings(
+            listener,
+            profile,
+            limits,
+            |_| {},
+            |_| {},
+            true,
+            WriterSettings {
+                reuse_error: Some(2),
+                frame_submit: None,
+            },
+        )
     }
 
     pub fn reusable_handshake(
@@ -288,7 +316,41 @@ impl Peer {
             connection_epoch: EPOCH,
             content_grant_epoch: CONTENT_GRANT_EPOCH,
         });
-        Self::handshake_settings(listener, profile, limits, |_| {}, |_| {}, false, error)
+        Self::handshake_settings(
+            listener,
+            profile,
+            limits,
+            |_| {},
+            |_| {},
+            false,
+            WriterSettings {
+                reuse_error: error,
+                frame_submit: None,
+            },
+        )
+    }
+
+    pub fn frame_submit_handshake(
+        listener: UnixListener,
+        profile: Profile,
+        options: FrameSubmitOptions,
+    ) -> Self {
+        let limits = ContentLimits::prototype(ContentGrant {
+            connection_epoch: EPOCH,
+            content_grant_epoch: CONTENT_GRANT_EPOCH,
+        });
+        Self::handshake_settings(
+            listener,
+            profile,
+            limits,
+            |_| {},
+            |_| {},
+            false,
+            WriterSettings {
+                reuse_error: None,
+                frame_submit: Some(options),
+            },
+        )
     }
 
     fn handshake_settings(
@@ -298,7 +360,7 @@ impl Peer {
         edit_bootstrap: fn(&mut Vec<u8>),
         edit_limits: fn(&mut Vec<u8>),
         fragmented_startup: bool,
-        reuse_error: Option<u32>,
+        writer: WriterSettings,
     ) -> Self {
         let deadline = Instant::now() + WAIT;
         listener.set_nonblocking(true).unwrap();
@@ -378,7 +440,9 @@ impl Peer {
             limits,
             edit_bootstrap,
             batch: None,
-            reuse_error,
+            reuse_error: writer.reuse_error,
+            frame_submit: writer.frame_submit,
+            frame_writes: VecDeque::new(),
             error_nodes: HashMap::new(),
         };
         let (kind, tag, body) = peer.frame(WAIT).expect("Tversion");
@@ -630,6 +694,15 @@ impl Peer {
                     self.handshake_done = true;
                     return;
                 }
+                if node == "frame-submit"
+                    && let Some(error) = self
+                        .frame_submit
+                        .map_or(Some(2), |options| options.lookup_error)
+                {
+                    self.answer_error(tag, error);
+                    self.handshake_done = true;
+                    return;
+                }
                 let mut reply = names.to_le_bytes().to_vec();
                 for _ in 0..names {
                     reply.extend_from_slice(&self.qid_of(&node));
@@ -652,6 +725,13 @@ impl Peer {
                     self.answer_error(tag, errno);
                     return;
                 }
+                if node == "frame-submit" {
+                    self.handshake_done = true;
+                    if let Some(error) = self.frame_submit.and_then(|options| options.open_error) {
+                        self.answer_error(tag, error);
+                        return;
+                    }
+                }
                 let reported = self.qid_of(&node);
                 if let Some(object) = self.objects.get(&node) {
                     self.pins.insert(fid, object.clone());
@@ -660,10 +740,12 @@ impl Peer {
                 let held = self.hold_writer_opens
                     && (node == "transaction" || node.starts_with("upload/"));
                 if node == "transaction-reuse" {
-                    self.handshake_done = true;
+                    self.handshake_done = self.profile.revision != 13;
                     self.fids.insert(fid, "transaction".into());
                 }
-                let iounit = if node.starts_with("upload/") {
+                let iounit = if node == "frame-submit" {
+                    self.frame_submit.unwrap().iounit
+                } else if node.starts_with("upload/") {
                     self.upload_iounit
                 } else {
                     0
@@ -769,6 +851,7 @@ impl Peer {
                         self.answer_write(tag, count);
                     }
                     "submit" => self.submits.push_back(Held { tag, data }),
+                    "frame-submit" => self.frame_writes.push_back(Held { tag, data }),
                     "owned-ring-v1" => {
                         self.control_writes.push(data);
                         self.answer_write(tag, count);

@@ -1,14 +1,14 @@
-tree 1e36956edd86624fcf52afb46867a3529449d34c
-parent b483e1ee9d79730705d372ffcebd47c7b12c4514
-author Mason Green <mason@greenm01.net> 1793981634 -0500
-committer Mason Green <mason@greenm01.net> 1793981652 -0500
+tree bdf4530974db71e6a15c6cf6d0718bba720c6445
+parent fd9330b64fb415dab8daacb769bcca835b546661
+author Mason Green <mason@greenm01.net> 1794014547 -0500
+committer Mason Green <mason@greenm01.net> 1794014547 -0500
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCau381BsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJAIAD/UoVOMNNz/cqR9LBEhzjX
- eC75tmK5MQ8qXz+7GIzMYZgA/RZQuKJuVHfz4esKCQuj9jLOTvobSQ84V2t90kiZ
- 7pEP
- =4W5t
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCau59UxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLGngEAxuznuMDB3k5Z/H/MIYG5
+ aYx9KeStr0TGVSwoZgg0n6wA/RwWwjIZzRq0JXrEx9OIYmQXYajc7hQ7PIP3PooP
+ yOAG
+ =g+P+
  -----END PGP SIGNATURE-----
 
-protocol: support explicitly negotiated terminal-only SFT notices
+Use optional complete-write SFT submission with custody-preserving fallback

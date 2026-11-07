@@ -70,7 +70,19 @@ impl FileWire {
                     decode_shell_file_record(bytes, ShellFileClass::Candidate)?.header
                 };
                 let (submission_id, kind) = (header.submission_id, header.kind);
-                let phase = if let Some(fid) = self.transaction_fid {
+                let direct = self.frame_submit.filter(|(_, iounit)| {
+                    kind == ShellFileKind::FrameCommit
+                        && self.transaction_fid.is_some()
+                        && bytes.len() <= self.pipeline.msize().saturating_sub(23) as usize
+                        && (*iounit == 0 || bytes.len() <= *iounit as usize)
+                });
+                let phase = if let Some((target, _)) = direct {
+                    let tag = self.pipeline.write(target, 0, bytes)?;
+                    SubmissionPhase::WriteSubmit {
+                        tag,
+                        fid: self.transaction_fid.expect("direct requires a live writer"),
+                    }
+                } else if let Some(fid) = self.transaction_fid {
                     let tag = self.pipeline.write(fid, 0, bytes)?;
                     SubmissionPhase::WriteRecord { tag, fid }
                 } else {
@@ -86,12 +98,19 @@ impl FileWire {
                         O_RDWR,
                     )?)
                 };
+                let bytes = output.take_front_bytes();
+                let (bytes, submit) = if direct.is_some() {
+                    (Box::default(), bytes.into_vec())
+                } else {
+                    (bytes, Vec::new())
+                };
                 Current::Submission {
-                    bytes: output.take_front_bytes(),
+                    bytes,
                     submission_id,
                     kind,
                     ticket,
-                    submit: Vec::new(),
+                    submit,
+                    submit_fid: direct.map_or(self.submit_fid, |(fid, _)| fid),
                     phase,
                     submitted: false,
                     accepted: false,
@@ -164,6 +183,7 @@ impl FileWire {
     pub(super) fn drive_submit_retry(&mut self) -> Result<bool, ShellClientError> {
         let Some(Current::Submission {
             submit,
+            submit_fid,
             phase:
                 SubmissionPhase::RetryWait {
                     fid,
@@ -184,7 +204,7 @@ impl FileWire {
             return Ok(false);
         }
         let fid = *fid;
-        let tag = self.pipeline.write(self.submit_fid, 0, submit)?;
+        let tag = self.pipeline.write(*submit_fid, 0, submit)?;
         if let Some(Current::Submission { phase, .. }) = &mut self.current {
             *phase = SubmissionPhase::WriteSubmit { tag, fid };
         }

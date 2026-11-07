@@ -1,5 +1,16 @@
 # Extraction and contract provenance
 
+## Complete-write SFT transport, 2026-11-06
+
+The optional `frame-submit` contract is copied verbatim from signed Sophia
+`205304b41f9a817c54979e4bb8b83f695adc3ff1`. `spec/SHA256SUMS` pins its bytes. Record layouts,
+capabilities and negotiation defaults are unchanged. See API-PARITY.md for the
+paired custody/error contract, caller storage rebuild requirement and preserved
+small-msize behavior. Source and device-free wire evidence is recorded in
+sophia-sft-combined-submit-01; this is not a native CPU improvement claim.
+Signed SDK imports and pinned producer integration are a separate checkpoint.
+
+
 ## Terminal-only SFT, 2026-11-06
 
 Paired bases: Rust `b483e1ee9d79730705d372ffcebd47c7b12c4514`,

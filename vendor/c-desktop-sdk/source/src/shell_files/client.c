@@ -201,6 +201,9 @@ int sf_session_drive(struct sophia_sf_client *c)
                 n = cap;
             r = sophia_9p_write(c->wire, c->fids[1], c->tx_offset, c->tx_storage + c->tx_offset, n,
                                 &c->submit_op.handle);
+        } else if (c->submit_stage == 2 && c->combined_submit) {
+            r = sophia_9p_write(c->wire, c->frame_submit_fid, 0, c->tx_storage, c->tx_size,
+                               &c->submit_op.handle);
         } else if (c->submit_stage == 2) {
             uint8_t b[24];
             if (sophia_sf_submit_encode(b, c->epoch, c->next_submission - 1, (uint32_t)c->tx_size))
@@ -225,6 +228,11 @@ int sf_session_drive(struct sophia_sf_client *c)
             else
                 r = sophia_9p_lopen(c->wire, c->fids[1], 2, &c->submit_op.handle);
         }
+        else if (c->submit_stage == 8) {
+            const char *name = "frame-submit";
+            r = sophia_9p_walk(c->wire, c->root, &name, 1, &c->submit_op.handle, &c->frame_submit_fid);
+        } else if (c->submit_stage == 9)
+            r = sophia_9p_lopen(c->wire, c->frame_submit_fid, 1, &c->submit_op.handle);
         else
             r = SOPHIA_9P_BUSY;
         r = sf_started(&c->submit_op, r);
@@ -255,6 +263,11 @@ static int remote_failure(struct sophia_sf_client *c, uint32_t error, int stream
 }
 static int submission_reply(struct sophia_sf_client *c, const struct sophia_9p_reply *r)
 {
+    if (r->type == 7 && c->submit_stage == 8 && r->error == 2) {
+        c->frame_submit_mode = 2;
+        c->submit_stage = 0;
+        return 0;
+    }
     if (r->type == 7 && c->submit_stage == 5 && !c->transaction_mode && r->error == 2) {
         c->transaction_mode = 2;
         return 0;
@@ -286,6 +299,18 @@ static int submission_reply(struct sophia_sf_client *c, const struct sophia_9p_r
     }
     if (r->type == 7)
         return remote_failure(c, r->error, 1);
+    if (c->submit_stage == 8) {
+        if (r->type != 111 || r->count != 1) return SOPHIA_9P_INVALID;
+        c->submit_stage = 9;
+        return 0;
+    }
+    if (c->submit_stage == 9) {
+        if (r->type != 13) return SOPHIA_9P_INVALID;
+        c->frame_submit_iounit = r->iounit;
+        c->frame_submit_mode = 1;
+        c->submit_stage = 0;
+        return 0;
+    }
     if (c->submit_stage >= 4) {
         if (c->submit_stage == 5 && r->count != 1)
             return SOPHIA_9P_INVALID;
@@ -294,7 +319,11 @@ static int submission_reply(struct sophia_sf_client *c, const struct sophia_9p_r
             if (!c->transaction_mode)
                 c->transaction_mode = 1;
         }
-        c->submit_stage = c->submit_stage == 6 ? 0 : (uint8_t)(c->submit_stage + 1);
+        if (c->submit_stage == 6 && c->transaction_mode == 1 &&
+            c->welcome.selected_revision == 13 && !c->frame_submit_mode)
+            c->submit_stage = 8;
+        else
+            c->submit_stage = c->submit_stage == 6 ? 0 : (uint8_t)(c->submit_stage + 1);
         return 0;
     }
     if (r->type != 119 || !r->count)
@@ -304,7 +333,7 @@ static int submission_reply(struct sophia_sf_client *c, const struct sophia_9p_r
         if (c->tx_offset == c->tx_size)
             c->submit_stage = 2;
     } else {
-        if (r->count != 24)
+        if (r->count != (c->combined_submit ? c->tx_size : 24u))
             return SOPHIA_9P_INVALID;
         c->submit_replied = 1;
         c->submit_stage = c->submitted ? 4 : 3;
@@ -385,7 +414,7 @@ static int receive(struct sophia_sf_client *c, const struct sophia_9p_reply *r)
             c->pair_record_ok = r->type == 119 && r->count == c->tx_size - c->tx_offset;
             return 0;
         }
-        if (c->submit_stage == 2 && r->type == 119 && r->count == 24)
+        if (c->submit_stage == 2 && r->type == 119 && r->count == (c->combined_submit ? c->tx_size : 24u))
             c->submit_accepted = 1;
         return submission_reply(c, r);
     }
@@ -475,7 +504,10 @@ static void submission_arm(struct sophia_sf_client *c, size_t n)
     c->next_submission++;
     c->tx_size = n;
     c->tx_offset = 0;
-    c->submit_stage = 1;
+    c->combined_submit = c->frame_submit_mode == 1 && c->transaction_mode == 1 &&
+        sf_get(c->tx_storage + 6, 2) == SOPHIA_SFT_COMMIT && n <= c->wire->msize - 23u &&
+        (!c->frame_submit_iounit || n <= c->frame_submit_iounit);
+    c->submit_stage = c->combined_submit ? 2 : 1;
     c->submitted = c->submit_replied = 0;
     c->submitted_sequence = 0;
     c->submit_wait = c->submit_sent = 0;

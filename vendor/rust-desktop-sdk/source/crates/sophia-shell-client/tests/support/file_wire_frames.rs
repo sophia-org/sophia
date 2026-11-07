@@ -452,3 +452,6 @@ fn terminal_only_uses_the_existing_role_negotiation() {
         assert!(frame_connect(offered, options, 8192).is_ok());
     }
 }
+
+#[path = "file_wire_frame_submit.rs"]
+mod combined;

@@ -379,6 +379,24 @@ impl FileWire {
                 ));
             }
         };
+        let frame_submit = if transaction_fid.is_some()
+            && welcome.selected_revision == SHELL_FRAME_REVISION
+        {
+            let (tag, fid) = pipeline.walk(root, &[b"frame-submit"])?;
+            match wait_ok(&mut pipeline, tag, deadline)? {
+                Reply::Error(errno) if errno.0 == 2 => None,
+                Reply::Walk(qids) if qids.len() == 1 => {
+                    let tag = pipeline.lopen(fid, O_WRONLY)?;
+                    match wait_ok(&mut pipeline, tag, deadline)? {
+                        Reply::Lopen { iounit, .. } => Some((fid, iounit)),
+                        _ => return Err(ShellClientError::Protocol("frame-submit open refused")),
+                    }
+                }
+                _ => return Err(ShellClientError::Protocol("frame-submit lookup refused")),
+            }
+        } else {
+            None
+        };
         let wire = FileWire {
             pipeline,
             epoch: connection_epoch,
@@ -390,6 +408,7 @@ impl FileWire {
             root,
             events_fid,
             submit_fid,
+            frame_submit,
             ack_fid,
             reusable_transactions: transaction_fid.is_some(),
             transaction_fid,

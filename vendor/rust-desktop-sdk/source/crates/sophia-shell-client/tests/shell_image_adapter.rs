@@ -559,3 +559,70 @@ mod frame_images;
 
 #[path = "support/image_owned_fill.rs"]
 mod image_owned_fill;
+
+#[test]
+fn readiness_wait_returns_when_its_drive_settles_a_ring_offer() {
+    for automatic_ack in [true, false] {
+        wait_for_ring_settlement(automatic_ack);
+    }
+}
+
+fn wait_for_ring_settlement(automatic_ack: bool) {
+    let (mut connection, mut peer, dir, listener) = connect_image("wait-settlement");
+    let accepted = drive_to_channel_ready(&mut connection, &mut peer, &listener);
+    let (source, _) = drive_to_ring_ready(&mut connection, &mut peer, &accepted);
+    drop(source);
+    let offer = connection
+        .image_upload_ring(upload(), &[7; 8], Instant::now())
+        .unwrap();
+    drive(&mut connection, &mut peer, |_, peer| {
+        peer.control_writes.len() == 2
+    });
+    let status = peer.event(ShellFileKind::ResourceStatus, &status_body(1, 21, 1, 2));
+    peer.push(status);
+    drive(&mut connection, &mut peer, |connection, _| {
+        connection.image_ring_offer(offer).unwrap().status
+            == Some(sophia_image_producer::ResourceStatusKind::Accepted)
+    });
+    while connection.take_content().unwrap().is_some() {}
+    for _ in 0..8 {
+        connection.poll_io().unwrap();
+        peer.pump();
+    }
+    assert!(connection.take_content().unwrap().is_none());
+    assert!(peer.events_read.is_some());
+    assert_eq!(connection.wake_deadline(), None);
+    assert_eq!(
+        connection.image_ring_offer(offer).unwrap().state,
+        RingOfferState::Pending
+    );
+    connection.set_automatic_journal_ack(automatic_ack).unwrap();
+    connection.poll_io().unwrap();
+    peer.pump();
+
+    // Deliver after the caller's state check, before wait_for_io's own drive.
+    let released = ring_released(peer.take_sequence(), offer, 2, 21, 1, 0);
+    peer.push(released);
+    peer.flush_events();
+    let started = Instant::now();
+    connection.wait_for_io(Duration::from_secs(2)).unwrap();
+    let elapsed = started.elapsed();
+    assert_eq!(
+        connection.image_ring_offer(offer).unwrap().state,
+        RingOfferState::Settled
+    );
+    assert!(connection.take_content().unwrap().is_none());
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "wait slept {elapsed:?} after consuming the slot release"
+    );
+    // An already-observed settled offer must not turn later idle waits into a spin.
+    for _ in 0..8 {
+        connection.poll_io().unwrap();
+        peer.pump();
+    }
+    let started = Instant::now();
+    connection.wait_for_io(Duration::from_millis(25)).unwrap();
+    assert!(started.elapsed() >= Duration::from_millis(20));
+    std::fs::remove_dir_all(dir).unwrap();
+}

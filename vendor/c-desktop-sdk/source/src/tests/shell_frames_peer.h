@@ -5,7 +5,7 @@
 static const struct sophia_sf_negotiated welcome = {13, PEER_EPOCH, FRAME_CAPS, 16, 128, 16, 1};
 static const struct sophia_ss_config config = {{13, 13, FRAME_CAPS}, SOPHIA_SF_BAR, 4096, 4, 8192, NULL, 0};
 
-static inline void start_as(struct rig *r, const struct sophia_sf_negotiated *v, const struct sophia_ss_config *cfg)
+static inline void start_frame_options(struct rig *r, const struct sophia_sf_negotiated *v, const struct sophia_ss_config *cfg, unsigned direct, uint32_t lookup_error, uint32_t open_error, uint32_t iounit)
 {
     static uint8_t limits[512];
     struct sophia_sf_record value;
@@ -22,7 +22,17 @@ static inline void start_as(struct rig *r, const struct sophia_sf_negotiated *v,
                         : cfg->profile == SOPHIA_SF_DOCK ? "sophia-shell-files version=1 role=dock epoch=17 fd_transfer=none\n" : NULL;
     r->p.revision = 13;
     r->p.welcome_override = v;
+    r->p.reusable = direct != 0;
+    r->p.frame_submit = direct == 1;
+    r->p.frame_lookup_error = lookup_error;
+    r->p.frame_open_error = open_error;
+    r->p.frame_iounit = iounit;
     rig_settle(r);
+}
+
+static inline void start_as(struct rig *r, const struct sophia_sf_negotiated *v, const struct sophia_ss_config *cfg)
+{
+    start_frame_options(r, v, cfg, 0, 0, 0, 0);
 }
 
 static inline void ready(struct rig *r)

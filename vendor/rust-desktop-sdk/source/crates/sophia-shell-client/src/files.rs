@@ -132,6 +132,7 @@ enum Current {
         ticket: u64,
         /// The exact `submit` bytes, once built, for an `EAGAIN` retry.
         submit: Vec<u8>,
+        submit_fid: Fid,
         phase: SubmissionPhase,
         /// The `Submitted` event for this submission was observed (it may
         /// precede the `submit` reply). Custody is then settled for good.
@@ -211,6 +212,7 @@ pub(crate) struct FileWire {
     root: Fid,
     events_fid: Fid,
     submit_fid: Fid,
+    frame_submit: Option<(Fid, u32)>,
     ack_fid: Fid,
     reusable_transactions: bool,
     transaction_fid: Option<Fid>,

@@ -484,12 +484,15 @@ impl ShellConnection {
 
     /// Makes one bounded I/O pass, then waits at most `maximum` for readiness.
     /// Drain received units before waiting: a retained unit returns immediately.
+    /// Processing a journal event also returns, including image-adapter events
+    /// that update queryable state without entering the content inbox.
     /// Retry deadlines and unfinished bounded local work also shorten the wait.
     /// This never waits for writability on an idle file connection. A signal
     /// may return early; call `poll_io` (or a typed receive) after waking.
     pub fn wait_for_io(&mut self, maximum: Duration) -> Result<(), ShellClientError> {
+        let handled = self.journal_progress().handled;
         self.poll_io()?;
-        if !self.inbox.is_empty() {
+        if !self.inbox.is_empty() || self.journal_progress().handled != handled {
             return Ok(());
         }
         let maximum = self.wake_deadline().map_or(maximum, |deadline| {

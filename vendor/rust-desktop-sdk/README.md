@@ -35,3 +35,9 @@ negotiation; Session/CLI enablement remains separate.
 The initial-image API additionally permits ordinary uploads before the first
 Open. The host test establishes retained images through it before copied-frame
 admission and same-connection fallback; production selection remains disabled.
+
+Revision `564be8c7a6c20b3100fd6345b2df7aa0b542737a` discovers the optional
+`frame-submit` file after opening the ordinary reusable writer. Eligible complete
+FrameCommits use one write; absent nodes retain the paired path. Retry, ACK and
+custody rules are unchanged. This import also includes the journal-progress
+wait fix from that SDK's ancestry. CPU benefit is not yet measured.

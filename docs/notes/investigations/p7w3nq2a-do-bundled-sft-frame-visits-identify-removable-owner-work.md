@@ -143,5 +143,13 @@ and completion, not a protected native session.
 
 Evidence: `~/.local/state/sophia-sft-combined-submit-01`. The pre-signing proof
 uses recorded temporary dependency paths, restored after each build; it does
-not edit or relabel either verified SDK snapshot. Signed commits/imports remain
-pending the signing cache. Native CPU benefit remains unmeasured.
+not edit or relabel either verified SDK snapshot. That evidence remains frozen.
+
+The signed host contract is `205304b41`; signed Rust SDK `564be8c7` and C SDK
+`8b7beb3b` are now imported from their exact archives. The snapshot verifiers,
+Rust SDK workspace tests and all 220 host runtime tests pass against the copied
+SDKs, including the real-host C/Rust fixture. Publication and producer-pin
+evidence lives separately at
+`~/.local/state/sophia-sft-combined-submit-publication-01`. No temporary dependency
+paths are used in these integration checks. Native CPU benefit remains unmeasured;
+this is a source checkpoint, not merge, installation or adoption.

@@ -43,3 +43,10 @@ Its independent C tests are included. The host's strict-C99 process test now
 exercises initial uploads, a copied/retained SFT scene and drained legacy fallback
 against the real file server/copy worker and negotiation, with supplied
 authentication verdicts and renderer completion. Native qualification remains separate.
+
+Revision `8b7beb3b9ae802b1a26ac51e42ae74b98601a7fc` discovers the optional
+`frame-submit` file after opening the ordinary reusable writer. Eligible complete
+FrameCommits use one write; absent nodes and records above the negotiated write
+limit retain the old path. Retry, ACK and custody rules are unchanged. Rebuild
+C/FFI consumers: the caller-allocated client structure has grown. CPU benefit
+is not yet measured.

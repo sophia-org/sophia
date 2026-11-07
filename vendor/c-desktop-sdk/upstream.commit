@@ -1,14 +1,14 @@
-tree 79c3dd171b1a00f1ca1e51b97ece00c0126d68f3
-parent 0df720b0b1af7dd793f55b2bceac867bc1261b6b
-author Mason Green <mason@greenm01.net> 1793981634 -0500
-committer Mason Green <mason@greenm01.net> 1793981634 -0500
+tree 3d483f4ff9fed630571bda4d37f6472f164572d3
+parent 1e3b5a607a7d891d127dd996a3cf466539f660ec
+author Mason Green <mason@greenm01.net> 1794014547 -0500
+committer Mason Green <mason@greenm01.net> 1794014547 -0500
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCau38whsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJzVgEA7phl5TVQ9jU+0oFmHy6Y
- BLjxRmO4o2V2yN9ng7ho7DIA/jUz0q0oScXxYAVhz3VG8WY2HvlzWv9iGE1sVKdz
- 0hsP
- =RQNS
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCau59UxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLuLQEAosMWEm9656waeW0sSlPp
+ Y+8ImGuejPB2OW7o/dyx7s4A/1r3bUbkHBkyshDC6PU7b+JpPeL9tN9T6SsNEcPL
+ mZsK
+ =SKaM
  -----END PGP SIGNATURE-----
 
-protocol: match terminal-only SFT negotiation and outcome policy
+Use optional complete-write SFT submission under the reusable writer

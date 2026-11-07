@@ -20,6 +20,7 @@ enum Node {
     Ack,
     Transaction,
     TransactionReuse,
+    FrameSubmit,
     Limits,
 }
 impl Node {
@@ -31,12 +32,13 @@ impl Node {
             Self::Ack => b"ack",
             Self::Transaction => b"transaction",
             Self::TransactionReuse => b"transaction-reuse",
+            Self::FrameSubmit => b"frame-submit",
             Self::Limits => b"limits",
         }
     }
     fn flags(self) -> u32 {
         match self {
-            Self::Submit | Self::Ack => O_WRONLY,
+            Self::Submit | Self::Ack | Self::FrameSubmit => O_WRONLY,
             Self::Transaction | Self::TransactionReuse => O_RDWR,
             _ => O_RDONLY,
         }
@@ -276,6 +278,7 @@ struct Handshake {
     retry_delay: u64,
     inbox: VecDeque<Inbound>,
     transaction_fid: Option<Fid>,
+    frame_submit: Option<(Fid, u32)>,
 }
 impl Handshake {
     fn new(
@@ -323,6 +326,7 @@ impl Handshake {
             retry_delay: 4,
             inbox: VecDeque::new(),
             transaction_fid: None,
+            frame_submit: None,
         })
     }
     fn queue(&mut self, now: u64) -> Result<(), ShellClientError> {
@@ -406,7 +410,11 @@ impl Handshake {
     }
     fn accept(&mut self, reply: Reply, now: u64) -> Result<(), ShellClientError> {
         if let Reply::Error(errno) = reply {
-            if matches!(self.stage, Stage::Walk(Node::TransactionReuse)) && errno.0 == 2 {
+            if matches!(
+                self.stage,
+                Stage::Walk(Node::TransactionReuse | Node::FrameSubmit)
+            ) && errno.0 == 2
+            {
                 self.stage = Stage::Ready;
                 return Ok(());
             }
@@ -449,6 +457,18 @@ impl Handshake {
                     Node::Transaction => Stage::Candidate,
                     Node::TransactionReuse => {
                         self.transaction_fid = Some(self.current);
+                        if self
+                            .negotiated
+                            .as_ref()
+                            .is_some_and(|n| n.welcome.selected_revision == SHELL_FRAME_REVISION)
+                        {
+                            Stage::Walk(Node::FrameSubmit)
+                        } else {
+                            Stage::Ready
+                        }
+                    }
+                    Node::FrameSubmit => {
+                        self.frame_submit = Some((self.current, iounit));
                         Stage::Ready
                     }
                     Node::Limits => {
@@ -641,6 +661,7 @@ impl Handshake {
             root: self.root,
             events_fid: self.events,
             submit_fid: self.submit,
+            frame_submit: self.frame_submit,
             ack_fid: self.ack,
             reusable_transactions: self.transaction_fid.is_some(),
             transaction_fid: self.transaction_fid,
