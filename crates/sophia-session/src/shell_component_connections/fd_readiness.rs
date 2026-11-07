@@ -39,7 +39,18 @@ pub(crate) struct ComponentFdReadiness {
 }
 
 impl ComponentFdReadiness {
-    pub(super) fn add_wait(mut self, fds: impl IntoIterator<Item = (FdRole, bool)>) -> Self {
+    #[cfg(test)]
+    pub(super) fn add_wait(self, fds: impl IntoIterator<Item = (FdRole, bool)>) -> Self {
+        self.add_observed(fds).0
+    }
+
+    /// Also this wait's joint cause bits (`owner_wait_causes`) for the owner's
+    /// histogram: journal, wire, or any other component descriptor.
+    pub(super) fn add_observed(
+        mut self,
+        fds: impl IntoIterator<Item = (FdRole, bool)>,
+    ) -> (Self, u8) {
+        use crate::owner_wait_causes::{bit, FD, JOURNAL, WIRE};
         let mut ready = [false; 8];
         let mut registered = false;
         for (role, fired) in fds {
@@ -58,8 +69,10 @@ impl ComponentFdReadiness {
             ready[index] |= fired;
         }
         if !registered {
-            return self;
+            return (self, 0);
         }
+        let causes =
+            bit(ready[0], JOURNAL) | bit(ready[1], WIRE) | bit(ready[2..].contains(&true), FD);
         let add = |count: &mut u64, fired: bool| *count = count.saturating_add(u64::from(fired));
         add(&mut self.waits, true);
         add(&mut self.any, ready.contains(&true));
@@ -78,6 +91,6 @@ impl ComponentFdReadiness {
         {
             add(count, fired);
         }
-        self
+        (self, causes)
     }
 }

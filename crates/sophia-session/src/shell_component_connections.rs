@@ -118,18 +118,28 @@ impl ComponentWaits<'_> {
         self.connections.is_empty()
     }
 
-    /// Call once after the wait that polled the subscribed slice.
-    pub fn observe(self, fds: &[rustix::event::PollFd<'_>]) {
+    /// Call once after the wait that polled the subscribed slice. Returns the
+    /// wait's joint cause bits (`owner_wait_causes`), including any ready
+    /// descriptor in `fds` outside the component slice.
+    pub fn observe(self, fds: &[rustix::event::PollFd<'_>]) -> u8 {
+        let component = self.start..self.start + self.roles.len();
         let ready = self.roles.iter().enumerate().map(|(index, &role)| {
             let fired = fds
                 .get(self.start + index)
                 .is_some_and(|fd| !fd.revents().is_empty());
             (role, fired)
         });
-        self.readiness.set(self.readiness.get().add_wait(ready));
+        let (readiness, mut causes) = self.readiness.get().add_observed(ready);
+        self.readiness.set(readiness);
+        if fds.iter().enumerate().any(|(index, fd)| {
+            !component.contains(&index) && !fd.revents().is_empty()
+        }) {
+            causes |= crate::owner_wait_causes::FD;
+        }
         for wait in self.connections {
             wait.observe(fds);
         }
+        causes
     }
 }
 

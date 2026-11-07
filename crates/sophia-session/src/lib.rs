@@ -110,6 +110,7 @@ pub mod support;
 
 #[cfg(feature = "native-session")]
 mod live_session;
+mod owner_wait_causes;
 
 /// The one published seam a conformance host needs: the projection from a
 /// policy indicator publication onto the `sophia_shell_v1` wire snapshot.

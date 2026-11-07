@@ -79,7 +79,7 @@
             .map(|fd| rustix::event::PollFd::from_borrowed_fd(fd, rustix::event::PollFlags::IN)),
         native_scanout.as_ref().map(LiveProductionNativeScanout::completion_progress),
         |fds| {
-            if let Some(waits) = component_waits { waits.observe(fds); }
+            if let Some(waits) = component_waits { owner_wake.note_wait_causes(waits.observe(fds)); }
             for registration in relay_waits { registration.observe(fds); }
         },
     )?

@@ -19,6 +19,8 @@ use std::time::{Duration, Instant};
 
 use rustix::event::{PollFd, PollFlags};
 
+use crate::owner_wait_causes::{self as causes, WaitCauses};
+
 mod attribution;
 pub(super) use attribution::{WaitPlan, WaitReason};
 
@@ -29,6 +31,9 @@ pub(super) struct OwnerWake {
     native_progress_before_wait: Cell<Option<(u64, u64)>>,
     wait_plan: Cell<Option<WaitPlan>>,
     wait_attribution: Cell<attribution::WaitAttribution>,
+    wait_causes: Cell<WaitCauses>,
+    /// Component cause bits noted by this wait's `observed` callback.
+    noted_causes: Cell<u8>,
 }
 
 /// Owner-thread observations, not scheduler wakeups or per-producer attribution.
@@ -59,6 +64,8 @@ impl OwnerWake {
             native_progress_before_wait: Cell::new(None),
             wait_plan: Cell::new(None),
             wait_attribution: Cell::default(),
+            wait_causes: Cell::default(),
+            noted_causes: Cell::new(0),
         })
     }
 
@@ -76,6 +83,16 @@ impl OwnerWake {
 
     pub(super) fn wait_attribution(&self) -> attribution::WaitAttribution {
         self.wait_attribution.get()
+    }
+
+    /// Joint cause of every wait so far; buckets partition `waits`.
+    pub(super) fn wait_causes(&self) -> WaitCauses {
+        self.wait_causes.get()
+    }
+
+    /// From an `observed` callback: which component descriptors ended this wait.
+    pub(super) fn note_wait_causes(&self, bits: u8) {
+        self.noted_causes.set(self.noted_causes.get() | bits);
     }
 
     /// Consumes the rings delivered so far. Call before inspecting any
@@ -248,14 +265,12 @@ impl OwnerWake {
         observed(&fds[..native_start]);
         let mut stats = self.statistics.get();
         stats.waits = stats.waits.saturating_add(1);
-        stats.ring_ready = stats
-            .ring_ready
-            .saturating_add(u64::from(!fds[ring_index].revents().is_empty()));
-        stats.fd_ready = stats.fd_ready.saturating_add(u64::from(
-            fds[..native_start]
-                .iter()
-                .any(|fd| !fd.revents().is_empty()),
-        ));
+        let ring_ready = !fds[ring_index].revents().is_empty();
+        let fd_ready = fds[..native_start]
+            .iter()
+            .any(|fd| !fd.revents().is_empty());
+        stats.ring_ready = stats.ring_ready.saturating_add(u64::from(ring_ready));
+        stats.fd_ready = stats.fd_ready.saturating_add(u64::from(fd_ready));
         let native_ready = fds[native_start..ring_index]
             .iter()
             .any(|fd| !fd.revents().is_empty());
@@ -276,6 +291,17 @@ impl OwnerWake {
         attribution.observe(plan, !ready);
         self.wait_attribution.set(attribution);
         self.statistics.set(stats);
+        // A ready descriptor no callback classified is still a descriptor.
+        let noted = self.noted_causes.take();
+        let cause = noted
+            | causes::bit(fd_ready && noted == 0, causes::FD)
+            | causes::bit(ring_ready, causes::RING)
+            | causes::bit(native_ready, causes::NATIVE)
+            | causes::bit(!ready, causes::DEADLINE)
+            | causes::bit(plan.reason == WaitReason::Service, causes::SERVICE);
+        let mut wait_causes = self.wait_causes.get();
+        wait_causes.add(cause);
+        self.wait_causes.set(wait_causes);
         Ok(())
     }
 }

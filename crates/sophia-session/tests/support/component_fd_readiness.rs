@@ -1,6 +1,7 @@
 use super::*;
 
 const WIRE: FdRole = FdRole::Transport(ShellPollRole::Wire);
+const WIRE_ROLE: FdRole = WIRE;
 const SOCKET: FdRole = FdRole::Transport(ShellPollRole::ImageSocket);
 const WAKE: FdRole = FdRole::Transport(ShellPollRole::WireWake);
 
@@ -43,4 +44,16 @@ fn counters_saturate() {
         ..Default::default()
     };
     assert_eq!(full.add_wait([(WIRE, true)]), full);
+}
+
+#[test]
+fn observed_causes_name_journal_wire_and_other_descriptors() {
+    use crate::owner_wait_causes::{FD, JOURNAL, WIRE};
+    let causes = |fds: &[(FdRole, bool)]| ComponentFdReadiness::default().add_observed(fds.iter().copied()).1;
+    assert_eq!(causes(&[]), 0);
+    assert_eq!(causes(&[(WIRE_ROLE, false), (WAKE, false)]), 0);
+    assert_eq!(causes(&[(WAKE, true)]), JOURNAL);
+    assert_eq!(causes(&[(WIRE_ROLE, true), (WAKE, true)]), JOURNAL | WIRE);
+    assert_eq!(causes(&[(SOCKET, true), (FdRole::ImageWorker, true)]), FD);
+    assert_eq!(causes(&[(WIRE_ROLE, true), (FdRole::ImageWorker, true)]), WIRE | FD);
 }

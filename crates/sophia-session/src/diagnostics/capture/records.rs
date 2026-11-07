@@ -118,6 +118,7 @@ pub fn reduced_record(line: &str) -> Option<String> {
             let counter = ["selected_", "expired_", "pending_"]
                 .iter().find_map(|prefix| key.strip_prefix(prefix));
             let known = matches!(key, "schema" | "owner_tid" | "observed_monotonic_usec")
+                || key.starts_with("cause_")
                 || matches!(key, "component_waits" | "component_ready_any" | "component_ready_wire" | "component_ready_wire_wake"
                     | "component_ready_image_listener" | "component_ready_image_socket"
                     | "component_ready_authentication" | "component_ready_negotiation"

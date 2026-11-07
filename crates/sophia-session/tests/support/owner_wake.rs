@@ -619,3 +619,43 @@ fn stalled_native_descriptor_sleeps_until_the_watchdog_budget() {
     assert_eq!(owner.statistics().native_ready, 0);
     assert_eq!(owner.statistics().wait_deadlines, 1);
 }
+
+#[test]
+fn wait_causes_partition_waits_by_joint_cause() {
+    use crate::owner_wait_causes::{DEADLINE, FD, JOURNAL, RING, SERVICE};
+    let owner = OwnerWake::new().unwrap();
+    let (_sender, queue) = sync_channel::<u8>(1);
+    let (socket, mut peer) = UnixStream::pair().unwrap();
+    // Deadline with nothing ready.
+    owner.receive(&queue, Duration::ZERO).unwrap_err();
+    // Ring alone.
+    owner.notifier().notify();
+    owner.receive(&queue, PROMPT).unwrap_err();
+    owner.begin_pass().unwrap();
+    // A descriptor the callback classifies as the journal, plus the ring.
+    peer.write_all(&[1]).unwrap();
+    owner.notifier().notify();
+    owner
+        .receive_observed(
+            &queue,
+            PROMPT,
+            [PollFd::new(&socket, PollFlags::IN)],
+            [],
+            None,
+            |_| owner.note_wait_causes(JOURNAL),
+        )
+        .unwrap()
+        .unwrap_err();
+    owner.begin_pass().unwrap();
+    // The same unclassified descriptor is a plain fd; a service wait says so.
+    owner
+        .wait_for_service_observed(PROMPT, [PollFd::new(&socket, PollFlags::IN)], Vec::new(), None, |_| {})
+        .unwrap();
+    let causes = owner.wait_causes();
+    assert_eq!(causes.count(DEADLINE), 1);
+    assert_eq!(causes.count(RING), 1);
+    assert_eq!(causes.count(RING | JOURNAL), 1);
+    assert_eq!(causes.count(FD | SERVICE), 1);
+    assert_eq!(causes.waits(), owner.statistics().waits);
+    assert_eq!(owner.statistics().waits, 4);
+}
