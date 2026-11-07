@@ -45,3 +45,19 @@ with Stage in this projection. Consequently this checks common invariants,
 not transport equivalence or an implementation proof of EAGAIN/error handling.
 The guard-removal controls are mode-independent. No error-code parser or
 staging-overlap mutation is claimed here; those are concrete test obligations.
+
+## Lean commits (`LeanPrefix`)
+
+`LeanPrefix` projects the bit-20 option onto one attach: the header sequence
+word of a complete `frame-submit` FrameCommit is a cumulative ACK the host
+validates and applies before admission; an admitted commit is recycled at
+once (nothing retained, no Submitted appended); the client takes custody and
+confirms the word from the exact Rwrite alone; a lost reply is a disconnect.
+The first acceptance (a paired Open, sequence 1) stays retained until covered.
+Run `LeanPrefix.cfg` as above. Negative controls, one at a time, must violate
+the named property: `ValidateEpoch` (EpochBinding), `ValidateAck`
+(AckValidation), `RequireWriter` (WriterBinding), `RequireCoveringAck`
+(AckBeforeReuse), `KnownOnAnyReply` (KnownIsReal), `ConfirmOnError`
+(ConfirmedIsApplied), `EmitSubmitted` (NoSubmitted); `IdleSpec` with
+`PROPERTY IdleProgress` and `CHECK_DEADLOCK FALSE` passes, and fails without
+`Standalone`. Bounded safety only; no refinement or CPU claim.

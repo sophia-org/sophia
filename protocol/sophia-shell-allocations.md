@@ -14,6 +14,7 @@ vendored snapshots retain their historical contracts and evidence.
 | 12 | 17 (`CONTENT_RETIRE_ON_PRESENT`, `0x20000`) | W2 predecessor retirement on presentation | Allocated here; production integration pending |
 | 13 | 18 (`FRAME_TRANSACTIONS`, `0x40000`) | Sophia Frame Transactions (SFT), native CPU profile | Allocated for default-off integration; codecs, owner/producer integration and qualification pending |
 | 13 | 19 (`FRAME_TERMINAL_ONLY`, `0x80000`) | Terminal-only SFT notices; requires bit 18 | Allocated explicit owner/peer opt-in; qualification pending |
+| 13 | 20 (`FRAME_LEAN`, `0x100000`) | Lean SFT commits: header-word ACK, no Submitted; requires bits 18 and 19 | Allocated explicit owner/peer opt-in; qualification pending |
 
 Revision 11 / bit 16 remains owned by draw even while t341 is deferred. Its
 DrawSettled event kind 54 also remains assigned to draw. Deferral does not make
@@ -161,3 +162,18 @@ candidate response records. Preparation consumes its obligation without a
 queued record or frame-credit return. See the terminal-only section of the
 SFT wire contract. Allocation does not enable SFT by default or qualify CPU
 savings, latency or installed-desktop behavior.
+
+## Lean SFT capability, November 7
+
+Shell capability bit 20 (`FRAME_LEAN`, `0x100000`) is allocated as an
+additive, explicitly required option at exactly r13. It requires bits 18 and
+19 and all existing SFT prerequisites; it is not a new revision or record
+layout. The owner must separately permit it. A host without the option
+refuses the required bit. An unsolicited bit 20 grant is invalid.
+
+Only complete FrameCommit writes to `frame-submit` change: the header
+sequence word carries the cumulative journal acknowledgement and the host
+publishes no Submitted record, the exact-count Rwrite being acceptance; the
+reusable writer is recycled at admission. Open, Close and paired submissions
+are unchanged. See the lean section of the SFT wire contract. Allocation does
+not enable SFT by default or qualify CPU savings.
