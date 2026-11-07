@@ -690,6 +690,8 @@ impl Handshake {
             progress: 0,
             pass: 0,
             service_pending: true,
+            deferred_reads: false,
+            arm_reads: false,
             dispatch_time: None,
             last_dispatch_time: None,
             early_submitted: None,

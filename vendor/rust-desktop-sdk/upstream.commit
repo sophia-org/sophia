@@ -1,27 +1,18 @@
-tree f339bea32a1fd84fb2deba7c7652dd228964d400
-parent 90e14d25b84ede9b9655c0600c4e4d154554da70
-author Mason Green <mason@greenm01.net> 1794059148 -0500
-committer Mason Green <mason@greenm01.net> 1794059148 -0500
+tree 0a83dcc203157fe2a31ef6218c91f42f1e943fe4
+parent 3ec34534b66da46efac089097c929895ac878898
+author Mason Green <mason@greenm01.net> 1794079481 -0500
+committer Mason Green <mason@greenm01.net> 1794079481 -0500
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCau8rjBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIWUAD/cUjXvYvl13yPxiGILObX
- y/BOq941jBM4EIfrVpeBCkUBAKtFT8YyMl/5njleOhi3xWXaAPdgGJsBnPdV6LNc
- OGED
- =l/I8
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCau96+RsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKxcQD/XFRns0N2P62OTgoRu1oO
+ qx89gG06fTw/Z/IuGwBysNoA/2pLHKUJZzH92nJUbEbAo7ITIRzaGIQVt3Ivw/tm
+ s64L
+ =bk30
  -----END PGP SIGNATURE-----
 
-Add lean SFT commits (bit 20): header-word ACK, Rwrite-only custody
+Apply rustfmt to sophia-image-producer role.rs
 
-SHELL_FRAME_LEAN_CAPABILITY (1 << 20) is an explicitly required r13 option
-on top of terminal-only; both bits must be granted exactly. A complete
-frame-submit FrameCommit carries the automatic cumulative ACK bound in its
-header sequence word and its exact Rwrite alone settles Custody::Submitted;
-a Submitted naming it is a protocol error. The word is confirmed only by the
-exact Rwrite, rolled back otherwise, and re-folded on an EAGAIN retry; one
-ACK stays in flight. A lone automatic ACK is held 250 ms for the next commit
-to carry, with the hold deadline joining wake_deadline. A lean commit may
-carry the ACK that covers a retained paired Open. The protocol codec accepts
-a nonzero sequence word only on a FrameCommit candidate. Open, Close and
-paired submissions are unchanged. Spec copy of the wire contract updated;
-API-PARITY records the C comparison.
+0706ea2 landed two expressions outside the pinned rustfmt layout; the host
+runs `cargo fmt --check` over its vendored snapshot, so the drift fails
+the host gate. No behaviour change.

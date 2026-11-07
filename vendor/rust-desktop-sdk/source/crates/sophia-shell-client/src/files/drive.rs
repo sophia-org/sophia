@@ -38,6 +38,19 @@ impl FileWire {
         self.service_pending = true;
         Ok(())
     }
+    pub(crate) fn set_deferred_event_reads(
+        &mut self,
+        enabled: bool,
+    ) -> Result<(), ShellClientError> {
+        self.io_interest()?;
+        self.deferred_reads = enabled;
+        self.service_pending = true;
+        Ok(())
+    }
+    /// The caller is about to sleep: the next pass re-arms a deferred read.
+    pub(crate) fn arm_event_reads(&mut self) {
+        self.arm_reads = true;
+    }
     pub(crate) fn acknowledge_journal(&mut self) -> Result<bool, ShellClientError> {
         self.io_interest()?;
         self.queue_ack()
@@ -238,7 +251,14 @@ impl FileWire {
             progressed |= self.drive_submit_retry()?;
             progressed |= self.drive_object_fetch()?;
             progressed |= self.drive_image_fetch()?;
-            progressed |= self.maybe_read_events(inbox)?;
+            // A deferred re-arm rides behind a request queued this round
+            // (the pipeline still holds its bytes) or goes out before a wait.
+            if !self.deferred_reads || self.arm_reads || self.pipeline.io_interest()?.writable {
+                progressed |= self.maybe_read_events(inbox)?;
+            }
+            if self.read_tag.is_some() {
+                self.arm_reads = false;
+            }
             if !progressed
                 || budget.as_ref().is_some_and(IoBudget::exhausted)
                 || round + 1 == MAX_ROUNDS

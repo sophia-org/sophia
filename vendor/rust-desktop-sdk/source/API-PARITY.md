@@ -2017,3 +2017,21 @@ refusal of a folded commit leaves `acked_sequence` unmoved; the caller's next
 `ack` re-covers it (an older `ack_through` after that can draw EINVAL from
 the host, as it always could). Same wire bytes, custody results and refusal
 classes; no native performance claim.
+
+## Deferred `events` re-arm, 2026-11-07
+
+`ShellConnection::set_deferred_event_reads(true)` (off by default) stops the
+client from re-arming its `events` `Tread` in the pass that drained the
+previous reply. The re-arm is queued behind the next request written in a
+drive round (both leave in one write) or in the pass that `wait_for_io` or
+`dispatch` begins, so a host that answers reads as soon as it appends is
+woken once for the re-arm and the following write together. Custody, ACK
+folding, event order and the one-outstanding-read rule are unchanged; a
+caller that sleeps on the borrowed descriptor without those entry points
+may wait with no read outstanding, which the method documents.
+
+C comparison: not ported. The C client issues its events read from its own
+stage machine and has no equivalent entry point yet; this is a measurement
+option for the Rust reference peer, and the gap is recorded here until the
+option is adopted or dropped. Same wire bytes and refusal classes; no native
+performance claim.

@@ -585,3 +585,52 @@ fn submitted_naming_a_lean_commit_fails_closed() {
     .unwrap_err();
     assert!(matches!(error, ShellClientError::Protocol(_)), "{error:?}");
 }
+
+#[test]
+fn deferred_event_reads_rearm_with_the_next_commit_or_before_a_wait() {
+    let (mut connection, mut peer) = lean_connected();
+    // Default: the read is re-armed in the pass that drained it.
+    consumed_head(&mut connection, &mut peer, 10);
+    connection.poll_io().unwrap();
+    peer.pump();
+    assert!(peer.events_read.is_some());
+
+    connection.set_deferred_event_reads(true).unwrap();
+    consumed_head(&mut connection, &mut peer, 12);
+    for _ in 0..3 {
+        connection.poll_io().unwrap();
+        peer.pump();
+    }
+    assert!(
+        peer.events_read.is_none(),
+        "deferred read was re-armed alone"
+    );
+    // The next commit carries the re-arm in the same pass.
+    let ticket = connection.enqueue_frame(&commit_record()).unwrap().first;
+    connection.poll_io().unwrap();
+    peer.pump();
+    assert_eq!(peer.frame_writes.len(), 1);
+    assert!(
+        peer.events_read.is_some(),
+        "re-arm did not ride with the commit"
+    );
+    let held = peer.frame_writes.pop_front().unwrap();
+    peer.answer_write(held.tag, held.data.len() as u32);
+    drive(&mut connection, &mut peer, |c, _| {
+        c.custody(ticket) == Some(Custody::Submitted)
+    })
+    .unwrap();
+    // Nothing to write: the read stays down until the caller is about to wait.
+    consumed_head(&mut connection, &mut peer, 14);
+    connection.poll_io().unwrap();
+    peer.pump();
+    assert!(peer.events_read.is_none());
+    connection.wait_for_io(std::time::Duration::ZERO).unwrap();
+    peer.pump();
+    assert!(
+        peer.events_read.is_some(),
+        "wait_for_io did not re-arm the read"
+    );
+    // And a later event still arrives.
+    consumed_head(&mut connection, &mut peer, 16);
+}

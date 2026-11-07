@@ -257,6 +257,12 @@ pub(crate) struct FileWire {
     pass: u64,
     /// New admission or an exhausted drive needs another local service pass.
     service_pending: bool,
+    /// Re-arm the `events` read only alongside a queued request or when the
+    /// caller is about to wait, so the re-arm shares the host's wake with
+    /// the next write instead of costing one of its own.
+    deferred_reads: bool,
+    /// The caller is about to wait: a deferred re-arm must go out now.
+    arm_reads: bool,
     /// Explicit dispatch time for this pass; absent for the convenience driver.
     dispatch_time: Option<Instant>,
     /// Monotonicity check for successive caller-supplied times.

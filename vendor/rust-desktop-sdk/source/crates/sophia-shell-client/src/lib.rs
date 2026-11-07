@@ -491,6 +491,7 @@ impl ShellConnection {
     /// may return early; call `poll_io` (or a typed receive) after waking.
     pub fn wait_for_io(&mut self, maximum: Duration) -> Result<(), ShellClientError> {
         let handled = self.journal_progress().handled;
+        self.wire.arm_event_reads();
         self.poll_io()?;
         if !self.inbox.is_empty() || self.journal_progress().handled != handled {
             return Ok(());
@@ -959,6 +960,7 @@ impl ShellConnection {
                 .advance_clock(now)
                 .map_err(|_| ShellClientError::InvalidArgument("image clock"))?;
         }
+        self.wire.arm_event_reads();
         let result = self.wire.poll_io(
             &mut self.output,
             &mut self.inbox,

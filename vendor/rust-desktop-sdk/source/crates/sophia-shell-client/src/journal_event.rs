@@ -33,6 +33,16 @@ impl ShellConnection {
         self.wire.set_automatic_event_delivery(enabled)
     }
 
+    /// Defer re-arming the `events` read until the next queued request or
+    /// the next `wait_for_io`/`dispatch` call, so a host that answers reads as
+    /// soon as it appends is woken once for the re-arm and the following
+    /// write together. Off by default. While enabled, a caller that sleeps on
+    /// the borrowed descriptor without `wait_for_io` or `dispatch` may wait
+    /// with no read outstanding; use those entry points before sleeping.
+    pub fn set_deferred_event_reads(&mut self, enabled: bool) -> Result<(), ShellClientError> {
+        self.wire.set_deferred_event_reads(enabled)
+    }
+
     /// Borrow the same validated head across dispatches, without socket I/O.
     /// Object publications can be prefetched before consumption. Snapshot
     /// results still use the ordinary receive APIs. A head survives local close.

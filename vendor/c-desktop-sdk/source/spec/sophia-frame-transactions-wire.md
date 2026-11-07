@@ -311,5 +311,9 @@ new epoch. Both SDKs reject a Submitted record naming a lean commit.
 Prepared stays elided by bit 19; terminal outcomes, ResourceReleased, credit,
 source status and all record layouts are unchanged. Per frame a lean stream
 publishes two journal records (terminal and ResourceReleased) and the client
-writes once. Default-off, native completion, custody checks and the separate
+writes once. While a lean commit is in flight, the host may keep its source's
+successful ResourceStatus and release record (owned-ring SlotReleased,
+image-channel SourceReleased) back from `events` reads until the frame's
+terminal is journaled, so one read carries them all; journal order is
+unchanged, and refusals and channel closure are published at once. Default-off, native completion, custody checks and the separate
 native CPU qualification are unchanged.

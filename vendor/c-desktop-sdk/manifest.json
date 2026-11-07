@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "repository": "https://github.com/sophia-org/sophia-desktop-sdk-c",
-  "revision": "46597795f33568663dbe9154c58376a73175de0d",
+  "revision": "fde3dd5cb5a451e368714fa7f44f21028ca14bca",
   "files": {
     ".gitignore": "020c2606e8ed484089c2083e0be438b9d0736bee1558a6b76af0d58bd23f69cf",
     "ADMIN-CLIENT.md": "da27923c47c8a3c3ecb437c8fbb775409c8382f3ab80457e15d3a5edd2f7edeb",
@@ -31,7 +31,7 @@
     "pkgconfig/sophia-9p.pc.in": "0676668379d41c943edcb305c662b5261bf3b45f9a98876336aebdbd07cddec3",
     "pkgconfig/sophia-desktop.pc.in": "956bc9c239f97474e649161eae120523ddd9ffd32f5ecdaf749d424534717d3c",
     "provenance/import.sha256": "7223f95f45ab16ca99f6428aa1a3bf8b0bfb7c2e4b9cf533aaf3b5b4c42f1da2",
-    "spec/SHA256SUMS": "017e7b9af6774400234f8d6bae160aa073b06128df46bc001bdce8aa2cf4dd78",
+    "spec/SHA256SUMS": "ef6e5dc7fe041f2bcc7dc67dedca8dc2f44d917fb7fd4e19f81ef52dca495395",
     "spec/factotum-launch-authentication.md": "2c54fecf31ee7ec0634bb57caa49b508ea65642deaaabeae7ac0a9b474bb2719",
     "spec/golden/sophia-frame-transactions-v1.tsv": "3e36d247d3f47a60509d15a99ee4c6fc8abb8b2a680748d8f4d7e278709f40e7",
     "spec/golden/sophia-image-channel-v1.tsv": "b7bdc6723e1eceda94da0bbb13868571590c3d47cd0b7fc976c2393026da29d8",
@@ -46,7 +46,7 @@
     "spec/sophia-broker-files-v1.kdl": "d0e224ee984a0ce3efe8aee209af1a9fff6bb2997362f1586a346e1fa7c78cb8",
     "spec/sophia-broker-files.md": "01ef46dab00a05ef2e097f5b57d180c7be749f84ee3f43e031feaa5656bad2bc",
     "spec/sophia-frame-transactions-v1.kdl": "e59dc10e82c48094dc748c78d21b41870a1b5bec5844fa42a99193366271046d",
-    "spec/sophia-frame-transactions-wire.md": "79c4e16e2aef854bddd4c61e70e3bad35e53f32e80c71a12ab464df744acfc18",
+    "spec/sophia-frame-transactions-wire.md": "147043eadedaa19efa8fa53ea831c11c81e724242b421ca1a9a0b7e8ed3af9bd",
     "spec/sophia-image-channel.md": "5a669a41b129ef7982d4779268a29491f572c0db349cc9c4d3715462a7deb15e",
     "spec/sophia-lock-files-v1.kdl": "85b9ee739bc79105225ac334b271624fe64ea008289f0556d196138b0c542f68",
     "spec/sophia-lock-files.md": "03aaf59a7a789e09bbc2b65319b66804a14fce9ec3a8e3970cd164896de0d1be",
