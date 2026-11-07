@@ -43,7 +43,9 @@ impl From<Arc<[u8]>> for SharedPixels {
 }
 
 impl SharedPixels {
-    pub fn pixel_version(&self) -> Option<std::num::NonZeroU64> { self.1 }
+    pub fn pixel_version(&self) -> Option<std::num::NonZeroU64> {
+        self.1
+    }
     pub fn watch(&self) -> SharedPixelsWatch {
         SharedPixelsWatch(match &self.0 {
             Backing::Bytes(bytes) => WeakBacking::Bytes(Arc::downgrade(bytes)),
@@ -54,11 +56,17 @@ impl SharedPixels {
 
     // Keep the Box allocation intact: Arc<[u8]>::from(Box) would copy pixels.
     pub(crate) fn owned(bytes: Box<[u8]>) -> Self {
-        Self(Backing::Owned(Arc::new(bytes)), crate::next_cpu_pixel_version())
+        Self(
+            Backing::Owned(Arc::new(bytes)),
+            crate::next_cpu_pixel_version(),
+        )
     }
 
     pub(crate) fn isb(mapping: sophia_linux_peer::SealedMapping) -> Self {
-        Self(Backing::Isb(Arc::new(mapping)), crate::next_cpu_pixel_version())
+        Self(
+            Backing::Isb(Arc::new(mapping)),
+            crate::next_cpu_pixel_version(),
+        )
     }
 }
 
