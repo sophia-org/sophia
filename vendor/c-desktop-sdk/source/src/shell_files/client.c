@@ -67,7 +67,8 @@ static int initialize(struct sophia_sf_client *c, struct sophia_9p_client *wire,
         } else if (offer.required_capabilities & SOPHIA_SF_CAP_OWNED_RING) {
             revision = offer.required_capabilities & SOPHIA_SFT_CAPABILITY ? 13 : 10;
             mask |= SOPHIA_SF_CAP_OWNED_RING | (offer.required_capabilities &
-                (SOPHIA_SFT_CAPABILITY | SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY));
+                (SOPHIA_SFT_CAPABILITY | SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY |
+                 SOPHIA_SFT_LEAN_CAPABILITY));
             /* The r10 DMA-BUF opt-in is part of the exact native mask
              * only when the caller requested it. */
             if (offer.required_capabilities & SOPHIA_SF_CAP_DMABUF_IMAGE)
@@ -202,6 +203,7 @@ int sf_session_drive(struct sophia_sf_client *c)
             r = sophia_9p_write(c->wire, c->fids[1], c->tx_offset, c->tx_storage + c->tx_offset, n,
                                 &c->submit_op.handle);
         } else if (c->submit_stage == 2 && c->combined_submit) {
+            sf_put(c->tx_storage + 24, c->fold_sequence, 8);
             r = sophia_9p_write(c->wire, c->frame_submit_fid, 0, c->tx_storage, c->tx_size,
                                &c->submit_op.handle);
         } else if (c->submit_stage == 2) {
@@ -281,6 +283,8 @@ static int submission_reply(struct sophia_sf_client *c, const struct sophia_9p_r
             c->submit_wait = 1;
             return 0;
         }
+        /* The folded ACK is confirmed only by the exact Rwrite; the caller re-covers it. */
+        c->fold_sequence = 0;
         /* EALREADY after observed custody is that custody; otherwise fatal. */
         if (r->error == 114 && c->submitted) {
             c->submit_replied = 1;
@@ -336,6 +340,13 @@ static int submission_reply(struct sophia_sf_client *c, const struct sophia_9p_r
         if (r->count != (c->combined_submit ? c->tx_size : 24u))
             return SOPHIA_9P_INVALID;
         c->submit_replied = 1;
+        if (c->combined_submit && sf_session_lean(c)) {
+            /* Lean: the exact Rwrite is custody and confirms the header word. */
+            if (c->fold_sequence > c->acked_sequence)
+                c->acked_sequence = c->fold_sequence;
+            c->fold_sequence = 0;
+            c->submitted = 1;
+        }
         c->submit_stage = c->submitted ? 4 : 3;
     }
     return 0;
@@ -508,6 +519,13 @@ static void submission_arm(struct sophia_sf_client *c, size_t n)
         sf_get(c->tx_storage + 6, 2) == SOPHIA_SFT_COMMIT && n <= c->wire->msize - 23u &&
         (!c->frame_submit_iounit || n <= c->frame_submit_iounit);
     c->submit_stage = c->combined_submit ? 2 : 1;
+    c->fold_sequence = 0;
+    if (c->combined_submit && sf_session_lean(c) && !c->ack_op.active) {
+        uint64_t bound = c->fold_limit && c->fold_limit < c->consumed_sequence ? c->fold_limit
+                                                                               : c->consumed_sequence;
+        if (bound > c->acked_sequence)
+            c->fold_sequence = bound;
+    }
     c->submitted = c->submit_replied = 0;
     c->submitted_sequence = 0;
     c->submit_wait = c->submit_sent = 0;
@@ -635,7 +653,7 @@ int sophia_sf_client_ack_through(struct sophia_sf_client *c, uint64_t sequence)
         return c->terminal;
     if (sequence > c->consumed_sequence)
         return SOPHIA_9P_ARGUMENT;
-    if (c->ack_op.active)
+    if (c->ack_op.active || c->fold_sequence)
         return SOPHIA_9P_BUSY;
     if (sequence <= c->acked_sequence)
         return 0;

@@ -139,7 +139,8 @@ pub(super) fn prepare(
             .and_then(|mut owner| {
                 if config.frame_transactions {
                     #[cfg(feature = "experimental-native-frame-transaction")]
-                    owner.enable_frame_transactions(config.frame_terminal_only)?;
+                    owner
+                        .enable_frame_transactions(config.frame_terminal_only, config.frame_lean)?;
                     #[cfg(not(feature = "experimental-native-frame-transaction"))]
                     return Err("SFT is not compiled into this Session".into());
                 }

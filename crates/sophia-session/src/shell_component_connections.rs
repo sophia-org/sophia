@@ -131,9 +131,11 @@ impl ComponentWaits<'_> {
         });
         let (readiness, mut causes) = self.readiness.get().add_observed(ready);
         self.readiness.set(readiness);
-        if fds.iter().enumerate().any(|(index, fd)| {
-            !component.contains(&index) && !fd.revents().is_empty()
-        }) {
+        if fds
+            .iter()
+            .enumerate()
+            .any(|(index, fd)| !component.contains(&index) && !fd.revents().is_empty())
+        {
             causes |= crate::owner_wait_causes::FD;
         }
         for wait in self.connections {
@@ -167,6 +169,8 @@ pub struct ShellComponentConnections {
     frame_transactions: bool,
     #[cfg(feature = "experimental-native-frame-transaction")]
     frame_terminal_only: bool,
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    frame_lean: bool,
     #[cfg(feature = "experimental-shell-capture")]
     capture: Option<crate::shell_capture_owner::Owner>,
     #[cfg(feature = "experimental-shell-capture")]
@@ -201,6 +205,8 @@ impl ShellComponentConnections {
             frame_transactions: false,
             #[cfg(feature = "experimental-native-frame-transaction")]
             frame_terminal_only: false,
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            frame_lean: false,
             #[cfg(feature = "experimental-shell-capture")]
             capture: None,
             #[cfg(feature = "experimental-shell-capture")]
@@ -240,6 +246,14 @@ impl ShellComponentConnections {
     pub fn enable_terminal_frame_transactions(&mut self) -> Result<(), ComponentConnectionError> {
         self.enable_frame_transactions()?;
         self.frame_terminal_only = true;
+        Ok(())
+    }
+
+    /// Permit lean commits (bit 20) for SFT bars; implies terminal-only.
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub fn enable_lean_frame_transactions(&mut self) -> Result<(), ComponentConnectionError> {
+        self.enable_terminal_frame_transactions()?;
+        self.frame_lean = true;
         Ok(())
     }
 
@@ -458,7 +472,14 @@ impl ShellComponentConnections {
             }
             if self.frame_transactions && connection.role == ShellComponentRole::Bar {
                 #[cfg(feature = "experimental-native-frame-transaction")]
-                return if self.frame_terminal_only {
+                return if self.frame_lean {
+                    connection.transport.begin_lean_frame_file_negotiation(
+                        &self.epochs,
+                        key.grant.connection_epoch,
+                        timeout,
+                        policy,
+                    )
+                } else if self.frame_terminal_only {
                     connection.transport.begin_terminal_frame_file_negotiation(
                         &self.epochs,
                         key.grant.connection_epoch,

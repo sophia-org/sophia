@@ -14,7 +14,7 @@
 use std::time::{Duration, Instant};
 
 use sophia_9p_client::pipeline::{PipelineError, Reply};
-use sophia_9p_records::{Errno, Tag};
+use sophia_9p_records::{Errno, Fid, Tag};
 use sophia_shell_protocol::shell_files::{
     ShellFileClass, ShellFileKind, ShellFileSubmit, decode_shell_file_record,
     encode_shell_file_submit,
@@ -46,8 +46,16 @@ impl FileWire {
         // export serves a connection's requests in order, so the covering
         // ack must be queued before this unit's walk and open: wait until
         // intake has reached that event and an ack through it is queued.
+        // A lean commit carries that covering ack itself, applied before admission.
+        let covered = || {
+            output
+                .front()
+                .is_some_and(|bytes| self.lean_direct_eligible(bytes))
+                && self.lean_fold_bound() >= self.submitted_sequence
+        };
         if matches!(kind, QueuedKind::Record)
-            && (self.early_submitted.is_some() || self.acked < self.submitted_sequence)
+            && (self.early_submitted.is_some()
+                || (self.acked < self.submitted_sequence && !covered()))
         {
             return Ok(false);
         }
@@ -70,39 +78,19 @@ impl FileWire {
                     decode_shell_file_record(bytes, ShellFileClass::Candidate)?.header
                 };
                 let (submission_id, kind) = (header.submission_id, header.kind);
-                let direct = self.frame_submit.filter(|(_, iounit)| {
-                    kind == ShellFileKind::FrameCommit
-                        && self.transaction_fid.is_some()
-                        && bytes.len() <= self.pipeline.msize().saturating_sub(23) as usize
-                        && (*iounit == 0 || bytes.len() <= *iounit as usize)
-                });
-                let phase = if let Some((target, _)) = direct {
-                    let tag = self.pipeline.write(target, 0, bytes)?;
-                    SubmissionPhase::WriteSubmit {
+                let direct = self.direct_target(kind == ShellFileKind::FrameCommit, bytes.len());
+                let (bytes, submit, phase) = if let Some((target, _)) = direct {
+                    let mut submit = output.take_front_bytes().into_vec();
+                    self.fold_ack(&mut submit);
+                    let tag = self.pipeline.write(target, 0, &submit)?;
+                    let phase = SubmissionPhase::WriteSubmit {
                         tag,
                         fid: self.transaction_fid.expect("direct requires a live writer"),
-                    }
-                } else if let Some(fid) = self.transaction_fid {
-                    let tag = self.pipeline.write(fid, 0, bytes)?;
-                    SubmissionPhase::WriteRecord { tag, fid }
-                } else {
-                    let name: &[u8] = if self.reusable_transactions {
-                        b"transaction-reuse"
-                    } else {
-                        b"transaction"
                     };
-                    SubmissionPhase::Opening(Opening::start(
-                        &mut self.pipeline,
-                        self.root,
-                        &[name],
-                        O_RDWR,
-                    )?)
-                };
-                let bytes = output.take_front_bytes();
-                let (bytes, submit) = if direct.is_some() {
-                    (Box::default(), bytes.into_vec())
+                    (Box::default(), submit, phase)
                 } else {
-                    (bytes, Vec::new())
+                    let phase = self.start_paired(bytes)?;
+                    (output.take_front_bytes(), Vec::new(), phase)
                 };
                 Current::Submission {
                     bytes,
@@ -121,6 +109,77 @@ impl FileWire {
         self.pending.pop_front();
         self.custody.push((ticket, Custody::InFlight));
         Ok(true)
+    }
+
+    /// The `frame-submit` node when a complete commit of `len` bytes may go
+    /// there in one write.
+    fn direct_target(&self, commit: bool, len: usize) -> Option<(Fid, u32)> {
+        self.frame_submit.filter(|(_, iounit)| {
+            commit
+                && self.transaction_fid.is_some()
+                && len <= self.pipeline.msize().saturating_sub(23) as usize
+                && (*iounit == 0 || len <= *iounit as usize)
+        })
+    }
+
+    /// A queued record that will carry the ACK itself, so none goes ahead of it.
+    pub(super) fn lean_direct_eligible(&self, record: &[u8]) -> bool {
+        self.lean()
+            && record.get(6..8) == Some(&281u16.to_le_bytes()[..])
+            && self.direct_target(true, record.len()).is_some()
+    }
+
+    /// The existing paired path: write to the live reusable writer, or open one.
+    fn start_paired(&mut self, bytes: &[u8]) -> Result<SubmissionPhase, ShellClientError> {
+        Ok(if let Some(fid) = self.transaction_fid {
+            let tag = self.pipeline.write(fid, 0, bytes)?;
+            SubmissionPhase::WriteRecord { tag, fid }
+        } else {
+            let name: &[u8] = if self.reusable_transactions {
+                b"transaction-reuse"
+            } else {
+                b"transaction"
+            };
+            SubmissionPhase::Opening(Opening::start(
+                &mut self.pipeline,
+                self.root,
+                &[name],
+                O_RDWR,
+            )?)
+        })
+    }
+
+    /// Under lean, with automatic ACK and nothing else acknowledging, a
+    /// complete commit carries the ACK bound in its header word. The word is
+    /// confirmed or rolled back by that write's reply (`on_submission_reply`).
+    fn fold_ack(&mut self, record: &mut [u8]) {
+        let sequence = self.lean_fold_bound();
+        if sequence > self.acked {
+            record[24..32].copy_from_slice(&sequence.to_le_bytes());
+            self.acked = sequence;
+            self.folded_ack = true;
+            self.ack_held_since = None;
+        }
+    }
+
+    /// What the next lean commit's header word would acknowledge: the ACK
+    /// bound, or nothing while another ACK is in flight or policy is manual.
+    fn lean_fold_bound(&self) -> u64 {
+        if !self.lean() || !self.automatic_ack || self.ack_tag.is_some() || self.folded_ack {
+            0
+        } else {
+            self.ack_limit()
+        }
+    }
+
+    /// The current unit is a complete lean commit on `frame-submit`: its
+    /// exact Rwrite is custody and no Submitted names it.
+    fn lean_direct(&self) -> bool {
+        self.lean()
+            && matches!(
+                (&self.current, self.frame_submit),
+                (Some(Current::Submission { submit_fid, .. }), Some((node, _))) if *submit_fid == node
+            )
     }
 
     /// Settles the current unit: records its custody and releases it from
@@ -147,6 +206,9 @@ impl FileWire {
             // `settle_buffered_submitted`); this is that same event.
             self.early_submitted = None;
             return Ok(());
+        }
+        if self.lean_direct() {
+            return Err(ShellClientError::Protocol("Submitted for a lean commit"));
         }
         let Some(Current::Submission {
             submission_id,
@@ -192,7 +254,7 @@ impl FileWire {
                     pass,
                 },
             ..
-        }) = &self.current
+        }) = &mut self.current
         else {
             return Ok(false);
         };
@@ -203,9 +265,21 @@ impl FileWire {
         {
             return Ok(false);
         }
-        let fid = *fid;
-        let tag = self.pipeline.write(*submit_fid, 0, submit)?;
-        if let Some(Current::Submission { phase, .. }) = &mut self.current {
+        let (fid, submit_fid) = (*fid, *submit_fid);
+        let mut submit = std::mem::take(submit);
+        if self.lean_direct() {
+            // The host ignores the word for identity; a retry may carry a newer ACK.
+            submit[24..32].fill(0);
+            self.fold_ack(&mut submit);
+        }
+        let tag = self.pipeline.write(submit_fid, 0, &submit)?;
+        if let Some(Current::Submission {
+            phase,
+            submit: held,
+            ..
+        }) = &mut self.current
+        {
+            *held = submit;
             *phase = SubmissionPhase::WriteSubmit { tag, fid };
         }
         Ok(true)
@@ -445,6 +519,17 @@ impl FileWire {
                 };
                 let seen = *submitted;
                 let exact = submit.len();
+                let lean_direct = self.lean_direct();
+                if self.folded_ack {
+                    // The header word is confirmed by the exact Rwrite alone;
+                    // anything else leaves it to a later ACK, repeats being idempotent.
+                    self.folded_ack = false;
+                    if matches!(reply, Reply::Write(n) if *n as usize == exact) {
+                        self.ack_confirmed = self.acked;
+                    } else {
+                        self.acked = self.ack_confirmed;
+                    }
+                }
                 match reply {
                     Reply::Write(count) if *count as usize == exact => {}
                     Reply::Write(_) => {
@@ -506,7 +591,7 @@ impl FileWire {
                 if let Some(Current::Submission { phase, .. }) = &mut self.current {
                     *phase = SubmissionPhase::AwaitSubmitted;
                 }
-                if seen {
+                if seen || lean_direct {
                     self.settle_current(Custody::Submitted);
                 }
                 Ok(true)

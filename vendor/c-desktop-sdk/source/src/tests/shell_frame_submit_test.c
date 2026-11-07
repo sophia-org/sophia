@@ -39,23 +39,30 @@ static void connected(struct rig *r, unsigned direct, uint32_t lookup, uint32_t 
     rig_run(r, 64);
 }
 
-static uint64_t issue(struct rig *r)
+/* Queues one commit and checks the complete write, whose header word is `word`. */
+static uint64_t issue_with(struct rig *r, uint64_t word)
 {
     struct sophia_sf_record request = commit_record();
     uint8_t expected[8192];
     size_t written;
     uint64_t ticket;
-    unsigned tx = r->p.tx_writes, submits = r->p.submits;
+    unsigned tx = r->p.tx_writes, submits = r->p.submits, writes = r->p.frame_writes;
     r->p.policy = P_HOLD;
     assert(!sophia_ss_submit(&r->s, &request, 1, &ticket));
     rig_run(r, 32);
-    assert(r->p.frame_writes == 1 && r->p.tx_writes == tx && r->p.submits == submits);
+    assert(r->p.frame_writes == writes + 1 && r->p.tx_writes == tx && r->p.submits == submits);
     request.header.epoch = PEER_EPOCH;
     request.header.submission = peer_get(r->p.last_submit + 8, 8);
     assert(!sophia_sf_encode_revision(expected, sizeof expected, 13, &request, &written));
+    peer_put(expected + 24, word, 8);
     assert(written == r->p.staged_used && !memcmp(expected, r->p.staged, written));
     assert(rig_outcome(r, ticket) == SOPHIA_SS_IN_FLIGHT);
     return ticket;
+}
+
+static uint64_t issue(struct rig *r)
+{
+    return issue_with(r, 0);
 }
 
 static void replies_and_retry(void)
@@ -191,12 +198,82 @@ static void disconnect_preserves_only_known_custody(void)
     }
 }
 
+static void lean_connected(struct rig *r)
+{
+    struct sophia_ss_config cfg = config;
+    struct sophia_sf_negotiated v = welcome;
+    cfg.offer.required_capabilities |= SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY | SOPHIA_SFT_LEAN_CAPABILITY;
+    v.capabilities |= SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY | SOPHIA_SFT_LEAN_CAPABILITY;
+    start_frame_options(r, &v, &cfg, 1, 0, 0, 0);
+    assert(sophia_ss_state(&r->s) == SOPHIA_SS_READY);
+    assert(!sophia_ss_ack(&r->s));
+    rig_run(r, 64);
+}
+
+/* Publishes a stream head and consumes it: its sequence is now above the ACK. */
+static uint64_t consumed_head(struct rig *r)
+{
+    struct sophia_sf_record opened = open_record();
+    const struct sophia_sf_record *e;
+    uint64_t sequence;
+    opened.header.kind = SOPHIA_SFT_OPENED;
+    opened.value.frame.stream.ttl_ms = 100;
+    peer_record(&r->p, &opened);
+    rig_run(r, 8);
+    assert(!sophia_ss_event(&r->s, &e) && e->header.kind == SOPHIA_SFT_OPENED);
+    sequence = e->header.sequence;
+    assert(!sophia_ss_consume(&r->s));
+    assert(sophia_ss_ack_limit(&r->s) == sequence && r->s.files.acked_sequence < sequence);
+    return sequence;
+}
+
+static void lean_folds_the_ack_and_rwrite_alone_is_custody(void)
+{
+    struct rig r;
+    uint64_t ticket, sequence;
+    unsigned acks;
+    lean_connected(&r);
+    acks = r.p.acks;
+    /* Nothing new to acknowledge: a zero word, and the Rwrite alone is custody. */
+    ticket = issue(&r);
+    peer_answer_submit(&r.p, 0);
+    rig_run(&r, 16);
+    assert(rig_outcome(&r, ticket) == SOPHIA_SS_SUBMITTED && !r.s.files.submit_stage);
+    assert(r.p.acks == acks && !r.s.files.terminal);
+    /* A consumed head rides in the next commit; the exact Rwrite confirms it. */
+    sequence = consumed_head(&r);
+    ticket = issue_with(&r, sequence);
+    assert(sophia_ss_ack(&r.s) == SOPHIA_9P_BUSY && r.s.files.acked_sequence < sequence);
+    peer_answer_submit(&r.p, 0);
+    rig_run(&r, 16);
+    assert(rig_outcome(&r, ticket) == SOPHIA_SS_SUBMITTED);
+    assert(r.s.files.acked_sequence == sequence && r.p.acks == acks);
+    assert(!sophia_ss_ack(&r.s));
+    rig_run(&r, 8);
+    assert(r.p.acks == acks);
+    /* A refused commit confirms nothing; the standalone ACK then re-covers it. */
+    sequence = consumed_head(&r);
+    ticket = issue_with(&r, sequence);
+    peer_answer_submit(&r.p, 22);
+    rig_run(&r, 16);
+    assert(rig_outcome(&r, ticket) == SOPHIA_SS_REFUSED && r.s.files.acked_sequence < sequence);
+    rig_ack(&r);
+    assert(r.s.files.acked_sequence == sequence && r.p.acks == acks + 1 && r.p.acked == sequence);
+    /* A Submitted naming a lean commit fails closed. */
+    ticket = issue(&r);
+    peer_submitted(&r.p, peer_get(r.p.last_submit + 8, 8), SOPHIA_SFT_COMMIT);
+    rig_run(&r, 16);
+    assert(sophia_ss_state(&r.s) == SOPHIA_SS_FAILED);
+    rig_close(&r);
+}
+
 int main(void)
 {
+    lean_folds_the_ack_and_rwrite_alone_is_custody();
     disconnect_preserves_only_known_custody();
     replies_and_retry();
     fallback_and_discovery();
     refused_and_uncertain();
-    puts("frame-submit: complete writes, fallback, retry and custody refusals passed");
+    puts("frame-submit: complete writes, lean folds, fallback, retry and custody refusals passed");
     return 0;
 }

@@ -31,7 +31,7 @@ fn combined_call_has_the_same_custody_and_journal_as_the_two_writes() {
         let mut control = export();
         let (_writer, submit) = stage(&mut control, &bytes);
         assert!(control.inbound.is_empty() && control.accepted.is_none());
-        control.submit_transaction(&submit).unwrap();
+        control.submit_transaction(&submit, false).unwrap();
 
         let mut candidate = export();
         let mut writer = candidate

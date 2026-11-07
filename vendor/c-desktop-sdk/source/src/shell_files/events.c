@@ -63,8 +63,10 @@ int sf_session_event_parse(struct sophia_sf_client *c)
         c->refused = 1;
         break;
     case SOPHIA_SF_SUBMITTED:
-        /* Custody cannot follow a definitive refusal of the same submission. */
+        /* Custody cannot follow a definitive refusal of the same submission,
+         * and a lean complete commit never has a Submitted. */
         if (!c->submit_stage || c->submitted || c->submit_error ||
+            (c->combined_submit && sf_session_lean(c)) ||
             r->value.submitted.submission_id != c->next_submission - 1 ||
             r->value.submitted.candidate_kind != sf_get(c->tx_storage + 6, 2))
             return SOPHIA_9P_INVALID;
@@ -118,7 +120,7 @@ int sophia_sf_client_ack(struct sophia_sf_client *c)
         return SOPHIA_9P_ARGUMENT;
     if (c->terminal)
         return c->terminal;
-    if (c->ack_op.active)
+    if (c->ack_op.active || c->fold_sequence)
         return SOPHIA_9P_BUSY;
     if (c->consumed_sequence == c->acked_sequence)
         return 0;

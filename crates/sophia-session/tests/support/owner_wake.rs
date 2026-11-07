@@ -649,7 +649,13 @@ fn wait_causes_partition_waits_by_joint_cause() {
     owner.begin_pass().unwrap();
     // The same unclassified descriptor is a plain fd; a service wait says so.
     owner
-        .wait_for_service_observed(PROMPT, [PollFd::new(&socket, PollFlags::IN)], Vec::new(), None, |_| {})
+        .wait_for_service_observed(
+            PROMPT,
+            [PollFd::new(&socket, PollFlags::IN)],
+            Vec::new(),
+            None,
+            |_| {},
+        )
         .unwrap();
     let causes = owner.wait_causes();
     assert_eq!(causes.count(DEADLINE), 1);

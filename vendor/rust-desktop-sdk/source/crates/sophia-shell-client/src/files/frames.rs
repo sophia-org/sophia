@@ -10,7 +10,9 @@ pub(super) fn validate_negotiated(
 ) -> Result<(), ShellClientError> {
     let caps = value.welcome.capabilities;
     if (caps | options.required_capabilities)
-        & (SHELL_FRAME_CAPABILITY | SHELL_FRAME_TERMINAL_ONLY_CAPABILITY)
+        & (SHELL_FRAME_CAPABILITY
+            | SHELL_FRAME_TERMINAL_ONLY_CAPABILITY
+            | SHELL_FRAME_LEAN_CAPABILITY)
         == 0
         && value.welcome.selected_revision != SHELL_FRAME_REVISION
     {
@@ -25,7 +27,11 @@ pub(super) fn validate_negotiated(
         || options.required_capabilities & required != required
         || caps & required != required
         || caps & unsupported != 0
-        || (caps ^ options.required_capabilities) & SHELL_FRAME_TERMINAL_ONLY_CAPABILITY != 0
+        || (caps ^ options.required_capabilities)
+            & (SHELL_FRAME_TERMINAL_ONLY_CAPABILITY | SHELL_FRAME_LEAN_CAPABILITY)
+            != 0
+        || (caps & SHELL_FRAME_LEAN_CAPABILITY != 0
+            && caps & SHELL_FRAME_TERMINAL_ONLY_CAPABILITY == 0)
         || !value.limits_published
     {
         return Err(ShellClientError::MissingCapability);
@@ -47,6 +53,12 @@ pub(super) fn frame_max_bytes(inbox: &std::collections::VecDeque<Inbound>) -> us
 }
 
 impl FileWire {
+    /// Negotiated bit 20: complete `frame-submit` commits fold the ACK and
+    /// settle on their Rwrite alone.
+    pub(super) fn lean(&self) -> bool {
+        self.capabilities & SHELL_FRAME_LEAN_CAPABILITY != 0
+    }
+
     pub(crate) fn require_frame(&self) -> Result<(), ShellClientError> {
         if self.revision != SHELL_FRAME_REVISION || self.capabilities & SHELL_FRAME_CAPABILITY == 0
         {

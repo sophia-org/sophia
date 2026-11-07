@@ -202,6 +202,7 @@ int ss_handoff(struct sophia_ss *s)
     if (s->state != SOPHIA_SS_READY || s->flight || !s->queued)
         return 0;
     n = s->entries[0].bytes;
+    s->files.fold_limit = sophia_ss_ack_limit(s);
     r = sophia_sf_client_submit_bytes(&s->files, s->queue, n);
     if (r == SOPHIA_9P_BUSY)
         return 0;

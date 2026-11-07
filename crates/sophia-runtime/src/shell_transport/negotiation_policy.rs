@@ -20,6 +20,14 @@ impl ShellComponentTransport {
         {
             return Err(ShellTransportError::MissingCapability);
         }
+        if hello.required_capabilities & sophia_protocol::shell_files::SHELL_FRAME_LEAN_CAPABILITY
+            != 0
+            && hello.required_capabilities
+                & sophia_protocol::shell_files::SHELL_FRAME_TERMINAL_ONLY_CAPABILITY
+                == 0
+        {
+            return Err(ShellTransportError::MissingCapability);
+        }
         if hello.required_capabilities & sophia_protocol::shell_files::SHELL_FRAME_CAPABILITY != 0 {
             return self.select_frame_negotiation(epochs, connection_epoch, content_policy, hello);
         }
@@ -91,7 +99,8 @@ impl ShellComponentTransport {
         hello: ShellV1ClientHello,
     ) -> Result<(ShellV1ServerWelcome, Option<ContentLimits>), ShellTransportError> {
         use sophia_protocol::shell_files::{
-            SHELL_FRAME_CAPABILITY, SHELL_FRAME_REVISION, SHELL_FRAME_TERMINAL_ONLY_CAPABILITY,
+            SHELL_FRAME_CAPABILITY, SHELL_FRAME_LEAN_CAPABILITY, SHELL_FRAME_REVISION,
+            SHELL_FRAME_TERMINAL_ONLY_CAPABILITY,
         };
         if !cfg!(feature = "experimental-native-frame-transaction")
             || !self
@@ -112,19 +121,21 @@ impl ShellComponentTransport {
         {
             return Err(ShellTransportError::UnsupportedRevision);
         }
-        let terminal_only = if self
-            .negotiation
-            .as_ref()
-            .is_some_and(|pending| pending.frame_terminal_only)
-        {
+        // Owner-permitted options for this handshake, echoed only when requested.
+        let pending = self.negotiation.as_ref().expect("checked above");
+        let options = if pending.frame_terminal_only {
             SHELL_FRAME_TERMINAL_ONLY_CAPABILITY
+        } else {
+            0
+        } | if pending.frame_lean {
+            SHELL_FRAME_LEAN_CAPABILITY
         } else {
             0
         };
         let allowed = ((1 << 11) - 1)
             | crate::owned_ring_protocol::CAPABILITY
             | SHELL_FRAME_CAPABILITY
-            | terminal_only;
+            | options;
         let denied = hello.required_capabilities & !allowed;
         if denied != 0 {
             return Err(ShellTransportError::ContentAdmissionRefused(
@@ -149,15 +160,16 @@ impl ShellComponentTransport {
                 minimum_revision: crate::owned_ring_protocol::REVISION,
                 maximum_revision: crate::owned_ring_protocol::REVISION,
                 required_capabilities: hello.required_capabilities
-                    & !(SHELL_FRAME_CAPABILITY | SHELL_FRAME_TERMINAL_ONLY_CAPABILITY),
+                    & !(SHELL_FRAME_CAPABILITY
+                        | SHELL_FRAME_TERMINAL_ONLY_CAPABILITY
+                        | SHELL_FRAME_LEAN_CAPABILITY),
             },
         )?;
         if welcome.selected_revision != crate::owned_ring_protocol::REVISION || limits.is_none() {
             return Err(ShellTransportError::MissingCapability);
         }
         welcome.selected_revision = SHELL_FRAME_REVISION;
-        welcome.capabilities |=
-            SHELL_FRAME_CAPABILITY | (hello.required_capabilities & terminal_only);
+        welcome.capabilities |= SHELL_FRAME_CAPABILITY | (hello.required_capabilities & options);
         Ok((welcome, limits))
     }
 

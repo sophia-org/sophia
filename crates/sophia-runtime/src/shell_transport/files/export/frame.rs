@@ -27,10 +27,14 @@ impl ShellFiles {
         capabilities: u64,
         revision: u16,
     ) -> Result<bool, Errno> {
+        use sophia_protocol::shell_files::{
+            SHELL_FRAME_LEAN_CAPABILITY, SHELL_FRAME_TERMINAL_ONLY_CAPABILITY,
+        };
         if revision != SHELL_FRAME_REVISION
             && capabilities
                 & (SHELL_FRAME_CAPABILITY
-                    | sophia_protocol::shell_files::SHELL_FRAME_TERMINAL_ONLY_CAPABILITY)
+                    | SHELL_FRAME_TERMINAL_ONLY_CAPABILITY
+                    | SHELL_FRAME_LEAN_CAPABILITY)
                 == 0
         {
             return Ok(false);
@@ -42,11 +46,14 @@ impl ShellFiles {
         let supported = ((1 << 11) - 1)
             | crate::owned_ring_protocol::CAPABILITY
             | SHELL_FRAME_CAPABILITY
-            | sophia_protocol::shell_files::SHELL_FRAME_TERMINAL_ONLY_CAPABILITY;
+            | SHELL_FRAME_TERMINAL_ONLY_CAPABILITY
+            | SHELL_FRAME_LEAN_CAPABILITY;
         if !cfg!(feature = "experimental-native-frame-transaction")
             || revision != SHELL_FRAME_REVISION
             || capabilities & required != required
             || capabilities & !supported != 0
+            || (capabilities & SHELL_FRAME_LEAN_CAPABILITY != 0
+                && capabilities & SHELL_FRAME_TERMINAL_ONLY_CAPABILITY == 0)
             || self.catalog_allowed
             || self.descriptor
             || self.image.as_ref().is_none_or(|image| {
@@ -59,6 +66,12 @@ impl ShellFiles {
             return Err(Errno::EACCES);
         }
         Ok(true)
+    }
+
+    /// Negotiated bit 20: a complete `frame-submit` commit carries its ACK in
+    /// the header word, gets no Submitted record and is recycled at admission.
+    pub(super) fn lean(&self) -> bool {
+        self.capabilities & sophia_protocol::shell_files::SHELL_FRAME_LEAN_CAPABILITY != 0
     }
 
     pub(super) fn submission_revision(&self) -> u16 {

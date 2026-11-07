@@ -12,7 +12,8 @@ int sf_descriptor_offer(const struct sophia_sf_negotiate *offer)
             (caps & (SOPHIA_SF_CAP_OWNED_RING | (UINT64_C(1) << 7))) != (SOPHIA_SF_CAP_OWNED_RING | (UINT64_C(1) << 7))) return 0;
         ordinary.minimum_revision = ordinary.maximum_revision = 8;
         ordinary.required_capabilities &= ~(SOPHIA_SFT_CAPABILITY | SOPHIA_SF_CAP_OWNED_RING |
-                                            SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY);
+                                            SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY |
+                                            SOPHIA_SFT_LEAN_CAPABILITY);
         return sf_descriptor_offer(&ordinary);
     }
     if (!offer->minimum_revision || offer->minimum_revision > revision || !(caps & 1) ||

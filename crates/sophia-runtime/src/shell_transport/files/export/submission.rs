@@ -227,10 +227,14 @@ impl ShellFiles {
     }
 
     pub(super) fn submit(&mut self, bytes: &[u8]) -> Result<(), Errno> {
-        self.submit_transaction(bytes)
+        self.submit_transaction(bytes, false)
     }
 
-    pub(super) fn submit_decoded(&mut self, submit: ShellFileSubmit) -> Result<(), Errno> {
+    pub(super) fn submit_decoded(
+        &mut self,
+        submit: ShellFileSubmit,
+        lean: bool,
+    ) -> Result<(), Errno> {
         // A pending image refusal blocks every further submission until
         // it is emitted. An identical retry of the accepted submission
         // that produced it returns accepted success and retries
@@ -297,10 +301,14 @@ impl ShellFiles {
         )
         .map_err(|_| Errno::EINVAL)?;
         // Every fallible check precedes custody transfer, including journal
-        // capacity. Custody records never use the terminal reserve.
-        let sequence = self
-            .journal
-            .append(ShellFileKind::Submitted, &body, false)?;
+        // capacity. Custody records never use the terminal reserve. A lean
+        // commit publishes none: its exact Rwrite is the receipt.
+        let sequence = if lean {
+            0
+        } else {
+            self.journal
+                .append(ShellFileKind::Submitted, &body, false)?
+        };
         let staging = self.staging.take().expect("candidate checked");
         self.accepted = Some(Accepted {
             submit,
@@ -323,6 +331,10 @@ impl ShellFiles {
             self.inbound.push_back(inbound);
         }
         self.apply(effect);
+        if lean {
+            // Nothing is retained for a lean commit; a repeat is EALREADY.
+            self.recycle_transaction();
+        }
         Ok(())
     }
 }

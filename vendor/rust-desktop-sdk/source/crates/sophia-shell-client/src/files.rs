@@ -81,6 +81,9 @@ enum QueuedKind {
 /// same pass that saw the refusal.
 const RETRY_FIRST: Duration = Duration::from_millis(4);
 const RETRY_MAX: Duration = Duration::from_millis(256);
+/// Under lean, how long an automatic ACK waits for a commit to carry it
+/// before going out alone; well under the host's 2 s ACK progress timeout.
+const LEAN_ACK_HOLD: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SubmissionPhase {
@@ -234,6 +237,11 @@ pub(crate) struct FileWire {
     retained_event: Option<(u64, events::Event)>,
     retained_event_consumed: bool,
     ack_tag: Option<Tag>,
+    /// The current lean commit carries an unconfirmed ACK in its header word;
+    /// `queue_ack` holds off until that write answers.
+    folded_ack: bool,
+    /// Since when an automatic ACK has been held for a lean commit to carry.
+    ack_held_since: Option<Instant>,
     object_fetch: Option<ObjectFetch>,
     snapshot_failure: Option<crate::SnapshotFetchFailure>,
     pending_objects: [Option<ShellFileObjectPublished>; FEEDS.len()],

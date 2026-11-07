@@ -31,7 +31,9 @@ pub(crate) fn bit(on: bool, flag: u8) -> u8 {
 }
 
 #[cfg(feature = "native-session")]
-const NAMES: [&str; 7] = ["ring", "journal", "wire", "fd", "native", "deadline", "service"];
+const NAMES: [&str; 7] = [
+    "ring", "journal", "wire", "fd", "native", "deadline", "service",
+];
 #[cfg(feature = "native-session")]
 const BUCKETS: usize = 1 << NAMES.len();
 
@@ -60,7 +62,9 @@ impl WaitCauses {
 
     #[cfg(test)]
     pub(crate) fn waits(&self) -> u64 {
-        self.0.iter().fold(0, |sum, count| sum.saturating_add(*count))
+        self.0
+            .iter()
+            .fold(0, |sum, count| sum.saturating_add(*count))
     }
 }
 

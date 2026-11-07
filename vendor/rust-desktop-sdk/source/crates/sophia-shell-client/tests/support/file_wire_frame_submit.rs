@@ -1,6 +1,101 @@
 use super::*;
 use file_wire_peer::FrameSubmitOptions;
 
+fn retained_head() -> (ShellConnection, Peer, u64) {
+    let (connection, mut peer) = connected(FrameSubmitOptions::default());
+    let mut connection = connection.unwrap();
+    connection.set_automatic_event_delivery(false).unwrap();
+    let ticket = connection.enqueue_frame(&commit_record()).unwrap().first;
+    let first = issued(&mut connection, &mut peer);
+    peer.answer_write(first.tag, first.data.len() as u32);
+    let submitted = receipt(&mut peer, &first);
+    peer.push(submitted);
+    let head = event(
+        &mut peer,
+        &ShellFrameRecord::Opened {
+            transaction: tx(10),
+            key: key(),
+            ttl_millis: 100,
+        },
+    );
+    peer.push(head);
+    drive(&mut connection, &mut peer, |c, _| {
+        c.custody(ticket) == Some(Custody::Submitted)
+            && c.journal_event().is_some()
+            && !c.journal_progress().ack_pending
+    })
+    .unwrap();
+    let sequence = connection.journal_event().unwrap().sequence;
+    assert!(connection.journal_progress().ack_limit < sequence);
+    peer.reset_logs();
+    (connection, peer, sequence)
+}
+
+#[test]
+fn consumed_head_ack_is_queued_before_an_already_ready_frame() {
+    let (mut connection, mut peer, sequence) = retained_head();
+    connection.consume_journal_event().unwrap();
+    connection.enqueue_frame(&commit_record()).unwrap();
+    eprintln!("ready-batch start");
+    connection.poll_io().unwrap();
+    eprintln!("ready-batch end");
+    peer.pump();
+    assert_eq!(peer.frame_writes.len(), 1);
+    let ack = peer
+        .log
+        .iter()
+        .position(|r| *r == Logged::Ack(sequence))
+        .unwrap();
+    let frame = peer
+        .log
+        .iter()
+        .position(|r| *r == Logged::FrameSubmit)
+        .unwrap();
+    assert!(
+        ack < frame,
+        "consumed-head ACK was ready before the frame: {:?}",
+        peer.log
+    );
+}
+
+#[test]
+fn ready_frame_does_not_ack_an_unconsumed_head_or_enable_manual_ack() {
+    for consume in [false, true] {
+        let (mut connection, mut peer, sequence) = retained_head();
+        if consume {
+            connection.set_automatic_journal_ack(false).unwrap();
+            connection.consume_journal_event().unwrap();
+        }
+        connection.enqueue_frame(&commit_record()).unwrap();
+        connection.poll_io().unwrap();
+        peer.pump();
+        assert_eq!(peer.frame_writes.len(), 1);
+        assert!(peer.acks.is_empty(), "ineligible ACK was sent");
+        assert_eq!(
+            connection.journal_progress().ack_limit,
+            sequence - u64::from(!consume)
+        );
+    }
+}
+
+#[test]
+fn ready_batch_respects_zero_byte_budget_and_recovers_without_peer_input() {
+    let (mut connection, mut peer, sequence) = retained_head();
+    connection.consume_journal_event().unwrap();
+    connection.enqueue_frame(&commit_record()).unwrap();
+    let now = Instant::now();
+    connection.dispatch(now, 0).unwrap();
+    peer.pump();
+    assert!(peer.frame_writes.is_empty() && peer.acks.is_empty());
+    connection.dispatch(now, 65536).unwrap();
+    peer.pump();
+    assert_eq!(peer.frame_writes.len(), 1);
+    assert_eq!(
+        peer.acks.iter().map(|ack| ack.sequence).collect::<Vec<_>>(),
+        [sequence]
+    );
+}
+
 fn connected(options: FrameSubmitOptions) -> (Result<ShellConnection, ShellClientError>, Peer) {
     let path = socket_path();
     let listener = UnixListener::bind(&path).unwrap();
@@ -309,4 +404,184 @@ fn disconnect_does_not_erase_known_acceptance_or_replay_unknown_custody() {
             })
         );
     }
+}
+
+fn lean_connected() -> (ShellConnection, Peer) {
+    let extra = SHELL_FRAME_TERMINAL_ONLY_CAPABILITY | SHELL_FRAME_LEAN_CAPABILITY;
+    let path = socket_path();
+    let listener = UnixListener::bind(&path).unwrap();
+    let mut offered = profile();
+    offered.capabilities |= extra;
+    let mut options = frame_options();
+    options.required_capabilities |= extra;
+    let thread = std::thread::spawn(move || {
+        Peer::frame_submit_handshake(listener, offered, FrameSubmitOptions::default())
+    });
+    let mut connection = ShellConnection::connect_files(&path, options).unwrap();
+    let mut peer = thread.join().unwrap();
+    std::fs::remove_file(path).unwrap();
+    connection.set_automatic_event_delivery(false).unwrap();
+    peer.reset_logs();
+    (connection, peer)
+}
+
+fn word(held: &Held) -> u64 {
+    u64::from_le_bytes(held.data[24..32].try_into().unwrap())
+}
+
+fn acks(peer: &Peer) -> Vec<u64> {
+    peer.log
+        .iter()
+        .filter_map(|r| match r {
+            Logged::Ack(sequence) => Some(*sequence),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Publishes one stream head and consumes it: its sequence is now above the
+/// confirmed ACK.
+fn consumed_head(connection: &mut ShellConnection, peer: &mut Peer, transaction: u64) -> u64 {
+    let head = event(
+        peer,
+        &ShellFrameRecord::Opened {
+            transaction: tx(transaction),
+            key: key(),
+            ttl_millis: 100,
+        },
+    );
+    peer.push(head);
+    drive(connection, peer, |c, _| c.journal_event().is_some()).unwrap();
+    let sequence = connection.journal_event().unwrap().sequence;
+    connection.consume_journal_event().unwrap();
+    sequence
+}
+
+#[test]
+fn lean_commit_carries_the_ack_and_its_rwrite_alone_is_custody() {
+    let (mut connection, mut peer) = lean_connected();
+    // Nothing consumed yet: no word, and no Submitted is needed.
+    let ticket = connection.enqueue_frame(&commit_record()).unwrap().first;
+    let first = issued(&mut connection, &mut peer);
+    assert_eq!(word(&first), 0);
+    peer.answer_write(first.tag, first.data.len() as u32);
+    drive(&mut connection, &mut peer, |c, _| {
+        c.custody(ticket) == Some(Custody::Submitted)
+    })
+    .unwrap();
+    assert!(acks(&peer).is_empty() && peer.transactions.is_empty() && peer.submits.is_empty());
+    assert!(connection.take_frame().unwrap().is_none());
+
+    // A consumed head is held, rides in the next commit, and the exact Rwrite confirms it.
+    let sequence = consumed_head(&mut connection, &mut peer, 10);
+    connection.poll_io().unwrap();
+    peer.pump();
+    assert!(
+        acks(&peer).is_empty(),
+        "lone ACK was not held: {:?}",
+        peer.log
+    );
+    let ticket = connection.enqueue_frame(&commit_record()).unwrap().first;
+    let second = issued(&mut connection, &mut peer);
+    assert_eq!(word(&second), sequence);
+    let progress = connection.journal_progress();
+    assert!(progress.queued == sequence && progress.acknowledged < sequence);
+    peer.answer_write(second.tag, second.data.len() as u32);
+    drive(&mut connection, &mut peer, |c, _| {
+        c.custody(ticket) == Some(Custody::Submitted)
+    })
+    .unwrap();
+    assert_eq!(connection.journal_progress().acknowledged, sequence);
+    assert!(acks(&peer).is_empty());
+
+    // A refused commit confirms nothing; the held ACK then goes out alone.
+    let sequence = consumed_head(&mut connection, &mut peer, 12);
+    let ticket = connection.enqueue_frame(&commit_record()).unwrap().first;
+    let third = issued(&mut connection, &mut peer);
+    assert_eq!(word(&third), sequence);
+    peer.answer_error(third.tag, 22);
+    drive(&mut connection, &mut peer, |c, _| {
+        c.custody(ticket) == Some(Custody::Refused(22))
+    })
+    .unwrap();
+    assert!(connection.journal_progress().acknowledged < sequence);
+    drive(&mut connection, &mut peer, |c, _| {
+        c.journal_progress().acknowledged == sequence
+    })
+    .unwrap();
+    assert_eq!(acks(&peer), [sequence]);
+}
+
+#[test]
+fn lean_paired_records_keep_the_covering_ack_and_submitted() {
+    let (mut connection, mut peer) = lean_connected();
+    let sequence = consumed_head(&mut connection, &mut peer, 10);
+    connection
+        .enqueue_frame(&ShellFrameRecord::Close {
+            transaction: tx(11),
+            key: key(),
+        })
+        .unwrap();
+    let held = submit(&mut connection, &mut peer);
+    assert_eq!(held.data.len(), 24);
+    assert_eq!(acks(&peer), [sequence]);
+    assert!(peer.frame_writes.is_empty());
+}
+
+#[test]
+fn lean_commit_after_a_paired_open_carries_the_covering_ack_itself() {
+    let (mut connection, mut peer) = lean_connected();
+    let open = connection.enqueue_frame(&open()).unwrap().first;
+    let held = submit(&mut connection, &mut peer);
+    peer.answer_write(held.tag, SHELL_FILE_SUBMIT_BYTES as u32);
+    let receipt = encode_shell_file_submitted_at_revision(
+        ShellFileHeader {
+            kind: ShellFileKind::Submitted,
+            connection_epoch: EPOCH,
+            submission_id: 0,
+            sequence: peer.take_sequence(),
+        },
+        ShellFileSubmitted {
+            submission_id: decode_shell_file_submit(&held.data).unwrap().submission_id,
+            candidate_kind: ShellFileKind::FrameStreamOpen,
+        },
+        13,
+    )
+    .unwrap();
+    peer.push(receipt);
+    drive(&mut connection, &mut peer, |c, _| {
+        c.custody(open) == Some(Custody::Submitted)
+    })
+    .unwrap();
+    peer.transactions.clear();
+    let before = acks(&peer);
+    let submitted = connection.journal_progress().handled;
+    // The Open's Submitted is handled but unacknowledged: the commit's word covers it.
+    let ticket = connection.enqueue_frame(&commit_record()).unwrap().first;
+    let commit = issued(&mut connection, &mut peer);
+    assert!(
+        word(&commit) >= submitted,
+        "{} < {submitted}",
+        word(&commit)
+    );
+    assert_eq!(acks(&peer), before);
+    peer.answer_write(commit.tag, commit.data.len() as u32);
+    drive(&mut connection, &mut peer, |c, _| {
+        c.custody(ticket) == Some(Custody::Submitted)
+    })
+    .unwrap();
+}
+
+#[test]
+fn submitted_naming_a_lean_commit_fails_closed() {
+    let (mut connection, mut peer) = lean_connected();
+    let ticket = connection.enqueue_frame(&commit_record()).unwrap().first;
+    let held = issued(&mut connection, &mut peer);
+    let receipt = receipt(&mut peer, &held);
+    peer.push(receipt);
+    let error = drive(&mut connection, &mut peer, |c, _| {
+        c.custody(ticket) == Some(Custody::Submitted)
+    })
+    .unwrap_err();
+    assert!(matches!(error, ShellClientError::Protocol(_)), "{error:?}");
 }

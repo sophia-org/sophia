@@ -68,7 +68,7 @@ fn whole_commit_deferral_and_error_restore_exact_scene_allocations() {
     let mut files = export();
     let bytes = golden("commit-copy-retire");
     let (_writer, submit) = stage(&mut files, &bytes);
-    files.submit_transaction(&submit).unwrap();
+    files.submit_transaction(&submit, false).unwrap();
     let expected = files.peek_frame_request().unwrap().clone();
     let ShellFrameRecord::Commit(frame) = &expected else {
         panic!()
@@ -126,7 +126,7 @@ fn whole_commit_deferral_and_error_restore_exact_scene_allocations() {
 fn stream_control_is_a_barrier_for_complete_commit_admission() {
     let mut files = export();
     let (_writer, submit) = stage(&mut files, &golden("open"));
-    files.submit_transaction(&submit).unwrap();
+    files.submit_transaction(&submit, false).unwrap();
     assert_eq!(
         files.with_frame_commit(|_| panic!("Open is not a scene")),
         Ok(None)

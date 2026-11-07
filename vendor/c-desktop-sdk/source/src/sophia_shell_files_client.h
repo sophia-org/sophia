@@ -38,6 +38,10 @@ struct sophia_sf_client {
     uint64_t event_offset, ack_pending, object_generation, object_qid;
     /* Retained custody blocks the next transaction open until this is acked. */
     uint64_t submitted_sequence;
+    /* Lean (bit 20): the ACK the in-flight complete commit carries in its
+     * header word, and the bound a caller sets before queueing one (0: the
+     * consumed sequence). sophia_ss sets the bound from its own ACK limit. */
+    uint64_t fold_sequence, fold_limit;
     struct sophia_sf_negotiate offer;
     struct sophia_sf_negotiated welcome;
     enum sophia_sf_profile profile;

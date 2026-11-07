@@ -250,7 +250,7 @@ impl PersistentXtermSessionConfig {
         let exit_after_input_proof = args.iter().any(|arg| arg == "--exit-after-input-proof");
         let native_scanout = args.iter().any(|arg| arg == "--native-scanout");
         let frame_transactions = frame_transactions::parse(args, native_scanout)?;
-    let frame_terminal_only = frame_transactions::parse_terminal_only(args, frame_transactions)?;
+        let (frame_terminal_only, frame_lean) = frame_transactions::options(args, frame_transactions)?;
         let shell_capture_destination_reuse =
             output_proof::parse_capture_destination_reuse(args, native_scanout)?;
         let namespace_profile_name = arg_value(args, "--namespace-profile")
@@ -940,7 +940,8 @@ impl PersistentXtermSessionConfig {
             shell_content_input_enabled,
             shell_capture_destination_reuse,
             frame_transactions,
-        frame_terminal_only,
+            frame_terminal_only,
+            frame_lean,
             shell_gpu_mode,
             shell_proof_restart_after_visible,
             wm_interface,

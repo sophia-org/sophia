@@ -161,7 +161,12 @@ pub(super) fn validate_header(header: ShellFileHeader) -> Result<(), ShellFileCo
     let valid = header.connection_epoch != 0
         && match shell_file_class(header.kind) {
             ShellFileClass::Object => header.submission_id == 0 && header.sequence == 0,
-            ShellFileClass::Candidate => header.submission_id != 0 && header.sequence == 0,
+            // A lean FrameCommit's word is a cumulative ACK; every other
+            // candidate keeps a zero word.
+            ShellFileClass::Candidate => {
+                header.submission_id != 0
+                    && (header.sequence == 0 || header.kind == ShellFileKind::FrameCommit)
+            }
             ShellFileClass::Event => header.submission_id == 0 && header.sequence != 0,
         };
     valid.then_some(()).ok_or(ShellFileCodecError::Identity)

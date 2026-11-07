@@ -57,6 +57,12 @@ impl ShellComponentProcesses {
         self.connections.enable_terminal_frame_transactions()
     }
 
+    /// Permit lean SFT commits (bit 20, with terminal-only) before any attempt is reserved.
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub fn enable_lean_frame_transactions(&mut self) -> Result<(), ComponentConnectionError> {
+        self.connections.enable_lean_frame_transactions()
+    }
+
     /// Enable the bar's explicit SFT negotiation before reserving any attempt.
     #[cfg(feature = "experimental-native-frame-transaction")]
     pub fn enable_frame_transactions(&mut self) -> Result<(), ComponentConnectionError> {

@@ -14,6 +14,10 @@ pub const SHELL_FRAME_REVISION: u16 = 13;
 pub const SHELL_FRAME_CAPABILITY: u64 = 1 << 18;
 /// Required r13 option: keep internal preparation, omit its wire notice.
 pub const SHELL_FRAME_TERMINAL_ONLY_CAPABILITY: u64 = 1 << 19;
+/// Required r13 option (needs bit 19): a complete `frame-submit` FrameCommit
+/// carries the cumulative ACK in its header sequence word and its exact Rwrite
+/// is custody; no Submitted record.
+pub const SHELL_FRAME_LEAN_CAPABILITY: u64 = 1 << 20;
 
 /// Exact binding of one stream; all words must be nonzero.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

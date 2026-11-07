@@ -426,6 +426,8 @@ impl FileWire {
             retained_event: None,
             retained_event_consumed: false,
             ack_tag: None,
+            folded_ack: false,
+            ack_held_since: None,
             object_fetch: None,
             snapshot_failure: None,
             pending_objects: [None; super::FEEDS.len()],

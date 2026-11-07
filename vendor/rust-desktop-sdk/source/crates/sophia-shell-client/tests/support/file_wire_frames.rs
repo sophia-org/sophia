@@ -455,3 +455,25 @@ fn terminal_only_uses_the_existing_role_negotiation() {
 
 #[path = "file_wire_frame_submit.rs"]
 mod combined;
+
+#[test]
+fn lean_requires_terminal_only_and_a_matching_grant() {
+    let both = SHELL_FRAME_TERMINAL_ONLY_CAPABILITY | SHELL_FRAME_LEAN_CAPABILITY;
+    for (requested, granted) in [
+        (both, both),
+        (both, SHELL_FRAME_TERMINAL_ONLY_CAPABILITY),
+        (SHELL_FRAME_TERMINAL_ONLY_CAPABILITY, both),
+        (SHELL_FRAME_LEAN_CAPABILITY, both),
+        (both, SHELL_FRAME_LEAN_CAPABILITY),
+    ] {
+        let mut options = frame_options();
+        let mut offered = profile();
+        options.required_capabilities |= requested;
+        offered.capabilities |= granted;
+        assert_eq!(
+            frame_connect(offered, options, 8192).is_ok(),
+            (requested, granted) == (both, both),
+            "requested {requested:#x} granted {granted:#x}"
+        );
+    }
+}

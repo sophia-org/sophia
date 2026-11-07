@@ -758,17 +758,7 @@ impl Export for ShellFiles {
             }
             (Node::Ack, _) if offset == 0 => {
                 let ack = decode_shell_file_ack(data).map_err(|_| Errno::EINVAL)?;
-                self.journal.ack(ack, Instant::now())?;
-                // A pending image refusal retries from ACK progress; its
-                // outcome never fails the acknowledgement itself.
-                let _ = self.retry_pending_image_refusal();
-                if self
-                    .accepted
-                    .as_ref()
-                    .is_some_and(|a| a.sequence <= ack.sequence)
-                {
-                    self.recycle_transaction();
-                }
+                self.apply_ack(ack)?;
                 Ok(data.len() as u32)
             }
             _ => Err(Errno::EINVAL),

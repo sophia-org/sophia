@@ -1,5 +1,13 @@
 # Provenance
 
+## Already-ready request batching, 2026-11-06
+
+Internal scheduling change on signed `564be8c7`: apply one buffered journal
+event before retiring outputs and queuing ready ACK/submission requests. The
+Sophia contract copies and wire vocabulary are unchanged. API-PARITY.md records
+the C ordering counterpart, tests and device-free proof; native qualification
+is separate. No production feature or default is enabled by this checkpoint.
+
 ## Complete-write SFT transport, 2026-11-06
 
 The optional `frame-submit` contract is copied verbatim from signed Sophia

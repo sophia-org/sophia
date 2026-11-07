@@ -50,7 +50,7 @@ impl ComponentFdReadiness {
         mut self,
         fds: impl IntoIterator<Item = (FdRole, bool)>,
     ) -> (Self, u8) {
-        use crate::owner_wait_causes::{bit, FD, JOURNAL, WIRE};
+        use crate::owner_wait_causes::{FD, JOURNAL, WIRE, bit};
         let mut ready = [false; 8];
         let mut registered = false;
         for (role, fired) in fds {

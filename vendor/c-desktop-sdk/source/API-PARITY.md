@@ -2132,3 +2132,33 @@ its existing caller-synchronized mapping lifetime. Tests independently upload an
 settle three resources before Open, reject a mismatched key and post-Open/Unknown
 use, and prove that initial uploads do not mint credit or send stream controls.
 This is SDK preparation for the real Lom producer, not native qualification.
+
+## SFT lean commits, bit 20 (2026-11-07)
+
+`SOPHIA_SFT_LEAN_CAPABILITY` (`1 << 20`) is an explicitly required r13 option
+on top of terminal-only: the grant must echo both bits exactly and a lean
+grant without bit 19 is refused. Under the option a complete FrameCommit on
+`frame-submit` carries a cumulative ACK in its header sequence word (0 when
+none) and its exact-count Rwrite alone is custody (`submitted`, stage 4 and
+on); a Submitted naming such a commit is `SOPHIA_9P_INVALID`. Open, Close and
+paired submissions keep their Submitted, zero word and ACK-gated writer reuse.
+`sf_validate` accepts a nonzero word only on a FrameCommit.
+
+The word is chosen when the commit is armed: the consumed sequence, bounded by
+`fold_limit`, which `sophia_ss` sets from `sophia_ss_ack_limit` at handoff so
+object holds still apply. While the folded commit is unanswered,
+`sophia_sf_client_ack`, `ack_through` and `sophia_ss_ack` return
+`SOPHIA_9P_BUSY`. The exact Rwrite raises `acked_sequence` to the word; EAGAIN
+keeps it for the identical retry; any other reply drops it unconfirmed and the
+caller's next ack re-covers it (an older `ack_through` after that can draw
+EINVAL from the host, as before). Disconnect with a lean commit on the wire is
+unknown custody, as for any issued submit.
+
+Rust comparison: Rust folds the automatic ACK bound at write time, holds a
+lone automatic ACK for 250 ms so the next commit can carry it, and rolls the
+queued value back on any non-exact reply. C has no automatic ACK and so no
+hold: a caller that wants the saving acknowledges only when no commit will
+follow. After a paired Open the C writer still waits for the caller's
+standalone ACK before the next commit is armed (stage 7), whereas Rust lets
+the first lean commit carry that covering ACK. Wire bytes, custody results
+and refusal classes match; no native performance claim.

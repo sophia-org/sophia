@@ -162,7 +162,10 @@ impl FileWire {
         if self.fatal.is_some() || self.peer_closed {
             None
         } else {
-            self.retry_deadline()
+            match (self.retry_deadline(), self.ack_hold_deadline()) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            }
         }
     }
 
@@ -213,6 +216,9 @@ impl FileWire {
                 return Ok(());
             }
             let mut progressed = drained || paired;
+            // Apply consumed heads before queuing their ACK, then retire completed
+            // outputs before reusing the outbound lane.
+            progressed |= self.process_buffered_event(inbox)?;
             for _ in 0..std::mem::take(&mut self.retire) {
                 output.retire_front();
             }
@@ -220,15 +226,18 @@ impl FileWire {
             // gather consumed events until this bounded drive is about to yield.
             if self.current.is_none()
                 && matches!(self.pending.front(), Some(super::QueuedKind::Record))
+                && self.automatic_ack
+                && !output
+                    .front()
+                    .is_some_and(|bytes| self.lean_direct_eligible(bytes))
             {
-                progressed |= self.maybe_send_ack()?;
+                progressed |= self.queue_ack()?;
             }
             progressed |= self.start_next_outbound(output)?;
             progressed |= self.queue_submit_with_record()?;
             progressed |= self.drive_submit_retry()?;
             progressed |= self.drive_object_fetch()?;
             progressed |= self.drive_image_fetch()?;
-            progressed |= self.process_buffered_event(inbox)?;
             progressed |= self.maybe_read_events(inbox)?;
             if !progressed
                 || budget.as_ref().is_some_and(IoBudget::exhausted)
@@ -354,13 +363,37 @@ impl FileWire {
         if !self.automatic_ack {
             return Ok(false);
         }
+        // Under lean the next complete commit carries the ACK; hold a lone
+        // one for a bounded time so a paused stream still acknowledges.
+        if self.lean()
+            && self.ack_tag.is_none()
+            && !self.folded_ack
+            && self.ack_limit() > self.acked
+        {
+            let now = self.dispatch_time.unwrap_or_else(std::time::Instant::now);
+            match self.ack_held_since {
+                None => {
+                    self.ack_held_since = Some(now);
+                    return Ok(false);
+                }
+                Some(since) if now < since + super::LEAN_ACK_HOLD => return Ok(false),
+                Some(_) => {}
+            }
+        }
         self.queue_ack()
+    }
+    /// When a held lean ACK must go out alone.
+    pub(super) fn ack_hold_deadline(&self) -> Option<std::time::Instant> {
+        self.ack_held_since
+            .filter(|_| self.ack_tag.is_none() && !self.folded_ack)
+            .map(|since| since + super::LEAN_ACK_HOLD)
     }
     fn queue_ack(&mut self) -> Result<bool, ShellClientError> {
         let sequence = self.ack_limit();
-        if self.ack_tag.is_some() || sequence <= self.acked {
+        if self.ack_tag.is_some() || self.folded_ack || sequence <= self.acked {
             return Ok(false);
         }
+        self.ack_held_since = None;
         let bytes = encode_shell_file_ack(ShellFileAck {
             connection_epoch: self.epoch,
             sequence,

@@ -8,6 +8,14 @@ pub(super) struct ReusableWriter {
     refusal: Option<Errno>,
 }
 
+/// Record identity ignores the header sequence word (a lean commit's ACK).
+fn same_record(staged: &[u8], bytes: &[u8]) -> bool {
+    staged.len() == bytes.len()
+        && staged.len() >= 32
+        && staged[..24] == bytes[..24]
+        && staged[32..] == bytes[32..]
+}
+
 impl ShellFiles {
     pub(super) fn submit_frame_record(&mut self, bytes: &[u8]) -> Result<u32, Errno> {
         let id = self.reuse_writer.as_ref().ok_or(Errno::ESTALE)?.id;
@@ -28,6 +36,18 @@ impl ShellFiles {
         if record.header.kind != ShellFileKind::FrameCommit {
             return Err(Errno::EINVAL);
         }
+        // Lean: the header word is a cumulative ACK, applied before admission
+        // and refusing the whole write before any effect; not part of identity.
+        let lean = self.lean();
+        if record.header.sequence != 0 {
+            if !lean {
+                return Err(Errno::EINVAL);
+            }
+            self.apply_ack(sophia_protocol::shell_files::ShellFileAck {
+                connection_epoch: record.header.connection_epoch,
+                sequence: record.header.sequence,
+            })?;
+        }
         let submit = encode_shell_file_submit(ShellFileSubmit {
             connection_epoch: record.header.connection_epoch,
             submission_id: record.header.submission_id,
@@ -36,18 +56,40 @@ impl ShellFiles {
         .map_err(|_| Errno::EINVAL)?;
         if let Some(accepted) = &self.accepted {
             // The submit header alone cannot distinguish a changed payload of equal length.
-            if accepted.handle != id || accepted.bytes != bytes {
+            if accepted.handle != id || !same_record(&accepted.bytes, bytes) {
                 return Err(EBUSY);
             }
         } else if !self
             .staging
             .as_ref()
-            .is_some_and(|staging| staging.handle == id && staging.bytes == bytes)
+            .is_some_and(|staging| staging.handle == id && same_record(&staging.bytes, bytes))
         {
             self.write_reusable_transaction(id, 0, bytes)?;
+            if lean && let Some(staging) = self.staging.as_mut() {
+                staging.bytes[24..32].fill(0);
+            }
         }
-        self.submit_transaction(&submit)?;
+        self.submit_transaction(&submit, lean)?;
         Ok(bytes.len() as u32)
+    }
+
+    /// The cumulative journal ACK, from `ack` or a lean commit's header word.
+    pub(super) fn apply_ack(
+        &mut self,
+        ack: sophia_protocol::shell_files::ShellFileAck,
+    ) -> Result<(), Errno> {
+        self.journal.ack(ack, Instant::now())?;
+        // A pending image refusal retries from ACK progress; its
+        // outcome never fails the acknowledgement itself.
+        let _ = self.retry_pending_image_refusal();
+        if self
+            .accepted
+            .as_ref()
+            .is_some_and(|a| a.sequence <= ack.sequence)
+        {
+            self.recycle_transaction();
+        }
+        Ok(())
     }
 
     pub(super) fn open_reusable_transaction(&mut self) -> Result<Handle, Errno> {
@@ -131,7 +173,8 @@ impl ShellFiles {
         }
     }
 
-    pub(super) fn submit_transaction(&mut self, data: &[u8]) -> Result<(), Errno> {
+    /// `lean`: a complete commit under bit 20, settled by its Rwrite alone.
+    pub(super) fn submit_transaction(&mut self, data: &[u8], lean: bool) -> Result<(), Errno> {
         let submit = decode_shell_file_submit(data).map_err(|_| Errno::EINVAL)?;
         if submit.connection_epoch != self.epoch {
             return Err(Errno::ESTALE);
@@ -139,7 +182,7 @@ impl ShellFiles {
         if let Some(error) = self.reuse_writer.as_ref().and_then(|w| w.refusal) {
             return Err(error);
         }
-        let result = self.submit_decoded(submit);
+        let result = self.submit_decoded(submit, lean);
         if let Err(error) = result
             && error != Errno::EAGAIN
             && let Some(writer) = self.reuse_writer.as_mut()

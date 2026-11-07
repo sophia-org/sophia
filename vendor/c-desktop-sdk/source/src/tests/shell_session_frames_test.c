@@ -220,8 +220,26 @@ static void terminal_only_negotiation(void)
     }
 }
 
+static void lean_negotiation(void)
+{
+    const uint64_t both = SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY | SOPHIA_SFT_LEAN_CAPABILITY;
+    const uint64_t requested[] = {both, both, SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY, SOPHIA_SFT_LEAN_CAPABILITY, both};
+    const uint64_t granted[] = {both, SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY, both, both, SOPHIA_SFT_LEAN_CAPABILITY};
+    for (unsigned i = 0; i < 5; ++i) {
+        struct rig r;
+        struct sophia_ss_config cfg = config;
+        struct sophia_sf_negotiated v = welcome;
+        cfg.offer.required_capabilities |= requested[i];
+        v.capabilities |= granted[i];
+        start_as(&r, &v, &cfg);
+        assert((sophia_ss_state(&r.s) == SOPHIA_SS_READY) == (i == 0));
+        rig_close(&r);
+    }
+}
+
 int main(void)
 {
+    lean_negotiation();
     terminal_only_negotiation();
     for (unsigned i = 0; i < 8; ++i) {
         const enum sophia_sf_profile roles[] = {SOPHIA_SF_BAR, SOPHIA_SF_LAUNCHER, SOPHIA_SF_DOCK, SOPHIA_SF_DESCRIPTOR};

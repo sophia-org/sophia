@@ -8,6 +8,9 @@
 #define SOPHIA_SFT_CAPABILITY (UINT64_C(1) << 18)
 /* Required r13 option; internal preparation remains mandatory. */
 #define SOPHIA_SFT_TERMINAL_ONLY_CAPABILITY (UINT64_C(1) << 19)
+/* Required r13 option (needs bit 19): a complete frame-submit commit carries the
+ * cumulative ACK in its header sequence word and its exact Rwrite is custody. */
+#define SOPHIA_SFT_LEAN_CAPABILITY (UINT64_C(1) << 20)
 #define SOPHIA_SFT_MAX_BYTES 8192u
 enum sophia_sft_kind {
     SOPHIA_SFT_OPENED = 55,

@@ -118,8 +118,8 @@ int sf_validate(const struct sophia_sf_record *r)
     } else if (k < 256) {
         if (r->header.submission || !r->header.sequence)
             return -1;
-    } else if (!r->header.submission || r->header.sequence)
-        return -1;
+    } else if (!r->header.submission || (r->header.sequence && k != SOPHIA_SFT_COMMIT))
+        return -1; /* Only a lean FrameCommit carries a word: its cumulative ACK. */
     switch (k) {
     case SOPHIA_SF_NEGOTIATE:
         return !r->value.negotiate.minimum_revision ||

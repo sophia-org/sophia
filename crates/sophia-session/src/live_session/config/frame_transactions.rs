@@ -45,18 +45,53 @@ pub(super) fn parse_terminal_only(
     args: &[String],
     frame_transactions: bool,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    const FLAG: &str = "--experimental-native-frame-terminal-only";
-    let count = args.iter().filter(|arg| arg.as_str() == FLAG).count();
+    parse_option(
+        args,
+        "--experimental-native-frame-terminal-only",
+        "--experimental-native-frame-transaction",
+        frame_transactions,
+    )
+}
+
+/// Lean commits (bit 20) need terminal-only (bit 19), as on the wire.
+pub(super) fn parse_lean(
+    args: &[String],
+    terminal_only: bool,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    parse_option(
+        args,
+        "--experimental-native-frame-lean",
+        "--experimental-native-frame-terminal-only",
+        terminal_only,
+    )
+}
+
+/// `(terminal_only, lean)` for the owner's SFT permission.
+pub(super) fn options(
+    args: &[String],
+    frame_transactions: bool,
+) -> Result<(bool, bool), Box<dyn std::error::Error>> {
+    let terminal_only = parse_terminal_only(args, frame_transactions)?;
+    Ok((terminal_only, parse_lean(args, terminal_only)?))
+}
+
+fn parse_option(
+    args: &[String],
+    flag: &str,
+    requires: &str,
+    satisfied: bool,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let count = args.iter().filter(|arg| arg.as_str() == flag).count();
     if count > 1
         || args.iter().any(|arg| {
-            arg.strip_prefix(FLAG)
+            arg.strip_prefix(flag)
                 .is_some_and(|suffix| suffix.starts_with('='))
         })
     {
-        return Err(format!("{FLAG} is a single, valueless flag").into());
+        return Err(format!("{flag} is a single, valueless flag").into());
     }
-    if count != 0 && !frame_transactions {
-        return Err(format!("{FLAG} requires --experimental-native-frame-transaction").into());
+    if count != 0 && !satisfied {
+        return Err(format!("{flag} requires {requires}").into());
     }
     Ok(count == 1)
 }

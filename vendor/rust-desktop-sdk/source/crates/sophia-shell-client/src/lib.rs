@@ -1122,6 +1122,17 @@ fn validate_image_options(
             "terminal-only requires SFT",
         ));
     }
+    if options.required_capabilities
+        & sophia_shell_protocol::shell_files::SHELL_FRAME_LEAN_CAPABILITY
+        != 0
+        && options.required_capabilities
+            & sophia_shell_protocol::shell_files::SHELL_FRAME_TERMINAL_ONLY_CAPABILITY
+            == 0
+    {
+        return Err(ShellClientError::InvalidArgument(
+            "lean requires terminal-only",
+        ));
+    }
     let revision = if frame {
         sophia_shell_protocol::shell_files::SHELL_FRAME_REVISION
     } else {

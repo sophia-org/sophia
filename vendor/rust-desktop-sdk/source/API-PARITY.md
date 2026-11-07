@@ -1,5 +1,30 @@
 # C and Rust SDK API parity
 
+## Already-ready request batching, 2026-11-06
+
+On Rust base `564be8c7a6c20b3100fd6345b2df7aa0b542737a`, each drive round
+applies its one buffered/consumed journal event before retiring completed
+outputs and queuing outgoing requests. This permits a now-eligible cumulative
+ACK and an already queued FrameCommit to share the pipeline's existing send.
+There is no batching delay, new record or public API. The request bytes, ACK
+holds, manual-ACK policy, retry/custody rules and I/O budgets remain unchanged.
+The change may send the newer ACK before the frame where the old scheduling
+sent that ACK afterwards; it still never acknowledges an unconsumed head.
+
+C `8b7beb3b9ae802b1a26ac51e42ae74b98601a7fc` updates its consumed watermark
+synchronously in `sophia_sf_client_event_consume`, so it has no deferred Rust
+head application to move. Its queued operations retain separate output slots;
+this is semantic/ordering compatibility, not a claim of equal syscall counts.
+No C implementation or ABI change is needed for this internal Rust scheduling
+change. Independent conformance remains the authority on custody, not sends.
+
+The failing-before scripted test changes two sends into one for an eligible
+ACK/frame pair. Controls cover retained heads, disabled automatic ACK and a
+zero-byte dispatch followed by progress without peer input. The actual producer
+fixture also exercises co-sent ACK/FrameCommit packets, with unchanged frame
+payloads. Evidence: `~/.local/state/sophia-sft-ready-batch-01`. No native CPU or
+owner-pass improvement is established by these device-free observations.
+
 ## Optional complete-write SFT transport, 2026-11-06
 
 Paired bases: Rust `fd9330b64fb415dab8daacb769bcca835b546661`,
@@ -1957,3 +1982,38 @@ C comparison 0df720b0b1af7dd793f55b2bceac867bc1261b6b has caller-composed
 poll/dispatch and no hidden convenience drive before sleep (see the event-loop
 matrix). No C implementation change is needed. No host SDK snapshot is changed
 by this checkpoint; the native reference peer explicitly pins the corrected SDK.
+
+## SFT lean commits, bit 20 (2026-11-07)
+
+`SHELL_FRAME_LEAN_CAPABILITY` (`1 << 20`) is an explicitly required r13 option
+on top of terminal-only; a request with bit 20 and without bit 19 is refused
+before connecting, and the grant must echo both bits exactly. Under the
+option a complete FrameCommit written to `frame-submit` carries the automatic
+cumulative ACK in its header sequence word (0 when nothing new is handled),
+and its exact-count Rwrite alone settles `Custody::Submitted`; a Submitted
+record naming such a commit is a protocol error. Open, Close and any commit
+on the paired `transaction`+`submit` path keep their Submitted record, zero
+word and the covering ACK queued ahead of the writer. The header word is
+confirmed only by the exact Rwrite; any other reply rolls the queued value
+back to the confirmed one and a retry re-folds a fresh bound, so repeats are
+idempotent and values monotone. The client keeps one ACK in flight: no
+header word while a standalone `ack` is pending and no standalone `ack`
+while a folded commit is pending.
+
+With automatic ACK a lone ACK is held for `LEAN_ACK_HOLD` (250 ms, well under
+the host's 2 s progress timeout) so the next commit can carry it; the hold
+deadline joins `wake_deadline`, so `wait_for_io` wakes to send it when no
+commit follows. Manual ACK policy and disconnect classification (a commit on
+the wire at disconnect is Unknown) are unchanged. The protocol codec accepts
+a nonzero sequence word only on a FrameCommit candidate; every other
+candidate keeps the zero rule.
+
+C comparison: the C client has no automatic ACK, so it has no hold. Under
+lean, `sophia_ss_submit` records the session's current ACK limit and the
+next complete commit carries it; `sophia_sf_client_ack` and `ack_through`
+answer `SOPHIA_9P_BUSY` while a folded commit is in flight. A caller that
+wants the saving acknowledges only when no commit will follow. A definitive
+refusal of a folded commit leaves `acked_sequence` unmoved; the caller's next
+`ack` re-covers it (an older `ack_through` after that can draw EINVAL from
+the host, as it always could). Same wire bytes, custody results and refusal
+classes; no native performance claim.

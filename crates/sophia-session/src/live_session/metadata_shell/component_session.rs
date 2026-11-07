@@ -132,14 +132,20 @@ impl ShellComponentSession {
 
     /// The first native SFT profile is an authenticated, CPU-only bar.
     #[cfg(feature = "experimental-native-frame-transaction")]
-    pub(crate) fn enable_frame_transactions(&mut self, terminal_only: bool) -> Result<()> {
+    pub(crate) fn enable_frame_transactions(
+        &mut self,
+        terminal_only: bool,
+        lean: bool,
+    ) -> Result<()> {
         if !self.plans.iter().any(|plan| {
             plan.selection().role == ShellComponentRole::Bar
                 && plan.selection().gpu == ShellGpuMode::Denied
         }) {
             return Err("SFT requires a selected bar with gpu denied".into());
         }
-        if terminal_only {
+        if lean {
+            self.processes.enable_lean_frame_transactions()?;
+        } else if terminal_only {
             self.processes.enable_terminal_frame_transactions()?;
         } else {
             self.processes.enable_frame_transactions()?;

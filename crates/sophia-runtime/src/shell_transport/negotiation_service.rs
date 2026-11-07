@@ -23,6 +23,7 @@ pub(super) struct PendingNegotiation {
     /// Owner permission for this one handshake, never inherited by a replacement.
     pub(super) frame_transactions: bool,
     pub(super) frame_terminal_only: bool,
+    pub(super) frame_lean: bool,
 }
 
 pub(super) enum Stage {
@@ -34,6 +35,19 @@ pub(super) enum Stage {
 }
 
 impl ShellComponentTransport {
+    /// Also permit lean commits (bit 20) for this handshake; requires terminal-only.
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub fn begin_lean_frame_file_negotiation(
+        &mut self,
+        epochs: &crate::ContentEpochRegistry,
+        connection_epoch: u64,
+        timeout: Duration,
+        policy: ShellContentAdmissionPolicy,
+    ) -> Result<(), ShellTransportError> {
+        self.begin_terminal_frame_file_negotiation(epochs, connection_epoch, timeout, policy)?;
+        self.negotiation.as_mut().expect("just started").frame_lean = true;
+        Ok(())
+    }
     /// Permit the required bit-19 option for this one SFT handshake.
     /// Ordinary r13 requests still receive Prepared notices.
     #[cfg(feature = "experimental-native-frame-transaction")]
@@ -137,6 +151,7 @@ impl ShellComponentTransport {
             descriptor: false,
             frame_transactions: false,
             frame_terminal_only: false,
+            frame_lean: false,
         });
         Ok(())
     }

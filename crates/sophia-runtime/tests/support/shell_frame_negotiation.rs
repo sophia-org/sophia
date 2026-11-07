@@ -309,3 +309,45 @@ fn terminal_only_requires_a_separate_owner_permission_and_exact_peer_request() {
         "permission must not survive a replacement handshake"
     );
 }
+
+#[cfg(feature = "experimental-native-frame-transaction")]
+#[test]
+fn lean_requires_terminal_only_and_a_separate_owner_permission() {
+    use sophia_protocol::shell_files::{
+        SHELL_FRAME_LEAN_CAPABILITY as LEAN, SHELL_FRAME_TERMINAL_ONLY_CAPABILITY as TERMINAL,
+    };
+    let mut owner = Owner::new(ContentStoreProfile::Legacy);
+    owner
+        .state
+        .begin_terminal_frame_file_negotiation(&owner.epochs, 1, Duration::from_secs(2), GRANTED)
+        .unwrap();
+    assert!(
+        owner.select(13, CAPS | TERMINAL | LEAN, GRANTED).is_err(),
+        "terminal-only permission does not include lean"
+    );
+    let mut owner = Owner::new(ContentStoreProfile::Legacy);
+    owner
+        .state
+        .begin_lean_frame_file_negotiation(&owner.epochs, 1, Duration::from_secs(2), GRANTED)
+        .unwrap();
+    assert!(
+        owner.select(13, CAPS | LEAN, GRANTED).is_err(),
+        "lean needs terminal-only"
+    );
+    assert_eq!(
+        owner
+            .select(13, CAPS | TERMINAL, GRANTED)
+            .unwrap()
+            .capabilities
+            & LEAN,
+        0
+    );
+    assert_eq!(
+        owner
+            .select(13, CAPS | TERMINAL | LEAN, GRANTED)
+            .unwrap()
+            .capabilities
+            & (TERMINAL | LEAN),
+        TERMINAL | LEAN
+    );
+}

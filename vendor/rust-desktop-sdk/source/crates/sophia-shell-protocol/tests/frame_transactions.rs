@@ -351,3 +351,20 @@ fn value_encoding_rejects_invalid_profile_without_creating_bytes() {
         .push(value.candidate.surfaces[0].clone());
     assert!(shell_frame_record_bytes(header, &ShellFrameRecord::Commit(value), 13).is_err());
 }
+
+#[test]
+fn only_a_frame_commit_may_carry_a_nonzero_sequence_word() {
+    for (name, accepted) in [
+        ("commit-copy-retire", true),
+        ("open", false),
+        ("close", false),
+    ] {
+        let mut bytes = named(name);
+        bytes[24..32].copy_from_slice(&7u64.to_le_bytes());
+        assert_eq!(
+            decode(&bytes, ShellFileClass::Candidate).is_ok(),
+            accepted,
+            "{name}"
+        );
+    }
+}

@@ -146,8 +146,8 @@ fn fragmented_frames_transfer_whole_once_and_receipt_ack_does_not_consume_input(
         count += 1;
         let mut files = export();
         let (_writer, submit) = stage(&mut files, &bytes);
-        files.submit_transaction(&submit).unwrap();
-        files.submit_transaction(&submit).unwrap();
+        files.submit_transaction(&submit, false).unwrap();
+        files.submit_transaction(&submit, false).unwrap();
         assert_eq!(files.inbound.len(), 1, "{name}");
         let journal = journal_bytes(&files);
         let receipt = decode_shell_file_submitted_at_revision(&journal, 13).unwrap();
@@ -231,7 +231,7 @@ fn malformed_or_over_grant_frames_never_acquire_file_custody() {
             _ => unreachable!(),
         }
         let (_writer, submit) = stage(&mut files, &bytes);
-        assert!(files.submit_transaction(&submit).is_err());
+        assert!(files.submit_transaction(&submit, false).is_err());
         assert!(files.accepted.is_none());
         assert!(files.inbound.is_empty());
         assert_eq!(files.submission_watermark, 0);
@@ -251,7 +251,7 @@ fn receipt_backpressure_leaves_frame_bytes_and_identity_available_for_retry() {
     );
     let bytes = golden("commit-copy-retire");
     let (_writer, submit) = stage(&mut files, &bytes);
-    assert_eq!(files.submit_transaction(&submit), Err(Errno::EAGAIN));
+    assert_eq!(files.submit_transaction(&submit, false), Err(Errno::EAGAIN));
     assert!(files.accepted.is_none());
     assert!(files.inbound.is_empty());
     assert_eq!(files.submission_watermark, 0);
@@ -265,7 +265,7 @@ fn receipt_backpressure_leaves_frame_bytes_and_identity_available_for_retry() {
         Instant::now(),
     );
     files.journal.enable_frame_revision();
-    files.submit_transaction(&submit).unwrap();
+    files.submit_transaction(&submit, false).unwrap();
     assert_eq!(files.inbound.len(), 1);
 }
 
@@ -274,7 +274,7 @@ fn legacy_file_negotiation_cannot_submit_frame_requests() {
     for name in ["open", "close", "commit-retained", "commit-copy-retire"] {
         let mut files = fixture();
         let (_writer, submit) = stage(&mut files, &golden(name));
-        assert!(files.submit_transaction(&submit).is_err());
+        assert!(files.submit_transaction(&submit, false).is_err());
         assert!(files.inbound.is_empty());
         assert!(files.accepted.is_none());
     }
@@ -288,3 +288,5 @@ mod copy_owner;
 
 #[path = "shell_frame_combined_submit_proof.rs"]
 mod combined_submit_proof;
+#[path = "shell_frame_lean_submit_proof.rs"]
+mod lean_submit_proof;

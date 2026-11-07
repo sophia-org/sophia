@@ -264,3 +264,52 @@ Ordinary Candidate traffic and unopted SFT streams retain their existing
 Prepared records. Default-off SFT policy, native completion and custody checks
 are unchanged. Protocol compatibility and device-free accounting proofs are
 separate from native CPU/latency qualification.
+
+## Lean commits (r13, required capability bit 20)
+
+`FRAME_LEAN` (`0x100000`) is an additive option at exactly revision 13. The
+request and grant must both include bit 20, bit 19, bit 18, owned-ring bit 15
+and all existing content-role prerequisites; the owner must separately permit
+it. Bit 20 without bit 19, unsupported required bits and unsolicited or
+missing bit 20 grants refuse negotiation. The option is immutable for the
+connection. Without bit 20 nothing below applies and every record keeps its
+existing bytes and events.
+
+Lean semantics apply only to FrameCommit records written whole to the
+`frame-submit` node. FrameStreamOpen, FrameStreamClose and any commit that
+takes the paired `transaction`+`submit` path keep their Submitted record,
+their zero sequence word and the ACK-gated writer reuse above.
+
+Header word: the u64 at offset 24 of a lean FrameCommit is a cumulative
+journal acknowledgement, 0 meaning none. A nonzero word has exactly the
+meaning of the 16-byte `ack` write (`docs/sophia-output-files.md`): the host
+applies it after the envelope and epoch checks and before admission. An exact
+repeat is idempotent; an older or unretained sequence refuses the whole write
+with EINVAL before any effect. A later admission refusal does not undo an
+applied acknowledgement. A client keeps one acknowledgement in flight: no
+header word while a standalone `ack` write is unanswered, and no standalone
+`ack` while a lean commit carrying a word is unanswered. On any reply other
+than the exact-count Rwrite the client treats the word as not confirmed and
+re-covers it later; repeats are idempotent and values are monotone. The
+standalone `ack` node is unchanged and still required when no commit is
+queued: idle, close and manual ACK policy. Every other FrameCommit decoder
+keeps the zero-sequence rule; a nonzero word outside a negotiated lean
+`frame-submit` write is EINVAL.
+
+No Submitted record: a lean commit emits no kind 18 event. Rwrite of the
+complete record length is acceptance and file custody. Any other reply is not
+custody; EAGAIN retains the same staged bytes and identity (compared ignoring
+bytes 24..32), and retry resends the complete record with a fresh word. A
+repeated submission id after acceptance is EALREADY, which a lean client
+treats as unknown custody and fails closed. The host recycles the reusable
+writer at admission: nothing is retained for a lean commit, so the covering
+ACK gates reuse only for Open, Close and paired records. A reply can be lost
+only through disconnect, which ends the epoch: a client with a lean commit on
+the wire at disconnect reports unknown custody and never replays it under a
+new epoch. Both SDKs reject a Submitted record naming a lean commit.
+
+Prepared stays elided by bit 19; terminal outcomes, ResourceReleased, credit,
+source status and all record layouts are unchanged. Per frame a lean stream
+publishes two journal records (terminal and ResourceReleased) and the client
+writes once. Default-off, native completion, custody checks and the separate
+native CPU qualification are unchanged.

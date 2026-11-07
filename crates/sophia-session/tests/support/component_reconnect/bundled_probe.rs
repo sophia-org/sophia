@@ -5,7 +5,7 @@ use sophia_shell_client::{FrameStream, RingOfferState, RingUpload};
 #[test]
 fn bundled_copy_preserves_source_and_frame_credit_through_component_transport() {
     let mut h = Harness::new();
-    h.owner.enable_frame_transactions(false).unwrap();
+    h.owner.enable_frame_transactions(false, false).unwrap();
     let (key, mut peer) = wire::connect_revision(&mut h.owner, 0, 13);
     h.owner
         .with_service(key, |_, t| wire::allocate_extent(t, &mut peer, 1))

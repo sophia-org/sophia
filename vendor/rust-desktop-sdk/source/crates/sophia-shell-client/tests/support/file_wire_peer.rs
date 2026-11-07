@@ -112,6 +112,7 @@ pub struct Ack {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Logged {
     Ack(u64),
+    FrameSubmit,
     Walk(String),
     Open(String),
     ObjectRead { node: String, returned: usize },
@@ -851,7 +852,10 @@ impl Peer {
                         self.answer_write(tag, count);
                     }
                     "submit" => self.submits.push_back(Held { tag, data }),
-                    "frame-submit" => self.frame_writes.push_back(Held { tag, data }),
+                    "frame-submit" => {
+                        self.log.push(Logged::FrameSubmit);
+                        self.frame_writes.push_back(Held { tag, data });
+                    }
                     "owned-ring-v1" => {
                         self.control_writes.push(data);
                         self.answer_write(tag, count);

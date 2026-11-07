@@ -105,3 +105,27 @@ fn terminal_only_requires_explicit_sft_and_a_single_valueless_flag() {
     assert!(parse(&[FLAG, FLAG], true).is_err());
     assert!(parse(&["--experimental-native-frame-terminal-only=true"], true).is_err());
 }
+
+#[test]
+fn lean_requires_terminal_only_and_a_single_valueless_flag() {
+    const FLAG: &str = "--experimental-native-frame-lean";
+    let args = |args: &[&str]| {
+        args.iter()
+            .map(|arg| (*arg).into())
+            .collect::<Vec<String>>()
+    };
+    let parse =
+        |flags: &[&str], terminal_only| frame_transactions::parse_lean(&args(flags), terminal_only);
+    assert!(!parse(&[], false).unwrap());
+    assert!(parse(&[FLAG], false).is_err());
+    assert!(parse(&[FLAG], true).unwrap());
+    assert!(parse(&[FLAG, FLAG], true).is_err());
+    assert!(parse(&["--experimental-native-frame-lean=true"], true).is_err());
+    let both = args(&["--experimental-native-frame-terminal-only", FLAG]);
+    assert_eq!(
+        frame_transactions::options(&both, true).unwrap(),
+        (true, true)
+    );
+    assert!(frame_transactions::options(&both[1..], true).is_err());
+    assert!(frame_transactions::options(&both, false).is_err());
+}

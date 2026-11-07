@@ -1,14 +1,24 @@
-tree 3d483f4ff9fed630571bda4d37f6472f164572d3
-parent 1e3b5a607a7d891d127dd996a3cf466539f660ec
-author Mason Green <mason@greenm01.net> 1794014547 -0500
-committer Mason Green <mason@greenm01.net> 1794014547 -0500
+tree 0b43ca564baf13a095b11b109adcaed986ba0168
+parent 8b7beb3b9ae802b1a26ac51e42ae74b98601a7fc
+author Mason Green <mason@greenm01.net> 1794059032 -0500
+committer Mason Green <mason@greenm01.net> 1794059032 -0500
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCau59UxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLuLQEAosMWEm9656waeW0sSlPp
- Y+8ImGuejPB2OW7o/dyx7s4A/1r3bUbkHBkyshDC6PU7b+JpPeL9tN9T6SsNEcPL
- mZsK
- =SKaM
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCau8rGBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIm3wEA/HUHJgMtJVuq73WhCla/
+ 7TUn+b/0wZhU8DP5/I03f80BALjDMOYCuPnjZlyjhl0r5obupfIRLn1vTLREkdR4
+ 8hYK
+ =Rii2
  -----END PGP SIGNATURE-----
 
-Use optional complete-write SFT submission under the reusable writer
+Add lean SFT commits (bit 20): header-word ACK, Rwrite-only custody
+
+SOPHIA_SFT_LEAN_CAPABILITY (1 << 20) is an explicitly required r13 option on
+top of terminal-only. A complete frame-submit FrameCommit carries the
+cumulative ACK in its header sequence word, bounded by the session ACK limit
+at handoff, and its exact Rwrite alone is custody; a Submitted naming it is
+INVALID. Standalone acks answer BUSY while a folded commit is in flight;
+EAGAIN keeps the word for the identical retry, any other reply drops it
+unconfirmed. sf_validate accepts a nonzero word only on a FrameCommit. Open,
+Close and paired submissions are unchanged. Spec copy of the wire contract
+updated with the lean section; API-PARITY records the Rust comparison.

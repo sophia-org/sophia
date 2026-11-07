@@ -223,7 +223,7 @@ impl Fixture {
         .unwrap();
         let files = self.transport.files_mut().unwrap().export_mut();
         let (_writer, submit) = stage(files, &bytes);
-        files.submit_transaction(&submit).unwrap();
+        files.submit_transaction(&submit, false).unwrap();
     }
 }
 
