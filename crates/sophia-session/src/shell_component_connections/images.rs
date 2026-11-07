@@ -49,6 +49,7 @@ pub(super) fn configure(
     })
 }
 
+#[cfg(feature = "native-session")]
 pub(crate) fn configure_transport(
     transport: &mut sophia_runtime::ShellComponentTransport,
     limits: &sophia_protocol::ContentLimits,
