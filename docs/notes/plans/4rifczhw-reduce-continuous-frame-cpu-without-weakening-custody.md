@@ -20,6 +20,17 @@ It does not reopen their completed exits or replace `todo.md` as the task ledger
 The exit is a separately qualified improvement, or a documented no-change result
 for each selected mechanism. A profile share is not a savings target.
 
+## November 7: lean SFT, publication hold and deferred reads landed
+
+Three bounded SFT steps are [qualified and integrated](../milestones/dcamg9hl-qualify-lean-sft-commits-publication-hold-and-deferred-event-reads.md):
+lean commits (bit 20) -61.5 to -60.5, the publication hold -59.6 to -58.7 and
+the opt-in deferred `events` re-arm -20.5 to -19.5 µs/frame, each against its
+own control on the changing bar lane. Owner wait-cause receipts show one wire
+pass per frame remaining; the lean frame wakes the owner four times. The next
+candidate must name the pass it removes and what that pass does, not a flat
+per-pass cost; the Service deadline pass is first. The FrameCommit redesign
+below keeps its 350 µs/frame target and its own gates.
+
 ## November 4: native FrameCommit design checkpoint
 
 The refreshed matched CPU reference is complete: Sophia 1032.5–1075, Niri

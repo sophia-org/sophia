@@ -7,6 +7,8 @@ They do not revive work, close a current milestone, or change acceptance gates.
 
 ## Milestone records
 
+- 2026-11-07: [Lean SFT commits, publication hold and deferred event reads qualified](../milestones/dcamg9hl-qualify-lean-sft-commits-publication-hold-and-deferred-event-reads.md) — three negotiated or opt-in SFT options, each a separately demonstrated bar-workload saving; the lean frame wakes the owner four times per frame.
+
 - 2026-11-03: [Native GL CPU upload reuse qualified on changing and retained layers](../milestones/5euoyv1f-qualify-native-gl-cpu-upload-reuse-on-changing-and-retained-layers.md) — changing-strip nonregression and a retained-workload CPU saving, with pixel and custody checks; broader desktop acceptance remains separate.
 
 - 2026-10-15: [Administrative commands accepted on the shared 9P core](../milestones/eh89zpqc-administrative-commands-accepted-on-the-shared-9p-core.md) — qualified transport, installed command and WM-restart smoke, retained release rollback.
