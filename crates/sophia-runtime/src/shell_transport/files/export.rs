@@ -463,10 +463,14 @@ impl ShellFiles {
             decode_shell_file_resource_status(&record).map_err(|_| Errno::EINVAL)?;
         }
         let sequence = self.journal.append(kind, body, credited)?;
-        if kind == ShellFileKind::CandidateOutcome {
-            // Lean requires terminal-only, so every journaled outcome
-            // settles one in-flight frame.
-            self.lean_frames_in_flight = self.lean_frames_in_flight.saturating_sub(1);
+        match kind {
+            // Lean requires terminal-only, so every journaled frame outcome
+            // settles one in-flight frame; a stream close ends them all.
+            ShellFileKind::FrameOutcome => {
+                self.lean_frames_in_flight = self.lean_frames_in_flight.saturating_sub(1);
+            }
+            ShellFileKind::FrameStreamClosed => self.lean_frames_in_flight = 0,
+            _ => {}
         }
         Ok(sequence)
     }

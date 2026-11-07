@@ -148,8 +148,13 @@ fn lean_frame_in_flight_holds_source_records_until_its_outcome_is_journaled() {
         !files.publish_image_records(),
         "source records wait for the terminal"
     );
+    // A legacy candidate outcome is not a frame terminal.
     files
         .append_event(ShellFileKind::CandidateOutcome, &[0; 40], false)
+        .unwrap();
+    assert_eq!(files.lean_frames_in_flight, 1);
+    files
+        .append_event(ShellFileKind::FrameOutcome, &[0; 116], false)
         .unwrap();
     assert_eq!(files.lean_frames_in_flight, 0);
     assert!(files.publish_image_records());
