@@ -101,7 +101,10 @@ let owner_notifier = owner_wake.notifier();
 let mut owner_cost = owner_cost::Recorder::new(owner_wake.statistics().passes);
 let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
     'session: loop {
-        owner_cost.begin_pass();
+        owner_cost.begin_pass([
+            native_scanout.as_ref().map_or(0, |native| native.render_worker_cpu_ns()),
+            shell_components.as_ref().map_or(0, |components| components.image_worker_cpu_ns()),
+        ]);
         // Before any producer is inspected, so a ring that lands during this
         // pass stays readable and ends the pass's wait at once. Idle waits
         // are bounded by authority_wait_timeout (at most 25 ms).

@@ -111,6 +111,7 @@ pub(super) fn run_worker<D>(
         }
         outputs.retain(|_, state| !state.claim.is_detached());
         observation_order = observation_order.saturating_add(1);
+        let _charge = super::lifecycle::CpuCharge::begin(&control);
         match command {
             #[cfg(all(test, feature = "experimental-shell-capture"))]
             WorkerCommand::FailCaptureService => captures.fail_next_service(),

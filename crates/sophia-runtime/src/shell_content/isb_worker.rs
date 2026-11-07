@@ -6,7 +6,7 @@ use std::io;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     mpsc,
 };
 use std::time::Instant;
@@ -59,6 +59,11 @@ struct Pending {
     submitted: bool,
 }
 
+fn thread_cpu_ns() -> u64 {
+    let t = rustix::time::clock_gettime(rustix::time::ClockId::ThreadCPUTime);
+    u64::try_from(t.tv_sec).unwrap_or(0) * 1_000_000_000 + u64::try_from(t.tv_nsec).unwrap_or(0)
+}
+
 /// Result-channel disconnection alone cannot wake an eventfd waiter. Signal
 /// on every thread exit, including unwinding, after the result sender drops.
 struct NotifyOnExit(sophia_wake::Notifier);
@@ -86,9 +91,16 @@ pub struct IsbValidationWorker {
     max_jobs: usize,
     max_bytes: usize,
     wake: Wake,
+    /// Thread CPU the validation thread spent on jobs, cumulative nanoseconds.
+    cpu_ns: Arc<AtomicU64>,
 }
 
 impl IsbValidationWorker {
+    /// Cumulative validation-thread CPU, for the owner's diagnostic cost rows.
+    pub fn cpu_ns(&self) -> u64 {
+        self.cpu_ns.load(Ordering::Relaxed)
+    }
+
     pub fn new(max_jobs: usize, max_bytes: usize) -> io::Result<Self> {
         Self::with_validation_budget(max_jobs, max_bytes, super::ISB_PIXEL_VALIDATION_BYTES)
     }
@@ -114,6 +126,8 @@ impl IsbValidationWorker {
         let notify = wake.notifier();
         let (sender, jobs) = mpsc::sync_channel::<Job>(max_jobs);
         let (results, completed) = mpsc::sync_channel(max_jobs);
+        let cpu_ns = Arc::new(AtomicU64::new(0));
+        let cpu_total = Arc::clone(&cpu_ns);
         // No callback or owner state enters this thread. Each job returns one
         // owned result before the worker starts another; the queue is bounded.
         std::thread::Builder::new()
@@ -126,12 +140,14 @@ impl IsbValidationWorker {
                 let mut raster = None;
                 while let Ok(job) = jobs.recv() {
                     let id = job.id;
+                    let started = thread_cpu_ns();
                     let result = validate(
                         job,
                         validation_bytes,
                         #[cfg(feature = "experimental-draw")]
                         &mut raster,
                     );
+                    cpu_total.fetch_add(thread_cpu_ns().saturating_sub(started), Ordering::Relaxed);
                     if completion_sender
                         .send(IsbValidationCompletion { job: id, result })
                         .is_err()
@@ -149,6 +165,7 @@ impl IsbValidationWorker {
             max_jobs,
             max_bytes,
             wake,
+            cpu_ns,
         })
     }
 

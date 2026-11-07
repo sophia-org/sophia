@@ -52,3 +52,17 @@ package reducer tests cover field shapes, identity, continuity, complete joins,
 boundaries and explicit refusals. Evidence is recorded under
 `~/.local/state/sophia-sft-owner-cost-source-01` and the fresh diagnostic package;
 no native result is claimed at this source checkpoint.
+
+## November 7: worker clocks beside the owner phases (schema 2)
+
+After the lean, publication-hold and deferred-read steps the owner wakes four
+times per frame, so the October 6 phase split (7.26 passes) is stale. Each
+`sophia_owner_cost` row now also carries `render_cpu_ns` and `image_cpu_ns`:
+the cumulative thread CPU of the renderer worker (`WorkerControl::cpu_ns`,
+charged per served command) and of the ISB validation worker
+(`IsbValidationWorker::cpu_ns`, charged per job), read just before the pass
+starts. A reducer takes the window delta of each, so one instrumented arm
+yields owner phases, the two worker threads and, by subtraction from the
+process clock, the GL composition remainder. The counters are two clock reads
+and one relaxed add per job on each worker; the row columns stay behind
+`diagnostic-owner-cost`. Diagnostic only; nothing schedules on them.

@@ -271,6 +271,10 @@ impl ShellComponentProcesses {
     }
 
     #[cfg(feature = "native-session")]
+    pub(crate) fn image_worker_cpu_ns(&self) -> u64 {
+        self.connections.image_worker_cpu_ns()
+    }
+
     pub(crate) fn fd_readiness(&self) -> crate::shell_component_connections::ComponentFdReadiness {
         self.connections.fd_readiness()
     }

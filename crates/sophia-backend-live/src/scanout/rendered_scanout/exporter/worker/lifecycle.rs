@@ -156,6 +156,9 @@ pub(super) struct WorkerControl {
     // Read by worker.rs; renderer_worker_shutdown mounts this file alone.
     #[allow(dead_code)]
     pub(super) result_wake: sophia_wake::WakeSlot,
+    /// Thread CPU this worker spent serving commands, cumulative nanoseconds;
+    /// read by the owner's diagnostic cost rows.
+    cpu_ns: std::sync::atomic::AtomicU64,
     #[cfg(feature = "experimental-shell-capture")]
     pub(super) command_wake: sophia_wake::WakeSlot,
     /// The Session owner wake rung by every capture-preparation reply and
@@ -179,6 +182,36 @@ impl WorkerControl {
     pub fn is_shutdown(&self) -> bool {
         self.shutdown.load(Ordering::Acquire)
     }
+
+    // renderer_worker_shutdown mounts this file alone, where no command runs.
+    #[allow(dead_code)]
+    pub fn cpu_ns(&self) -> u64 {
+        self.cpu_ns.load(Ordering::Relaxed)
+    }
+}
+
+/// Charges the worker thread's CPU for one command to its control on drop.
+#[allow(dead_code)]
+pub(super) struct CpuCharge<'a>(&'a WorkerControl, u64);
+
+#[allow(dead_code)]
+impl<'a> CpuCharge<'a> {
+    pub(super) fn begin(control: &'a WorkerControl) -> Self {
+        Self(control, thread_cpu_ns())
+    }
+}
+
+impl Drop for CpuCharge<'_> {
+    fn drop(&mut self) {
+        let spent = thread_cpu_ns().saturating_sub(self.1);
+        self.0.cpu_ns.fetch_add(spent, Ordering::Relaxed);
+    }
+}
+
+#[allow(dead_code)]
+fn thread_cpu_ns() -> u64 {
+    let t = rustix::time::clock_gettime(rustix::time::ClockId::ThreadCPUTime);
+    u64::try_from(t.tv_sec).unwrap_or(0) * 1_000_000_000 + u64::try_from(t.tv_nsec).unwrap_or(0)
 }
 
 /// One registration owns one claim; a delayed detach cannot name its replacement.

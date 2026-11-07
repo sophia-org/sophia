@@ -213,4 +213,13 @@ impl LiveProductionNativeScanout {
         });
         (self.retirement_owner_identity(), progress)
     }
+
+    /// Cumulative renderer-worker thread CPU over every card group, for the
+    /// owner's diagnostic cost rows; not a scheduling input.
+    pub fn render_worker_cpu_ns(&self) -> u64 {
+        self.groups
+            .iter()
+            .filter_map(|group| group.renderer_core.as_ref())
+            .fold(0_u64, |sum, core| sum.saturating_add(core.cpu_ns()))
+    }
 }

@@ -640,6 +640,17 @@ impl ShellComponentConnections {
         }
     }
 
+    /// Cumulative image-worker thread CPU over every connection, for the
+    /// owner's diagnostic cost rows; not a scheduling input.
+    pub fn image_worker_cpu_ns(&self) -> u64 {
+        self.connections
+            .iter()
+            .filter_map(|connection| connection.images.as_ref())
+            .fold(0_u64, |sum, owner| {
+                sum.saturating_add(owner.worker_cpu_ns())
+            })
+    }
+
     /// Active wire deadlines and retained image jobs may shorten the wait.
     pub fn authentication_wait(&self, now: std::time::Instant) -> std::time::Duration {
         let wait = self

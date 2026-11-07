@@ -14,7 +14,7 @@ impl Recorder {
     pub(super) fn new(_: u64) -> Self {
         Self
     }
-    pub(super) fn begin_pass(&mut self) {}
+    pub(super) fn begin_pass(&mut self, _: [u64; 2]) {}
     pub(super) fn phase(&mut self, _: Phase) {}
     pub(super) fn measure<T>(&mut self, _: Phase, f: impl FnOnce() -> T) -> T {
         f()
@@ -50,6 +50,8 @@ mod enabled {
         start: Stamp,
         end: Stamp,
         cpu: [u64; 4],
+        /// Cumulative render-worker and image-worker thread CPU at pass start.
+        workers: [u64; 2],
     }
     pub(crate) struct Recorder {
         rows: Vec<Row>,
@@ -57,6 +59,7 @@ mod enabled {
         last_cpu: u64,
         phase: Phase,
         cpu: [u64; 4],
+        workers: [u64; 2],
         overflow: u64,
         initial_passes: u64,
     }
@@ -68,6 +71,7 @@ mod enabled {
                 last_cpu: 0,
                 phase: Phase::Other,
                 cpu: [0; 4],
+                workers: [0; 2],
                 overflow: 0,
                 initial_passes,
             }
@@ -90,6 +94,7 @@ mod enabled {
                         start,
                         end,
                         cpu: self.cpu,
+                        workers: self.workers,
                     });
                 }
             }
@@ -100,8 +105,11 @@ mod enabled {
             self.phase = Phase::Other;
             self.cpu = [0; 4];
         }
-        pub(crate) fn begin_pass(&mut self) {
+        /// `workers`: cumulative render-worker and image-worker thread CPU
+        /// read just before this pass, so a window's delta is theirs.
+        pub(crate) fn begin_pass(&mut self, workers: [u64; 2]) {
             self.begin_at(stamp());
+            self.workers = workers;
         }
         fn phase_at(&mut self, phase: Phase, cpu: u64) {
             self.charge(cpu);
@@ -121,7 +129,7 @@ mod enabled {
             self.close(stamp());
             for (i, row) in self.rows.iter().enumerate() {
                 crate::session_println!(
-                    "sophia_owner_cost schema=1 pass={} start_ns={} start_after_ns={} end_before_ns={} end_ns={} cpu_start_ns={} cpu_end_ns={} other_ns={} components_ns={} native_ns={} authority_ns={}",
+                    "sophia_owner_cost schema=2 pass={} start_ns={} start_after_ns={} end_before_ns={} end_ns={} cpu_start_ns={} cpu_end_ns={} other_ns={} components_ns={} native_ns={} authority_ns={} render_cpu_ns={} image_cpu_ns={}",
                     i + 1,
                     row.start.wall,
                     row.start.after,
@@ -132,11 +140,13 @@ mod enabled {
                     row.cpu[0],
                     row.cpu[1],
                     row.cpu[2],
-                    row.cpu[3]
+                    row.cpu[3],
+                    row.workers[0],
+                    row.workers[1]
                 );
             }
             crate::session_println!(
-                "sophia_owner_cost_end schema=1 rows={} overflow={} complete={} pid={} tid={} initial_passes={} final_passes={}",
+                "sophia_owner_cost_end schema=2 rows={} overflow={} complete={} pid={} tid={} initial_passes={} final_passes={}",
                 self.rows.len(),
                 self.overflow,
                 complete,

@@ -542,6 +542,11 @@ impl ShellComponentSession {
         self.processes.fd_readiness()
     }
 
+    /// Cumulative image-worker thread CPU, for the owner's diagnostic cost rows.
+    pub(crate) fn image_worker_cpu_ns(&self) -> u64 {
+        self.processes.image_worker_cpu_ns()
+    }
+
     pub fn discard_readiness(&self) {
         self.processes.discard_readiness();
     }

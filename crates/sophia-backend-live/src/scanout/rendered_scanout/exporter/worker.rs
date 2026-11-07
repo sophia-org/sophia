@@ -280,6 +280,11 @@ impl NativeGbmRendererWorkerCore {
         }))
     }
 
+    /// Cumulative thread CPU the renderer worker spent serving commands.
+    pub fn cpu_ns(&self) -> u64 {
+        self.control.cpu_ns()
+    }
+
     /// Queue one inventory generation; the caller retains its original descriptors until acknowledged.
     pub fn request_image_import_device_replacement(
         &self,

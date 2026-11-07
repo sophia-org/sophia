@@ -23,6 +23,11 @@ pub struct ShellIsbImageOwner {
 }
 
 impl ShellIsbImageOwner {
+    /// Cumulative validation-worker thread CPU, for the owner's diagnostic cost rows.
+    pub fn worker_cpu_ns(&self) -> u64 {
+        self.worker.cpu_ns()
+    }
+
     pub fn new(max_resource_bytes: usize, validation_bytes: usize) -> std::io::Result<Self> {
         Ok(Self {
             jobs: IsbImageJobs::default(),
