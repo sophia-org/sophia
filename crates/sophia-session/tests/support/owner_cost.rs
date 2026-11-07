@@ -77,6 +77,9 @@ fn emitted_record_and_footer_exercise_real_formatter() {
     let mut r = Recorder::new(7);
     r.begin_pass([1, 2], 4, [3, 1]);
     assert_eq!((r.cause, r.turns), (4, [3, 1]));
+    r.begin_pass([1, 2], 8, [4, 2]);
+    // The wait that ended at the second loop top closes the first row.
+    assert_eq!(r.rows[0].cause, 8);
     r.measure(Phase::Components, || std::hint::black_box(1));
     r.finish(true, 8);
 }

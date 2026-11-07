@@ -117,12 +117,15 @@ mod enabled {
         }
         /// `workers`: cumulative render-worker and image-worker thread CPU
         /// read just before this pass, so a window's delta is theirs.
-        /// `cause`: bits of the wait that woke this pass. `turns`: cumulative
-        /// component wire turns and ready turns before this pass.
+        /// `cause`: bits of the wait that just ended. A row runs from one
+        /// loop top to the next and its wait precedes its work, so that wait
+        /// belongs to the row being closed here (cpu-decomp-02 recorded it one
+        /// row late). `turns`: cumulative component wire turns and ready turns
+        /// before this pass.
         pub(crate) fn begin_pass(&mut self, workers: [u64; 2], cause: u8, turns: [u64; 2]) {
+            self.cause = cause;
             self.begin_at(stamp());
             self.workers = workers;
-            self.cause = cause;
             self.turns = turns;
         }
         fn phase_at(&mut self, phase: Phase, cpu: u64) {
