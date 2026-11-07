@@ -8,6 +8,9 @@ impl ShellFiles {
         status: &ContentResourceStatus,
         body: &[u8],
     ) -> Result<Option<u64>, Errno> {
+        // Refusals are published at once; only an acceptance may wait for
+        // the lean frame it belongs to.
+        let publish = status.status != 2 || self.publish_image_records();
         let Some(credit) = self.owned.live.iter_mut().flatten().find(|c| {
             // Cancellation keeps its own transaction id. Resource custody is
             // unique among live offers, so consume the exact owed status once.
@@ -27,6 +30,7 @@ impl ShellFiles {
             credit.status.ok_or(Errno::EINVAL)?,
             ShellFileKind::ResourceStatus,
             body,
+            publish,
         )?;
         credit.status = None;
         self.owned.published = sequence;
@@ -120,6 +124,7 @@ impl ShellFiles {
         reason: u16,
         changed_generation: bool,
     ) -> Result<(), Errno> {
+        let publish = reason != 0 || self.publish_image_records();
         let slot = self
             .owned
             .live
@@ -130,7 +135,7 @@ impl ShellFiles {
         if credit.status.is_some() {
             return Err(Errno::EAGAIN);
         }
-        let sequence = self.journal.append_owned_event(
+        let sequence = self.journal.append_owned_event_with(
             credit.release,
             Event {
                 kind: EventKind::SlotReleased,
@@ -141,6 +146,7 @@ impl ShellFiles {
                 reason,
                 changed_generation,
             },
+            publish,
         )?;
         self.owned.published = sequence;
         *slot = None;

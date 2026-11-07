@@ -124,3 +124,49 @@ fn lean_backpressure_retry_keeps_identity_without_the_word() {
     assert!(files.accepted.is_none() && files.staging.is_none());
     assert_eq!(files.inbound.len(), 1);
 }
+
+#[test]
+fn lean_frame_in_flight_holds_source_records_until_its_outcome_is_journaled() {
+    let mut files = lean_export();
+    let _writer = files.open(&Node::TransactionReuse, OpenFlags(2)).unwrap();
+    let bytes = golden("commit-copy-retire");
+    assert_eq!(lean(&mut files, &bytes), Ok(bytes.len() as u32));
+    assert!(
+        files.publish_image_records(),
+        "nothing in flight before admission"
+    );
+    let accepted = files.with_frame_commit(|input| {
+        input.take();
+        Ok(crate::ContentFrameAdmission::Accepted { copy_job: None })
+    });
+    assert!(matches!(
+        accepted,
+        Ok(Some(crate::ContentFrameAdmission::Accepted { .. }))
+    ));
+    assert_eq!(files.lean_frames_in_flight, 1);
+    assert!(
+        !files.publish_image_records(),
+        "source records wait for the terminal"
+    );
+    files
+        .append_event(ShellFileKind::CandidateOutcome, &[0; 40], false)
+        .unwrap();
+    assert_eq!(files.lean_frames_in_flight, 0);
+    assert!(files.publish_image_records());
+    // Without bit 20 the same admission holds nothing.
+    let mut files = export();
+    files.capabilities |= SHELL_FRAME_TERMINAL_ONLY_CAPABILITY;
+    let _writer = files.open(&Node::TransactionReuse, OpenFlags(2)).unwrap();
+    assert_eq!(
+        files.write(&Node::FrameSubmit, &mut Handle::Plain, 0, &bytes),
+        Ok(bytes.len() as u32)
+    );
+    files
+        .with_frame_commit(|input| {
+            input.take();
+            Ok(crate::ContentFrameAdmission::Accepted { copy_job: None })
+        })
+        .unwrap();
+    assert_eq!(files.lean_frames_in_flight, 0);
+    assert!(files.publish_image_records());
+}

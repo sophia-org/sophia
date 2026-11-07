@@ -65,6 +65,9 @@ impl ShellFiles {
                 self.inbound.remove(at);
             }
         }
+        if self.lean() && matches!(decision, Ok(ContentFrameAdmission::Accepted { .. })) {
+            self.lean_frames_in_flight += 1;
+        }
         decision.map(Some)
     }
 }

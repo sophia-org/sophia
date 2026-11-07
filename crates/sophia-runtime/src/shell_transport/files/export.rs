@@ -248,6 +248,8 @@ pub(in crate::shell_transport) struct ShellFiles {
     pending_image_refusal: Option<PendingImageRefusal>,
     pending_image_closed: Option<ShellChannelClosed>,
     submission_watermark: u64,
+    /// Lean commits admitted and not yet settled by a journaled outcome.
+    lean_frames_in_flight: u32,
     journal: Journal,
     inbound: VecDeque<Inbound>,
     #[cfg(feature = "experimental-draw")]
@@ -323,6 +325,7 @@ impl ShellFiles {
             pending_image_refusal: None,
             pending_image_closed: None,
             submission_watermark: 0,
+            lean_frames_in_flight: 0,
             journal: Journal::new(epoch, bounds, now),
             inbound: VecDeque::with_capacity(INBOUND_RECORDS),
             #[cfg(feature = "experimental-draw")]
@@ -459,7 +462,13 @@ impl ShellFiles {
             .map_err(|_| Errno::EINVAL)?;
             decode_shell_file_resource_status(&record).map_err(|_| Errno::EINVAL)?;
         }
-        self.journal.append(kind, body, credited)
+        let sequence = self.journal.append(kind, body, credited)?;
+        if kind == ShellFileKind::CandidateOutcome {
+            // Lean requires terminal-only, so every journaled outcome
+            // settles one in-flight frame.
+            self.lean_frames_in_flight = self.lean_frames_in_flight.saturating_sub(1);
+        }
+        Ok(sequence)
     }
 
     /// Authoritative store settlement, including a cancel's own transaction.

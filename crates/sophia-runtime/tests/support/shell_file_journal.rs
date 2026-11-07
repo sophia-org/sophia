@@ -47,14 +47,20 @@ fn held_close_survives_credited_record_and_byte_exhaustion() {
         let size = journal.size();
         let records = journal.records();
         assert_eq!(
-            journal.append_consuming_reservation(reservation, ShellFileKind::ImageLimits, &closed),
+            journal.append_consuming_reservation(
+                reservation,
+                ShellFileKind::ImageLimits,
+                &closed,
+                true
+            ),
             Err(Errno::EINVAL)
         );
         assert_eq!(
             journal.append_consuming_reservation(
                 reservation,
                 ShellFileKind::ChannelClosed,
-                &closed[..8]
+                &closed[..8],
+                true
             ),
             Err(Errno::EINVAL)
         );
@@ -63,7 +69,8 @@ fn held_close_survives_credited_record_and_byte_exhaustion() {
             journal.append_consuming_reservation(
                 reservation,
                 ShellFileKind::ChannelClosed,
-                &closed
+                &closed,
+                true
             ),
             Ok(records as u64 + 1)
         );
@@ -71,7 +78,8 @@ fn held_close_survives_credited_record_and_byte_exhaustion() {
             journal.append_consuming_reservation(
                 reservation,
                 ShellFileKind::ChannelClosed,
-                &closed
+                &closed,
+                true
             ),
             Err(Errno::EINVAL)
         );
@@ -112,6 +120,7 @@ fn four_offer_pairs_and_close_keep_independent_terminal_capacity() {
                     held[index],
                     ShellFileKind::Submitted,
                     &body(sizes[index] - 32),
+                    true,
                 )
                 .unwrap();
             assert_eq!(journal.records(), before + 1);
@@ -119,7 +128,8 @@ fn four_offer_pairs_and_close_keep_independent_terminal_capacity() {
                 journal.append_consuming_reservation(
                     held[index],
                     ShellFileKind::Submitted,
-                    &body(sizes[index] - 32)
+                    &body(sizes[index] - 32),
+                    true
                 ),
                 Err(Errno::EINVAL)
             );
@@ -136,20 +146,20 @@ fn released_and_foreign_epoch_handles_cannot_spend_a_reused_slot() {
     assert_ne!(old, new);
     journal.release_reservation(old);
     assert_eq!(
-        journal.append_consuming_reservation(old, ShellFileKind::Submitted, &body(16)),
+        journal.append_consuming_reservation(old, ShellFileKind::Submitted, &body(16), true),
         Err(Errno::EINVAL)
     );
     journal
-        .append_consuming_reservation(new, ShellFileKind::Submitted, &body(16))
+        .append_consuming_reservation(new, ShellFileKind::Submitted, &body(16), true)
         .unwrap();
     let mut successor = Journal::new(2, BOUNDS, Instant::now());
     let own = successor.hold_reservation(48).unwrap();
     assert_eq!(
-        successor.append_consuming_reservation(old, ShellFileKind::Submitted, &body(16)),
+        successor.append_consuming_reservation(old, ShellFileKind::Submitted, &body(16), true),
         Err(Errno::EINVAL)
     );
     successor
-        .append_consuming_reservation(own, ShellFileKind::Submitted, &body(16))
+        .append_consuming_reservation(own, ShellFileKind::Submitted, &body(16), true)
         .unwrap();
 }
 
@@ -174,10 +184,10 @@ fn holds_cannot_overbook_terminal_bytes_even_with_free_record_slots() {
         .is_ok()
     {}
     journal
-        .append_consuming_reservation(second, ShellFileKind::Submitted, &body(16))
+        .append_consuming_reservation(second, ShellFileKind::Submitted, &body(16), true)
         .unwrap();
     journal
-        .append_consuming_reservation(replacement, ShellFileKind::Submitted, &body(16))
+        .append_consuming_reservation(replacement, ShellFileKind::Submitted, &body(16), true)
         .unwrap();
 }
 
@@ -428,4 +438,49 @@ mod terminal_reserve {
             }
         );
     }
+}
+
+#[test]
+fn deferred_records_stay_unread_until_the_next_published_record() {
+    let mut journal = Journal::new(1, BOUNDS, Instant::now());
+    let before = journal.size();
+    let status = journal.hold_reservation(48).unwrap();
+    let release = journal.hold_reservation(48).unwrap();
+    journal
+        .append_consuming_reservation(status, ShellFileKind::Submitted, &body(16), false)
+        .unwrap();
+    journal
+        .append_consuming_reservation(release, ShellFileKind::Submitted, &body(16), false)
+        .unwrap();
+    assert_eq!(journal.records(), 2, "deferred records are journaled");
+    assert_eq!(journal.size(), before, "but not yet visible");
+    assert_eq!(journal.read(before, u32::MAX), Ok(ReadOutcome::Pending));
+    assert_eq!(
+        journal.read(before + 48, u32::MAX),
+        Ok(ReadOutcome::Pending)
+    );
+    journal
+        .append(ShellFileKind::Submitted, &body(16), false)
+        .unwrap();
+    assert_eq!(journal.size(), before + 144);
+    let Ok(ReadOutcome::Ready(bytes)) = journal.read(before, u32::MAX) else {
+        panic!("one read carries the deferred run and its publisher");
+    };
+    assert_eq!(bytes.len(), 144);
+    // A published consuming append reveals what it follows; a later
+    // deferred record starts a fresh run.
+    let next = journal.hold_reservation(48).unwrap();
+    journal
+        .append_consuming_reservation(next, ShellFileKind::Submitted, &body(16), false)
+        .unwrap();
+    assert_eq!(journal.size(), before + 144);
+    let last = journal.hold_reservation(48).unwrap();
+    journal
+        .append_consuming_reservation(last, ShellFileKind::Submitted, &body(16), true)
+        .unwrap();
+    assert_eq!(journal.size(), before + 240);
+    assert_eq!(
+        journal.read(before + 240, u32::MAX),
+        Ok(ReadOutcome::Pending)
+    );
 }

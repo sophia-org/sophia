@@ -23,6 +23,17 @@ impl Journal {
         reservation: JournalReservation,
         event: Event,
     ) -> Result<u64, Errno> {
+        self.append_owned_event_with(reservation, event, true)
+    }
+
+    /// As [`Self::append_owned_event`]; with `publish` false the record
+    /// stays unread until the next published record follows it.
+    pub(in crate::shell_transport) fn append_owned_event_with(
+        &mut self,
+        reservation: JournalReservation,
+        event: Event,
+        publish: bool,
+    ) -> Result<u64, Errno> {
         let slot = self
             .held
             .iter()
@@ -36,8 +47,11 @@ impl Journal {
         let mut limits = self.append_limits(true);
         limits.records += 1;
         limits.bytes += held;
+        let start = self.custody.size();
         let prepared = self.custody.prepare(bytes, limits)?;
         self.held[slot] = None;
-        Ok(prepared.commit())
+        let sequence = prepared.commit();
+        self.note_commit(start, publish);
+        Ok(sequence)
     }
 }

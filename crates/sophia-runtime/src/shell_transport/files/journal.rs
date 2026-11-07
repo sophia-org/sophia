@@ -44,6 +44,10 @@ pub(in crate::shell_transport) struct Journal {
     /// particular record a sequence.
     held: [Option<(JournalReservation, usize)>; MAX_HELD_RECORDS],
     next_reservation: u64,
+    /// A trailing run of appended records that reads do not see yet, as its
+    /// start and end offsets. The next record published past `end` reveals
+    /// the run in journal order.
+    deferred: Option<(u64, u64)>,
 }
 
 impl Journal {
@@ -55,6 +59,7 @@ impl Journal {
             revision: 8,
             held: [None; MAX_HELD_RECORDS],
             next_reservation: 1,
+            deferred: None,
         }
     }
 
@@ -180,12 +185,15 @@ impl Journal {
 
     /// Appends the record a reservation was held for, spending it. The
     /// encoded record must be exactly the held byte size; a mismatch keeps
-    /// the reservation held and changes nothing.
+    /// the reservation held and changes nothing. A record appended with
+    /// `publish` false is journaled but stays invisible to reads until the
+    /// next published record follows it.
     pub(in crate::shell_transport) fn append_consuming_reservation(
         &mut self,
         reservation: JournalReservation,
         kind: ShellFileKind,
         body: &[u8],
+        publish: bool,
     ) -> Result<u64, Errno> {
         // Reservations exist for terminal events; spending one on any
         // other class is a programming error, refused before any change.
@@ -218,9 +226,34 @@ impl Journal {
         let mut limits = self.append_limits(true);
         limits.records += 1;
         limits.bytes += held;
+        let start = self.custody.size();
         let prepared = self.custody.prepare(bytes, limits)?;
         self.held[slot] = None;
-        Ok(prepared.commit())
+        let sequence = prepared.commit();
+        self.note_commit(start, publish);
+        Ok(sequence)
+    }
+
+    /// Extends or ends the deferred tail after a record committed at `start`.
+    fn note_commit(&mut self, start: u64, publish: bool) {
+        self.deferred = if publish {
+            None
+        } else {
+            let first = match self.deferred {
+                Some((first, end)) if end == start => first,
+                _ => start,
+            };
+            Some((first, self.custody.size()))
+        };
+    }
+
+    /// The end of what reads may see: the whole journal unless a deferred
+    /// run is still its tail.
+    fn visible(&self) -> u64 {
+        match self.deferred {
+            Some((start, end)) if end == self.custody.size() => start,
+            _ => self.custody.size(),
+        }
     }
 
     pub(in crate::shell_transport) fn read(
@@ -228,7 +261,7 @@ impl Journal {
         offset: u64,
         count: u32,
     ) -> Result<ReadOutcome, Errno> {
-        self.custody.read(offset, count)
+        self.read_buffered(offset, count, &mut Vec::new())
     }
 
     pub(in crate::shell_transport) fn read_buffered(
@@ -237,6 +270,14 @@ impl Journal {
         count: u32,
         scratch: &mut Vec<u8>,
     ) -> Result<ReadOutcome, Errno> {
+        let visible = self.visible();
+        if offset >= visible && offset < self.custody.size() {
+            scratch.clear();
+            return Ok(ReadOutcome::Pending);
+        }
+        let count = u32::try_from(visible.saturating_sub(offset)).map_or(count, |readable| {
+            count.min(readable).max(u32::from(offset >= visible))
+        });
         self.custody.read_buffered(offset, count, scratch)
     }
 
@@ -262,8 +303,9 @@ impl Journal {
         self.custody.position().records
     }
 
+    /// The journal file's size: the end of what reads may see.
     pub(in crate::shell_transport) fn size(&self) -> u64 {
-        self.custody.size()
+        self.visible()
     }
 }
 

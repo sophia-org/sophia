@@ -334,6 +334,7 @@ impl ShellFiles {
             state.close_reservation.ok_or(Errno::EINVAL)?,
             ShellFileKind::ChannelClosed,
             &body,
+            true,
         )?;
         let state = self.image.as_mut().expect("image state checked");
         state.close_reservation = None;

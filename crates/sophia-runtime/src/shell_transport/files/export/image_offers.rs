@@ -360,6 +360,9 @@ impl ShellFiles {
         status: &sophia_protocol::ContentResourceStatus,
         body: &[u8],
     ) -> Result<Option<u64>, Errno> {
+        // Refusals are published at once; only an acceptance may wait for
+        // the lean frame it belongs to.
+        let publish = status.status != 2 || self.publish_image_records();
         let Some(state) = &mut self.image else {
             return Ok(None);
         };
@@ -399,6 +402,7 @@ impl ShellFiles {
             offer.status.ok_or(Errno::EINVAL)?,
             ShellFileKind::ResourceStatus,
             body,
+            publish,
         )?;
         offer.status = None;
         state.offers.collect();
@@ -410,6 +414,7 @@ impl ShellFiles {
         metadata: ShellImageMetadata,
         disposition: ShellSourceDisposition,
     ) -> Result<u64, Errno> {
+        let publish = self.publish_image_records();
         let state = self.image.as_mut().ok_or(Errno::EACCES)?;
         let offer = state
             .offers
@@ -436,6 +441,7 @@ impl ShellFiles {
             offer.release.ok_or(Errno::EINVAL)?,
             ShellFileKind::SourceReleased,
             &body,
+            publish,
         )?;
         offer.release = None;
         offer.source = None;

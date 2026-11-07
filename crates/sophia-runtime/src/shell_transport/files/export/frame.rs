@@ -74,6 +74,13 @@ impl ShellFiles {
         self.capabilities & sophia_protocol::shell_files::SHELL_FRAME_LEAN_CAPABILITY != 0
     }
 
+    /// Under lean, a committed frame's successful source records wait in
+    /// the journal for its terminal, so one `events` read carries them all
+    /// and the client re-arms its read once per frame.
+    pub(super) fn publish_image_records(&self) -> bool {
+        !(self.lean() && self.lean_frames_in_flight > 0)
+    }
+
     pub(super) fn submission_revision(&self) -> u16 {
         if cfg!(feature = "experimental-native-frame-transaction")
             && self.negotiated
