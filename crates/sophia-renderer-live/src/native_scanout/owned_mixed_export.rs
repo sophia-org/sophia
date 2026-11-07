@@ -138,6 +138,12 @@ where
                     )
                 })?;
         }
+        // Only the managed-capture arm can drop a layer; without that feature
+        // clippy sees a filter_map that never filters.
+        #[cfg_attr(
+            not(feature = "experimental-shell-capture"),
+            allow(clippy::unnecessary_filter_map)
+        )]
         let layers = frame
             .layers
             .iter()
