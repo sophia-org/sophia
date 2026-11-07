@@ -606,6 +606,11 @@ where
         matches!(self.worker.as_ref(), Some(worker) if worker.in_flight())
     }
 
+    /// Cumulative renderer thread CPU behind this output; zero without a worker.
+    pub fn worker_cpu_ns(&self) -> u64 {
+        self.worker.as_ref().map_or(0, |worker| worker.cpu_ns())
+    }
+
     pub const fn renderer_image_owner_initialized(&self) -> bool {
         self.worker.is_some() || self.context.is_some()
     }

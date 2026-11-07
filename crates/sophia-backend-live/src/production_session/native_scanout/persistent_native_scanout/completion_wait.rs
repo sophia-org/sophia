@@ -217,9 +217,18 @@ impl LiveProductionNativeScanout {
     /// Cumulative renderer-worker thread CPU over every card group, for the
     /// owner's diagnostic cost rows; not a scheduling input.
     pub fn render_worker_cpu_ns(&self) -> u64 {
-        self.groups
-            .iter()
-            .filter_map(|group| group.renderer_core.as_ref())
-            .fold(0_u64, |sum, core| sum.saturating_add(core.cpu_ns()))
+        // Without shared workers every head owns its core and the group slot
+        // stays empty (cpu-decomp-01 read zero here); with sharing, heads
+        // attach one core, so count groups to avoid double counting.
+        if Self::shared_renderer_worker_enabled() {
+            self.groups
+                .iter()
+                .filter_map(|group| group.renderer_core.as_ref())
+                .fold(0_u64, |sum, core| sum.saturating_add(core.cpu_ns()))
+        } else {
+            self.exporters.iter().fold(0_u64, |sum, exporter| {
+                sum.saturating_add(exporter.worker_cpu_ns())
+            })
+        }
     }
 }

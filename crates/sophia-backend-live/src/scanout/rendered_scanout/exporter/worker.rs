@@ -467,6 +467,11 @@ impl NativeGbmRendererWorker {
         }
     }
 
+    /// Cumulative thread CPU of the core this output is attached to.
+    pub fn cpu_ns(&self) -> u64 {
+        self.core.cpu_ns()
+    }
+
     pub(super) const fn output(&self) -> LiveRendererWorkerOutputKey {
         self.output
     }
