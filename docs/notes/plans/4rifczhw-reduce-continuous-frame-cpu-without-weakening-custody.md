@@ -55,6 +55,71 @@ Use the local Herdr socket to agree the next writer before edits; no cross-machi
 agent coordination is required. Documentation completion does not start a native
 run or assign source work implicitly.
 
+### A1 finding and A2/A3 source acceptance, November 8
+
+Phase A source is integrated on master: signed `1285d1609` adds A2 reason
+attribution, `cc92b86bb` adds A3 render-result notification, and `5e113906d`
+proves the production attachment route. All three are based on `a5e072b79` and
+passed bounded source review. The final device-free `cargo xtask check` log
+ends in `exit=0`: 809 passing Cargo test summaries, C-wire, conformance, clippy,
+layout and Python checks passed. Hardware proofs remain explicitly unproved.
+
+Evidence is retained at `~/.local/state/sophia-t344-source-acceptance-01`
+(SHA256SUMS digest `eb211f506e45a9fbcc0f1c3358b644abe441e0f6631a417a05e2081ff1150dd7`).
+It includes all earlier failed attempts: the seat fixture depends on caller
+umask (the final run used `022`), and the intermittent C portal-test failure
+has no established cause. Gate execution and isolation are the implementer's
+report; the reviewer inspected the source, signatures and saved gate log.
+No native run, CPU saving or latency improvement is established by this merge.
+
+A3 uses the existing SignalSender and one WakeSlot per renderer core. Result
+publication or reply-route drop rings the owner; late attachment rings once.
+The 1 ms fallback and short-service predicates remain unchanged. Native receipt
+capture and any A4 comparison still require a reviewed package and owner launch.
+An A2-only attribution control must use `1285d1609`; captures of the merged
+build already include A3 and cannot describe the old timer-only path.
+
+Source inspection identifies owed render-result collection on the lean path.
+The bounded wait in `owner_loop/authority_service_wait.rs` polls relay/native
+completion descriptors and the owner ring. The completion-wait builders include
+exporter pending/in-flight work and head rendering content among the reasons for
+short service; these are not the only possible reasons in the general path.
+At the A1 base, the exporter worker creates a bounded `mpsc` result channel in
+`scanout/rendered_scanout/exporter/worker.rs`; its service sends WorkerResult via
+`state.reply.try_send` without an owner wake. Capture-preparation replies have a
+SignalSender, which is a separate path. A page-flip completion cannot signal a
+flip that result collection has not yet submitted. Incidental earlier or
+unrelated descriptor wakes are not a render-result readiness contract.
+
+Saved `t331/sft-lazy-01/changing/runs/h24/r60c1` receipts are consistent with that
+reading, but do not identify the short-service predicate retrospectively. The
+whole-run total is 2163 Service expiries out of 2164 Service waits. Normalize
+using interior receipt deltas, not whole-run totals divided by frames: anchors
+120/2120 complete at 512601546903/512634881196 us; receipts at
+512603946435/512633947291 us are strictly inside them. Across those receipts,
+Service expiries rise 307 -> 2107 and native wakes 266 -> 2066, while ordinary
+`cause_deadline` stays 50 and expired shell-authentication stays 29. Later,
+post-frame receipts reach 999 ordinary deadlines and 978 authentication expiries.
+Thus the 999 total is not evidence of a fifth steady-state per-frame wake class.
+The interior sample does not establish absence of every boundary transient.
+
+Do not delete owed result collection. A result-ready notification could replace
+its timer trigger; whether that removes retries, changes pass coalescing or adds
+notification CPU is unmeasured. The 1 ms polling cap is not a measured latency
+saving or an end-to-end bound. Neither CPU neutrality nor impossibility of a CPU
+saving is established. Keep such a readiness change a separately reviewed
+latency/progress hypothesis until its full obligation and lifecycle contract is
+proved; no scheduling change is authorized by this finding.
+
+A2 records which native short-service sources were present when a Service wait
+was planned. Its per-source counts can overlap and must not be summed as a
+partition of waits; retain the joint wait-cause histogram separately. Compare
+bounded interior windows with unchanged completion denominators and classify
+zero-reason Service waits too. Those marginal counts can support attribution but
+cannot alone prove event chronology or that the source was still pending at wake.
+Any receipt-only native run requires its own reviewed package and owner launch;
+one run is not pre-authorized and cannot establish a performance effect.
+
 ## November 7: lean SFT, publication hold and deferred reads landed
 
 Three bounded SFT steps are [qualified and integrated](../milestones/dcamg9hl-qualify-lean-sft-commits-publication-hold-and-deferred-event-reads.md):
