@@ -28,14 +28,17 @@ acceptance in t289 and portability planning in t256. The November 7 milestone
 below closes three experimental comparisons, not default-on adoption. Its final
 lane is 673.7–674.1 combined µs/frame; separate treatments are not additive.
 
-Next investigate the **Service deadline pass** among the four observed owner
-wakes. Name its pending obligation and the transition that makes that work ready.
-Only propose removing/combining a pass if every expiry, retry, cancellation,
-backpressure, reconnect and custody check retains an owner and progress signal.
-Do not delete a timer from its frequency alone. Prove the mechanism device-free,
-then qualify one candidate with matched pixels and accounting, mechanism counters,
-cadence/latency and cleanup gates. Component-walk repetition is the next source
-question, not authorization for a general reactor rewrite or cached authority.
+The **Service deadline obligation** now has a reviewed result-ready notification
+and a receipt-only native observation, recorded below. The Service wait remains
+one per completion; A3 changes its observed trigger from timer to owner ring.
+No CPU or latency effect has been qualified. Keep the 1 ms fallback.
+
+Next investigate **component-walk repetition**, read-only: which role visits do
+useful work for each ready source, and which expiry, retry, cancellation,
+backpressure, reconnect and custody obligations require unconditional service.
+Only then select a bounded candidate with a concrete CPU hypothesis and a
+device-free proof before native qualification. This is not authorization for a
+general reactor rewrite, cached authority or another A3 ABBA without a hypothesis.
 
 The [current SFT status](../../native-frame-transactions.md#coverage-and-remaining-gates)
 separates model coverage, idle ACK testing, C deferred-read parity and SDK
@@ -119,6 +122,42 @@ zero-reason Service waits too. Those marginal counts can support attribution but
 cannot alone prove event chronology or that the source was still pending at wake.
 Any receipt-only native run requires its own reviewed package and owner launch;
 one run is not pre-authorized and cannot establish a performance effect.
+
+### A2/A3 native receipt result, November 8
+
+`svc-01/changing` completed A2 `1285d1609` then A3 `f92406de3` on the unchanged
+cpu-strip-03 b-arm GL-worker lane. Package MANIFEST is `90da0d83…`; the root
+result is sealed at `~/.local/state/sophia-t344-native-receipts-01`
+(SHA256SUMS `a3f848fa8c24ae08c04635a10f2a7c948563bf3c9fb08f6fec7df643b38730da`).
+An independent raw-log recount matches every receipt delta and saved input hash.
+Both arms passed their existing identity, accounting, cadence and cleanup gates;
+seat0 stayed unchanged and tty4 agetty was restored.
+
+Each arm has seven strictly interior snapshots and 1800 completions: generations
+264–2063 for A2, 266–2065 for A3. A2 has 1800 `cause_deadline_service` and zero
+`cause_ring_service`; A3 has zero and 1800 respectively. Both have 1800 each of
+wire-only, other-fd-only and native-only waits. Owner passes/completed waits are
+7214 and 7219, including 12/17 ordinary deadlines and two ordinary ring waits.
+The dominant four waits per completion remain; this capture removes no observed
+Service wait. The shared ring histogram is not a per-message causality trace.
+
+Both arms count `head_rendering_content`, `exporter_pending_frame` and
+`exporter_worker_in_flight` 1800 times each, every other reason zero. These
+planning-time marginals overlap, not 5400 distinct waits. Zero-reason Service
+waits are zero. The observations support the owed render-result collection
+reading and the new readiness trigger, not CPU neutrality or a latency saving.
+No CPU/latency comparison, repeatability or production-adoption claim is made.
+
+Launch disclosure: niltempus started before the final readiness archive was
+sealed and before explicit quiet confirmation. Claude reports overlapping
+check-only binary hashing/git work; Codex made status reads when detecting the
+active attempt. Exact monotonic bounds for those checks were not recorded, so
+we do not assert that they were outside the selected window or claim an entirely
+quiet run. `sophia-t344-native-readiness-02` was sealed after completion and says
+so. The first readiness refusal (historical peer/runner filesystem device number
+changed, all other metadata/content unchanged) and its original package remain
+in `sophia-t344-native-readiness-01`; a separately reviewed boot-bound receipt
+records the permitted device-number change without altering build evidence.
 
 ## November 7: lean SFT, publication hold and deferred reads landed
 
