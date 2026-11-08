@@ -253,6 +253,13 @@ retain the other checkout's path and make `cargo xtask check` inspect that tree
 instead of the one from which it was invoked. Keep Cargo's registry cache
 shared, but keep workspace build artifacts separate.
 
+On the shared crunch development host, run Cargo through `cargo-slot sophia`
+from the intended checkout, for example `cargo-slot sophia cargo xtask check`.
+The allocator gives linked worktrees separate pools; do not invent a target
+directory or copy build artifacts into evidence. Record their paths and hashes.
+Remove a finished, merged worktree with `git worktree remove` so the normal
+pool cleanup can reclaim it without touching another lane's active builds.
+
 If a check reports repository paths from another checkout, correct the target
 directory first, then clear the affected workspace package artifacts and rebuild
 from the intended checkout. Do not hide the mismatch with sibling-repository
@@ -299,6 +306,54 @@ Hardware gates remain explicit because they require a real TTY, DRM ownership,
 and operator authorization. Their argument parsing, evidence verification, and
 archive logic belong in `sophia-conformance`; the minimal TTY takeover adapter
 remains transitional shell until production session startup owns that boundary.
+
+### Isolated gate on a development host
+
+The t344 source gate used an unprivileged Bubblewrap environment with
+`/dev/dri` and `/dev/input` hidden, `DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY`
+and `SOPHIA_*` experiment variables unset, stdin from `/dev/null`, and `umask 022`.
+Run the canonical gate through the checkout's Cargo slot in that environment.
+Environment clearing prevents a live session or inherited experiment setting
+from selecting a different path; device hiding prevents the gate from opening
+the display and input nodes. This is a test environment, not a security sandbox
+for untrusted repository code.
+
+The recorded Bash invocation was the following, with `.artifacts/` already
+present. For a new run, choose a fresh log name; do not overwrite an earlier
+attempt. The trailing `echo` succeeds even if the gate fails: read the recorded
+`exit=` value, not the enclosing shell task's status.
+
+```bash
+umask 022
+bwrap --dev-bind / / --tmpfs /dev/dri --tmpfs /dev/input --die-with-parent -- \
+  env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY \
+  $(env | grep -o '^SOPHIA_[A-Z_]*' | sed 's/^/-u /') \
+  cargo-slot sophia cargo xtask check < /dev/null \
+  > .artifacts/t344-xtask-check-4.log 2>&1
+echo exit=$? >> .artifacts/t344-xtask-check-4.log
+```
+
+This historical name filter covers uppercase letters and underscores; if a
+`SOPHIA_*` name contains digits or other characters, unset that full name too.
+The recipe does not isolate the network or PID namespace, hide `/dev/kfd`, or
+remove device descriptors inherited from the launching process. Launch it from
+a shell with no device descriptors open; do not describe it as denying every
+possible route to hardware.
+
+Keep the gate's combined output and actual exit status, with the source commit
+and invocation. Preserve earlier failures and their explanations when rerunning
+after a correction; a passing focused test does not replace a complete gate.
+For t344, the frozen example is
+`~/.local/state/sophia-t344-source-acceptance-01/` on crunch: `RECEIPT.json`
+names `t344-xtask-check-4.log`, which ends in `exit=0` at `5e113906d`.
+The prior umask-dependent bootstrap fixture refusal and intermittent C portal
+test failure remain in the same evidence directory. The latter's cause was not
+established; passing reruns are not a diagnosis.
+
+The isolated run reports hardware proofs as **not proved here** when no render
+node is available. Its green exit qualifies the device-free gate only; native
+cadence, pixel correctness on hardware, and CPU/frame comparisons retain their
+separate qualification requirements.
 
 ## Definition Of Done
 

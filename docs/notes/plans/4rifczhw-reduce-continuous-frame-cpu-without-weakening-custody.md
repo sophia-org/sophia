@@ -1430,7 +1430,7 @@ For each approved experiment:
 
 ## Connections and exact evidence
 
-The source baseline for the continuous Sophia diagnostics is host `d9116ff0`
+The historical source baseline for the continuous Sophia diagnostics is host `d9116ff0`
 with integration/peer `748c325`, unless a package explicitly pins another pair.
 All local evidence below is under `~/.local/state/t331/` on crunch:
 
@@ -1443,6 +1443,49 @@ All local evidence below is under `~/.local/state/t331/` on crunch:
   per-arm postflight/input hashes: complete, inconclusive, never rerun.
 - `continuous-frame-cpu-02-recovery/analysis/`: profiled attribution only;
   the original failed capture remains failed.
+
+The November component-walk investigation also reuses these lanes. Each keeps
+its own pinned source, workload and instrumentation; their costs are not
+interchangeable with the post-A3 lean SFT lane:
+
+- `continuous-shell-work-cost-01/runs/sophia{1,2}/session.log`: raw
+  `sophia_shell_work_cost` receipts from `cpu-shell-work-cost` at `5e6db9f99`.
+  The analysis JSON's empty owner stages are not evidence of zero owner cost;
+  any new attribution must reduce the raw rows and retain their window limits.
+- `cpu-decomp-03/changing/analysis/r60c1/owner-cost.json` and its raw session
+  log: instrumented, pre-A3 decomposition at `d43c4feb0`. Independent recounts
+  are in `~/.local/state/cpu-decomp-03-postrun-audit-claude-01/`, including
+  `per_pass.json`. Wait labels identify the wait recorded in a pass, not proof
+  that its wake caused every operation or CPU cost in that pass.
+- `cpu-syscall-census-01/census/counts.json`: pre-lean W2-on syscall frequency,
+  with separate owner, worker, other-thread and peer windows. The corrected
+  report is `~/.local/state/sophia-syscall-census-analysis-01/REPORT.md`, and
+  the independent audit is `~/.local/state/sophia-syscall-census-01-audit-claude-01/`.
+  Error numbers have no errno attribution; call counts are not CPU costs or
+  evidence that an authority check is dispensable.
+- `svc-01/changing/analysis/summary.json`: A2/A3 receipt-only comparison;
+  `~/.local/state/sophia-t344-native-receipts-01/` holds the independent
+  recount and result seal. One Service wait per completion remains, with its
+  observed trigger changing from timer to shared owner ring. No CPU or latency
+  effect follows from this comparison.
+
+Historical branches are located by ref and commit, not by assuming a worktree
+still exists. These are investigation inputs, not a recommendation to stack
+their changes:
+
+| Lane | Branch and source | Evidence and limit |
+| --- | --- | --- |
+| R1 | `cpu/owner-self-wake`, `9923b899d` | `~/.local/state/sophia-r1-igpu-result-01/`: historical W2-on mean rule passed narrowly, variable pairs; unadopted, not an SFT measurement. |
+| R2 | `cpu/metadata-readiness`, `b5eab0749` | Parked: the measured native lane does not construct `LiveMetadataShell`; not evidence for component-wire savings. |
+| R3/E1 | `cpu/reap-on-readiness`, `ed888c011` | `~/.local/state/sophia-r3-e1-igpu-failure-01/`: baseline cadence refusal, no aggregate effect claim. The branch name does not establish pidfd-gated process reaping. |
+| Owner waits | unchanged `892bd1436` | `~/.local/state/sophia-owner-pass-review-01/{NOTE.md,wait-deltas.json}`: historical interior wait deltas, not current per-pass CPU costs. |
+| Decomposition | `cpu/decomp` `f0942beea`; `cpu/decomp-fix` `cab686fdb`; `cpu/decomp-fix2` `d43c4feb0` | Branch note `docs/notes/investigations/k6q1mv8p-where-does-the-real-sft-owner-spend-cpu-per-pass.md`; use the corrected package and audit above, not the earlier reducers. |
+| Pass cost | `cpu/pass-cost`, `026eb3282` | Diagnostic per-pass accounting; verify activation and window before using it to price a current visit. |
+| Collect/render | `cpu/collect-render`, `2a45d8ea3` | Separate source experiment; no qualified native saving is established by its presence in this index. |
+
+Read branch-only notes with `git show <commit>:<path>`. Custody liveness
+checks remain an authority-review question: neither a large historical bucket
+nor an expensive syscall authorizes skipping them.
 
 Branch-qualified investigations are not claimed merged into this notebook:
 
