@@ -4,6 +4,10 @@
 
 ## Namespace composition
 
+[Portable Plan 9 interfaces with native frame mechanisms](../concepts/fp9o6pdb-portable-plan-9-interfaces-with-native-frame-mechanisms.md)
+connects the Redox namespace/ring research to existing Sophia contracts and t256;
+it proposes no immediate URI parser, transport replacement or OS port.
+
 [Adopting the Plan 9 namespace model](../investigations/kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md)
 investigates composable per-process file and service views, their Linux mapping,
 and their relationship to Sophia's admission and isolation contracts.
@@ -29,7 +33,9 @@ and the [decision to separate desktop readiness from application proofs](../deci
 The [bounded FrameCommit proposal](../decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md)
 targets repeated frame coordination after the fresh iGPU CPU comparison. It keeps
 9P for control and the image path for pixels; the linked architecture diagram and
-TLA+ checkpoint separate a 350 µs/frame target from unmeasured implementation gains.
+TLA+ checkpoint retain the original design basis. The [current SFT status](../../native-frame-transactions.md)
+records subsequent qualified experimental results and separates the 350 µs/frame
+target from measured outcomes.
 
 The [X11 readback and operator capture investigation](../investigations/id869143-x11-drawable-readback-and-an-operator-capture-path.md)
 separates the missing XkbBell request from CPU drawable readback, scoped desktop

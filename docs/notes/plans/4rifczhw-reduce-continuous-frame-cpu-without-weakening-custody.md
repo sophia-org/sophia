@@ -20,6 +20,41 @@ It does not reopen their completed exits or replace `todo.md` as the task ledger
 The exit is a separately qualified improvement, or a documented no-change result
 for each selected mechanism. A profile share is not a savings target.
 
+## Current resumption, November 8
+
+This section supersedes all earlier next-step wording in this plan. Task state
+and execution order remain solely in `todo.md` t344, with broader workload
+acceptance in t289 and portability planning in t256. The November 7 milestone
+below closes three experimental comparisons, not default-on adoption. Its final
+lane is 673.7–674.1 combined µs/frame; separate treatments are not additive.
+
+Next investigate the **Service deadline pass** among the four observed owner
+wakes. Name its pending obligation and the transition that makes that work ready.
+Only propose removing/combining a pass if every expiry, retry, cancellation,
+backpressure, reconnect and custody check retains an owner and progress signal.
+Do not delete a timer from its frequency alone. Prove the mechanism device-free,
+then qualify one candidate with matched pixels and accounting, mechanism counters,
+cadence/latency and cleanup gates. Component-walk repetition is the next source
+question, not authorization for a general reactor rewrite or cached authority.
+
+The [current SFT status](../../native-frame-transactions.md#coverage-and-remaining-gates)
+separates model coverage, idle ACK testing, C deferred-read parity and SDK
+publication from completed native comparisons. Verify those gates against actual
+source and receipts for the next candidate; do not reopen the pre-wire work or
+rerun parked batching merely because Redox also batches.
+
+[Portable Plan 9 interfaces](../concepts/fp9o6pdb-portable-plan-9-interfaces-with-native-frame-mechanisms.md)
+records the future direction. t256 owns it; URI syntax, ring transport and OS
+ports do not block this investigation. A ring candidate needs evidence of
+remaining transport cost, separate queue/wake/revocation modeling and a
+transport-only comparison before promotion. No new transport is authorized here.
+
+Coordination: Codex owns this documentation reconciliation; Claude on Crunch
+reviewed the pre-edit status and reported no held SFT branch or uncommitted work.
+Use the local Herdr socket to agree the next writer before edits; no cross-machine
+agent coordination is required. Documentation completion does not start a native
+run or assign source work implicitly.
+
 ## November 7: lean SFT, publication hold and deferred reads landed
 
 Three bounded SFT steps are [qualified and integrated](../milestones/dcamg9hl-qualify-lean-sft-commits-publication-hold-and-deferred-event-reads.md):
@@ -36,8 +71,8 @@ below keeps its 350 µs/frame target and its own gates.
 The refreshed matched CPU reference is complete: Sophia 1032.5–1075, Niri
 415–455 and XLibre 180–220 combined µs/frame on the changing 1920×24 iGPU/60 Hz
 lane. These accounting bounds and their workload limits are recorded in the
-[FrameCommit architecture](../../native-frame-transactions.md). This dated update
-owns the native CPU lane's next step; earlier sequencing below is retained history.
+[FrameCommit architecture](../../native-frame-transactions.md). This is a historical
+design checkpoint; the November 8 resumption above owns the next investigation.
 
 Mason authorized protocol redesign and TLA+ modeling first. The
 [proposed decision](../decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md)
@@ -181,6 +216,8 @@ redraw costs and GPU qualification remain open. Held sources, releases and
 sealed evidence remain immutable.
 
 ## Current priority: make each CPU redraw cheaper, October 30
+
+Historical heading retained for links; use [current resumption](#current-resumption-november-8).
 
 Mason restored CPU redraw cost to the near-term critical path after the
 direct-fill closeout. This order supersedes the historical GPU-first ordering
@@ -664,6 +701,8 @@ approval. No storage or authority-window change is authorized by attribution
 alone. The exact mechanism must receive its own custody review.
 
 ## Immediate critical path
+
+Historical ordering retained for existing links; use [current resumption](#current-resumption-november-8).
 
 The October 30 CPU redraw priority above supersedes this ordering. The table
 retains prior dispositions; it does not reopen completed or regressed candidates.

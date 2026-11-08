@@ -180,3 +180,57 @@ not permission to interrupt or duplicate it.
   owns the measured optimization queue; this investigation supplies references.
 - [Readiness must name an obligation](../concepts/readiness-readiness-must-name-an-obligation.md)
   supplies the local standard for safe source-specific scheduling.
+
+## November 8 follow-up: namespaces, links and portability
+
+Read-only clones on Crunch distinguish three mechanisms: filesystem symlinks
+store names, hard links refer to the same filesystem node, and namespace
+registration maps a scheme name to an already-open service descriptor. Current
+Redox uses scheme-rooted paths such as `/scheme/audiohw`; historical `scheme:`
+examples are not current API recipes. URL spelling is naming, not an IPC ABI.
+
+The namespace manager in `base/bootstrap/src/initnsmgr.rs` uses a map of names
+to descriptors, can fork a selected subset and can narrow namespace permissions.
+Registration receives a descriptor through a registration handle. Opening a
+scheme duplicates its registered descriptor; unlink removes the name, not all
+previously opened handles. Audiod opens its hardware handle before entering a
+namespace containing only memory/rand and retains the hardware handle afterward.
+RedoxFS's `flink_internal` links an existing node; relibc implements filesystem
+symlinks and inter-scheme resolution separately from namespace registration.
+
+Plan 9's [bind](https://9p.io/magic/man2html/2/bind) changes a process namespace,
+with replacement or ordered unions; it is not an on-disk symlink. The inspected
+Redox manager is not an implementation of arbitrary directory binds/unions.
+Both systems establish handles; neither requires a fresh full name traversal
+for every I/O. Redox's scheme request/completion ABI is not 9P. Its shared-ring
+extension is distinct from the ordinary scheme ABI's use of SQE/CQE names.
+
+Source pins (shallow clones under `~/src`, clean at inspection; no builds).
+Local directories are `redox`, `redox-book`, `redox-kernel`, `redox-base`,
+`redox-relibc` and `redoxfs`, respectively; table names below are upstream
+repository names, and implementation anchors are relative to those repositories:
+
+| Repository | Revision |
+| --- | --- |
+| [redox](https://gitlab.redox-os.org/redox-os/redox/-/tree/284f2691855f085608b57b7c6ba4ac87ec5adbb1) | 284f2691855f085608b57b7c6ba4ac87ec5adbb1 |
+| [book](https://gitlab.redox-os.org/redox-os/book/-/tree/4bcfb67fb739a6215c9944162ad9db78e85133ad) | 4bcfb67fb739a6215c9944162ad9db78e85133ad |
+| [kernel](https://gitlab.redox-os.org/redox-os/kernel/-/tree/909f2e82cf66796fcb1a8ff046d3361cb4ab3342) | 909f2e82cf66796fcb1a8ff046d3361cb4ab3342 |
+| [base](https://gitlab.redox-os.org/redox-os/base/-/tree/d63a289a480388f30d3d91d5d8518a6270452fbf) | d63a289a480388f30d3d91d5d8518a6270452fbf |
+| [relibc](https://gitlab.redox-os.org/redox-os/relibc/-/tree/c3cc8b5fe1c6fbc40d6b5ea87e39daf2e19ddbc4) | c3cc8b5fe1c6fbc40d6b5ea87e39daf2e19ddbc4 |
+| [redoxfs](https://gitlab.redox-os.org/redox-os/redoxfs/-/tree/5ba45a6887374ab425326656a276bb3b62eba7dc) | 5ba45a6887374ab425326656a276bb3b62eba7dc |
+
+Primary implementation anchors: `base/bootstrap/src/initnsmgr.rs` (Namespace,
+SchemeRegister, open_scheme_resource, unlinkat/on_sendfd), `base/audiod/src/main.rs`
+(open hardware then mkns/setns), `relibc/redox-rt/src/sys.rs` (register_scheme_to_ns),
+`relibc/src/platform/redox/path.rs` (inter-scheme symlink resolution), and
+`redoxfs/src/mount/redox/scheme.rs` (flink_internal). The book's `communication.md`
+and `influences.md` explain the ABI and separate Plan 9 inspiration from
+Minix/seL4 microkernel and BSD sandbox influences; documentation has explicit
+outdated-information caveats, so the implementation anchors control these facts.
+
+The [portable-interface concept](../concepts/fp9o6pdb-portable-plan-9-interfaces-with-native-frame-mechanisms.md)
+records the resulting direction and ring experiment gates. Sophia already has
+scoped discovery and authenticated bound connections; do not add a name router
+per frame. Keep existing custody/revocation and private pixel capture. No new
+runtime interface, shared-ring dependency or supported OS is established by
+this research, and no Redox speedup is a Sophia prediction.

@@ -7,17 +7,51 @@ capture and completion make up the rest of SFT's contract. SFT uses the existing
 9P control transport, registered pixel path and native renderer; it is not a new
 transport or rendering API. The name makes no performance claim.
 
-**Status: default-off implementation, 2026-11-04.** The operator authorized protocol
-design changes and TLA+ modeling to reduce native CPU/frame while retaining
-security and atomic tear-free rendering. The initial wire contract is allocated
-for integration; paired C/Rust owning clients and their source-admission joins
-are imported. Explicit owner/producer startup and real Lom/reference CPU joins
-now pass device-free tests. The Rust client lifecycle trace gate passes; native
-qualification remains incomplete. This is not implementation acceptance or a measured speedup. See
-[ADR dwm37bn6](notes/decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md).
-The [shell files contract](sophia-shell-files.md),
-[image channel](sophia-image-channel.md) and
-[owned-ring contract](experimental-owned-ring.md) still define current behavior.
+**Current status, November 8, 2026:** experimental, negotiated/opt-in SFT is
+implemented and has bounded native qualification. The [November 7 milestone](notes/milestones/dcamg9hl-qualify-lean-sft-commits-publication-hold-and-deferred-event-reads.md)
+records lean commits (bit 20), publication holding and Rust deferred event reads,
+each measured separately against its own control. The final changing 1920×24
+owned-ring bar lane measured **673.7–674.1 combined µs/frame** at iGPU 60 Hz.
+This is not default-on adoption, general desktop qualification, a supported BSD
+or Redox port, or a fresh paired comparison with Niri. Do not sum the three
+experiments' savings. The older Niri reference is 415–455 µs/frame; 350 is still
+a target, not an achieved result.
+
+The current lean path folds the cumulative ACK into FrameCommit and establishes
+custody through exact Rwrite, without Submitted. Publication holding batches the
+source status/release records with the terminal; deferred reads coalesce the next
+Tread with subsequent work. The ordinary path below retains its own event shape.
+[Shell files](sophia-shell-files.md), [SFT wire](sophia-frame-transactions-wire.md),
+[image channel](sophia-image-channel.md) and [owned-ring](experimental-owned-ring.md)
+remain authoritative. The [original ADR](notes/decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md)
+is unchanged; older dated checkpoints below describe their evidence at that time.
+
+The next investigation is the Service deadline obligation among four owner
+wakes, then repeated component servicing; see the [current CPU plan](notes/plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md#current-resumption-november-8).
+
+### Coverage and remaining gates
+
+- The original finite lifecycle model and runtime client trace have their stated
+  abstraction limits. The separate [LeanPrefix projection](../validation/tla/frame-submit/README.md#lean-commits-leanprefix)
+  covers lean file custody and an abstract idle-progress property; that is not
+  end-to-end refinement of publication holding, deferred reads or physical output.
+- The Rust SDK [API parity record](../vendor/rust-desktop-sdk/source/API-PARITY.md#deferred-events-re-arm-2026-11-07)
+  explicitly records the absent C deferred-read port. No C parity claim follows
+  from the Rust peer's native qualification.
+- The frozen lazy-run audit did not exercise the idle 250 ms ACK path. A concrete
+  idle-path regression remains an obligation distinct from the abstract model.
+- The milestone records local peer SDK pins needing publication; verify current
+  external repository/pin state before any next package instead of reusing a
+  historical file URL. Each new candidate requires fresh pinned builds/package
+  binding and its own qualification; the completed three comparisons stay closed.
+
+### Future portability direction, not a transport amendment
+
+[Portable Plan 9 interfaces with native frame mechanisms](notes/concepts/fp9o6pdb-portable-plan-9-interfaces-with-native-frame-mechanisms.md)
+keeps 9P control/discovery and scoped names, with OS-specific identity, memory,
+wakeup and display mechanisms beneath common transaction guarantees. Redox-style
+rings are a future carrier candidate, not the current SFT path or an authorized
+implementation. URL syntax grants no authority and has no measured CPU benefit.
 
 ## Keep 9P; change the frame transaction
 
@@ -727,6 +761,8 @@ Evidence: `~/.local/state/sophia-frame-native-runner-01`. No native run or CPU/f
 result is implied by these gates.
 
 ### Model and remaining integration gates
+
+Historical November 4 checkpoint; see [current coverage](#coverage-and-remaining-gates).
 
 The [modeling brief](../validation/specula/native-frame-transaction/modeling-brief.md)
 defines the finite scope; [results](../validation/specula/native-frame-transaction/results.md)
