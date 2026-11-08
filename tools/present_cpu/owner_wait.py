@@ -3,7 +3,7 @@
 REASONS = (
     "maintenance input input_receipts frames topology seat shell_interaction lifecycle "
     "cursor controls proof frame_deadline present native_deadline shortcut shell_output "
-    "pacer service"
+    "pacer service shell_authentication"
 ).split()
 FIELDS = {f"{kind}_{reason}" for kind in ("selected", "expired", "pending")
           for reason in REASONS} | {"owner_tid"}
