@@ -216,10 +216,10 @@ The largest component-walk term is the custody poll. cpu-collect-01 put its
 two master arms at 661.3 to 661.6 and 673.2 to 673.6 us/frame on the host
 alone, so two identical arms differed by about 12 us/frame inside one
 package. That is observed between-arm variability, not the package's
-resolution and not a proof of what can or cannot be measured; it says only
-that a candidate priced below it would not be told from that variability by
-one four-arm run. Every in-lane candidate below is priced under it. Custody
-caching is an authority change and out of this lane.
+resolution. It makes a small saving uncertain in a single comparison; it
+does not establish a minimum resolvable effect. Every in-lane candidate
+below is priced under it. Custody caching is an authority change and out of
+this lane.
 
 Candidate prices, all assumptions until a receipt measures them:
 
@@ -257,10 +257,11 @@ Candidate prices, all assumptions until a receipt measures them:
 
 ## Next discriminator
 
-If a candidate from the table is chosen, its upper price is below the 12
-us/frame observed between master arms, so a CPU arm could not resolve it and
-none is launched.
-The mechanism is proved device-free with a negative mutation and captured in
+If a candidate from the table is chosen, its assumed price below the
+observed spread weakens the case for a native CPU run now; it does not prove
+the effect unresolvable, and this note selects no CPU run. The proposed
+route, for the joint decision, is receipt-only: the mechanism is proved
+device-free with a negative mutation and captured in
 a two-arm receipt-only package like svc-01, with the counters that must move
 named in advance (for the first candidate: `component_waits` equals
 `owner_waits`, blind turns per frame zero, accept attempts on turn visits
