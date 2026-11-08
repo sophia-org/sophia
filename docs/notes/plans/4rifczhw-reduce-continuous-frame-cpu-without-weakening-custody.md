@@ -43,11 +43,36 @@ Acceptance is sealed in `~/.local/state/sophia-component-walk-acceptance-01/`
 The separate reader fix `7b51fa6b0` is integrated and includes the emitter's
 `shell_authentication` reason; its four focused tests pass after integration.
 
-Next is the **B2 joint decision**, not an already selected implementation or
-native run. Select a bounded candidate only with a concrete hypothesis and
-device-free proof before qualification. Custody liveness stays outside this
-lane and requires an authority review. This is not authorization for a general
-reactor rewrite, cached authority or another A3 ABBA without a hypothesis.
+**B2 decision, November 8:** select component-descriptor subscription in the
+Service wait for B3 source work and device-free proof. Reuse the Receive-wait
+subscription/observation path with its runtime-present guard and append relay
+registrations at the resulting descriptor offset. Keep deadlines, phase order,
+authority checks and unconditional component servicing. Reuse the existing
+64-entry inline descriptor vector API; no subscription API redesign is needed.
+
+The hypothesis is fewer blind input-turn probes and turn-side listener accepts
+after a Service wait. Publication-flush accepts remain separately accounted.
+A current observation may avoid a probe; a stale or replaced observation must
+retain its safe fallback. Newly subscribed descriptors can also end Service
+waits earlier: unchanged passes per frame, Service counts and ring counts are
+predictions to test, not invariants. Record mixed causes and extra passes.
+The assumed 1–4 µs price is not a saving or a resolution threshold.
+
+B3 must exercise the production Service-wait wiring with a real OwnerWake and
+component connection. Removing the subscription must fail the mechanism
+assertion while the request still receives its answer. Cover a quiet component
+on a ring wake, component readiness interrupting Service, and relay observation
+after a nonempty component descriptor prefix; reuse existing replacement tests.
+Any minimal blind/observed or accept counters need identical definitions in
+control and candidate, separately from the behavior change. Freeze the diff
+after the isolated gate for review before integration.
+
+The proposed native route after source acceptance is two-arm receipt-only,
+with targets fixed in a reviewed package; no CPU ABBA or native launch is
+authorized here. Record custody liveness as a separate authority-review
+request, motivated by the historical instrumented 94.8 checks per published
+permit, not a current cost or saving claim. Cached authority remains outside
+this lane. Process-reap and second-native-service alternatives remain unselected.
 
 The [current SFT status](../../native-frame-transactions.md#coverage-and-remaining-gates)
 separates model coverage, idle ACK testing, C deferred-read parity and SDK
