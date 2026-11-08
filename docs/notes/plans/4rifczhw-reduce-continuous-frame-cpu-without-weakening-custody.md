@@ -237,8 +237,9 @@ Root's independent saved-data reader agrees with every cell and aggregate,
 the Service context and routing. Result evidence is
 `~/.local/state/sophia-liveness-native-receipts-01/` (SHA256SUMS
 `7c6d9a58503d8a562c9ebdee4445ec3eb4121d7020c71ede28834dffd1c60743`).
-All 341 external pins and 32 per-arm input hashes reverify. Native counted gaps
-are 16,666–16,668 µs; counted sampler maximum step is 5.041179 ms, late slots
+All 341 external pins and 32 per-arm input hashes reverify. Native anchor-window
+gaps into generations 121–2120 are 16,666–16,668 µs; counted sampler maximum
+step is 5.041179 ms, late slots
 zero. Postflight and cleanup pass, tty4 agetty and seat0 are restored, bound
 processes exited, tmpfs source/link are gone and the canonical log is regular.
 Owner passes/waits and subscribed/observed turns stay 4 per completion; blind
@@ -246,11 +247,23 @@ turns are zero. Service/ring counts stay 1 each, with wire, fd, native and
 ring+Service causes each 1 and deadline+Service zero. B3's Some-before-validity
 limit remains: this is not a zero-fallback-syscall proof.
 
-WINDOW CLOSED and result seal were sent to the local reviewer for independent
-recount. Preserve source/pool until that audit is accepted and cleanup explicitly
-released. This checkpoint closes the selected counts decision; the next CPU
-optimization needs a separate evidence-backed selection, not reopening parked
-candidates merely because this route closed.
+Claude's independent recount is accepted, sealed at
+`~/.local/state/sophia-liveness-native-receipts-audit-claude-01/` (SHA256SUMS
+`68db201f00838739892acf1006388d61a4165355f9e8252c681d040a89504b8c`).
+Every total and entry/boundary split agrees. A label clarification is preserved
+separately in `~/.local/state/sophia-liveness-native-audit-acceptance-01/`
+(SHA256SUMS `531049d4e03336a32830b2569371b9dfd277105eece03a208c5d6b76d46378b4`):
+the frozen root `counted_native_gap_usec` covers all 2,000 anchor-window gaps
+into generations 121–2120. Gaps into the narrower receipt-counted generations
+265–2064 range 16,667–16,668 µs. No count, gate or routing outcome changed, and
+the original result seal is untouched.
+
+After WINDOW CLOSED and audit acceptance, Claude inspected the diagnostic
+worktree at `581a56b3e` with zero tracked changes, untracked or ignored files,
+then removed it with ordinary `git worktree remove`, without force. Local and
+origin branch refs and all evidence remain; the pool is left to nightly hygiene. This closes the selected counts
+decision. The next CPU optimization needs a separate evidence-backed selection,
+not reopening parked candidates merely because this route closed.
 
 The historical 4.95 polls per service entry and the projected 34 polls / 38 µs
 per frame remain pre-lean-derived assumptions. This counts-only capture can
