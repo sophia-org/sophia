@@ -29,7 +29,7 @@ mod head_selection;
 mod native_head_fixture;
 mod prepared_cancellation;
 mod renderer_deferral;
-pub use completion_wait::LiveNativeCompletionWait;
+pub use completion_wait::{LiveNativeCompletionWait, native_short_service};
 mod composition_admission;
 mod composition_installation;
 mod mirror_completion;

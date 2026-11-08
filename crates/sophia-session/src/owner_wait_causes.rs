@@ -92,6 +92,54 @@ impl std::fmt::Display for WaitCauses {
     }
 }
 
+/// Why each bounded Service wait was taken: one count per set
+/// `native_short_service` bit, plus `none` for waits with no source bit. A
+/// wait with several sources counts under each, so these do not partition
+/// `service_waits`. Diagnostic only; no scheduling decision reads it.
+#[cfg(feature = "native-session")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ServiceReasons([u64; REASON_NAMES.len() + 1]);
+
+#[cfg(feature = "native-session")]
+const REASON_NAMES: [&str; 19] = sophia_backend_live::native_short_service::NAMES;
+
+#[cfg(feature = "native-session")]
+impl Default for ServiceReasons {
+    fn default() -> Self {
+        Self([0; REASON_NAMES.len() + 1])
+    }
+}
+
+#[cfg(feature = "native-session")]
+impl ServiceReasons {
+    pub(crate) fn add(&mut self, reasons: u32) {
+        if reasons == 0 {
+            let none = &mut self.0[REASON_NAMES.len()];
+            *none = none.saturating_add(1);
+        }
+        for (i, count) in self.0.iter_mut().take(REASON_NAMES.len()).enumerate() {
+            if reasons & (1 << i) != 0 {
+                *count = count.saturating_add(1);
+            }
+        }
+    }
+}
+
+/// One ` service_reason_<name>=<count>` field per nonzero source, in bit order.
+#[cfg(feature = "native-session")]
+impl std::fmt::Display for ServiceReasons {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, count) in self.0.iter().enumerate() {
+            if *count == 0 {
+                continue;
+            }
+            let name = REASON_NAMES.get(i).copied().unwrap_or("none");
+            write!(f, " service_reason_{name}={count}")?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(all(test, feature = "native-session"))]
 #[path = "../tests/support/owner_wait_causes.rs"]
 mod tests;

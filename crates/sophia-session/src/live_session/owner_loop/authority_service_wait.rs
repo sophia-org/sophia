@@ -51,6 +51,7 @@
                             wait = wait.min(deadline.saturating_duration_since(now));
                         }
                         owner_wake.record_native_wait(true, !native_wait.descriptors.is_empty());
+                        owner_wake.note_service_reasons(native_wait.short_service_reasons);
                         owner_wake.wait_for_service_observed(
                             wait,
                             relay_fds,

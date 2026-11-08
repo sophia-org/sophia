@@ -33,3 +33,24 @@ fn every_bit_has_a_name_and_counts_saturate() {
     assert_eq!(full.count(FD), u64::MAX);
     assert_eq!(full.waits(), u64::MAX);
 }
+
+#[test]
+fn service_reasons_count_each_source_and_name_waits_without_one() {
+    use sophia_backend_live::native_short_service::{
+        EXPORTER_WORKER_IN_FLIGHT, FENCE_SIGNALED, HEAD_RENDERING_CONTENT,
+    };
+    let mut reasons = ServiceReasons::default();
+    reasons.add(HEAD_RENDERING_CONTENT | EXPORTER_WORKER_IN_FLIGHT);
+    reasons.add(EXPORTER_WORKER_IN_FLIGHT);
+    reasons.add(FENCE_SIGNALED);
+    reasons.add(0);
+    assert_eq!(
+        reasons.to_string(),
+        " service_reason_fence_signaled=1 service_reason_head_rendering_content=1 service_reason_exporter_worker_in_flight=2 service_reason_none=1"
+    );
+    let mut full = ServiceReasons([u64::MAX; REASON_NAMES.len() + 1]);
+    full.add(FENCE_SIGNALED);
+    full.add(0);
+    assert_eq!(full.0[6], u64::MAX);
+    assert_eq!(full.0[REASON_NAMES.len()], u64::MAX);
+}

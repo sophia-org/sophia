@@ -27,6 +27,7 @@ fn mirror_heads_share_one_card_wait_and_cards_keep_the_earliest_watchdog() {
     );
     assert!(wait.submissions);
     assert!(!wait.short_service);
+    assert_eq!(wait.short_service_reasons, 0);
     assert_eq!(
         wait.deadline,
         Some(start + LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL)
@@ -46,7 +47,31 @@ fn callbacks_already_read_from_the_card_need_service_without_another_fd_event() 
     let mut wait = LiveNativeCompletionWait::default();
     wait.observe_group(card.as_fd(), std::iter::empty(), true);
     assert!(wait.short_service);
+    assert_eq!(
+        wait.short_service_reasons,
+        native_short_service::POLLER_CALLBACKS
+    );
     assert!(wait.descriptors.is_empty());
+}
+
+#[test]
+fn a_signalled_fence_names_itself_as_the_short_service_reason() {
+    let (fence, _signal) = UnixStream::pair().unwrap();
+    let mut wait = LiveNativeCompletionWait::default();
+    wait.observe_fence(fence.as_fd(), LibdrmNativeCompletionFenceStatus::Signaled);
+    assert!(wait.short_service);
+    assert_eq!(
+        wait.short_service_reasons,
+        native_short_service::FENCE_SIGNALED
+    );
+    assert!(wait.descriptors.is_empty());
+    wait.short_if(false, native_short_service::TOPOLOGY_DRAIN);
+    assert_eq!(
+        wait.short_service_reasons,
+        native_short_service::FENCE_SIGNALED
+    );
+    assert_eq!(native_short_service::NAMES.len(), 19);
+    assert_eq!(native_short_service::EXPORTER_WORKER_IN_FLIGHT, 1 << 18);
 }
 
 #[test]

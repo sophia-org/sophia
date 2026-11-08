@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use rustix::event::{PollFd, PollFlags};
 
-use crate::owner_wait_causes::{self as causes, WaitCauses};
+use crate::owner_wait_causes::{self as causes, ServiceReasons, WaitCauses};
 
 mod attribution;
 pub(super) use attribution::{WaitPlan, WaitReason};
@@ -34,6 +34,7 @@ pub(super) struct OwnerWake {
     wait_causes: Cell<WaitCauses>,
     /// Component cause bits noted by this wait's `observed` callback.
     noted_causes: Cell<u8>,
+    service_reasons: Cell<ServiceReasons>,
 }
 
 /// Owner-thread observations, not scheduler wakeups or per-producer attribution.
@@ -66,6 +67,7 @@ impl OwnerWake {
             wait_attribution: Cell::default(),
             wait_causes: Cell::default(),
             noted_causes: Cell::new(0),
+            service_reasons: Cell::default(),
         })
     }
 
@@ -88,6 +90,17 @@ impl OwnerWake {
     /// Joint cause of every wait so far; buckets partition `waits`.
     pub(super) fn wait_causes(&self) -> WaitCauses {
         self.wait_causes.get()
+    }
+
+    /// Which fd-less sources made the Service wait about to start bounded.
+    pub(super) fn note_service_reasons(&self, reasons: u32) {
+        let mut counts = self.service_reasons.get();
+        counts.add(reasons);
+        self.service_reasons.set(counts);
+    }
+
+    pub(super) fn service_reasons(&self) -> ServiceReasons {
+        self.service_reasons.get()
     }
 
     /// From an `observed` callback: which component descriptors ended this wait.
