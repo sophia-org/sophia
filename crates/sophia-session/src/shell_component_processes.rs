@@ -263,6 +263,13 @@ impl ShellComponentProcesses {
         self.connections.subscribe_wait(fds)
     }
 
+    /// The connection owner, for wait subscriptions made beside other descriptors.
+    pub(crate) fn connections(
+        &self,
+    ) -> &crate::shell_component_connections::ShellComponentConnections {
+        &self.connections
+    }
+
     #[cfg(feature = "native-session")]
     pub(crate) fn fd_readiness(&self) -> crate::shell_component_connections::ComponentFdReadiness {
         self.connections.fd_readiness()
