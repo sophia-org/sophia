@@ -153,6 +153,27 @@ imply a useless entry. All checks, phase order and authority freshness remain;
 this diagnostic neither caches liveness nor gates an obligation. The scoping
 review must settle counter/emitter coverage before source implementation.
 
+Scope approved for diagnostic branch `cpu/liveness-counts` from `b58806931`,
+with explicit turn/flush/outside entry contexts and eight exclusive innermost
+boundary tags. Entry and boundary guards restore the full prior thread-local
+context, including on unwind. Count actual custody polls after the inactive
+fast return, image-alive polls at their call, and accepts at `accept_with`;
+export-poll and file-check invocations remain separate wrapper counters. The
+headline P below sums owner-thread `LaunchCustody` poll attempts over all
+contexts; image-alive polls are reported separately, not added to P. Each
+attempt occupies exactly one cell; each service entry is counted once. Emit a
+complete 24-row snapshot copied before printing, using the existing owner
+receipt timestamp. Capture filters validate the fixed string vocabulary as
+well as unsigned counters. Prove inactive/outside calls, context restoration,
+thread isolation, saturation and entry accounting device-free alongside the
+connected-wire mutation. No clocks or per-count allocation are added.
+
+The held runtime compiler-artifact rows and the native feature chain exclude
+`experimental-custody-dispatch`; verify that again in the diagnostic build.
+Always-on counting is scoped to this diagnostic branch, not automatic master
+integration. Source and proof are reviewed before packaging; agents launch no
+native arm.
+
 Predeclared routing rule, made exact rather than rounded: let P be the valid
 interior custody-poll total and N its completed-frame denominator. If P >= 30*N,
 forward the counts to the separate custody-liveness authority-review request;
