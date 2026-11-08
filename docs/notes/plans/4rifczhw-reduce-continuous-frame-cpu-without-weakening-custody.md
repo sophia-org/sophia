@@ -51,25 +51,35 @@ authority checks and unconditional component servicing. Reuse the existing
 64-entry inline descriptor vector API; no subscription API redesign is needed.
 
 The hypothesis is fewer blind input-turn probes and turn-side listener accepts
-after a Service wait. Publication-flush accepts remain separately accounted.
+after a Service wait. Publication-flush accepts remain unchanged; neither
+turn-side nor flush-side accept attempts are measured by the new counters.
 A current observation may avoid a probe; a stale or replaced observation must
 retain its safe fallback. Newly subscribed descriptors can also end Service
 waits earlier: unchanged passes per frame, Service counts and ring counts are
 predictions to test, not invariants. Record mixed causes and extra passes.
 The assumed 1–4 µs price is not a saving or a resolution threshold.
 
-B3 must exercise the production Service-wait wiring with a real OwnerWake and
-component connection. Removing the subscription must fail the mechanism
-assertion while the request still receives its answer. Cover a quiet component
-on a ring wake, component readiness interrupting Service, and relay observation
-after a nonempty component descriptor prefix; reuse existing replacement tests.
-Any minimal blind/observed or accept counters need identical definitions in
-control and candidate, separately from the behavior change. Freeze the diff
-after the isolated gate for review before integration.
+B3 is source-integrated by signed merge `2070399e1`: counter-only
+`266ea0e0e` remains the receipt control and behavioral `9f3397b22` the candidate.
+The merged crate tree equals the reviewed candidate. The frozen gate at
+`~/.local/state/sophia-b3-service-wait-components-01/` ends `exit=0`, with
+809 successful Cargo summaries and no failed summary; earlier failures remain.
+The bounded review is `~/.local/state/sophia-b3-service-wait-components-review-01/`
+(SHA256SUMS `2c5298eeefd60c03e0ba21ad0a31762554da818001880603fe72ac331d3a4c16`).
 
-The proposed native route after source acceptance is two-arm receipt-only,
-with targets fixed in a reviewed package; no CPU ABBA or native launch is
-authorized here. Record custody liveness as a separate authority-review
+Accepted proof limits: `turns_observed` is a supplied `Some` before server
+validity, so `turns_blind` zero is not zero fallback syscalls. The tests exercise
+the shared helpers and OwnerWake; the included `authority_service_wait` block
+and RelayWait offset are source-reviewed only. `served == 1` means processed
+by the owner, not a peer-observed reply. The no-subscription mutation fails the
+observed-turn assertion after that processing assertion passes. Quiet-ring,
+component-ready and prefixed-descriptor cases pass, as does the existing
+replacement test. These limits must accompany the receipt comparison.
+
+Next prepare the two-arm receipt-only package with the same counter semantics
+on both arms and targets fixed before launch; source acceptance is not native
+qualification. No CPU ABBA or native launch is authorized here.
+Record custody liveness as a separate authority-review
 request, motivated by the historical instrumented 94.8 checks per published
 permit, not a current cost or saving claim. Cached authority remains outside
 this lane. Process-reap and second-native-service alternatives remain unselected.
