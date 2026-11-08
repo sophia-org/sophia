@@ -208,13 +208,14 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             let component_ready = shell_components.as_ref()
                 .map(|components| components.fd_readiness()).unwrap_or_default();
             crate::session_println!(
-                "sophia_owner_wait schema=1 owner_tid={} observed_monotonic_usec={}{}{}{} component_waits={} component_ready_any={} component_ready_wire={} component_ready_wire_wake={} component_ready_image_listener={} component_ready_image_socket={} component_ready_authentication={} component_ready_negotiation={} component_ready_image_worker={} component_ready_capture_completion={}",
+                "sophia_owner_wait schema=1 owner_tid={} observed_monotonic_usec={}{}{}{} component_waits={} component_ready_any={} component_ready_wire={} component_ready_wire_wake={} component_ready_image_listener={} component_ready_image_socket={} component_ready_authentication={} component_ready_negotiation={} component_ready_image_worker={} component_ready_capture_completion={} component_turns_observed={} component_turns_blind={}",
                 rustix::thread::gettid().as_raw_nonzero(), observed_monotonic_usec,
                 owner_wake.wait_attribution(), owner_wake.wait_causes(), owner_wake.service_reasons(),
                 component_ready.waits, component_ready.any, component_ready.wire, component_ready.wire_wake,
                 component_ready.image_listener, component_ready.image_socket,
                 component_ready.authentication, component_ready.negotiation,
                 component_ready.image_worker, component_ready.capture_completion,
+                component_ready.turns_observed, component_ready.turns_blind,
             );
             present_evidence.flush();
             sophia_x_authority::flush_present_evidence();

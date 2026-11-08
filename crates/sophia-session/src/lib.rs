@@ -8,6 +8,8 @@ mod shell_capture_owner;
 #[allow(clippy::duplicate_mod)]
 #[path = "../../sophia-runtime/tests/support/image_test_authority.rs"]
 mod test_image_authority;
+// In-crate tests reuse the integration harnesses, which name this crate.
+extern crate self as sophia_session;
 #[cfg(all(test, feature = "native-session"))]
 #[allow(dead_code)]
 #[path = "../../sophia-runtime/tests/support/shell_sdk_image.rs"]

@@ -36,9 +36,24 @@ pub(crate) struct ComponentFdReadiness {
     /// CPU image-worker completion.
     pub image_worker: u64,
     pub capture_completion: u64,
+    /// Connected-wire owner turns that carried the wait's observation.
+    pub turns_observed: u64,
+    /// Connected-wire owner turns without one: the wire was probed instead.
+    pub turns_blind: u64,
 }
 
 impl ComponentFdReadiness {
+    /// One connected wire's owner turn, by whether an observation steered it.
+    pub(super) fn add_turn(mut self, observed: bool) -> Self {
+        let turns = if observed {
+            &mut self.turns_observed
+        } else {
+            &mut self.turns_blind
+        };
+        *turns = turns.saturating_add(1);
+        self
+    }
+
     #[cfg(test)]
     pub(super) fn add_wait(self, fds: impl IntoIterator<Item = (FdRole, bool)>) -> Self {
         self.add_observed(fds).0

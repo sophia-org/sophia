@@ -117,6 +117,7 @@ mod output_replacement;
 mod output_startup_activation;
 mod owner_wake;
 mod present_clock;
+mod service_wait_components;
 use owner_wake::{OwnerWake, SessionSender};
 mod visual_progress;
 use native_session_evidence::{NativeEvidenceSnapshot, NativeSessionEvidence};

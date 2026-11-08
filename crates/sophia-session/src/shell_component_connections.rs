@@ -700,12 +700,15 @@ impl ShellComponentConnections {
             let readiness = readiness
                 .filter(|(owner, _)| *owner == key)
                 .map(|(_, observation)| observation);
-            if phase == ComponentConnectionPhase::Connected
-                && let Err(error) = connection
+            if phase == ComponentConnectionPhase::Connected {
+                self.fd_readiness
+                    .set(self.fd_readiness.get().add_turn(readiness.is_some()));
+                if let Err(error) = connection
                     .transport
                     .service_owner_observed(&mut self.epochs, readiness)
-            {
-                *failure = Some((ComponentConnectionKey { slot, grant }, error));
+                {
+                    *failure = Some((ComponentConnectionKey { slot, grant }, error));
+                }
             }
             if let Some(owner) = connection.images.as_mut()
                 && let Err(error) = owner.service(

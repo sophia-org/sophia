@@ -45,8 +45,14 @@
                         let mut wait = native_wait.deadline.map_or(wait, |deadline| {
                             wait.min(deadline.saturating_duration_since(now))
                         });
-                        let mut relay_fds = smallvec::SmallVec::<[rustix::event::PollFd<'_>; 128]>::new();
-                        let relay_waits = authenticated_launches.subscribe_relays(0, |fd| relay_fds.push(fd));
+                        let mut relay_fds = smallvec::SmallVec::<[rustix::event::PollFd<'_>; 64]>::new();
+                        let component_waits = crate::live_session::service_wait_components::subscribe(
+                            shell_components.as_ref().map(|components| components.connections()),
+                            runtime.is_some(),
+                            &mut relay_fds,
+                        );
+                        let relay_waits = authenticated_launches
+                            .subscribe_relays(relay_fds.len(), |fd| relay_fds.push(fd));
                         if let Some(deadline) = authenticated_launches.relay_deadline() {
                             wait = wait.min(deadline.saturating_duration_since(now));
                         }
@@ -59,7 +65,10 @@
                                 .map(|fd| rustix::event::PollFd::from_borrowed_fd(fd, rustix::event::PollFlags::IN))
                                 .collect(),
                             native_scanout.as_ref().map(LiveProductionNativeScanout::completion_progress),
-                            |fds| { for registration in relay_waits { registration.observe(fds); } },
+                            |fds| {
+                                crate::live_session::service_wait_components::observe(owner_wake, component_waits, fds);
+                                for registration in relay_waits { registration.observe(fds); }
+                            },
                         )?;
                     }
                 }

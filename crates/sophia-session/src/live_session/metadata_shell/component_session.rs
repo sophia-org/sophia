@@ -532,6 +532,12 @@ impl ShellComponentSession {
         self.processes.subscribe_wait(fds)
     }
 
+    pub(crate) fn connections(
+        &self,
+    ) -> &crate::shell_component_connections::ShellComponentConnections {
+        self.processes.connections()
+    }
+
     pub(crate) fn fd_readiness(&self) -> crate::shell_component_connections::ComponentFdReadiness {
         self.processes.fd_readiness()
     }

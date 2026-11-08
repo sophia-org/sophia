@@ -57,3 +57,18 @@ fn observed_causes_name_journal_wire_and_other_descriptors() {
     assert_eq!(causes(&[(SOCKET, true), (FdRole::ImageWorker, true)]), FD);
     assert_eq!(causes(&[(WIRE_ROLE, true), (FdRole::ImageWorker, true)]), WIRE | FD);
 }
+
+#[test]
+fn owner_turns_count_by_observation_and_saturate() {
+    let counts = ComponentFdReadiness::default()
+        .add_turn(true)
+        .add_turn(false)
+        .add_turn(false);
+    assert_eq!((counts.turns_observed, counts.turns_blind), (1, 2));
+    assert_eq!(counts.add_wait([(WIRE, true)]).turns_blind, 2);
+    let full = ComponentFdReadiness {
+        turns_observed: u64::MAX,
+        ..Default::default()
+    };
+    assert_eq!(full.add_turn(true), full);
+}

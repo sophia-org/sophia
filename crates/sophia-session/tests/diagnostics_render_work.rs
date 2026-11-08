@@ -13,6 +13,8 @@ fn component_readiness_keeps_only_named_numeric_counters() {
         "component_ready_negotiation",
         "component_ready_image_worker",
         "component_ready_capture_completion",
+        "component_turns_observed",
+        "component_turns_blind",
     ] {
         let valid = format!("sophia_owner_wait schema=1 {key}=23");
         assert_eq!(
