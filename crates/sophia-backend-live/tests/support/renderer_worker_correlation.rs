@@ -14,6 +14,38 @@ fn correlated_facade() -> (
     (facade, commands, reply)
 }
 
+/// The production wiring, not a test-built slot: a facade's reply route rings
+/// the owner wake attached through its core, and attaching after a result was
+/// already published rings once so that result is inspected too.
+#[test]
+fn facade_results_ring_the_owner_wake_attached_through_the_core() {
+    let (facade, _commands, reply) = correlated_facade();
+    let owner = sophia_wake::Wake::new().expect("owner wake");
+    let correlation = super::frame_correlation(&mixed_job(70), Some(LiveRendererWorkerRequestId(1)));
+    let mut queued = correlated_result(correlation, exported_outcome());
+    queued.output = facade.output();
+    let now = std::time::Instant::now();
+
+    reply.send(queued).unwrap();
+    assert!(!owner.wait(Some(now)).expect("poll"), "nothing attached yet");
+    facade.attach_owner_wake(&owner.notifier());
+    assert!(
+        owner.wait(Some(now)).expect("poll"),
+        "attaching rings once for the already published result"
+    );
+    owner.clear().expect("consume the attach ring");
+    facade.attach_owner_wake(&owner.notifier());
+    assert!(!owner.wait(Some(now)).expect("poll"), "a second attach is a no-op");
+
+    let mut published = correlated_result(correlation, exported_outcome());
+    published.output = facade.output();
+    reply.send(published).unwrap();
+    assert!(
+        owner.wait(Some(now + SETTLE)).expect("poll"),
+        "a result published after attachment rings the owner"
+    );
+}
+
 fn mixed_job(generation: u64) -> super::PendingRenderedFrame {
     super::PendingRenderedFrame::Mixed(
         sophia_renderer_live::LiveOwnedMixedCompositionFrame {

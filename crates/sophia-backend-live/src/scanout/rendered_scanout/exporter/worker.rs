@@ -354,8 +354,6 @@ impl NativeGbmRendererWorkerCore {
         output: LiveRendererWorkerOutputKey,
     ) -> NativeGbmRendererWorker {
         let (reply, result_receiver) = sync_channel(WORKER_RESULT_CAPACITY);
-        // Every result rings the Session owner, so result collection ends on
-        // the transition instead of the bounded short-service timer alone.
         let reply = sophia_wake::SignalSender::new(reply, self.control.result_wake.clone());
         let frame_slot_metrics = LiveRendererFrameSlotMetricsHandle::default();
         let claim = Arc::new(OutputClaim::default());
