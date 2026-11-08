@@ -33,12 +33,21 @@ and a receipt-only native observation, recorded below. The Service wait remains
 one per completion; A3 changes its observed trigger from timer to owner ring.
 No CPU or latency effect has been qualified. Keep the 1 ms fallback.
 
-Next investigate **component-walk repetition**, read-only: which role visits do
-useful work for each ready source, and which expiry, retry, cancellation,
-backpressure, reconnect and custody obligations require unconditional service.
-Only then select a bounded candidate with a concrete CPU hypothesis and a
-device-free proof before native qualification. This is not authorization for a
-general reactor rewrite, cached authority or another A3 ABBA without a hypothesis.
+The read-only [B1 component-walk investigation](../investigations/3u93ti2w-which-component-walk-visits-do-useful-work-per-ready-source.md)
+is accepted at `eb60f81cb` and integrated. It maps visits to readiness and
+unconditional obligations; historical costs remain per published permit where
+that is the emitter's denominator. No-decode flush counts do not prove useless
+publication work, and baseline variation is not a resolution threshold.
+Acceptance is sealed in `~/.local/state/sophia-component-walk-acceptance-01/`
+(SHA256SUMS `0c437449e39361637aeceaed4e01d91ab422a65000177c8ad8c11cbe4ead5986`).
+The separate reader fix `7b51fa6b0` is integrated and includes the emitter's
+`shell_authentication` reason; its four focused tests pass after integration.
+
+Next is the **B2 joint decision**, not an already selected implementation or
+native run. Select a bounded candidate only with a concrete hypothesis and
+device-free proof before qualification. Custody liveness stays outside this
+lane and requires an authority review. This is not authorization for a general
+reactor rewrite, cached authority or another A3 ABBA without a hypothesis.
 
 The [current SFT status](../../native-frame-transactions.md#coverage-and-remaining-gates)
 separates model coverage, idle ACK testing, C deferred-read parity and SDK
