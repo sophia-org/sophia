@@ -197,14 +197,13 @@ saturated or regressing counter, and uses the exact decision below.
 Readiness is `~/.local/state/sophia-liveness-native-readiness-02/` (SHA256SUMS
 `73a5bfba38d3a3ef1f59c46d0df19e7ab18ee0af7338ffa6d919431d85c4d19f`):
 check-only passed with zero GPU/input opens or connector-status reads. No native
-attempt has run. Two preparation refusals remain outside the package: generated
+attempt had run at readiness. Two preparation refusals remain outside the package: generated
 Python bytecode blocked the first seal, and the first check-only found the
 missing empty `runs/h24` parent. Caches were removed before sealing; the empty
 0700 parent was added without changing sealed file bytes. Readiness cites both.
-Next is local final review/quiet handoff and niltempus's detached owner launch;
-TEST SUCCESS means diagnostic acceptance, not a speedup. Keep source and pool
-unchanged through result sealing. No authority change or master integration of
-the counters follows from preparation.
+Local final review and quiet handoff preceded niltempus's detached owner launch.
+TEST SUCCESS means diagnostic acceptance, not a speedup. No authority change or
+master integration of the counters follows from preparation.
 
 Predeclared routing rule, made exact rather than rounded: let P be the valid
 interior custody-poll total and N its completed-frame denominator. If P >= 30*N,
@@ -216,6 +215,42 @@ both have the same close-without-change outcome. Do not round P/N before decidin
 These are niltempus-selected prioritization thresholds, not measured CPU-cost,
 resolution, safety or dispensability thresholds. A high count authorizes neither
 an authority change nor a CPU saving claim; a low count proves no CPU floor.
+
+**Counts result, November 8:** `liv-01` completed and qualified. Seven complete
+interior snapshots cover 1,800 completions, generations 265–2064. The owner
+made 48,600 `LaunchCustody` poll attempts: **27 per completion**, split 15 in
+input turns and 12 in publication flushes, zero outside. Boundary totals per
+completion are pre-turn 7, post-turn 7, file-check 6 and image-check 7. Entries
+are 4 input turns and 3 flushes per completion; export/file wrapper counts are
+14/6, not syscall totals. Image-alive polls are a separate 7 per completion.
+Listener accept attempts are zero on input turns and 3 per completion on
+flushes; these are attempts, not successful joins or errno observations.
+
+Apply the exact declared rule: 48,600 < 30 × 1,800 = 54,000. The intermediate
+band **closes this counts investigation with obligations retained**. Do not
+add image-alive polls to P or revise the threshold after observing the result.
+The separate custody authority review is not triggered by this capture. No
+repeat, authority change, CPU claim or diagnostic-counter master integration
+is selected. This does not establish a performance floor or price removable work.
+
+Root's independent saved-data reader agrees with every cell and aggregate,
+the Service context and routing. Result evidence is
+`~/.local/state/sophia-liveness-native-receipts-01/` (SHA256SUMS
+`7c6d9a58503d8a562c9ebdee4445ec3eb4121d7020c71ede28834dffd1c60743`).
+All 341 external pins and 32 per-arm input hashes reverify. Native counted gaps
+are 16,666–16,668 µs; counted sampler maximum step is 5.041179 ms, late slots
+zero. Postflight and cleanup pass, tty4 agetty and seat0 are restored, bound
+processes exited, tmpfs source/link are gone and the canonical log is regular.
+Owner passes/waits and subscribed/observed turns stay 4 per completion; blind
+turns are zero. Service/ring counts stay 1 each, with wire, fd, native and
+ring+Service causes each 1 and deadline+Service zero. B3's Some-before-validity
+limit remains: this is not a zero-fallback-syscall proof.
+
+WINDOW CLOSED and result seal were sent to the local reviewer for independent
+recount. Preserve source/pool until that audit is accepted and cleanup explicitly
+released. This checkpoint closes the selected counts decision; the next CPU
+optimization needs a separate evidence-backed selection, not reopening parked
+candidates merely because this route closed.
 
 The historical 4.95 polls per service entry and the projected 34 polls / 38 µs
 per frame remain pre-lean-derived assumptions. This counts-only capture can
