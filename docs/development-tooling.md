@@ -260,6 +260,20 @@ directory or copy build artifacts into evidence. Record their paths and hashes.
 Remove a finished, merged worktree with `git worktree remove` so the normal
 pool cleanup can reclaim it without touching another lane's active builds.
 
+Keep worktree names short: conformance fixtures put Unix sockets beneath
+`CARGO_TARGET_TMPDIR`, so the full Cargo-slot path consumes the platform's
+socket-path budget. A long pool name can fail `bind` before the assertion under
+test runs. The B3 gate history is retained in
+`~/.local/state/sophia-b3-service-wait-components-01/GATE-HISTORY.md` on crunch.
+
+`cargo-slot` derives the linked-worktree pool suffix from the Git administrative
+directory, not the checkout's current basename. `git worktree move` keeps that
+directory and therefore the old pool. It can also leave cached fixtures with
+the former `CARGO_MANIFEST_DIR`. If a shorter pool is needed, preserve the branch
+and any local work, then remove the clean worktree and add it under a short name;
+verify the allocator's printed pool before building. Do not rename or share
+another worktree's target directory to work around this.
+
 If a check reports repository paths from another checkout, correct the target
 directory first, then clear the affected workspace package artifacts and rebuild
 from the intended checkout. Do not hide the mismatch with sibling-repository
