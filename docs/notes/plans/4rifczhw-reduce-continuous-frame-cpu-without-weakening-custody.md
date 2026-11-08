@@ -126,31 +126,51 @@ proves that no package can demonstrate a saving. Holding pidfds alone does not
 prove reap gating preserves progress for paused owners. Neither candidate gets a
 mechanism-only change or receipt run merely to exhaust the list.
 
-The recommended next item for niltempus's selection is one separately reviewed,
-one-arm **diagnostic** of B6 caller-fresh custody work on post-B3 master, reusing
-the shell-work-cost receipt design. Name counts before implementation: custody
-polls by call site and entry kind, input turns and publication flushes, all
-normalized to completed frames in the same strictly interior window. Separate
-input from flush attribution; no decoded input does not imply a useless entry.
-If pricing CPU as well as counting calls, report instrumented thread-CPU time
-with explicit clock-read overhead and nesting/double-counting limits. Counts
-alone cannot establish the projected 38 µs cost. Preserve all checks and phase
-order: this is observation, not custody caching or an authority treatment.
+**Selected next diagnostic, November 8:** niltempus selected one post-B3,
+one-arm **counts-only** custody diagnostic. No thread-CPU timing, pass-cost
+timing rebase, CPU comparison, saving or architectural-floor claim. Claude owns
+a bounded scope proposal before source edits, then the diagnostic branch and
+device-free proof; Codex reviews, assembles and seals; niltempus launches the
+reviewed package. Both agents may commit and push necessary accepted work.
+One arm and one launch, no automatic repeat. A failed or incomplete capture is
+a refusal, not evidence for either routing outcome below.
 
-The historical 4.95 custody polls per service entry, projected 34 per frame and
-38 µs remain pre-lean-derived assumptions, not current measurements or a savings
-budget. B6 is a plausible larger term to price, not the only term that can clear
-an ABBA. A material measured cost can justify the separate custody-liveness
-authority review; it cannot show that cost is removable or authorize weaker
-freshness. A small cost supports closing this lane with its current obligations
-retained; it does not establish a global or architectural CPU floor. An ambiguous
-result remains inconclusive rather than triggering an automatic repeat.
+Reuse only the needed counting mechanisms from cpu-shell-work-cost `5e6db9f99`.
+Name custody polls by call site (pre-turn, post-turn, per-file check, image check)
+and by input versus publication-flush entry; also count entries and turn-side
+versus flush-side accept attempts. The scope must define the executed poll unit
+(one poll invocation can check two pidfds), account for custody calls outside
+those entry contexts explicitly, and demonstrate that total and classified
+counts reconcile without double counting. Do not label wrapper invocations
+as syscalls without proving they reach the poll. Accept attempts are counts,
+not successful joins, error numbers or custody polls.
 
-The custody-liveness authority-review request is recorded but deferred pending
-current evidence and selection. No source rebase, diagnostic build, package or
-native launch is started by this recommendation. Native collection still needs
-a reviewed sealed package and niltempus's launch. No CPU ABBA or new optimization
-candidate is selected here; completed and parked results remain closed.
+Pair periodic owner receipts and use completed frames in the same strictly
+interior snapshot window as svc-02, with a qualifying completion floor, identity,
+monotonicity and saturation checks. Input/flush and call-site attribution must
+cover the same window and owner scope as the total. No decoded input does not
+imply a useless entry. All checks, phase order and authority freshness remain;
+this diagnostic neither caches liveness nor gates an obligation. The scoping
+review must settle counter/emitter coverage before source implementation.
+
+Predeclared routing rule, made exact rather than rounded: let P be the valid
+interior custody-poll total and N its completed-frame denominator. If P >= 30*N,
+forward the counts to the separate custody-liveness authority-review request;
+that review decides whether any contract-preserving change merits work. If
+P < 30*N, close this counts investigation with obligations retained. Report
+P <= 10*N as the low-count band and 10*N < P < 30*N as the intermediate band;
+both have the same close-without-change outcome. Do not round P/N before deciding.
+These are niltempus-selected prioritization thresholds, not measured CPU-cost,
+resolution, safety or dispensability thresholds. A high count authorizes neither
+an authority change nor a CPU saving claim; a low count proves no CPU floor.
+
+The historical 4.95 polls per service entry and the projected 34 polls / 38 µs
+per frame remain pre-lean-derived assumptions. This counts-only capture can
+measure frequency in its instrumented lane; it cannot validate 38 µs, price
+removable work, or establish repeatability. B6 is not proven to be the only
+ABBA-resolvable term. Reap gating and native-service skipping remain unselected,
+and no CPU ABBA or new optimization candidate is selected by this diagnostic.
+Completed and parked results remain closed.
 
 The [current SFT status](../../native-frame-transactions.md#coverage-and-remaining-gates)
 separates model coverage, idle ACK testing, C deferred-read parity and SDK
