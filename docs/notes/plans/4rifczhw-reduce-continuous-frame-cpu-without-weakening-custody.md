@@ -76,9 +76,40 @@ observed-turn assertion after that processing assertion passes. Quiet-ring,
 component-ready and prefixed-descriptor cases pass, as does the existing
 replacement test. These limits must accompany the receipt comparison.
 
-Next prepare the two-arm receipt-only package with the same counter semantics
-on both arms and targets fixed before launch; source acceptance is not native
-qualification. No CPU ABBA or native launch is authorized here.
+**B4 receipt qualification, November 8:** `svc-02/changing` completed both
+arms with the counter-only control `266ea0e0e` and candidate `9f3397b22`.
+The package manifest is
+`58df31164307a0b9d15a59dbd71ba85647e2226126155f5b5ae570741a7577b0`.
+Each arm has seven paired interior snapshots and 1,800 completions (control
+generations 266–2065; candidate 267–2066). Component subscribed waits and
+observed turns move from 5,400 to 7,200, while blind turns move from 1,800 to
+zero. Owner passes and waits stay 7,200 in both: four per completion. Native
+Service waits and owner-ring readiness stay 1,800. Joint wire, fd, native and
+ring+Service causes each count 1,800; deadline+Service is zero. The three
+render-result reason marginals each count 1,800 and overlap; zero-reason Service
+waits are zero. All outcomes were descriptive, not acceptance targets.
+
+This confirms observation delivery on the turns that were blind in the control;
+it removes no owner passes in this capture. The accepted B3 limits above still
+apply, including no zero-fallback-syscall claim. `component_waits` counts observed
+waits with at least one registered component descriptor and can trail owner
+waits before connection. Startup and idle-tail totals are not the denominator.
+No CPU, latency, accept4, repeatability or adoption claim follows from B4.
+
+The result is frozen in `~/.local/state/sophia-b3-native-receipts-01/`
+(SHA256SUMS `7068e484c08ad136d9aa866d44cf96fa952e2a804df29a9ec955bf3e802a82dd`).
+Claude's independent parser reproduced the receipt fields with zero discrepancies,
+in `~/.local/state/sophia-b3-native-receipts-audit-claude-01/`
+(SHA256SUMS `1303e7dfc710a575b5f42f69346869a2b8bd9be3eec34e1a8fd62bfc1ca7a67b`).
+Both postflights and cleanup passed; counted completion gaps are 16,667–16,668 µs,
+seat0 stayed unchanged, and tty4's login prompt returned. Readiness was sealed
+before launch and the local reviewer acknowledged quiet. Build worktrees are
+released for ordinary removal after audit acceptance; evidence and commit refs
+remain, with cargo pools left to nightly hygiene.
+
+B4 is closed. The next step is a joint decision on the remaining component-walk
+obligations, not a repeat or CPU ABBA of this receipt-only result. No new source
+candidate or native run is selected here.
 Record custody liveness as a separate authority-review
 request, motivated by the historical instrumented 94.8 checks per published
 permit, not a current cost or saving claim. Cached authority remains outside
@@ -1512,6 +1543,13 @@ interchangeable with the post-A3 lean SFT lane:
   recount and result seal. One Service wait per completion remains, with its
   observed trigger changing from timer to shared owner ring. No CPU or latency
   effect follows from this comparison.
+
+- `svc-02/changing/analysis/summary.json`: B4 component subscription receipts;
+  `~/.local/state/sophia-b3-native-receipts-01/` and the separate
+  `sophia-b3-native-receipts-audit-claude-01/` hold matching recounts. Blind
+  turns change from one to zero per completion, observed turns from three to
+  four; owner passes stay four. These counters do not measure fallback or
+  accept syscalls, CPU savings or latency.
 
 Historical branches are located by ref and commit, not by assuming a worktree
 still exists. These are investigation inputs, not a recommendation to stack
