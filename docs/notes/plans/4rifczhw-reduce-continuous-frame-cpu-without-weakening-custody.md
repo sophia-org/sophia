@@ -107,13 +107,50 @@ before launch and the local reviewer acknowledged quiet. Build worktrees are
 released for ordinary removal after audit acceptance; evidence and commit refs
 remain, with cargo pools left to nightly hygiene.
 
-B4 is closed. The next step is a joint decision on the remaining component-walk
-obligations, not a repeat or CPU ABBA of this receipt-only result. No new source
-candidate or native run is selected here.
-Record custody liveness as a separate authority-review
-request, motivated by the historical instrumented 94.8 checks per published
-permit, not a current cost or saving claim. Cached authority remains outside
-this lane. Process-reap and second-native-service alternatives remain unselected.
+**Joint decision after B4, November 8:** close this component-walk inventory
+and the selected subscription qualification. In the counted connected-bar lane,
+both Receive and Service waits supplied component observations and four owner
+passes per completion remained. This does not eliminate B10's per-visit turn
+obligation or establish observation validity on every topology, startup or
+replacement path. B7 process reaping, B8 settlement/reconciliation, B9 topology
+retry/WM cancellation/chords, B11 observation disposal and B12's unconditional
+native-service obligations remain; no receipt showed them dispensable. The B1
+note stays a historical investigation input, superseded here for current status.
+
+Candidates (b), pidfd-triggered reap, and (c), skipping the pre-wait native service
+after a native-ended pass, are priced but **unselected**, not pending source
+work. Their 3–8 and 6–9 µs estimates are assumptions. The approximately 12 µs
+between-arm variability in cpu-collect-01 weakens the case for spending another
+native comparison on those estimates; it neither sets measurement resolution nor
+proves that no package can demonstrate a saving. Holding pidfds alone does not
+prove reap gating preserves progress for paused owners. Neither candidate gets a
+mechanism-only change or receipt run merely to exhaust the list.
+
+The recommended next item for niltempus's selection is one separately reviewed,
+one-arm **diagnostic** of B6 caller-fresh custody work on post-B3 master, reusing
+the shell-work-cost receipt design. Name counts before implementation: custody
+polls by call site and entry kind, input turns and publication flushes, all
+normalized to completed frames in the same strictly interior window. Separate
+input from flush attribution; no decoded input does not imply a useless entry.
+If pricing CPU as well as counting calls, report instrumented thread-CPU time
+with explicit clock-read overhead and nesting/double-counting limits. Counts
+alone cannot establish the projected 38 µs cost. Preserve all checks and phase
+order: this is observation, not custody caching or an authority treatment.
+
+The historical 4.95 custody polls per service entry, projected 34 per frame and
+38 µs remain pre-lean-derived assumptions, not current measurements or a savings
+budget. B6 is a plausible larger term to price, not the only term that can clear
+an ABBA. A material measured cost can justify the separate custody-liveness
+authority review; it cannot show that cost is removable or authorize weaker
+freshness. A small cost supports closing this lane with its current obligations
+retained; it does not establish a global or architectural CPU floor. An ambiguous
+result remains inconclusive rather than triggering an automatic repeat.
+
+The custody-liveness authority-review request is recorded but deferred pending
+current evidence and selection. No source rebase, diagnostic build, package or
+native launch is started by this recommendation. Native collection still needs
+a reviewed sealed package and niltempus's launch. No CPU ABBA or new optimization
+candidate is selected here; completed and parked results remain closed.
 
 The [current SFT status](../../native-frame-transactions.md#coverage-and-remaining-gates)
 separates model coverage, idle ACK testing, C deferred-read parity and SDK
