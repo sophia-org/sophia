@@ -106,7 +106,7 @@ fn register_claim(
     commands
         .send(WorkerCommand::Register {
             output,
-            reply,
+            reply: reply.into(),
             frame_slot_metrics: super::LiveRendererFrameSlotMetricsHandle::default(),
             claim,
         })
@@ -167,6 +167,46 @@ fn a_result_reaches_only_the_output_that_asked() {
         first_results.try_recv().is_err(),
         "an output that asked for nothing must receive nothing"
     );
+
+    drop(commands);
+    let _ = thread.join();
+}
+
+/// A render result rings the owner wake its reply route was attached to, so
+/// the owner's bounded Service wait ends on the result rather than its timer.
+#[test]
+fn a_render_result_rings_the_attached_owner_wake() {
+    let (commands, thread) = worker_channel();
+    let output = LiveRendererWorkerOutputKey::from_raw(3);
+    let owner = sophia_wake::Wake::new().expect("owner wake");
+    let slot = sophia_wake::WakeSlot::default();
+    slot.set(owner.notifier());
+    owner.clear().expect("attaching rings once; clear it");
+    let (reply, results) = sync_channel(2);
+    commands
+        .send(WorkerCommand::Register {
+            output,
+            reply: sophia_wake::SignalSender::new(reply, slot),
+            frame_slot_metrics: super::LiveRendererFrameSlotMetricsHandle::default(),
+            claim: std::sync::Arc::new(super::OutputClaim::default()),
+        })
+        .expect("worker accepts a registration");
+    let now = std::time::Instant::now();
+    assert!(
+        !owner.wait(Some(now)).expect("poll"),
+        "registration alone rings nothing"
+    );
+
+    render(&commands, output, 9);
+
+    assert!(
+        owner.wait(Some(now + SETTLE)).expect("poll"),
+        "the result rings the owner"
+    );
+    let result = results
+        .recv_timeout(SETTLE)
+        .expect("the result is also delivered");
+    assert_eq!(result.request_id, LiveRendererWorkerRequestId(9));
 
     drop(commands);
     let _ = thread.join();

@@ -595,6 +595,13 @@ where
         self.pending_frame.take().is_some()
     }
 
+    /// Attach the Session owner's wake to this exporter's worker, once.
+    pub(crate) fn attach_owner_wake(&self, notifier: &sophia_wake::Notifier) {
+        if let Some(worker) = &self.worker {
+            worker.attach_owner_wake(notifier);
+        }
+    }
+
     pub const fn worker_in_flight(&self) -> bool {
         matches!(self.worker.as_ref(), Some(worker) if worker.in_flight())
     }

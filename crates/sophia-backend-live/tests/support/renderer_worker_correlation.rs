@@ -3,7 +3,7 @@
 fn correlated_facade() -> (
     super::NativeGbmRendererWorker,
     Receiver<WorkerCommand>,
-    SyncSender<WorkerResult>,
+    sophia_wake::SignalSender<WorkerResult>,
 ) {
     let (core, commands, resume) = inventory_test_core(32);
     resume.send(()).unwrap();

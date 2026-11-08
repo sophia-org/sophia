@@ -151,6 +151,11 @@ impl Drop for WorkerReservation {
 #[derive(Default)]
 pub(super) struct WorkerControl {
     shutdown: AtomicBool,
+    /// The Session owner wake rung by every render result and by a reply
+    /// route dropping, attached once per owner (one core serves one run).
+    // Read by worker.rs; renderer_worker_shutdown mounts this file alone.
+    #[allow(dead_code)]
+    pub(super) result_wake: sophia_wake::WakeSlot,
     #[cfg(feature = "experimental-shell-capture")]
     pub(super) command_wake: sophia_wake::WakeSlot,
     /// The Session owner wake rung by every capture-preparation reply and

@@ -9,6 +9,9 @@
             native_scanout.as_ref().map(LiveProductionNativeScanout::completion_progress),
             seat_state == sophia_backend_live::LiveSeatState::Active && native_scanout.is_some(),
         )?;
+        if let Some(native) = native_scanout.as_ref() {
+            native.attach_owner_wake(&owner_notifier);
+        }
         let native_wait = match (
             runtime.as_ref(), native_scanout.as_ref(), native_frame_service_request.as_ref(),
         ) {

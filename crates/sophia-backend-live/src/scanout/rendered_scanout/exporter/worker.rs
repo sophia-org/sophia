@@ -354,6 +354,9 @@ impl NativeGbmRendererWorkerCore {
         output: LiveRendererWorkerOutputKey,
     ) -> NativeGbmRendererWorker {
         let (reply, result_receiver) = sync_channel(WORKER_RESULT_CAPACITY);
+        // Every result rings the Session owner, so result collection ends on
+        // the transition instead of the bounded short-service timer alone.
+        let reply = sophia_wake::SignalSender::new(reply, self.control.result_wake.clone());
         let frame_slot_metrics = LiveRendererFrameSlotMetricsHandle::default();
         let claim = Arc::new(OutputClaim::default());
         // A refused registration quarantines its facade before it can render.
@@ -452,6 +455,13 @@ impl NativeGbmRendererWorker {
 
     pub const fn in_flight(&self) -> bool {
         self.in_flight.is_some() || self.stalled.is_some()
+    }
+
+    /// Attach the Session owner's wake once; later results ring it directly.
+    pub(super) fn attach_owner_wake(&self, notifier: &sophia_wake::Notifier) {
+        if !self.core.control.result_wake.attached() {
+            self.core.control.result_wake.set(notifier.clone());
+        }
     }
 
     pub(super) const fn output(&self) -> LiveRendererWorkerOutputKey {
@@ -873,7 +883,7 @@ enum WorkerCommand {
     /// and the metrics handle its own slot pool publishes to.
     Register {
         output: LiveRendererWorkerOutputKey,
-        reply: SyncSender<WorkerResult>,
+        reply: sophia_wake::SignalSender<WorkerResult>,
         frame_slot_metrics: LiveRendererFrameSlotMetricsHandle,
         claim: Arc<OutputClaim>,
     },

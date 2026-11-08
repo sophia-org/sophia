@@ -108,6 +108,14 @@ impl<'a> LiveNativeCompletionWait<'a> {
 }
 
 impl LiveProductionNativeScanout {
+    /// Attach the owner wake to every exporter worker, once each, so a render
+    /// result ends the owner's wait instead of its 1 ms fallback.
+    pub fn attach_owner_wake(&self, notifier: &sophia_wake::Notifier) {
+        for exporter in &self.exporters {
+            exporter.attach_owner_wake(notifier);
+        }
+    }
+
     pub(crate) fn completion_wait(&self) -> LiveNativeCompletionWait<'_> {
         let mut wait = LiveNativeCompletionWait::default();
         if !self.output_topology_allows_frame_service() {

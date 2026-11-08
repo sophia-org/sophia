@@ -10,7 +10,7 @@ use crate::api::*;
 use std::collections::BTreeMap;
 use std::io;
 use std::os::fd::AsFd;
-use std::sync::mpsc::{Receiver, SyncSender};
+use std::sync::mpsc::Receiver;
 
 /// One output's private state inside a shared worker.
 ///
@@ -18,7 +18,7 @@ use std::sync::mpsc::{Receiver, SyncSender};
 /// Buffer reuse in particular is matched on size alone, so two outputs of the
 /// same mode sharing a pool would hand one screen's content to the other.
 struct WorkerOutputState {
-    reply: SyncSender<WorkerResult>,
+    reply: sophia_wake::SignalSender<WorkerResult>,
     claim: Arc<OutputClaim>,
     frame_slots: LiveRendererFrameSlotPool,
     slot_damage: WorkerSlotDamage,
@@ -28,7 +28,7 @@ struct WorkerOutputState {
 
 impl WorkerOutputState {
     fn new(
-        reply: SyncSender<WorkerResult>,
+        reply: sophia_wake::SignalSender<WorkerResult>,
         frame_slot_metrics: LiveRendererFrameSlotMetricsHandle,
         claim: Arc<OutputClaim>,
     ) -> Self {
