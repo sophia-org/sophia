@@ -174,6 +174,38 @@ Always-on counting is scoped to this diagnostic branch, not automatic master
 integration. Source and proof are reviewed before packaging; agents launch no
 native arm.
 
+**Diagnostic package prepared, November 8:** `cpu/liveness-counts` is frozen at
+`581a56b3e`, two signed commits on `b58806931`, separate from master. Its source
+review is `~/.local/state/sophia-liveness-counts-review-01/` (SHA256SUMS
+`ad50f6e30b2239d29424c8b3953221f9e5968faf1a11ba8c57790e36ffe3484c`).
+The author gate ends `exit=0` with 811 passing Cargo summaries; the reviewer
+inspected the gate and mutation evidence without repeating the full build.
+Live-wire image boundary wiring is source-reviewed only; direct image tests
+prove counter sites under supplied labels. Owner TLS is the emitted scope.
+
+The device-free host build in `~/.local/state/sophia-liveness-build-01/`
+(SHA256SUMS `2def2d14e81300572fd852b5e40d587eaa02f76b8c2b72aac1fdb206de60d721`)
+binds binary `5d39286e94576e1077166ff103347c8b5b01c96dd0618051270687eb5ccd2cdb`.
+Its compiler-artifact rows exclude custody-dispatch. The one-arm package
+`~/.local/state/t331/liv-01/changing/` has manifest
+`0eea2ea4bcc2077cbf4f8f157578c4d8baad189fae9ef1342f903d6ffe8c2cac`,
+84 sealed entries and 341 pins. Eighteen package suites pass. Peer, runner,
+workload, safety and accounting gates remain the svc-02 recipe. The reducer
+requires all 24 unique cells at every interior snapshot, with no missing,
+saturated or regressing counter, and uses the exact decision below.
+
+Readiness is `~/.local/state/sophia-liveness-native-readiness-02/` (SHA256SUMS
+`73a5bfba38d3a3ef1f59c46d0df19e7ab18ee0af7338ffa6d919431d85c4d19f`):
+check-only passed with zero GPU/input opens or connector-status reads. No native
+attempt has run. Two preparation refusals remain outside the package: generated
+Python bytecode blocked the first seal, and the first check-only found the
+missing empty `runs/h24` parent. Caches were removed before sealing; the empty
+0700 parent was added without changing sealed file bytes. Readiness cites both.
+Next is local final review/quiet handoff and niltempus's detached owner launch;
+TEST SUCCESS means diagnostic acceptance, not a speedup. Keep source and pool
+unchanged through result sealing. No authority change or master integration of
+the counters follows from preparation.
+
 Predeclared routing rule, made exact rather than rounded: let P be the valid
 interior custody-poll total and N its completed-frame denominator. If P >= 30*N,
 forward the counts to the separate custody-liveness authority-review request;
