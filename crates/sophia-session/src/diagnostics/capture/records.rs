@@ -23,6 +23,9 @@ pub fn reduced_record(line: &str) -> Option<String> {
     if super::renderer_handoff::record(name) {
         return super::renderer_handoff::reduce(name, fields);
     }
+    if super::liveness_counts::record(name) {
+        return super::liveness_counts::reduce(name, fields);
+    }
     let mut result = name.to_owned();
     for field in fields {
         let Some((key, value)) = field.split_once('=') else {

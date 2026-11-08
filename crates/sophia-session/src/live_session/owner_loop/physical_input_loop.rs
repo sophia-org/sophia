@@ -217,6 +217,10 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 component_ready.image_worker, component_ready.capture_completion,
                 component_ready.turns_observed, component_ready.turns_blind,
             );
+            crate::live_session::liveness_receipt::emit(
+                rustix::thread::gettid().as_raw_nonzero().get(),
+                observed_monotonic_usec,
+            );
             present_evidence.flush();
             sophia_x_authority::flush_present_evidence();
             // Scheduling counters on the same cadence as the resource gauges.

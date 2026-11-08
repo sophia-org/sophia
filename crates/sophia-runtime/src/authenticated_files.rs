@@ -166,6 +166,7 @@ impl<E> AuthenticatedFiles<E> {
         owner.admission_context().ok_or(Errno::EACCES)
     }
     pub fn poll(&mut self, now: Instant) -> Result<(), Errno> {
+        crate::liveness_counts::count(crate::liveness_counts::Field::ExportPolls);
         match &mut self.admission {
             Admission::Legacy => Ok(()),
             Admission::Pending => Err(Errno::EACCES),
@@ -275,6 +276,8 @@ impl<E: ProtectedFiles> Export for AuthenticatedFiles<E> {
         Ok(map_attachment(root.publish()))
     }
     fn check(&mut self, a: &Access<'_, Self::Node>) -> Result<(), Errno> {
+        let _check = crate::liveness_counts::within(crate::liveness_counts::Boundary::FileCheck);
+        crate::liveness_counts::count(crate::liveness_counts::Field::FileChecks);
         match a.node {
             AuthenticatedNode::Auth { attempt, .. } => {
                 if attempt.connection != a.connection {

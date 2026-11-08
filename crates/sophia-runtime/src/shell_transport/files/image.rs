@@ -96,7 +96,12 @@ impl ImageService {
         let skip_accept = listener_idle.is_some() && listener_idle == self.listener_subscription();
         let accepted = if !skip_accept && self.accept_not_before.is_none_or(|at| now >= at) {
             self.accept_not_before = None;
-            match wire.accept_image_peer(&self.listener, self.expected, now) {
+            let accepted = {
+                let _accept =
+                    crate::liveness_counts::within(crate::liveness_counts::Boundary::ImageAccept);
+                wire.accept_image_peer(&self.listener, self.expected, now)
+            };
+            match accepted {
                 Ok(peer) => peer,
                 Err(_) => {
                     // Resource exhaustion can leave the listener readable.
@@ -254,6 +259,7 @@ impl ShellFileWire {
         peer: &ImageChannelPeer,
         now: Instant,
     ) -> std::io::Result<()> {
+        let _check = crate::liveness_counts::within(crate::liveness_counts::Boundary::ImageCheck);
         peer.check(self.server.export_mut(), now)
     }
 }

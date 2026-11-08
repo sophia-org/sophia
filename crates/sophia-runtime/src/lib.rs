@@ -23,6 +23,7 @@ mod host_domain;
 pub mod image_channel;
 #[cfg(target_os = "linux")]
 pub mod inspection;
+pub mod liveness_counts;
 pub mod lock_files;
 #[cfg(target_os = "linux")]
 pub mod namespace_publication;

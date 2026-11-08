@@ -58,6 +58,7 @@ impl LaunchCustody {
         if !self.inner.active.load(Ordering::Acquire) {
             return Ok(false);
         }
+        crate::liveness_counts::count(crate::liveness_counts::Field::CustodyPolls);
         let mut fds = [
             rustix::event::PollFd::new(&self.inner.wrapper, rustix::event::PollFlags::IN),
             rustix::event::PollFd::new(&self.inner.peer, rustix::event::PollFlags::IN),
@@ -77,3 +78,5 @@ impl LaunchCustody {
 mod dispatch;
 #[cfg(feature = "experimental-custody-dispatch")]
 pub use dispatch::{CustodyDispatch, CustodyDispatchLimit};
+
+mod tests;

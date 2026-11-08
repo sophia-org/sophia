@@ -58,6 +58,7 @@ fn process_alive(process: &OwnedFd) -> Result<bool, Errno> {
         process,
         rustix::event::PollFlags::IN,
     )];
+    crate::liveness_counts::count(crate::liveness_counts::Field::ImageAlivePolls);
     rustix::event::poll(
         &mut ready,
         Some(&rustix::event::Timespec {
@@ -210,6 +211,7 @@ impl ImageChannelListener {
     /// A caller must close a returned socket unless its Hello joins live 9P
     /// custody. Credential equality alone never grants image authority.
     fn accept(&self) -> Result<Option<OwnedFd>, Errno> {
+        crate::liveness_counts::count(crate::liveness_counts::Field::AcceptAttempts);
         match rustix::net::accept_with(
             &self.socket,
             rustix::net::SocketFlags::CLOEXEC | rustix::net::SocketFlags::NONBLOCK,

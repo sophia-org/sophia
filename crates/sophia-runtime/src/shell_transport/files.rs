@@ -14,6 +14,7 @@ use sophia_protocol::shell_files::{
 use super::ShellTransportError;
 use crate::ContentStoreProfile;
 use crate::authenticated_files::{AuthenticatedFiles, FileAuthenticationFactory};
+use crate::liveness_counts::{self, Boundary, Entry};
 
 #[cfg(feature = "experimental-custody-dispatch")]
 mod custody_dispatch;
@@ -201,6 +202,11 @@ impl ShellFileWire {
         flush_only: bool,
         service_images: bool,
     ) -> Result<(), ShellTransportError> {
+        let _entry = liveness_counts::enter(if flush_only {
+            Entry::Flush
+        } else {
+            Entry::Turn
+        });
         let readiness = self.readiness.take();
         let listener_idle = readiness
             .as_ref()
@@ -218,11 +224,14 @@ impl ShellFileWire {
         }
         // The experimental request/retry scope has ended. This final custody
         // check and image service retain caller-fresh liveness.
-        self.server
-            .export_mut()
-            .poll(Instant::now())
-            .map_err(|_| ShellTransportError::NotConnected)?;
-        self.export_mut().expire();
+        {
+            let _post = liveness_counts::within(Boundary::PostTurn);
+            self.server
+                .export_mut()
+                .poll(Instant::now())
+                .map_err(|_| ShellTransportError::NotConnected)?;
+            self.export_mut().expire();
+        }
         if service_images {
             self.service_image_channel(Instant::now(), listener_idle);
         }
@@ -234,12 +243,20 @@ impl ShellFileWire {
         flush_only: bool,
         readiness: Option<ShellReadinessObservation>,
     ) -> Result<bool, ShellTransportError> {
-        self.server
-            .export_mut()
-            .poll(Instant::now())
-            .map_err(|_| ShellTransportError::NotConnected)?;
+        {
+            let _pre = liveness_counts::within(Boundary::PreTurn);
+            self.server
+                .export_mut()
+                .poll(Instant::now())
+                .map_err(|_| ShellTransportError::NotConnected)?;
+        }
         self.turns = self.turns.saturating_add(1);
         self.publication_pending = false;
+        let _server = liveness_counts::within(if flush_only {
+            Boundary::ServerFlush
+        } else {
+            Boundary::ServerTurn
+        });
         if flush_only {
             self.server.flush()
         } else if let Some(readiness) = readiness {

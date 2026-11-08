@@ -108,6 +108,7 @@ mod socket_directories;
 mod startup_barrier;
 use cpu_visual_progress::{CpuVisualProgress, presented_logical_checksum};
 use metadata_shell::live_shell_activation_surfaces;
+mod liveness_receipt;
 mod lock_authenticator;
 mod lock_provider;
 mod native_retirement;
