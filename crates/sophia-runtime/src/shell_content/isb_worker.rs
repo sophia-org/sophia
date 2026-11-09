@@ -6,7 +6,7 @@ use std::io;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, Ordering},
     mpsc,
 };
 use std::time::Instant;
@@ -59,6 +59,7 @@ struct Pending {
     submitted: bool,
 }
 
+#[cfg(feature = "diagnostic-owner-cost")]
 fn thread_cpu_ns() -> u64 {
     let t = rustix::time::clock_gettime(rustix::time::ClockId::ThreadCPUTime);
     u64::try_from(t.tv_sec).unwrap_or(0) * 1_000_000_000 + u64::try_from(t.tv_nsec).unwrap_or(0)
@@ -92,11 +93,13 @@ pub struct IsbValidationWorker {
     max_bytes: usize,
     wake: Wake,
     /// Thread CPU the validation thread spent on jobs, cumulative nanoseconds.
-    cpu_ns: Arc<AtomicU64>,
+    #[cfg(feature = "diagnostic-owner-cost")]
+    cpu_ns: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl IsbValidationWorker {
     /// Cumulative validation-thread CPU, for the owner's diagnostic cost rows.
+    #[cfg(feature = "diagnostic-owner-cost")]
     pub fn cpu_ns(&self) -> u64 {
         self.cpu_ns.load(Ordering::Relaxed)
     }
@@ -126,7 +129,9 @@ impl IsbValidationWorker {
         let notify = wake.notifier();
         let (sender, jobs) = mpsc::sync_channel::<Job>(max_jobs);
         let (results, completed) = mpsc::sync_channel(max_jobs);
-        let cpu_ns = Arc::new(AtomicU64::new(0));
+        #[cfg(feature = "diagnostic-owner-cost")]
+        let cpu_ns = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        #[cfg(feature = "diagnostic-owner-cost")]
         let cpu_total = Arc::clone(&cpu_ns);
         // No callback or owner state enters this thread. Each job returns one
         // owned result before the worker starts another; the queue is bounded.
@@ -140,6 +145,7 @@ impl IsbValidationWorker {
                 let mut raster = None;
                 while let Ok(job) = jobs.recv() {
                     let id = job.id;
+                    #[cfg(feature = "diagnostic-owner-cost")]
                     let started = thread_cpu_ns();
                     let result = validate(
                         job,
@@ -147,6 +153,7 @@ impl IsbValidationWorker {
                         #[cfg(feature = "experimental-draw")]
                         &mut raster,
                     );
+                    #[cfg(feature = "diagnostic-owner-cost")]
                     cpu_total.fetch_add(thread_cpu_ns().saturating_sub(started), Ordering::Relaxed);
                     if completion_sender
                         .send(IsbValidationCompletion { job: id, result })
@@ -165,6 +172,7 @@ impl IsbValidationWorker {
             max_jobs,
             max_bytes,
             wake,
+            #[cfg(feature = "diagnostic-owner-cost")]
             cpu_ns,
         })
     }

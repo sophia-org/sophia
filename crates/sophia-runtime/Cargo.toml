@@ -13,12 +13,14 @@ experimental-draw = ["dep:sophia-draw", "rustix/fs"]
 experimental-shell-capture = ["dep:sophia-renderer-image", "sophia-renderer-image/experimental-shell-capture", "rustix/fs"]
 # Opt-in shell-file control-turn observation; absent from default builds.
 experimental-custody-dispatch = []
+# Validation-worker thread CPU charged per job, for the owner's diagnostic cost rows.
+diagnostic-owner-cost = ["rustix/time"]
 
 [dependencies]
 sophia-draw = { path = "../sophia-draw", optional = true }
 sophia-renderer-image = { path = "../sophia-renderer-image", optional = true }
 sophia-wake = { path = "../sophia-wake" }
-rustix = { version = "1.1", default-features = false, features = ["net", "process", "std", "event", "rand", "time"] }
+rustix = { version = "1.1", default-features = false, features = ["net", "process", "std", "event", "rand"] }
 sophia-linux-peer = { path = "../sophia-linux-peer" }
 sophia-9p = { path = "../sophia-9p" }
 sophia-9p-client = { workspace = true }

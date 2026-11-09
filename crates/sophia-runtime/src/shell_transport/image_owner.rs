@@ -24,6 +24,7 @@ pub struct ShellIsbImageOwner {
 
 impl ShellIsbImageOwner {
     /// Cumulative validation-worker thread CPU, for the owner's diagnostic cost rows.
+    #[cfg(feature = "diagnostic-owner-cost")]
     pub fn worker_cpu_ns(&self) -> u64 {
         self.worker.cpu_ns()
     }

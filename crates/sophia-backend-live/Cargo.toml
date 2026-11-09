@@ -32,6 +32,8 @@ sophia-xshmfence = { path = "../sophia-xshmfence" }
 
 [features]
 default = []
+# Renderer-worker thread CPU charged per command, for the owner's diagnostic cost rows.
+diagnostic-owner-cost = ["dep:rustix"]
 experimental-shell-capture = ["gbm-probe", "sophia-renderer-live/experimental-shell-capture"]
 # Deterministic cross-crate owner fixtures; never enabled by native-session.
 test-support = ["gbm-probe", "libdrm-events"]

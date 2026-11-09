@@ -216,6 +216,7 @@ impl LiveProductionNativeScanout {
 
     /// Cumulative renderer-worker thread CPU over every card group, for the
     /// owner's diagnostic cost rows; not a scheduling input.
+    #[cfg(feature = "diagnostic-owner-cost")]
     pub fn render_worker_cpu_ns(&self) -> u64 {
         // Without shared workers every head owns its core and the group slot
         // stays empty (cpu-decomp-01 read zero here); with sharing, heads

@@ -158,6 +158,7 @@ pub(super) struct WorkerControl {
     pub(super) result_wake: sophia_wake::WakeSlot,
     /// Thread CPU this worker spent serving commands, cumulative nanoseconds;
     /// read by the owner's diagnostic cost rows.
+    #[cfg(feature = "diagnostic-owner-cost")]
     cpu_ns: std::sync::atomic::AtomicU64,
     #[cfg(feature = "experimental-shell-capture")]
     pub(super) command_wake: sophia_wake::WakeSlot,
@@ -184,6 +185,7 @@ impl WorkerControl {
     }
 
     // renderer_worker_shutdown mounts this file alone, where no command runs.
+    #[cfg(feature = "diagnostic-owner-cost")]
     #[allow(dead_code)]
     pub fn cpu_ns(&self) -> u64 {
         self.cpu_ns.load(Ordering::Relaxed)
@@ -191,9 +193,11 @@ impl WorkerControl {
 }
 
 /// Charges the worker thread's CPU for one command to its control on drop.
+#[cfg(feature = "diagnostic-owner-cost")]
 #[allow(dead_code)]
 pub(super) struct CpuCharge<'a>(&'a WorkerControl, u64);
 
+#[cfg(feature = "diagnostic-owner-cost")]
 #[allow(dead_code)]
 impl<'a> CpuCharge<'a> {
     pub(super) fn begin(control: &'a WorkerControl) -> Self {
@@ -201,6 +205,7 @@ impl<'a> CpuCharge<'a> {
     }
 }
 
+#[cfg(feature = "diagnostic-owner-cost")]
 impl Drop for CpuCharge<'_> {
     fn drop(&mut self) {
         let spent = thread_cpu_ns().saturating_sub(self.1);
@@ -208,6 +213,7 @@ impl Drop for CpuCharge<'_> {
     }
 }
 
+#[cfg(feature = "diagnostic-owner-cost")]
 #[allow(dead_code)]
 fn thread_cpu_ns() -> u64 {
     let t = rustix::time::clock_gettime(rustix::time::ClockId::ThreadCPUTime);

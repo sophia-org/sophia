@@ -217,3 +217,18 @@ fn worker_pending_export<Owner>() -> LiveRenderedScanoutBufferExport<Owner> {
         None,
     )
 }
+
+#[cfg(all(
+    feature = "diagnostic-owner-cost",
+    feature = "libdrm-events",
+    feature = "gbm-probe"
+))]
+impl<R> NativeGbmRenderedScanoutBufferDiscoveryExporter<R>
+where
+    R: RenderDeviceDiscoveryBackend,
+{
+    /// Cumulative renderer thread CPU behind this output; zero without a worker.
+    pub fn worker_cpu_ns(&self) -> u64 {
+        self.worker.as_ref().map_or(0, |worker| worker.cpu_ns())
+    }
+}

@@ -270,7 +270,7 @@ impl ShellComponentProcesses {
         &self.connections
     }
 
-    #[cfg(feature = "native-session")]
+    #[cfg(all(feature = "native-session", feature = "diagnostic-owner-cost"))]
     pub(crate) fn image_worker_cpu_ns(&self) -> u64 {
         self.connections.image_worker_cpu_ns()
     }

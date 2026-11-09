@@ -63,3 +63,19 @@ pub(super) fn worker_outcome_name(outcome: &WorkerOutcome) -> &'static str {
         WorkerOutcome::Failed(_) => "failed",
     }
 }
+
+#[cfg(feature = "diagnostic-owner-cost")]
+impl NativeGbmRendererWorkerCore {
+    /// Cumulative thread CPU the renderer worker spent serving commands.
+    pub fn cpu_ns(&self) -> u64 {
+        self.control.cpu_ns()
+    }
+}
+
+#[cfg(feature = "diagnostic-owner-cost")]
+impl NativeGbmRendererWorker {
+    /// Cumulative thread CPU of the core this output is attached to.
+    pub fn cpu_ns(&self) -> u64 {
+        self.core.cpu_ns()
+    }
+}

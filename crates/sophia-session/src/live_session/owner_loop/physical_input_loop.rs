@@ -101,11 +101,15 @@ let owner_notifier = owner_wake.notifier();
 let mut owner_cost = owner_cost::Recorder::new(owner_wake.statistics().passes);
 let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
     'session: loop {
+        #[cfg(feature = "diagnostic-owner-cost")]
+        let worker_cpu_ns = [
+            native_scanout.as_ref().map_or(0, |native| native.render_worker_cpu_ns()),
+            shell_components.as_ref().map_or(0, |components| components.image_worker_cpu_ns()),
+        ];
+        #[cfg(not(feature = "diagnostic-owner-cost"))]
+        let worker_cpu_ns = [0; 2];
         owner_cost.begin_pass(
-            [
-                native_scanout.as_ref().map_or(0, |native| native.render_worker_cpu_ns()),
-                shell_components.as_ref().map_or(0, |components| components.image_worker_cpu_ns()),
-            ],
+            worker_cpu_ns,
             owner_wake.last_wait_cause(),
             shell_components.as_ref().map_or([0; 2], |components| components.component_turns()),
         );

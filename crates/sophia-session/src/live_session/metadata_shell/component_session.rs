@@ -543,6 +543,7 @@ impl ShellComponentSession {
     }
 
     /// Cumulative image-worker thread CPU, for the owner's diagnostic cost rows.
+    #[cfg(feature = "diagnostic-owner-cost")]
     pub(crate) fn image_worker_cpu_ns(&self) -> u64 {
         self.processes.image_worker_cpu_ns()
     }
