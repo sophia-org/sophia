@@ -28,6 +28,57 @@ acceptance in t289 and portability planning in t256. The November 7 milestone
 below closes three experimental comparisons, not default-on adoption. Its final
 lane is 673.7–674.1 combined µs/frame; separate treatments are not additive.
 
+**Current selection: Track A authority review, then Track B trigger design.**
+After the closed liv-01 result, niltempus separately selected a device-free
+custody-poll cost screen, an obligation map and an authority-review request,
+followed by a design note on moving per-pass obligations to their own triggers.
+This selection does not change the liv-01 routing rule or its 27/frame closure.
+
+The [custody obligation map](../investigations/px8oi1bw-which-custody-polls-protect-an-obligation-that-channel-liveness-cannot.md)
+is integrated at accepted `3fba26d95`. Readiness wakes the owner; it does not
+replace caller-fresh authority. Concurrent exit can occur between any two
+observations, so repeated counts alone do not establish redundancy. The tight
+userspace loop observed about 0.4 µs per two-pidfd zero-timeout poll, including
+its harness. That is not a bound, owner-thread cost or removable saving.
+Keep cost evidence `sophia-custody-poll-cost-01` and both correction siblings;
+correction-claude-02 supersedes the first correction's lower-bound wording.
+
+Draft 02 is accepted **as the authority-review request**, not an implementation
+selection. Its frozen input is
+`~/.local/state/sophia-custody-authority-review-request-draft-claude-02/REQUEST.md`
+(SHA256SUMS `ed3065ff87c10557689c3a7783486c71d1dc50b6db30b12cfe939a023130134e`).
+Acceptance is `~/.local/state/sophia-custody-authority-request-acceptance-01/`
+(SHA256SUMS `75dee241d384104457ae9c3e3da219ad5e6332ff98fededdd9a838d2fac173b5`).
+The pending decision has two questions:
+
+- M1: can a later image-path check replace the post-turn custody observation
+  on a proven-eligible entry while preserving authentication close, admission
+  withdrawal, whole-wire refusal and publication behavior? Image-only Closing
+  is not equivalent today. Ready/Hello are proposed states to examine, not
+  proven eligibility. Preserve the current early return before expiry and
+  image service on failure; retaining expiry on successful service does not
+  authorize running it after refusal.
+- M2: can the owner wait supply a current, identity-bound, single-use
+  authentication observation for the next entry? Define the accepted exit
+  interval, preserve active/ingress reads, and retain fresh-poll fallback for
+  missing, stale, replaced, invalid, errored or consumed observations. Wait
+  return is not a demonstrated atomic observation instant. Fresh operation,
+  delivery and attach checks remain obligations.
+
+M3, readiness-driven reaping, is parked for Track B's lifecycle map. Existing
+wire registration does not establish coverage for startup, failed negotiation,
+disconnection/revocation, stopping or replacement. Preserve retirement and
+termination deadlines; holding a pidfd does not establish complete progress.
+
+The next step is the authority decision: select, reject or defer each question
+with reasons. Only a selected mechanism proceeds to separately scoped,
+device-free interleaving/refusal proof and a negative mutation. Only after
+that proof may a separately approved receipt package be proposed with an
+adequate discriminator. Receipt values and unchanged passes are hypotheses,
+not security proof. Rejecting or deferring all mechanisms completes the review.
+No mechanism, build, benchmark rerun, CPU arm or native launch is selected by
+accepting this request. The earlier closed results below remain historical.
+
 The **Service deadline obligation** now has a reviewed result-ready notification
 and a receipt-only native observation, recorded below. The Service wait remains
 one per completion; A3 changes its observed trigger from timer to owner ring.
