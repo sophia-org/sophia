@@ -53,12 +53,12 @@ hypothesis; neither lower CPU nor a cheaper pass is established here.
 | B1 id | obligation today | where | candidate trigger | bound if the trigger is missed | must stay per pass |
 |---|---|---|---|---|---|
 | B6 | custody poll per entry (27/frame) | `files.rs service`, `launch_authentication/files.rs poll/check` | pidfd readiness already in both wait sets, under the pending M1/M2 authority decision | the requested 20 ms idle cap plus scheduling delay; not a detection guarantee | every retained boundary keeps its `active`/ingress read and a fresh poll where the contract requires one. Not designed here. |
-| B7 | process reap: `try_wait` over every slot from three sites per pass | `shell_component_processes.rs:196-227`, `process.rs:486-507`, callers `component_service.rs:32`, `component_lifecycle.rs:193`, `physical_input_loop.rs:397` | the wrapper pidfd, held by the supervisor only on demand (`process.rs:360-379`), registered as an owned lifecycle descriptor rather than through the wire | the termination deadline (2 s, `process.rs:511-515`) and the per-pass walk as fallback until coverage is proven for every state in Table B | the three call sites collapse to one readiness-driven visit only after Table B is closed; `has_live_launch`'s own `try_wait` before admission stays |
-| B8 | settlement of revoked grants and catalog reconcile, twice per pass each | `component_session.rs:579-591 settle_revocations`, `component_catalog.rs:198-230 reconcile_connections`, called at `component_service.rs:121,153,305,346` | settlement: the ledger's own retained state (`revoked_content_grants.rs:33-55` keeps an entry until its exact cleanup succeeds; `settle_with` with no runtime returns the retained count without draining; `component_session.rs:351` blocks a new start while the ledger is nonempty). Reconcile: every mutation of the connected inventory and of publications or queued opens, which are independent sites (`component_catalog.rs:198-230`) | settlement has none and needs none if the pending state is the ledger itself, which must stay retained across visits without a runtime and be serviced when one returns; reconcile has none and is unpriced | the original four sites and their order, error and partial-success behaviour; the reconcile's whole-inventory validation (`component_catalog.rs:196-197`); no duplicate flag before the existing ledger state is shown insufficient. Unpriced: see the amendment below |
+| B7 | process reap: `try_wait` over every slot from three sites per pass | `shell_component_processes.rs:196-227`, `process.rs:486-507`, callers `component_service.rs:32`, `component_lifecycle.rs:193`, `physical_input_loop.rs:397` | the wrapper pidfd, opened on demand into `LaunchCustody`, not retained as a supervisor readiness registration (`process.rs:360-379`), registered as an owned lifecycle descriptor rather than through the wire | the termination deadline (2 s, `process.rs:511-515`) and the per-pass walk as fallback until coverage is proven for every state in Table B | the three call sites collapse to one readiness-driven visit only after Table B is closed; `has_live_launch`'s own `try_wait` before admission stays |
+| B8 | settlement of revoked grants and catalog reconcile, twice per pass each | `component_session.rs:579-591 settle_revocations`, `component_catalog.rs:198-230 reconcile_connections`, called at `component_service.rs:121,153,305,346` | settlement: the ledger's own retained state (`revoked_content_grants.rs:33-55` keeps an entry until its exact cleanup succeeds; `settle_revocations` with no runtime returns without draining; `settle_with(None)` likewise retains entries; `component_session.rs:351` blocks a new start while the ledger is nonempty). Reconcile: every mutation of the connected inventory and of publications or queued opens, which are independent sites (`component_catalog.rs:198-230`) | settlement has none and needs none if the pending state is the ledger itself, which must stay retained across visits without a runtime and be serviced when one returns; reconcile has none and is unpriced | the original four sites and their order, error and partial-success behaviour; the reconcile's whole-inventory validation (`component_catalog.rs:196-197`); no duplicate flag before the existing ledger state is shown insufficient. Unpriced: see the amendment below |
 | B9a | topology publication retry | `topology_phase.rs:589-593` | the candidate that blocks publication clearing, which "clears on its own schedule" | the pass itself, as now, until the clearing event is named | one retained slot; a newer snapshot supersedes |
 | B9b | WM failure cancellation every turn | `wm_phase.rs:80-86` | none: the comment states the cancellation request must persist on every turn until restoration | the turn | stays per pass by design |
 | B9c | chords dispatched every turn | `lifecycle.rs:204-212` | already input-driven and clock-driven ("Held falls due by the clock"); the per-turn dispatch drains a FIFO | the chord clock | the drain of an empty FIFO is cheap and keeps the overdue-deadline guarantee; leave |
-| B10 | every connected wire turns once per visit so subscribed readiness is consumed | `component_session.rs:496-499` | the observation itself, since B3; a visit without an observation on that wire has nothing to consume | the pre-turn poll and expire still run on the entry | this is M2's territory for custody and otherwise already event-shaped |
+| B10 | every connected wire turns once per visit so subscribed readiness is consumed | `component_session.rs:496-499` | the observation itself, since B3; a missing or stale observation retains ordinary probing and the per-visit obligations | the pre-turn poll and expire still run on the entry | this is M2's territory for custody and otherwise already event-shaped |
 | B11 | a skipped component pass must not carry a wait forward | `physical_input_loop.rs:591` | none; it is the rule that makes any gating safe | n/a | stays |
 | B12 | pre-wait `service_native` unconditional; parked candidates serviced when nothing is pending | `native_service.rs:7-11, 29, 130-132` | native fds and the ring already end the wait; the pre-wait call is the candidate (c) from B1, overlapping the inconclusive collection guard 75ff298ab | the Service wait's short cap | feedback delivery before an authority-only batch skips the tail |
 | B1-B5, B13 | present clocks, ack deadlines, image accept retry, hello timeout, capture maintenance, authentication wait | as in 3u93ti2w Table B | already have their own deadline or trigger | own | unchanged |
@@ -94,10 +94,9 @@ interleavings, deadlines and registration errors; receipts from a capture
 corroborate only the states that capture exercised and cannot stand in for
 that proof.
 
-## Which move is worth designing first
+## Unselected design questions
 
-Ranked by how much per-pass work it removes against how much contract it
-touches, with the pre-lean counts as the only sizes on record:
+Unranked source hypotheses, each requiring its own selection and proof:
 
 - B8 settlement and reconcile serviced from their own state rather than per
   pass. Unranked by size: no measurement of these four calls exists (see the
@@ -128,25 +127,25 @@ touches, with the pre-lean counts as the only sizes on record:
 
 The first version of this note ranked B8 first on "121 settlement calls per
 completion, 99 percent empty" from continuous-shell-work-cost-01, and the
-accepted component-walk note 3u93ti2w carries the same figure in its Table A
-(line 106) and Table C (line 122) against `settle_revocations` and
-`reconcile`. Codex's review of this note checked the historical host
+accepted component-walk note 3u93ti2w attributed the empty fraction to
+`settle_revocations` and `reconcile` in Table A and left the 133.7-per-permit
+stage row labelled only `settle`. Codex's review checked the historical host
 `5e6db9f99`: `Stage::Settle` is in
 `crates/sophia-runtime/src/shell_content/isb_jobs.rs:222` and wraps the ISB
 image-job reconcile, not `RevokedContentGrantLedger::settle_with` or
 `ComponentCatalog::reconcile_connections`, and its denominator is published
 permits, not completed frames. The attribution in both notes is therefore
-wrong. This note withdraws it; the 3u93ti2w rows are corrected by this
-amendment trail and should be amended in that note by a separate docs
-change. No measurement of the four B8 calls exists, pre-lean or current, and
-none is requested here.
+wrong. This note withdraws it; the separate integration correction to 3u93ti2w
+withdraws the Table A attribution and names the ISB operation in its
+historical stage row without changing the numbers. No measurement of the four
+B8 calls exists, pre-lean or current, and none is requested here.
 
 What this does not reach: the four passes per frame themselves. Each wake
 source still produces a full pass because the Timeout tail serves native work
 and the next pass serves everything else. Collapsing passes is a reactor
 change that B1 and 4rifczhw have declined to authorize without a hypothesis;
-moving obligations to triggers is what makes each pass cheaper, and it is
-what this note proposes.
+moving obligations to triggers is a hypothesis for reducing work per pass,
+not an established saving.
 
 ## Limits
 

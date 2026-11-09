@@ -79,6 +79,23 @@ not security proof. Rejecting or deferring all mechanisms completes the review.
 No mechanism, build, benchmark rerun, CPU arm or native launch is selected by
 accepting this request. The earlier closed results below remain historical.
 
+**Track B design input accepted, November 8:** the
+[obligations-on-triggers note](../investigations/rug93yha-which-per-pass-obligations-can-move-to-their-own-trigger-without-weakening-custody.md)
+is integrated from `02950097f`; acceptance is
+`~/.local/state/sophia-obligation-triggers-acceptance-01/` (SHA256SUMS
+`06c18deb58bb5ce5e280703f95f105793bd4959781c0d3fb1af16c48837144c5`).
+B8 revoked-grant settlement and catalog reconcile are unpriced source
+hypotheses. The historical `Stage::Settle` measurements belonged to ISB
+image-job reconcile, not B8; the inherited B1 label is corrected with frozen
+evidence and numerical results unchanged. Preserve retained ledger work,
+original settlement ordering and independent catalog mutation obligations.
+M3's map now includes spawn-worker ownership and handoff, registration loss
+and termination deadlines. A capture exercising no missed readiness cannot
+replace per-state progress/refusal proof. B3 observation limits remain.
+This completes the selected design-note work, not an optimization selection:
+M1/M2 still await the authority decision; M3 and B8 remain unselected. No
+source implementation, diagnostic package, native run or CPU claim follows.
+
 The **Service deadline obligation** now has a reviewed result-ready notification
 and a receipt-only native observation, recorded below. The Service wait remains
 one per completion; A3 changes its observed trigger from timer to owner ring.

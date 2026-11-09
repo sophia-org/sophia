@@ -103,7 +103,7 @@ native-ended 27.0, wire-ended 45.3, fd-ended 28.0, Service-ended 60.9 us.
 | turn_connected: custody checks | `files.rs:208-230` via `launch_authentication/files.rs:409` and `custody.rs:41` to `launch_custody.rs:57-73` | none; caller-fresh liveness by design | `export.poll` before and after the turn, one per file check, one image check | B6 | 4.95 pidfd ppolls per `service()` entry, an aggregate average over turns and flushes (shell-work-cost boundary rows) | none; cached authority is an authority change |
 | turn_connected: image channel | `files/image.rs:85-175` | listener readable, image peer readable | accept when `listener_idle` is None and outside the 10 ms backoff; `check_image_peer` custody; `receive_image_datagram` | B3, B4, B6 | accept4 EAGAIN (post-Service), recvmsg EAGAIN | |
 | images.service | `metadata_shell/component_session.rs` | image worker fd | `image_alive` custody poll per retained owner | B6 | one pidfd ppoll | |
-| settle_revocations, reconcile (twice each) | `metadata_shell/component_session.rs` | revocation or publication | 99.25 percent of settlement calls empty (shell-work-cost) | B8 | none | |
+| settle_revocations, reconcile (twice each) | `metadata_shell/component_session.rs` | revocation or publication | unpriced; the historical Settle counter measures ISB image-job reconcile, not these calls | B8 | none | |
 | bar role services | `component_service.rs:247-280`, `panel_service.rs:78-160` | content change, action, presentation | all five run; `with_service` only invokes its closure, and the role services call `poll_io`, whose `turn_files` flushes only when a publication is pending (`shell_transport.rs:586-593`); `turn_connected`'s input turn can flush a publication too | B6, B10 | pidfd ppolls per flush entry, count not measured per flush | |
 | dock and launcher roles | `component_service.rs:175-240` | catalog or launch change | `catalog.publish` then `poll_io` | B6 | as bar | |
 | catalog.service_execution, discard_readiness | `physical_input_loop.rs:592-594` | none | drops unconsumed readiness, uncounted | B11 | none | |
@@ -119,11 +119,20 @@ every row, source_release 16.5 against 16.9 us being the widest):
 | stage | calls per permit | CPU per call | CPU per permit |
 |---|---|---|---|
 | custody | 94.8 | 1.13 us | 106.7 us |
-| settle | 133.7 (99.25 percent empty) | 0.58 us | 77.0 us |
+| settle (ISB image-job reconcile) | 133.7 (99.25 percent empty) | 0.58 us | 77.0 us |
 | collect | 42.8 | 0.64 us | 27.6 us |
 | image_alive | 19.3 | 1.06 us | 20.3 us |
 | admission | 26.5 | 0.71 us | 18.7 us |
 | source_release | 26.5 | 0.64 us | 16.9 us |
+
+**November 8 attribution correction:** `Stage::Settle` at historical
+`5e6db9f99`, `shell_content/isb_jobs.rs:222`, wraps ISB image-job reconcile.
+It does not instrument revoked-grant settlement or catalog reconcile. The
+133.7-per-permit row and its 99.25 percent empty fraction belong to that ISB
+operation; Table A's earlier attribution to B8 is withdrawn. These historical
+values are unchanged, and do not price the four B8 call sites. See the
+[Track B amendment](rug93yha-which-per-pass-obligations-can-move-to-their-own-trigger-without-weakening-custody.md#amendment-the-settlement-counter-was-for-a-different-operation).
+Frozen reduction and review artifacts remain unchanged.
 
 These are instrumented historical costs. Per-call CPU includes the two clock
 reads of the instrumentation itself, and the instrumentation can perturb
