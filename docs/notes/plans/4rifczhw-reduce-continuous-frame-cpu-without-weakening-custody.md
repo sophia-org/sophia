@@ -40,7 +40,9 @@ there is no shared CQ or host mapping. Persistent two-process servicing and
 export refusal/journal tests are correctness evidence only. Authenticated wrapper
 and complete socket-framed 9P parity remain the next gate, followed by a matched
 counts-only census before timing. See the probe README for exact coverage and
-unproved lifecycle boundaries.
+unproved lifecycle boundaries. Review 6f59474c accepts 52ea995d4 as a
+correctness checkpoint only; the next client follow-up distinguishes prepared
+from successfully published hints without changing host custody.
 Ring-01 evidence stays frozen; a4f599e7a source disposition remains OPEN and must
 not be folded into a carrier effect claim.
 

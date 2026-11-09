@@ -195,6 +195,7 @@ fn real_duplicate_stages_and_poisons_writer_and_client_fails_unknown() {
     assert!(b.staging.is_some());
     let mut client = Client::default();
     client.begin(receipt.identity).unwrap();
+    publish_client(&mut client);
     client.observe(receipt).unwrap();
     assert!(client.closed && client.unknown);
     let next = commit(21, 0);
@@ -324,6 +325,7 @@ fn real_ack_effect_survives_backpressure_but_receipt_confirms_only_success() {
     );
     let mut client = Client::default();
     client.begin(receipt.identity).unwrap();
+    publish_client(&mut client);
     client.observe(receipt).unwrap();
     assert_eq!(client.confirmed_ack, 0);
     a.inbound.clear();
@@ -331,6 +333,7 @@ fn real_ack_effect_survives_backpressure_but_receipt_confirms_only_success() {
     let receipt = carrier.submit(&mut b, &bytes);
     agrees(control(&mut a, &bytes), receipt, &bytes);
     client.begin(receipt.identity).unwrap();
+    publish_client(&mut client);
     client.observe(receipt).unwrap();
     assert_eq!(client.confirmed_ack, ack);
     equal(&a, &b);
@@ -367,3 +370,8 @@ fn transport_close_does_not_roll_back_export_custody_or_publish_after_withdrawal
 
 #[path = "shell_frame_control_carrier_process.rs"]
 mod process;
+
+fn publish_client(client: &mut Client) {
+    let (_reader, writer) = sophia_control_ring_probe::wake::pipe().unwrap();
+    client.publish(&writer).unwrap();
+}

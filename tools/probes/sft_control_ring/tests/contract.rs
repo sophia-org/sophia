@@ -150,6 +150,7 @@ fn wrong_receipt_identity_or_ack_word_does_not_establish_knowledge() {
         let mut c = Client::default();
         let a = request(1, 10, 1);
         c.begin(a.identity).unwrap();
+        publish_client(&mut c);
         let mut r = Receipt {
             identity: a.identity,
             outcome: Outcome::Accepted { applied_ack: 1 },
@@ -201,6 +202,7 @@ fn answered_refusal_does_not_become_unknown_on_disconnect() {
     let mut c = Client::default();
     let a = request(1, 10, 1);
     c.begin(a.identity).unwrap();
+    publish_client(&mut c);
     c.observe(Receipt {
         identity: a.identity,
         outcome: Outcome::Refused(Errno::EAGAIN),
@@ -283,8 +285,6 @@ fn producer_process_fixture() {
     let mut stream = process::connect();
     let r = request(1, 10, 0);
     let mut p = stage(&r);
-    let mut client = Client::default();
-    client.begin(r.identity).unwrap();
     send_descriptors(&stream, &[p.source_fd()], 1);
     let mut byte = [0];
     stream.read_exact(&mut byte).unwrap();
@@ -313,8 +313,8 @@ fn producer_process_fixture() {
         sophia_control_ring_probe::wake::Ready::Work
     );
     let receipt = bell.receipt().unwrap().unwrap();
-    client.observe(receipt).unwrap();
-    assert_eq!(client.known, Some(10));
+    assert_eq!(receipt.identity, r.identity);
+    assert_eq!(receipt.outcome, Outcome::Accepted { applied_ack: 0 });
     stream.write_all(&[4]).unwrap();
     stream.read_exact(&mut byte).unwrap();
     assert_eq!(&byte, b"Q");
@@ -329,6 +329,7 @@ fn standalone_ack_and_submission_cannot_overlap_in_either_order() {
     c.finish_ack(7).unwrap();
     assert_eq!(c.confirmed_ack, 7);
     c.begin(request(1, 10, 8).identity).unwrap();
+    publish_client(&mut c);
     assert_eq!(c.begin_ack(8), Err(EBUSY));
     assert_eq!(c.confirmed_ack, 7);
     c.disconnect();
@@ -565,11 +566,13 @@ fn duplicate_receipt_message_fails_closed_and_ealready_is_unknown() {
         outcome: Outcome::Accepted { applied_ack: 0 },
     };
     client.begin(first.identity).unwrap();
+    publish_client(&mut client);
     client.observe(receipt).unwrap();
     assert!(client.observe(receipt).is_err());
     assert!(client.closed);
     let mut client = Client::default();
     client.begin(first.identity).unwrap();
+    publish_client(&mut client);
     client
         .observe(Receipt {
             identity: first.identity,
@@ -622,4 +625,59 @@ fn pwrite_only_cq_cannot_be_both_reusable_and_peer_write_sealed() {
         sealed.write_at(b"O", 0).unwrap_err().raw_os_error(),
         Some(1)
     );
+}
+
+fn publish_client(client: &mut Client) {
+    let (_reader, writer) = sophia_control_ring_probe::wake::pipe().unwrap();
+    client.publish(&writer).unwrap();
+}
+
+#[test]
+fn only_published_attempts_become_unknown_and_early_receipts_refuse() {
+    let id = request(1, 10, 0).identity;
+    let mut prepared = Client::default();
+    prepared.begin(id).unwrap();
+    prepared.disconnect();
+    assert!(prepared.closed && !prepared.unknown && prepared.known.is_none());
+
+    let mut prepared = Client::default();
+    prepared.begin(id).unwrap();
+    assert!(
+        prepared
+            .observe(Receipt {
+                identity: id,
+                outcome: Outcome::Accepted { applied_ack: 0 }
+            })
+            .is_err()
+    );
+    assert!(prepared.closed && !prepared.unknown && prepared.known.is_none());
+
+    let (reader, writer) = sophia_control_ring_probe::wake::pipe().unwrap();
+    let mut published = Client::default();
+    published.begin(id).unwrap();
+    published.publish(&writer).unwrap();
+    assert!(published.publish(&writer).is_err());
+    assert_eq!(reader.next(0).unwrap(), Some(1));
+    assert_eq!(
+        reader.next(1).unwrap(),
+        None,
+        "repeat publish wrote no hint"
+    );
+    published.disconnect();
+    assert!(published.closed && published.unknown && published.known.is_none());
+}
+
+#[test]
+fn failed_hint_write_closes_as_unpublished() {
+    let (_reader, writer) = sophia_control_ring_probe::wake::pipe().unwrap();
+    let block = [0; 4096];
+    while rustix::io::write(&writer, &block).is_ok() {}
+    let mut client = Client::default();
+    client.begin(request(1, 10, 0).identity).unwrap();
+    assert_eq!(
+        client.publish(&writer).unwrap_err().kind(),
+        io::ErrorKind::WouldBlock
+    );
+    assert!(client.closed && !client.unknown && client.known.is_none());
+    assert!(client.begin(request(1, 10, 0).identity).is_err());
 }

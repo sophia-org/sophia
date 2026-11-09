@@ -58,7 +58,9 @@ wake before touching shared storage:
 A sequence hint is transport identity, never admission, ACK or release authority.
 Pipe framing and the wait are bounded. The persistent fixture uses an absolute
 10 s deadline, a child pidfd obtained from the launch result, and process-exit
-readiness in the same poll as requests. Exit wins over work. Error returns must
+readiness in the same poll as requests. Exit wins over work. HUP is checked
+before IN: closing the hint writer with a hint buffered loses it, so a conforming
+peer keeps its writer open until the receipt. Error returns must
 end the owning control endpoint; an unanswered published attempt is unknown,
 not replayable. The fixture retains export custody when transport closes.
 
@@ -81,7 +83,11 @@ adapter, preserves exact errno and count, and gates publication separately.
 under the existing private frame-export tests. Captured bytes go through the
 real `read_reusable_transaction` and `ShellFiles::write(FrameSubmit)` path and
 therefore the host `sophia_protocol` codec, ACK/recycle, staging, expiry, watermark
-and journal implementation. No visibility is widened. Tests compare direct
+and journal implementation. The explicit read_reusable_transaction check binds
+the peer-claimed writer; the export checks its own live writer. A production
+adapter must keep this binding check and the per-operation authenticated
+Export::check gate; the latter is not exercised here. No visibility is widened.
+Tests compare direct
 FrameSubmit results and journal/state to the carrier for retries, changed bytes,
 EALREADY plus poisoned writer, expiry/clunk/reopen, ACK-before-backpressure,
 publication holds and transport closure. There is no second admission owner.
@@ -95,7 +101,10 @@ inbound records/journal as the direct export control. This is a mechanism proof,
 Success receipts bind sequence, epoch, writer, submission, byte count and the
 exact applied ACK word. EAGAIN confirms no ACK even if it applied before admission
 failed. Standalone ACK and submissions serialize in both directions. EALREADY
-sets unknown and closes. Every receipt pipe record must answer the pending
+sets unknown and closes. Client begin prepares an attempt; only a successful
+hint write through Client::publish marks it published. A failed hint write
+closes as unpublished, while a published attempt with no receipt closes unknown.
+Both states block overlapping ACKs; a receipt before publication is refused. Every receipt pipe record must answer the pending
 attempt; duplicate or foreign messages close. The former benign duplicate CQ
 cell rule is obsolete because the CQ is no longer shared storage.
 
@@ -165,3 +174,9 @@ isolation uses umask 022, bwrap hiding /dev/dri and /dev/input and clears sessio
 SOPHIA_* environment. Ignored child fixtures are explicitly invoked by their
 non-ignored parent tests. Dependencies use held root-lock versions; no binaries
 are copied into evidence. No native launch or CPU/saving claim follows.
+
+Checkpoint 52ea995d4 was accepted as device-free correctness evidence by review
+6f59474c (sophia-control-carrier-probe-review-claude-02). It classified all prepared
+attempts conservatively as unknown on disconnect; the client publication state
+follow-up separates them without changing host custody. Remaining transport and
+authority gates above are unchanged.

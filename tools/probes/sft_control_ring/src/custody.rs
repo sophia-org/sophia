@@ -127,6 +127,7 @@ impl Slot {
 #[derive(Default)]
 pub struct Client {
     pending: Option<Identity>,
+    published: bool,
     pub known: Option<u64>,
     pub confirmed_ack: u64,
     pub unknown: bool,
@@ -150,6 +151,23 @@ impl Client {
         self.binding = Some((id.epoch, id.writer));
         self.pending = Some(id);
         Ok(())
+    }
+    /// Only a successful hint write makes a prepared attempt unanswered.
+    pub fn publish(&mut self, writer: &crate::wake::Writer) -> std::io::Result<()> {
+        if self.closed || self.published || self.pending.is_none() {
+            return Err(std::io::Error::other("no prepared attempt"));
+        }
+        let sequence = self.pending.expect("prepared attempt").sequence;
+        match writer.notify(sequence) {
+            Ok(()) => {
+                self.published = true;
+                Ok(())
+            }
+            Err(error) => {
+                self.disconnect();
+                Err(error)
+            }
+        }
     }
     pub fn reopen_writer(&mut self, writer: u64) -> Result<(), Errno> {
         if self.closed || self.unknown || self.pending.is_some() || !self.needs_reopen {
@@ -183,12 +201,12 @@ impl Client {
         Ok(())
     }
     pub fn disconnect(&mut self) {
-        self.unknown |= self.pending.is_some();
+        self.unknown |= self.pending.is_some() && self.published;
         self.closed = true;
     }
     /// Every pipe record must answer the one outstanding attempt exactly.
     pub fn observe(&mut self, receipt: Receipt) -> Result<Outcome, Errno> {
-        if self.closed || self.pending != Some(receipt.identity) {
+        if self.closed || !self.published || self.pending != Some(receipt.identity) {
             self.disconnect();
             return Err(Errno::EINVAL);
         }
@@ -201,6 +219,7 @@ impl Client {
             self.confirmed_ack = self.confirmed_ack.max(applied_ack);
         }
         self.pending = None;
+        self.published = false;
         match receipt.outcome {
             Outcome::Refused(Errno::ESTALE) => self.needs_reopen = true,
             Outcome::Refused(Errno::EAGAIN) | Outcome::Accepted { .. } => (),

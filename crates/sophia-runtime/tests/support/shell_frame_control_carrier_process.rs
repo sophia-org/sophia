@@ -121,7 +121,7 @@ fn peer() {
         producer.bytes_mut()[..HEADER].copy_from_slice(&identity.header());
         producer.bytes_mut()[HEADER..HEADER + bytes.len()].copy_from_slice(&bytes);
         client.begin(identity).unwrap();
-        requests.notify(sequence).unwrap();
+        client.publish(&requests).unwrap();
         assert_eq!(
             wake::wait(
                 responses.as_fd(),

@@ -193,3 +193,10 @@ composition still precede measurement. Next is a matched counts-only census of
 both complete paths. Static carrier I/O is 3–4 host calls per attempt before
 poll/authority work, not a syscall reduction claim. No timing, native run or
 integration is selected by this correctness checkpoint.
+
+Review 6f59474c accepts 52ea995d4 as device-free correctness evidence, with
+full authenticated/socket-framed parity still open. Its writer-binding and HUP
+clarifications are in the probe README. The next client-only lifecycle follow-up
+marks an attempt published only after its hint write succeeds; failed publication
+closes as unpublished instead of unnecessarily unknown. This does not grant a
+replay on the closed carrier or weaken host custody.
