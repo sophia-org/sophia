@@ -50,17 +50,26 @@ Niltempus selected one matched host-only ABBA: `ring-01/changing`, exact parent
 have matching release recipes in separate pools (build seal `6acd40c0`), with
 all peer/SDK/runner/helpers/workload inputs held from hp-01. CPU accounting and
 gates come from cpu-strip-03, without native perf/strace. All 18 package suites
-pass; bounded review `cafb46d1` accepts. Readiness `95ccb4fb` passes check-only
-with zero device opens and no native launch. Full identities and launch commands
-are in the investigation and sealed package PLAN. **Await niltempus's one owner
-launch**, with quiet held during collection; no automatic repeat or adoption.
+pass; bounded review `cafb46d1` and final verification `9adaef09` accept.
+Readiness `95ccb4fb` passed check-only without device opens. Niltempus launched
+once: all four arms qualify, cadence and cleanup pass, and the window is closed.
+Root result `70546268` recounts raw CPU/latency records and verifies all input
+hashes; independent recount `91c585ad` matches. Full identities, distributions
+and limits are in the investigation.
 
-Report CPU/completed-frame with native and peer-observed latency, cadence, counts
-and cleanup. Latency is descriptive, not input-to-photon; no extra buffering.
-Prior spread is not a detection floor, and an interval containing zero is
-inconclusive rather than no effect. Source proof and effect remain separate.
-No runtime merge/install, CPU saving or historical Niri comparison follows from
-preparation. Retain M1/M2 deferral and B6 checks. Task t344 remains open.
+**Saving is inconclusive; nonregression passes.** Combined control mean
+[699.488006,700.003314], candidate [699.342410,699.820884], delta
+[-0.660903,+0.332879] µs/completed frame. Pair midpoint deltas are +3.352754 and
+-3.680779 µs/frame. All cadence gates pass (b1 gaps 16662..16673 µs, c1
+16663..16671, c2/b2 16666..16668); peer median pair differences
++1/0 µs and p99 +8/-4 µs are descriptive, not input-to-photon or a responsiveness
+proof. No extra buffering. Prior spread is not a detection floor, and zero in
+the interval establishes neither no effect nor an effect below resolution.
+The independent recount corrects the root report's overly narrow all-arm gap
+range; sealed per-arm data are unchanged. Source proof and effect remain separate.
+No automatic repeat, keep/drop, runtime merge/install or CPU saving claim.
+Retain M1/M2 deferral and B6 checks. Task t344 remains open pending the distinct
+source disposition and next optimization selection.
 
 ### Previous T5 scheduling checkpoint, November 9
 

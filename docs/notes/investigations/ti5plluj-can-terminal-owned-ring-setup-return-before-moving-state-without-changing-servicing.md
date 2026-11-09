@@ -96,7 +96,8 @@ terminal branches precede the setup-copy block and form `Ok(None)`; subsequent
 service still runs. The compiler-specific excerpt and assert-based check are
 retained in source evidence. This proves the selected code path bypasses those
 copies, not a timing effect or a complete integrated-host code-generation result.
-Source candidate accepted; worktree and pool retained while the branch is unmerged.
+Source candidate accepted; worktree and pool were retained for the comparison
+below. The branch remains unmerged.
 
 ## Matched effect package, November 9
 
@@ -117,7 +118,10 @@ reproduces hp-01's normal host; candidate binary is
 Both match the held release recipe, toolchain, profile and feature rows. Build
 seal `~/.local/state/sophia-owned-ring-idle-build-01/SHA256SUMS`:
 `6acd40c087dafbc5c5ee3a1b22973950fd264bc6f742e6e23d16663fa218ddfe`.
-Worktrees and pools remain pinned through the result seal.
+Worktrees and pools were pinned through result sealing and the independent
+recount. Both clean worktrees were then removed with ordinary `git worktree
+remove`; candidate refs remain locally and on origin. Pools are left to nightly
+hygiene, with no binary copies or broad cleanup. Frozen evidence is untouched.
 
 All 18 package suites pass. The bounded package review accepts the arm isolation,
 build parity, unchanged gates and new descriptive latency join:
@@ -126,7 +130,7 @@ build parity, unchanged gates and new descriptive latency join:
 Readiness `~/.local/state/sophia-owned-ring-idle-readiness-01/SHA256SUMS`
 is `95ccb4fb726c4ae8594bec6af9e6ea8fd4b04b06fc157d79c6c875112af4545a`:
 check-only passes, zero GPU/input device opens and connector status reads,
-zero native launches. The package remains unconsumed; niltempus launches.
+zero native launches at readiness. Niltempus subsequently launched it once.
 
 Report CPU per completed frame, pair deltas, within-variant spread, native
 submission-to-completion and peer offer-to-observed-Presented distributions.
@@ -139,8 +143,53 @@ or cadence evidence is concerning.
 Prior between-arm variability does not establish a detection floor. A CPU delta
 interval containing zero is inconclusive, not proof of no effect or an effect
 below resolution. Neither a null result nor source proof automatically decides
-keep/drop. No saving magnitude is predicted. The next action is the single
-owner launch in the sealed PLAN, followed by audit and a separate decision.
+keep/drop. No saving magnitude was predicted. The single owner launch and root
+audit are complete; the source disposition remains a separate decision.
+
+## Matched result, November 9
+
+All four arms completed and qualified. Root result:
+`~/.local/state/sophia-owned-ring-idle-result-01/SHA256SUMS`,
+`70546268ae8830108a772123ec1059e5e5f0b3e5477119d9387f62247649e565`.
+The raw-record recount reproduces CPU brackets, per-process and tick bounds,
+latencies and ABBA reduction without importing the package reducer. All 128
+analysis input hashes, the original package manifest and 508 pins verify.
+
+| Combined CPU, µs/completed frame | Lower | Upper |
+| --- | ---: | ---: |
+| Control mean | 699.488006 | 700.003314 |
+| Candidate mean | 699.342410 | 699.820884 |
+| Candidate minus control | -0.660903 | +0.332879 |
+
+Nonregression passes the predeclared 5% rule; **saving is inconclusive**.
+The midpoint difference is -0.164012 µs/frame (-0.023439%). Pair midpoint
+differences have opposite signs: +3.352754 and -3.680779 µs/frame. These
+accounting intervals are not confidence intervals; neither the midpoint nor
+the source-level elimination proves an effect.
+
+The 2000 counted completion gaps span 16662..16673 µs in b1, 16663..16671 in
+c1, and 16666..16668 in c2/b2. All pass [0.5,1.5] refresh periods, with zero late
+slots. Native latency median pair differences are -1/-2 µs; peer-observed
+latency median differences +1/0, p99 +8/-4 and maxima +16/+11 µs. These are
+descriptive observations under the stated timestamp limits, not a control/input
+responsiveness proof. Per-arm distributions and CPU splits are in the report.
+
+All postflights and cleanup pass: four normal lifecycle handoffs, PAM cleanup,
+child status zero, no residual PIDs, tty restored, empty outer cleanup, seat
+unchanged, regular persisted logs and no remaining per-arm tmpfs sources/live
+links. tty4's agetty is restored. `TEST SUCCESS` means qualification, not saving.
+The window is closed; independent recount matches the sealed data:
+`~/.local/state/sophia-ring-01-recount-claude-01/SHA256SUMS`,
+`91c585adadef00f314414c77aa350edda0525ffe3e63639daf8cda5399460c55`.
+It caught a prose error in the root REPORT: 16666..16668 was incorrectly stated
+for every arm. Per-arm JSON and both recounts already have the ranges above;
+the frozen report remains untouched, with this correction carried separately.
+Acceptance and correction:
+`~/.local/state/sophia-owned-ring-idle-result-acceptance-01/SHA256SUMS`,
+`a696c310bf97a9c6a696f9f23128e5b86c8d1f92181fadabe6814b4773bbeb90`.
+No native repeat, runtime merge, installation or automatic adoption. The source
+proof stands independently; keep/drop requires a distinct decision and must not
+be presented as a measured CPU improvement.
 
 The owning [CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 and `todo.md` t344 carry execution order. The previous architectural deferrals
