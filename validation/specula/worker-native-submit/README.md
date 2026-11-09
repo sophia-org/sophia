@@ -5,6 +5,14 @@ native launch, qualified CPU saving or end-to-end implementation proof.
 Source anchor: `2c77581d8`. The [modeling brief](modeling-brief.md) maps the
 current boundaries; [coverage](brief-coverage.md) names every configured check.
 
+## Disposition, November 9
+
+Niltempus parked worker-side T4 and selected a bounded docs-only owner-side
+input-fence study. That [study](../../../docs/notes/investigations/7kr29tw2-input-fences-retain-the-render-worker-to-owner-handoff-on-the-current-native-path.md)
+stopped on the equivalent worker-return handoff, with no runtime change or
+fence infrastructure. The scope-choice section below records the decision
+boundary reached on November 8; the choice is no longer pending.
+
 ## Result
 
 The simple T4 change is insufficient. A render worker cannot submit silently

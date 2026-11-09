@@ -2,10 +2,21 @@
 id: l4ruwq60
 date: 2026-11-08
 kind: investigation
-status: investigating
+status: parked
 tags: [investigation, performance, custody, native, tla]
 ---
 # Worker-side native submission needs a new authority and lifetime contract
+
+## Disposition, November 9
+
+Niltempus selected parking worker-side T4 at this checkpoint and a bounded,
+docs-only owner-side input-fence feasibility read. Its stopping rule was to
+record and stop if an equivalent handoff or weakened boundary is required.
+The [input-fence study](7kr29tw2-input-fences-retain-the-render-worker-to-owner-handoff-on-the-current-native-path.md)
+hits the equivalent-handoff condition and closes with no runtime change.
+The recommendation/choice discussion below is the November 8 record, now
+resolved by that selection. Neither worker-side expansion nor fence
+infrastructure is selected. Existing authority and lifetime rules remain.
 
 ## Question
 

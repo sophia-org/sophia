@@ -45,8 +45,9 @@ Observed counts stay apart from source associations; nothing is selected.
 The [worker-side submission checkpoint](../investigations/l4ruwq60-worker-side-native-submission-needs-a-new-authority-and-lifetime-contract.md)
 records T4's new authority, lifetime and completion obligations. Its TLA+ safety
 checks pass under proposed mechanisms, while a stalled-gate progress probe fails.
-Worker-side expansion versus an owner-side input-fence feasibility study remains
-niltempus's scope decision; no runtime change or saving is qualified.
+Niltempus parked worker-side T4. The selected [input-fence feasibility study](../investigations/7kr29tw2-input-fences-retain-the-render-worker-to-owner-handoff-on-the-current-native-path.md)
+stopped because the fence and exact buffer still need worker-to-owner publication
+before commit. No runtime change, fence infrastructure or saving is qualified.
 
 The [bounded FrameCommit proposal](../decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md)
 targets repeated frame coordination after the fresh iGPU CPU comparison. It keeps

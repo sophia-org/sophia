@@ -20,9 +20,31 @@ It does not reopen their completed exits or replace `todo.md` as the task ledger
 The exit is a separately qualified improvement, or a documented no-change result
 for each selected mechanism. A profile share is not a savings target.
 
-## Current resumption, November 8
+## Current resumption, November 9
 
-This section supersedes all earlier next-step wording in this plan. Task state
+This section supersedes earlier next-step wording. Niltempus parked worker-side
+T4 at l4ruwq60 and selected a bounded docs-only owner-side input-fence feasibility
+study, with a firm stop on an equivalent handoff or a weakened required boundary.
+The [completed study](../investigations/7kr29tw2-input-fences-retain-the-render-worker-to-owner-handoff-on-the-current-native-path.md)
+reaches the first stopping condition on source `67fd9c795`: the render fence must
+follow the worker's commands and reach the owner, alongside the exact buffer and
+validated result, before submission. Earlier fence readiness does not remove that
+return dependency. Current GL-error/export/identity refusals remain before submit;
+startup pixel evidence is not a new per-frame gate.
+
+**Disposition: worker-side T4 parked; direct input-fence proposal stopped with
+no change.** No fence infrastructure, new authority/lifetime protocol, runtime
+edit, build, native run, latency or CPU claim. Hardware/driver extension support
+was not probed because even assumed support does not remove the handoff. This
+is not a rejection of all explicit synchronization or future scheduling designs.
+Reopen only with a distinct mechanism and its preserved gates stated first.
+No successor optimization is selected: M1/M2 remain deferred, B6 retained,
+M3 parked, T1/T2/T3/T5 and B8/control-ring implementation unselected. The broader
+optimization task remains open in `todo.md` t344; this bounded study is complete.
+
+## Previous resumption, November 8
+
+Historical checkpoint, superseded by November 9 above. Task state
 and execution order remain solely in `todo.md` t344, with broader workload
 acceptance in t289 and portability planning in t256. The November 7 milestone
 below closes three experimental comparisons, not default-on adoption. Its final
