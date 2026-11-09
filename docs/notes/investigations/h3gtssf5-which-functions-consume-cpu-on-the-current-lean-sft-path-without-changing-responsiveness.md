@@ -2,7 +2,7 @@
 id: h3gtssf5
 date: 2026-11-09
 kind: investigation
-status: awaiting-physical-acceptance
+status: closed
 tags: [investigation, performance, rendering]
 ---
 # Which functions consume CPU on the current lean SFT path without changing responsiveness
@@ -29,7 +29,8 @@ is byte-identical to the B3 candidate. Build evidence is
 `~/.local/state/sophia-lean-hotpath-build-01/`, SHA256SUMS
 `3dcc9dfd9eedba2601bec01369712a57aef91a9f374c057990961d686c2d56a1`.
 No runtime source edit or install; source worktree `~/dev/sophia-hp1` and its
-cargo-slot pool stay pinned until result release.
+cargo-slot pool were held through independent recount; ordinary worktree cleanup
+is authorized by the accepted result, with the pool left to nightly hygiene.
 
 The dcp-01 b-arm provides held peer/SDK/runner/helpers/configuration and postflight:
 owned-ring CPU strip 1920×24, two slots, one outstanding frame, r13 terminal-only
@@ -66,9 +67,68 @@ One non-blocking metadata inconsistency is retained honestly: package.json's unu
 attempt's `perf_collection=true` identify this capture. Fix the field in a future
 package; this frozen package is unchanged. The handoff receipt records the limit.
 
+## Saved result, November 9
+
+The owner launch and offline decode passed; the independent parser matches every
+reported count, period sum and symbol/DSO-keyed table. All 136 root input hashes
+matched, package inputs unchanged. Result seal:
+`~/.local/state/sophia-lean-hotpath-result-01/`, SHA256SUMS
+`25c5bf5e9699e7b8feb40d5cd2e44931508dfe56eb489cfe48758fdca79c427d`.
+Independent recount: `~/.local/state/sophia-lean-hotpath-recount-claude-01/`,
+SHA256SUMS `6b029693f5a1d56fac9c0d41e43df574c59e6fdd205cb1e902081c10b9c069f7`.
+Acceptance: `~/.local/state/sophia-lean-hotpath-audit-acceptance-01/`, SHA256SUMS
+`737854c427461ed0bdbae8d534e14ced75de28c7528f4212b828ab3fc8df2ffc`.
+
+The selected interval spans native generation anchors 155..1656 (1501 complete
+intervals). All 1069 samples fall inside it; one period value, 1001001 ns, no lost
+records, empty decoder stderr. Forty TIDs are stable and bound before/after.
+
+| Role | Samples | Share of selected sample periods | Unknown leaves | Leaf-only stacks |
+| --- | ---: | ---: | ---: | ---: |
+| Owner | 660 | 61.74% | 12 | 38 |
+| Validation worker | 43 | 4.02% | 0 | 0 |
+| Other Session threads | 237 | 22.17% | 51 | 9 |
+| Peer | 129 | 12.07% | 1 | 1 |
+
+All 2000 post-warmup completion gaps (121..2120) are 16666..16668 us. Postflight,
+identity and cleanup passed, no late slots; seat unchanged, tty4 prompt restored,
+PAM cleanup complete, no residual bound processes, tmpfs source removed and
+canonical session.log regular. No CPU/frame reduction or saving claim. The root
+recount initially compared tied inclusive rows in order; its corrected comparison
+keys rows by symbol/DSO. Counts were unchanged; before-log retained.
+
+### A symbol is not necessarily the operation its name suggests
+
+The peer's largest leaf, `ClientOutbox::enqueue_after`, accounts for 36/129 peer
+samples (3.37% of all selected samples). Saved disassembly places all 36 on byte
+stores or pointer updates inside its inlined pixel-fill callback, between the
+peer's two clock calls. The SDK invokes the callback before queue commit. This
+is producer pixel work, not queue/transport or Session cost. Independent review
+agrees. Attribution evidence: `~/.local/state/sophia-lean-hotpath-attribution-01/`,
+SHA256SUMS `2b8a2b9d6cb2c4c108242b442c34e26bdb41067cf31740aebbe964156f74a151`.
+
+This is known work: typed-fill candidate `521702c671333c42d4bcd61741a53195e49a36d8`
+already demonstrated a peer reduction of 21.355..21.524 us/frame in the older
+ordinary-r13 `sft-fill-clock-01` ABBA, without adoption. Its result seal is
+`8bfb85ad12a366f45ff7d0a43cb3a34a9a4e5854a9f7735eacf02da81f4a3601`.
+The current held peer retains the byte loop. That prior result does not price a
+change on today's lean lane, and reusing it would optimize the test producer,
+not Sophia's compositor. Do not repeat the old experiment or count it as a new win.
+
+Owner inclusive `service_components` is 241/660 samples (36.52% within owner),
+`service_native` 128/660 (19.39%). These nested shares overlap. Allocation and
+copy leaves occur under multiple callers; this profile does not establish a
+removable budget or justify weakening custody, changing wake order or rewriting
+the queue. Other Session attribution is also limited by 51 unknown leaves,
+mostly Mesa symbols. The recommended next bounded item is source review of
+construction/allocation within component servicing: name one operation and prove
+its removal preserves behavior before selecting code. No new capture or runtime
+candidate is selected by this result. This sampling investigation is complete;
+the broader optimization task remains open.
+
 ## Interpretation and exit
 
-The owner launches only after bounded package review and timing-ready handoff.
+The completed owner launch followed bounded package review and timing-ready handoff.
 `TEST SUCCESS` means capture, postflight, native cadence and cleanup passed and the
 result was saved. It explicitly leaves offline hotspot decoding pending. A failed
 capture is retained; no automatic repeat. Raw addresses/symbols remain private;

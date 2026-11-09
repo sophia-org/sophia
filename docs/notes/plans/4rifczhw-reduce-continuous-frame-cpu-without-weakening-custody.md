@@ -22,15 +22,21 @@ for each selected mechanism. A profile share is not a savings target.
 
 ## Current resumption, November 9
 
-Niltempus selected one [current-lean function profile](../investigations/h3gtssf5-which-functions-consume-cpu-on-the-current-lean-sft-path-without-changing-responsiveness.md)
-to find work to remove inside the existing stages while preserving responsiveness.
-The normal master host is pinned at `ad0c5239d`; hp-01 reuses the held lean workload
-and perf collector, without simultaneous strace or diagnostic-owner-cost.
-Package sealed, device-free readiness passed and bounded review accepted owner
-handoff; physical capture is pending. Agents launch nothing. Interpret
-qualified sampled leaves/callers first, then select one concrete change for a
-device-free proof; a later effect package must qualify CPU/presented-frame together
-with latency, cadence and counts. No CPU saving or historical Niri comparison.
+The [current-lean function profile](../investigations/h3gtssf5-which-functions-consume-cpu-on-the-current-lean-sft-path-without-changing-responsiveness.md)
+completed and its independent recount matches. hp-01 used normal host `ad0c5239d`
+and the held lean workload with perf alone. Capture/decode/postflight/cadence and
+cleanup pass: 1069 samples across 1501 complete frame intervals, no recorded loss.
+Owner/validation/other Session/peer sample-period shares are 61.74/4.02/22.17/12.07%.
+The apparent peer outbox hotspot resolves to its inlined fill callback: known
+producer work with an older typed-fill result, not a new queue or compositor win.
+
+Next recommendation: a bounded source review of construction/allocation inside
+component servicing (36.52% inclusive within the owner samples), identifying one
+specific behavior-preserving change. Inclusive shares overlap and are not removable
+budgets. No runtime candidate, repeat capture, buffering or authority change is
+selected. Retain M1/M2 deferral and B6 checks. A future effect package still needs
+CPU/presented-frame alongside latency, cadence and counts; this profile makes no
+saving or historical Niri comparison. Task t344 remains open.
 
 ### Previous T5 scheduling checkpoint, November 9
 
