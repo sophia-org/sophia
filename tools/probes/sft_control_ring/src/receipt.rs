@@ -1,10 +1,9 @@
-//! One owner-written receipt slot. There is no peer-written consumer head.
+//! Exact transport receipt carried directly by the owner-to-peer pipe.
 use crate::{
     capture::{HEADER, Identity},
-    custody::{Outcome, Receipt, Refusal},
+    custody::{Outcome, Receipt},
 };
-use rustix::fs::{SealFlags, fcntl_get_seals};
-use std::{fs::File, io, os::unix::fs::FileExt};
+use std::io;
 
 pub const BYTES: usize = HEADER + 16;
 
@@ -14,16 +13,7 @@ impl Receipt {
         bytes[..HEADER].copy_from_slice(&self.identity.header());
         let (kind, ack): (u64, u64) = match self.outcome {
             Outcome::Accepted { applied_ack } => (0, applied_ack),
-            Outcome::Refused(error) => (
-                match error {
-                    Refusal::Again => 1,
-                    Refusal::Invalid => 2,
-                    Refusal::Stale => 3,
-                    Refusal::Busy => 4,
-                    Refusal::Already => 5,
-                },
-                0,
-            ),
+            Outcome::Refused(error) => (u64::from(error.0), 0),
         };
         bytes[HEADER..HEADER + 8].copy_from_slice(&kind.to_le_bytes());
         bytes[HEADER + 8..].copy_from_slice(&ack.to_le_bytes());
@@ -36,39 +26,37 @@ impl Receipt {
         let ack = u64::from_le_bytes(bytes[HEADER + 8..].try_into().expect("word size"));
         let outcome = match kind {
             0 if ack == identity.ack => Outcome::Accepted { applied_ack: ack },
-            1..=5 if ack == 0 => Outcome::Refused(match kind {
-                1 => Refusal::Again,
-                2 => Refusal::Invalid,
-                3 => Refusal::Stale,
-                4 => Refusal::Busy,
-                _ => Refusal::Already,
-            }),
+            1..=4095 if ack == 0 => Outcome::Refused(sophia_9p::Errno(kind as u32)),
             _ => return Err(invalid()),
         };
         Ok(Self { identity, outcome })
     }
 }
 
-pub struct Source(File);
-impl Source {
-    pub fn admit(file: File) -> io::Result<Self> {
-        if !fcntl_get_seals(&file)?.contains(SealFlags::GROW | SealFlags::SHRINK)
-            || file.metadata()?.len() != BYTES as u64
-        {
-            return Err(invalid());
-        }
-        Ok(Self(file))
-    }
-    /// One private pread; no retry can stitch two different publications together.
-    pub fn read(&self) -> io::Result<Receipt> {
+impl crate::wake::Reader {
+    /// One receipt per read; short/error input closes, never stitches messages.
+    pub fn receipt(&self) -> io::Result<Option<Receipt>> {
         let mut bytes = [0; BYTES];
-        if self.0.read_at(&mut bytes, 0)? != BYTES {
+        let count = match rustix::io::read(self, &mut bytes) {
+            Err(rustix::io::Errno::AGAIN) => return Ok(None),
+            result => result?,
+        };
+        if count != BYTES {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 "short receipt",
             ));
         }
-        Receipt::decode(&bytes)
+        Receipt::decode(&bytes).map(Some)
+    }
+}
+impl crate::wake::Writer {
+    /// Full/short/error is not delivery: close without undoing export custody.
+    pub fn receipt(&self, receipt: Receipt) -> io::Result<()> {
+        if rustix::io::write(self, &receipt.encode())? != BYTES {
+            return Err(io::Error::other("short receipt write"));
+        }
+        Ok(())
     }
 }
 fn invalid() -> io::Error {

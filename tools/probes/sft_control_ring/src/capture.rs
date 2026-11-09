@@ -1,6 +1,6 @@
 //! Pread-only capture. The producer alone owns a writable mapping.
 use rustix::fs::{SealFlags, fcntl_get_seals};
-use sophia_shell_protocol::shell_files::SHELL_FILE_MAX_TRANSACTION_BYTES;
+use sophia_protocol::shell_files::SHELL_FILE_MAX_TRANSACTION_BYTES;
 use std::fs::File;
 use std::io;
 use std::os::unix::fs::FileExt;
@@ -74,6 +74,28 @@ pub struct Captured {
     pub bytes: Vec<u8>,
 }
 
+#[derive(Clone, Copy)]
+pub enum ReadPlan {
+    HeaderThenPayload,
+    FullExtent,
+}
+
+impl Captured {
+    pub fn buffer() -> Self {
+        Self {
+            identity: Identity {
+                sequence: 0,
+                epoch: 0,
+                writer: 0,
+                submission: 0,
+                ack: 0,
+                bytes: 0,
+            },
+            bytes: Vec::with_capacity(EXTENT),
+        }
+    }
+}
+
 pub struct Source(File);
 impl Source {
     pub fn admit(file: File) -> io::Result<Self> {
@@ -85,26 +107,71 @@ impl Source {
         }
         Ok(Self(file))
     }
+    pub fn scan(&self, last: u64, buffer: &mut Captured, plan: ReadPlan) -> io::Result<bool> {
+        scan_with(last, buffer, plan, |buf, offset| {
+            self.0.read_at(buf, offset)
+        })
+    }
     pub fn capture(&self, expected_sequence: u64) -> io::Result<Captured> {
         capture_with(expected_sequence, |buf, offset| self.0.read_at(buf, offset))
     }
 }
 
-/// One bounded header read and one payload read; short/error reads are definitive.
-/// The seam allows deterministic EINTR/EIO/mutation tests without retrying bytes.
+/// Header/body capture with at most one local EINTR retry per read.
+/// Short successful reads are never stitched; other errors close the carrier.
 pub fn capture_with(
     expected_sequence: u64,
     mut read: impl FnMut(&mut [u8], u64) -> io::Result<usize>,
 ) -> io::Result<Captured> {
-    let mut header = [0; HEADER];
-    exact(&mut read, &mut header, 0)?;
-    let identity = Identity::decode(&header)?;
-    if identity.sequence != expected_sequence || expected_sequence == u64::MAX {
-        return Err(invalid("unexpected or exhausted transport sequence"));
+    let mut buffer = Captured::buffer();
+    let last = expected_sequence
+        .checked_sub(1)
+        .ok_or_else(|| invalid("zero expected sequence"))?;
+    if !scan_with(last, &mut buffer, ReadPlan::HeaderThenPayload, &mut read)? {
+        return Err(invalid("expected a new publication"));
     }
-    let mut bytes = vec![0; identity.bytes as usize];
-    exact(&mut read, &mut bytes, HEADER as u64)?;
-    Ok(Captured { identity, bytes })
+    Ok(buffer)
+}
+
+/// False is idle (initial zero header or last processed sequence). Gaps close.
+pub fn scan_with(
+    last: u64,
+    buffer: &mut Captured,
+    plan: ReadPlan,
+    mut read: impl FnMut(&mut [u8], u64) -> io::Result<usize>,
+) -> io::Result<bool> {
+    let mut header = [0; HEADER];
+    match plan {
+        ReadPlan::HeaderThenPayload => exact(&mut read, &mut header, 0)?,
+        ReadPlan::FullExtent => {
+            buffer.bytes.resize(EXTENT, 0);
+            exact(&mut read, &mut buffer.bytes, 0)?;
+            header.copy_from_slice(&buffer.bytes[..HEADER]);
+        }
+    }
+    if last == 0 && header == [0; HEADER] {
+        return Ok(false);
+    }
+    let identity = Identity::decode(&header)?;
+    if identity.sequence == last {
+        return Ok(false);
+    }
+    if identity.sequence == u64::MAX || last.checked_add(1) != Some(identity.sequence) {
+        return Err(invalid("gap or exhausted transport sequence"));
+    }
+    let len = identity.bytes as usize;
+    match plan {
+        ReadPlan::HeaderThenPayload => {
+            buffer.bytes.resize(len, 0);
+            exact(&mut read, &mut buffer.bytes, HEADER as u64)?;
+        }
+        ReadPlan::FullExtent => {
+            buffer.bytes.copy_within(HEADER..HEADER + len, 0);
+            buffer.bytes.truncate(len);
+        }
+    }
+    buffer.identity = identity;
+    Ok(true)
 }
 
 fn exact(
@@ -112,7 +179,12 @@ fn exact(
     bytes: &mut [u8],
     offset: u64,
 ) -> io::Result<()> {
-    if read(bytes, offset)? != bytes.len() {
+    // One local retry after EINTR; never retry a short successful read.
+    let count = match read(bytes, offset) {
+        Err(error) if error.kind() == io::ErrorKind::Interrupted => read(bytes, offset)?,
+        other => other?,
+    };
+    if count != bytes.len() {
         return Err(io::Error::new(
             io::ErrorKind::UnexpectedEof,
             "short snapshot read",

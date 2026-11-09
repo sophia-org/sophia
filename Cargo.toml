@@ -58,7 +58,7 @@ default-members = [
 resolver = "3"
 # The Rust desktop SDK snapshot is its own workspace; Sophia uses its crates
 # through the path dependencies below.
-exclude = ["vendor/rust-desktop-sdk/source"]
+exclude = ["vendor/rust-desktop-sdk/source", "tools/probes/sft_control_ring"]
 
 [workspace.package]
 authors = ["Mason Austin Green"]

@@ -27,6 +27,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+sophia-control-ring-probe = { path = "../../tools/probes/sft_control_ring" }
 sophia-linux-peer = { path = "../sophia-linux-peer" }
 serde = { version = "1", features = ["derive"] }
 sophia-launch-client = { workspace = true }

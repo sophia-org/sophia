@@ -158,3 +158,38 @@ two-process memfd exchange. The custody module is a test projection with supplie
 authority and ACK effects, not a host path. Actual 9P/journal parity and persistent
 carrier servicing are still required before timing. No production adoption,
 source disposition, native run or performance decision is made at this checkpoint.
+
+## Real-export seam and receipt-pipe amendment, November 9
+
+Mechanism review cee06b68 at 350ce8c3d accepts the standalone checkpoint and
+permits a cfg(test)-only seam beside the existing runtime export proofs. The
+follow-up deletes the supplied admission owner and calls the real reusable-writer
+check and FrameSubmit export. Production src items and APIs are unchanged;
+negotiation is supplied by fixtures, so authenticated wrapper parity remains open.
+
+The current response carrier supersedes the earlier shared CQ: one exact 80-byte
+receipt travels directly over an owner-created nonblocking directional pipe.
+Pwrite cannot maintain a reusable peer-write-sealed CQ: FUTURE_WRITE also blocks
+host writes, while a size-sealed read-only fd can be reopened writable through
+/proc. A writable host mapping would require its own production decision; this
+probe avoids it. A peer can inject receipt lies into its own reader by reopening
+it, but that cannot change host custody. No peer-supplied response grants authority.
+
+SQ publication is an eight-byte sequence hint on the other directed pipe. The
+owner classifies it before pread: expected next permits capture, one duplicate
+last hint is idle without touching the SQ, and further duplicates/gaps/short
+records/errors close. The header must match the hint. The client keeps the SQ
+immutable until its receipt; no host mapping or shared CQ consumer head remains.
+Full/short/error writes are not delivery and close without undoing accepted work.
+The pending response reservation still precedes ACK effects. Receipt transport
+is still independent of the 9P journal and its covering ACK.
+
+Real-export tests cover retry/backpressure, changed payload, duplicate poisoning,
+expiry/clunk/reopen, ACK-before-refusal and journal holds. A persistent three-attempt
+child fixture exercises both directed pipes, duplicate hints and peer-exit wake.
+The [probe README](../../../tools/probes/sft_control_ring/README.md) records gaps:
+complete socket-framed/authenticated parity, withdrawal/replacement and lifecycle
+composition still precede measurement. Next is a matched counts-only census of
+both complete paths. Static carrier I/O is 3–4 host calls per attempt before
+poll/authority work, not a syscall reduction claim. No timing, native run or
+integration is selected by this correctness checkpoint.

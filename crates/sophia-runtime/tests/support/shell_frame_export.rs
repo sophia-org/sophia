@@ -290,3 +290,6 @@ mod copy_owner;
 mod combined_submit_proof;
 #[path = "shell_frame_lean_submit_proof.rs"]
 mod lean_submit_proof;
+
+#[path = "shell_frame_control_carrier.rs"]
+mod control_carrier;

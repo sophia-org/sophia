@@ -157,3 +157,14 @@ consumption by a conforming client. Host-local sequence validation refuses gaps
 and wrap. `QueueIndex` is retained as a deeper-queue alternative, not evidence
 about a remote-head input in this probe. A hostile client publishing early can
 lose its own receipt; that never licenses acceptance, ACK or frame release.
+
+### Executable receipt-pipe amendment
+
+The real-export follow-up supersedes the initial mapped CQ with a directed pipe
+carrying one exact receipt. The SQ has a sequence-hint pipe so stale hints can be
+classified before any pread of a reused cell. The models and frozen checks above
+are unchanged: their abstract response reservation/delivery can describe this
+order, but do not prove pipe I/O, mutable input, process wiring or the runtime
+export. QueueIndex is not a property of this selected carrier. The probe README
+maps code boundaries to projection actions and names the remaining parity gate;
+that mapping is not trace validation or refinement evidence.

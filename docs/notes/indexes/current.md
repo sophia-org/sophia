@@ -145,4 +145,4 @@ Provlita shell clients, and later output and administrative replacements.
 The [inspection investigation](../investigations/pp3pk4dd-read-only-wm-inspection-preserves-host-admission-and-writer-progress.md)
 records the separate HostDomain observer and the remaining workspace-gate limit.
 
-- [Bounded SFT control-carrier experiment](../decisions/z8cr4n2p-test-a-bounded-sft-control-carrier-before-live-integration.md): selected commit-only/pread-first work; model reviewed, standalone mechanism checkpoint under review; production carrier unchanged.
+- [Bounded SFT control-carrier experiment](../decisions/z8cr4n2p-test-a-bounded-sft-control-carrier-before-live-integration.md): selected commit-only/pread-first work; model/first mechanism reviewed; test-only real-export and persistent SQ-hint/receipt-pipe follow-up, complete authenticated/socket parity still open; production carrier unchanged.

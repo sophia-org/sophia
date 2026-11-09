@@ -1,20 +1,14 @@
-//! Executable custody projection with a supplied ACK-effect callback.
-//! Production journal and authorization are not wired into this test seam.
+//! Transport reservation and client knowledge, with no admission implementation.
 use crate::capture::{Captured, Identity};
-use sophia_shell_protocol::shell_files::*;
+use sophia_9p::Errno;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Refusal {
-    Again,
-    Invalid,
-    Stale,
-    Busy,
-    Already,
-}
+pub const EBUSY: Errno = Errno(16);
+pub const EALREADY: Errno = Errno(114);
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Outcome {
     Accepted { applied_ack: u64 },
-    Refused(Refusal),
+    Refused(Errno),
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Receipt {
@@ -22,181 +16,108 @@ pub struct Receipt {
     pub outcome: Outcome,
 }
 
-struct Staging {
-    bytes: Vec<u8>,
-    submission: u64,
-    deadline: u64,
-}
-
-pub struct Owner {
-    epoch: u64,
-    writer: u64,
-    live: bool,
-    token: bool,
-    next_sequence: u64,
-    watermark: u64,
-    staging: Option<Staging>,
+#[derive(Default)]
+pub struct Slot {
+    last_sequence: u64,
     pending: Option<Receipt>,
+    closed: bool,
 }
-impl Owner {
-    pub fn new(epoch: u64, writer: u64) -> Self {
-        assert!(
-            epoch != 0 && writer != 0,
-            "binding identities must be nonzero"
-        );
-        Self {
-            epoch,
-            writer,
-            live: true,
-            token: true,
-            next_sequence: 1,
-            watermark: 0,
-            staging: None,
-            pending: None,
+impl Slot {
+    /// Called only after consuming a new sequence hint. A stale cell under a
+    /// new hint is an error, not idle. Failure closes the control endpoint.
+    pub fn capture_published(
+        &mut self,
+        hint: u64,
+        source: &crate::capture::Source,
+        buffer: &mut Captured,
+        plan: crate::capture::ReadPlan,
+    ) -> std::io::Result<()> {
+        if self.closed {
+            return Err(std::io::Error::other("carrier closed"));
         }
-    }
-    pub fn withdraw(&mut self) {
-        self.live = false;
-        self.pending = None;
-    }
-    pub fn expire_writer(&mut self) {
-        self.token = false;
-    }
-    pub fn reopen_writer(&mut self, writer: u64) -> Result<(), Refusal> {
-        if !self.live || self.pending.is_some() || writer <= self.writer {
-            return Err(Refusal::Stale);
+        let result = if self.last_sequence.checked_add(1) != Some(hint) {
+            Err(std::io::Error::other("unexpected publication hint"))
+        } else {
+            source
+                .scan(self.last_sequence, buffer, plan)
+                .and_then(|fresh| {
+                    if fresh && buffer.identity.sequence == hint {
+                        Ok(())
+                    } else {
+                        Err(std::io::Error::other(
+                            "cell does not match publication hint",
+                        ))
+                    }
+                })
+        };
+        if result.is_err() {
+            self.close();
         }
-        self.writer = writer;
-        self.token = true;
-        self.staging = None;
-        Ok(())
+        result
     }
-    pub fn watermark(&self) -> u64 {
-        self.watermark
+    pub fn last_sequence(&self) -> u64 {
+        self.last_sequence
     }
-    pub fn staging_deadline(&self) -> Option<u64> {
-        self.staging.as_ref().map(|s| s.deadline)
+    pub fn closed(&self) -> bool {
+        self.closed
     }
     pub fn pending(&self) -> bool {
         self.pending.is_some()
     }
-
-    /// Reserve the one-deep receipt slot before invoking the ACK control path.
-    /// `now` and `deadline` are monotonic test units, not a new production clock.
+    pub fn close(&mut self) {
+        self.closed = true;
+        self.pending = None;
+    }
+    /// The adapter owns the fid, fresh checks, ACK effects and all admission.
+    /// Reserve before calling it; a transport failure never undoes its effects.
     pub fn process(
         &mut self,
-        request: Captured,
-        now: u64,
-        deadline: u64,
-        room: bool,
-        mut apply_ack: impl FnMut(u64) -> Result<(), Refusal>,
-    ) -> Result<(), Refusal> {
-        if !self.live {
-            return Err(Refusal::Stale);
+        request: &Captured,
+        dispatch: impl FnOnce(&[u8]) -> Result<u32, Errno>,
+    ) -> Result<(), Errno> {
+        if self.closed {
+            return Err(Errno::ESTALE);
         }
         if self.pending.is_some() {
-            return Err(Refusal::Busy);
+            return Err(EBUSY);
         }
         let id = request.identity;
-        if id.sequence != self.next_sequence || id.sequence == u64::MAX {
-            self.withdraw();
-            return Err(Refusal::Invalid);
+        if id.sequence == u64::MAX || self.last_sequence.checked_add(1) != Some(id.sequence) {
+            self.close();
+            return Err(Errno::EINVAL);
         }
-        self.next_sequence += 1;
-        // Placeholder reservation owns no journal or terminal capacity.
+        let bytes = &request.bytes;
+        if bytes.len() < 32
+            || bytes.len() as u64 != id.bytes
+            || bytes[8..16] != id.epoch.to_le_bytes()
+            || bytes[16..24] != id.submission.to_le_bytes()
+            || bytes[24..32] != id.ack.to_le_bytes()
+        {
+            self.close();
+            return Err(Errno::EINVAL);
+        }
+        self.last_sequence = id.sequence;
         self.pending = Some(Receipt {
             identity: id,
-            outcome: Outcome::Refused(Refusal::Invalid),
+            outcome: Outcome::Refused(Errno::EINVAL),
         });
-        let outcome = self.process_reserved(request, now, deadline, room, &mut apply_ack);
-        if outcome.is_err() && outcome != Err(Refusal::Again) && self.staging.is_some() {
-            self.token = false;
-        }
-        self.pending.as_mut().expect("reserved receipt").outcome = match outcome {
-            Ok(()) => Outcome::Accepted {
+        let outcome = match dispatch(bytes) {
+            Ok(count) if count as u64 == id.bytes => Outcome::Accepted {
                 applied_ack: id.ack,
             },
+            Ok(_) => {
+                self.close();
+                return Err(Errno::EINVAL);
+            }
             Err(error) => Outcome::Refused(error),
         };
+        self.pending.as_mut().expect("reserved receipt").outcome = outcome;
         Ok(())
     }
-    fn process_reserved(
-        &mut self,
-        request: Captured,
-        now: u64,
-        deadline: u64,
-        room: bool,
-        apply_ack: &mut impl FnMut(u64) -> Result<(), Refusal>,
-    ) -> Result<(), Refusal> {
-        let id = request.identity;
-        if !self.token || id.epoch != self.epoch || id.writer != self.writer {
-            return Err(Refusal::Stale);
-        }
-        if self.staging.as_ref().is_some_and(|s| now >= s.deadline) {
-            self.token = false;
-            return Err(Refusal::Stale);
-        }
-        let mut bytes = request.bytes;
-        if bytes.len() > SHELL_FILE_MAX_TRANSACTION_BYTES || bytes.len() != id.bytes as usize {
-            return Err(Refusal::Invalid);
-        }
-        let record = decode_shell_file_record_at_revision(
-            &bytes,
-            ShellFileClass::Candidate,
-            SHELL_FRAME_REVISION,
-        )
-        .map_err(|_| Refusal::Invalid)?;
-        if record.header.kind != ShellFileKind::FrameCommit
-            || record.header.connection_epoch != id.epoch
-            || record.header.submission_id != id.submission
-            || record.header.sequence != id.ack
-        {
-            return Err(Refusal::Invalid);
-        }
-        if id.ack != 0 {
-            apply_ack(id.ack)?;
-        }
-        if id.submission <= self.watermark {
-            return Err(Refusal::Already);
-        }
-        bytes[24..32].fill(0);
-        if let Some(staged) = &self.staging {
-            if staged.submission != id.submission || staged.bytes != bytes {
-                return Err(Refusal::Busy);
-            }
-        } else {
-            if now >= deadline {
-                return Err(Refusal::Stale);
-            }
-            self.staging = Some(Staging {
-                bytes,
-                submission: id.submission,
-                deadline,
-            });
-        }
-        if !room {
-            return Err(Refusal::Again);
-        }
-        let staged = self.staging.as_ref().expect("staging created");
-        if !matches!(
-            decode_shell_frame_record(
-                &staged.bytes,
-                ShellFileClass::Candidate,
-                SHELL_FRAME_REVISION,
-                SHELL_FILE_MAX_TRANSACTION_BYTES
-            ),
-            Ok(ShellFrameRecord::Commit(_))
-        ) {
-            return Err(Refusal::Invalid);
-        }
-        self.watermark = id.submission;
-        self.staging = None;
-        Ok(())
-    }
-    /// Proposed fresh publication gate; a withdrawal preserves accepted watermark.
+    /// The caller rechecks delivery authority; no retained live flag grants it.
     pub fn publish(&mut self, authority_live: bool) -> Option<Receipt> {
-        if !self.live || !authority_live {
-            self.withdraw();
+        if self.closed || !authority_live {
+            self.close();
             return None;
         }
         self.pending.take()
@@ -215,27 +136,28 @@ pub struct Client {
     standalone_ack: Option<u64>,
 }
 impl Client {
-    pub fn begin(&mut self, id: Identity) -> Result<(), Refusal> {
+    /// SQ bytes must remain immutable until this attempt's receipt is observed.
+    pub fn begin(&mut self, id: Identity) -> Result<(), Errno> {
         if self.closed || self.unknown {
-            return Err(Refusal::Stale);
+            return Err(Errno::ESTALE);
         }
         if self.pending.is_some() || self.standalone_ack.is_some() {
-            return Err(Refusal::Busy);
+            return Err(EBUSY);
         }
         if self.needs_reopen || self.binding.is_some_and(|b| b != (id.epoch, id.writer)) {
-            return Err(Refusal::Stale);
+            return Err(Errno::ESTALE);
         }
         self.binding = Some((id.epoch, id.writer));
         self.pending = Some(id);
         Ok(())
     }
-    pub fn reopen_writer(&mut self, writer: u64) -> Result<(), Refusal> {
+    pub fn reopen_writer(&mut self, writer: u64) -> Result<(), Errno> {
         if self.closed || self.unknown || self.pending.is_some() || !self.needs_reopen {
-            return Err(Refusal::Stale);
+            return Err(Errno::ESTALE);
         }
-        let (epoch, old) = self.binding.ok_or(Refusal::Stale)?;
+        let (epoch, old) = self.binding.ok_or(Errno::ESTALE)?;
         if writer <= old {
-            return Err(Refusal::Stale);
+            return Err(Errno::ESTALE);
         }
         self.binding = Some((epoch, writer));
         self.needs_reopen = false;
@@ -244,18 +166,17 @@ impl Client {
     pub fn standalone_ack_allowed(&self) -> bool {
         !self.closed && !self.unknown && self.pending.is_none() && self.standalone_ack.is_none()
     }
-    /// Mirrors the outstanding standalone 9P ACK, without replacing its handler.
-    pub fn begin_ack(&mut self, word: u64) -> Result<(), Refusal> {
+    pub fn begin_ack(&mut self, word: u64) -> Result<(), Errno> {
         if !self.standalone_ack_allowed() {
-            return Err(Refusal::Busy);
+            return Err(EBUSY);
         }
         self.standalone_ack = Some(word);
         Ok(())
     }
-    pub fn finish_ack(&mut self, word: u64) -> Result<(), Refusal> {
+    pub fn finish_ack(&mut self, word: u64) -> Result<(), Errno> {
         if self.closed || self.standalone_ack != Some(word) {
             self.disconnect();
-            return Err(Refusal::Invalid);
+            return Err(Errno::EINVAL);
         }
         self.standalone_ack = None;
         self.confirmed_ack = self.confirmed_ack.max(word);
@@ -265,24 +186,28 @@ impl Client {
         self.unknown |= self.pending.is_some();
         self.closed = true;
     }
-    pub fn observe(&mut self, receipt: Receipt) -> Result<Outcome, Refusal> {
+    /// Every pipe record must answer the one outstanding attempt exactly.
+    pub fn observe(&mut self, receipt: Receipt) -> Result<Outcome, Errno> {
         if self.closed || self.pending != Some(receipt.identity) {
             self.disconnect();
-            return Err(Refusal::Invalid);
+            return Err(Errno::EINVAL);
         }
         if let Outcome::Accepted { applied_ack } = receipt.outcome {
             if applied_ack != receipt.identity.ack {
                 self.disconnect();
-                return Err(Refusal::Invalid);
+                return Err(Errno::EINVAL);
             }
             self.known = Some(receipt.identity.submission);
             self.confirmed_ack = self.confirmed_ack.max(applied_ack);
         }
         self.pending = None;
         match receipt.outcome {
-            Outcome::Refused(Refusal::Stale) => self.needs_reopen = true,
-            Outcome::Refused(Refusal::Again) | Outcome::Accepted { .. } => (),
-            _ => self.closed = true,
+            Outcome::Refused(Errno::ESTALE) => self.needs_reopen = true,
+            Outcome::Refused(Errno::EAGAIN) | Outcome::Accepted { .. } => (),
+            Outcome::Refused(error) => {
+                self.unknown |= error == EALREADY;
+                self.closed = true;
+            }
         }
         Ok(receipt.outcome)
     }

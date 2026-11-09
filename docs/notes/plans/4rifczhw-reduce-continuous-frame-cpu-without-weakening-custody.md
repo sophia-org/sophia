@@ -31,11 +31,16 @@ caller-fresh B6 checks; M1/M2 remain deferred. t256 owns portability qualificati
 After contract challenge 29e08b85, niltempus selected commit-only and pread-first:
 only FrameCommit and its receipt move; all journal events and standalone ACKs
 stay on 9P. Model review f821f765 clears standalone correctness work at 2d5d5b493;
-its finite projections do not prove the implementation. The first mechanism
-checkpoint tests bounded pread capture, exact one-deep receipts, refusal/ACK
-ordering and a two-process exchange. Its supplied authority/ACK projection is
-not the production export: actual 9P/journal parity and persistent service-loop
-proof remain the next gate before any timing. See the probe README for coverage.
+its finite projections do not prove the implementation. Mechanism review cee06b68
+accepted the first checkpoint and the cfg(test)-only real-export seam. The
+follow-up removes the duplicate admission implementation: privately captured
+records reach the real reusable-writer/FrameSubmit export in test support. One
+SQ cell and an eight-byte sequence-hint pipe feed a direct 80-byte receipt pipe;
+there is no shared CQ or host mapping. Persistent two-process servicing and
+export refusal/journal tests are correctness evidence only. Authenticated wrapper
+and complete socket-framed 9P parity remain the next gate, followed by a matched
+counts-only census before timing. See the probe README for exact coverage and
+unproved lifecycle boundaries.
 Ring-01 evidence stays frozen; a4f599e7a source disposition remains OPEN and must
 not be folded into a carrier effect claim.
 
