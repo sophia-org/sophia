@@ -64,3 +64,55 @@ contract. See z8cr4n2p's challenge addendum for all eight required semantics.
 The initial Carrier projection combines acceptance and receipt creation and
 therefore does not prove guarded publication after an intervening withdrawal.
 Its reuse property is abstract, not an implementation of lean commit recycling.
+
+## Commit-only expansion (scope selected November 9)
+
+niltempus selected commit-only and pread-first. The old unresolved-choice text
+above is the history of checkpoint 708b1cb25, not the current scope.
+
+`CommitOnly` adds two attempts of the same submission, an ACK word refreshed on
+retry, pre-ACK response reservation, original deadline identity, token expiry,
+separate acceptance/publication/observation, withdrawal and replacement attach,
+and unknown-custody replay refusal. Success receipts echo the attempt's ACK word;
+EAGAIN never confirms it. A live attach with an expired writer yields definitive
+stale refusal, not a blocked request. Expiry after acceptance does not erase it.
+One ACK in flight spans both carriers. Journal offsets, holds and event delivery
+stay on the unmodified 9P path; this model assumes its valid ACK frontier.
+
+The proposed fresh CQ publication gate is a conservative new carrier rule.
+`connection.rs::read` sets guarded delivery for Rread, not all Rwrite responses;
+we do not claim that existing Rwrite has an identical additional delivery check.
+That candidate work must be included in the comparison. Already-published bytes
+can be observed after withdrawal in the old attach; they authorize nothing new.
+
+`QueueIndex` checks monotonic validated remote-head accounting and two-entry
+capacity through four publications, including a hostile ahead-of-tail value.
+`ExitWake` checks cleanup through a registered exit descriptor if notification
+never happens. It assumes the owner services that descriptor fairly and proves
+no real-time bound. A stalled-but-live publisher additionally needs the existing
+operation deadline; timeout must close without inventing acceptance or release.
+
+These are separate bounded design projections, not a composed refinement proof.
+Before measurement, executable tests must cover actual byte sizes/offsets,
+integer overflow (refuse before wrap), mutable metadata/payload snapshots,
+response identity including ACK word, retries with the same bytes/deadline,
+EAGAIN vs definitive refusal, old mappings, token expiry and delayed/failed I/O.
+The existing journal remains authoritative; exercise its full/held/read-offset
+and idle-ACK behavior in both carriers rather than invent a second journal model.
+Trace observations must be compared with model transitions once code exists.
+No host path or performance gate is cleared by this model check alone.
+
+| New scenario | Positive invariant/property | Negative control |
+|---|---|---|
+| Response reservation before ACK effect | CapacityBeforeEffects | CommitReserveBeforeAck |
+| Withdraw between accept and publish | FreshDelivery | CommitGuardDelivery |
+| Retry response names applied ACK word | ExactAckEcho | CommitEchoAck |
+| Refusal does not confirm ACK | SuccessConfirms | CommitConfirmSuccessOnly |
+| Retry does not extend deadline | OriginalDeadline | CommitKeepDeadline |
+| Lost result cannot license reconnect replay | NoReplay | CommitNoUnknownReplay |
+| Hostile CQ head cannot grow free capacity | Bounded | QueueUnchecked |
+| Exit wakes even without notification | ExitProgress | ExitUnwatched |
+
+All five positive configurations and fourteen named controls pass the expanded
+helper. Full local log: sophia-control-carrier-model-02/reproduce-expanded.log.
+This adds review input; it is not approval of a memory mapping or a live carrier.

@@ -131,3 +131,12 @@ The frozen implementation contract must also include these obligations:
 A positive comparison does not authorize integration. Integration requires an
 accepted decision, wire-contract/allocation-ledger amendments and custody
 review under 4rifczhw, followed by its separately selected qualification.
+
+## Scope selected by niltempus, November 9
+
+niltempus answered "proceed with your recommendation": select **commit-only**
+and **pread-first**. FrameCommit Twrite/Rwrite alone is the treatment; CQ contains
+only its transport receipts. Every journal event and standalone ACK remains on
+9P with the existing ordered reader, offsets, visibility/hold and release rules.
+The exchange-set hold is resolved. Model/implementation proof and bounded review
+still precede a measured probe. Journal-on-CQ and host mapping are unselected.
