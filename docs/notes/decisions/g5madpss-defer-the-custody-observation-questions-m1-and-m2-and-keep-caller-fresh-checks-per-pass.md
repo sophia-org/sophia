@@ -2,7 +2,7 @@
 id: g5madpss
 date: 2026-11-08
 kind: adr
-status: proposed
+status: accepted
 tags: [adr, custody, performance, session, shell]
 ---
 # Defer the custody observation questions M1 and M2 and keep caller-fresh checks per pass
@@ -95,9 +95,12 @@ No source change, build, native run or CPU claim follows from this record.
 
 ## Acceptance and connections
 
-Proposed 2026-11-08 after a read-only consult with Codex, which recommended
+Accepted 2026-11-08 after a read-only consult with Codex, which recommended
 this disposition and supplied the decision wording; niltempus agreed to the
-disposition the same day. Acceptance is recorded by Codex in the plan and
-`todo.md` t344. Supporting records: `sophia-custody-poll-cost-01` and its
+disposition the same day. The frozen proposal `2d166e233` passed review at
+`~/.local/state/sophia-custody-deferral-acceptance-01/` (SHA256SUMS
+`4d342b97d55ca76c3e3d6f296780652cb47e3e8cd38af2e764e5848d680a4526`).
+Acceptance is recorded in the plan and `todo.md` t344.
+Supporting records: `sophia-custody-poll-cost-01` and its
 corrections, the authority-review request draft 02 and its acceptance,
 px8oi1bw, rug93yha, liv-01 and dcp-01 within their stated limits.

@@ -28,7 +28,28 @@ acceptance in t289 and portability planning in t256. The November 7 milestone
 below closes three experimental comparisons, not default-on adoption. Its final
 lane is 673.7–674.1 combined µs/frame; separate treatments are not additive.
 
-**Current selection: docs-only four-wait dependency/authority investigation.**
+**Current checkpoint: four-wait note accepted; M1 and M2 deferred.**
+The [four-wait dependency note](../investigations/edc0te2v-which-action-each-of-the-four-lean-owner-wakes-owes-and-which-transition-a-consolidation-would-remove.md)
+is accepted at `e84ee472f`; acceptance is
+`~/.local/state/sophia-four-wait-dependency-acceptance-01/` (SHA256SUMS
+`987c828615479313c9ca961d58451d1447136f95fd95f0ec2dfd45d489a0b06f`).
+Its T1–T5 shapes remain unselected: source associations are not observed
+descriptor identities, a skipped body need not remove a wait, and projected
+counter changes remain hypotheses.
+
+Niltempus selected [deferral of M1 and M2](../decisions/g5madpss-defer-the-custody-observation-questions-m1-and-m2-and-keep-caller-fresh-checks-per-pass.md).
+The proposal `2d166e233` passed review at
+`~/.local/state/sophia-custody-deferral-acceptance-01/` (SHA256SUMS
+`4d342b97d55ca76c3e3d6f296780652cb47e3e8cd38af2e764e5848d680a4526`).
+This completes Track A's authority decision with existing checks and refusal
+behavior retained. Reopen only for a mechanism-specific opportunity supported
+by new cost or coverage evidence, or a selected architectural change that
+revisits these boundaries. The tight-loop cost estimate is not a measured
+saving or CPU-share threshold; c41 is caution, not a rejection of M2.
+B6 remains an obligation before guarded actions in any consolidation. M3 stays
+parked, B8 unselected. No implementation, build or native run is selected;
+the wider optimization task awaits niltempus's next selection.
+
 `dcp-01/changing` completed TEST SUCCESS with all qualification and cleanup
 gates passing. The root saved-data recount is sealed at
 `~/.local/state/sophia-decomp-post-lean-result-01/` (SHA256SUMS
@@ -45,22 +66,19 @@ owner ppolls, 12 owner wait4s and one peer sendto per completion, without
 socket attribution or CPU pricing. These observations select no implementation.
 No numeric security premium, uninstrumented saving or Niri comparison follows.
 
-Niltempus selected q2m7v8ka's first question: a docs-only four-wait
-dependency/authority table. Claude owns the investigation note; Codex reviews
-the frozen commit before push and owns this plan and `todo.md`. Read current
-source alongside 3u93ti2w, rug93yha and the accepted dcp-01 evidence. For each
-wait, name the action made ready, its actual observed source versus inferred
-association, why the action must run on the owner, and the fresh-authority,
-immutable-publication or release boundary separating it from the next action.
-Any consolidation proposal must identify the exact transition or round trip
-it removes and the ordering/refusal obligations it preserves.
+The completed note answered q2m7v8ka's first question from current source,
+3u93ti2w, rug93yha and the accepted dcp-01 evidence: the action associated with
+each wait, its owner-thread and authority boundaries, and the transition a
+consolidation proposes to remove. Future proposals must preserve its distinction
+between observed classes and source associations, and name the ordering and
+refusal obligations they retain.
 
 Aggregate counts do not establish a per-frame causal chain, an empty pass or
 removable work. Retain dcp-01's instrumented scopes and separate windows; no
-numeric security premium, CPU-saving or floor claim. This selects a note,
-not pass consolidation, a protocol change, source implementation, build or
-native run. Control-ring and renderer work remain unselected. M1/M2 remain
-separate pending authority decisions; no second native arm or repeat.
+numeric security premium, CPU-saving or floor claim. Acceptance selects no
+pass consolidation, protocol change, source implementation, build or native
+run. Control-ring and renderer work remain unselected. M1/M2 are deferred;
+no second native arm or repeat.
 
 **Capture selection and inputs (completed):**
 Niltempus selected a fresh one-arm decomposition of the current lean lane after
@@ -89,7 +107,7 @@ This is one instrumented capture, no ABBA or automatic repeat. Do not infer a
 numeric security premium, GL residual, removable cost or saving by subtraction;
 do not pool with historical Niri or untraced runs. A follow-up note may propose
 pass consolidation, control transport or renderer work; it selects none by
-itself. Track A M1/M2 remain pending in parallel, M3 and B8 remain unselected.
+itself. Track A M1/M2 are now deferred; M3 and B8 remain unselected.
 
 **Earlier selection: Track A authority review, then Track B trigger design.**
 After the closed liv-01 result, niltempus separately selected a device-free
@@ -112,7 +130,7 @@ selection. Its frozen input is
 (SHA256SUMS `ed3065ff87c10557689c3a7783486c71d1dc50b6db30b12cfe939a023130134e`).
 Acceptance is `~/.local/state/sophia-custody-authority-request-acceptance-01/`
 (SHA256SUMS `75dee241d384104457ae9c3e3da219ad5e6332ff98fededdd9a838d2fac173b5`).
-The pending decision has two questions:
+The request posed two questions, now deferred by g5madpss:
 
 - M1: can a later image-path check replace the post-turn custody observation
   on a proven-eligible entry while preserving authentication close, admission
@@ -133,9 +151,9 @@ wire registration does not establish coverage for startup, failed negotiation,
 disconnection/revocation, stopping or replacement. Preserve retirement and
 termination deadlines; holding a pidfd does not establish complete progress.
 
-For Track A, the next step remains the authority decision: select, reject or defer each question
-with reasons. Only a selected mechanism proceeds to separately scoped,
-device-free interleaving/refusal proof and a negative mutation. Only after
+Track A is closed by the deferral above. If reopened, only a separately
+selected mechanism proceeds to a scoped device-free interleaving/refusal proof
+and a negative mutation. Only after
 that proof may a separately approved receipt package be proposed with an
 adequate discriminator. Receipt values and unchanged passes are hypotheses,
 not security proof. Rejecting or deferring all mechanisms completes the review.
@@ -156,7 +174,7 @@ M3's map now includes spawn-worker ownership and handoff, registration loss
 and termination deadlines. A capture exercising no missed readiness cannot
 replace per-state progress/refusal proof. B3 observation limits remain.
 This completes the selected design-note work, not an optimization selection:
-M1/M2 still await the authority decision; M3 and B8 remain unselected. No
+M1/M2 are now deferred; M3 and B8 remain unselected. No
 source implementation, diagnostic package, native run or CPU claim follows
 from that design-input acceptance alone.
 
