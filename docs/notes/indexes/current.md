@@ -104,6 +104,11 @@ could own each one and the deadline that bounds it, maps the component
 lifecycle states a readiness-driven reap would have to cover, and ranks
 settlement-on-record first; a design input for selection, no mechanism chosen.
 
+[Defer the custody observation questions M1 and M2](../decisions/g5madpss-defer-the-custody-observation-questions-m1-and-m2-and-keep-caller-fresh-checks-per-pass.md)
+records the Track A disposition: both questions deferred with a reopening
+condition, every caller-fresh custody check and refusal kept, and B6 retained
+as a per-pass obligation in any consolidation; no cost or saving is claimed.
+
 ## Public role IPC and mounting
 
 The [9P role replacement and mounting investigation](../investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
