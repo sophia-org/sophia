@@ -30,13 +30,25 @@ Owner/validation/other Session/peer sample-period shares are 61.74/4.02/22.17/12
 The apparent peer outbox hotspot resolves to its inlined fill callback: known
 producer work with an older typed-fill result, not a new queue or compositor win.
 
-Next recommendation: a bounded source review of construction/allocation inside
-component servicing (36.52% inclusive within the owner samples), identifying one
-specific behavior-preserving change. Inclusive shares overlap and are not removable
-budgets. No runtime candidate, repeat capture, buffering or authority change is
-selected. Retain M1/M2 deferral and B6 checks. A future effect package still needs
-CPU/presented-frame alongside latency, cadence and counts; this profile makes no
-saving or historical Niri comparison. Task t344 remains open.
+Niltempus authorized the bounded component-construction source review. It selected
+the [terminal owned-ring setup candidate](../investigations/ti5plluj-can-terminal-owned-ring-setup-return-before-moving-state-without-changing-servicing.md),
+`a4f599e7a` on `cpu/owned-ring-idle`, separate from master. An eight-line guard
+returns after disclosure/reset when registration is Ready or Refused, avoiding
+Setup/Phase movement on an identity path. Nonterminal work, all four owner
+services, caller-fresh checks, publication, deadlines and buffering are unchanged.
+Two contract tests and a wrong-order mutation pin the disclosure boundary;
+independent review and the full isolated gate pass (809 successful result blocks).
+Release-library assembly confirms terminal branches bypass setup copies while
+remaining service continues. Source evidence seal `542aac18` and independent
+review `e35d1522` are linked in the investigation. Source candidate accepted;
+the branch/worktree remain held for a possible matched effect comparison.
+
+Six owner memcpy samples have callers in setup; samples do not record phase or
+establish a removable cost. Inclusive shares overlap and are not removable budgets.
+No runtime merge/install, native repeat, CPU saving or historical Niri comparison
+is selected by this source result. Retain M1/M2 deferral and B6 checks. A future
+effect package needs CPU/presented-frame alongside latency, cadence and counts.
+Task t344 remains open.
 
 ### Previous T5 scheduling checkpoint, November 9
 

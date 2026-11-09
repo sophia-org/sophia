@@ -33,8 +33,10 @@ and the [decision to separate desktop readiness from application proofs](../deci
 The [current-lean function profile](../investigations/h3gtssf5-which-functions-consume-cpu-on-the-current-lean-sft-path-without-changing-responsiveness.md)
 is qualified with an independent recount: 1069 samples, no recorded loss and clean
 cadence/cleanup. The peer outbox symbol resolves to inlined pixel filling, not
-queue cost. Component servicing is the next recommended source-review scope;
-no runtime optimization or performance saving is selected by the profile.
+queue cost. The subsequent [terminal owned-ring setup investigation](../investigations/ti5plluj-can-terminal-owned-ring-setup-return-before-moving-state-without-changing-servicing.md)
+selects a small source candidate: skip terminal setup movement after disclosure
+checking. It remains separate from master, with no CPU/frame saving or native
+effect comparison yet.
 
 The [T5 scheduling screen](../investigations/y4mb4ylo-two-sft-credits-need-an-explicit-batching-policy-before-they-can-reduce-owner-servicing.md)
 distinguishes an unused second credit, unproved eager lookahead and deliberate
