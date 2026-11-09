@@ -30,6 +30,11 @@ and the [decision to separate desktop readiness from application proofs](../deci
 
 ## Desktop composition
 
+The [post-lean owner decomposition](../investigations/q2m7v8ka-what-the-post-lean-decomposition-says-about-the-next-native-frame-change.md)
+records the instrumented owner phases and role syscall counts after B3, keeps
+worker scopes and windows separate, and proposes coordination, control-ring and
+renderer questions without selecting a change or claiming a security premium.
+
 The [bounded FrameCommit proposal](../decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md)
 targets repeated frame coordination after the fresh iGPU CPU comparison. It keeps
 9P for control and the image path for pixels; the linked architecture diagram and

@@ -28,7 +28,26 @@ acceptance in t289 and portability planning in t256. The November 7 milestone
 below closes three experimental comparisons, not default-on adoption. Its final
 lane is 673.7–674.1 combined µs/frame; separate treatments are not additive.
 
-**Current selection: one post-lean diagnostic decomposition capture.**
+**Current checkpoint: post-lean diagnostic capture completed; select the next investigation.**
+`dcp-01/changing` completed TEST SUCCESS with all qualification and cleanup
+gates passing. The root saved-data recount is sealed at
+`~/.local/state/sophia-decomp-post-lean-result-01/` (SHA256SUMS
+`7a0677ef83845072794eb34925c0bc7fe231c369da1d9216b53e80f41caf8a5c`);
+independent recount is pending. The [result and proposed next questions](../investigations/q2m7v8ka-what-the-post-lean-decomposition-says-about-the-next-native-frame-change.md)
+record the measured scopes and their limits. Instrumented owner components
+are 461.579–461.693 us/completion; other/native/authority are approximately
+226.9/226.7/102.1 us. Four owner passes remain. The role census observes 44
+owner ppolls, 12 owner wait4s and one peer sendto per completion, without
+socket attribution or CPU pricing. These observations select no implementation.
+No numeric security premium, uninstrumented saving or Niri comparison follows.
+
+Next proposed investigation is the four-wait dependency/authority table before
+selecting pass consolidation; control-ring and renderer proposals need a named
+remaining round trip or active operation. The generic send-batching premise is
+weaker with one aggregate peer sendto. Niltempus selects the next work; M1/M2
+remain separate pending authority decisions. No second native arm or repeat.
+
+**Capture selection and inputs (completed):**
 Niltempus selected a fresh one-arm decomposition of the current lean lane after
 B3. Keep owner CPU in disjoint components/native/authority/other scopes, pass
 counts by actual waits, completed worker command/job counters, role/syscall-name
@@ -41,7 +60,7 @@ The host build is sealed at `~/.local/state/sophia-decomp-post-lean-build-01/`
 one Cargo build, then receipt completion from that same successful stream after
 a post-build target-name check failed; build completion timestamp is unknown.
 
-Package assembly is `~/.local/state/t331/dcp-01/changing/`, using liv-01's
+The consumed package is `~/.local/state/t331/dcp-01/changing/`, using liv-01's
 unchanged lean workload, peer, runner and helpers, with the added
 `diagnostic-owner-cost` host feature and a bounded counts-only strace attachment.
 Schema 5 distinguishes no-wait passes and multiwait cause unions. Worker values
@@ -49,7 +68,7 @@ are completed-scope snapshot deltas inside the identity-checked census interval,
 not whole-thread or exact-anchor CPU totals. Each census role retains its own
 attach/detach edges and completion denominator; fd inventory is descriptive,
 not socket attribution. Keep all existing qualification and cleanup gates.
-Only niltempus launches after package review, seal and device-free readiness.
+Niltempus launched after package review, seal and device-free readiness.
 
 This is one instrumented capture, no ABBA or automatic repeat. Do not infer a
 numeric security premium, GL residual, removable cost or saving by subtraction;
