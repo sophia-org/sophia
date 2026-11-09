@@ -1,6 +1,6 @@
 ----------------------------- MODULE Carrier -----------------------------
 \* Proposed design projection, NOT an implemented carrier or refinement proof.
-\* Correspondence: LeanPrefix Deliver/Receive; export/transaction.rs lines20-70.
+\* Correspondence: LeanPrefix Deliver/Receive; export/transaction.rs submit_frame_record/apply_ack.
 EXTENDS Naturals, TLC
 CONSTANTS ReserveReply, FreshAuthority, ExactReceipt, SnapshotInput, SemanticAck
 VARIABLE s

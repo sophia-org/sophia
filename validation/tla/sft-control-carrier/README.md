@@ -18,7 +18,7 @@ Carrier models one attempt, two possible payload values and one epoch withdrawal
 Capture reserves one receipt slot and copies the payload privately. Accept
 represents reaching existing file custody, not frame admission or presentation.
 The producer may mutate input before or after capture. Success knowledge comes
-only from an owner-authored matching receipt; ring consumption is not ACK.
+only from an owner-authored matching receipt; ring consumption is not ACK. `reuse` represents reuse of semantic accepted-custody state, not reclamation of an SQ cell after its complete private capture. That transport cell can be reclaimed independently without releasing pixels or frame credit.
 The model has no reopen/retry action: it cannot prove no replay across reconnects.
 
 Wake models one publication and notification, separately interleaved with owner
@@ -57,3 +57,10 @@ SHA256SUMS c05e688651abafdbe4a79cc5876e808b835600d9e09add5d9dead3896586ecea.
 Initial syntax failure and the helper's plural/singular error-message mismatch
 are retained in that evidence; only reproduce-final.log is the successful gate.
 The listed open scenarios above remain open; these counts are not qualification.
+
+Contract review 29e08b85 identifies the covered exchange set as an unresolved
+prototype choice: commit-only is recommended; journal-on-CQ changes the events
+contract. See z8cr4n2p's challenge addendum for all eight required semantics.
+The initial Carrier projection combines acceptance and receipt creation and
+therefore does not prove guarded publication after an intervening withdrawal.
+Its reuse property is abstract, not an implementation of lean commit recycling.

@@ -28,6 +28,9 @@ Sequence: contract/model review, isolated prototype, adversarial proof, matched
 transport comparison, then an integration decision. No native run or live
 host/SDK change selected. Preserve responsiveness, one outstanding frame and
 caller-fresh B6 checks; M1/M2 remain deferred. t256 owns portability qualification.
+Contract challenge 29e08b85 leaves the covered exchange set pending: commit-only
+is recommended, journal-on-CQ needs an events-contract decision. Prototype gate
+is held; initial model checks are not complete proof.
 The ring-01 result and independent source-disposition decision below remain closed
 evidence and must not be folded into a carrier effect claim.
 
