@@ -11,6 +11,14 @@ impl ShellFiles {
             self.reset_owned_ring();
             return Ok(None);
         }
+        if self
+            .owned
+            .registration
+            .as_ref()
+            .is_some_and(|setup| matches!(setup.phase, Phase::Ready | Phase::Refused))
+        {
+            return Ok(None);
+        }
         let Some(mut setup) = self.owned.registration.take() else {
             return Ok(None);
         };

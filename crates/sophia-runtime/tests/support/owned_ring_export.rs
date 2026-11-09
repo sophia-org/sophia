@@ -521,6 +521,106 @@ fn full_handshake_publishes_admitted_then_ready_and_refunds_on_drop() {
 }
 
 #[test]
+fn terminal_ready_setup_preserves_pending_offer_but_still_checks_disclosure() {
+    let mut files = fixture();
+    let mut epochs = epochs();
+    let ring = ready(&mut files, &mut epochs);
+    let bytes = offer(1, 0, 2).encode();
+    files.write_owned_ring(&bytes).unwrap();
+    let pending = files.owned_pending_offer();
+    let published = files.owned_publication_sequence();
+    let events = journal_events(&files);
+    let accounting = epochs.accounting();
+    let deadline = files.owned.registration.as_ref().unwrap().deadline;
+    for instant in [
+        deadline - Duration::from_secs(1),
+        deadline,
+        deadline + Duration::from_secs(1),
+    ] {
+        assert!(matches!(
+            files.service_owned_ring_setup(&mut epochs, instant),
+            Ok(None)
+        ));
+        assert!(matches!(
+            files.owned.registration.as_ref().unwrap().phase,
+            Phase::Ready
+        ));
+        assert_eq!(files.owned_current_identity(), Some(identity()));
+        assert_eq!(files.owned_deadline(), None);
+        assert_eq!(files.owned_pending_offer(), pending);
+        assert!(files.owned.live.iter().any(Option::is_some));
+        assert_eq!(files.owned_publication_sequence(), published);
+        assert_eq!(journal_events(&files), events);
+        assert_eq!(epochs.accounting(), accounting);
+    }
+    files.revoked = true;
+    assert!(matches!(
+        files.service_owned_ring_setup(&mut epochs, deadline),
+        Ok(None)
+    ));
+    assert!(files.owned.registration.is_none());
+    assert!(files.owned.live.iter().all(Option::is_none));
+    assert_eq!(files.owned_pending_offer(), None);
+    assert_eq!(files.owned.last, None);
+    assert_eq!(files.owned_current_identity(), None);
+    assert_eq!(files.owned_publication_sequence(), published);
+    assert_eq!(
+        epochs.accounting(),
+        accounting,
+        "the external ring still owns its charge"
+    );
+    drop(ring);
+}
+
+#[test]
+fn terminal_refused_setup_stays_refused_but_still_checks_disclosure() {
+    let mut files = fixture();
+    let mut epochs = epochs();
+    let accounting = epochs.accounting();
+    register(&mut files);
+    let deadline = files.owned.registration.as_ref().unwrap().deadline;
+    files
+        .service_owned_ring_setup(&mut epochs, deadline)
+        .unwrap();
+    assert!(matches!(
+        files.owned.registration.as_ref().unwrap().phase,
+        Phase::Refused
+    ));
+    let published = files.owned_publication_sequence();
+    let events = journal_events(&files);
+    for instant in [deadline, deadline + Duration::from_secs(1)] {
+        assert!(matches!(
+            files.service_owned_ring_setup(&mut epochs, instant),
+            Ok(None)
+        ));
+        assert!(matches!(
+            files.owned.registration.as_ref().unwrap().phase,
+            Phase::Refused
+        ));
+        assert_eq!(files.owned_current_identity(), None);
+        assert_eq!(files.owned_deadline(), None);
+        assert_eq!(files.owned_publication_sequence(), published);
+        assert_eq!(journal_events(&files), events);
+        assert_eq!(epochs.accounting(), accounting);
+    }
+    let another = Registration {
+        slots: 1,
+        ..registration()
+    }
+    .encode();
+    assert_eq!(files.write_owned_ring(&another), Err(EALREADY));
+    files.negotiated = false;
+    assert!(matches!(
+        files.service_owned_ring_setup(&mut epochs, deadline),
+        Ok(None)
+    ));
+    assert!(files.owned.registration.is_none());
+    assert_eq!(files.owned.last, None);
+    assert_eq!(files.owned_publication_sequence(), published);
+    assert_eq!(epochs.accounting(), accounting);
+}
+
+#[test]
 fn offer_retries_busy_and_stale_generations() {
     let mut files = fixture();
     let mut epochs = epochs();
