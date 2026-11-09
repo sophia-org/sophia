@@ -26,8 +26,7 @@ Tread with subsequent work. The ordinary path below retains its own event shape.
 remain authoritative. The [original ADR](notes/decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md)
 is unchanged; older dated checkpoints below describe their evidence at that time.
 
-The next investigation is the Service deadline obligation among four owner
-wakes, then repeated component servicing; see the [current CPU plan](notes/plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md#current-resumption-november-8).
+The selected next experiment is a [device-free bounded control carrier](notes/decisions/z8cr4n2p-test-a-bounded-sft-control-carrier-before-live-integration.md), beginning with its custody model. The production carrier remains 9P; no live transport, platform port or native comparison is selected. Historical milestones above retain their original scope.
 
 ### Coverage and remaining gates
 

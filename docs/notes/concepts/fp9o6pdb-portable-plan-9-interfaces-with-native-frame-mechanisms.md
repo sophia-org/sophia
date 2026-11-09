@@ -93,3 +93,7 @@ lookup belongs in the hot path without measured justification.
 
 No backend implementation, runtime security audit or new measurement supports
 this direction yet. Naming convenience alone does not reduce CPU/frame.
+
+## November 9 selection
+
+The [device-free control-carrier experiment](../decisions/z8cr4n2p-test-a-bounded-sft-control-carrier-before-live-integration.md) is now selected under t344. This narrows the next implementation to an isolated prototype after model/review gates; it does not authorize a production transport or platform port. Earlier direction-only statements above describe the original scope.

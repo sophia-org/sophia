@@ -144,3 +144,5 @@ connects the working WM path to daily acceptance, the independent Lom/Bemenu/
 Provlita shell clients, and later output and administrative replacements.
 The [inspection investigation](../investigations/pp3pk4dd-read-only-wm-inspection-preserves-host-admission-and-writer-progress.md)
 records the separate HostDomain observer and the remaining workspace-gate limit.
+
+- [Bounded SFT control-carrier experiment](../decisions/z8cr4n2p-test-a-bounded-sft-control-carrier-before-live-integration.md): selected device-free work; custody contract proposed, production carrier unchanged.

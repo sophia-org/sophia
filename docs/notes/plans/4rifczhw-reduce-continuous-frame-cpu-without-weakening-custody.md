@@ -22,6 +22,15 @@ for each selected mechanism. A profile share is not a savings target.
 
 ## Current resumption, November 9
 
+**Selected next: device-free SFT control carrier.** niltempus approved the
+[bounded experiment](../decisions/z8cr4n2p-test-a-bounded-sft-control-carrier-before-live-integration.md) and requested implementation.
+Sequence: contract/model review, isolated prototype, adversarial proof, matched
+transport comparison, then an integration decision. No native run or live
+host/SDK change selected. Preserve responsiveness, one outstanding frame and
+caller-fresh B6 checks; M1/M2 remain deferred. t256 owns portability qualification.
+The ring-01 result and independent source-disposition decision below remain closed
+evidence and must not be folded into a carrier effect claim.
+
 The [current-lean function profile](../investigations/h3gtssf5-which-functions-consume-cpu-on-the-current-lean-sft-path-without-changing-responsiveness.md)
 completed and its independent recount matches. hp-01 used normal host `ad0c5239d`
 and the held lean workload with perf alone. Capture/decode/postflight/cadence and
