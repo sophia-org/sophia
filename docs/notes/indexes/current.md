@@ -86,6 +86,12 @@ maps the owner's 27 per-frame launch-custody polls to the Session action each
 guards and to the wake routes that already exist; it separates a readiness
 notification from a fresh liveness observation and selects no mechanism.
 
+[Which per-pass obligations can move to their own trigger without weakening custody](../investigations/rug93yha-which-per-pass-obligations-can-move-to-their-own-trigger-without-weakening-custody.md)
+takes the component-walk note's per-pass obligations, names the event that
+could own each one and the deadline that bounds it, maps the component
+lifecycle states a readiness-driven reap would have to cover, and ranks
+settlement-on-record first; a design input for selection, no mechanism chosen.
+
 ## Public role IPC and mounting
 
 The [9P role replacement and mounting investigation](../investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
