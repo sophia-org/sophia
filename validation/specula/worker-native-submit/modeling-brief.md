@@ -38,7 +38,9 @@ permission (`docs/native-frame-transactions.md`, authority section;
 Model CheckAndReserve and KernelAccept separately. ApplyWithdrawal may run
 between them in the unserialized variant. The protected variant assumes a common
 gate covers both and all authority-changing paths. That gate does not exist in
-the implementation. Its progress consequences are an open design question.
+the implementation. CheckAndReserve reads valid/withdrawRequested on the
+worker side: the gate itself presumes new shared authorization state, not just
+a scheduling optimization. Its authorization and progress contracts remain open.
 
 ### 2. Submission outlives the worker reply and output facade
 
@@ -69,7 +71,9 @@ subscribes the card and establishes a hard-stall deadline from submitted_at;
 rendering content instead requests short Service. `singleton_tick.rs:124–211`
 installs exact submitted identity/content, timestamps and cursor settlement only
 after the owner consumes the submission report. Removing its wake requires
-pre-armed completion coverage and a durable exact submission record.
+pre-armed completion coverage and a durable exact submission record. The
+existing per-submission out-fence at completion_wait.rs:140–146 is produced by
+the commit; it is not pre-submit coverage.
 
 The model allows KernelFlip before PublishAccepted. Its ledger premise must be
 implemented as enough retained identity/resource state to preserve an early
@@ -131,8 +135,14 @@ transition exists to instrument or validate yet.
 
 No cross-head atomicity, mirrors, direct scanout, cursor transaction arbitration,
 wall-time bounds, memory ordering, device-loss recovery, kernel event encoding,
-or successor-frame reclamation proof. PhysicalDetach abstracts a proven physical
-release, not a timeout or requested shutdown. Those exclusions prevent adopting
+or successor-frame reclamation proof. Dispatch never re-enables: capacity
+linearization between submit N+1 and retirement N (custody.rs can_submit /
+accept_submission) is explicitly unmodeled. PhysicalDetach abstracts proven
+physical release. The current uncompleted-submission anchor is
+production_visual_runtime/native.rs:207–234 suspend_revoked_native_scanout and
+sophia-session/src/live_session/native_owner_retirement.rs RetirementMode::DeviceRevoked.
+Calling a function, reaching a timeout, requesting shutdown or joining a thread
+is not itself that proof; the disposition must hold. Those exclusions prevent adopting
 the model as a production custody protocol. Frame cancellation before renderer
 handoff remains the existing contract and is outside this post-handoff episode.
 

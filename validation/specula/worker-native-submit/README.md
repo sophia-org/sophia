@@ -54,6 +54,11 @@ Using the repository-pinned TLC jar (SHA256
 The control variants are hypothetical unsafe T4 designs, not current Sophia
 bugs. The safety result assumes the new gate and retained ledger; it does not
 prove they exist, are implementable safely, or have acceptable progress.
+In particular, CheckAndReserve reads valid/withdrawRequested on the worker:
+its gate presumes new shared cross-thread authorization state. That premise
+is under review, not permission to introduce a cache of today's authority.
+The one-frame model also excludes capacity reservation for N+1 racing the
+owner's retirement of N; it cannot qualify repeated-frame custody.
 Deadlock checking is disabled for intentionally stopped finite episodes; the
 explicit withdrawal temporal property is checked and fails as reported.
 
@@ -87,8 +92,13 @@ rules. An irrevocable render-time permission would change the SFT contract;
 another per-frame owner approval would retain the handoff being targeted.
 
 Before implementation, niltempus must choose whether to expand T4 to that
-submission-owner design or park it. The review may identify a smaller existing
-mechanism; no new actor, shared authorization cache or unsafe Send bridge is
-authorized by this checkpoint. Retain M1/M2 deferral and every B6 obligation.
+submission-owner design or park it. The read-only review found no smaller existing
+mechanism. It named owner-side submission with an explicit GPU input fence as
+an alternative design to investigate, not an implemented or selected solution.
+That alternative must establish buffer/framebuffer availability, when the fence
+can be exported without another worker round trip, and the disposition of render
+errors and validation results that currently precede submission. No wake or CPU
+saving follows from naming it. No new actor, shared authorization state or
+unsafe Send bridge is authorized by this checkpoint. Retain M1/M2 deferral and every B6 obligation.
 No physical run is useful until a concrete implementation survives the
 device-free tests listed in the brief.
