@@ -26,10 +26,11 @@ selects no mechanism.
 Source read on master `0fdf784e9`. Counts from liv-01. Unit cost from the
 device-free `sophia-custody-poll-cost-01` package as corrected by its sibling
 `sophia-custody-poll-cost-correction-claude-01` (`7ccb2fa5…`) after Codex's
-bounded review: one LaunchCustody-shaped zero-timeout poll costs on the order
-of 0.4 us in a tight loop on this host, harness included, consistent with the
-408 ns ppoll mean in `sophia-custody-poll-screen-01`. No figure here is a
-measurement of the owner thread; nothing here is a CPU claim.
+bounded review: one LaunchCustody-shaped zero-timeout poll took on the order
+of 0.4 us per call in a tight userspace loop on this host, harness included,
+consistent with the 408 ns ppoll mean in `sophia-custody-poll-screen-01`.
+That is a microbenchmark figure, not a floor, a bound or an owner-thread
+cost. Nothing here is a CPU claim.
 
 ## Custody on one transport entry
 
@@ -86,25 +87,29 @@ repeated polls are the fresh observations the contract asks for, made at
 every boundary where Session is about to act. The wire's HUP covers the
 connected process, not the launch custody, so it cannot replace the pidfd.
 
-## Redundancy inside one entry
+## Repeated observations inside one entry
 
 Within one entry the pre-turn poll, the post-turn poll and the image check's
-`live()` observe the same two pidfds, typically within tens of microseconds
-and with no peer action possible in between that could change custody. The
-per-file checks repeat the observation once per protected access inside the
-same turn. Of the 27 custody polls per frame, 14 are the post-turn and the
-image-check repeats of the pre-turn observation, and 6 are per-access repeats
-inside the turn. This is the shape the review would be asked about: not
-"poll less often", but "which of the repeats within one entry observes
-something the first observation of that entry could not".
+`live()` observe the same two pidfds at successive instants, and the per-file
+checks observe them again once per protected access inside the turn. Of the
+27 custody polls per frame, 7 are the first observation of an entry and 20
+are later observations in the same entry. Either process can exit at any
+instant, including between two of these observations, so a later observation
+is not redundant by count: each one shortens the window between the last
+observation and the Session action it precedes. What the count cannot say is
+whether that shorter window protects anything. That is the question for the
+review, per site: which Session action follows each later observation, and
+what happens if the exit falls in the window the previous observation left.
 
-The window that one observation per entry opens is the entry's own duration:
-an exit between the pre-turn poll and the image check. In that window Session
-can serve the turn's replies and read one image datagram from a connector
-whose own `process_alive` still runs. It cannot admit a new attach, because
-`begin`, `read` and `commit` keep their own `grant`/`admission` checks and the
-Factotum verdict, and it cannot extend custody, because `active` is owned by
-Session and withdrawn before signals.
+The window that one observation per entry would open is the rest of that
+entry: an exit after the pre-turn poll and before the image check. In that
+window Session can serve the turn's replies and read one image datagram from
+a connector whose own `process_alive` still runs. It cannot admit a new
+attach, because `begin`, `read` and `commit` keep their own `grant` and
+`admission` checks and the Factotum verdict, and it cannot extend custody,
+because `active` is owned by Session and withdrawn before signals. Whether
+serving those replies or reading that datagram for an exited process is
+acceptable is for the authority to decide, not for this note.
 
 ## Prior art the review must not repeat
 
@@ -141,16 +146,17 @@ Session and withdrawn before signals.
    kinds, and idle detection is bounded at 20 ms. What the repeated polls add
    is freshness at each boundary, under the stated contract that readiness is
    a wake, not authority.
-3. Twenty of the 27 polls per frame are repeats of an observation made
-   microseconds earlier in the same entry, with no possible intervening peer
-   action that changes custody. The remaining 7 are the first observation of
-   each entry.
-4. On the unit-cost bound, 27 polls are about 10 to 11 us per frame in a
-   tight loop, harness included; the owner-thread cost is not measured. The
-   between-arm spread in cpu-collect-01 was about 12 us/frame. A custody-only
-   change is therefore not resolvable by a CPU comparison on this lane and
-   should not be asked for as one. The review's value is correctness and the
-   design in the follow-on note on obligations and triggers, not a saving.
+3. Seven of the 27 polls per frame are the first observation of an entry;
+   20 are later observations in the same entry. An exit can fall between
+   any two of them, so the count alone does not make the later ones
+   redundant; each shortens a window before a named Session action, and the
+   review decides per site whether that window matters.
+4. The owner-thread cost of these polls is not measured. The microbenchmark
+   gives a per-call figure in a tight loop only, and the earlier note
+   recorded that between-arm variability is not a resolution threshold.
+   This note therefore asks for no CPU comparison and makes no claim about
+   what one could resolve. The review's object is correctness: which
+   observations the contract requires, and which mechanism keeps them.
 
 ## Limits
 
