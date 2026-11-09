@@ -14,12 +14,12 @@ impl Recorder {
     pub(super) fn new(_: u64) -> Self {
         Self
     }
-    pub(super) fn begin_pass(&mut self, _: [u64; 2], _: u8, _: [u64; 2]) {}
+    pub(super) fn begin_pass(&mut self, _: [u64; 2], _: (u8, u8), _: [u64; 2]) {}
     pub(super) fn phase(&mut self, _: Phase) {}
     pub(super) fn measure<T>(&mut self, _: Phase, f: impl FnOnce() -> T) -> T {
         f()
     }
-    pub(super) fn finish(self, _: bool, _: u64) {}
+    pub(super) fn finish(self, _: bool, _: u64, _: (u8, u8)) {}
 }
 
 #[cfg(feature = "diagnostic-owner-cost")]

@@ -110,7 +110,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         let worker_cpu_ns = [0; 2];
         owner_cost.begin_pass(
             worker_cpu_ns,
-            owner_wake.last_wait_cause(),
+            owner_wake.take_pass_waits(),
             shell_components.as_ref().map_or([0; 2], |components| components.component_turns()),
         );
         // Before any producer is inspected, so a ring that lands during this
@@ -816,7 +816,11 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 })();
-owner_cost.finish(session_loop_result.is_ok(), owner_wake.statistics().passes);
+owner_cost.finish(
+    session_loop_result.is_ok(),
+    owner_wake.statistics().passes,
+    owner_wake.take_pass_waits(),
+);
 if let Err(error) = session_loop_result {
     present_evidence.flush();
     sophia_x_authority::flush_present_evidence();

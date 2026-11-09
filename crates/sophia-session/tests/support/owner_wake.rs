@@ -665,3 +665,36 @@ fn wait_causes_partition_waits_by_joint_cause() {
     assert_eq!(causes.waits(), owner.statistics().waits);
     assert_eq!(owner.statistics().waits, 4);
 }
+
+#[test]
+fn pass_waits_are_consumed_and_a_pass_without_a_wait_reads_as_none() {
+    use crate::owner_wait_causes::{DEADLINE, RING};
+    let owner = OwnerWake::new().unwrap();
+    let (authority, authority_queue) = sync_channel::<u32>(1);
+    assert_eq!(owner.take_pass_waits(), (0, 0));
+    // Pass 1: an empty queue and a ring end the wait.
+    owner.begin_pass().unwrap();
+    owner.notifier().notify();
+    assert_eq!(
+        owner.receive(&authority_queue, LONG),
+        Err(RecvTimeoutError::Timeout)
+    );
+    let (cause, waits) = owner.take_pass_waits();
+    assert_eq!((cause & RING, waits), (RING, 1));
+    // Pass 2: the item is already queued, so receive returns without a wait.
+    owner.begin_pass().unwrap();
+    authority.send(3).unwrap();
+    assert_eq!(owner.receive(&authority_queue, LONG), Ok(3));
+    assert_eq!(owner.take_pass_waits(), (0, 0));
+    // Pass 3: a different wait, bounded by its deadline.
+    owner.begin_pass().unwrap();
+    assert_eq!(
+        owner.receive(&authority_queue, Duration::from_millis(5)),
+        Err(RecvTimeoutError::Timeout)
+    );
+    let (cause, waits) = owner.take_pass_waits();
+    assert_eq!((cause & DEADLINE, cause & RING, waits), (DEADLINE, 0, 1));
+    // The joint histogram still counts both real waits.
+    assert_eq!(owner.wait_causes().waits(), 2);
+    assert_eq!(owner.take_pass_waits(), (0, 0));
+}

@@ -66,3 +66,24 @@ yields owner phases, the two worker threads and, by subtraction from the
 process clock, the GL composition remainder. The counters are two clock reads
 and one relaxed add per job on each worker; the row columns stay behind
 `diagnostic-owner-cost`. Diagnostic only; nothing schedules on them.
+
+## November 8: schema 5 amendment, superseding the subtraction above
+
+The sentence above that one instrumented arm yields "by subtraction from the
+process clock, the GL composition remainder" is withdrawn. The two worker
+counters, now `render_cmd_cpu_ns` and `image_job_cpu_ns`, charge completed
+renderer commands and completed validation jobs, not the threads' lifetimes:
+work in flight at a row edge lands in a later row, a replaced worker core
+restarts its sum from zero, and a reset can hide behind another worker's
+growing sum, so a reader refuses regressions and needs a stable worker
+topology before reading a window delta at all. Their edges are not the
+owner's row edges nor the process sampler's, and non-owner work other than
+these two scopes is unmeasured. Nothing is subtracted across those windows,
+and no "security premium" is derived from them.
+
+Each row also carries `waits`, the number of owner waits observed during the
+pass, with `cause` the OR of their bits. The causes are consumed at every
+loop top and at the final close, so a pass that found its authority item
+queued or served without waiting reads `waits=0` instead of inheriting the
+previous wait's cause as the schema 3 rows did. The row and footer lines say
+`schema=5`.

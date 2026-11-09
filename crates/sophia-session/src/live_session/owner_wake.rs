@@ -35,8 +35,9 @@ pub(super) struct OwnerWake {
     /// Component cause bits noted by this wait's `observed` callback.
     noted_causes: Cell<u8>,
     service_reasons: Cell<ServiceReasons>,
-    /// Cause bits of the wait that ended most recently, for the owner cost rows.
-    last_cause: Cell<u8>,
+    /// Cause bits OR'd over, and the count of, the waits since the last
+    /// take; the owner cost rows read one pass's worth and reset it.
+    pass_waits: Cell<(u8, u8)>,
 }
 
 /// Owner-thread observations, not scheduler wakeups or per-producer attribution.
@@ -70,7 +71,7 @@ impl OwnerWake {
             wait_causes: Cell::default(),
             noted_causes: Cell::new(0),
             service_reasons: Cell::default(),
-            last_cause: Cell::new(0),
+            pass_waits: Cell::new((0, 0)),
         })
     }
 
@@ -106,9 +107,12 @@ impl OwnerWake {
         self.service_reasons.get()
     }
 
-    /// Cause bits of the most recent wait; zero before the first wait.
-    pub(super) fn last_wait_cause(&self) -> u8 {
-        self.last_cause.get()
+    /// The waits since the previous call: their cause bits OR'd, and how many
+    /// there were. `(0, 0)` means no wait was observed, which a pass that
+    /// found its authority item queued or served without waiting produces;
+    /// the joint `wait_causes` histogram is unaffected.
+    pub(super) fn take_pass_waits(&self) -> (u8, u8) {
+        self.pass_waits.take()
     }
 
     /// From an `observed` callback: which component descriptors ended this wait.
@@ -323,7 +327,8 @@ impl OwnerWake {
         let mut wait_causes = self.wait_causes.get();
         wait_causes.add(cause);
         self.wait_causes.set(wait_causes);
-        self.last_cause.set(cause);
+        let (bits, waits) = self.pass_waits.get();
+        self.pass_waits.set((bits | cause, waits.saturating_add(1)));
         Ok(())
     }
 }

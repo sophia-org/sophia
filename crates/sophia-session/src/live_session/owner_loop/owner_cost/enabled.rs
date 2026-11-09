@@ -25,8 +25,10 @@ struct Row {
     cpu: [u64; 4],
     /// Cumulative render-worker and image-worker thread CPU at pass start.
     workers: [u64; 2],
-    /// Cause bits of the wait that woke this pass.
+    /// Cause bits OR'd over the waits observed during this pass, and how
+    /// many there were; `waits == 0` is a pass that never waited.
     cause: u8,
+    waits: u8,
     /// Cumulative component wire turns and ready turns at pass start.
     turns: [u64; 2],
 }
@@ -38,6 +40,7 @@ pub(crate) struct Recorder {
     cpu: [u64; 4],
     workers: [u64; 2],
     cause: u8,
+    waits: u8,
     turns: [u64; 2],
     overflow: u64,
     initial_passes: u64,
@@ -52,6 +55,7 @@ impl Recorder {
             cpu: [0; 4],
             workers: [0; 2],
             cause: 0,
+            waits: 0,
             turns: [0; 2],
             overflow: 0,
             initial_passes,
@@ -77,6 +81,7 @@ impl Recorder {
                     cpu: self.cpu,
                     workers: self.workers,
                     cause: self.cause,
+                    waits: self.waits,
                     turns: self.turns,
                 });
             }
@@ -87,6 +92,7 @@ impl Recorder {
         self.start = Some(now);
         self.phase = Phase::Other;
         self.cpu = [0; 4];
+        (self.cause, self.waits) = (0, 0);
     }
     /// `workers`: cumulative render-worker and image-worker thread CPU
     /// read just before this pass, so a window's delta is theirs. Each is
@@ -94,16 +100,25 @@ impl Recorder {
     /// the thread's lifetime: work in flight at a row edge lands in a later
     /// row, and a replaced worker core restarts its sum from zero, which a
     /// reader must refuse as a regression rather than subtract.
-    /// `cause`: bits of the wait that just ended. A row runs from one
-    /// loop top to the next and its wait precedes its work, so that wait
-    /// belongs to the row being closed here (cpu-decomp-02 recorded it one
-    /// row late). `turns`: cumulative component wire turns and ready turns
-    /// before this pass.
-    pub(crate) fn begin_pass(&mut self, workers: [u64; 2], cause: u8, turns: [u64; 2]) {
-        self.cause = cause;
+    /// `waits`: the cause bits and count of every wait since the previous
+    /// loop top, taken from the owner wake. A row runs from one loop top to
+    /// the next, so those waits belong to the row being closed here
+    /// (cpu-decomp-02 recorded them one row late), and a pass that found
+    /// its item queued or served without waiting closes with `(0, 0)` rather
+    /// than inheriting an earlier wait. `turns`: cumulative component wire
+    /// turns and ready turns before this pass.
+    pub(crate) fn begin_pass(&mut self, workers: [u64; 2], waits: (u8, u8), turns: [u64; 2]) {
+        (self.cause, self.waits) = waits;
         self.begin_at(stamp());
         self.workers = workers;
         self.turns = turns;
+    }
+    /// Closes the open row with the waits observed during it; nothing
+    /// carries into a later close.
+    fn close_with(&mut self, waits: (u8, u8), now: Stamp) {
+        (self.cause, self.waits) = waits;
+        self.close(now);
+        (self.cause, self.waits) = (0, 0);
     }
     fn phase_at(&mut self, phase: Phase, cpu: u64) {
         self.charge(cpu);
@@ -119,11 +134,12 @@ impl Recorder {
         self.phase(previous);
         result
     }
-    pub(crate) fn finish(mut self, complete: bool, final_passes: u64) {
-        self.close(stamp());
+    /// `waits`: the waits observed during the final, still-open row.
+    pub(crate) fn finish(mut self, complete: bool, final_passes: u64, waits: (u8, u8)) {
+        self.close_with(waits, stamp());
         for (i, row) in self.rows.iter().enumerate() {
             crate::session_println!(
-                "sophia_owner_cost schema=4 pass={} start_ns={} start_after_ns={} end_before_ns={} end_ns={} cpu_start_ns={} cpu_end_ns={} other_ns={} components_ns={} native_ns={} authority_ns={} render_cmd_cpu_ns={} image_job_cpu_ns={} cause={} component_turns={} component_ready_turns={}",
+                "sophia_owner_cost schema=5 pass={} start_ns={} start_after_ns={} end_before_ns={} end_ns={} cpu_start_ns={} cpu_end_ns={} other_ns={} components_ns={} native_ns={} authority_ns={} render_cmd_cpu_ns={} image_job_cpu_ns={} cause={} waits={} component_turns={} component_ready_turns={}",
                 i + 1,
                 row.start.wall,
                 row.start.after,
@@ -138,12 +154,13 @@ impl Recorder {
                 row.workers[0],
                 row.workers[1],
                 row.cause,
+                row.waits,
                 row.turns[0],
                 row.turns[1]
             );
         }
         crate::session_println!(
-            "sophia_owner_cost_end schema=4 rows={} overflow={} complete={} pid={} tid={} initial_passes={} final_passes={}",
+            "sophia_owner_cost_end schema=5 rows={} overflow={} complete={} pid={} tid={} initial_passes={} final_passes={}",
             self.rows.len(),
             self.overflow,
             complete,
