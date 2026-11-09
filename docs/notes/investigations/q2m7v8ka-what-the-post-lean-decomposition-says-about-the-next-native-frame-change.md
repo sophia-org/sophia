@@ -10,7 +10,7 @@ tags: [investigation, session, performance, frame-transaction, custody]
 ## Result and scope
 
 `dcp-01/changing` completed one diagnostic native arm at source `9d1708744`.
-The root recount passes; independent recount is pending. Source remains on its
+The root and independent recounts pass with zero field disagreements. Source remains on its
 diagnostic branch, not master or an installed release. No second arm or repeat
 is selected. The capture supports investigation, not a saving, regression,
 removable-cost estimate or numeric security premium.
@@ -23,6 +23,13 @@ The sealed root reader imports no package reducer. It reproduces raw owner
 rows, process-clock brackets, role census summaries, worker snapshots and
 service counters; it verifies all 358 input pins and 43 analysis input hashes.
 Full raw evidence remains under `~/.local/state/t331/dcp-01/changing/`.
+Independent audit: `~/.local/state/sophia-decomp-post-lean-result-audit-claude-01/`,
+SHA256SUMS `4d159153ba590616e43686d0dd7b039a1adde9d38906ebd0c05e024b9269e3d1`.
+Acceptance: `~/.local/state/sophia-decomp-post-lean-audit-acceptance-01/`.
+Both readers use the same raw capture and window rules; agreement confirms the
+reduction, not representativeness. Frozen result files are unchanged; the sibling
+acceptance supersedes their pending-audit status. The diagnostic worktree is
+released for ordinary cleanup, retaining branch history and all evidence.
 
 The workload is the held lean r13 owned-ring 1920×24 CPU strip at 60 Hz,
 2,120 frames, two slots, terminal-only, capabilities `0x1c8183`, W2 off.

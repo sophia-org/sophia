@@ -33,7 +33,11 @@ lane is 673.7–674.1 combined µs/frame; separate treatments are not additive.
 gates passing. The root saved-data recount is sealed at
 `~/.local/state/sophia-decomp-post-lean-result-01/` (SHA256SUMS
 `7a0677ef83845072794eb34925c0bc7fe231c369da1d9216b53e80f41caf8a5c`);
-independent recount is pending. The [result and proposed next questions](../investigations/q2m7v8ka-what-the-post-lean-decomposition-says-about-the-next-native-frame-change.md)
+the independent recount agrees on every compared field (audit SHA256SUMS
+`4d159153ba590616e43686d0dd7b039a1adde9d38906ebd0c05e024b9269e3d1`).
+Sibling acceptance is `~/.local/state/sophia-decomp-post-lean-audit-acceptance-01/`;
+frozen results remain unchanged, and the diagnostic worktree is released for
+ordinary cleanup with branch/evidence retained. The [result and proposed next questions](../investigations/q2m7v8ka-what-the-post-lean-decomposition-says-about-the-next-native-frame-change.md)
 record the measured scopes and their limits. Instrumented owner components
 are 461.579–461.693 us/completion; other/native/authority are approximately
 226.9/226.7/102.1 us. Four owner passes remain. The role census observes 44
