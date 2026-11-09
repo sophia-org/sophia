@@ -1,0 +1,17 @@
+[package]
+name = "sophia-control-ring-probe"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+rustix = { version = "=1.1.4", default-features = false, features = ["fs", "event", "process", "std", "net"] }
+sophia-shell-protocol = { path = "../../../vendor/rust-desktop-sdk/source/crates/sophia-shell-protocol" }
+
+[dev-dependencies]
+sophia-linux-peer = { path = "../../../crates/sophia-linux-peer" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[workspace]

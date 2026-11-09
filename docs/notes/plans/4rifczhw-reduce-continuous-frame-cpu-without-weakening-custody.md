@@ -30,9 +30,14 @@ host/SDK change selected. Preserve responsiveness, one outstanding frame and
 caller-fresh B6 checks; M1/M2 remain deferred. t256 owns portability qualification.
 After contract challenge 29e08b85, niltempus selected commit-only and pread-first:
 only FrameCommit and its receipt move; all journal events and standalone ACKs
-stay on 9P. Model/implementation gates remain; initial projections are not complete proof.
-The ring-01 result and independent source-disposition decision below remain closed
-evidence and must not be folded into a carrier effect claim.
+stay on 9P. Model review f821f765 clears standalone correctness work at 2d5d5b493;
+its finite projections do not prove the implementation. The first mechanism
+checkpoint tests bounded pread capture, exact one-deep receipts, refusal/ACK
+ordering and a two-process exchange. Its supplied authority/ACK projection is
+not the production export: actual 9P/journal parity and persistent service-loop
+proof remain the next gate before any timing. See the probe README for coverage.
+Ring-01 evidence stays frozen; a4f599e7a source disposition remains OPEN and must
+not be folded into a carrier effect claim.
 
 The [current-lean function profile](../investigations/h3gtssf5-which-functions-consume-cpu-on-the-current-lean-sft-path-without-changing-responsiveness.md)
 completed and its independent recount matches. hp-01 used normal host `ad0c5239d`

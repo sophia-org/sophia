@@ -1,7 +1,7 @@
 # SFT control carrier: initial custody and wake projections
 
-Status: initial design projections, NOT the complete prototype gate. No carrier
-implementation exists. See decision z8cr4n2p in docs/notes/decisions.
+Status: reviewed design projections and a separate executable mechanism checkpoint,
+NOT a complete prototype/comparison gate. See decision z8cr4n2p and the limits below.
 
 Run the pinned TLC helper from the repository root:
 
@@ -125,3 +125,35 @@ is not reclassified unknown on disconnect. It adds `OneAckInFlight` and the
 `CommitSerializeAck` negative control. Five positive configurations and fifteen
 negative controls pass. Evidence: sophia-control-carrier-model-03/reproduce.log;
 model-02 stays frozen. No implementation/prototype qualification follows.
+
+### Accepted model limits and the executable checkpoint
+
+Read-only review of 2d5d5b493 permits standalone device-free correctness work,
+not timing or host integration. Review seal:
+`f821f765d5869e375e40aecc3c4194f3faafe142147f35dcbcd2a4f4ba91873e`
+in `sophia-control-carrier-model-review-claude-01`.
+
+- `KeepDeadline`, `EchoAck`, `ConfirmSuccessOnly` and `SerializeAck` controls set
+  their bad flag directly from the configuration. They test helper detection,
+  not the corresponding design property. In particular, the abstract expiry
+  value is written but not read. Executable deadline, receipt and ACK tests must
+  establish the actual behavior separately.
+- `already` is unreachable in `CommitOnly`: success ends the attempt, and Publish
+  requires idle/retry. Epoch 2 cannot Process either. Duplicate EALREADY and
+  client fail-closed behavior are not modeled; replacement attach only exercises
+  replay refusal, not a legitimate new-epoch submission.
+- A stale refusal ends the modeled attempt. Reopening a writer on the same
+  attach and republishing the same id is executable-test work, not model coverage.
+
+These are uncomposed finite projections over abstract phases. They contain no
+Rust, byte offsets, wrap implementation, memory ordering, pread outcomes, real
+clock, fid objects or journal. State counts are not coverage or refinement proof.
+
+The executable mechanism checkpoint lives in
+[tools/probes/sft_control_ring](../../../tools/probes/sft_control_ring/README.md).
+It selects one SQ slot and one CQ slot with sequential attempts. There is no
+peer-written CQ consumer head: the next valid SQ publication follows receipt
+consumption by a conforming client. Host-local sequence validation refuses gaps
+and wrap. `QueueIndex` is retained as a deeper-queue alternative, not evidence
+about a remote-head input in this probe. A hostile client publishing early can
+lose its own receipt; that never licenses acceptance, ACK or frame release.

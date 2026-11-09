@@ -77,8 +77,11 @@ decision. Four dependent owner services are not predicted to disappear.
 
 ## Current checkpoint
 
-Contract drafted; review requested. Initial [custody/wake projections](../../../validation/tla/sft-control-carrier/README.md) exist, with their remaining gate explicitly listed. No complete model gate, executable carrier, transport comparison or saving is established yet. The existing ring-01 source disposition
-remains independent. Frozen historical evidence must not be rewritten.
+The commit-only/pread-first scope and bounded model review clear device-free
+prototype correctness work. The first standalone mechanisms and their remaining
+production-parity gate are recorded below and in the probe README. No transport
+comparison or saving is established. The ring-01 source disposition remains
+independent; frozen historical evidence is unchanged.
 
 ## Contract challenge and prototype hold, November 9
 
@@ -140,3 +143,18 @@ only its transport receipts. Every journal event and standalone ACK remains on
 9P with the existing ordered reader, offsets, visibility/hold and release rules.
 The exchange-set hold is resolved. Model/implementation proof and bounded review
 still precede a measured probe. Journal-on-CQ and host mapping are unselected.
+
+## Model accepted; first executable mechanisms, November 9
+
+Claude's review at 2d5d5b493 (seal f821f765) clears standalone device-free
+correctness work. Its three modeling limits are now explicit in the model
+README: wiring controls are not behavioral proofs, EALREADY/legitimate epoch-2
+processing are unmodeled, and same-attach writer reopen needs executable proof.
+The models remain separate finite projections, not implementation refinement.
+
+The [probe README](../../../tools/probes/sft_control_ring/README.md) records the
+one-deep CQ choice, bounded private-copy/receipt/ACK/refusal tests and a real
+two-process memfd exchange. The custody module is a test projection with supplied
+authority and ACK effects, not a host path. Actual 9P/journal parity and persistent
+carrier servicing are still required before timing. No production adoption,
+source disposition, native run or performance decision is made at this checkpoint.
