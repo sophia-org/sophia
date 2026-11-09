@@ -28,14 +28,33 @@ acceptance in t289 and portability planning in t256. The November 7 milestone
 below closes three experimental comparisons, not default-on adoption. Its final
 lane is 673.7–674.1 combined µs/frame; separate treatments are not additive.
 
-**Current checkpoint: four-wait note accepted; M1 and M2 deferred.**
+**Current checkpoint: T4 feasibility checked; scope decision required.**
+Niltempus authorized progress until a critical decision or physical run. The
+selected bounded work was the T4 contract/model study: keep Render, investigate
+removing successful result → owner → DRM submit, preserve fresh authority and
+physical custody. The [checkpoint](../investigations/l4ruwq60-worker-side-native-submission-needs-a-new-authority-and-lifetime-contract.md)
+records model `1195d002b`, sealed evidence `sophia-t4-model-02` (SHA256SUMS
+`beb6721faf571240787df7c7b9db5f9cfbb1d9026e9fd0836196c6a924307132`) and
+independent acceptance as design input only (`sophia-t4-model-review-claude-02`,
+SHA256SUMS `31b9e91f1c2b3a7f9fcd257f665e19947ab42a949fd164226abd62f6304cfa94`).
+Safety passes for one abstract frame with proposed shared authority and retained
+custody; eight unsafe controls fail. The protected design's stalled-gate progress
+probe fails, even on a trace with observed completion. This is not a current
+runtime defect or proof of implementation correctness. N+1 capacity versus N
+retirement and real physical behavior remain unmodeled.
+
+Recommend parking worker-side T4 rather than expanding it into a new submission
+owner now. That disposition is awaiting niltempus, as is the optional alternative:
+a docs-only owner-side input-fence feasibility study. Neither alternative is
+selected for implementation. No Rust source/build/install/native run, wake saving
+or CPU saving follows. Existing checks and SFT authority semantics remain intact.
+
 The [four-wait dependency note](../investigations/edc0te2v-which-action-each-of-the-four-lean-owner-wakes-owes-and-which-transition-a-consolidation-would-remove.md)
-is accepted at `e84ee472f`; acceptance is
-`~/.local/state/sophia-four-wait-dependency-acceptance-01/` (SHA256SUMS
+remains accepted at `e84ee472f` (acceptance SHA256SUMS
 `987c828615479313c9ca961d58451d1447136f95fd95f0ec2dfd45d489a0b06f`).
-Its T1–T5 shapes remain unselected: source associations are not observed
-descriptor identities, a skipped body need not remove a wait, and projected
-counter changes remain hypotheses.
+T1/T2/T3/T5 remain unselected; source associations are not observed descriptor
+identities, a skipped body need not remove a wait, and projected counter effects
+remain hypotheses. T4 was selected for feasibility analysis only.
 
 Niltempus selected [deferral of M1 and M2](../decisions/g5madpss-defer-the-custody-observation-questions-m1-and-m2-and-keep-caller-fresh-checks-per-pass.md).
 The proposal `2d166e233` passed review at
@@ -48,7 +67,7 @@ revisits these boundaries. The tight-loop cost estimate is not a measured
 saving or CPU-share threshold; c41 is caution, not a rejection of M2.
 B6 remains an obligation before guarded actions in any consolidation. M3 stays
 parked, B8 unselected. No implementation, build or native run is selected;
-the wider optimization task awaits niltempus's next selection.
+the wider optimization task awaits the T4 scope decision above.
 
 `dcp-01/changing` completed TEST SUCCESS with all qualification and cleanup
 gates passing. The root saved-data recount is sealed at
@@ -75,9 +94,10 @@ refusal obligations they retain.
 
 Aggregate counts do not establish a per-frame causal chain, an empty pass or
 removable work. Retain dcp-01's instrumented scopes and separate windows; no
-numeric security premium, CPU-saving or floor claim. Acceptance selects no
-pass consolidation, protocol change, source implementation, build or native
-run. Control-ring and renderer work remain unselected. M1/M2 are deferred;
+numeric security premium, CPU-saving or floor claim. The decomposition acceptance
+selects no pass consolidation, protocol change, source implementation, build or
+native run. The subsequent T4 feasibility selection is recorded above; control-ring
+implementation and renderer implementation remain unselected. M1/M2 are deferred;
 no second native arm or repeat.
 
 **Capture selection and inputs (completed):**

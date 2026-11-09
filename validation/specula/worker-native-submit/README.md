@@ -59,6 +59,12 @@ its gate presumes new shared cross-thread authorization state. That premise
 is under review, not permission to introduce a cache of today's authority.
 The one-frame model also excludes capacity reservation for N+1 racing the
 owner's retirement of N; it cannot qualify repeated-frame custody.
+The model-02 progress trace reaches BeginIoctl → KernelAccept → KernelFlip →
+StallWorker → ObserveExactCompletion → stutter. Even exact completion of a
+visible frame does not release this gate without worker return. Whether an
+exact completion can release it independently, and how a late PublishAccepted
+is then handled, is an open design question, not resolved here.
+
 Deadlock checking is disabled for intentionally stopped finite episodes; the
 explicit withdrawal temporal property is checked and fails as reported.
 

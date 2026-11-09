@@ -61,6 +61,9 @@ Model retained ownership separately from replyOpen and workerAlive. BeginIoctl,
 kernel acceptance and known userspace return are distinct. Worker exit after
 BeginIoctl leaves an unknown outcome until a known return or proven physical
 detach; Release must not consult global kernel acceptance as owner knowledge.
+The commitStarted record must itself be shared and published before entering
+the syscall; a crash between record and syscall conservatively leaves an unknown
+outcome. The model assumes that ordering and does not prove a Rust implementation.
 Drop-on-disconnect/stop and unknown-outcome controls test why existing cleanup
 cannot simply be reused after moving submission.
 

@@ -42,6 +42,12 @@ read from current source, against the dcp-01 rows, and says for each candidate
 consolidation whether it removes a loop body, a wait or a leg of an exchange.
 Observed counts stay apart from source associations; nothing is selected.
 
+The [worker-side submission checkpoint](../investigations/l4ruwq60-worker-side-native-submission-needs-a-new-authority-and-lifetime-contract.md)
+records T4's new authority, lifetime and completion obligations. Its TLA+ safety
+checks pass under proposed mechanisms, while a stalled-gate progress probe fails.
+Worker-side expansion versus an owner-side input-fence feasibility study remains
+niltempus's scope decision; no runtime change or saving is qualified.
+
 The [bounded FrameCommit proposal](../decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md)
 targets repeated frame coordination after the fresh iGPU CPU comparison. It keeps
 9P for control and the image path for pixels; the linked architecture diagram and
