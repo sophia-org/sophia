@@ -32,8 +32,10 @@ and the [decision to separate desktop readiness from application proofs](../deci
 
 The [T5 scheduling screen](../investigations/y4mb4ylo-two-sft-credits-need-an-explicit-batching-policy-before-they-can-reduce-owner-servicing.md)
 distinguishes an unused second credit, unproved eager lookahead and deliberate
-pair batching. Peer-clock ordering is recounted from svc-02; any batching model
-awaits a freshness-budget decision, with no runtime or performance claim.
+pair batching. Peer-clock ordering is recounted from svc-02. Niltempus chose
+preserving responsiveness; this evaluation closes with no change, no batching
+model and no performance claim. Reopening requires a concrete schedule that
+removes repeated servicing while preserving responsiveness.
 
 The [post-lean owner decomposition](../investigations/q2m7v8ka-what-the-post-lean-decomposition-says-about-the-next-native-frame-change.md)
 records the instrumented owner phases and role syscall counts after B3, keeps

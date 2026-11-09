@@ -2,7 +2,7 @@
 id: y4mb4ylo
 date: 2026-11-09
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation, performance, custody, scheduling]
 ---
 # Two SFT credits need an explicit batching policy before they can reduce owner servicing
@@ -123,12 +123,18 @@ Just-in-time/phase-aligned admission is a different possibility, but no such
 schedule, measured timing margin or safe coalescing rule has been established
 here. Do not infer that two credits necessarily add one frame of latency.
 
-**Checkpoint:** reject the credit-only proposal; do not implement eager queueing
-without a named eliminated service. Deliberate batching needs a latency/freshness
-budget decision before selecting its contract/model. Recommend retaining current
-freshness rather than commissioning a protocol change for an unpriced benefit.
-This is not a rejection of every two-frame design. T5 remains at its scheduling
-decision, with no custody model, runtime change or native package selected.
+**Decision, November 9:** niltempus selected "preserving responsiveness" after
+the reviewed scheduling screen. Retain current frame freshness; do not pursue
+the deliberate pair-batching proposal that trades additional frame age for an
+unpriced service reduction. Credit-only remains rejected as unused, and eager
+queueing has no established eliminated service to justify implementation.
+
+This closes the selected T5 evaluation with a documented no-change result at
+the scheduling gate. It does not prove every two-frame architecture ineffective
+or necessarily slower. Reopen only with a concrete schedule that names the
+repeated service it removes while preserving responsiveness, including control
+and revocation responsiveness. No custody model, runtime change or native package
+is selected; the broader CPU optimization task remains open.
 
 ## Validation and remaining work
 
@@ -137,7 +143,7 @@ controls, checks complete 2120-frame coverage and the ordering assertions before
 reducing the 2000-frame spans. Source files are pinned in the evidence. No Rust
 tests, build, TLC run, GPU access or native run was needed for this screen.
 
-If deliberate batching is selected, first name precisely the service entry it
+For any future reopening, first name precisely the service entry it
 removes and how control/revocation/expiry still interrupt delayed work. Then model
 two accepted frames plus the preceding displayed resource: credit/response/copy
 capacity, private images, exact epochs, failures and withdrawal at every stage,

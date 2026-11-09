@@ -30,12 +30,16 @@ finds that the pinned peer is strictly feedback-paced: a second credit alone
 is unused. Eager lookahead offers concurrency but has no established eliminated
 service. Deliberate pair batching names work to amortize, but needs a batching
 contract and a freshness budget; its illustrative 60 Hz schedule adds one period
-to part of a pair, not a universal latency bound. The next critical decision is
-whether to explore that trade-off. Recommend preserving current freshness rather
-than implementing an unpriced queue. T5 remains open at this decision: no model,
-runtime edit, build or native launch selected. M1/M2 deferred, B6 retained,
+to part of a pair, not a universal latency bound. Niltempus chose "preserving
+responsiveness": retain current freshness and do not pursue that batching
+trade-off. **T5 evaluation closed with no change at the scheduling gate.**
+Reopen only with a concrete schedule that removes named repeated servicing while
+preserving frame, control and revocation responsiveness; this is not a proof
+against all two-frame architectures. No custody model, runtime edit, build or
+native launch selected, and no CPU saving claimed. M1/M2 deferred, B6 retained,
 M3 and worker-side T4 parked; T1/T2/T3 and B8/control-ring implementation remain
-unselected. The broader task stays open in `todo.md` t344.
+unselected. No successor mechanism is selected. The broader task stays open in
+`todo.md` t344.
 
 ### Previous input-fence checkpoint, November 9
 
