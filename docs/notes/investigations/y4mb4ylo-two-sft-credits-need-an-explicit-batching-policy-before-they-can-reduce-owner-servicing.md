@@ -41,10 +41,13 @@ latency or comparative performance effects. The offer is logged after the SDK
 submission call. Source, rather than that log stamp alone, establishes the
 producer dependency. Both arms have the same pinned peer.
 
-The [post-lean decomposition](q2m7v8ka-what-the-post-lean-decomposition-says-about-the-next-native-frame-change.md)
-has four wait classes and no multiwait/union-cause whole row on its instrumented
-capture. That does not prove workers never overlap, identify all ready sources,
-or predict another scheduler. Its costs are not an untraced baseline for T5.
+In the [post-lean decomposition](q2m7v8ka-what-the-post-lean-decomposition-says-about-the-next-native-frame-change.md),
+every whole row records exactly one wait and falls in one of the four reported
+cause classes; this does not prove no concurrent work or enumerate all ready
+sources. In particular, ring|service contains two bits for one Service-path wait.
+Those instrumented costs are not an untraced baseline for T5. The accepted svc-02
+cadence already meets 60 Hz with one credit; no second credit is needed to meet
+that captured workload's cadence. This is not a guarantee for other workloads.
 
 ### Current source constraints
 
@@ -86,6 +89,16 @@ concrete scheduling benefit before implementing those changes.
    rule is defined. Rendering and physical presentation remain ordered, and no
    reduction of their visits follows. This is a candidate for further design,
    not a selected implementation or demonstrated saving.
+
+For this specific paired-intake/paired-settlement proposal, the named ceiling is
+two service entries saved per pair: two wire-intake services become one, and two
+validation settlements become one only if both results are available when the
+owner services them, or a separately justified batch-completion rule ensures it.
+The proposal retains separate render-result and flip services for the two
+ordered frames. Relative to the four-class sequence, that is at most two of
+eight named services per pair. It is not a 25% CPU prediction, a bound on all
+possible T5 designs, or proof that total owner passes fall by two: other ready
+work, control traffic, retries and deadlines still require service.
 
 For the third proposal, an illustrative steady-state schedule makes the
 freshness trade-off visible. Let P = 1/60 second and omit small service offsets:
