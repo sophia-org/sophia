@@ -98,13 +98,49 @@ retained in source evidence. This proves the selected code path bypasses those
 copies, not a timing effect or a complete integrated-host code-generation result.
 Source candidate accepted; worktree and pool retained while the branch is unmerged.
 
-## Remaining acceptance
+## Matched effect package, November 9
 
-This step establishes a source candidate, not a CPU/frame improvement. A future
-matched effect comparison must keep peer, runner, build recipe and workload
-fixed and qualify CPU per completed frame alongside latency, cadence, counts,
-identity and cleanup. Do not call source review, instruction removal or a small
-sample share proof of an effect. No native launch is selected by this note.
+Niltempus selected one host-only ABBA of exact parent `6817e7bca` against
+`a4f599e7a`. Package `~/.local/state/t331/ring-01/changing` is sealed at MANIFEST
+`42e7091efd0201035c5d27da6e190d5ec0dd10eb432ec4e8664de5fea01aa870`.
+Order is control, candidate, candidate, control. The four arms retain hp-01's
+peer, SDK, runner, helpers, configuration and lean changing-strip workload, with
+cpu-strip-03's process-clock accounting and cadence/identity/cleanup gates.
+Normal features are enforced on both hosts; no native perf, strace or owner-cost
+instrumentation. There is no automatic repeat, adoption, runtime merge or install.
+
+The hosts were built from clean signed worktrees in distinct cargo-slot pools
+`sophia@sophia-ringctl` and `sophia@sophia-ringidle`. Control binary
+`e42d0fe9b73a545ffdc3c22c3120c050579212c9c085d2928f17a251e810020d`
+reproduces hp-01's normal host; candidate binary is
+`5948a8303737f656e2109938ae06462f2c116f21d3e17532baae6a2af5b835ee`.
+Both match the held release recipe, toolchain, profile and feature rows. Build
+seal `~/.local/state/sophia-owned-ring-idle-build-01/SHA256SUMS`:
+`6acd40c087dafbc5c5ee3a1b22973950fd264bc6f742e6e23d16663fa218ddfe`.
+Worktrees and pools remain pinned through the result seal.
+
+All 18 package suites pass. The bounded package review accepts the arm isolation,
+build parity, unchanged gates and new descriptive latency join:
+`~/.local/state/sophia-ring-01-package-review-claude-01/SHA256SUMS`,
+`cafb46d14883148d0a58058d2b71665a4b2cb79177d3698dee771a86afbfa56a`.
+Readiness `~/.local/state/sophia-owned-ring-idle-readiness-01/SHA256SUMS`
+is `95ccb4fb726c4ae8594bec6af9e6ea8fd4b04b06fc157d79c6c875112af4545a`:
+check-only passes, zero GPU/input device opens and connector status reads,
+zero native launches. The package remains unconsumed; niltempus launches.
+
+Report CPU per completed frame, pair deltas, within-variant spread, native
+submission-to-completion and peer offer-to-observed-Presented distributions.
+Peer latency joins unique connection/grant/output/generation stamps, uses
+generations 121..2120, and includes observation delay; it excludes earlier
+fill/input age and is not input-to-photon latency. Latency is descriptive, not
+a new threshold. CPU nonregression alone cannot justify adoption if the latency
+or cadence evidence is concerning.
+
+Prior between-arm variability does not establish a detection floor. A CPU delta
+interval containing zero is inconclusive, not proof of no effect or an effect
+below resolution. Neither a null result nor source proof automatically decides
+keep/drop. No saving magnitude is predicted. The next action is the single
+owner launch in the sealed PLAN, followed by audit and a separate decision.
 
 The owning [CPU plan](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 and `todo.md` t344 carry execution order. The previous architectural deferrals

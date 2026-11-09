@@ -41,14 +41,26 @@ independent review and the full isolated gate pass (809 successful result blocks
 Release-library assembly confirms terminal branches bypass setup copies while
 remaining service continues. Source evidence seal `542aac18` and independent
 review `e35d1522` are linked in the investigation. Source candidate accepted;
-the branch/worktree remain held for a possible matched effect comparison.
+the branch/worktree remain held through the selected effect comparison.
 
 Six owner memcpy samples have callers in setup; samples do not record phase or
 establish a removable cost. Inclusive shares overlap and are not removable budgets.
-No runtime merge/install, native repeat, CPU saving or historical Niri comparison
-is selected by this source result. Retain M1/M2 deferral and B6 checks. A future
-effect package needs CPU/presented-frame alongside latency, cadence and counts.
-Task t344 remains open.
+Niltempus selected one matched host-only ABBA: `ring-01/changing`, exact parent
+`6817e7bca` versus `a4f599e7a`, manifest `42e7091e`. Both normal-feature hosts
+have matching release recipes in separate pools (build seal `6acd40c0`), with
+all peer/SDK/runner/helpers/workload inputs held from hp-01. CPU accounting and
+gates come from cpu-strip-03, without native perf/strace. All 18 package suites
+pass; bounded review `cafb46d1` accepts. Readiness `95ccb4fb` passes check-only
+with zero device opens and no native launch. Full identities and launch commands
+are in the investigation and sealed package PLAN. **Await niltempus's one owner
+launch**, with quiet held during collection; no automatic repeat or adoption.
+
+Report CPU/completed-frame with native and peer-observed latency, cadence, counts
+and cleanup. Latency is descriptive, not input-to-photon; no extra buffering.
+Prior spread is not a detection floor, and an interval containing zero is
+inconclusive rather than no effect. Source proof and effect remain separate.
+No runtime merge/install, CPU saving or historical Niri comparison follows from
+preparation. Retain M1/M2 deferral and B6 checks. Task t344 remains open.
 
 ### Previous T5 scheduling checkpoint, November 9
 
