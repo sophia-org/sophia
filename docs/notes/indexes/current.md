@@ -81,6 +81,11 @@ map, not a list of every note or another roadmap.
 
 [Explicit scoped component grants](../concepts/k2d9l42p-native-shell-components-compose-through-explicit-scoped-grants.md) describes integrated and modular shells; the linked candidate plan starts with a bar and independent launcher. This is not current multi-client support.
 
+[Which custody polls protect an obligation that channel liveness cannot](../investigations/px8oi1bw-which-custody-polls-protect-an-obligation-that-channel-liveness-cannot.md)
+maps the owner's 27 per-frame launch-custody polls to the Session action each
+guards and to the wake routes that already exist; it separates a readiness
+notification from a fresh liveness observation and selects no mechanism.
+
 ## Public role IPC and mounting
 
 The [9P role replacement and mounting investigation](../investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
