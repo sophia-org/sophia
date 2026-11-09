@@ -28,7 +28,7 @@ acceptance in t289 and portability planning in t256. The November 7 milestone
 below closes three experimental comparisons, not default-on adoption. Its final
 lane is 673.7–674.1 combined µs/frame; separate treatments are not additive.
 
-**Current checkpoint: post-lean diagnostic capture completed; select the next investigation.**
+**Current selection: docs-only four-wait dependency/authority investigation.**
 `dcp-01/changing` completed TEST SUCCESS with all qualification and cleanup
 gates passing. The root saved-data recount is sealed at
 `~/.local/state/sophia-decomp-post-lean-result-01/` (SHA256SUMS
@@ -45,11 +45,22 @@ owner ppolls, 12 owner wait4s and one peer sendto per completion, without
 socket attribution or CPU pricing. These observations select no implementation.
 No numeric security premium, uninstrumented saving or Niri comparison follows.
 
-Next proposed investigation is the four-wait dependency/authority table before
-selecting pass consolidation; control-ring and renderer proposals need a named
-remaining round trip or active operation. The generic send-batching premise is
-weaker with one aggregate peer sendto. Niltempus selects the next work; M1/M2
-remain separate pending authority decisions. No second native arm or repeat.
+Niltempus selected q2m7v8ka's first question: a docs-only four-wait
+dependency/authority table. Claude owns the investigation note; Codex reviews
+the frozen commit before push and owns this plan and `todo.md`. Read current
+source alongside 3u93ti2w, rug93yha and the accepted dcp-01 evidence. For each
+wait, name the action made ready, its actual observed source versus inferred
+association, why the action must run on the owner, and the fresh-authority,
+immutable-publication or release boundary separating it from the next action.
+Any consolidation proposal must identify the exact transition or round trip
+it removes and the ordering/refusal obligations it preserves.
+
+Aggregate counts do not establish a per-frame causal chain, an empty pass or
+removable work. Retain dcp-01's instrumented scopes and separate windows; no
+numeric security premium, CPU-saving or floor claim. This selects a note,
+not pass consolidation, a protocol change, source implementation, build or
+native run. Control-ring and renderer work remain unselected. M1/M2 remain
+separate pending authority decisions; no second native arm or repeat.
 
 **Capture selection and inputs (completed):**
 Niltempus selected a fresh one-arm decomposition of the current lean lane after
