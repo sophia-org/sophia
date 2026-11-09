@@ -36,10 +36,11 @@ worker scopes and windows separate, and proposes coordination, control-ring and
 renderer questions without selecting a change or claiming a security premium.
 
 The [four lean owner wakes](../investigations/edc0te2v-which-action-each-of-the-four-lean-owner-wakes-owes-and-which-transition-a-consolidation-would-remove.md)
-investigation reads the owed action, ready descriptor, owner-only reason and
-authority boundary of each wait in the lean frame from current source and the
-dcp-01 rows, and names the exact transition each candidate consolidation would
-remove. It keeps observations apart from associations and selects nothing.
+investigation associates each observed wait class in the lean frame with a
+descriptor, an owed action, an owner-only reason and an authority boundary
+read from current source, against the dcp-01 rows, and says for each candidate
+consolidation whether it removes a loop body, a wait or a leg of an exchange.
+Observed counts stay apart from source associations; nothing is selected.
 
 The [bounded FrameCommit proposal](../decisions/dwm37bn6-submit-native-frames-as-bounded-transactions-over-the-existing-shell-transport.md)
 targets repeated frame coordination after the fresh iGPU CPU comparison. It keeps
