@@ -20,7 +20,7 @@ proposed change on the current mixed-composition path, not to every possible
 renderer or scheduling architecture. No runtime change, build, native capture,
 new model, dependency or device access was needed. Worker-side T4 stays parked.
 
-## Fence availability is the first discriminator
+## Fence creation timing is the first discriminator
 
 [Khronos EGL_ANDROID_native_fence_sync](https://registry.khronos.org/EGL/extensions/ANDROID/EGL_ANDROID_native_fence_sync.txt)
 (version 3, September 4, 2012; read November 9, 2026) specifies that creating a
@@ -51,9 +51,14 @@ owner --Render(N)--> worker: issue draw(N), create/flush/export fence(N)
 The worker-to-owner publication before commit remains.
 ```
 
-This is a dependency finding, not a measured wake count. A fence-ready reply
-might occur earlier than a fully completed GPU operation, but that does not
-remove the return leg. Replacing the reply with shared storage still requires
+This is a dependency finding, not a measured wake count or earlier-reply claim.
+The ordinary composition sequence has no unconditional explicit glFinish or
+client-wait before replying; GL-error validation is not GPU completion. The
+atomic request defaults to nonblocking and emits NONBLOCK when that flag is set
+(`sophia-backend-live/src/drm/native_atomic/request.rs:120–143,199–210`). This
+does not prove EGL swap, GBM lock or the driver never blocks, nor that the GPU is
+still busy when a particular reply arrives. No current GPU-wait cost was priced.
+Replacing the reply with shared storage still requires
 publication, ordering and an owner observation; polling it or coalescing it with
 some other work is a different scheduling proposal, not a demonstrated saving.
 
@@ -124,3 +129,15 @@ M1/M2 remain deferred, B6 retained, M3 parked; no successor optimization selecte
 Task selection stays in [4rifczhw](../plans/4rifczhw-reduce-continuous-frame-cpu-without-weakening-custody.md)
 and `todo.md` t344. The [four-wait note](edc0te2v-which-action-each-of-the-four-lean-owner-wakes-owes-and-which-transition-a-consolidation-would-remove.md)
 remains the source for T4's intended removed transition and observation limits.
+
+## Review
+
+Frozen docs proposal `ca4247592` and evidence
+`~/.local/state/sophia-input-fence-feasibility-01/` (SHA256SUMS
+`020b3213a1238bfa2445869c63d2b3467f1c1d72b3f703eb04da8da5235d6ea8`)
+passed bounded read-only review at
+`~/.local/state/sophia-input-fence-feasibility-review-claude-01/` (SHA256SUMS
+`20ba4c1b5f77ed25929a13c452e67a657c3acbac478170423c0ce2d1ebf8ca17`).
+The follow-up clarifies creation timing and the current nonblocking API intent;
+it does not adopt a claim about actual Mesa/amdgpu timing or implicit-sync cost.
+Frozen evidence and review remain unchanged.
