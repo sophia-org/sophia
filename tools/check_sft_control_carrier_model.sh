@@ -18,6 +18,7 @@ while read -r module config expected; do
     fi
     echo "$config: expected $expected"
 done <<'CONTROLS'
+CommitOnly CommitSerializeAck Invariant OneAckInFlight is violated
 QueueIndex QueueUnchecked Invariant Bounded is violated
 ExitWake ExitUnwatched Temporal property ExitProgress was violated
 CommitOnly CommitReserveBeforeAck Invariant CapacityBeforeEffects is violated

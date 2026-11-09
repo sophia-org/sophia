@@ -116,3 +116,12 @@ No host path or performance gate is cleared by this model check alone.
 All five positive configurations and fourteen named controls pass the expanded
 helper. Full local log: sophia-control-carrier-model-02/reproduce-expanded.log.
 This adds review input; it is not approval of a memory mapping or a live carrier.
+
+### Follow-up: answered refusal and ACK overlap
+
+The following checked revision restricts `unknown` on Close to an unanswered
+queued/captured/pending/delivered attempt. A received EAGAIN or definitive refusal
+is not reclassified unknown on disconnect. It adds `OneAckInFlight` and the
+`CommitSerializeAck` negative control. Five positive configurations and fifteen
+negative controls pass. Evidence: sophia-control-carrier-model-03/reproduce.log;
+model-02 stays frozen. No implementation/prototype qualification follows.

@@ -4,7 +4,7 @@
 \* This projection deliberately keeps journal delivery outside the new carrier.
 EXTENDS Naturals, TLC
 CONSTANTS ReserveBeforeAck, GuardDelivery, EchoAck, ConfirmSuccessOnly,
-          KeepDeadline, NoUnknownReplay
+          KeepDeadline, NoUnknownReplay, SerializeAck
 VARIABLE s
 vars == <<s>>
 Init == s = [live |-> TRUE, token |-> TRUE, epoch |-> 1,
@@ -13,7 +13,7 @@ Init == s = [live |-> TRUE, token |-> TRUE, epoch |-> 1,
   capacity |-> TRUE, accepted |-> FALSE, known |-> FALSE, result |-> "none",
   unknown |-> FALSE, expiry |-> 1, badDeadline |-> FALSE,
   badCapacity |-> FALSE, badDelivery |-> FALSE, badConfirm |-> FALSE,
-  badEcho |-> FALSE, replayed |-> FALSE]
+  badEcho |-> FALSE, replayed |-> FALSE, overlappingAck |-> FALSE]
 \* One outstanding attempt, two bounded attempts of the same submission.
 Publish == /\ s.phase \in {"idle", "retry"} /\ s.attempt < 2
            /\ s.live /\ (~s.unknown \/ ~NoUnknownReplay)
@@ -54,15 +54,16 @@ Receive == /\ s.phase = "delivered"
                  !.badEcho = s.badEcho \/ (success /\ s.echoed # s.word),
                  !.reserved = FALSE]
 \* Standalone ACK cannot overlap a published but unanswered commit.
-IdleAck == /\ s.phase \in {"idle", "done", "retry"} /\ s.live /\ ~s.unknown
-           /\ s' = [s EXCEPT !.applied = 1, !.confirmed = 1]
+IdleAck == /\ (s.phase \in {"idle", "done", "retry"} \/ ~SerializeAck) /\ s.live /\ ~s.unknown
+           /\ s' = [s EXCEPT !.applied = 1, !.confirmed = 1,
+                    !.overlappingAck = s.overlappingAck \/ s.phase \in {"queued", "captured", "pending", "delivered"}]
 Expire == /\ s.token /\ s' = [s EXCEPT !.token = FALSE]
 Withdraw == /\ s.live /\ s' = [s EXCEPT !.live = FALSE]
 \* Lost reply/withdrawal abandons knowledge, not accepted work. No implicit
 \* accepted-work cancellation or pixel-credit return is represented here.
 Close == /\ ~s.live /\ s.phase # "closed"
          /\ s' = [s EXCEPT !.phase = "closed", !.reserved = FALSE,
-                   !.unknown = s.unknown \/ (s.attempt > 0 /\ ~s.known)]
+                   !.unknown = s.unknown \/ (s.phase \in {"queued", "captured", "pending", "delivered"} /\ ~s.known)]
 Reopen == /\ s.phase = "closed" /\ s.epoch = 1
           /\ s' = [s EXCEPT !.phase = "idle", !.epoch = 2, !.live = TRUE,
                     !.token = TRUE]
@@ -79,4 +80,5 @@ SuccessConfirms == ~s.badConfirm
 ConfirmedIsApplied == s.confirmed <= s.applied
 OriginalDeadline == ~s.badDeadline
 NoReplay == ~s.replayed
+OneAckInFlight == ~s.overlappingAck
 =============================================================================
