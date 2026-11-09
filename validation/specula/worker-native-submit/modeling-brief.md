@@ -55,9 +55,12 @@ not a transferable Send submission record. EGL/GBM Rc-owned resources stay on
 the worker (`sophia-renderer-native-egl/src/gbm_platform/scanout/context.rs:30–45`
 and `buffer.rs:2–19`). No unsafe Send conversion is proposed.
 
-Model retained ownership separately from replyOpen and workerAlive. Submission
-acceptance is distinct from userspace return. Drop-on-disconnect/stop controls
-test why existing cleanup cannot simply be reused after moving submission.
+Model retained ownership separately from replyOpen and workerAlive. BeginIoctl,
+kernel acceptance and known userspace return are distinct. Worker exit after
+BeginIoctl leaves an unknown outcome until a known return or proven physical
+detach; Release must not consult global kernel acceptance as owner knowledge.
+Drop-on-disconnect/stop and unknown-outcome controls test why existing cleanup
+cannot simply be reused after moving submission.
 
 ### 3. Completion can precede submit-result consumption
 
@@ -96,6 +99,7 @@ proof that current owner-side blocking ioctls have a stronger progress guarantee
 |---|---|---|
 | FreshSubmit | No accepted submission after effective authority withdrawal | 1 |
 | PhysicalCustody | Pending or displayed frame retains physical ownership | 2 |
+| UncertainCustody | Started ioctl with no known return retains ownership | 2 |
 | SubmittedAccounted | Submit has a durable exact owner independent of result delivery | 2, 3 |
 | CompletionArmed | Successful silent submit is covered before owner result processing | 3 |
 | ExactCompletion | Foreign completion cannot settle the frame | 3 |

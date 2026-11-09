@@ -23,6 +23,7 @@ done <<'MUTATIONS'
 Unserialized FreshSubmit
 LostReply PhysicalCustody
 WorkerStop PhysicalCustody
+UnknownOutcome UncertainCustody
 LateLedger SubmittedAccounted
 LateCard CompletionArmed
 EarlyRelease PhysicalCustody

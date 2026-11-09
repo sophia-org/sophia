@@ -11,7 +11,8 @@ vars == <<s>>
 Init == s = [phase |-> "idle", epoch |-> 1, ticketEpoch |-> 0,
              valid |-> TRUE, withdrawRequested |-> FALSE, gate |-> FALSE,
              ledger |-> FALSE, retained |-> FALSE, cardArmed |-> FALSE,
-             accepted |-> FALSE, returned |-> FALSE, outcome |-> "none",
+             commitStarted |-> FALSE, accepted |-> FALSE,
+             returned |-> FALSE, outcome |-> "none",
              kernel |-> "none", observed |-> FALSE, detached |-> FALSE,
              replyOpen |-> TRUE, workerAlive |-> TRUE, stalled |-> FALSE,
              staleSubmit |-> FALSE, wrongCompletion |-> FALSE]
@@ -46,16 +47,21 @@ ApplyWithdrawal ==
     /\ (~s.gate \/ Fault = "unserialized")
     /\ s' = [s EXCEPT !.valid = FALSE, !.epoch = 2]
 
-\* Kernel acceptance and userspace return are deliberately separate: a flip
-\* can race the result report. prepare.rs submit seam would move to the worker.
-KernelAccept ==
+\* Entering the syscall, kernel acceptance and userspace return are separate.
+\* Death after BeginIoctl is uncertain even without a known successful return.
+BeginIoctl ==
     /\ s.phase = "checked" /\ s.workerAlive /\ ~s.stalled
+    /\ s' = [s EXCEPT !.phase = "committing", !.commitStarted = TRUE]
+
+\* A flip can race the result report; prepare.rs submit moves to the worker.
+KernelAccept ==
+    /\ s.phase = "committing" /\ s.workerAlive /\ ~s.stalled
     /\ s' = [s EXCEPT !.phase = "in-ioctl", !.accepted = TRUE,
              !.kernel = "pending",
              !.staleSubmit = ~s.valid \/ s.ticketEpoch # s.epoch]
 
 KernelReject ==
-    /\ s.phase = "checked" /\ s.workerAlive /\ ~s.stalled
+    /\ s.phase = "committing" /\ s.workerAlive /\ ~s.stalled
     /\ s' = [s EXCEPT !.phase = "rejected", !.returned = TRUE,
              !.gate = FALSE, !.outcome = "failed"]
 
@@ -95,7 +101,8 @@ WorkerStops ==
     /\ s' = [s EXCEPT !.workerAlive = FALSE, !.gate = FALSE,
              !.retained = IF Fault = "drop-on-worker-stop" /\ s.accepted
                           THEN FALSE ELSE @,
-             !.outcome = IF s.accepted THEN "uncertain" ELSE "failed"]
+             !.outcome = IF s.returned THEN @
+                        ELSE IF s.commitStarted THEN "uncertain" ELSE "failed"]
 
 \* Scheduling/driver delay is not a completed thread exit and cannot unlock.
 StallWorker ==
@@ -105,32 +112,35 @@ StallWorker ==
 \* Abstract existing physical retirement/device-detach proof, NOT a timeout,
 \* lost reply, merely requesting shutdown, or declaring a worker dead.
 PhysicalDetach ==
-    /\ s.accepted /\ ~s.detached /\ ~s.gate
+    /\ s.commitStarted /\ ~s.detached /\ ~s.gate
     /\ s' = [s EXCEPT !.detached = TRUE, !.kernel = "none"]
 
 Release ==
     /\ s.retained /\ ~s.gate
-    /\ (s.detached \/ (~s.accepted /\ (s.returned \/ ~s.workerAlive)))
+    /\ (s.detached \/ (s.returned /\ s.outcome = "failed")
+         \/ (~s.workerAlive /\ ~s.commitStarted)
+         \/ (Fault = "free-unknown" /\ ~s.workerAlive /\ ~s.accepted))
     /\ s' = [s EXCEPT !.retained = FALSE]
 
 Next == Dispatch \/ RenderDone \/ CheckAndReserve \/ RequestWithdrawal
-        \/ ApplyWithdrawal \/ KernelAccept \/ KernelReject \/ PublishAccepted
+        \/ ApplyWithdrawal \/ BeginIoctl \/ KernelAccept \/ KernelReject \/ PublishAccepted
         \/ KernelFlip \/ ObserveExactCompletion \/ ObserveForeignCompletion
         \/ Disconnect \/ WorkerStops \/ StallWorker \/ PhysicalDetach \/ Release
 Spec == Init /\ [][Next]_vars
 
 TypeOK ==
-    /\ s.phase \in {"idle", "rendering", "ready", "checked", "in-ioctl",
+    /\ s.phase \in {"idle", "rendering", "ready", "checked", "committing", "in-ioctl",
                     "rejected", "returned"}
     /\ s.epoch \in {1, 2} /\ s.ticketEpoch \in {0, 1, 2}
     /\ s.kernel \in {"none", "pending", "visible"}
     /\ s.outcome \in {"none", "accepted", "failed", "uncertain"}
     /\ \A k \in {"valid", "withdrawRequested", "gate", "ledger", "retained",
-                  "cardArmed", "accepted", "returned", "observed", "detached",
+                  "cardArmed", "commitStarted", "accepted", "returned", "observed", "detached",
                   "replyOpen", "workerAlive", "stalled", "staleSubmit", "wrongCompletion"}:
           s[k] \in BOOLEAN
 FreshSubmit == ~s.staleSubmit
 PhysicalCustody == s.accepted /\ ~s.detached => s.retained
+UncertainCustody == s.commitStarted /\ ~s.returned /\ ~s.detached => s.retained
 SubmittedAccounted == s.accepted => s.ledger
 CompletionArmed == s.accepted /\ ~s.detached => s.cardArmed
 ExactCompletion == s.observed => s.accepted /\ ~s.wrongCompletion
@@ -139,7 +149,7 @@ ExactCompletion == s.observed => s.accepted /\ ~s.wrongCompletion
 \* stalled worker's disabled action happen. WorkerStops is not forced: a stuck
 \* thread/driver has not exited merely because the owner wants to stop it.
 ProgressSpec == Spec /\ WF_vars(ApplyWithdrawal)
-                    /\ WF_vars(KernelAccept \/ KernelReject \/ PublishAccepted)
+                    /\ WF_vars(BeginIoctl \/ KernelAccept \/ KernelReject \/ PublishAccepted)
 WithdrawalEventuallyApplied == s.withdrawRequested ~> ~s.valid
 
 \* Native deadlines and detach proof remain outside this bounded model.

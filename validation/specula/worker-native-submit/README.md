@@ -40,11 +40,11 @@ owner --Render + reserved submission obligation--> worker --submit--> DRM
 Using the repository-pinned TLC jar (SHA256
 `e22f8ffb4bacdea0a871f444dd94fe5fb0d8013b3388ae39e82e26f852c735d5`):
 
-- Protected abstract safety model: 717 generated / 296 distinct states,
-  complete search, six invariants pass.
-- Seven negative controls produce their expected invariant violation:
+- Protected abstract safety model: 889 generated / 364 distinct states,
+  complete search, seven invariants pass.
+- Eight negative controls produce their expected invariant violation:
   unlocked authority check, lost reply, worker stop, late ledger, late card
-  coverage, early release and foreign completion.
+  coverage, early release, foreign completion and release of an unknown outcome.
 - The protected design's progress probe fails: after a valid submission claim,
   a worker can stall while withdrawal is requested. Effective withdrawal cannot
   pass the held gate. Fairness on enabled submit/withdraw actions does not fix
@@ -57,9 +57,12 @@ prove they exist, are implementable safely, or have acceptable progress.
 Deadlock checking is disabled for intentionally stopped finite episodes; the
 explicit withdrawal temporal property is checked and fails as reported.
 
-Evidence: `~/.local/state/sophia-t4-model-01/checked/` contains pinned copies,
-commands, logs and TLC counterexamples. Earlier local setup and checker-message
-matching failures remain in the parent evidence directory. The final checks
+Evidence: `~/.local/state/sophia-t4-model-02/` contains the final pinned copies,
+commands, logs and TLC counterexamples. The frozen `sophia-t4-model-01` holds
+the first model and its setup/checker-message failures. Follow-up 02 separates
+entry into the ioctl from kernel acceptance and known return: after worker exit,
+cleanup may not use the model's global kernel truth as owner knowledge. A new
+control releases that unknown outcome and violates UncertainCustody. The checks
 recognize the pinned jar's exact temporal-property message. No output or cache
 is written into the repository by the reproduction helper.
 
@@ -68,7 +71,7 @@ SOPHIA_SPECULA_TLA2TOOLS_JAR=/absolute/path/to/pinned/tla2tools.jar \
   timeout 120s bash tools/check_worker_native_submit_model.sh
 ```
 
-The helper succeeds only when the safety run passes and all eight expected
+The helper succeeds only when the safety run passes and all nine expected
 negative results occur. Its successful exit is **not** T4 implementation
 acceptance: it explicitly prints the unresolved progress result.
 
