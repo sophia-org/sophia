@@ -30,6 +30,11 @@ and the [decision to separate desktop readiness from application proofs](../deci
 
 ## Desktop composition
 
+The [current-lean function profile](../investigations/h3gtssf5-which-functions-consume-cpu-on-the-current-lean-sft-path-without-changing-responsiveness.md)
+is selected to identify work inside the existing stages with responsiveness
+preserved. It uses a normal host and sampling alone; sealed preparation awaits
+owner capture and saved-data qualification before any optimization is selected.
+
 The [T5 scheduling screen](../investigations/y4mb4ylo-two-sft-credits-need-an-explicit-batching-policy-before-they-can-reduce-owner-servicing.md)
 distinguishes an unused second credit, unproved eager lookahead and deliberate
 pair batching. Peer-clock ordering is recounted from svc-02. Niltempus chose

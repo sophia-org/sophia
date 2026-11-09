@@ -22,6 +22,18 @@ for each selected mechanism. A profile share is not a savings target.
 
 ## Current resumption, November 9
 
+Niltempus selected one [current-lean function profile](../investigations/h3gtssf5-which-functions-consume-cpu-on-the-current-lean-sft-path-without-changing-responsiveness.md)
+to find work to remove inside the existing stages while preserving responsiveness.
+The normal master host is pinned at `ad0c5239d`; hp-01 reuses the held lean workload
+and perf collector, without simultaneous strace or diagnostic-owner-cost.
+Package sealed, device-free readiness passed and bounded review accepted owner
+handoff; physical capture is pending. Agents launch nothing. Interpret
+qualified sampled leaves/callers first, then select one concrete change for a
+device-free proof; a later effect package must qualify CPU/presented-frame together
+with latency, cadence and counts. No CPU saving or historical Niri comparison.
+
+### Previous T5 scheduling checkpoint, November 9
+
 Niltempus selected T5 evaluation: two bounded in-flight SFT frames, scheduling
 opportunity first, no mere queueing, custody model before implementation, and
 CPU/presented-frame qualified alongside latency, cadence and frame counts only
@@ -38,7 +50,7 @@ preserving frame, control and revocation responsiveness; this is not a proof
 against all two-frame architectures. No custody model, runtime edit, build or
 native launch selected, and no CPU saving claimed. M1/M2 deferred, B6 retained,
 M3 and worker-side T4 parked; T1/T2/T3 and B8/control-ring implementation remain
-unselected. No successor mechanism is selected. The broader task stays open in
+unselected. At that checkpoint no successor mechanism was selected. The broader task stays open in
 `todo.md` t344.
 
 ### Previous input-fence checkpoint, November 9
