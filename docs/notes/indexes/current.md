@@ -30,6 +30,11 @@ and the [decision to separate desktop readiness from application proofs](../deci
 
 ## Desktop composition
 
+The [T5 scheduling screen](../investigations/y4mb4ylo-two-sft-credits-need-an-explicit-batching-policy-before-they-can-reduce-owner-servicing.md)
+distinguishes an unused second credit, unproved eager lookahead and deliberate
+pair batching. Peer-clock ordering is recounted from svc-02; any batching model
+awaits a freshness-budget decision, with no runtime or performance claim.
+
 The [post-lean owner decomposition](../investigations/q2m7v8ka-what-the-post-lean-decomposition-says-about-the-next-native-frame-change.md)
 records the instrumented owner phases and role syscall counts after B3, keeps
 worker scopes and windows separate, and proposes coordination, control-ring and

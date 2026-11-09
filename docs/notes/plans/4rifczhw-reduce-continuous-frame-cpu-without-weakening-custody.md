@@ -22,7 +22,24 @@ for each selected mechanism. A profile share is not a savings target.
 
 ## Current resumption, November 9
 
-This section supersedes earlier next-step wording. Niltempus parked worker-side
+Niltempus selected T5 evaluation: two bounded in-flight SFT frames, scheduling
+opportunity first, no mere queueing, custody model before implementation, and
+CPU/presented-frame qualified alongside latency, cadence and frame counts only
+for a surviving mechanism. The [scheduling screen](../investigations/y4mb4ylo-two-sft-credits-need-an-explicit-batching-policy-before-they-can-reduce-owner-servicing.md)
+finds that the pinned peer is strictly feedback-paced: a second credit alone
+is unused. Eager lookahead offers concurrency but has no established eliminated
+service. Deliberate pair batching names work to amortize, but needs a batching
+contract and a freshness budget; its illustrative 60 Hz schedule adds one period
+to part of a pair, not a universal latency bound. The next critical decision is
+whether to explore that trade-off. Recommend preserving current freshness rather
+than implementing an unpriced queue. T5 remains open at this decision: no model,
+runtime edit, build or native launch selected. M1/M2 deferred, B6 retained,
+M3 and worker-side T4 parked; T1/T2/T3 and B8/control-ring implementation remain
+unselected. The broader task stays open in `todo.md` t344.
+
+### Previous input-fence checkpoint, November 9
+
+Superseded next-step wording below is retained as history. Niltempus parked worker-side
 T4 at l4ruwq60 and selected a bounded docs-only owner-side input-fence feasibility
 study, with a firm stop on an equivalent handoff or a weakened required boundary.
 The [completed study](../investigations/7kr29tw2-input-fences-retain-the-render-worker-to-owner-handoff-on-the-current-native-path.md)
@@ -38,7 +55,7 @@ edit, build, native run, latency or CPU claim. Hardware/driver extension support
 was not probed because even assumed support does not remove the handoff. This
 is not a rejection of all explicit synchronization or future scheduling designs.
 Reopen only with a distinct mechanism and its preserved gates stated first.
-No successor optimization is selected: M1/M2 remain deferred, B6 retained,
+At that checkpoint no successor optimization was selected: M1/M2 remain deferred, B6 retained,
 M3 parked, T1/T2/T3/T5 and B8/control-ring implementation unselected. The broader
 optimization task remains open in `todo.md` t344; this bounded study is complete.
 
