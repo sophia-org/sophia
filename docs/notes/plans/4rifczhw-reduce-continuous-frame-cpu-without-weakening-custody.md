@@ -28,7 +28,36 @@ acceptance in t289 and portability planning in t256. The November 7 milestone
 below closes three experimental comparisons, not default-on adoption. Its final
 lane is 673.7–674.1 combined µs/frame; separate treatments are not additive.
 
-**Current selection: Track A authority review, then Track B trigger design.**
+**Current selection: one post-lean diagnostic decomposition capture.**
+Niltempus selected a fresh one-arm decomposition of the current lean lane after
+B3. Keep owner CPU in disjoint components/native/authority/other scopes, pass
+counts by actual waits, completed worker command/job counters, role/syscall-name
+counts and peer process CPU. The accepted diagnostic source is `9d1708744`,
+kept separate from master; source acceptance is
+`~/.local/state/sophia-decomp-post-lean-source-acceptance-01/` (SHA256SUMS
+`ec972aaed3974b427d0a804dba4407be7091d6ac22718ec8d37fc36476623642`).
+The host build is sealed at `~/.local/state/sophia-decomp-post-lean-build-01/`
+(SHA256SUMS `1e152f25a620c06fb4a8625c5f99064cf2914439bc7469d4df88c75722d2d306`):
+one Cargo build, then receipt completion from that same successful stream after
+a post-build target-name check failed; build completion timestamp is unknown.
+
+Package assembly is `~/.local/state/t331/dcp-01/changing/`, using liv-01's
+unchanged lean workload, peer, runner and helpers, with the added
+`diagnostic-owner-cost` host feature and a bounded counts-only strace attachment.
+Schema 5 distinguishes no-wait passes and multiwait cause unions. Worker values
+are completed-scope snapshot deltas inside the identity-checked census interval,
+not whole-thread or exact-anchor CPU totals. Each census role retains its own
+attach/detach edges and completion denominator; fd inventory is descriptive,
+not socket attribution. Keep all existing qualification and cleanup gates.
+Only niltempus launches after package review, seal and device-free readiness.
+
+This is one instrumented capture, no ABBA or automatic repeat. Do not infer a
+numeric security premium, GL residual, removable cost or saving by subtraction;
+do not pool with historical Niri or untraced runs. A follow-up note may propose
+pass consolidation, control transport or renderer work; it selects none by
+itself. Track A M1/M2 remain pending in parallel, M3 and B8 remain unselected.
+
+**Earlier selection: Track A authority review, then Track B trigger design.**
 After the closed liv-01 result, niltempus separately selected a device-free
 custody-poll cost screen, an obligation map and an authority-review request,
 followed by a design note on moving per-pass obligations to their own triggers.
@@ -70,7 +99,7 @@ wire registration does not establish coverage for startup, failed negotiation,
 disconnection/revocation, stopping or replacement. Preserve retirement and
 termination deadlines; holding a pidfd does not establish complete progress.
 
-The next step is the authority decision: select, reject or defer each question
+For Track A, the next step remains the authority decision: select, reject or defer each question
 with reasons. Only a selected mechanism proceeds to separately scoped,
 device-free interleaving/refusal proof and a negative mutation. Only after
 that proof may a separately approved receipt package be proposed with an
@@ -94,7 +123,8 @@ and termination deadlines. A capture exercising no missed readiness cannot
 replace per-state progress/refusal proof. B3 observation limits remain.
 This completes the selected design-note work, not an optimization selection:
 M1/M2 still await the authority decision; M3 and B8 remain unselected. No
-source implementation, diagnostic package, native run or CPU claim follows.
+source implementation, diagnostic package, native run or CPU claim follows
+from that design-input acceptance alone.
 
 The **Service deadline obligation** now has a reviewed result-ready notification
 and a receipt-only native observation, recorded below. The Service wait remains
