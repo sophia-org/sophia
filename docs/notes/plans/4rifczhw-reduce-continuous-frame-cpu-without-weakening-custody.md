@@ -24,6 +24,33 @@ for each selected mechanism. A profile share is not a savings target.
 
 ## Current resumption, November 10
 
+**Selected next: combined frame-job contract and proof, not a carrier rewrite.**
+Niltempus selected the integrated seven-part three-service plan. Research branch
+`design/combined-frame-job`, worktree `~/dev/sophia-framejob`, contains contract
+`n7fj3c2p` at signed `a52c358f4` and preliminary model head `ee4b95725`.
+Ten source files are pinned at base `22d8cbca7`. Keep authenticated 9P transactions,
+private capture, journal/ACK, one outstanding frame and owner-side DRM. The new
+contract proposes one private capture/validate/render job, then owner settlement
+and submission, then exact completion/publication. Three correlated frame services
+is a target, not a claim about every wake or busy-desktop pass.
+
+Two source gaps are explicit: projection needs a validated resource lease, and
+content installation currently queues rendering. A provisional plan and an
+owner-only install-already-rendered path need authority review; actual render
+slot acquisition/Deferred also requires a defined accounting transition. Claude
+is challenging the frozen contract read-only. No production source or prototype
+is authorized past that gate by silence.
+
+Preliminary design-model evidence `sophia-combined-frame-job-model-01`, seal
+`4c811ba9`, checks 353 generated / 189 distinct states and fair owner withdrawal
+without worker fairness. Three deliberately broken variants fail named stale
+submission/source ownership/predecessor lifetime invariants. This is not a full
+model or Rust refinement: scene binding, budgets, Deferred, journal, notifications,
+real ioctl uncertainty and actual GPU last-use remain explicit omissions. The
+prototype gate is not passed. No Rust build, native launch, merge or SDK change.
+Research source and evidence remain separate from the installed path.
+
+
 **Control-carrier experiment closed device-free; source disposition open.** The
 separate `cpu/sft-control-ring` branch is held at signed `4342177d4` (not merged).
 Its commit-only, pread-first prototype retained 9P journal events and standalone
