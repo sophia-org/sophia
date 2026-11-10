@@ -231,10 +231,39 @@ Release, not while the slot is necessarily free. The actual slot pool stays occu
 until the fixture explicitly supplies release; GPU buffer destruction is unproved.
 Disconnected remains retained while the sidecar lives, without a recovery path or
 retirement proof. Placement in the actual facade, poll-ordered flushing, runtime
-credit settlement and cross-crate wake composition remain unproved. Next is stage 4
-scoping for wake behavior/poll ordering, with frozen source review before any build;
-a non-test bridge remains a separate scope gate. Production/native gates remain
-held, with no push, timing, three-service or CPU/frame claim.
+credit settlement and cross-crate wake composition remain unproved.
+
+Stage 4 scoping (`sophia-framejob-stage4-scoping-01`, `e36325ed`) and consult
+(`f6b7ac90`) selected a runtime-local wake checkpoint first, leaving actual facade
+poll placement (4b) and the runtime/backend bridge (4c) separate. Stage 4a source
+`aa1de21e4` (tree `7e5749e5`), source seal `5edf9ef5`, received pre-build acceptance
+`c201932a`. Five test-support/documentation files changed; no crates/*/src or Cargo
+change. Optional bounded checkpoint metadata sits beside opaque P and uses the
+existing take_route call. The next job's checkpoint entry orders the prior complete
+validator iteration without introducing an ordinary completion notification.
+
+Validation `sophia-framejob-wake-seam-validation-01` (`691dfa77`) records all sixteen
+combined tests (six new wake tests and the previous ten) passing with default and
+all features, seven ordinary plus one shutdown control, three assertion-red
+notification mutants and restored sixteen passing. It checks synchronized quiet
+forwarding with credit retained; cancellation/malformed and Full/Disconnected
+ordinary return wakes; one publication-after-clear schedule; independent control
+readiness in the fixture poll array; and normal/unwind exit with the owner Wake
+alive. The deliberate validator-thread Disconnected panic is expected output of a
+passing exit-guard test, not a failed test: IN and BrokenPipe are required while the
+unreturned job's credit stays held. The mutants add success notification, omit the
+ordinary notification, and omit NotifyOnExit; each fails its named IN/quiet assertion
+in a separate copy, not compilation. Mutation worktree removed normally, pool kept
+for nightly hygiene.
+
+Full isolated xtask check and fmt exit 0 on unchanged clean G `aa1de21e4`, with
+808 strict Rust ok summaries and zero FAILED summaries. Independent validation
+review `sophia-framejob-stage4a-validation-review-claude-01` (`4e8ab18a`) accepts this
+checkpoint. This covers one validator and controlled schedules, not all wake
+interleavings, Session OwnerWake wiring, actual renderer execution or the composed
+runtime/backend pipeline. Next is 4b poll-placement scoping; 4c and any non-test
+bridge remain separate scope gates. Production/native gates stay held, with no
+push, timing, three-service or CPU/frame claim.
 
 Preliminary design-model evidence `sophia-combined-frame-job-model-01`, seal
 `4c811ba9`, checks 353 generated / 189 distinct states and fair owner withdrawal
