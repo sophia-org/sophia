@@ -200,10 +200,41 @@ assertion-style checks on `c30bc8b7d`; validation-02 (`8d9d5a06`) on `3ce427768`
 failed an immediate nonblocking socket-EOF assertion in the parallel suite despite
 passing focused checks. No specific cause of the EOF timing was proved. The
 replacement directly checks Rust payload lifetime without a sleep or an assumption
-about all OS references. Neither failed run qualifies the final head. Next is
-backend-local dedicated retained-Release capacity, still subject to frozen source
-review; it cannot establish a runtime/backend cross-crate proof. Production/native
-gates remain held, with no timing or CPU/frame result.
+about all OS references. Neither failed run qualifies the final head.
+
+Stage 3 source `b239fe5b7` (tree `42cdc605`), frozen in
+`sophia-framejob-release-seam-source-01` (`b03f15f5`), was accepted before builds
+by `sophia-framejob-stage3-review-claude-01` (`4f6e028d`). Following the scoping
+consult (`dc7c5dda`), it uses a harness-owned per-facade retained-Release cell;
+no crates/*/src item changed. The exclusive facade borrow and Free/Reserved/Retained
+states bound the fixture to one obligation. Retain accepts only Exported for that
+output and returns foreign, Deferred and Failed results intact. Full and Disconnected
+preserve the dedicated obligation without altering ordinary release-failure counts;
+the ordinary discarded-release cell coexists unchanged. Raw supplied results are
+drained directly once, never also through poll().
+
+Validation `sophia-framejob-release-seam-validation-01` (`85859590`) records
+seven tests with explicit gbm-probe/libdrm-events and capture off, seven with all
+features, 45 worker controls (one native readback ignored), nine shutdown controls,
+four assertion-red mutants and restored seven passing. The separate-copy mutants
+remove the foreign-output check, drop retention on Full, swallow Deferred, and
+remove the real slot pool's occupied guard. Full isolated xtask check and fmt exit 0
+on unchanged clean G `b239fe5b7`, with 808 strict Rust ok summaries and zero FAILED
+summaries. The mutation worktree was removed cleanly, pool left to nightly hygiene.
+Independent validation review `sophia-framejob-stage3-validation-review-claude-01`
+(`43cf9a91`) accepts the evidence.
+
+This is a backend-local fixture result. Retain does not recheck facade state after
+reservation and grants no new admission authority; caller classification remains
+required. Successful enqueue frees the cell while the bounded channel owns the
+Release, not while the slot is necessarily free. The actual slot pool stays occupied
+until the fixture explicitly supplies release; GPU buffer destruction is unproved.
+Disconnected remains retained while the sidecar lives, without a recovery path or
+retirement proof. Placement in the actual facade, poll-ordered flushing, runtime
+credit settlement and cross-crate wake composition remain unproved. Next is stage 4
+scoping for wake behavior/poll ordering, with frozen source review before any build;
+a non-test bridge remains a separate scope gate. Production/native gates remain
+held, with no push, timing, three-service or CPU/frame claim.
 
 Preliminary design-model evidence `sophia-combined-frame-job-model-01`, seal
 `4c811ba9`, checks 353 generated / 189 distinct states and fair owner withdrawal
