@@ -121,8 +121,22 @@ The original 29,229 / 6,192 proof-01 stays frozen. Ten checks pass their expecte
 outcomes on the same signed clean identity, with 25 source and two peer pins.
 This is a narrow design composition, not whole-pipeline or Rust verification:
 receiver loss, exact native disposition, full scene binding, journal, GPU and
-implementation remain outside it. A bounded mapping review is requested before
-a real test-only owner seam; production and native gates remain held.
+implementation remain outside it. Review `2350ce57` accepts this composed projection
+for the design step. Docs-only research `89ac4ca7a` records its qualifications:
+retain before quota clearance in the consuming owner turn; installed shell content
+and Presented tracking survive pending-render supersession; recurrent shared-core
+Full and disconnected-send/native retirement remain outside this projection.
+Acceptance `sophia-framejob-owner-turn-acceptance-01` (`da8c29fa`) preserves the
+review and verifies the prior seal/model bytes unchanged.
+
+`tools/models/combined-frame-job/SEAM-PROPOSAL.md` on the research branch is the
+concrete approval request: tagged reservation and settle_combined first, opaque
+payload boundary, dedicated retained Release, wake behavior, then ordinary
+content-service fallback fixture. Only test-compiled additions, real owner seams,
+no copied admission loop or production visibility/API change. Freeze the diff for
+bounded review BEFORE builds. Niltempus authorization for writing this seam is
+pending: the reviewer explicitly authorizes asking, not implementation. Production
+and native gates remain held. No new source or build has started.
 
 Preliminary design-model evidence `sophia-combined-frame-job-model-01`, seal
 `4c811ba9`, checks 353 generated / 189 distinct states and fair owner withdrawal
