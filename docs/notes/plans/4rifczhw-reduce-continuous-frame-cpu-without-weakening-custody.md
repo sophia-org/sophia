@@ -81,12 +81,22 @@ accepts revision 3 facts as adequate for the scene decision. Revision 4 at signe
 `2b9e53726` records its A1 one-way forwarding witness and A2 reserved-capacity
 correction; evidence sibling `sophia-framejob-rev4-correction-01` preserves the
 review and diff without altering frozen models. Prototype/production gate is held.
-The next owner choice is explicit conventional
-fallback versus a new obsolete-scene refusal, with no reuse of peer-identity
-Stale. Recommendation is fallback limited to scene-input churn with valid
-description and authority, counting the discarded render and all fallback work;
-it avoids a new scene-change refusal signal but does not establish lower CPU.
-Neither policy is selected. Runtime/prototype gate remains held.
+Niltempus approved conventional fallback limited to scene-input churn with valid
+description and authority. Research head `86fb743ed` records one conventional
+pipeline entry using the returned validated backing, with retained speculative
+Release and existing rollback/Prepared behavior. No recursive combined retry or
+new host-obsolete reason. Authority/geometry failures still refuse; existing Stale
+keeps its meaning. Count discarded speculative renders, actual ordinary renders,
+extra visits, retained bytes and stalls; CPU advantage remains a hypothesis.
+
+Evidence `sophia-framejob-fallback-proof-01` (`1331bff1`) records two positive finite
+checks (fallback 880/310, transfer 29229/6192 generated/distinct) and ten named
+negative controls. Fallback covers routing, one entry, two-field rollback, retained
+release and Prepared/current-check boundaries; transfer adds the per-job delayed
+forwarded witness and validator-exit/retirement split. Frozen identity is clean G
+before/after. These remain separate projections, not an integrated frame pipeline
+or runtime proof. The bounded read-only review is pending. No Rust build, prototype,
+physical run, production adoption or combined CPU saving is established.
 
 Preliminary design-model evidence `sophia-combined-frame-job-model-01`, seal
 `4c811ba9`, checks 353 generated / 189 distinct states and fair owner withdrawal
