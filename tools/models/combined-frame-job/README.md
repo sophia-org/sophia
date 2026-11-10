@@ -203,3 +203,13 @@ frozen proof-01 remains 29,229 generated / 6,192 distinct. The narrowed developm
 check is 26,661 / 5,616 with CreditUntilConsumed and temporal WithdrawalProgress
 passing. This correction is recorded beside the prior counts, not replacing them.
 State counts are not coverage or implementation proof.
+
+## Accepted owner-turn scope and next approval
+
+Review 2350ce57 accepts the 20070959b composed projection as frozen design evidence.
+FALLBACK.md records its four qualifications: same-turn retention before credit
+clearance is an implementation obligation; pending-render supersession does not
+lose installed shell content or its Presented tracking; later shared-core queue
+refills are unmodeled; disconnected send/native retirement remains a separate
+projection. No model changed. SEAM-PROPOSAL.md is a request, not authorization to
+implement, build, run, or integrate the next test-only seam.

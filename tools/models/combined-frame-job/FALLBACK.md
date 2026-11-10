@@ -28,7 +28,9 @@ choice once and take the following path:
    misrouted ordinary WorkerResult and MUST NOT be overwritten. A new owner-callable
    combined-result retain operation is required; current release_discarded_result
    cannot accept this result type. It returns exact retention proof before the
-   combined validation credit clears. No backend lease type is added to the lower
+   combined validation credit clears, within the same consuming owner turn. The
+   model separates Settle/Retain/ClearCredit and permits a gap; it does not prove
+   that the implementation performs them in one turn. No backend lease type is added to the lower
    sophia-runtime crate; the owner joins the backend disposition with the job token.
    Reuse flush_discarded_release's Full-retains semantics, with the separate cell.
    Ownership moves to the command queue only after successful send. The physical
@@ -82,6 +84,10 @@ Deferred returns to the owner, which parks pending_frame; resubmission requires 
 later owner export cycle (worker_export::export_from_worker). It is NOT the
 worker-internal retry used by a parked combined job. Count the result collection,
 later export cycle and latest-wins supersession if a newer frame replaces it.
+That supersession replaces pending render work, not the installed shell_content
+candidate. Its content persists into the superseding composition; Presented resolves
+through presented_content_list_matches on whichever frame actually presents
+(shell_content_presentation_epoch), under the existing identity checks.
 No transient Full redispatches the combined job or spends new response reservations.
 A definitive failure keeps its ordinary classification; no fallback retry loop.
 
@@ -158,3 +164,11 @@ send transferring it to WorkerCommand (or a separately established final disposi
 Disconnected is a counted failed enqueue, not a successful transfer or physical
 release; worker retirement still needs its qualified disposition. OwnerTurn assumes
 a live command receiver and omits disconnection/retirement. No ACK is added.
+
+Owner-turn review 2350ce57 accepts this narrow composition. Initial queue noise is
+bounded: other-output commands cannot arrive again in OwnerTurn, while on a shared
+core they can refill the real queue indefinitely. Recurrent Full is outside this
+finite check. CreditProtected does not cover send to a dead receiver; native
+retirement belongs to Transfer's separate RetireNative/SettleRetired projection,
+not a composed proof here. Test-only seam authorization remains pending; see
+SEAM-PROPOSAL.md. The accepted model and evidence are unchanged.
