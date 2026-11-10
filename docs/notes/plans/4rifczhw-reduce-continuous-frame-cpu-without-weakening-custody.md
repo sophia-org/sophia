@@ -45,7 +45,7 @@ record one accounting owner, bounded transfer, cancellation, busy-renderer handl
 and retained charges. CPU/frame and security are the primary criteria: count the
 added worker handoff, retained resources, discarded renders and contention work,
 not just the removed owner visit. Preserve responsiveness and fresh owner checks.
-Obsolete-scene disposition is still a critical owner decision; concrete detach,
+The scene-only conventional fallback is now selected below; concrete detach,
 scheduler/slot and atomic installation proofs remain implementation obligations.
 No production source or prototype is authorized past that gate by silence.
 
@@ -95,8 +95,34 @@ negative controls. Fallback covers routing, one entry, two-field rollback, retai
 release and Prepared/current-check boundaries; transfer adds the per-job delayed
 forwarded witness and validator-exit/retirement split. Frozen identity is clean G
 before/after. These remain separate projections, not an integrated frame pipeline
-or runtime proof. The bounded read-only review is pending. No Rust build, prototype,
-physical run, production adoption or combined CPU saving is established.
+or runtime proof. Review `d99c5932` accepts the frozen evidence with source-mapping
+corrections: a separate combined retained-Release cell is needed; fallback declines
+fast installation and uses the existing content service, rather than re-entering
+submit_bundle; Full is ordinary deferral, not a setter error or rollback. No Rust
+build, prototype, physical run, adoption or combined CPU saving is established.
+
+Follow-up signed research head `20070959b`, evidence
+`sophia-framejob-owner-turn-proof-01` (`89b4e4d5`), composes result consumption,
+settlement bookkeeping, the dedicated per-output retained-Release cell, quota
+clearance, decline-fast latch and ordinary entry with a finite command FIFO and
+three slots. Quota clearance accepts token held in the cell or successfully sent
+to WorkerCommand; it does not wait for slot freedom or a nonexistent Release ACK.
+Full keeps the obligation. An ordinary Render that finds no slot returns Deferred
+to the owner, then requires a later export cycle to retry; latest-wins pending
+supersession is explicit and counted. This differs from worker-internal combined
+job retry. No fast-path candidate state changes before the owner decision.
+
+OwnerTurn checks 3,035 generated / 1,204 distinct states; two action controls fail
+retention/occupied-slot invariants, and two no-mutation witnesses reach Full on
+both sends and a superseded later owner retry. Narrowing Transfer Die to renderer-
+held queued/waiting/rendering/finished gives 26,661 / 5,616, with credit retention
+and fair withdrawal passing and all four guard controls still failing as expected.
+The original 29,229 / 6,192 proof-01 stays frozen. Ten checks pass their expected
+outcomes on the same signed clean identity, with 25 source and two peer pins.
+This is a narrow design composition, not whole-pipeline or Rust verification:
+receiver loss, exact native disposition, full scene binding, journal, GPU and
+implementation remain outside it. A bounded mapping review is requested before
+a real test-only owner seam; production and native gates remain held.
 
 Preliminary design-model evidence `sophia-combined-frame-job-model-01`, seal
 `4c811ba9`, checks 353 generated / 189 distinct states and fair owner withdrawal
