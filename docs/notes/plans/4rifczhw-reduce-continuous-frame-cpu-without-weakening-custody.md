@@ -129,14 +129,38 @@ Full and disconnected-send/native retirement remain outside this projection.
 Acceptance `sophia-framejob-owner-turn-acceptance-01` (`da8c29fa`) preserves the
 review and verifies the prior seal/model bytes unchanged.
 
-`tools/models/combined-frame-job/SEAM-PROPOSAL.md` on the research branch is the
-concrete approval request: tagged reservation and settle_combined first, opaque
-payload boundary, dedicated retained Release, wake behavior, then ordinary
-content-service fallback fixture. Only test-compiled additions, real owner seams,
-no copied admission loop or production visibility/API change. Freeze the diff for
-bounded review BEFORE builds. Niltempus authorization for writing this seam is
-pending: the reviewer explicitly authorizes asking, not implementation. Production
-and native gates remain held. No new source or build has started.
+Niltempus approved the ordered test-only `SEAM-PROPOSAL.md`: tagged reservation
+and settle_combined first, opaque payload boundary, dedicated retained Release,
+wake behavior, then ordinary content-service fallback fixture. Every stage needs
+a frozen signed diff and bounded source review BEFORE builds. No copied admission
+ledger, production visibility/API change or default-off feature is authorized.
+Runtime-local cfg(test) composition is the stage 2 access decision; backend-local
+checks later cannot be described as a cross-crate proof. A bridge requiring
+non-test source remains a separate scope gate.
+
+Stage 1 research source `2269c4d33` (tree `a9fab517`) was accepted before builds by
+`sophia-framejob-stage1-review-claude-01`. Source-02 `cabfd249` and signing-01
+`d4c457d5` bind that same tree. The real validation worker's pending slots carry a
+private reservation tag; successful forwarding retains credit until matching
+settlement, while errors and failed moves use unchanged take_completed. The test
+endpoint returns validated pixels, not a renderer result or retirement proof.
+Cancellation is not an atomic forwarding gate. A destination lost after successful
+forwarding still pins credit until teardown: a documented stage-1 reclamation gap.
+
+Validation `sophia-framejob-credit-seam-validation-01` (`a5e5f616`) records seven
+seam tests and eight ordinary/shutdown controls passing. Three mutations fail the
+named identity, premature owner-credit clearance and unwanted-notify assertions;
+restored tests pass. The optional duplicate-completion mutation was not selected.
+The no-wake assertion is one point observation. Full isolated cargo xtask check
+exited 0 with 809 strict ok summaries and unchanged clean G source; fmt exited 0.
+A daemon restart killed the first gate's recorder while its child survived: its
+log is retained without an exit/verdict. The rerun began after that exact child
+PID was gone, with a setsid recorder, fd 0 /dev/null and separate logs. Independent
+validation review `sophia-framejob-stage1-validation-review-claude-01` (`80ebfe6f`)
+accepts the evidence and its limits. The mutation worktree was removed cleanly;
+the research worktree stays pinned. No production change, native launch, timing,
+three-service result, CPU claim, merge or push follows. Next source step is the
+opaque payload and per-job forwarding witness, reviewed before any build.
 
 Preliminary design-model evidence `sophia-combined-frame-job-model-01`, seal
 `4c811ba9`, checks 353 generated / 189 distinct states and fair owner withdrawal
