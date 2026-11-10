@@ -1,0 +1,15 @@
+{
+  "base": "22d8cbca7313ea0bc5d1f9feeb24f67044527d4f",
+  "files": {
+    "crates/sophia-runtime/src/shell_transport/owned_copy/frame.rs": "a8893d808cc29c47d94c90493ad639646b54e970ce6a7e80b669ab8cc9349d62",
+    "crates/sophia-runtime/src/shell_content/epoch_registry/owned_ring/frame.rs": "834092d891a56fd1724e045835f1f1a02c68910533882b9de489780930ce60e3",
+    "crates/sophia-runtime/src/shell_content/owned_ring.rs": "dc1a89c6029d423750c95f65887487ee76a6630234d0f8b14d74bfe6b5abcab5",
+    "crates/sophia-runtime/src/shell_content/isb_worker.rs": "b7ef5cb2514988c72f31a512ce557ae04d6b4b30fb3263c030616bbea763785b",
+    "crates/sophia-runtime/src/shell_transport/image_owner.rs": "445f8214fe17f04a6e4c37904aec8a5e4ff40dacab5170b0e6f7483dfe376eaf",
+    "crates/sophia-session/src/live_session/metadata_shell/content/projection.rs": "137e5b81cc271ca59fafdf3a5ecfaddf14096eeed3793a0fa62a98485ca6460f",
+    "crates/sophia-session/src/live_session/metadata_shell/content/submission.rs": "80bf45942d3395aa1c9dc934982a929f34e25bba83cbe2007d8fbac55e773301",
+    "crates/sophia-backend-live/src/production_visual_runtime/compositor_graphics/shell_content.rs": "a54f97801d8d185b8a51436d1bd4d6159a0caa36ca43121a7754ea05c6c00572",
+    "crates/sophia-backend-live/src/scanout/rendered_scanout/exporter/worker/service.rs": "be6e5c1fe9fc99720e5bf2d5154295309c61c4103b36b8fb174e4f71c06e5709",
+    "crates/sophia-backend-live/src/scanout/rendered_scanout/exporter/worker.rs": "c75d38eee8a09301a0450bdfe2715c13406a65c83b63ba4a02dfaceee77cacdb"
+  }
+}
