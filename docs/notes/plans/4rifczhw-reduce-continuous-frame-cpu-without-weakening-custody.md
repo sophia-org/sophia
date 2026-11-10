@@ -22,6 +22,24 @@ for each selected mechanism. A profile share is not a savings target.
 
 ## Current resumption, November 9
 
+
+Child-attach/journal checkpoint `49876afa7` is accepted (probe-06 `71f42c66`,
+review `54296aaa`). Next is the matched three-record counts screen, followed by
+untraced owner-service CPU for socket versus split capture if no correctness
+blocker appears. Full extent stays a recorded byte-cost contrast; it is not a
+second CPU treatment. Counts alone cannot decide cheaper dispatch. Supplied
+authority, absent production FrameSubmit lifetime coupling, raw-Pipeline peer and
+excluded per-frame events/ACK traffic remain explicit limits.
+
+Separately, SDK `57f4dd3` on current vendor base `da1ad8f` is accepted as a
+device-free mechanism checkpoint (evidence `7371396c`, review `6bbb0e40`, acceptance
+`ead7f086`; docs-only clarification `ed3d94b`). Three reproductions each show one
+redundant empty receive removed from the scripted reply drive, with dispatch
+unchanged. This is not a per-frame count or a native performance result. No SDK
+vendor/peer pin was changed and the old sft-sdk-01 null is not promoted.
+
+Earlier checkpoint history follows.
+
 **Selected next: device-free SFT control carrier.** niltempus approved the
 [bounded experiment](../decisions/z8cr4n2p-test-a-bounded-sft-control-carrier-before-live-integration.md) and requested implementation.
 Sequence: contract/model review, isolated prototype, adversarial proof, matched

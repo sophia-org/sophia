@@ -2,6 +2,8 @@
 use super::super::process::fixture as process;
 use super::*;
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
+use rustix::process::{Pid, PidfdFlags, pidfd_open};
+use std::os::fd::AsRawFd;
 
 #[test]
 fn child_owned_attach_uses_the_same_export_for_socket_and_carrier() {
@@ -23,6 +25,25 @@ fn child_writer_clunk_preserves_accepted_receipt_but_refuses_next_attempt() {
 #[test]
 fn wrong_child_bootstrap_token_is_refused_before_binding_installation() {
     assert!(run(4).is_empty());
+}
+
+#[test]
+fn census_socket_three_records() {
+    assert_eq!(run(5).len(), 3);
+}
+#[test]
+fn census_split_capture_three_records() {
+    assert_eq!(run(6).len(), 3);
+}
+#[test]
+fn census_full_capture_three_records() {
+    assert_eq!(run(7).len(), 3);
+}
+
+// One stderr write keeps role markers indivisible in per-thread syscall traces.
+fn census_line(message: std::fmt::Arguments<'_>) {
+    let line = format!("{message}\n");
+    std::io::stderr().write_all(line.as_bytes()).unwrap();
 }
 
 fn wait_ready(wire: &mut ShellFileWire, control: &UnixStream, socket: &UnixStream) {
@@ -55,12 +76,13 @@ fn run(mode: u8) -> Vec<Inbound> {
     let child_name = format!("{}::peer", module_path!().split_once("::").unwrap().1);
     let mut peer = process::spawn(&child_name);
     let (socket, child_socket) = UnixStream::pair().unwrap();
+    let socket_fd = socket.as_raw_fd();
     let owner_socket = socket.try_clone().unwrap();
     let checks = Arc::new(Mutex::new(CheckState::default()));
     let mut wire = ShellFileWire::adopt(
         socket,
         lean_export(),
-        Some(Box::new(CountingFactory(checks))),
+        Some(Box::new(CountingFactory(checks.clone()))),
         true,
     )
     .unwrap();
@@ -100,8 +122,106 @@ fn run(mode: u8) -> Vec<Inbound> {
     let source = Source::admit(File::from(rights.descriptors[0].take().unwrap())).unwrap();
     let mut slot = Slot::default();
     let mut captured = Captured::buffer();
-    peer.stream.write_all(b"G").unwrap();
-    if mode == 0 {
+    if mode >= 5 {
+        let child_pidfd = pidfd_open(
+            Pid::from_raw(peer.child.0.id() as i32).unwrap(),
+            PidfdFlags::empty(),
+        )
+        .unwrap();
+        let before = checks.lock().unwrap().calls;
+        let capacity = captured.bytes.capacity();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        census_line(format_args!(
+            "CARRIER_FDS role=owner mode={mode} socket={} poll_socket={} hints={} receipt={} control={} pidfd={}",
+            socket_fd,
+            owner_socket.as_raw_fd(),
+            requests.as_fd().as_raw_fd(),
+            responses.as_ref().unwrap().as_fd().as_raw_fd(),
+            peer.stream.as_raw_fd(),
+            child_pidfd.as_raw_fd()
+        ));
+        census_line(format_args!(
+            "CARRIER_CENSUS role=owner mode={mode} edge=begin"
+        ));
+        peer.stream.write_all(b"G").unwrap();
+        let mut turns = 0;
+        let mut dispatches = 0;
+        let mut polls = 0;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            assert!(!remaining.is_zero(), "census child progress");
+            let mut fds = [
+                PollFd::new(&peer.stream, PollFlags::IN),
+                PollFd::new(&owner_socket, PollFlags::IN),
+                PollFd::new(&requests, PollFlags::IN),
+                PollFd::new(&child_pidfd, PollFlags::IN),
+            ];
+            let ready = poll(
+                &mut fds,
+                Some(&Timespec {
+                    tv_sec: remaining.as_secs() as i64,
+                    tv_nsec: remaining.subsec_nanos() as i64,
+                }),
+            )
+            .unwrap();
+            polls += 1;
+            assert!(ready > 0);
+            assert!(
+                fds[3].revents().is_empty(),
+                "child exit before census completion"
+            );
+            for fd in &fds[..3] {
+                assert!(
+                    !fd.revents()
+                        .intersects(PollFlags::HUP | PollFlags::ERR | PollFlags::NVAL),
+                    "closed census channel"
+                );
+            }
+            if fds[0].revents().contains(PollFlags::IN) {
+                break;
+            }
+            if fds[1].revents().contains(PollFlags::IN) {
+                assert_eq!(mode, 5, "no control traffic during carrier-only bracket");
+                wire.turn().unwrap();
+                turns += 1;
+            }
+            if fds[2].revents().contains(PollFlags::IN) {
+                assert_ne!(mode, 5);
+                let hint = requests.next(slot.last_sequence()).unwrap().unwrap();
+                let plan = if mode == 6 {
+                    ReadPlan::HeaderThenPayload
+                } else {
+                    ReadPlan::FullExtent
+                };
+                slot.capture_published(hint, &source, &mut captured, plan)
+                    .unwrap();
+                binding.process(&mut wire, &mut slot, &captured).unwrap();
+                binding
+                    .deliver(&mut wire, &mut slot, responses.as_ref().unwrap())
+                    .unwrap();
+                dispatches += 1;
+            }
+        }
+        census_line(format_args!(
+            "CARRIER_CENSUS role=owner mode={mode} edge=end"
+        ));
+        let calls = checks.lock().unwrap().calls - before;
+        assert_eq!((turns, dispatches), if mode == 5 { (3, 0) } else { (0, 3) });
+        assert_eq!(calls, if mode == 5 { 3 } else { 6 });
+        assert_eq!(
+            captured.bytes.capacity(),
+            capacity,
+            "capture reuses its allocation"
+        );
+        census_line(format_args!(
+            "CARRIER_COUNTS mode={mode} attempts=3 owner_checks={calls} wire_turns={turns} carrier_dispatches={dispatches} polls={polls} capture_capacity={capacity}"
+        ));
+    } else {
+        peer.stream.write_all(b"G").unwrap();
+    }
+    if mode >= 5 {
+        assert!(!slot.pending());
+    } else if mode == 0 {
         wait_ready(&mut wire, &peer.stream, &owner_socket);
     } else {
         for _ in 0..if mode == 3 { 4 } else { 3 } {
@@ -126,6 +246,7 @@ fn run(mode: u8) -> Vec<Inbound> {
                     3,
                     "accepted transport proposals precede teardown"
                 );
+                process::readable(&owner_socket);
                 assert!(wire.turn().is_err());
                 assert_eq!(wire.server.connection_count(), 0);
                 assert!(!wire.export().attached);
@@ -160,12 +281,25 @@ fn run(mode: u8) -> Vec<Inbound> {
             assert_eq!(control.write(&bytes), Reply::Write(bytes.len() as u32));
         }
         drop(control.client);
+        // Closing the client does not imply this thread has observed EOF yet.
+        process::readable(&control.owner_socket);
         assert!(control.wire.turn().is_err());
         assert!(control.wire.export().revoked && wire.export().revoked);
         assert!(records.is_empty());
         equal(control.wire.export(), wire.export());
     } else {
         assert_eq!(records.len(), 3);
+    }
+    if mode >= 5 {
+        let mut control = Fixture::new();
+        for id in 20..23 {
+            let bytes = commit(id, 0);
+            assert_eq!(control.write(&bytes), Reply::Write(bytes.len() as u32));
+        }
+        let expected: Vec<_> =
+            std::iter::from_fn(|| control.wire.export_mut().take_inbound()).collect();
+        assert_eq!(records, expected);
+        equal(control.wire.export(), wire.export());
     }
     peer.stream.write_all(b"Q").unwrap();
     assert!(peer.child.0.wait().unwrap().success());
@@ -183,7 +317,7 @@ fn peer() {
     let socket = UnixStream::from(rights.descriptors[0].take().unwrap());
     stream.read_exact(&mut marker).unwrap();
     let mode = marker[0];
-    assert!(mode <= 4);
+    assert!(mode <= 7);
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut pipeline =
         Pipeline::over(socket, PipelineLimits::default(), Duration::from_secs(10)).unwrap();
@@ -236,9 +370,21 @@ fn peer() {
     stream.read_exact(&mut marker).unwrap();
     assert_eq!(marker, *b"G");
     let mut client = Client::default();
+    if mode >= 5 {
+        census_line(format_args!(
+            "CARRIER_FDS role=peer mode={mode} socket={} hints={} receipt={} control={}",
+            pipeline.as_ref().unwrap().as_fd().as_raw_fd(),
+            requests.as_fd().as_raw_fd(),
+            responses.as_fd().as_raw_fd(),
+            stream.as_raw_fd()
+        ));
+        census_line(format_args!(
+            "CARRIER_CENSUS role=peer mode={mode} edge=begin"
+        ));
+    }
     for sequence in 1..=if mode == 3 { 4 } else { 3 } {
         let bytes = commit(sequence + 19, 0);
-        if mode == 0 {
+        if mode == 0 || mode == 5 {
             let pipeline = pipeline.as_mut().unwrap();
             let tag = pipeline.write(frame, 0, &bytes).unwrap();
             assert_eq!(
@@ -304,6 +450,11 @@ fn peer() {
                 assert_eq!(client.known, Some(22));
             }
         }
+    }
+    if mode >= 5 {
+        census_line(format_args!(
+            "CARRIER_CENSUS role=peer mode={mode} edge=end"
+        ));
     }
     stream.write_all(b"K").unwrap();
     stream.read_exact(&mut marker).unwrap();

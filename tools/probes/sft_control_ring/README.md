@@ -64,7 +64,7 @@ peer keeps its writer open until the receipt. Error returns must
 end the owning control endpoint; an unanswered published attempt is unknown,
 not replayable. The fixture retains export custody when transport closes.
 
-The source has exact extent `64 + SHELL_FILE_MAX_TRANSACTION_BYTES` (8256) and
+The source has exact extent `64 + SHELL_FILE_MAX_TRANSACTION_BYTES` (65,600) and
 GROW|SHRINK seals. A capture buffer is allocated once and reused. Both read shapes
 exist for later comparison: header then payload (two preads), or the full extent
 (one pread followed by private compaction). One local EINTR retry per read is
@@ -281,3 +281,33 @@ published bytes and stale acknowledged offsets. Full-journal tests prove the
 receipt spends no journal capacity and covering ACK applies before admission
 backpressure; only a later successful retry confirms it. These are test-owned
 completion and journal fixtures, not a native frame or a transport cost result.
+
+## Commit-only counts screen
+
+The child-owned attach fixture now has three census modes: socket, split capture
+and full-extent capture. They share one owner poll array (control, cloned socket,
+hint pipe, child pidfd), check exit/errors before work, and accept three identical
+records with one outstanding attempt. The socket mode uses the real wire turn;
+the carrier uses the reviewed Binding with its additional delivery check. All
+three compare final records and journal state to the same socket control.
+
+Role markers bracket only the commit exchange. Owner scope includes the initial
+one-byte G control send and the final control-ready poll; both are reported.
+The socket turn's own zero-timeout poll is included, separately from the common
+outer poll. These are harness polls, not native wake counts. The child uses raw
+Pipeline, not FileWire; peer counts are harness counts. Events, frame outcomes,
+covering ACK and idle ACK traffic are absent from these zero-ACK records, not
+removed from production. No allocation counter exists; buffer capacity is only
+a reuse assertion. Setup/teardown stay outside the marked region.
+
+Development counts exposed stale numeric prose: the held protocol limit is
+65,536, so full extent is 65,600 bytes; code always derived it from the constant.
+The older 8,192/8,256 documentation was wrong. The split path reads 64 header
+bytes plus the 392-byte fixture record per attempt. Full extent remains a recorded
+contrast and is not advanced to the next CPU screen. Counts alone cannot show
+cheaper dispatch: the next discriminator is separate untraced owner-service CPU
+for socket versus split capture over many sequential attempts, with test-owned
+queue draining explicit and all extra receipt checks retained. No consistently
+lower service cost means close with a device-free null; a repeatable reduction
+only warrants designing a larger matched comparison. No native or integration
+claim follows from either outcome.

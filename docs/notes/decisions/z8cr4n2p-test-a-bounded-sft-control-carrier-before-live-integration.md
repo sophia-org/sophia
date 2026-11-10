@@ -31,7 +31,7 @@ count, with success or a definitive refusal. Success means the privately capture
 record reached the same accepted-custody boundary as complete-write submission;
 it does not mean candidate admission, pixels released, Prepared or Presented.
 
-Reuse the existing complete record grammar and `SHELL_FILE_MAX_TRANSACTION_BYTES` upper bound (8192 bytes). Snapshot
+Reuse the existing complete record grammar and `SHELL_FILE_MAX_TRANSACTION_BYTES` upper bound (65,536 bytes). Snapshot
 untrusted metadata and bytes into bounded private storage before decoding. Never
 lend a Rust reference into peer-mutable input. Validate the private snapshot;
 producer generation words cannot authenticate it. Reserve space for the receipt
@@ -261,3 +261,23 @@ an export-visible registration lifetime with its wire/allocation and authority
 review. No such production change is selected here. Whole-attach revoke clears
 queued proposals; carrier-only pipe closure with a live attach does not. The
 probe README records both distinct assertions.
+
+## Child-attach acceptance and census scope
+
+`49876afa7` is accepted as test-only child-attach/journal composition: probe-06
+`71f42c66`, independent review `54296aaa`. It retains supplied authentication and
+the export-visible FrameSubmit lifetime limit above. No production or teardown
+qualification follows. The first full-gate EAGAIN failure remains recorded on the
+same tree; the second passed, with nondeterminism rather than branch independence
+claimed.
+
+The counts-only screen uses the same owner poll array for actual socket framing,
+split pread and full-extent pread, three sequential records per invocation.
+Authentication checks and raw-Pipeline peer counts are harness observations;
+9P events/ACK traffic is excluded from this commit-only scope. The constant-based
+implementation always allowed 65,536 bytes; earlier numeric prose was stale.
+Full extent is retained as a byte-amplification contrast, not advanced to CPU
+measurement. Counts do not decide dispatch cost. Next is an untraced socket-versus-
+split owner-service CPU screen with explicit test-owned draining; only a repeatable
+reduction warrants designing the larger matched comparison. No native or
+integration selection follows automatically.
