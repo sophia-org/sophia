@@ -38,12 +38,27 @@ Two source gaps are explicit: projection needs a validated resource lease, and
 content installation currently queues rendering. A provisional plan and an
 owner-only install-already-rendered path need authority review; actual render
 slot acquisition/Deferred also requires a defined accounting transition. Claude
-review `2e0c759f` holds authority approval: choose validation/render thread placement
-and obsolete-scene behavior, then complete the slot/accounting/publication model.
-Follow-up contract `1c3418fce` records these requirements and decisions. The
-recommendation is to preserve validation-thread isolation and explicitly design
-the worker-to-worker transfer; this revises the initial same-worker sketch. No
-production source or prototype is authorized past that gate by silence.
+review `2e0c759f` holds full authority approval. Niltempus has now selected a
+separate validation worker handing its validated result directly to the renderer,
+bypassing the intermediate owner visit. Contract `02e04ef06` and TRANSFER.md
+record one accounting owner, bounded transfer, cancellation, busy-renderer handling
+and retained charges. CPU/frame and security are the primary criteria: count the
+added worker handoff, retained resources, discarded renders and contention work,
+not just the removed owner visit. Preserve responsiveness and fresh owner checks.
+Obsolete-scene disposition is still a critical owner decision; concrete detach,
+scheduler/slot and atomic installation proofs remain implementation obligations.
+No production source or prototype is authorized past that gate by silence.
+
+Frozen research head `93258952d` adds a separate transfer projection. Evidence
+`sophia-framejob-transfer-model-01`, seal `1c405a25`, records 1885 generated / 516
+distinct states, complete checking and weakly fair owner withdrawal without worker
+fairness. Three action mutations violate unique ownership, retained credit and
+the cancellation gate. Two initial parser refusals are retained. Before/after
+identity is the same clean signed tree. This is uncomposed with the preliminary
+model; it proves neither scheduler progress nor runtime behavior. Reviewer has
+been asked for a bounded read-only challenge; acceptance is pending. The next
+owner choice is explicit conventional fallback versus a new obsolete-scene
+refusal, with no reuse of peer-identity Stale. Neither is selected.
 
 Preliminary design-model evidence `sophia-combined-frame-job-model-01`, seal
 `4c811ba9`, checks 353 generated / 189 distinct states and fair owner withdrawal
