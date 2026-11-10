@@ -5,6 +5,18 @@ use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::process::{Pid, PidfdFlags, pidfd_open};
 use std::os::fd::AsRawFd;
 
+#[path = "shell_frame_control_carrier_cost.rs"]
+mod cost;
+
+fn attempts(mode: u8) -> u64 {
+    match mode {
+        3 => 4,
+        8 | 9 => 32,
+        10 | 11 => 4096,
+        _ => 3,
+    }
+}
+
 #[test]
 fn child_owned_attach_uses_the_same_export_for_socket_and_carrier() {
     let control = run(0);
@@ -122,7 +134,23 @@ fn run(mode: u8) -> Vec<Inbound> {
     let source = Source::admit(File::from(rights.descriptors[0].take().unwrap())).unwrap();
     let mut slot = Slot::default();
     let mut captured = Captured::buffer();
-    if mode >= 5 {
+    let mut timed_records = None;
+    if mode >= 8 {
+        let before = checks.lock().unwrap().calls;
+        timed_records = Some(cost::owner(
+            &mut wire,
+            &mut peer,
+            &requests,
+            responses.as_ref().unwrap(),
+            &source,
+            binding,
+            mode,
+        ));
+        assert_eq!(
+            checks.lock().unwrap().calls - before,
+            attempts(mode) as usize * if mode.is_multiple_of(2) { 1 } else { 2 }
+        );
+    } else if mode >= 5 {
         let child_pidfd = pidfd_open(
             Pid::from_raw(peer.child.0.id() as i32).unwrap(),
             PidfdFlags::empty(),
@@ -271,8 +299,12 @@ fn run(mode: u8) -> Vec<Inbound> {
     }
     peer.stream.read_exact(&mut marker).unwrap();
     assert_eq!(marker, *b"K");
-    assert_eq!(wire.export().submission_watermark, 22);
-    let records: Vec<_> = std::iter::from_fn(|| wire.export_mut().take_inbound()).collect();
+    assert_eq!(
+        wire.export().submission_watermark,
+        if mode >= 8 { attempts(mode) + 19 } else { 22 }
+    );
+    let records: Vec<_> = timed_records
+        .unwrap_or_else(|| std::iter::from_fn(|| wire.export_mut().take_inbound()).collect());
     if mode == 2 {
         // Whole-attach revoke clears queued proposals; closing only pipes does not.
         let mut control = Fixture::new();
@@ -288,16 +320,23 @@ fn run(mode: u8) -> Vec<Inbound> {
         assert!(records.is_empty());
         equal(control.wire.export(), wire.export());
     } else {
-        assert_eq!(records.len(), 3);
+        assert_eq!(
+            records.len(),
+            if mode >= 8 {
+                attempts(mode) as usize
+            } else {
+                3
+            }
+        );
     }
     if mode >= 5 {
         let mut control = Fixture::new();
-        for id in 20..23 {
+        let mut expected = Vec::with_capacity(attempts(mode) as usize);
+        for id in 20..20 + attempts(mode) {
             let bytes = commit(id, 0);
             assert_eq!(control.write(&bytes), Reply::Write(bytes.len() as u32));
+            expected.push(control.wire.export_mut().take_inbound().unwrap());
         }
-        let expected: Vec<_> =
-            std::iter::from_fn(|| control.wire.export_mut().take_inbound()).collect();
         assert_eq!(records, expected);
         equal(control.wire.export(), wire.export());
     }
@@ -317,7 +356,7 @@ fn peer() {
     let socket = UnixStream::from(rights.descriptors[0].take().unwrap());
     stream.read_exact(&mut marker).unwrap();
     let mode = marker[0];
-    assert!(mode <= 7);
+    assert!(mode <= 11);
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut pipeline =
         Pipeline::over(socket, PipelineLimits::default(), Duration::from_secs(10)).unwrap();
@@ -370,7 +409,7 @@ fn peer() {
     stream.read_exact(&mut marker).unwrap();
     assert_eq!(marker, *b"G");
     let mut client = Client::default();
-    if mode >= 5 {
+    if (5..=7).contains(&mode) {
         census_line(format_args!(
             "CARRIER_FDS role=peer mode={mode} socket={} hints={} receipt={} control={}",
             pipeline.as_ref().unwrap().as_fd().as_raw_fd(),
@@ -382,9 +421,9 @@ fn peer() {
             "CARRIER_CENSUS role=peer mode={mode} edge=begin"
         ));
     }
-    for sequence in 1..=if mode == 3 { 4 } else { 3 } {
+    for sequence in 1..=attempts(mode) {
         let bytes = commit(sequence + 19, 0);
-        if mode == 0 || mode == 5 {
+        if mode == 0 || mode == 5 || mode == 8 || mode == 10 {
             let pipeline = pipeline.as_mut().unwrap();
             let tag = pipeline.write(frame, 0, &bytes).unwrap();
             assert_eq!(
@@ -451,7 +490,7 @@ fn peer() {
             }
         }
     }
-    if mode >= 5 {
+    if (5..=7).contains(&mode) {
         census_line(format_args!(
             "CARRIER_CENSUS role=peer mode={mode} edge=end"
         ));

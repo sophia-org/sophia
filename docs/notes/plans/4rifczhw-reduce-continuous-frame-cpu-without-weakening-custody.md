@@ -38,6 +38,14 @@ redundant empty receive removed from the scripted reply drive, with dispatch
 unchanged. This is not a per-frame count or a native performance result. No SDK
 vendor/peer pin was changed and the old sft-sdk-01 null is not promoted.
 
+Census source `9395545a9` and counts `a315b85b` are accepted by `389eae82`.
+The socket fixture's blind turn is not a CPU baseline for the current observed
+lean loop. D1 compares socket and split carrier with current observations and
+the same retained wire servicing in both arms, counting all service visits.
+Thread-clock overhead stays included; test-owned draining and waits are outside
+the service bracket. A 32-attempt correctness path precedes the explicit
+untraced release screen. No native launch or adoption is selected.
+
 Earlier checkpoint history follows.
 
 **Selected next: device-free SFT control carrier.** niltempus approved the

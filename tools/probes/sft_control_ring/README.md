@@ -311,3 +311,32 @@ queue draining explicit and all extra receipt checks retained. No consistently
 lower service cost means close with a device-free null; a repeatable reduction
 only warrants designing a larger matched comparison. No native or integration
 claim follows from either outcome.
+
+## Observed owner-service CPU discriminator (D1)
+
+The census is accepted (`a315b85b`, independent `389eae82`). Its blind socket
+turn and direct carrier call are not a fair CPU comparison: the former includes
+an extra poll and per-pass obligations that a carrier must retain. D1 therefore
+uses actual server descriptors in subscription order, asserts a current
+observation, and performs the same observed wire turn in both arms. The socket
+turn dispatches its request; the carrier's idle wire turn retains pre/post
+authentication polling, expiry and image servicing, then the existing Binding
+captures and dispatches with its additional delivery check.
+
+Two normal 32-attempt tests compare every resulting record to the socket control.
+Two ignored 4,096-attempt tests are reserved for an explicit untraced release-mode
+screen. Only the service interval is charged with thread CPU clocks: current
+observation installation and wire turn, followed by carrier work when present.
+Clock overhead stays included. Poll waits, subscription construction/validation,
+test-owned inbound draining and final equality checks are outside that interval;
+none is claimed removed. All service visits, including a possible empty wake,
+remain in the reported sum. FIFO draining is a fixture consumer, not a renderer,
+frame outcome or grant-lifetime implementation.
+
+The extra rustix time feature is a test dev-dependency, with no production clock
+or feature. Supplied authentication and raw Pipeline remain harness limits.
+Debug smoke-test clock output is not a performance result. The prewritten rule
+uses three alternating paired untraced repetitions: no consistently lower
+carrier cost closes this experiment; a repeatable reduction warrants designing
+a matched paced/throughput screen, not native adoption. Full-extent capture is
+not a D1 treatment. No native run or CPU saving is established here.
