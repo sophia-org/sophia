@@ -113,16 +113,19 @@ impl Binding {
             operation: Operation::Write,
         }
     }
-    fn process(&self, wire: &mut ShellFileWire, carrier: &mut Carrier) -> Result<(), Errno> {
+    fn process(
+        &self,
+        wire: &mut ShellFileWire,
+        slot: &mut Slot,
+        captured: &Captured,
+    ) -> Result<(), Errno> {
         let result = (|| {
             // This check is after private capture, before any ACK or admission effect.
             wire.server.export_mut().check(&self.access())?;
-            if carrier.captured.identity.epoch != self.epoch.0
-                || carrier.captured.identity.writer != self.writer
-            {
+            if captured.identity.epoch != self.epoch.0 || captured.identity.writer != self.writer {
                 return Err(Errno::ESTALE);
             }
-            carrier.slot.process(&carrier.captured, |bytes| {
+            slot.process(captured, |bytes| {
                 let files = wire.server.export_mut();
                 files
                     .files_mut()
@@ -136,26 +139,26 @@ impl Binding {
             })
         })();
         if result.is_err() {
-            carrier.slot.close();
+            slot.close();
         }
         result
     }
     fn deliver(
         &self,
         wire: &mut ShellFileWire,
-        carrier: &mut Carrier,
+        slot: &mut Slot,
         output: &Writer,
     ) -> Result<(), Errno> {
         let result = wire
             .server
             .export_mut()
             .with_delivery(&self.access(), || {
-                let receipt = carrier.slot.publish(true).ok_or(Errno::ESTALE)?;
+                let receipt = slot.publish(true).ok_or(Errno::ESTALE)?;
                 output.receipt(receipt).map_err(|_| Errno::EIO)
             })
             .and_then(|result| result);
         if result.is_err() {
-            carrier.slot.close();
+            slot.close();
         }
         result
     }
@@ -180,13 +183,13 @@ fn authenticated_socket_and_captured_record_agree_with_two_fresh_checks() {
         let calls = candidate.calls();
         candidate
             .binding
-            .process(&mut candidate.wire, &mut carrier)
+            .process(&mut candidate.wire, &mut carrier.slot, &carrier.captured)
             .unwrap();
         assert_eq!(candidate.calls(), calls + 1);
         assert!(input.receipt().unwrap().is_none());
         candidate
             .binding
-            .deliver(&mut candidate.wire, &mut carrier, &output)
+            .deliver(&mut candidate.wire, &mut carrier.slot, &output)
             .unwrap();
         assert_eq!(candidate.calls(), calls + 2);
         agrees(
@@ -204,7 +207,9 @@ fn authentication_failure_after_capture_has_no_effect_or_receipt() {
     let (mut carrier, input, output) = prepared(&fixture, &commit(20, 0));
     fixture.checks.lock().unwrap().deny = true;
     assert_eq!(
-        fixture.binding.process(&mut fixture.wire, &mut carrier),
+        fixture
+            .binding
+            .process(&mut fixture.wire, &mut carrier.slot, &carrier.captured),
         Err(Errno::EACCES)
     );
     assert!(fixture.wire.export().inbound.is_empty());
@@ -213,7 +218,7 @@ fn authentication_failure_after_capture_has_no_effect_or_receipt() {
     assert!(
         fixture
             .binding
-            .deliver(&mut fixture.wire, &mut carrier, &output)
+            .deliver(&mut fixture.wire, &mut carrier.slot, &output)
             .is_err()
     );
     assert!(input.receipt().unwrap().is_none());
@@ -236,7 +241,11 @@ fn host_binding_and_captured_claims_are_both_checked() {
             4 => carrier.captured.bytes[8..16].copy_from_slice(&999_u64.to_le_bytes()),
             _ => unreachable!(),
         }
-        assert!(binding.process(&mut fixture.wire, &mut carrier).is_err());
+        assert!(
+            binding
+                .process(&mut fixture.wire, &mut carrier.slot, &carrier.captured)
+                .is_err()
+        );
         assert!(fixture.wire.export().inbound.is_empty());
         assert!(carrier.slot.closed());
         assert!(input.receipt().unwrap().is_none());
@@ -251,11 +260,11 @@ fn writer_clunk_after_capture_is_not_cached_authority() {
     assert_eq!(reply(&mut fixture.wire, &mut fixture.client), Reply::Clunk);
     fixture
         .binding
-        .process(&mut fixture.wire, &mut carrier)
+        .process(&mut fixture.wire, &mut carrier.slot, &carrier.captured)
         .unwrap();
     fixture
         .binding
-        .deliver(&mut fixture.wire, &mut carrier, &output)
+        .deliver(&mut fixture.wire, &mut carrier.slot, &output)
         .unwrap();
     assert_eq!(
         input.receipt().unwrap().unwrap().outcome,
@@ -270,14 +279,14 @@ fn receipt_withdrawal_is_stricter_than_unguarded_shell_reply_delivery() {
     let (mut carrier, input, output) = prepared(&fixture, &commit(20, 0));
     fixture
         .binding
-        .process(&mut fixture.wire, &mut carrier)
+        .process(&mut fixture.wire, &mut carrier.slot, &carrier.captured)
         .unwrap();
     assert_eq!(fixture.wire.export().inbound.len(), 1);
     fixture.checks.lock().unwrap().deny = true;
     assert_eq!(
         fixture
             .binding
-            .deliver(&mut fixture.wire, &mut carrier, &output),
+            .deliver(&mut fixture.wire, &mut carrier.slot, &output),
         Err(Errno::EACCES)
     );
     assert_eq!(fixture.calls(), 2);
@@ -349,3 +358,46 @@ fn socket_control_flushes_owed_rwrite_after_revocation() {
         Reply::Write(bytes.len() as u32)
     );
 }
+
+#[test]
+fn writer_clunk_after_processing_does_not_erase_custody_or_confirm_the_next_attempt() {
+    let mut fixture = Fixture::new();
+    let bytes = commit(20, 0);
+    let (mut carrier, input, output) = prepared(&fixture, &bytes);
+    fixture
+        .binding
+        .process(&mut fixture.wire, &mut carrier.slot, &carrier.captured)
+        .unwrap();
+    assert_eq!(fixture.wire.export().inbound.len(), 1);
+    fixture.client.clunk(fixture.writer_fid).unwrap();
+    assert_eq!(reply(&mut fixture.wire, &mut fixture.client), Reply::Clunk);
+    assert!(fixture.wire.export().reuse_writer.is_none());
+    fixture
+        .binding
+        .deliver(&mut fixture.wire, &mut carrier.slot, &output)
+        .unwrap();
+    agrees(
+        Ok(bytes.len() as u32),
+        input.receipt().unwrap().unwrap(),
+        &bytes,
+    );
+    assert_eq!(fixture.wire.export().inbound.len(), 1);
+    carrier.capture(&commit(21, 0));
+    fixture
+        .binding
+        .process(&mut fixture.wire, &mut carrier.slot, &carrier.captured)
+        .unwrap();
+    fixture
+        .binding
+        .deliver(&mut fixture.wire, &mut carrier.slot, &output)
+        .unwrap();
+    assert_eq!(
+        input.receipt().unwrap().unwrap().outcome,
+        Outcome::Refused(Errno::ESTALE)
+    );
+    assert_eq!(fixture.wire.export().inbound.len(), 1);
+    assert_eq!(fixture.wire.export().submission_watermark, 20);
+}
+
+#[path = "shell_frame_control_carrier_auth_process.rs"]
+mod persistent;

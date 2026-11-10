@@ -216,3 +216,20 @@ The candidate uses AuthenticatedFiles::with_delivery around its actual receipt
 write. The README records the extra inner check and the remaining binding and
 persistent lifecycle gaps. This checkpoint does not establish full carrier
 parity, authorize integration or select a census/timing/native run.
+
+## Test-only lifecycle composition, November 9
+
+Adapter 4f12ca40a is accepted (probe-04 seal e502a429, independent review
+5f6e1ec9, acceptance 1898d844). The next bounded test joins its existing
+check/process/with_delivery path to the actual child SQ/hint/receipt mechanism.
+Normal receipt, withdrawal after processing and accept-then-peer-exit are tested
+with retained owner work; the exit is synchronized over the control stream before
+pidfd observation and transport closure. Writer clunk between processing and
+delivery preserves accepted custody; a subsequent attempt refuses the lost token.
+
+The 9P attach, writer and FrameSubmit fids still belong to the harness Pipeline
+in the owner process. The child owns only carrier endpoints. This is adapter
+composition, not binding to the child's own authenticated attach. The source
+challenge in sophia-control-carrier-lifecycle-challenge-claude-01 records this
+limit and the three distinct exit orderings. No production source/API changes,
+real custody proof, census, timing, native run or integration are selected.

@@ -46,8 +46,11 @@ from successfully published hints without changing host custody.
 The next adapter checkpoint uses a cfg(test)-only authenticated wrapper and
 socket/Pipeline control, per challenge 4471e1d4. Its required stricter receipt
 delivery is explicit: all existing ShellFiles replies are delivery-unguarded.
-Complete persistent lifecycle composition and a matched census remain open;
-supplied authentication verdicts prove wiring only. No production path is added.
+Adapter 4f12ca40a is accepted (probe e502a429, review 5f6e1ec9). Next is
+bounded child-process composition for receipt/withdrawal/exit and the late writer
+clunk boundary. The harness owns the 9P attach, not the child; full binding and
+journal lifecycle composition still precede a matched census. Supplied verdicts
+prove wiring only. No production path is added.
 Ring-01 evidence stays frozen; a4f599e7a source disposition remains OPEN and must
 not be folded into a carrier effect claim.
 

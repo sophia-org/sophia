@@ -147,10 +147,32 @@ owner work. This stricter delivery rule is intentional, not errno/lifecycle
 parity. The tests also cover authentication failure after capture, wrong host
 connection/epoch, lying headers/writer ids and writer clunk after capture.
 
-The authenticated fixture is in-process; the existing child-process fixture
-still exercises the direct export seam. Neither is a matched per-role census.
-Full/held journal, idle ACK, grant replacement and persistent authenticated
-lifecycle composition remain before measurement.
+The first authenticated fixture is in-process. The follow-up child composition
+uses the same Binding::process/deliver functions with a real child-owned SQ,
+publication pipe and receipt pipe. The 9P attach, writer fid and FrameSubmit fid
+belong to the harness Pipeline in the owner process; the child owns only the SQ,
+hint writer and receipt reader, and receives the binding over the private test
+bootstrap. This proves adapter composition, **not binding to the child's own
+authenticated attach**, production descriptor negotiation or a per-role census.
+
+The child publishes three sequential attempts and two duplicate old hints.
+Normal delivery confirms each exact receipt before reuse. On withdrawal after
+the third Process, the fresh gate refuses; closing the receipt writer produces
+EOF, the child's Client disconnects unknown, and all three owner records remain.
+For exit with a receipt pending, the owner first processes the third attempt,
+then sends E over the control stream; the child disconnects unknown and exits.
+Only after child termination does the owner poll the pidfd, observe Exited, and
+close the pending transport without delivery. This pins accept -> exit -> poll,
+not exit-before-capture or write-after-reader-close. Every case compares the
+remaining export state and records with three actual socket-framed Twrites.
+
+A separate test clunks the reusable writer through 9P between Process and
+Deliver: accepted custody and its receipt survive; the next attempt refuses
+ESTALE and adds no owner record. The fresh attach/epoch delivery check remains.
+No production lifetime routing is implemented by these tests. FrameSubmit
+clunk/replacement, grant replacement, full/held journal and idle ACK through both
+complete carriers, and the child's own authenticated attach remain open before
+measurement.
 
 ## Setup, authority and remaining comparison gate
 
