@@ -55,3 +55,24 @@ none must exit 0 with complete checking and temporal property satisfied. stale,
 release and retire must exit 12 naming respectively FreshSubmission,
 WorkerOwnership, PredecessorLifetime. All are design controls. No device access,
 Rust build, runtime change, CPU or three-service proof follows from these checks.
+
+## Separate-worker transfer projection
+
+Niltempus selected the separate validation worker and direct handoff to the
+renderer. TRANSFER.md freezes the proposed ownership/cancellation contract.
+Transfer.tla is a separate, uncomposed finite projection of that contract. Run
+transfer-none.cfg with Transfer.tla using the same command recipe above; expect
+exit 0 and complete checking. transfer-duplicate, transfer-credit and
+transfer-cancel must exit 12 with UniqueOwner, CreditUntilConsumed and CancelGate.
+
+The model checks unique envelope ownership, credit retained until owner consumption,
+validated private input before rendering, and withdrawal independent of worker
+progress. The cancellation check and render start are one abstract action; real
+cancellation may race after a check and allow bounded private work. This does not
+authorize publication, which remains an owner check outside this projection.
+Busy renderer and blocked result route can stall indefinitely. Worker death
+quarantines ownership without a reclamation action. Slot availability, queue
+reservation, deadline wakeups and scheduler fairness are not proved. Consume
+abstracts credit settlement, never a proof that scanout resources can be freed.
+Scene-change disposition remains an owner decision. No runtime or prototype gate
+is passed by either model, and no CPU/frame or three-service result is claimed.
