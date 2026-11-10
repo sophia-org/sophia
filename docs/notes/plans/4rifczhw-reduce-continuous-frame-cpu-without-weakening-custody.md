@@ -22,6 +22,42 @@ for each selected mechanism. A profile share is not a savings target.
 
 ## Current resumption, November 9
 
+**Control-carrier experiment closed device-free; source disposition open.** The
+separate `cpu/sft-control-ring` branch is held at signed `4342177d4` (not merged).
+Its commit-only, pread-first prototype retained 9P journal events and standalone
+ACKs, caller-fresh checks and one outstanding attempt. Correctness, authenticated
+adapter, child-attach/journal and census checkpoints preceded D1; none is a
+production integration proof. The source contract and detailed history remain on
+that branch in `z8cr4n2p` and the probe README.
+
+D1 `sophia-control-carrier-dispatch-cost-01` (seal `d0a7ebc1`) compares an observed
+socket service against split capture with common wire servicing retained in both.
+Three fixed-order pairs, each 4096 attempts and 4096 service visits, give split
+minus socket **-44.9570, +38.6707, +342.5693 ns/attempt**. Within-arm spreads are
+267.1267 ns (socket) and 148.0242 ns (split). The prewritten routing therefore
+closes with `close_device_free_no_consistent_reduction`, not the distinct
+inconclusive-with-lower-direction outcome. Neither a no-effect finding nor a
+resolution floor follows. Independent recount `sophia-control-carrier-d1-review-claude-02`
+(seal `fda929e5`) agrees; root acceptance is
+`~/.local/state/sophia-control-carrier-dispatch-acceptance-01/ACCEPTANCE.md`.
+
+No larger carrier timing harness, native arm or production adoption is selected.
+The cfg(test) release profile, supplied authority, raw Pipeline peer, clock overhead,
+stricter receipt delivery and excluded frame events/ACK limit the result. Parent
+and child may share CPUs 30,31; owner thread CPU is measured, wall time is not
+reported. Niltempus decides branch disposition and any reopening; recommendation
+is preservation as unmerged research. Frozen source and evidence remain untouched.
+
+The separate SDK `57f4dd3` mechanism checkpoint (docs follow-up `ed3d94b`, evidence
+`7371396c`, independent review `6bbb0e40`) removes one redundant receive in the
+scripted reply drive; dispatch is unchanged. This is not a per-frame or native
+saving. No vendor or native peer pin changed; the earlier pre-lean sft-sdk-01
+inconclusive comparison is not promoted. Immutable-image feasibility selected no
+new mechanism. M1/M2 remain deferred, B6 retained, M3/T4 parked.
+
+Earlier native profile and owned-ring setup history follows; its source disposition
+remains separately open.
+
 The [current-lean function profile](../investigations/h3gtssf5-which-functions-consume-cpu-on-the-current-lean-sft-path-without-changing-responsiveness.md)
 completed and its independent recount matches. hp-01 used normal host `ad0c5239d`
 and the held lean workload with perf alone. Capture/decode/postflight/cadence and
