@@ -50,7 +50,7 @@ pub(super) fn reserve(worker: &mut IsbValidationWorker) -> Reservation {
     worker.reserve_combined(8, Instant::now() + WAIT).unwrap()
 }
 
-fn plan(id: u64) -> ProbePlan {
+pub(super) fn plan(id: u64) -> ProbePlan {
     ProbePlan {
         id,
         descriptor: source(&id.to_le_bytes()),

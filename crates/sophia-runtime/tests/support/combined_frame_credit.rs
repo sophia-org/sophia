@@ -30,6 +30,14 @@ pub(super) struct Route<P: Send + 'static> {
     plan: P,
     sender: mpsc::SyncSender<ReturnedValidation<P>>,
     owner_plan: mpsc::SyncSender<P>,
+    checkpoint: Option<Checkpoint>,
+}
+
+const CHECKPOINT_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+
+struct Checkpoint {
+    entered: mpsc::SyncSender<()>,
+    resume: mpsc::Receiver<()>,
 }
 
 struct ReturnedValidation<P: Send + 'static> {
@@ -40,7 +48,17 @@ struct ReturnedValidation<P: Send + 'static> {
 }
 
 pub(super) fn take_route(mut job: Job) -> (Job, Option<Route<ProbePlan>>) {
-    let route = job.combined.take();
+    let mut route = job.combined.take();
+    if let Some(checkpoint) = route.as_mut().and_then(|route| route.checkpoint.take()) {
+        checkpoint
+            .entered
+            .send(())
+            .expect("checkpoint owner present");
+        checkpoint
+            .resume
+            .recv_timeout(CHECKPOINT_WAIT)
+            .expect("fixture checkpoint deliberately disconnected or timed out");
+    }
     (job, route)
 }
 
@@ -57,6 +75,7 @@ pub(super) fn forward<P: Send + 'static>(
         plan,
         sender,
         owner_plan,
+        checkpoint: _,
     } = route;
     let pixels = match result {
         Ok(pixels) => pixels,
@@ -119,6 +138,17 @@ impl IsbValidationWorker {
         plan: ProbePlan,
         sender: mpsc::SyncSender<ReturnedValidation<ProbePlan>>,
     ) -> Result<mpsc::Receiver<ProbePlan>, (IsbSubmitFailure, OwnedFd, ProbePlan)> {
+        self.submit_combined_checkpoint(reservation, source, plan, sender, None)
+    }
+
+    fn submit_combined_checkpoint(
+        &mut self,
+        reservation: &Reservation,
+        source: OwnedFd,
+        plan: ProbePlan,
+        sender: mpsc::SyncSender<ReturnedValidation<ProbePlan>>,
+        checkpoint: Option<Checkpoint>,
+    ) -> Result<mpsc::Receiver<ProbePlan>, (IsbSubmitFailure, OwnedFd, ProbePlan)> {
         let Some(pending) = self.pending.iter_mut().flatten().find(|pending| {
             pending.id == reservation.job
                 && !pending.submitted
@@ -141,6 +171,7 @@ impl IsbValidationWorker {
                 plan,
                 sender,
                 owner_plan,
+                checkpoint,
             }),
         };
         match self.sender.try_send(job) {
@@ -191,3 +222,6 @@ mod tests;
 
 #[path = "combined_frame_credit/payload_tests.rs"]
 mod payload_tests;
+
+#[path = "combined_frame_credit/wake_tests.rs"]
+mod wake_tests;

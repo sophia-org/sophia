@@ -80,6 +80,7 @@ fn generic_transport_requires_no_payload_inspection_traits() {
                 plan: payload,
                 sender,
                 owner_plan,
+                checkpoint: None,
             }),
             job,
             Ok(pixels),
