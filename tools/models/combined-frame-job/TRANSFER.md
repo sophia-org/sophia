@@ -1,4 +1,4 @@
-# Direct validated-job transfer: proposed contract revision 2
+# Direct validated-job transfer: proposed contract revision 3
 
 ## Selection and objectives
 
@@ -20,7 +20,7 @@ At service 1, the owner allocates one CombinedPending row keyed by connection,
 grant, output, candidate, job and worker incarnation. This is the SOLE authority
 for the combined operation's credit and disposition. It owns the existing
 validation-credit reservation (one of four shared slots), byte/resource charges,
-four journal obligations, fixed deadline and renderer inbox/result credits.
+four journal obligations, fixed deadline and dedicated renderer inbox/result credits.
 These are owned tokens, not duplicate counters. The existing validation pending
 row must refer to this row or become part of it; it may not independently release
 a forwarded completion. No synthetic IsbValidationCompletion may enter today's
@@ -36,12 +36,66 @@ quarantined; that observation is not a promise it stays idle until handoff.
 A later contention is handled explicitly below. Preserve existing errno/Rwrite
 behavior: no new error code is introduced by this draft.
 
+Use a dedicated bounded(1) combined input channel and bounded(1) combined result
+channel per output. Ordinary commands cannot consume this capacity; do not pretend
+the shared 32-entry command channel offers reservations. A combined result never
+enters the ordinary WorkerResult receiver or its in_flight correlation check.
+The owner drains the combined result route even when ordinary in_flight is None,
+with exact job, OutputClaim and retirement_owner_identity checks. One admitted
+combined row reserves both capacities until settlement; channel Full is then an
+internal protocol violation, not normal host contention charged to the peer.
+
 A host-created result route and immutable job identity travel with the payload.
 Only a successful move into the bounded inbox transfers ownership; a failed or
 full send returns the entire payload to its sender. No blocking send, retry spin,
 new helper thread, or fresh capacity allocation on failure. Queue Full despite
 reserved capacity is an internal invariant failure: return a classified failure
 and retain ownership for settlement, never drop bookkeeping to force progress.
+
+## Plan transport and accounting
+
+Move the frozen renderer plan through the validator envelope, rather than adding
+a parked-plan channel and a half-joined state. In sophia-runtime the carried plan
+is a generic opaque P: Send + 'static, with no other bound, methods, Debug or
+Box<dyn Any>. The validator moves it and never inspects it. Prototype review must
+check this type boundary. The owner retains the composition record, display list
+and transform in CombinedPending for installation; the result returns identity,
+validated backing and render lease/failure, not a worker-authored display list.
+
+Permitted plan references are value descriptors, immutable identity keys and
+already-validated predecessor CPU content leases. No scanout lease, slot token,
+GPU/device handle, callback or mutable authority enters the validator. Admission
+must prove this eligibility; unsupported composition stays on the existing path.
+Validation failure returns the opaque plan to the owner for disposal. Unwind and
+queue-destruction tests must prove that dropping permitted references cannot run
+device cleanup on the validator. Moving the plan adds no pixel copy; retained
+predecessor bytes and metadata construction still count toward total cost.
+
+At renderer dequeue bind private validated pixels into the plan's placeholder
+only when declared width/height/stride/extent equal validated values. A mismatch
+returns the owned failure to the owner. Service 2 repeats this check and owns the
+peer-visible Malformed classification. The worker never emits that outcome.
+
+The proposed owner-local CombinedFrameJobs table in ShellIsbImageOwner holds the
+CombinedPending rows. IsbValidationWorker remains the single allocator of its
+shared four-slot quota; reserve_combined transfers the exact credit token into
+the row, leaving a tagged reservation in the allocator, not a second freeable
+credit. Forwarded success cannot use today's take_completed or IsbImageJobs::receive.
+Add an explicit settle_combined(token, proof) path: proof is the exact combined
+result or the qualified retirement proof below. It consumes that reservation
+once, then drives the matching resource-admission row through reconciliation.
+An unknown/duplicate result changes no credit. Pending resource settlement remains
+owned if reconciliation is blocked; freeing validation capacity does not free
+bytes or source slots. This is a proposed accounting API, not an existing one.
+
+Before forwarding, validation or send failure returns via the ordinary validator
+completion route with the opaque plan retained for the owner. take_completed
+supplies the one completion proof for that case; the combined table records that
+consumption and cannot also free its token. Forwarding success changes the proof
+route, never frees the slot. No synthetic completion is injected into the old
+expect-based path. Tests must cover a result arriving before forwarding bookkeeping
+is observed; ambiguous transfer status retains charges and cannot use retirement
+as a shortcut.
 
 ## Payload ownership and cancellation
 
@@ -78,11 +132,23 @@ slots. A ready combined job never reserves a fourth slot or steals scanout state
 
 If the renderer is busy or no slot is available, keep the envelope in its one
 bounded pending position. Retry only after a relevant completion/Release, not
-by waking the owner or spinning. Check cancellation and the admission-fixed
+by waking the owner or spinning. A freed slot goes to the parked combined job of
+that output before the next ordinary Render for it; no stream of ordinary renders
+may continually overtake it. Fair scheduling across outputs remains required. Check cancellation and the admission-fixed
 pre-render deadline at each retry. The event loop must wake for that deadline
-when otherwise idle. Expiry before render returns an owned failure envelope.
+when otherwise idle. Reuse the existing command WakeSlot for both ordinary-command
+and combined-input notification, including builds without experimental-shell-capture.
+Clear notification before inspecting both queues, then wait on that notifier and
+the earliest parked deadline. No recv() without a deadline while a combined job is
+parked, no periodic busy poll, and no new helper thread. Both capture feature
+configurations need lost-wake and timeout tests. The ordinary command path gaining
+a SignalSender in the non-capture build is added work: count its notifications and
+CPU cost; do not call it unchanged. Preserve Release/shutdown service on all paths. Expiry before render returns an owned failure envelope.
 Renderer stall clocks retain their existing meaning: start at actual render,
-not at validation dispatch. Expiry during a driver operation does not prove last
+not at validation dispatch. Ordinary requests submitted while a combined render
+runs remain accepted under current ordinary admission: their existing submitted_at
+age includes the wait behind it. Count this queued delay and resulting stall
+classifications; do not reset their clocks or claim responsiveness is unchanged. Expiry during a driver operation does not prove last
 use; existing stall/quarantine handling controls retention. No successor combined
 job can pass this one. Fairness against ordinary render work requires explicit
 tests: no indefinite postponement of an admitted job, no validation-induced hold
@@ -108,19 +174,55 @@ release obligation. Validated backing is reconciled under its original retired
 epoch. Clear combined credit only on exact owner consumption with required
 ownership accounted for, not on transfer, cancellation or channel disconnection.
 
-Sender/receiver exit must ring the existing owner wake. A disconnected or
-quarantined worker marks the row for recovery but proves no GPU last-use or
-source-read completion. Keep that row and charges until exact late-result,
-source-ticket destruction, or existing proven-detach/worker-exit evidence permits
-settlement. No unlimited replacement workers. The production adapter must bind
-this to the concrete detach handler before review approval; absence of that
-mapping is an OPEN C6 obligation, not permission to infer proof from EOF.
+Sender/receiver exit must ring the existing owner wake. Record OutputClaim and
+retirement_owner_identity at dispatch: a shared core can outlive an output.
+Renderer dequeue rejects a detached or replaced claim and returns the intact
+envelope through its carried owner route, even when that output is no longer in
+the worker map. Thread liveness is never output ownership.
+
+The existing seat ReleasePending path calls suspend_revoked_native_scanout,
+close_native_owner(DeviceRevoked), then NativeRetirement::poll_seat_release.
+NativeRetirement::poll records CompletedNativeOwner only after poll_shutdown,
+disposition and actual owner destruction. Mode, EOF, quarantine, timeout and
+RetirementFailure do not establish it. Retain combined rows in the accounting
+held by RetirementFailure and forbid replacement over unresolved rows.
+
+For proven-forwarded rows in inbox/waiting/rendering/result phases, a matching
+CompletedNativeOwner may supply the classified-failure proof to settle_combined
+only when the new channels/payload owners participate in that exact destruction
+and disposition. A late result cannot settle twice. This extension needs tests;
+the current receipt does not already cover new channels. Ambiguous enqueue races
+retain the row until ownership is established. Validating rows are untouched:
+they return through validation failure or detached-claim/disconnected-send failure.
+Seat acknowledgement may precede a still-running validator, which holds no device
+resource. NotifyOnExit with outstanding validation stays the current I/O failure,
+not a completion proof. Never infer source-read completion from native retirement.
+
+## Source settlement and held-peer cadence
+
+For this first contract, retain the existing settlement coupling: finish private
+capture drops OwnedRingRead, but source settlement/publication is deferred until
+the combined result is consumed at service 2 (or its exact failure is reconciled).
+No new validation-success owner wake and no independent source-settlement path.
+The ticket finished flag is the source-read fact; publish_releases still journals
+the exact ResourceStatus before confirm_release. Journal EAGAIN retains the work
+for a later owner visit. Retired epochs never publish into a replacement journal.
+
+The held peer 273d98c2e frame() returns only after accepted, presented, predecessor
+released, source_released and frame credit. It cannot offer n+1 while n's source
+release is unknown, so a delayed-release n+2 Budget refusal is NOT a held-lane
+prediction. With settlement at service 2 before Presented at service 3, release
+delay need not add next-offer delay. If publication stalls on journal/ACK or moves
+past presentation, next-offer delay or the peer five-second WAIT timeout is possible. Keep two
+source slots and one frame credit, and model these guards explicitly. Count
+capture/validation/park/render/consumption/release/Presented intervals and journal
+backpressure in any later capture; altered refusals, timeout or cadence are not
+hidden by counting only successful fast-path frames. No capture is selected here.
 
 ## Result contents and acceptance
 
 Result includes job and worker incarnation, declared and validated descriptions,
-retained private backing, source-finished fact, full composition record/display
-list, transform, rendered lease or failure, and phase timestamps/counters only
+retained private backing, source-finished fact, rendered lease or failure, and phase timestamps/counters only
 in diagnostic builds. Validated width/height/stride/extent must equal planned
 metadata. Malformed mismatch retains charges until safe settlement.
 
@@ -145,3 +247,23 @@ renderer/slot deferral/Release/deadline; no premature resource or credit release
 Mutation controls remove move ownership, release-on-consume, cancellation gate,
 and capacity reservation. Prove no intermediate validator success wake reaches
 the owner; error/exit/control wakes remain legitimate and counted.
+
+## Revision 3 review disposition
+
+F1/F4: separate one-deep input/result channels, result drain independent of ordinary
+in_flight. F2: opaque moved plan, no parked-plan join. F3: explicit proof-consuming
+combined quota settlement. F5: common notification/deadline wait in both capture
+configs, same-output priority and ordinary stall age counted. F6: retain coupled
+source settlement, model release-gated held-peer offers and journal/ACK delay.
+C6a-c: output/native identity, exact retirement disposition and independent source
+ticket proof. These are design requirements awaiting implementation tests, not
+existing APIs. No change to the frozen transfer model or its evidence.
+
+The scene-change recommendation is a single conventional fallback using returned
+validated backing, only when description and authority remain valid. This avoids
+requesting another peer copy/validation and avoids a new peer-visible reason for
+host scene activity, but does not establish lower CPU or remove timing channels.
+Count the discarded speculative render and all fallback work. Niltempus has NOT
+selected this policy. Identical-content fast rejection of unnecessary work must
+use host-known exact immutable identity before dispatch, never trust declared
+geometry/pixels as proof of equality; otherwise preserve the owner result check.

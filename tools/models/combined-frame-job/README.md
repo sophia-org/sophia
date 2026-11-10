@@ -76,3 +76,31 @@ reservation, deadline wakeups and scheduler fairness are not proved. Consume
 abstracts credit settlement, never a proof that scanout resources can be freed.
 Scene-change disposition remains an owner decision. No runtime or prototype gate
 is passed by either model, and no CPU/frame or three-service result is claimed.
+
+## Source release / held-peer witness
+
+SourceRelease.tla is a third, uncomposed design projection. source-none.cfg checks
+ReleaseProof and HeldOfferSafe; source-early.cfg deliberately confirms before the
+finished ticket and journal record and must fail ReleaseProof (exit 12).
+source-journal.cfg asks the deliberately false JournalTimeoutAbsent property and
+must fail it (exit 12): render/owner consumption and presentation complete while
+journal room remains blocked until the peer's five-second WAIT. This is a possible
+abstract stall, not a runtime regression finding or an expected frequency.
+
+The model pins two source slots and two sequential frames, with next offer gated
+by observed release and presentation, matching held peer 273d98c2e. It treats the
+other peer success conditions (acceptance/predecessor retirement/credit) as already
+satisfied; they may only add delay in the real path. No overlapping frame credit
+is introduced. Room is a one-bit abstraction of journal/ACK backpressure, not a
+model of four reservations, deferred publication holds or actual ACK offsets.
+Source release before Presented permits the next offer at Presented, so later
+release than validation alone does not imply cadence harm.
+
+Finite clock milestones are 0, 16,667 us (rounded 60 Hz period), 100,000 us
+(ILLUSTRATIVE parked deadline, not a selected production value), 4,999,999 us and
+5,000,000 us (peer WAIT from source). An expired parked job cannot start rendering.
+The journal timeout witness completes rendering before the first period, so it
+does not depend on that illustrative parked bound. Time can jump between these
+milestones; no fairness, measured phase duration, GPU timing or timeout-rate claim
+is made. Additional busy/late schedules need the eventual implementation trace.
+Run the three source-*.cfg with SourceRelease.tla using the same TLC recipe.
