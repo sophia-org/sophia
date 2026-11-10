@@ -100,7 +100,8 @@ Finite clock milestones are 0, 16,667 us (rounded 60 Hz period), 100,000 us
 (ILLUSTRATIVE parked deadline, not a selected production value), 4,999,999 us and
 5,000,000 us (peer WAIT from source). An expired parked job cannot start rendering.
 The journal timeout witness completes rendering before the first period, so it
-does not depend on that illustrative parked bound. Time can jump between these
-milestones; no fairness, measured phase duration, GPU timing or timeout-rate claim
+does not depend on that illustrative parked bound. Present is restricted to the first period to isolate source publication delay
+in the timeout witness; this is not an all-cadences model. Time can jump between
+these milestones; no fairness, measured phase duration, GPU timing or timeout-rate claim
 is made. Additional busy/late schedules need the eventual implementation trace.
 Run the three source-*.cfg with SourceRelease.tla using the same TLC recipe.

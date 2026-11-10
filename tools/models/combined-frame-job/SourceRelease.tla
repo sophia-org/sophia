@@ -29,7 +29,7 @@ Confirm == /\ s.generation > 0 /\ ~s.confirmed
            /\ s' = [s EXCEPT !.confirmed = TRUE, !.pending = @ \ {Slot}, !.badRelease = ~(s.finished /\ s.journaled)]
 ObserveRelease == /\ s.confirmed /\ s.journaled /\ ~s.observed
                   /\ s' = [s EXCEPT !.observed = TRUE]
-Present == /\ s.consumed /\ ~s.presented /\ s.age >= Period
+Present == /\ s.consumed /\ ~s.presented /\ s.age = Period
            /\ s' = [s EXCEPT !.presented = TRUE]
 \* Abstract prior-record ACK making publication room; no automatic fair ACK.
 AckRoom == /\ ~s.room /\ s' = [s EXCEPT !.room = TRUE]
