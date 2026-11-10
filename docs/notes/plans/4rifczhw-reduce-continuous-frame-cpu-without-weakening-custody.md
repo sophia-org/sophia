@@ -20,7 +20,9 @@ It does not reopen their completed exits or replace `todo.md` as the task ledger
 The exit is a separately qualified improvement, or a documented no-change result
 for each selected mechanism. A profile share is not a savings target.
 
-## Current resumption, November 9
+<a id="current-resumption-november-9"></a>
+
+## Current resumption, November 10
 
 **Control-carrier experiment closed device-free; source disposition open.** The
 separate `cpu/sft-control-ring` branch is held at signed `4342177d4` (not merged).
@@ -48,8 +50,8 @@ and child may share CPUs 30,31; owner thread CPU is measured, wall time is not
 reported. Niltempus decides branch disposition and any reopening; recommendation
 is preservation as unmerged research. Frozen source and evidence remain untouched.
 
-**SDK physical-comparison proposal prepared; niltempus decides.** The independent
-SDK mechanism checkpoint `57f4dd3` (docs `ed3d94b`, evidence `7371396c`, review
+**SDK physical comparison completed; no combined saving demonstrated.** The
+independent SDK mechanism checkpoint `57f4dd3` (docs `ed3d94b`, evidence `7371396c`, review
 `6bbb0e40`) removes one redundant receive in a scripted reply drive. A repeated
 real-FileWire screen now compares candidate `cecd880` with control `8c4433d`:
 identical test support, only the reviewed production drive gate differs. Both
@@ -74,9 +76,9 @@ lockfile source identities and README; all peer Rust sources and registry pins
 are unchanged. SDK `0621e10dc` to `da1ad8f` bridge is docs/rustfmt only. Peer
 integration passes 10 tests/fmt/clippy (seal `10dd28ba`); candidate release build
 `73ba2e3f` uses the held recipe in a distinct pool, binary `43d5d339`. No SDK
-publication, vendor update, installed peer or native selection follows.
+publication, vendor update or installed peer change follows.
 
-The unconsumed `~/.local/state/t331/sdk-02/changing` proposal is a single
+The consumed `~/.local/state/t331/sdk-02/changing` package ran one
 host-fixed peer-only ABBA: b1/c1/c2/b2, host `6817e7bca` / binary `e42d0fe9`,
 held control peer `273d98c2e` / `6edd4cc3`, candidate `336bb21` / `43d5d339`.
 Runner, helpers, 1920x24 pixels, two slots, 2120 generations, 60 Hz, one outstanding
@@ -86,16 +88,52 @@ perf/strace in the native run. The existing process-clock, cadence, retirement,
 postflight, cleanup and descriptive latency gates are retained unchanged.
 Package manifest `5602fe9e` has 120 entries/332 pins; 18 preparation suites pass.
 Readiness `cdd9ad1c` passed check-only with zero device opens/connector status
-reads and no attempt. Cached EDID/modes sysfs reads are explicitly included.
+reads before the attempt. Cached EDID/modes sysfs reads are explicitly included.
 Independent package/seal/readiness review `cac2bd40` accepts the prepared proposal.
-No native attempt has run; only niltempus can select and launch it.
+Niltempus launched once; all four arms reached TEST SUCCESS. Cadence, retirement,
+postflight and cleanup pass; the seat is unchanged, tty4 is restored, bound PIDs
+are absent and temporary storage is gone. The window is closed. Root raw-record
+recount and seal `60d02dda` at
+`~/.local/state/sophia-sdk-lean-native-result-01/REPORT.md` verify the manifest,
+332 pins, 32 input hashes per arm and the 245-file post-run inventory. Independent
+recount `e2a719b6` matches every figure; root acceptance `94c600ad` records that
+match and the latency qualification below. Source disposition remains open;
+research branches, worktrees and pools are held unchanged.
 
-After review and timing handoff, niltempus may select the physical comparison by
-launching the package; agents launch nothing native. It takes four roughly
-60-second arms plus checks, reports TEST PROGRESS then TEST SUCCESS/FAILED,
-and refuses repeats. A successful run qualifies collection, not improvement or
-adoption. A non-writable later drive round may defer input/EOF to the next outer
-poll; level readiness preserves progress but does not prove equal latency.
+**The peer component was lower; the combined result was higher in this block.**
+Combined control mean [700.596013,701.109918], candidate
+[709.673795,710.186635], candidate minus control
+[+8.563877,+9.590621] us/completed frame (midpoint about +1.30%). Pair midpoint
+deltas are +25.788269 and -7.633770 us/frame, opposite directions. Peer mean
+difference is [-5.731931,-5.575361] us/frame, lower in both pairs; Session mean
+difference is [+14.295808,+15.165983]. The host is fixed, but this block does not
+identify why its accounted CPU changed. Do not infer causal work transfer, or
+subtract the peer result to assert a system saving. These are accounting boundary
+intervals, not confidence intervals or future-effect bounds.
+
+The prewritten 5% nonregression gate passes (worst boundary comparison +1.368923%);
+it permits a small increase and does not mean equal cost. Demonstrated saving and
+production adoption are false. The combined interval does not contain zero; call
+it a higher combined observation with pair disagreement, not the earlier
+zero-containing inconclusive result. No automatic repeat, pooling or promotion.
+Recommendation: retain held production/control pins; SDK source disposition and
+publication remain separate decisions.
+
+All completion cadence gates pass: b1/b2 gaps 16666..16668 us, c1/c2
+16667..16668 us, zero late sampler slots. Peer offer-to-Presented pair differences
+are median +2/+3 us, p99 0/+3 us; the second candidate's maximum is 17384 us
+versus its control's 16804 us (+580 us), retained without a causal claim. It is
+generation 688 in c2, with native reported latency 17129 us. Peer-terminal minus
+native-completed timestamps for generations 687/688/689 are -491/+255/-472 us;
+these cross-domain differences do not locate a literal post-completion delay.
+The independent review withdrew that interpretation in ADDENDUM-01.md
+(sha256 `fcf2f04e`); raw values and verdict are unchanged.
+Submission-to-completion median pair differences are -2/+4 us. These are
+descriptive distributions, not input-to-photon or general responsiveness proof.
+A non-writable later drive round may defer input/EOF to the next outer poll;
+level readiness preserves progress but does not prove equal latency. No native
+syscall count was collected, so the fixture's removed-probe count is not a
+per-frame attribution. TEST SUCCESS qualifies collection, not improvement.
 
 Immutable-image feasibility selected no new mechanism. M1/M2 remain deferred,
 B6 retained, M3/T4 parked. Carrier and owned-ring-setup source disposition remain
