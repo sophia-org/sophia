@@ -66,15 +66,22 @@ retirement receipt is presumed to cover newly introduced payload owners.
 Source-release evidence `sophia-framejob-source-release-model-02` (`0d03178b`)
 checks 831 generated / 290 distinct states, plus a journal-stall timeout witness
 and early-confirm refusal control. The witness restricts presentation to 16,667 us
-and reaches the held peer's five-second WAIT with source publication blocked.
+and reaches a five-second WAIT with abstract publication room blocked. Review
+`58230480` corrects its applicability: admission reserves four frame responses,
+so arbitrary unavailable room is outside this contract, not a demonstrated
+held-peer timeout path. No unreserved consumer of that capacity was identified.
 The prior `-01` (`e3144657`) allowed late presentation and is retained as history.
-Clock milestones, a 100ms illustrative parked bound and journal room are abstract;
-no timeout rate or production bound follows. These projections remain uncomposed.
+Clock milestones and a 100ms parked bound are illustrative. These projections
+remain uncomposed; no runtime timing claim follows.
 
 The held peer waits for source release and Presented before the next offer:
 review's initial n+2 busy-slot Budget conjecture does not apply. Settlement at
-service 2 before Presented need not delay the next offer; journal/ACK stalls can.
-Revision 3 is frozen for review. The next owner choice is explicit conventional
+service 2 before Presented need not delay the next offer. Review `58230480`
+accepts revision 3 facts as adequate for the scene decision. Revision 4 at signed
+`2b9e53726` records its A1 one-way forwarding witness and A2 reserved-capacity
+correction; evidence sibling `sophia-framejob-rev4-correction-01` preserves the
+review and diff without altering frozen models. Prototype/production gate is held.
+The next owner choice is explicit conventional
 fallback versus a new obsolete-scene refusal, with no reuse of peer-identity
 Stale. Recommendation is fallback limited to scene-input churn with valid
 description and authority, counting the discarded render and all fallback work;
