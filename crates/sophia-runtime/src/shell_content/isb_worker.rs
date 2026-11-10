@@ -50,7 +50,7 @@ struct Job {
     deadline: Instant,
     cancelled: Arc<AtomicBool>,
     #[cfg(test)]
-    combined: Option<combined::Route>,
+    combined: Option<combined::Route<combined::ProbePlan>>,
 }
 
 struct Pending {
@@ -60,7 +60,7 @@ struct Pending {
     cancelled: Arc<AtomicBool>,
     submitted: bool,
     #[cfg(test)]
-    combined: Option<Arc<()>>,
+    combined: Option<Arc<combined::Identity>>,
 }
 
 /// Result-channel disconnection alone cannot wake an eventfd waiter. Signal

@@ -1,5 +1,9 @@
 # Stage 1: test-only validation credit handoff
 
+This describes the frozen stage 1 source at 2269c4d33, accepted with validation
+seal a5e5f616. The next source checkpoint extends the fixture as described in
+[PAYLOAD-SEAM.md](PAYLOAD-SEAM.md); stage 1 evidence remains unchanged.
+
 Niltempus approved SEAM-PROPOSAL. This first frozen diff requires source review
 before any build. Formatting and source-layout checks are not compilation/test
 evidence. No production, device, runtime or CPU claim follows.
