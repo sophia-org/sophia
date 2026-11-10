@@ -50,6 +50,18 @@ It is not a promise about all loop iterations or all waits in a busy desktop.
    obligations. Linux first; describe required capture/transfer/lifetime/display
    properties for future per-OS adapters, without a new generic platform layer.
 
+## Selected worker placement, November 10
+
+Niltempus explicitly approved keeping the separate validation worker and handing
+its validated result directly to the renderer, bypassing the intermediate owner
+visit. CPU per completed frame and security are the primary acceptance criteria;
+validation isolation and responsiveness remain constraints. This supersedes the
+initial same-worker wording below: one logical job now spans two existing threads.
+The direct transfer protocol is specified in
+`tools/models/combined-frame-job/TRANSFER.md`. It is a proposed internal contract,
+not a production API or authority-review pass. Scene-churn disposition remains
+an owner decision; no new refusal reason or fallback has been selected.
+
 ## Proposed internal ownership interface
 
 FrameReservation remains owner-local: exact connection/grant/output/candidate,
@@ -158,7 +170,7 @@ Required contract refinements, accepted for the next revision:
   result retaining backing; do not assert it impossible. Gate dispatch against
   current in-flight/stalled/quarantined state.
 
-Two owner decisions remain before completing the contract/model:
+Review history (thread placement is now selected above; scene choice remains):
 
 1. Execution placement: validation on the renderer thread (new contention and
    stall-budget implications) versus retaining both existing workers and handing

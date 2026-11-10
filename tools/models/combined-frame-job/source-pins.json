@@ -15,6 +15,8 @@
     "crates/sophia-backend-live/src/scanout/rendered_scanout/exporter/discovery/worker_export.rs": "162f2ff9480977073f7a1f55b761912cd1cafde87593927daedc3b69900aaac4",
     "crates/sophia-runtime/src/shell_transport/owned_copy.rs": "1cca8228f11c4ebdf5ed871a9ffdbc445caa0ff37de8e80dc497ba3888ad662c",
     "crates/sophia-runtime/src/shell_transport/owned_copy/admission.rs": "cd9a8d01b1ad4c70ac74ecefa600ab55934dcaa00abbbe4c70c2e0af454b8394",
-    "crates/sophia-runtime/src/shell_content/isb_jobs.rs": "fa2a6b80eabf14c2d8d39fa8851d6815f650238e5f739c488e5d9327366d0b96"
+    "crates/sophia-runtime/src/shell_content/isb_jobs.rs": "fa2a6b80eabf14c2d8d39fa8851d6815f650238e5f739c488e5d9327366d0b96",
+    "crates/sophia-backend-live/src/production_visual_runtime/projection/retirement.rs": "d970490663ac95a41acf625603efaf72fab68c726752e684c040a098e124cda3",
+    "crates/sophia-runtime/src/shell_content/candidates.rs": "f44884d3fb08142485fe52cb0c6670bb411e48fc3dc761c8ce6853d62ff71743"
   }
 }
