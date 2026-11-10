@@ -233,3 +233,31 @@ composition, not binding to the child's own authenticated attach. The source
 challenge in sophia-control-carrier-lifecycle-challenge-claude-01 records this
 limit and the three distinct exit orderings. No production source/API changes,
 real custody proof, census, timing, native run or integration are selected.
+
+## Lifecycle acceptance and next comparison gate
+
+Checkpoint `4cb4c9bc3` is accepted as test-only composition: probe-05 seal
+`d3cac90d`, independent review `d23d1d46`, acceptance `d6618dd5`. Normal receipts,
+withdrawal after processing, synchronized accept-then-exit, and writer clunk after
+processing retain owner custody as specified. The harness still owns the attach
+and fids; supplied verdicts are not actual grant-teardown proof. Complete child
+binding, FrameSubmit lifetime/replacement and journal composition before the
+matched counts-only comparison. Preserve the intentionally stricter receipt gate
+in the candidate and report its checks; do not silently equalize it away.
+
+The approved continuation retains separate SDK and immutable-image investigations
+under 4rifczhw. Neither is an additional carrier treatment or permission to move
+journal events onto a queue. No production API or native run is selected.
+
+## Binding seam limit
+
+Consult `sophia-control-carrier-binding-consult-claude-01` (amended seal
+`01bfc758`) finds no export-visible FrameSubmit fid identity: Connection owns
+clunk/replacement checks and ShellFiles ignores Plain release. The child-owned
+fixture can prove actual attach teardown and reusable-writer lifetime, plus
+characterize socket EBADF/replacement, but cannot prove absent carrier coupling.
+Do not add fixture flags and call them parity. Production integration must select
+an export-visible registration lifetime with its wire/allocation and authority
+review. No such production change is selected here. Whole-attach revoke clears
+queued proposals; carrier-only pipe closure with a live attach does not. The
+probe README records both distinct assertions.

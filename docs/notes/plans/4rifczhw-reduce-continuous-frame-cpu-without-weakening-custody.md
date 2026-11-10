@@ -51,6 +51,31 @@ bounded child-process composition for receipt/withdrawal/exit and the late write
 clunk boundary. The harness owns the 9P attach, not the child; full binding and
 journal lifecycle composition still precede a matched census. Supplied verdicts
 prove wiring only. No production path is added.
+Lifecycle composition at `4cb4c9bc3` is accepted (probe-05 `d3cac90d`,
+independent review `d23d1d46`, acceptance `d6618dd5`). Its child still uses a
+harness-owned attach; this is not complete binding or grant-teardown proof.
+Niltempus selected the continuation: finish binding/journal composition and the
+matched device-free census; independently reconcile the existing SDK empty-probe
+candidate `f522b0c` with the current lean path; then write a bounded immutable-image
+feasibility note using the previous ISB results. Keep these treatments separate.
+The SDK vendor snapshot must be changed through its signed upstream import, never
+by editing vendor/source. No new carrier production API, shared CQ, journal
+replacement, extra buffering or native launch is selected. T4 stays parked;
+M1/M2 stay deferred. Counts do not establish CPU savings, and the immutable-image
+note must account for producer allocation/fill/seal/transfer/validation/reclamation
+before proposing a worker removal. Stop autonomous execution at a reviewed owner
+physical-run handoff, not at an unreviewed build.
+
+The [immutable-image feasibility read](../investigations/p8cn6w2r-sealed-images-do-not-by-themselves-remove-the-validation-service.md)
+closes with no source change: the historical sealed path still validated on a
+worker, and its per-image lifecycle must be included before proposing a reversal.
+No worker-free mechanism was found by that bounded contract/history read.
+SDK reconciliation also found the previous sft-sdk-01 native ABBA: independent
+audit reports delta [-42.5,+37.5] us/frame, nonregression pass, saving inconclusive,
+no adoption. That older SFT result is not a current-lean result or a detection
+floor. Current-lean call-site reproduction remains required before a new SDK
+candidate or physical run; do not silently promote the old branch.
+
 Ring-01 evidence stays frozen; a4f599e7a source disposition remains OPEN and must
 not be folded into a carrier effect claim.
 

@@ -30,6 +30,11 @@ and the [decision to separate desktop readiness from application proofs](../deci
 
 ## Desktop composition
 
+The [sealed-image feasibility read](../investigations/p8cn6w2r-sealed-images-do-not-by-themselves-remove-the-validation-service.md)
+accounts for producer, validation and reclamation costs and stops at the missing
+worker-removal mechanism. The historical sealed path already used a validation
+worker; no new data plane, authority change or native comparison is selected.
+
 The [current-lean function profile](../investigations/h3gtssf5-which-functions-consume-cpu-on-the-current-lean-sft-path-without-changing-responsiveness.md)
 is qualified with an independent recount: 1069 samples, no recorded loss and clean
 cadence/cleanup. The peer outbox symbol resolves to inlined pixel filling, not

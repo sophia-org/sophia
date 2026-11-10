@@ -19,6 +19,7 @@ struct Fixture {
     wire: ShellFileWire,
     owner_socket: UnixStream,
     client: Pipeline,
+    root: Fid,
     frame: Fid,
     writer_fid: Fid,
     binding: Binding,
@@ -78,6 +79,7 @@ impl Fixture {
             wire,
             owner_socket,
             client,
+            root,
             frame,
             writer_fid,
             binding,
@@ -399,5 +401,45 @@ fn writer_clunk_after_processing_does_not_erase_custody_or_confirm_the_next_atte
     assert_eq!(fixture.wire.export().submission_watermark, 20);
 }
 
+#[test]
+fn frame_fid_clunk_and_replacement_are_connection_checks_not_export_identity() {
+    let mut fixture = Fixture::new();
+    fixture.client.clunk(fixture.frame).unwrap();
+    assert_eq!(reply(&mut fixture.wire, &mut fixture.client), Reply::Clunk);
+    let calls = fixture.calls();
+    let bytes = commit(20, 0);
+    assert_eq!(fixture.write(&bytes), Reply::Error(Errno::EBADF));
+    assert_eq!(
+        fixture.calls(),
+        calls,
+        "clunked fid fails before export check"
+    );
+    assert!(fixture.wire.export().inbound.is_empty());
+    assert_eq!(fixture.wire.export().submission_watermark, 0);
+    let (_, replacement) = fixture
+        .client
+        .walk(fixture.root, &[b"frame-submit"])
+        .unwrap();
+    assert!(matches!(
+        reply(&mut fixture.wire, &mut fixture.client),
+        Reply::Walk(_)
+    ));
+    fixture.client.lopen(replacement, 1).unwrap();
+    assert!(matches!(
+        reply(&mut fixture.wire, &mut fixture.client),
+        Reply::Lopen { .. }
+    ));
+    fixture.frame = replacement;
+    assert_eq!(fixture.write(&bytes), Reply::Write(bytes.len() as u32));
+    assert_eq!(fixture.wire.export().inbound.len(), 1);
+    assert_eq!(fixture.wire.export().submission_watermark, 20);
+}
+
 #[path = "shell_frame_control_carrier_auth_process.rs"]
 mod persistent;
+
+#[path = "shell_frame_control_carrier_auth_journal.rs"]
+mod journal;
+
+#[path = "shell_frame_control_carrier_auth_child.rs"]
+mod child_attach;

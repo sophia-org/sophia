@@ -248,3 +248,36 @@ Checkpoint 52ea995d4 was accepted as device-free correctness evidence by review
 attempts conservatively as unknown on disconnect; the client publication state
 follow-up separates them without changing host custody. Remaining transport and
 authority gates above are unchanged.
+
+## Child-owned attach and journal composition follow-up
+
+The next fixture moves Pipeline auth/attach/walk/lopen into the child for both
+socket and carrier treatments. Its token is supplied by the child but validated
+against the host's one live reusable writer before Binding installation and on
+every dequeue; connection and epoch remain host-derived. A wrong bootstrap token
+refuses before installation, effects or receipt endpoint creation. No getter or
+production accessor was added.
+
+Tests cover three identical accepted records, actual child writer clunk between
+processing and delivery (accepted receipt remains valid, next attempt ESTALE),
+and child socket close with a pending receipt. Whole-attach close invokes the
+existing wire reset and revoke: queued inbound proposals are cleared, watermark
+unchanged, no receipt is published, and further dequeues fail. The child's last
+attempt remains unknown with only the first two confirmed. The revoked/empty
+state is compared with a real 9P control closed after three writes. This differs
+from the earlier pipe-only close test, whose still-live attach retains proposals.
+No admitted-resource or renderer teardown is exercised.
+
+A separate socket characterization proves FrameSubmit clunk returns EBADF before
+an export check, while a replacement fid accepts the next write. The export does
+not retain FrameSubmit identity: its Plain release is ignored. This is NOT carrier
+fid-lifetime parity. Integration must select an export-visible registration
+lifetime (existing writer or a new tracked handle) and review that contract; no
+adapter-side flag or production lifecycle mechanism is introduced by these tests.
+Supplied authentication remains wiring evidence, not actual Factotum/grant proof.
+
+Both treatments also read events and send idle ACK over real 9P, with identical
+published bytes and stale acknowledged offsets. Full-journal tests prove the
+receipt spends no journal capacity and covering ACK applies before admission
+backpressure; only a later successful retry confirms it. These are test-owned
+completion and journal fixtures, not a native frame or a transport cost result.
