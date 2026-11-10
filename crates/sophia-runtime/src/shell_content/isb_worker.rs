@@ -49,6 +49,8 @@ struct Job {
     bytes: usize,
     deadline: Instant,
     cancelled: Arc<AtomicBool>,
+    #[cfg(test)]
+    combined: Option<combined::Route>,
 }
 
 struct Pending {
@@ -57,6 +59,8 @@ struct Pending {
     deadline: Instant,
     cancelled: Arc<AtomicBool>,
     submitted: bool,
+    #[cfg(test)]
+    combined: Option<Arc<()>>,
 }
 
 /// Result-channel disconnection alone cannot wake an eventfd waiter. Signal
@@ -126,12 +130,19 @@ impl IsbValidationWorker {
                 let mut raster = None;
                 while let Ok(job) = jobs.recv() {
                     let id = job.id;
+                    #[cfg(test)]
+                    let (job, combined) = combined::take_route(job);
                     let result = validate(
                         job,
                         validation_bytes,
                         #[cfg(feature = "experimental-draw")]
                         &mut raster,
                     );
+                    #[cfg(test)]
+                    let result = match combined::forward(combined, id, result) {
+                        Some(result) => result,
+                        None => continue,
+                    };
                     if completion_sender
                         .send(IsbValidationCompletion { job: id, result })
                         .is_err()
@@ -197,6 +208,8 @@ impl IsbValidationWorker {
             deadline,
             cancelled: Arc::new(AtomicBool::new(false)),
             submitted: false,
+            #[cfg(test)]
+            combined: None,
         });
         Ok(id)
     }
@@ -223,6 +236,8 @@ impl IsbValidationWorker {
             bytes: pending.bytes,
             deadline: pending.deadline,
             cancelled: pending.cancelled.clone(),
+            #[cfg(test)]
+            combined: None,
         };
         match self.sender.try_send(job) {
             Ok(()) => {
@@ -365,6 +380,9 @@ fn sealed_validation(
     })?;
     IsbPixelValidation::new(mapping).map_err(|_| IsbValidationFailure::Malformed)
 }
+#[cfg(test)]
+#[path = "../../tests/support/combined_frame_credit.rs"]
+mod combined;
 mod owned_copy;
 
 #[cfg(feature = "experimental-draw")]
@@ -420,6 +438,8 @@ impl IsbValidationWorker {
             bytes: pending.bytes,
             deadline: pending.deadline,
             cancelled: pending.cancelled.clone(),
+            #[cfg(test)]
+            combined: None,
         };
         match self.sender.try_send(job) {
             Ok(()) => {

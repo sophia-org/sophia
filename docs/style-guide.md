@@ -600,3 +600,11 @@ status-before-slot-release ordering and retired worker custody without exposing
 production mutation hooks. Test bodies stay in `tests/support/owned_ring_export.rs`
 `tests/support/shell_owned_copy_owner.rs` and `tests/support/owned_ring_transport.rs`; their source-layout exceptions
 cover only those fixture declarations.
+
+The combined-frame research credit fixture mounts
+`tests/support/combined_frame_credit.rs` inside the existing validation worker.
+Its `cfg(test)` fields and dispatch glue tag the real pending rows and route real
+validated pixels without introducing a second allocator. Assertions live under
+`tests/support/combined_frame_credit/`; ordinary completion behavior is unchanged.
+The two exact layout exceptions cover that test wiring and the ordinary ring Job
+initializer, not production APIs or a renderer retirement proof.

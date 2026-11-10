@@ -1,6 +1,7 @@
 # Proposed test-only real owner seam
 
-Status: awaiting niltempus approval. Research branch design/combined-frame-job;
+Status: niltempus approved writing the test-only seam, with frozen-diff review
+before any build. Research branch design/combined-frame-job;
 accepted baseline 20070959b, owner-turn review 2350ce57. This is the concrete next
 scope requested by the review, not a production change or a physical-run request.
 CPU/frame and security remain primary; correctness and ownership come before a
@@ -61,7 +62,7 @@ mounts/fields/methods needed to reach their actual private state. Follow existin
 source-layout test mounts. No production visibility widening, feature flag, new
 runtime API, dependency, unsafe code, authority shortcut or second owner. No new
 thread or polling path in the non-test program. Existing take_completed behavior
-is unchanged. No Rust source is edited until approval.
+is unchanged. Approval permits the ordered research edits, not production changes.
 
 A cfg(test) implementation can establish behavior of that research route, not its
 presence in a normal binary. If real-seam access or generic forwarding requires a

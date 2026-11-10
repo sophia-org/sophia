@@ -22,6 +22,8 @@ impl IsbValidationWorker {
             bytes: pending.bytes,
             deadline: pending.deadline,
             cancelled: pending.cancelled.clone(),
+            #[cfg(test)]
+            combined: None,
         };
         match self.sender.try_send(job) {
             Ok(()) => {
