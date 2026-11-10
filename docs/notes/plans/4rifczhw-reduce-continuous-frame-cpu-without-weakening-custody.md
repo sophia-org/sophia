@@ -48,12 +48,58 @@ and child may share CPUs 30,31; owner thread CPU is measured, wall time is not
 reported. Niltempus decides branch disposition and any reopening; recommendation
 is preservation as unmerged research. Frozen source and evidence remain untouched.
 
-The separate SDK `57f4dd3` mechanism checkpoint (docs follow-up `ed3d94b`, evidence
-`7371396c`, independent review `6bbb0e40`) removes one redundant receive in the
-scripted reply drive; dispatch is unchanged. This is not a per-frame or native
-saving. No vendor or native peer pin changed; the earlier pre-lean sft-sdk-01
-inconclusive comparison is not promoted. Immutable-image feasibility selected no
-new mechanism. M1/M2 remain deferred, B6 retained, M3/T4 parked.
+**SDK physical-comparison proposal prepared; niltempus decides.** The independent
+SDK mechanism checkpoint `57f4dd3` (docs `ed3d94b`, evidence `7371396c`, review
+`6bbb0e40`) removes one redundant receive in a scripted reply drive. A repeated
+real-FileWire screen now compares candidate `cecd880` with control `8c4433d`:
+identical test support, only the reviewed production drive gate differs. Both
+workspace gates pass 1018 tests; both 4096-cycle debug correctness tests pass.
+Release traces find dispatch unchanged and one fewer EAGAIN receive per reply.
+Three untraced pairs give candidate minus control -570.2783, -569.7703,
+-452.3542 ns per scripted cycle, with separated observed ranges. Root seal
+`05dfcce6`, independent recount `550a39ed` and acceptance `74b947e6` agree.
+The prewritten result is a native-comparison decision for niltempus, not adoption.
+The initial libtest-prefix parser refusal is retained and excluded before the
+complete block; no prior paired result or decision existed.
+
+One FrameOpened head per scripted cycle is not the native terminal/resource/
+release mix or full stream lifecycle. Do not multiply this fixture difference
+by historical recvfrom counts to predict native savings. Clock overhead remains;
+only poll_io is timed, not enqueue, head consumption or scripted server work.
+Older pre-lean sft-sdk-01 stays inconclusive and separate. Native effect can be
+small or inconclusive; prior spread is neither a floor nor a selection threshold.
+
+Pins-only peer `336bb21` on held `273d98c2e` changes five SDK revisions, matching
+lockfile source identities and README; all peer Rust sources and registry pins
+are unchanged. SDK `0621e10dc` to `da1ad8f` bridge is docs/rustfmt only. Peer
+integration passes 10 tests/fmt/clippy (seal `10dd28ba`); candidate release build
+`73ba2e3f` uses the held recipe in a distinct pool, binary `43d5d339`. No SDK
+publication, vendor update, installed peer or native selection follows.
+
+The unconsumed `~/.local/state/t331/sdk-02/changing` proposal is a single
+host-fixed peer-only ABBA: b1/c1/c2/b2, host `6817e7bca` / binary `e42d0fe9`,
+held control peer `273d98c2e` / `6edd4cc3`, candidate `336bb21` / `43d5d339`.
+Runner, helpers, 1920x24 pixels, two slots, 2120 generations, 60 Hz, one outstanding
+frame and terminal-only lean workload stay fixed. Normal host features, peer
+compiler graph parity and boot-bound artifact identities are enforced. No
+perf/strace in the native run. The existing process-clock, cadence, retirement,
+postflight, cleanup and descriptive latency gates are retained unchanged.
+Package manifest `5602fe9e` has 120 entries/332 pins; 18 preparation suites pass.
+Readiness `cdd9ad1c` passed check-only with zero device opens/connector status
+reads and no attempt. Cached EDID/modes sysfs reads are explicitly included.
+Independent package/seal/readiness review `cac2bd40` accepts the prepared proposal.
+No native attempt has run; only niltempus can select and launch it.
+
+After review and timing handoff, niltempus may select the physical comparison by
+launching the package; agents launch nothing native. It takes four roughly
+60-second arms plus checks, reports TEST PROGRESS then TEST SUCCESS/FAILED,
+and refuses repeats. A successful run qualifies collection, not improvement or
+adoption. A non-writable later drive round may defer input/EOF to the next outer
+poll; level readiness preserves progress but does not prove equal latency.
+
+Immutable-image feasibility selected no new mechanism. M1/M2 remain deferred,
+B6 retained, M3/T4 parked. Carrier and owned-ring-setup source disposition remain
+niltempus's decisions; all experimental source/evidence is held unchanged.
 
 Earlier native profile and owned-ring setup history follows; its source disposition
 remains separately open.
