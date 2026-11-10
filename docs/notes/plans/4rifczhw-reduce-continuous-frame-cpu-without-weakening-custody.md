@@ -55,10 +55,31 @@ distinct states, complete checking and weakly fair owner withdrawal without work
 fairness. Three action mutations violate unique ownership, retained credit and
 the cancellation gate. Two initial parser refusals are retained. Before/after
 identity is the same clean signed tree. This is uncomposed with the preliminary
-model; it proves neither scheduler progress nor runtime behavior. Reviewer has
-been asked for a bounded read-only challenge; acceptance is pending. The next
-owner choice is explicit conventional fallback versus a new obsolete-scene
-refusal, with no reuse of peer-identity Stale. Neither is selected.
+model; it proves neither scheduler progress nor runtime behavior. Review
+`sophia-framejob-transfer-review-claude-01` (`9faff6f7`) accepts the frozen design
+evidence and identifies six independent topology requirements. Revision 3 at
+`56790ddba` addresses them with dedicated bounded input/result channels, opaque
+moved plan, explicit combined-credit settlement, deadline-aware renderer wake,
+ordinary stall-cost accounting and exact native/source disposition. No existing
+retirement receipt is presumed to cover newly introduced payload owners.
+
+Source-release evidence `sophia-framejob-source-release-model-02` (`0d03178b`)
+checks 831 generated / 290 distinct states, plus a journal-stall timeout witness
+and early-confirm refusal control. The witness restricts presentation to 16,667 us
+and reaches the held peer's five-second WAIT with source publication blocked.
+The prior `-01` (`e3144657`) allowed late presentation and is retained as history.
+Clock milestones, a 100ms illustrative parked bound and journal room are abstract;
+no timeout rate or production bound follows. These projections remain uncomposed.
+
+The held peer waits for source release and Presented before the next offer:
+review's initial n+2 busy-slot Budget conjecture does not apply. Settlement at
+service 2 before Presented need not delay the next offer; journal/ACK stalls can.
+Revision 3 is frozen for review. The next owner choice is explicit conventional
+fallback versus a new obsolete-scene refusal, with no reuse of peer-identity
+Stale. Recommendation is fallback limited to scene-input churn with valid
+description and authority, counting the discarded render and all fallback work;
+it avoids a new scene-change refusal signal but does not establish lower CPU.
+Neither policy is selected. Runtime/prototype gate remains held.
 
 Preliminary design-model evidence `sophia-combined-frame-job-model-01`, seal
 `4c811ba9`, checks 353 generated / 189 distinct states and fair owner withdrawal
