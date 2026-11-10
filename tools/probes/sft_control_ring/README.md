@@ -162,7 +162,9 @@ EOF, the child's Client disconnects unknown, and all three owner records remain.
 For exit with a receipt pending, the owner first processes the third attempt,
 then sends E over the control stream; the child disconnects unknown and exits.
 Only after child termination does the owner poll the pidfd, observe Exited, and
-close the pending transport without delivery. This pins accept -> exit -> poll,
+close the pending transport without delivery. Child transport exit leaves the
+harness's 9P authority live; real grant death and owner teardown are unproved.
+This pins accept -> exit -> poll,
 not exit-before-capture or write-after-reader-close. Every case compares the
 remaining export state and records with three actual socket-framed Twrites.
 

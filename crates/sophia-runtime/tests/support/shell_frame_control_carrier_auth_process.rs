@@ -138,10 +138,12 @@ fn run(mode: u8) {
     }
     equal(control.wire.export(), fixture.wire.export());
     assert_eq!(fixture.wire.export().inbound.len(), 3);
-    assert_eq!(
-        control.wire.export_mut().take_inbound(),
-        fixture.wire.export_mut().take_inbound()
-    );
+    for _ in 0..3 {
+        let expected = control.wire.export_mut().take_inbound().unwrap();
+        assert_eq!(fixture.wire.export_mut().take_inbound(), Some(expected));
+    }
+    assert!(control.wire.export_mut().take_inbound().is_none());
+    assert!(fixture.wire.export_mut().take_inbound().is_none());
 }
 
 #[test]
