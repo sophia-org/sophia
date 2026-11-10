@@ -159,8 +159,51 @@ PID was gone, with a setsid recorder, fd 0 /dev/null and separate logs. Independ
 validation review `sophia-framejob-stage1-validation-review-claude-01` (`80ebfe6f`)
 accepts the evidence and its limits. The mutation worktree was removed cleanly;
 the research worktree stays pinned. No production change, native launch, timing,
-three-service result, CPU claim, merge or push follows. Next source step is the
+three-service result, CPU claim, merge or push follows. The next stage carries the
 opaque payload and per-job forwarding witness, reviewed before any build.
+
+Stage 2 final source `9fd03c08c` (tree `a14eca12`), frozen in
+`sophia-framejob-payload-seam-source-03` (`33ac9fd7`), follows `c30bc8b7d` and
+`3ce427768`. Each head received source acceptance from
+`sophia-framejob-stage2-review-claude-01` before compilation. Only two
+cfg(test) field types changed in the existing worker file; its loop, validate and
+take_completed remain textually unchanged. Route<P>/ReturnedValidation<P> and the
+transport helpers require only Send + 'static. Job uses one concrete fixture
+instantiation; a distinct payload exercises the helper only. No production-generic
+worker or cross-crate bridge was introduced. This does not define the real scene
+plan or prove its permitted-reference eligibility.
+
+The per-job Arc identity holds a one-way Release-after-successful-move witness,
+read with Acquire; it grants no submission, publication or release authority.
+A private one-place return channel holds the opaque plan before ordinary failure
+completion, adding no owner descriptor wake. Its per-submit allocation is fixture
+cost, not a proposed free production mechanism. The Full panic is fixture-only;
+a production return path must not panic and break every pending job. Abandonment
+may dispose of the fixture payload on either thread. Move/store death and the
+lost-result reclamation gap remain unproved. The final fixture uses a private
+immutable Arc token and an external Weak observer to check payload destruction,
+while retaining descriptor identity checks; its allocation is fixture-only too.
+
+Final-head validation `sophia-framejob-payload-seam-validation-03` (`b558f8bb`)
+records ten targeted tests, eight ordinary/shutdown controls, four named
+assertion-red mutations and restored ten passing. Mutations cover a premature
+witness, absent witness, missing plan return specifically on validation Err, and
+a deliberately retained payload detected after ordinary completion. Full isolated
+xtask check and fmt exit 0 on unchanged clean G `9fd03c08c`, with 809 strict Rust
+ok summaries and zero FAILED summaries. The mutation copy was removed cleanly;
+research stays pinned. Independent final validation review
+`sophia-framejob-stage2-validation-review-claude-01` (`3ade124b`) accepts this
+checkpoint and its limits.
+
+The prior records remain separate: validation-01 (`5b03bf96`) failed six clippy
+assertion-style checks on `c30bc8b7d`; validation-02 (`8d9d5a06`) on `3ce427768`
+failed an immediate nonblocking socket-EOF assertion in the parallel suite despite
+passing focused checks. No specific cause of the EOF timing was proved. The
+replacement directly checks Rust payload lifetime without a sleep or an assumption
+about all OS references. Neither failed run qualifies the final head. Next is
+backend-local dedicated retained-Release capacity, still subject to frozen source
+review; it cannot establish a runtime/backend cross-crate proof. Production/native
+gates remain held, with no timing or CPU/frame result.
 
 Preliminary design-model evidence `sophia-combined-frame-job-model-01`, seal
 `4c811ba9`, checks 353 generated / 189 distinct states and fair owner withdrawal
