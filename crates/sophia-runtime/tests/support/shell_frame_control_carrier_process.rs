@@ -9,7 +9,7 @@ use sophia_control_ring_probe::wake::{self, Reader, Ready, Writer};
 use std::io::{Read, Write};
 use std::os::fd::AsFd;
 #[path = "../../../../tools/probes/sft_control_ring/tests/support/process.rs"]
-mod fixture;
+pub(super) mod fixture;
 
 #[test]
 fn persistent_process_uses_real_export_and_ignores_duplicate_hints_before_capture() {

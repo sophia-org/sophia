@@ -1,13 +1,12 @@
 //! Real child SQ publications through the authenticated adapter. The harness
 //! owns 9P setup/control; supplied verdicts do not bind the child to a real grant.
+use super::super::process::fixture as process;
 use super::*;
 use rustix::{
     event::Timespec,
     process::{Pid, PidfdFlags, pidfd_open},
 };
 use sophia_control_ring_probe::wake::Ready;
-#[path = "../../../../tools/probes/sft_control_ring/tests/support/process.rs"]
-mod process;
 
 const NORMAL: u8 = 0;
 const WITHDRAW: u8 = 1;
