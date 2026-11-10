@@ -56,7 +56,7 @@ Niltempus explicitly approved keeping the separate validation worker and handing
 its validated result directly to the renderer, bypassing the intermediate owner
 visit. CPU per completed frame and security are the primary acceptance criteria;
 validation isolation and responsiveness remain constraints. This supersedes the
-initial same-worker wording below: one logical job now spans two existing threads.
+initial same-worker sketch: one logical job now spans two existing threads.
 The direct transfer protocol is specified in
 `tools/models/combined-frame-job/TRANSFER.md`. It is a proposed internal contract,
 not a production API or authority-review pass. Scene-churn disposition remains
@@ -78,9 +78,10 @@ work, then dispatches. It MUST NOT manufacture an admitted resource lease for
 unvalidated pixels. Service 2 validates the returned identities and current
 state, settles resources and candidate state, and uses the existing tracked DRM
 submission. Service 3 observes exact completion and publishes terminal/release
-facts. Failure or stale scene at service 2 refuses/discards with original charges
-retained until each last-use proof arrives; no automatic rerender or cross-epoch
-fallback. Unsupported cases choose the existing path before admission.
+facts. Authority or validated-description failure retains original charges until
+each last-use proof arrives. Scene-only churn is a separate unselected policy:
+explicit conventional fallback versus a new host-obsolete refusal. No cross-epoch
+fallback is allowed. Unsupported cases choose the existing path before admission.
 
 ## Source obligation map (base 22d8cbca7)
 
@@ -91,13 +92,13 @@ are the primary anchors; source-pins.json in the modeling directory binds bytes.
 | --- | --- | --- |
 | runtime shell_transport/owned_copy/frame.rs propose_frame_commit | current grant/ring identity, source and response reservation | service 1; preserve custody and write-response meaning |
 | runtime shell_content/epoch_registry/owned_ring/frame.rs reserve_owned_frame_copy | frame/copy/resource accounting joined before consume | service 1; add renderer/result reservation without weakening rollback |
-| runtime shell_content/owned_ring.rs OwnedRingRead::copy | noncloneable retained source, generation checks, one private payload read | combined worker; same failure rules, no client mapping |
-| runtime shell_content/isb_worker.rs | bounded validation, deadlines/cancel, result on worker exit | combined worker; preserve validation chunk checks and failure notification |
+| runtime shell_content/owned_ring.rs OwnedRingRead::copy | noncloneable retained source, generation checks, one private payload read | validation worker; same failure rules, no client mapping |
+| runtime shell_content/isb_worker.rs | bounded validation, deadlines/cancel, result on worker exit | validation worker; direct transfer on success, preserve failure notification |
 | runtime shell_transport/image_owner.rs service | current grant reconciliation, withdrawn jobs, settlements, source publication | service 2 or withdrawal handling; no worker authority |
 | session live_session/metadata_shell/content/projection.rs project_render_bundle | placement bounds and resource lease retention | split metadata preflight at service 1 from validated-resource binding at service 2; new provisional plan must not impersonate ContentRenderBundle |
 | session live_session/metadata_shell/content/submission.rs submit_bundle | projection, runtime install, Prepared, pending presentation | service 2; must avoid triggering a second render through the current installation path |
 | backend-live production_visual_runtime/compositor_graphics/shell_content.rs set_shell_content_on_target | grant/layer ownership, quiescence, retirement, scene transform; queue retained projection | metadata checks at service 1 and recheck service 2; separate install of an already-rendered result requires proof, not an existing API |
-| backend-live scanout/rendered_scanout/exporter/worker/service.rs render_frame | actual frame-slot acquisition, private rendering, failure invalidation | combined worker; slot acquisition currently happens here, not at owner dispatch |
+| backend-live scanout/rendered_scanout/exporter/worker/service.rs render_frame | actual frame-slot acquisition, private rendering, failure invalidation | renderer worker; slot acquisition remains here, not at owner dispatch |
 | backend-live scanout/rendered_scanout/exporter/worker.rs | correlation, worker lifetime, result wake | reuse, one completion notification for combined success; no transfer of DRM owner |
 
 Two concrete implementation gaps: current projection requires a validated
@@ -172,12 +173,10 @@ Required contract refinements, accepted for the next revision:
 
 Review history (thread placement is now selected above; scene choice remains):
 
-1. Execution placement: validation on the renderer thread (new contention and
-   stall-budget implications) versus retaining both existing workers and handing
-   a private validated job directly between them (new transfer/cancellation
-   protocol). Recommendation: preserve the separate validation thread for
-   responsiveness, but authorize that as a revised design rather than silently
-   interpreting the current combined-worker sketch that way.
+1. Execution placement: resolved by niltempus's approval of separate validation
+   and renderer threads with direct transfer. TRANSFER.md revision 4 records the
+   queues, opaque plan, ownership witness, credit proof and cancellation contract.
+   These are design obligations, not an implemented worker handoff.
 2. Scene churn after dispatch: a new explicit obsolete-scene refusal/retry contract
    versus a clearly reported fallback to the existing owner/render path. Do not
    overload existing Stale (peer identity drift) or hide a second render. Full
@@ -186,4 +185,5 @@ Review history (thread placement is now selected above; scene choice remains):
 
 These are prerequisites to the promised full model and prototype, not decisions
 an implementer may make inside the runtime diff. No new capability, codec,
-production API, worker handoff or native run is selected at this checkpoint.
+production API or native run is selected at this checkpoint. The direct worker
+handoff is selected as a design, subject to the remaining proof/prototype gates.

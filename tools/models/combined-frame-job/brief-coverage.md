@@ -58,3 +58,10 @@ does not promise that ACK/worker/owner progress is fair, or that a future native
 run meets cadence. The held peer does not produce the earlier conjectured n+2
 busy-slot Budget. Read README for the simplified peer flags and illustrative
 parked bound; no source model is composed with either ownership projection.
+
+Revision 4 qualification (review 58230480): SourceRelease.room is unconstrained
+and omits the four reserved responses. Its journal timeout counterexample is
+outside that contract and must not be transferred to the held lane. No identified
+unreserved record can spend that reservation. The future composed model must
+carry it. Transfer.tla also lacks the new one-way forwarded flag and its memory
+ordering; no atomic implementation proof follows from its global phase variable.

@@ -84,8 +84,11 @@ ReleaseProof and HeldOfferSafe; source-early.cfg deliberately confirms before th
 finished ticket and journal record and must fail ReleaseProof (exit 12).
 source-journal.cfg asks the deliberately false JournalTimeoutAbsent property and
 must fail it (exit 12): render/owner consumption and presentation complete while
-journal room remains blocked until the peer's five-second WAIT. This is a possible
-abstract stall, not a runtime regression finding or an expected frequency.
+journal room remains blocked until the peer's five-second WAIT. Review correction:
+this schedule omits admission's reservation of four responses, so arbitrary lack
+of room is outside the selected contract. No unreserved consumer of that capacity
+was identified. Do not present this witness as a reachable held-lane timeout or
+runtime risk; it exposes the projection's missing reservation, not a system bug.
 
 The model pins two source slots and two sequential frames, with next offer gated
 by observed release and presentation, matching held peer 273d98c2e. It treats the
@@ -94,7 +97,8 @@ satisfied; they may only add delay in the real path. No overlapping frame credit
 is introduced. Room is a one-bit abstraction of journal/ACK backpressure, not a
 model of four reservations, deferred publication holds or actual ACK offsets.
 Source release before Presented permits the next offer at Presented, so later
-release than validation alone does not imply cadence harm.
+release than validation alone does not imply cadence harm. The real EAGAIN retry
+at publish_releases is ordering, not evidence of exhausted reserved ACK capacity.
 
 Finite clock milestones are 0, 16,667 us (rounded 60 Hz period), 100,000 us
 (ILLUSTRATIVE parked deadline, not a selected production value), 4,999,999 us and

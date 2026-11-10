@@ -1,4 +1,4 @@
-# Direct validated-job transfer: proposed contract revision 3
+# Direct validated-job transfer: proposed contract revision 4
 
 ## Selection and objectives
 
@@ -93,9 +93,22 @@ completion route with the opaque plan retained for the owner. take_completed
 supplies the one completion proof for that case; the combined table records that
 consumption and cannot also free its token. Forwarding success changes the proof
 route, never frees the slot. No synthetic completion is injected into the old
-expect-based path. Tests must cover a result arriving before forwarding bookkeeping
-is observed; ambiguous transfer status retains charges and cannot use retirement
-as a shortcut.
+expect-based path.
+
+Each row owns a one-way atomic forwarded flag, initially false. The validator
+sets it with Release after successful move into the dedicated input channel;
+the owner observes it with Acquire during existing turns, with no success wake.
+The flag is an ownership-routing fact, never pixel or submission authority.
+A true flag plus matching CompletedNativeOwner and the qualified destruction
+below permits retirement settlement. A false flag retains the credit while the
+validator progresses to setting it or returns via take_completed. Validator death
+inside that interval remains NotifyOnExit's I/O failure; it does not free credit.
+An exact renderer result itself proves transfer even if it arrives before the
+flag; consuming it once makes a later flag store irrelevant. Tests must cover
+retirement/result/flag reorderings, ordinary-turn observation after retirement,
+and validator death before/after send. This closes the missing forwarding witness;
+the existing Transfer.tla abstracts these transitions and does not prove the
+atomic implementation or scheduling latency.
 
 ## Payload ownership and cancellation
 
@@ -205,18 +218,25 @@ capture drops OwnedRingRead, but source settlement/publication is deferred until
 the combined result is consumed at service 2 (or its exact failure is reconciled).
 No new validation-success owner wake and no independent source-settlement path.
 The ticket finished flag is the source-read fact; publish_releases still journals
-the exact ResourceStatus before confirm_release. Journal EAGAIN retains the work
-for a later owner visit. Retired epochs never publish into a replacement journal.
+the exact ResourceStatus before confirm_release. EAGAIN retains the work for a
+later owner visit, but its existence does not prove peer ACK capacity pressure:
+admission already reserves this frame's four responses before Rwrite. The current
+owned-copy path has no identified unreserved record consuming that capacity; the
+EAGAIN here concerns ordering. Retired epochs never publish into a replacement
+journal.
 
 The held peer 273d98c2e frame() returns only after accepted, presented, predecessor
 released, source_released and frame credit. It cannot offer n+1 while n's source
 release is unknown, so a delayed-release n+2 Budget refusal is NOT a held-lane
 prediction. With settlement at service 2 before Presented at service 3, release
-delay need not add next-offer delay. If publication stalls on journal/ACK or moves
-past presentation, next-offer delay or the peer five-second WAIT timeout is possible. Keep two
-source slots and one frame credit, and model these guards explicitly. Count
-capture/validation/park/render/consumption/release/Presented intervals and journal
-backpressure in any later capture; altered refusals, timeout or cadence are not
+delay need not add next-offer delay. Keep two source slots and one frame credit,
+and preserve the reserved response capacity and ordering in the eventual composed
+model. SourceRelease.tla's arbitrary room=false until the five-second WAIT omits
+that reservation and is an over-approximation outside this contract, not a reachable
+held-lane timeout claim. The earlier wording implying ACK could consume this room
+is withdrawn. Validation/park/render deadlines still require implementation tests.
+Count capture/validation/park/render/consumption/release/Presented intervals and
+actual publication-order delays in any later capture; no delay or refusal may be
 hidden by counting only successful fast-path frames. No capture is selected here.
 
 ## Result contents and acceptance
@@ -267,3 +287,10 @@ Count the discarded speculative render and all fallback work. Niltempus has NOT
 selected this policy. Identical-content fast rejection of unnecessary work must
 use host-known exact immutable identity before dispatch, never trust declared
 geometry/pixels as proof of equality; otherwise preserve the owner result check.
+
+## Revision 4 corrections
+
+Review 58230480 accepts revision 3 facts as sufficient for the scene decision,
+subject to the forwarding witness and reserved-journal qualification above. The
+source-release witness remains frozen design evidence, not a native timeout risk.
+Security choices do not depend on pretending this abstract schedule is reachable.
