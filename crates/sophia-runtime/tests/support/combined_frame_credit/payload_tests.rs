@@ -1,17 +1,16 @@
 use super::tests::WAIT;
 use super::*;
-use std::io::Read;
 use std::os::fd::AsRawFd;
-use std::os::unix::net::UnixStream;
 
 #[test]
-fn real_worker_moves_the_plan_and_only_the_owner_drops_the_returned_descriptor() {
+fn real_worker_moves_the_plan_and_only_the_owner_drops_the_returned_payload() {
     let mut worker = IsbValidationWorker::new(2, 8).unwrap();
     let token = tests::reserve(&mut worker);
     assert!(!token.was_forwarded());
-    let (mut reader, writer) = UnixStream::pair().unwrap();
-    reader.set_nonblocking(true).unwrap();
-    let raw = writer.as_raw_fd();
+    let lifetime = Arc::new(());
+    let ended = Arc::downgrade(&lifetime);
+    let descriptor = tests::source(&[9; 8]);
+    let raw = descriptor.as_raw_fd();
     let (sender, receiver) = mpsc::sync_channel(1);
     let owner_plan = worker
         .submit_combined(
@@ -19,7 +18,8 @@ fn real_worker_moves_the_plan_and_only_the_owner_drops_the_returned_descriptor()
             tests::source(&[0; 8]),
             ProbePlan {
                 id: 917,
-                descriptor: writer.into(),
+                descriptor,
+                lifetime,
             },
             sender,
         )
@@ -48,13 +48,12 @@ fn real_worker_moves_the_plan_and_only_the_owner_drops_the_returned_descriptor()
     assert_eq!(pixels.bytes(), &[0; 8]);
     assert_eq!(plan.id, 917);
     assert_eq!(plan.descriptor.as_raw_fd(), raw);
-    let mut byte = [0];
-    assert_eq!(
-        reader.read(&mut byte).unwrap_err().kind(),
-        io::ErrorKind::WouldBlock
-    );
+    assert!(Arc::ptr_eq(&plan.lifetime, &ended.upgrade().unwrap()));
     drop(plan);
-    assert_eq!(reader.read(&mut byte).unwrap(), 0);
+    assert!(
+        ended.upgrade().is_none(),
+        "owner dropped the returned payload"
+    );
     assert_eq!(worker.pending(), 0);
 }
 
@@ -99,8 +98,8 @@ fn abandoning_the_plan_return_does_not_block_the_ordinary_failure_route() {
     let mut worker = IsbValidationWorker::new(1, 8).unwrap();
     let token = tests::reserve(&mut worker);
     assert!(worker.cancel(token.job));
-    let (mut reader, writer) = UnixStream::pair().unwrap();
-    reader.set_nonblocking(true).unwrap();
+    let lifetime = Arc::new(());
+    let ended = Arc::downgrade(&lifetime);
     let (sender, receiver) = mpsc::sync_channel(1);
     let owner_plan = worker
         .submit_combined(
@@ -108,7 +107,8 @@ fn abandoning_the_plan_return_does_not_block_the_ordinary_failure_route() {
             tests::source(&[0; 8]),
             ProbePlan {
                 id: 55,
-                descriptor: writer.into(),
+                descriptor: tests::source(&[9; 8]),
+                lifetime,
             },
             sender,
         )
@@ -120,5 +120,5 @@ fn abandoning_the_plan_return_does_not_block_the_ordinary_failure_route() {
     assert!(!token.was_forwarded());
     assert!(receiver.try_recv().is_err());
     assert_eq!(worker.pending(), 0);
-    assert_eq!(reader.read(&mut [0]).unwrap(), 0);
+    assert!(ended.upgrade().is_none(), "abandoned payload was destroyed");
 }

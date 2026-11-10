@@ -17,9 +17,10 @@ production scheduler. A second move-only payload exercises the generic helper
 directly, using pixels from real validation; that is not a second worker-loop
 instantiation. No admission table, validation loop or owner is copied.
 
-ProbePlan carries an identity value and an owned process-local descriptor used as
-a lifetime sentinel. It has no methods, Clone or Debug. Tests observe descriptor
-identity and socket EOF after disposal. These harmless fixture handles do not
+ProbePlan carries an identity value, an owned process-local descriptor and an
+immutable Arc lifetime token. It has no methods, Clone or Debug. Tests observe
+descriptor identity and use a Weak token to observe payload destruction directly.
+The only strong token moves inside P; the observer owns none. These fixture fields do not
 define the actual scene plan's permitted references. Geometry, predecessor leases,
 composition record and renderer placeholder are absent. Production plan eligibility
 and the prohibition on GPU/device handles and mutable authority remain unproved.
@@ -46,10 +47,14 @@ and plan are consumed by return_plan. Full is an internal assertion, not a hosti
 capacity decision. If the owner abandons the receiver, the plan is dropped where
 the failed return occurs (or when the buffered receiver is dropped). That is safe
 only for eligible payload references; it is not a device-retirement proof. A test
-abandons the receiver and checks ordinary cancellation completion and descriptor
-closure. No blocking send or retry is added.
+abandons the receiver and checks ordinary cancellation completion and payload
+destruction. No blocking send or retry is added. An earlier immediate socket-EOF
+assertion failed under the parallel gate (WouldBlock); that did not distinguish
+payload lifetime from additional OS socket references. The replacement keeps an
+exact payload-destruction assertion without timing or OS-reference assumptions.
 
-This fixture allocates an extra bounded channel per combined attempt. Its cost is
+This fixture allocates an extra bounded channel per combined attempt and an Arc
+token solely for the payload lifetime assertion. Their cost is
 not hidden or claimed free: the eventual retained owner-row implementation and
 all allocation/retention cost need separate review before runtime integration.
 No framing, CPU or service-count comparison is licensed by this test shape.
@@ -77,7 +82,7 @@ Validator-death/result/retirement interleavings are not discharged by this stage
 The seven stage 1 tests retain their credit/backing assertions and add plan return
 and witness checks on the real worker. They cover stale reservation, deadline,
 size, malformed validation, cancellation, downstream Full/Disconnected and receiver
-loss. Three additional checks cover real-worker descriptor ownership through owner
+loss. Three additional checks cover real-worker payload ownership through owner
 settlement, generic transport of a distinct non-Clone/non-Debug payload, and an
 abandoned owner-return receiver. The unchanged no-notify check remains a point
 observation only. These checks have not run at this source-review checkpoint.
@@ -86,7 +91,10 @@ After signed frozen-source acceptance: run all ten tests, ordinary/shutdown
 controls, and named mutations. Move the witness store before try_send: Full must
 fail the not-forwarded assertion. Omit the successful store: the FIFO-barrier
 witness assertion must fail. Omit the failure plan return: the original validation
-error must still arrive but its plan-before-completion assertion must fail. Keep
+error must still arrive but its plan-before-completion assertion must fail.
+A lifetime-assertion control deliberately forgets the failed plan in return_plan:
+ordinary completion must still arrive, then the abandoned-payload assertion must
+fail. Keep
 mutations in a separate cargo-slot worktree, retain failures, restore and recheck.
 Then run the required isolated full gate and fmt on the unchanged signed source.
 No production source, native run, timing, push or three-service claim is admitted.

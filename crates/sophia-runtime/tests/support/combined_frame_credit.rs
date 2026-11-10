@@ -22,6 +22,7 @@ impl Reservation {
 pub(super) struct ProbePlan {
     id: u64,
     descriptor: OwnedFd,
+    lifetime: Arc<()>,
 }
 
 pub(super) struct Route<P: Send + 'static> {

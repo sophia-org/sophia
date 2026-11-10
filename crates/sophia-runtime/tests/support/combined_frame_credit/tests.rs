@@ -54,6 +54,7 @@ fn plan(id: u64) -> ProbePlan {
     ProbePlan {
         id,
         descriptor: source(&id.to_le_bytes()),
+        lifetime: Arc::new(()),
     }
 }
 
