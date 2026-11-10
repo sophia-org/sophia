@@ -1,4 +1,4 @@
-# Direct validated-job transfer: proposed contract revision 4
+# Direct validated-job transfer: proposed contract revision 5
 
 ## Selection and objectives
 
@@ -253,9 +253,12 @@ and input bindings atomically; rollback as existing code on definitive refusal.
 This does not permit rollback after uncertain or successful kernel submission.
 The existing tracked-submit protocol remains a separate required proof.
 
-Scene churn and identical-content handling are intentionally NOT decided here.
-A new host-obsolete refusal reason or an explicit conventional rerender fallback
-requires niltempus's decision. Consequently the full prototype gate stays held.
+Niltempus approved conventional fallback for scene-only churn, with authority and
+validated description still valid. FALLBACK.md fixes the one-shot transition and
+its source obligations. No new host-obsolete reason, peer retry protocol, or
+cross-epoch fallback is selected. Exact host-known identical content may avoid
+new work before dispatch; peer-declared equality is never sufficient. The full
+prototype gate still requires the remaining composition and implementation proofs.
 
 ## Required model/prototype checks
 
@@ -279,12 +282,12 @@ C6a-c: output/native identity, exact retirement disposition and independent sour
 ticket proof. These are design requirements awaiting implementation tests, not
 existing APIs. No change to the frozen transfer model or its evidence.
 
-The scene-change recommendation is a single conventional fallback using returned
+The approved scene-change policy is a single conventional fallback using returned
 validated backing, only when description and authority remain valid. This avoids
 requesting another peer copy/validation and avoids a new peer-visible reason for
 host scene activity, but does not establish lower CPU or remove timing channels.
-Count the discarded speculative render and all fallback work. Niltempus has NOT
-selected this policy. Identical-content fast rejection of unnecessary work must
+Count the discarded speculative render and all fallback work. The approval selects
+the internal contract clause, not a native run or production adoption. Identical-content fast rejection of unnecessary work must
 use host-known exact immutable identity before dispatch, never trust declared
 geometry/pixels as proof of equality; otherwise preserve the owner result check.
 

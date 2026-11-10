@@ -109,3 +109,40 @@ in the timeout witness; this is not an all-cadences model. Time can jump between
 these milestones; no fairness, measured phase duration, GPU timing or timeout-rate claim
 is made. Additional busy/late schedules need the eventual implementation trace.
 Run the three source-*.cfg with SourceRelease.tla using the same TLC recipe.
+
+## Approved scene fallback projection
+
+FALLBACK.md records niltempus's selected one-shot conventional fallback. It maps
+the current setter rollback, deferred queue success and retained Release path.
+Fallback.tla starts at an abstract completed combined result and ends at ordinary
+pipeline entry/refusal. It is a separate Category B projection, not a composed
+frame pipeline or an implementation refinement. The installed content/claim pair
+models only the two fields restored by the setter on Err; no whole-desktop or
+GPU rollback claim follows. Current authority/geometry are grouped predicates;
+actual bindings, all allocation rows and checks must be tested in the real seam.
+
+Run fallback-none.cfg with Fallback.tla: all seven invariants enabled, expect full
+checking exit 0. The six action mutations fallback-eligibility/retry/rollback/
+release/prepared/fresh must fail EligibleFallback/OneFallbackEntry/RollbackPair/
+LeaseHeld/PreparedAfterInstall/FreshInstall respectively (exit 12). No liveness or
+CPU prediction is asserted. Later scene changes do not recursively re-enter the
+combined path. Actual ordinary renders, deferrals, failures and owner visits must
+be counted; one fallback entry does not mean one guaranteed renderer invocation.
+
+## Forwarding witness amendment
+
+Transfer.tla now splits the successful move from PublishForward(job). Forwarded
+flags are indexed by exact job, so a delayed old store never marks its successor.
+RetireNative denotes an externally established CompletedNativeOwner, not an EOF
+or a timeout; its proof is assumed, not derived here. SettleRetired requires the
+forwarded witness for renderer-owned lost results. An exact returned result may
+settle before the flag store. ValidatorExit prevents further validation or flag
+progress; absent a renderer result or witnessed retirement, credit remains held.
+No validator fairness is assumed, and this projection proves no reclaim latency.
+
+All transfer configs now enable ForwardedBeforeRetirementSettlement and
+ForwardedOnlyAfterMove in addition to their previous checks. transfer-forwarding
+removes the settlement witness guard and must fail the former. Existing controls
+remain. The atomic flag is modeled sequentially consistently; real Release/Acquire
+and per-output channel teardown need implementation tests. This replaces only the
+previous projection's omission of the flag, not its other documented limitations.

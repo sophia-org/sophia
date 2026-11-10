@@ -59,8 +59,10 @@ validation isolation and responsiveness remain constraints. This supersedes the
 initial same-worker sketch: one logical job now spans two existing threads.
 The direct transfer protocol is specified in
 `tools/models/combined-frame-job/TRANSFER.md`. It is a proposed internal contract,
-not a production API or authority-review pass. Scene-churn disposition remains
-an owner decision; no new refusal reason or fallback has been selected.
+not a production API or authority-review pass. Niltempus subsequently approved
+one conventional fallback for scene-only churn with valid authority and geometry.
+See FALLBACK.md for its owner checks, rollback, retained Release obligation and
+accounting. No new refusal reason or physical run is selected.
 
 ## Proposed internal ownership interface
 
@@ -79,9 +81,9 @@ unvalidated pixels. Service 2 validates the returned identities and current
 state, settles resources and candidate state, and uses the existing tracked DRM
 submission. Service 3 observes exact completion and publishes terminal/release
 facts. Authority or validated-description failure retains original charges until
-each last-use proof arrives. Scene-only churn is a separate unselected policy:
-explicit conventional fallback versus a new host-obsolete refusal. No cross-epoch
-fallback is allowed. Unsupported cases choose the existing path before admission.
+each last-use proof arrives. Scene-only churn uses the approved one-shot
+conventional fallback with the same validated backing; it never re-enters the
+combined speculative path for that attempt. No cross-epoch fallback is allowed. Unsupported cases choose the existing path before admission.
 
 ## Source obligation map (base 22d8cbca7)
 
@@ -177,11 +179,11 @@ Review history (thread placement is now selected above; scene choice remains):
    and renderer threads with direct transfer. TRANSFER.md revision 4 records the
    queues, opaque plan, ownership witness, credit proof and cancellation contract.
    These are design obligations, not an implemented worker handoff.
-2. Scene churn after dispatch: a new explicit obsolete-scene refusal/retry contract
-   versus a clearly reported fallback to the existing owner/render path. Do not
-   overload existing Stale (peer identity drift) or hide a second render. Full
-   scene version covers every retained composition input, not only shell content.
-   Model non-shell churn, stalled work, slots and starvation before selecting.
+2. Scene churn after dispatch: resolved by niltempus's approval of one conventional
+   fallback with still-valid authority and geometry. Keep existing Stale meaning
+   (peer identity drift), and count discarded and ordinary render work. Full scene
+   version covers every retained composition input, not only shell content.
+   Non-shell churn, stalled work, slots and starvation remain proof obligations.
 
 These are prerequisites to the promised full model and prototype, not decisions
 an implementer may make inside the runtime diff. No new capability, codec,

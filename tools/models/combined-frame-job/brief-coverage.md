@@ -65,3 +65,26 @@ outside that contract and must not be transferred to the held lane. No identifie
 unreserved record can spend that reservation. The future composed model must
 carry it. Transfer.tla also lacks the new one-way forwarded flag and its memory
 ordering; no atomic implementation proof follows from its global phase variable.
+
+## Approved fallback clause
+
+FALLBACK.md F1-F6 map one-to-one to fallback-eligibility/retry/rollback/release/
+prepared/fresh.cfg. Every config, including fallback-none.cfg, explicitly enables
+TypeOK and the six corresponding safety properties; controls change actions, not
+invariant constants. No control or positive check establishes the exact real
+Release acknowledgement, fresh-check/kernel interval, multi-output rollback,
+complete scene version, channel wakeups or forwarding flag memory ordering.
+The model begins after validation and speculative render and ends at conventional
+entry, so no composed proof or Rust trace is claimed. Description stands for
+validation equality/current geometry eligibility, not mutable validated pixels.
+
+## Forwarding witness amendment
+
+All five transfer cfgs enable ForwardedBeforeRetirementSettlement and
+ForwardedOnlyAfterMove. transfer-forwarding removes the witness gate on exact
+retirement settlement and must fail ForwardedBeforeRetirementSettlement.
+ForwardedOnlyAfterMove has no dedicated mutation; it is a structural check.
+Move, delayed flag store, validator exit and exact retirement are separate actions.
+A later old-job flag store is indexed by job, and cannot satisfy a successor's
+proof. This is a sequentially consistent design projection; the real memory
+ordering and native owner's extended resource disposition remain unproved.
