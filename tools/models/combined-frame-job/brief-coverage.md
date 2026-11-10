@@ -71,8 +71,8 @@ ordering; no atomic implementation proof follows from its global phase variable.
 FALLBACK.md F1-F6 map one-to-one to fallback-eligibility/retry/rollback/release/
 prepared/fresh.cfg. Every config, including fallback-none.cfg, explicitly enables
 TypeOK and the six corresponding safety properties; controls change actions, not
-invariant constants. No control or positive check establishes the exact real
-Release acknowledgement, fresh-check/kernel interval, multi-output rollback,
+invariant constants. No control or positive check establishes the actual
+Release delivery/disposition (there is no worker ACK), fresh-check/kernel interval, multi-output rollback,
 complete scene version, channel wakeups or forwarding flag memory ordering.
 The model begins after validation and speculative render and ends at conventional
 entry, so no composed proof or Rust trace is claimed. Description stands for
@@ -88,3 +88,13 @@ Move, delayed flag store, validator exit and exact retirement are separate actio
 A later old-job flag store is indexed by job, and cannot satisfy a successor's
 proof. This is a sequentially consistent design projection; the real memory
 ordering and native owner's extended resource disposition remain unproved.
+
+## Owner-turn correction
+
+Read README's Owner-turn composition section for the source mapping, finite bounds,
+Deferred return-to-owner/supersession and two-valued release proof. owner-none enables
+ten invariants; drop/reuse mutate token retention and actual slot acquisition.
+The two witness configs use no mutation and ask deliberately false absence claims
+for both Full sends and a superseded owner retry. Other safety checks are structural,
+not implementation tests. Transfer Die is renderer-only including finished; validator
+exit has its own action. Prior proof-01 is preserved with its larger state counts.

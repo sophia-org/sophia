@@ -181,9 +181,10 @@ emitted only after owner installation, not on the validator or renderer thread.
 A duplicate/foreign result cannot spend another row's credit. No raw pointer to
 owner state or mutable authority crosses threads.
 
-For a returned speculative render lease that cannot be installed, use ordinary
-lease drop / Release command. Full Release queues retain the existing deferred
-release obligation. Validated backing is reconciled under its original retired
+For a returned speculative render lease that cannot be installed, use the dedicated
+combined retained-Release cell specified in FALLBACK.md, separate from the ordinary
+discarded_release Option. A new owner-callable retain entry is required. Full
+Release queues retain that exact obligation; public lease Drop alone is insufficient. Validated backing is reconciled under its original retired
 epoch. Clear combined credit only on exact owner consumption with required
 ownership accounted for, not on transfer, cancellation or channel disconnection.
 

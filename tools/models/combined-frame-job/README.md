@@ -146,3 +146,60 @@ removes the settlement witness guard and must fail the former. Existing controls
 remain. The atomic flag is modeled sequentially consistently; real Release/Acquire
 and per-output channel teardown need implementation tests. This replaces only the
 previous projection's omission of the flag, not its other documented limitations.
+
+## Owner-turn composition and review corrections
+
+OwnerTurn.tla is a narrow composition of returned-result bookkeeping, retained
+Release, quota clearance, decline-fast latch and ordinary candidate entry. It
+assumes an eligible scene-only fallback; it does not compose the authority,
+validator, journal, or ioctl models. A live worker and exact token routing are
+assumed. No liveness/fairness or full prototype qualification follows.
+
+Source correspondence (source-pins.json): worker::release_discarded_result and
+flush_discarded_release have ONE ordinary retained Option. The proposed combined
+cell is separate, one per output facade, reserved at admission; it cannot overwrite
+that Option. Retain is the new owner-callable combined disposition operation, not
+an existing API. ClearCredit accepts token in cell or successful command transfer;
+ProcessRelease is physical worker processing, not an ACK. Disconnected is omitted:
+a failed send counts, but supplies neither successful transfer nor physical proof.
+
+The fast path touches no candidate state before its decision. OrdinaryEntry maps
+to candidates::begin_submission_inner followed by existing metadata_shell content
+service submit_bundle (content.rs / native_service.rs), NOT a new fallback caller.
+No second candidate insertion is allowed. Full in flush_discarded_release retains
+the token; ordinary WorkerQueueFull/WorkerPending is deferred by
+policy_presentation::handle_preview_refusal and projection::queue_retained_projection.
+Fallback.tla Install(FALSE,FALSE) instead models a definitive setter error; its
+rollback covers two fields only, not pre-error retirement-claim settlement.
+
+OwnerTurn uses a two-command FIFO to expose backpressure (actual channel is 32),
+three physical slots, one combined result and at most two ordinary dispatch attempts.
+The ordinary discarded cell stays independently occupied. PriorLastUse only models
+an externally proven release of the other slots. ProcessRender uses the
+frame_slots::try_acquire occupied-slot guard: early enqueue is safe, actual aliasing
+is not. It abstracts private rendering completion into acquisition, not GPU last use.
+
+On no free slot, ProcessRender emits a deferred_reply. CollectDeferred is a distinct
+owner export cycle that parks pending_frame; LaterOwnerExport is a later cycle
+before retry. Counters returns/collections/laterCycles/attempts expose those steps.
+They are model-action counts, not native pass or CPU estimates. Supersede abstracts
+one newer ordinary frame replacing pending_frame (worker_export::export_from_worker);
+its own admission/authority is external. These ordinary retries are NOT the proposed
+worker-internal retry of a parked combined job. No dedicated wake is invented.
+
+Run owner-none.cfg: complete checking with all ten safety invariants. owner-drop
+must fail LeaseHeld when Full drops the retained token; owner-reuse must fail
+NoOccupiedSlotReuse by bypassing try_acquire's occupied guard. Separately run
+owner-witness-full/retry: expected failures NoBothFull/NoSupersededRetry establish
+reachable Full on both sends and Deferred -> owner collection -> supersession ->
+later export -> second dispatch. They are positive reachability witnesses expressed
+as false invariants, not bugs. FullIsDeferred/OneEntry/SeparateRetention have no
+independent mutations; they check the projection's structure, not Rust behavior.
+
+Transfer Die now covers only queued/waiting/rendering/finished (renderer-held).
+Validator-held rows exit through ordinary Fail or ValidatorExit; validator death
+can hold quota until component end, including the move-before-flag window. The
+frozen proof-01 remains 29,229 generated / 6,192 distinct. The narrowed development
+check is 26,661 / 5,616 with CreditUntilConsumed and temporal WithdrawalProgress
+passing. This correction is recorded beside the prior counts, not replacing them.
+State counts are not coverage or implementation proof.

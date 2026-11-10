@@ -22,7 +22,10 @@
     "crates/sophia-session/src/live_session/owner_loop/lifecycle/seat.rs": "ff700860448dc85110767e73cdc5afadd7d5cecb9c3f1ff1e59dbf9b52cae8bc",
     "crates/sophia-backend-live/src/production_visual_runtime/native.rs": "e505adcf92979d300ae0dbd8453afa71df8c58755c75729710339acc5d54b2c9",
     "crates/sophia-backend-live/src/scanout/rendered_scanout/exporter/worker/lifecycle.rs": "c680bbb2566d4e3942aba09dcd470a08ce288ab4cb315a317235c27513051bfd",
-    "crates/sophia-backend-live/src/scanout/rendered_scanout/exporter/worker/shell_capture.rs": "fbb4fd4255acd4a028553e23dfcbbf3293b5dd70e6d364eca0ef7958a0ff388e"
+    "crates/sophia-backend-live/src/scanout/rendered_scanout/exporter/worker/shell_capture.rs": "fbb4fd4255acd4a028553e23dfcbbf3293b5dd70e6d364eca0ef7958a0ff388e",
+    "crates/sophia-session/src/live_session/metadata_shell/content.rs": "d99ed5c1353626ed60fa7023e98b9058491a3636a2f6ac16cc5f9ce1ffd1e861",
+    "crates/sophia-session/src/live_session/metadata_shell/content/native_service.rs": "5c936b14f6466190e360f3367de1090f39a22414b91d2331a2c699cf64f16639",
+    "crates/sophia-backend-live/src/production_visual_runtime/policy_presentation.rs": "8af2e48d3bb3566be171a066cb2c913bbd55efd9736401352ab314c74806fca1"
   },
   "held_peer": {
     "repository": "/home/niltempus/dev/niltempus-sft-lazy-peer",

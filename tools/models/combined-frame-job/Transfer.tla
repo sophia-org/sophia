@@ -47,8 +47,8 @@ Request == /\ ~x.requested
  /\ x' = [x EXCEPT !.requested = TRUE, !.cancelled = TRUE]
 Withdraw == /\ x.requested /\ ~x.withdrawn
  /\ x' = [x EXCEPT !.withdrawn = TRUE]
-\* Death does not make credit free. No unproved reclamation action exists.
-Die == /\ x.phase \in {"validating", "validated", "queued", "waiting", "rendering"}
+\* Renderer death does not free credit; validator death is ValidatorExit only.
+Die == /\ x.phase \in {"queued", "waiting", "rendering", "finished"}
  /\ x' = [x EXCEPT !.phase = "quarantined", !.holders = {"quarantine"}]
 \* Revision 4: post-move witness is separate; old-job stores cannot name a successor.
 PublishForward(job) == /\ job \in x.moved \ x.forwarded /\ x.validatorAlive
