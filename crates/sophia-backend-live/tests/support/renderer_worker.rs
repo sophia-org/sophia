@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+#[path = "combined_frame_release.rs"]
+mod combined_release;
+
 use super::reusable_cpu_buffer_damage;
 use sophia_protocol::Size;
 
