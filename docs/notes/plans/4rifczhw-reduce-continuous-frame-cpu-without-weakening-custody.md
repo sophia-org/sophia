@@ -38,8 +38,12 @@ Two source gaps are explicit: projection needs a validated resource lease, and
 content installation currently queues rendering. A provisional plan and an
 owner-only install-already-rendered path need authority review; actual render
 slot acquisition/Deferred also requires a defined accounting transition. Claude
-is challenging the frozen contract read-only. No production source or prototype
-is authorized past that gate by silence.
+review `2e0c759f` holds authority approval: choose validation/render thread placement
+and obsolete-scene behavior, then complete the slot/accounting/publication model.
+Follow-up contract `1c3418fce` records these requirements and decisions. The
+recommendation is to preserve validation-thread isolation and explicitly design
+the worker-to-worker transfer; this revises the initial same-worker sketch. No
+production source or prototype is authorized past that gate by silence.
 
 Preliminary design-model evidence `sophia-combined-frame-job-model-01`, seal
 `4c811ba9`, checks 353 generated / 189 distinct states and fair owner withdrawal
