@@ -86,7 +86,8 @@ therefore the host `sophia_protocol` codec, ACK/recycle, staging, expiry, waterm
 and journal implementation. The explicit read_reusable_transaction check binds
 the peer-claimed writer; the export checks its own live writer. A production
 adapter must keep this binding check and the per-operation authenticated
-Export::check gate; the latter is not exercised here. No visibility is widened.
+Export::check gate. The older direct-export tests omit that wrapper; the
+authenticated adapter tests below exercise it. No visibility is widened.
 Tests compare direct
 FrameSubmit results and journal/state to the carrier for retries, changed bytes,
 EALREADY plus poisoned writer, expiry/clunk/reopen, ACK-before-backpressure,
@@ -108,6 +109,49 @@ Both states block overlapping ACKs; a receipt before publication is refused. Eve
 attempt; duplicate or foreign messages close. The former benign duplicate CQ
 cell rule is obsolete because the CQ is no longer shared storage.
 
+## Authenticated adapter checkpoint
+
+The cfg(test)-only `shell_frame_control_carrier_auth.rs` fixture adopts a real
+UnixStream pair through ShellFileWire and negotiates auth/attach/walk/open with
+the vendored Pipeline. Both sides use the same ShellFiles construction and
+supplied test authentication owner. The control sends actual socket-framed
+Twrite; the candidate dispatches a privately captured record through
+AuthenticatedFiles. Common export state and journal bytes are compared.
+This is adapter wiring evidence, not Factotum/LaunchCustody or timing evidence.
+
+The binding retains the host's adopt connection and published attachment epoch,
+not the captured connection_epoch. It names the FrameSubmit write-open and the
+reusable writer opened during setup (the host-issued Lopen qid is its id).
+That fixed write-open replaces `opened.access.writes()` for this fixture;
+`read_reusable_transaction` still rechecks the bound writer on every dequeue.
+The fixture keeps the FrameSubmit fid open for its lifetime. Production binding
+installation, FrameSubmit clunk/replacement and descriptor negotiation are not
+implemented by this test binding. A lying header cannot replace host identity.
+
+After capture and before any write, `AuthenticatedFiles::check` runs with
+Operation::Write. Failure closes without effects or a receipt. Slot reservation
+still precedes the real write/ACK effects. Receipt delivery wraps the actual
+pipe write in `AuthenticatedFiles::with_delivery`, also Operation::Write:
+one authentication-owner check and two inner export checks (the wrapper's check
+and inner with_delivery). The tests assert one owner check per dequeue and one
+per delivery. No custody-dispatch scope is opened; these are harness call counts,
+not production syscall counts. Oversized successful counts close with EIO, as
+Connection::write refuses them; short success also closes without custody.
+
+**Required asymmetry:** ShellFiles never enables guard_read_delivery. None of
+its current shell replies, including Rread and Rwrite, has the carrier's fresh
+delivery guard. The blocked-socket control demonstrates an owed lean Rwrite
+flushing after ShellFileWire::revoke. The carrier must suppress its receipt if
+authority is withdrawn after acceptance; transport close does not undo accepted
+owner work. This stricter delivery rule is intentional, not errno/lifecycle
+parity. The tests also cover authentication failure after capture, wrong host
+connection/epoch, lying headers/writer ids and writer clunk after capture.
+
+The authenticated fixture is in-process; the existing child-process fixture
+still exercises the direct export seam. Neither is a matched per-role census.
+Full/held journal, idle ACK, grant replacement and persistent authenticated
+lifecycle composition remain before measurement.
+
 ## Setup, authority and remaining comparison gate
 
 The current setup channel is a private Unix SCM_RIGHTS **test bootstrap** using
@@ -117,9 +161,9 @@ This is not an existing image-channel message or a new public allocation. The
 current image protocol does not negotiate these host-to-peer carrier descriptors;
 production setup needs its own contract/ledger review before integration.
 
-The real-export tests supply negotiation. They do not prove authenticated fid
-binding, caller-fresh pidfd/admission checks, partial 9P delivery, grant replacement
-or all loop failures. Writer clunk/expiry is exercised through the real export;
+The older real-export tests supply negotiation. The authenticated fixture proves
+the wrapper wiring described above, not caller-fresh pidfd/admission checks,
+production fid-binding lifecycle, grant replacement or all loop failures. Writer clunk/expiry is exercised through the real export;
 a production adapter still needs the full authenticated wrapper and withdrawal
 routing. No process-exit or transport event may invent pixel release or undo
 accepted owner work. Full/held event offsets, idle ACK, terminal reserve and

@@ -2,12 +2,39 @@
 use sophia_9p::{AttachContext, ConnectionId, Errno, Fid, ReadOutcome, authentication::Attempt};
 use sophia_protocol::*;
 use sophia_runtime::authenticated_files::{FileAuthentication, FileAuthenticationFactory};
+#[cfg(feature = "experimental-native-frame-transaction")]
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub struct Factory;
+#[cfg(feature = "experimental-native-frame-transaction")]
+#[derive(Default)]
+pub struct CheckState {
+    pub calls: usize,
+    pub deny: bool,
+}
+#[cfg(feature = "experimental-native-frame-transaction")]
+pub struct CountingFactory(pub Arc<Mutex<CheckState>>);
+#[cfg(feature = "experimental-native-frame-transaction")]
+impl FileAuthenticationFactory for CountingFactory {
+    fn create(
+        &mut self,
+        connection: ConnectionId,
+        _: Instant,
+        _: sophia_9p::unix::Wake,
+    ) -> Result<Box<dyn FileAuthentication>, Errno> {
+        Ok(Box::new(Owner {
+            connection,
+            admitted: false,
+            checks: Some(self.0.clone()),
+        }))
+    }
+}
 struct Owner {
     connection: ConnectionId,
     admitted: bool,
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    checks: Option<Arc<Mutex<CheckState>>>,
 }
 impl FileAuthenticationFactory for Factory {
     fn create(
@@ -19,6 +46,8 @@ impl FileAuthenticationFactory for Factory {
         Ok(Box::new(Owner {
             connection,
             admitted: false,
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            checks: None,
         }))
     }
 }
@@ -52,6 +81,14 @@ impl FileAuthentication for Owner {
         Ok(())
     }
     fn check(&mut self, connection: ConnectionId, _: Instant) -> Result<(), Errno> {
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        if let Some(checks) = &self.checks {
+            let mut checks = checks.lock().unwrap();
+            checks.calls += 1;
+            if checks.deny {
+                return Err(Errno::EACCES);
+            }
+        }
         if self.admitted && connection == self.connection {
             Ok(())
         } else {

@@ -681,3 +681,17 @@ fn failed_hint_write_closes_as_unpublished() {
     assert!(client.closed && !client.unknown && client.known.is_none());
     assert!(client.begin(request(1, 10, 0).identity).is_err());
 }
+
+#[test]
+fn oversized_success_refuses_eio_and_short_success_never_confirms_custody() {
+    let r = request(1, 20, 0);
+    for (count, error) in [
+        (r.bytes.len() as u32 + 1, Errno::EIO),
+        (r.bytes.len() as u32 - 1, Errno::EINVAL),
+    ] {
+        let mut slot = Slot::default();
+        assert_eq!(slot.process(&r, |_| Ok(count)), Err(error));
+        assert!(slot.closed());
+        assert!(slot.publish(true).is_none());
+    }
+}

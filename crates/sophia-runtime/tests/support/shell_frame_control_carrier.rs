@@ -53,6 +53,18 @@ impl Carrier {
         }
     }
     fn submit(&mut self, files: &mut ShellFiles, bytes: &[u8]) -> Receipt {
+        self.capture(bytes);
+        let identity = self.captured.identity;
+        self.slot
+            .process(&self.captured, |record| {
+                // The carrier binds to the existing writer, not a cached negotiation flag.
+                files.read_reusable_transaction(identity.writer, 0, 0)?;
+                files.write(&Node::FrameSubmit, &mut Handle::Plain, 0, record)
+            })
+            .unwrap();
+        self.slot.publish(true).unwrap()
+    }
+    fn capture(&mut self, bytes: &[u8]) {
         let header = decode_shell_file_record_at_revision(
             bytes,
             ShellFileClass::Candidate,
@@ -78,14 +90,6 @@ impl Carrier {
                 ReadPlan::HeaderThenPayload,
             )
             .unwrap();
-        self.slot
-            .process(&self.captured, |record| {
-                // The carrier binds to the existing writer, not a cached negotiation flag.
-                files.read_reusable_transaction(identity.writer, 0, 0)?;
-                files.write(&Node::FrameSubmit, &mut Handle::Plain, 0, record)
-            })
-            .unwrap();
-        self.slot.publish(true).unwrap()
     }
 }
 fn equal(control: &ShellFiles, candidate: &ShellFiles) {
@@ -370,6 +374,9 @@ fn transport_close_does_not_roll_back_export_custody_or_publish_after_withdrawal
 
 #[path = "shell_frame_control_carrier_process.rs"]
 mod process;
+
+#[path = "shell_frame_control_carrier_auth.rs"]
+mod authenticated;
 
 fn publish_client(client: &mut Client) {
     let (_reader, writer) = sophia_control_ring_probe::wake::pipe().unwrap();

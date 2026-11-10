@@ -43,6 +43,11 @@ counts-only census before timing. See the probe README for exact coverage and
 unproved lifecycle boundaries. Review 6f59474c accepts 52ea995d4 as a
 correctness checkpoint only; the next client follow-up distinguishes prepared
 from successfully published hints without changing host custody.
+The next adapter checkpoint uses a cfg(test)-only authenticated wrapper and
+socket/Pipeline control, per challenge 4471e1d4. Its required stricter receipt
+delivery is explicit: all existing ShellFiles replies are delivery-unguarded.
+Complete persistent lifecycle composition and a matched census remain open;
+supplied authentication verdicts prove wiring only. No production path is added.
 Ring-01 evidence stays frozen; a4f599e7a source disposition remains OPEN and must
 not be folded into a carrier effect claim.
 

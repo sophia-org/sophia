@@ -105,9 +105,13 @@ impl Slot {
             Ok(count) if count as u64 == id.bytes => Outcome::Accepted {
                 applied_ack: id.ack,
             },
-            Ok(_) => {
+            Ok(count) => {
                 self.close();
-                return Err(Errno::EINVAL);
+                return Err(if count as u64 > id.bytes {
+                    Errno::EIO
+                } else {
+                    Errno::EINVAL
+                });
             }
             Err(error) => Outcome::Refused(error),
         };

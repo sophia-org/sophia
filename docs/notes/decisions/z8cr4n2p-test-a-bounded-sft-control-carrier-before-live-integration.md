@@ -200,3 +200,19 @@ clarifications are in the probe README. The next client-only lifecycle follow-up
 marks an attempt published only after its hint write succeeds; failed publication
 closes as unpublished instead of unnecessarily unknown. This does not grant a
 replay on the closed carrier or weaken host custody.
+
+## Authenticated adapter challenge, November 9
+
+Challenge 4471e1d4 accepts a cfg(test)-only binding and real authenticated-wrapper
+join within step 3. Connection/epoch come from host adopt/attach, not the SQ;
+write access is bound during setup and reusable-writer expiry is checked on every
+dequeue. The current probe adds a real socket/Pipeline control and supplied-owner
+check counters. No production accessor, carrier API or custody scope is added.
+
+The fresh receipt gate is deliberately stricter than **all** existing shell
+replies: ShellFiles does not enable guard_read_delivery, including for Rread.
+An already-owed lean Rwrite may flush after revoke; a carrier receipt must not.
+The candidate uses AuthenticatedFiles::with_delivery around its actual receipt
+write. The README records the extra inner check and the remaining binding and
+persistent lifecycle gaps. This checkpoint does not establish full carrier
+parity, authorize integration or select a census/timing/native run.
