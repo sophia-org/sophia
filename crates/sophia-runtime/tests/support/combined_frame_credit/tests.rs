@@ -198,8 +198,7 @@ fn stale_submit_and_original_byte_deadline_bounds_are_preserved() {
     let plan_raw = submitted_plan.descriptor.as_raw_fd();
     let (error, fd, returned_plan) = worker
         .submit_combined(&stale, fd, submitted_plan, sender)
-        .err()
-        .expect("stale submission");
+        .expect_err("stale submission");
     assert_eq!(error, IsbSubmitFailure::Invalid);
     assert_eq!(fd.as_raw_fd(), raw);
     assert_eq!(returned_plan.id, stale.job);
@@ -237,10 +236,7 @@ fn stale_submit_and_original_byte_deadline_bounds_are_preserved() {
         let result = completion(&mut worker);
         assert_eq!(result.job, token.job);
         assert_eq!(result.result.err(), Some(expected));
-        let returned_plan = returned_plan
-            .try_recv()
-            .ok()
-            .expect("plan before completion");
+        let returned_plan = returned_plan.try_recv().expect("plan before completion");
         assert_eq!(returned_plan.id, token.job);
         assert_eq!(returned_plan.descriptor.as_raw_fd(), raw);
         assert!(!token.was_forwarded());
@@ -268,7 +264,7 @@ fn cancelled_before_submission_uses_the_unchanged_completion_route() {
     assert_eq!(result.job, token.job);
     assert_eq!(result.result.err(), Some(IsbValidationFailure::Cancelled));
     assert_eq!(
-        returned_plan.try_recv().ok().expect("cancelled plan").id,
+        returned_plan.try_recv().expect("cancelled plan").id,
         token.job
     );
     assert!(!token.was_forwarded());
@@ -339,7 +335,7 @@ fn full_or_disconnected_destination_preserves_the_old_owner_return() {
     assert_eq!(result.job, second.job);
     assert_eq!(result.result.unwrap().bytes(), &[0; 8]);
     assert_eq!(
-        second_plan.try_recv().ok().expect("full plan return").id,
+        second_plan.try_recv().expect("full plan return").id,
         second.job
     );
     assert!(!second.was_forwarded(), "Full is not a successful move");
@@ -359,11 +355,7 @@ fn full_or_disconnected_destination_preserves_the_old_owner_return() {
     assert_eq!(result.job, third.job);
     assert_eq!(result.result.unwrap().bytes(), &[0; 8]);
     assert_eq!(
-        third_plan
-            .try_recv()
-            .ok()
-            .expect("disconnected plan return")
-            .id,
+        third_plan.try_recv().expect("disconnected plan return").id,
         third.job
     );
     assert!(

@@ -87,7 +87,7 @@ fn generic_transport_requires_no_payload_inspection_traits() {
         )
         .is_none()
     );
-    let returned = receiver.try_recv().ok().expect("generic envelope");
+    let returned = receiver.try_recv().expect("generic envelope");
     assert_eq!(returned.plan.0.as_raw_fd(), raw);
     assert_eq!(returned.pixels.bytes(), &[0; 8]);
     assert!(identity.forwarded.load(Ordering::Acquire));
