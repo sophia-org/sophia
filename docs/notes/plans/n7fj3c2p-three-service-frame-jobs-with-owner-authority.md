@@ -127,3 +127,51 @@ owner-side pixel work, cached liveness, speculative unbounded memory or a new ri
 - [Portable mechanisms](../concepts/fp9o6pdb-portable-plan-9-interfaces-with-native-frame-mechanisms.md)
 
 No Rust source, native run or performance evidence belongs to this contract draft.
+
+## Authority challenge: prototype gate held
+
+Review `sophia-framejob-authority-review-claude-01` (seal `2e0c759f`, report
+`2d1bea35`) finds the direction coherent enough to model after the following
+requirements and decisions; it is NOT authority approval. Model ee4b95725 is
+only the preliminary ownership projection (evidence `4c811ba9`).
+
+Required contract refinements, accepted for the next revision:
+
+- Plan geometry is untrusted declared metadata, never a fabricated validated lease.
+  Validated width/height/stride/extent must equal the planned description; mismatch
+  is Malformed, with charges retained until proper settlement. Recheck allocation
+  rows/scale generation, output size, viewport/content-layout generation, foreign
+  retirement claims, interaction revocation and native service availability.
+- PreparedFrame must carry composition records and transform. Owner installation
+  must atomically update content entry, retirement claim, display list and input
+  projection with rollback. Specify the identical-frame Ok(false) handling; do not
+  claim the existing content install already accepts rendered results.
+- Preserve service-1 Rwrite and its command-custody meaning; retain the existing
+  four reserved journal responses. Prepared is owner-produced after the service-2
+  checks, never implied by a worker completion.
+- Pin successor gating, validation credit held through render, exact pending-table
+  ownership and worker-death transfers. Withdrawn render leases use the existing
+  Release command; backing follows retired-epoch reconciliation. Quarantine and
+  disconnect prove neither last use nor safe release.
+- Renderer has three slots per output and acquires them on its thread. Deferred
+  is a real busy-output case. Specify bounded retry or an explicit non-success
+  result retaining backing; do not assert it impossible. Gate dispatch against
+  current in-flight/stalled/quarantined state.
+
+Two owner decisions remain before completing the contract/model:
+
+1. Execution placement: validation on the renderer thread (new contention and
+   stall-budget implications) versus retaining both existing workers and handing
+   a private validated job directly between them (new transfer/cancellation
+   protocol). Recommendation: preserve the separate validation thread for
+   responsiveness, but authorize that as a revised design rather than silently
+   interpreting the current combined-worker sketch that way.
+2. Scene churn after dispatch: a new explicit obsolete-scene refusal/retry contract
+   versus a clearly reported fallback to the existing owner/render path. Do not
+   overload existing Stale (peer identity drift) or hide a second render. Full
+   scene version covers every retained composition input, not only shell content.
+   Model non-shell churn, stalled work, slots and starvation before selecting.
+
+These are prerequisites to the promised full model and prototype, not decisions
+an implementer may make inside the runtime diff. No new capability, codec,
+production API, worker handoff or native run is selected at this checkpoint.
