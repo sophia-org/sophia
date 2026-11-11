@@ -1,347 +1,403 @@
 # Step 3 bounded authority review: owner integration of the combined frame job
 
-Draft for review by Codex, then niltempus. It is not an authority pass, and it
-selects no source. It answers the five obligations Codex attached to its
-4c-3(a) acceptance (BRIDGE.md, "4c-3 (a) accepted as an inert scaffold";
-review seal 8c85cec1), against n7fj3c2p gates 1 to 4, TRANSFER.md revision 5
-and FALLBACK.md. Code anchors are function names at head 53ce24697, with line
-numbers where they help. Paths are under crates/.
+Revision 2. This is a draft for review by Codex, then niltempus. It is not an
+authority pass and selects no source. n7fj3c2p requires a design authority
+pass before any gate-3 prototype is written; verifying the prototype is a
+separate, later acceptance.
 
-This review was written with Codex's acceptance in hand. The facts it relies on
-were gathered read-only from the source and are restated here so a reviewer can
-check each one. Nothing was built or run.
+Revision 1 (fdc2b1c11) answered the five obligations from Codex's 4c-3(a)
+acceptance (seal 8c85cec1). Codex reviewed it and asked for revision (seal
+1ac6c496), with five blocking findings, F1 to F5, and two drafting
+corrections. This revision answers each one.
 
-## What the source shows that the contract did not
+Anchors are function names at head fdc2b1c11, with line numbers where they
+help. Paths are under crates/. The facts were gathered read-only from the
+source; nothing was built or run.
 
-The provisional plan cannot be today's frame type. The renderer worker
-renders a `PendingRenderedFrame` (sophia-backend-live
-scanout/rendered_scanout/exporter/discovery.rs:28). For shell content, the
-frame is `Mixed(LiveOwnedMixedCompositionFrame, ..)` (sophia-renderer-live
-native_scanout.rs:273). Lowering takes each content image's pixel storage
-out of its live store lease with `LiveCpuPixelStorage::try_from(lease)`
-(renderer-live head_composition.rs:290-366, pixel_storage.rs:37-47). The
-display list that feeds it is built by the visual runtime
-(`retained_output_head_composition_frames`, compositor_graphics.rs:561) from
-`shell_content`, and `shell_content` is written only by
-`set_shell_component_content_on_target`, which needs those leases
-(shell_content.rs:52-68). At service 1 the pixels are not captured yet. A
-plan that renders without them needs a layer that names a validated image
-which does not exist yet. That layer is bound on the renderer thread
-(TRANSFER.md "Plan transport"), and composing it needs a provisional
-`shell_content` entry that is never installed. Both are new contracts. They
-touch sophia-renderer-live (a placeholder layer), the visual runtime
-(composition without installation) and the backend worker (binding at
-dequeue).
+## Standing facts
 
-Submission has no entry point for an already-rendered lease. The only
-constructor of `NativeGbmRendererWorkerScanoutLease` is
-`NativeGbmRendererWorker::poll` (worker.rs:729). Its fields are private.
-Its only consumer is `export_from_worker` (exporter/discovery/worker_export.rs:21),
-reached from `export_rendered_scanout_buffer`, which `prepare.rs:241`
-calls on the tick path. The native scanout's head state machine also has to
-see the frame: `pending_content`, `rendering_content`, `submitted_content`
-and `presented_content`, the `deferred_mirror_generations` queue, native
-frame ids from `next_frame_id`, and retirement protection
-(`output_retirement_protected`, renderer_images.rs:471-488). The combined
-result must enter at the point where `poll()` would have yielded
-`Exported`, for the same head, frame id and correlation. No current method
-does that.
+- **The provisional plan cannot be today's frame type.** Lowering a
+  `Mixed` frame takes each content image's storage out of its live lease
+  (renderer-live head_composition.rs:313, pixel_storage.rs:37-54).
+- **There is no entry point for an already-rendered lease.** The only
+  constructor is `NativeGbmRendererWorker::poll` (exporter/worker.rs:729),
+  and the only consumer is `export_from_worker`
+  (exporter/discovery/worker_export.rs:21).
+- **Response room is four reserved records**: Prepared, terminal, resource
+  status and release (epoch_registry/owned_ring/frame.rs:61). Two of them
+  are journal reservations, status and release
+  (files/export/owned_ring/offer.rs:54-61). Codex agreed with this
+  correction. TRANSFER.md takes it when this design is accepted.
+- **The validator has the default plan type.** `ShellIsbImageOwner` holds
+  `IsbValidationWorker` with the default plan (shell_transport/image_owner.rs:20).
+  The owner, or its owned-copy part, takes a defaulted generic plan
+  parameter that the session sets to the backend's `CombinedRenderPlan`.
+  There is no `Box<dyn Any>`.
+- **One owner turn runs in this order** (sophia-session
+  live_session/owner_loop/physical_input_loop.rs):
+  1. component service, which services the image owner first
+     (`ShellComponentConnections::turn_connected` →
+     `ShellIsbImageOwner::service`), then content submission
+     (`service_content` → `submit_bundle`)
+  2. `runtime.service_native`, whose reducer runs `run_tick` for any output
+     whose exporter reports pending work (service.rs:353, :421)
 
-Four related facts correct standing text:
+  So one turn can settle a result, install it and reach tracked submission.
+- **The host derives stride and format.** The offer request carries only
+  width and height (isb_jobs/owned_copy.rs:9-28). The host derives the
+  description in allocations/image.rs:6-46: row `width*4` with a checked
+  multiply, pixel format 1, total `row*height`. The compositor stride is
+  `width_px*4` and the format is `DRM_FORMAT_ARGB8888`
+  (sophia-session content/projection.rs:96-100). Revision 1's "declared
+  stride" is withdrawn; the plan freezes this host-derived stride and extent.
 
-- Response room, not journal reservations. The owned-ring frame check is
-  `response_room >= 4` control records: Prepared, terminal, resource status
-  and the eventual release (epoch_registry/owned_ring/frame.rs:61,
-  commit.rs:79). The file journal itself holds two reservations, status and
-  release (files/export/owned_ring/offer.rs:54-61). TRANSFER.md's "four
-  journal obligations" should read "four reserved response records, two of
-  them journal reservations".
-- The shell image owner's validator is not the combined one.
-  `ShellIsbImageOwner` holds `IsbValidationWorker` with the default plan
-  type (shell_transport/image_owner.rs:20,32), one owner per connection
-  (sophia-session shell_component_connections.rs:80). The combined path
-  needs `IsbValidationWorker<CombinedRenderPlan>`, whose plan type is a
-  backend type that sophia-runtime cannot name. The owner, or its owned-copy
-  part, must become generic over the plan with the session choosing the
-  type, or the plan stays opaque behind a runtime-defined box. TRANSFER.md
-  already forbids `Box<dyn Any>`.
-- `submit_bundle` discards the runtime's identical-frame `Ok(false)` and
-  still emits Prepared and a pending presentation (sophia-session
-  metadata_shell/content/submission.rs:31-59). It has no rollback after the
-  runtime install. The setter itself rolls back `shell_content` and the
-  retirement claim if `queue_retained_projection` fails (shell_content.rs:128-146).
-- The conventional path compares facts, interaction and candidate
-  generations (sophia-runtime shell_content/candidates.rs:785-793, 643-646)
-  and the stored `content_layout_generation`. No scene or composition
-  generation exists there. The backend has `scene_generation` (the maximum
-  committed generation; compositor_graphics.rs:516-520), `target_generation`
-  per head, and `logical_content_checksum` per head frame
-  (renderer_images.rs:7-14).
+## Service sequence
 
-## Obligation 1: one owner row with exact identity
+Service 1, admission. This runs in the frame-commit turn, through existing
+calls in this order:
 
-The row is `CombinedPending`, owned by the session beside the connection's
-image owner. It binds the runtime half and the backend half and is the only
-place either half is settled.
+1. **Eligibility.** The whole-composition eligibility check (F4) runs on
+   metadata only. If it refuses, the frame takes today's path.
+2. **Facade reservation.** `reserve_combined_frame(head)` reserves the
+   facade's cell and returns the inbox.
+3. **Runtime admission.** `reserve_frame_commit` runs with the combined
+   admission joined (F3). It reserves the response room, the single worker
+   credit, `begin_isb` and `bind_frame_copy`, and returns the
+   `CombinedReservation` with the same worker job. A refusal cancels the
+   facade reservation.
+4. **Plan.** `compose_provisional_head_frame` builds the plan (F1, F4) and
+   allocates the native frame id.
+5. **Submission.** `submit_combined` receives the plan and the inbox. This
+   replaces `submit_reserved_copy` for this job and for no other.
 
-The runtime half holds the connection and content grant epochs from the
-owned-ring `Identity` (owned_ring_protocol.rs:18-33), the
-`FrameCopyBinding` (candidates/credits/copy.rs:5-8), the worker job, the
-`CombinedReservation`, the deadline and the four reserved responses.
+Service 2, result. This runs in the turn the result wake rings:
 
-The backend half needs an identity that still finds the issuing facade after
-disable, mirror, remap, replacement, revocation or disconnect. None of
-`OutputId`, the head vector index or `LiveRendererWorkerOutputKey` does that
-alone. The key is `(group << 32) | head` (renderer_initialization.rs:69-72),
-so it repeats when a worker re-attaches. The facade's real identity is the
-triple of its core's `image_store` (from the `NEXT_IMAGE_STORE` counter,
-worker.rs:231), its output key, and the `Arc<OutputClaim>` made at each
-`attach` (worker.rs:380). Topology installation never drops, replaces or
-reorders exporters, and never changes `head.head` or `head.group`
-(topology/installation.rs:147-378). Shell capture already finds its exporter
-by `image_store_identity()` (persistent_native_scanout/shell_capture.rs:197).
-The row therefore records:
+1. **Drain.** The session drains `take_combined_frame_result(head)`. It
+   checks the token against the row's reservation and the correlation
+   against the row's job.
+2. **Settle.** `settle_combined_frame` clears the credit and returns the
+   pixels. An exported result moves into the facade's cell as `Held` (F2),
+   so the facade owns the lease before the credit clears.
+3. **Reconcile.** `OwnedCopyOwner::receive_forwarded(job, pixels)` (F3)
+   records the result. The image owner's existing `reconcile` and
+   `publish_releases` then make the resource resident and journal the
+   source release, in the same service call.
+4. **Bundle.** The content service runs
+   `begin_content_submission → begin_submission_inner` unchanged. That
+   builds the `ContentRenderBundle` with real store leases and applies the
+   Stale and Budget checks.
+5. **Install or fall back.** If the bundle belongs to the row's candidate
+   and every check in F1 and F2 passes, `submit_rendered_bundle` installs
+   the result and accepts it. Otherwise the held result is retained for
+   Release and today's `submit_bundle` renders conventionally: this is
+   FALLBACK.md's one-shot path.
+6. **Submit.** `service_native` in the same turn exports and submits
+   through the unchanged tracked path.
 
-    CombinedHead {
-        native_owner: NativeFrameOwner,   // process-unique, native_identity.rs:10-25
-        head: RenderHeadId,               // located by head_index_for_head
-        image_store: u64,                 // the issuing facade's core
-        claim: Arc<OutputClaim>,          // pointer identity of the issuing facade
-        target_generation: u64,           // at admission
-        output: OutputId,                 // for authority checks only, never routing
-    }
+Service 3, completion: page-flip retirement, presentation, terminal and
+credit return, all as today.
 
-Collection, cancellation and settlement find the exporter by `image_store`
-and `head`, then require `Arc::ptr_eq` on the facade's claim. A missing
-exporter, a different `NativeFrameOwner` or a different claim is a
-classified state, never "no renderer". The 4c-3 forwarders change to this
-lookup (section "Backend correction before any caller").
+## F1: exact scene equality
 
-Admission reserves both halves or neither. The order is: validator
-`reserve_combined`, facade `reserve_combined_frame`, response room. A
-failure rolls back in reverse with the existing calls (`release_reserved`,
-`cancel_combined_frame`, `cancel_owned_offer`). A result is accepted only if
-its `CombinedToken` matches the row's reservation (`Arc::ptr_eq`,
-combined.rs:287) and its correlation matches the row's job. Unknown,
-duplicate or stale results change no row.
+The diagnostic checksum cannot authorize acceptance. `logical_scene_checksum`
+leaves out each `ContentImage`'s resource, node and pixel version
+(sophia-engine composition_plan/checksum.rs:139-152). Two other resources
+with the same generation and geometry hash the same. The scene check
+compares exact identities instead.
 
-A retention refusal is never discarded. `settle_combined_frame` must return
-the unretained `WorkerResult` intact. A result for a different facade must
-not cancel that facade's cell: the 4c-3 code does both, and both change.
+At service 1 the plan records a `CombinedSceneKey` for the head. It is the
+exact list of the head's lowered layers, in order, made of:
 
-Teardown keeps requested detach apart from proof. Facade Drop detaches the
-claim and sends Deregister without acknowledgement (worker.rs:799-811). The
-service drops the output state when the claim is detached
-(service.rs:98,155), so its buffers return with it. That proves the worker
-gave up the output state, not that a device operation finished. A row whose
-facade was dropped may settle its credit only with TRANSFER.md's qualified
-proof: `CompletedNativeOwner` for the matching `NativeFrameOwner`, after
-`poll_shutdown`, disposition and owner destruction. Until then it keeps its
-charges and blocks replacement over unresolved rows, as RetirementFailure
-already does.
+- the placement of every layer
+- for every `Cpu` layer: `pixel_version`, `handle`, `generation`, `size`,
+  `stride` and `format` (`LiveSharedCpuBufferSource`,
+  renderer-live cpu_composition.rs:41-51)
+- for every `Solid` layer: geometry and colour
+- for every shell content image: the `CompositorNodeId` (grant, output,
+  candidate, surface and placement), the `ContentResourceBegin` (grant
+  epoch, resource id and generation, size, format) and the lease's
+  immutable pixel version (`CpuPixels.version`, from
+  `next_cpu_pixel_version`, resources/backing.rs:53-57; this needs a
+  read-only accessor)
+- the head's `target_generation`, the `content_layout_generation`, the
+  presented transform, and the cursor plan
 
-## Obligation 2: provisional geometry and resource binding
+The candidate's own image appears as a placeholder that carries its
+`CompositorNodeId` and host-derived description.
 
-`project_render_bundle` (sophia-session metadata_shell/content/projection.rs:7)
-mixes metadata checks and lease reads inside one loop. The lease's
-description supplies width and height before the bounds check (:37-45).
-The split is:
-
-- `preflight_render_plan(bundle_metadata, declared, output, allocations)`
-  runs every metadata check in today's order: output identity, candidate
-  generation, output size, surface and allocation existence, same output,
-  placement bounds with checked add, node uniqueness, visible placements,
-  targets with `scale_generation`, popouts. It uses the declared width,
-  height and stride from the offer's `OwnedCopyImageRequest`. It returns a
-  `ProvisionalContentFrame` that holds no lease and cannot convert into
-  `LiveShellContentFrame`.
-- `bind_validated(provisional, lease)` runs today's lease checks against
-  the validated description and rejects any mismatch as Malformed. It
-  happens once at owner consumption. The renderer runs the same size,
-  stride and extent equality at dequeue for its own placeholder (TRANSFER.md)
-  and reports a mismatch as a classified failure, never as Malformed.
-
-A provisional composition is the visual runtime's existing display list for
-that output, built as if the provisional content were installed. It cannot
-write `shell_content`, retirement claims or `retained_projection_pending`.
-The proposed operation is
-`compose_provisional_head_frame(output, provisional, scene) -> CombinedRenderPlan`
-in compositor_graphics, using `retained_composition_source_set`,
-`display_list_for_output` and `compose_native_head_frames_from_sources`.
-The provisional image becomes a new `LiveOwnedMixedCompositionLayer`
-variant in sophia-renderer-live. It carries the declared description and a
-binding slot and nothing else. Every other layer keeps its existing lease or
-storage. Those are the "already-validated predecessor CPU content leases"
-TRANSFER.md permits in the plan. The plan also records the
-`scene_generation`, the head's `target_generation`, the
-`content_layout_generation` and the transform it was composed against.
-
-The authority rechecks at consumption are the setter's checks in its order
-(shell_content.rs:53-117): grant per layer, interaction revocation,
-quiescence and frame service, foreign retirement claims, viewport and layout
-generation. Before them come allocation rows and scale generation, output
-extent, current grant and epoch, and native availability. Negative cases:
-declared and validated size differ; stride overflow; extent overflow; a
-placement out of bounds after an allocation shrinks; grant lost between
-admission and result; interaction revoked; foreign retirement claim
-appears; native suspended. Each is a refusal or withdrawal on today's rules,
-never a fallback.
-
-## Obligation 3: owner-only installation of the rendered result
-
-Successful installation is a lease transfer, separate from the
-discard-and-Release settlement 4c-3 implements. It has two halves, done in
-one owner turn and rolled back together on refusal.
-
-The visual runtime half is `install_rendered_shell_content(frame, layer,
-plan_identity)`, beside `set_shell_component_content_on_target`. It runs
-the same checks, writes `shell_content` and the retirement claim the same
-way, and does not call `queue_retained_projection`. It binds the retirement
-claim to the combined frame's native frame id, which `queue_retained_projection`
-would otherwise do through `bind_shell_retirement_claims`. Its rollback is
-the setter's. Identical frames: if the frame equals the installed one, the
-owner settles the result as Expired-equivalent (retain and Release the
-lease) and returns `Ok(false)`. The session caller must then skip Prepared
-and pending presentation. This is the honest form of today's discarded
-`Ok(false)`, and it changes nothing on the conventional path.
-
-The native scanout half is `accept_combined_render(head: CombinedHead,
-result)`. It finds the facade by identity, checks that the head's
-`target_generation` and `NativeFrameOwner` still match, and checks that the
-head has no pending, rendering or protected-retirement content
-(renderer_images.rs:280, 471-488). It then stores the exported result so the
-next `export_rendered_scanout_buffer` for that head returns it, exactly as
-`poll()` returning `Exported` would. It records the head's
-`rendering_content` with the frame id allocated at admission. The existing
-tracked path (`prepare.rs:201`, `tracked_submit.rs:10`,
-`custody.accept_submission`) then submits it unchanged. Uncertain
-submission, page-flip retirement and device detach stay where they are.
-Prepared is emitted only after both halves succeed. Presentation follows
-the exact tracked completion.
-
-Multi-output effects: admission is single-output and single-head, so one
-result touches one head. An output that has become mirrored or remapped
-since admission fails the native-half check, and its result settles by
-Release. That is a classified failure, never a silent drop.
-
-## Obligation 4: bounded accounting and failure ownership
-
-Charges that stay on the row until its settlement:
-
-- the validator credit, held through rendering and cleared only by
-  `settle_combined_token`
-- the backing headroom (`owned_offer_available`, files/export/owned_ring.rs:109-136)
-- the source slot, busy until the read ends and its release is journaled
-- the private frame binding
-- the four reserved responses
-- the facade's Release cell
-
-Rwrite keeps its custody meaning: a lean commit is settled by its Rwrite
-alone (files/export/transaction.rs:176). The source release is published
-by today's `publish_releases` at service 2, after consumption or exact
-failure, never from the validator.
-
-| Failure | Where it is seen | Who owns the charges | How it settles |
-| --- | --- | --- | --- |
-| Validation fails before forwarding | `take_completed` with `owner_plan` | row | ordinary completion; plan dropped on owner |
-| Inbox refuses the move | same | row | same; `cancel_combined_frame` |
-| Forwarded, flag not yet set | none | row | wait for the result or exit; no release |
-| Renderer expires the job | `CombinedOutcome::Expired` | row | settle; cell Free; source release published |
-| Render fails | `Rendered(Failed)` | row | settle; cell Free |
-| Exported, owner refuses | `Rendered(Exported)` | row, then cell | retain, settle; Release on next poll |
-| Validator thread dies | NotifyOnExit, BrokenPipe | row | Io as today; credit kept |
-| Renderer route disconnects | `NotConnected` | row | kept until `CompletedNativeOwner` proof |
-| Facade dropped (topology, revocation) | identity lookup fails | row | kept until qualified proof |
-| Journal full at publication | `EAGAIN` | row's release | retried next turn, as today |
-| Grant lost or deadline passes | `withdraw_epoch`, `expire` | row | cancel flag only; result still settles |
-
-A successor may be admitted while its predecessor's lease is still retained
-in the cell only if the cell is free. The cell is per facade, so the
-successor is refused and takes the conventional path. That refusal is
+At consumption the owner recomposes the same key from current state. This
+is metadata work: no pixels are touched and no lease is created. The key
+must match exactly, except that the placeholder must now match the bundle's
+real image. That image's description must equal the validated one and its
+node must equal the placeholder's. The recomposition is owner work and is
 counted.
 
-## Obligation 5: scene fallback and progress
+Classification:
 
-The scene comparison is the plan's recorded `scene_generation`,
-`target_generation`, `content_layout_generation` and transform against the
-current values at consumption, plus a recomputed `logical_content_checksum`
-for the output's other layers. `scene_generation` alone is a maximum over
-committed generations and could miss a lower-generation change. Any
-difference is scene churn. Churn takes FALLBACK.md's one-way,
-once-per-candidate conventional path: retain the speculative lease, clear
-the credit, latch the candidate, and let `begin_submission_inner` and the
-existing content service submit it. A change in authority or geometry is
-never treated as churn.
+- **Candidate's own authority or geometry fails** (grant lost, interaction
+  revoked, foreign retirement claim, allocation or scale changed, placement
+  out of bounds, validated and declared descriptions differ): the existing
+  refusal and withdrawal rules apply, through the conventional content
+  service. These never become a scene-only fallback.
+- **Head topology changed** (target generation, head disabled or mirrored,
+  output remapped, native owner changed): the fast path is declined and the
+  conventional path decides with its own checks.
+- **Any other layer or input differs**: this is scene-only churn and takes
+  FALLBACK.md's one-shot conventional path.
 
-Prototype checks name their negative controls before validation:
+Negative controls, named before validation:
 
-- full and disconnected Release
-- an occupied three-slot pool
-- ordinary and combined contention for one output
-- deadline and cancel at each phase
-- capture on and off
-- disable, mirror and remap during each phase
-- no second validation or render on the stable success path
+- another component's resource is replaced by one with the same numeric
+  generation and geometry
+- another component's grant is replaced or revoked
+- a surface's `pixel_version` changes with the same generation
+- the transform or `content_layout_generation` changes
+- the cursor moves
 
-The mechanism capture counts fallback work, retained age and added
-notifications. Three services and any CPU saving stay claims for the
-later ABBA.
+## F2: entering the native lifecycle as an accepted render
 
-## Eligibility for the first prototype
+An accepted combined result becomes the facade's in-flight request. Storing
+it beside the facade would not work: the tick returns early unless
+`pending_frame()` is true (singleton_tick.rs:31-35). `pending_frame()`
+reports `in_flight` (discovery.rs:586-590), and failure cleanup chooses
+`rendering_content` only when the worker was in flight (singleton_tick.rs:262-293).
 
-Admission takes the combined path only when all of these hold; otherwise
-the frame stays on today's path, chosen before any reservation:
+The facade's cell has four states:
 
-- one enabled head serves the output, and it is not mirrored
-- the head's worker is attached, idle and not quarantined
-- the combined cell is free
-- the content is CPU storage, not dmabuf or snapshot
-- capture is not active on the head
-- the frame comes from the owned-ring lean lane
+- `Free`
+- `Reserved`: set at admission
+- `Held(WorkerResult)`: set at settlement, for an exported result that is
+  not yet accepted
+- `Retained(DiscardedWorkerLease)`: a refused result, awaiting Release
+
+Settlement moves an exported result into `Held`. The facade owns it, so the
+credit can clear (the 4c-3 order). A failed or expired result frees the
+cell. In 4c-4, 4c-3's `settle_combined_frame` stops retaining an exported
+result for Release; it takes it as `Held` instead. Refusal converts `Held`
+to `Retained` on the facade that issued it. The `WorkerResult` never leaves
+the facade, and no lease is created for a refused result.
+
+Acceptance has two phases. Every check runs before anything changes:
+
+1. `preflight_rendered_install(frame)` in the visual runtime runs the
+   setter's checks in its order (shell_content.rs:53-117). It writes
+   nothing.
+2. `preflight_combined_accept(head)` in the native scanout requires all of:
+   - the facade has `Held` with the row's job
+   - ordinary `in_flight` and `pending_frame` are both `None`
+   - the head's `pending_content` and `rendering_content` are both `None`
+   - no protected retirement (renderer_images.rs:280, :471-488)
+   - matching `target_generation` and `NativeFrameOwner`
+
+   If an ordinary frame was queued for the head during validation, the
+   scene changed, so it falls back.
+
+If both preflights pass, the commit step cannot fail. It writes the
+following, in this order:
+
+1. runtime `shell_content` and `retained_projection_retirements`, with the
+   retirement claim bound to the plan's native frame id, as
+   `bind_shell_retirement_claims` would (projection/retirement.rs:129)
+2. head `rendering_content` and `last_checksum` (as
+   composition_installation.rs:193 does)
+3. `output_frames` pending then rendering, with the plan's damage snapshot
+4. facade `in_flight = InFlight { request: COMBINED_REQUEST, correlation, ready }`,
+   with the `Held` result moved into `ready` and the cell `Free`
+
+Revision 1 relied on the setter's two-field rollback; with no fallible step
+after the first write, nothing needs rolling back.
+
+In the tick that follows, `worker_was_in_flight` is true. `poll()` sees the
+`ready` result in place of the ordinary result channel and runs its existing
+checks on it: output, request id, correlation, capture and descriptor
+(worker.rs:671-697). It then yields `Exported` through the one constructor.
+The existing statuses then behave correctly:
+
+- `SubmittedWaitingForPageFlip` selects `rendering_content`
+  (singleton_tick.rs:136-149) and promotes rendering to submitted
+- a preparation or definitive submission failure takes `rendering_content`
+  and discards rendering (:262-293)
+- an uncertain submission stays on the existing custody path
+- `ScanoutExportPending` cannot occur, because `ready` is already terminal
+
+Ordinary `in_flight` still means one outstanding request: the facade has
+one at a time, and a combined request is tagged `COMBINED_REQUEST`.
+`worker_in_flight()` keeps its meaning for topology installation
+(installation.rs:318-328). An accepted combined render blocks a topology
+install exactly as an ordinary render does.
+
+Cancellation before export: once accepted, the request is in flight like
+any other. Revocation follows the existing in-flight rules; it does not
+need a new one.
+
+Test: a device-free fixture drives a real head and exporter through success
+to `SubmittedWaitingForPageFlip`, through preparation failure, and through
+definitive submission failure. It checks head contents, output frames and
+the cell after each.
+
+## F3: joining owned-ring admission and reconciliation
+
+There is one admission and one allocator. `reserve_copy`
+(epoch_registry/owned_ring.rs:121-168) gains a worker-reservation mode:
+
+- **ordinary:** `worker.reserve`
+- **combined:** `worker.reserve_combined`
+
+In combined mode the returned reservation's `job()` becomes the
+`worker_job`. `begin_isb` failure releases that row with `release_reserved`,
+as today. `reserve_frame_commit` passes the mode through and binds the same
+job to the candidate's `FrameCopyState` (commit.rs:104-117) and to the
+resource. `FrameAdmissionReservation` carries the `CombinedReservation`
+out. No second credit is spent, and the candidate's job equals the
+validator's job.
+
+There is one reconciliation entry. Clearing the token yields pixels and
+nothing else. The owned-copy owner gains
+`receive_forwarded(job, pixels) -> Result<(), ValidatedIsbPixels>`. It does
+what `receive` does (isb_jobs.rs:135): it matches
+`worker_job == job && submitted && result.is_none()` and sets
+`result = Some(Ok(pixels))`. It takes no `IsbValidationCompletion` and never
+calls `take_completed`. A mismatch returns the pixels. The existing
+`reconcile` then calls `complete_isb(grant, resource, result)`, which makes
+the backing resident in the store: there is no fabricated lease, because
+the store makes it. `publish_releases` → `finish_frame_copy` then matches
+the same job and binding (isb_jobs/owned_copy.rs:204, credits/copy.rs:31)
+and journals the source release. Retry ownership is the existing `Releasing`
+entry, and `EAGAIN` keeps it. Across a disconnect the row keeps the
+original grant epoch. `finish_frame_copy` refuses a stale identity, as today.
+
+Corrections to the revision 1 failure table, with each path cleaned up
+exactly once:
+
+| Path | Credit | Facade cell | Plan | Resource and candidate |
+| --- | --- | --- | --- | --- |
+| refused before the facade reservation | none | none | none | today's path |
+| facade reserved, runtime refuses | none | `cancel` | none | refusal as today |
+| runtime admitted, plan build fails | `withdraw(Cancelled)`, row released | `cancel` | none | existing withdrawal |
+| validation fails or inbox refuses | cleared by `take_completed` | `cancel` when the owner plan returns | dropped on the owner | ordinary Malformed or failure reconcile |
+| forwarded, result Failed or Expired | `settle_combined_token` | `Free` | consumed | `receive_forwarded`, then conventional render (decision 3) |
+| forwarded, result Exported | `settle_combined_token` | `Held` | consumed | `receive_forwarded`, then install or fallback |
+| renderer route disconnects | kept | kept | in flight | kept until `CompletedNativeOwner` |
+| facade dropped | kept | gone with the facade | in flight | kept until qualified proof |
+| journal full | unchanged | unchanged | - | `Releasing` retry |
+
+Rollback test at each reservation boundary: malformed validation, inbox
+refusal, `begin_isb` failure, and blocked reconciliation and journal.
+
+## F4: whole-plan eligibility and validated backing
+
+Admission checks the entire provisional composition for the head, not only
+the candidate. It is eligible only if all of these hold:
+
+- every layer is `Cpu` or `Solid`; `DmaBuf`, `RendererImage`, `Snapshot`
+  and `ManagedCapture` refuse
+- `image_reads` is empty
+- every `Cpu` layer's storage is `Shared`, `Content`, `Bytes` or `Lock`.
+  Dropping any of these frees memory or unmaps a sealed mapping, and none
+  holds a device handle (cpu_composition/pixel_storage.rs:7-15; Content's
+  drop ends in `SealedMapping`'s munmap, sophia-linux-peer
+  sealed_mapping.rs:88-94)
+- the cursor plan is plane-only, with no layer composited from a renderer
+  image
+- the earlier single-head, idle-worker, CPU-content, no-capture and
+  lean-lane conditions also hold
+
+A refusal is a metadata decision made before any reservation.
+
+Validated backing on the renderer: the placeholder layer carries only the
+host-derived description. At dequeue the renderer checks that the validated
+size, stride and extent equal it. It then wraps the `ValidatedIsbPixels` in
+a new `LiveCpuPixelStorage::Validated(Arc<ValidatedIsbPixels>)` and binds
+it as a `Cpu` layer. This adds no copy (the bytes are the sealed mapping,
+isb_pixels.rs:15-25) and no admitted lease. After the render the renderer
+drops the frame and recovers the pixels with `Arc::try_unwrap` into
+`CombinedRenderResult.pixels`. The row's backing charge stays on the row
+throughout. If the renderer kept a reference beyond the render, as damage
+history or a retained snapshot could, `try_unwrap` fails. That is a
+stopping condition to settle in the prototype, not a case to work around.
+
+Tests:
+
+- refusal for each disallowed layer class and for `image_reads`
+- dropping the validator queue and unwinding with a plan inside, showing
+  only memory is freed on that thread
+- the renderer returns the pixels with a strong count of one
+
+## F5: identical frames and protocol work
+
+Revision 1's `Ok(false)` branch is removed. A new candidate cannot equal
+the installed frame: `LiveShellContentFrame` equality includes
+`candidate_generation` and every image node
+(production_visual_runtime.rs:389-404, shell_content.rs:89-91).
+Admission refuses any `candidate_generation` not above the last one
+(candidates/admission.rs:33, credits.rs:267). Duplicate results are refused
+earlier, by token and job identity, and create no candidate obligation. If
+the install preflight still finds equality, that is an invariant failure:
+the fast path is declined and today's conventional path runs, which keeps
+today's Prepared and pending behaviour.
+
+Protocol work on the success path is `submit_bundle`'s with the runtime
+call replaced. The `Projection`, `Prepared`
+(`transport.content_prepared(..)`, which runs `ContentCandidateStore::prepare`
+and consumes a response credit) and pending-presentation steps stay the
+same. The terminal and credit return stay with service 3.
+
+Test: a duplicate result and a replayed job leave the candidate's state
+unchanged and both response obligations intact, and return the credit once.
 
 ## Backend correction before any caller (4c-4)
 
-The 4c-3 forwarders change before a production caller exists:
+1. **Routing:** by `CombinedHead`, which is `NativeFrameOwner`,
+   `RenderHeadId`, `image_store`, claim pointer and `target_generation`.
+   The exporter is found by `image_store` and head, and the claim must be
+   the same pointer. Collection, cancellation and disposal reach the
+   issuing facade after any target change. Only acceptance checks current
+   validity.
+2. **The cell** gains `Held`. Settlement holds an exported result rather
+   than retaining it for Release. Refusal returns the non-cloneable result
+   to the issuing facade's cell; it never exposes `WorkerResult`.
+3. **Not found is distinct:** "renderer not found" is its own error, not a
+   settlement.
+4. **Operations are tied to the job:** an operation on one facade must name
+   that facade's exact pending job.
 
-1. Key by `CombinedHead`, not `OutputId`. Find the exporter by
-   `image_store` and head, and require claim pointer equality.
-2. Return refused results instead of dropping them:
-   `Result<ValidatedIsbPixels, CombinedSettleRefused>` gains the unretained
-   `WorkerResult`.
-3. Make "renderer not found" a distinct error, not a settlement.
-4. Cancel only the facade that issued the reservation.
-
-Tests cover remap and disable between reserve and settle, using the existing
-fake-worker fixture. These are backend-only, behind the feature.
+Tests: disable, mirror and remap between reserve and settle; the same
+output key with a replacement claim; unrelated pending work on another
+facade; collection, cancellation and settlement each covered.
 
 ## Stopping conditions
 
-Stop and record the blocking obligation if any of these turns out to be
-true:
-
-- the placeholder layer cannot be bound on the renderer thread without
-  owner-side pixel work
-- provisional composition needs to write `shell_content`
-- `accept_combined_render` cannot keep the head state machine's retirement
-  protection
-- the validator's plan type cannot stay opaque in sophia-runtime without
-  `Box<dyn Any>`
+- The renderer cannot return the validated pixels unshared after a render.
+- Provisional composition cannot produce the F1 key without writing
+  installed state.
+- Acceptance cannot be made infallible after its preflights.
+- The plan type cannot stay opaque in sophia-runtime.
+- A three-slot pool or ordinary contention postpones an admitted job
+  without bound.
 
 Per n7fj3c2p, none of these may be worked around with worker-side DRM,
-cached liveness or a new ring.
+owner-side pixel work, cached liveness or a new ring.
 
 ## Decisions for niltempus
 
-1. Scope: step 3 touches four crates. sophia-renderer-live gets a
-   placeholder layer. The backend visual runtime gets provisional
-   composition and `install_rendered_shell_content`. The backend native
-   scanout gets `accept_combined_render`. The session and runtime get the
-   owner row and the generic plan. Accept this scope, or stop at the
-   scaffold.
-2. Eligibility: the narrow first set above.
-3. Order:
-   - 4c-4 backend correction
-   - gate-3 prototype on the test-only seams: the renderer-live placeholder
-     layer, provisional composition and accept with a deterministic renderer
-   - the authority pass
-   - gate 4, default-off real integration
+1. **Scope.** Step 3 touches four places:
+   - sophia-renderer-live: the placeholder layer and the `Validated` storage
+   - the backend visual runtime: provisional composition, the scene key and
+     the two-phase install
+   - the backend native scanout: the two-phase accept and the `Held` cell
+   - sophia-runtime and the session: the joined admission,
+     `receive_forwarded`, the generic plan and the owner row
+
+   Accept this scope, or stop at the scaffold.
+2. **Eligibility.** The F4 set is deliberately narrow.
+3. **Render failure or expiry after forwarding.** This revision renders
+   the already-validated pixels conventionally, through the same one-shot
+   latch, and counts it as "renderer-unavailable fallback". FALLBACK.md
+   approved the latch only for scene churn, so this needs approval.
+   Otherwise the frame gets a failure terminal.
+4. **Order:**
+   - this design's authority pass
+   - 4c-4
+   - the gate-3 prototype on these seams with a deterministic renderer
+   - prototype acceptance
+   - gate 4, a default-off real integration
