@@ -118,3 +118,106 @@ step 3; 4c carries it opaque and renders only the deterministic test plan.
 No real combined render, no scene or fallback policy, no install-already-
 rendered operation, no native run and no CPU claim. Disconnected stays
 unqualified until retirement proof.
+
+## Corrections after 4c-1 (9e7723d45)
+
+- Dependency direction. The source facts above say runtime and backend-live
+  share only protocol and wake. That holds for direct dependencies only:
+  backend-live already depends on sophia-renderer-live, which depends on
+  sophia-runtime, and runtime is a backend dev-dependency. An optional
+  direct dependency on sophia-runtime behind the feature therefore adds no
+  new edge to the build graph and no cycle.
+- Inbox type. 4c-1 landed `CombinedInbox<P>` as a `SyncSender` plus a wake
+  handle, not a `SignalSender`: a `SignalSender` rings on drop, and a route
+  dropped on a failed forward must not wake the renderer. 4c-2 changes the
+  handle from `Notifier` to `sophia_wake::WakeSlot`. The renderer's command
+  wake is attached by the worker thread after spawn (as
+  `Captures::new` does today), so a facade attached before the thread runs
+  has no `Notifier` to copy; `WakeSlot` is the type the backend already uses
+  for every lazily attached wake (`result_wake`, `command_wake`). A forward
+  before attachment rings nothing, and the worker's first iteration finds the
+  frame because it checks inboxes before its first wait.
+
+## 4c-2 design, frozen before source edits
+
+Feature: `experimental-combined-frame-job` in sophia-backend-live,
+`["dep:sophia-runtime", "sophia-runtime/experimental-combined-frame-job"]`,
+added to session's feature of the same name. Feature off, every hunk below
+is compiled out except the unchanged argument pair passed to `Captures::next`.
+
+Types, in a new `exporter/worker/combined.rs`, all behind the feature:
+
+- `pub struct CombinedRenderPlan` with private fields: admission `deadline:
+  Instant`, `target`, `frame: PendingRenderedFrame`, `preferred_modifiers`,
+  `output_format`; a `pub(crate)` constructor. 4c-3 decides the session-facing
+  constructor; step 3 decides the real provisional contents.
+- `pub struct CombinedRenderResult` with private fields `token:
+  CombinedToken`, `pixels: ValidatedIsbPixels`, `outcome`: `Rendered(WorkerResult)`,
+  `Expired`, or `Failed(detail)`. It is the owner-facing type decision 3
+  names; `WorkerResult` stays private inside it.
+- Per output, `WorkerOutputState.combined`: the inbox `Receiver` (bounded 1),
+  at most one parked `ForwardedValidation<CombinedRenderPlan>`, and the result
+  `SignalSender<CombinedRenderResult>` (bounded 1) ringing `result_wake`.
+- Facade: one field holding the inbox `SyncSender`, a clone of
+  `command_wake`, and the result `Receiver`; `combined_inbox()` builds a
+  `CombinedInbox` for one submission, `take_combined_result()` is a
+  `try_recv`. Both registration halves travel in `WorkerCommand::Register`
+  under the feature.
+
+Scheduling is a pure per-output function, `serve(state, now, render)`, with
+the render step passed in so tests drive it deterministically:
+
+1. A parked job is checked first: deadline passed, `Expired` envelope;
+   otherwise `render` is attempted, and a missing slot keeps it parked.
+2. With nothing parked, one frame is taken from the inbox: deadline checked
+   at dequeue, then `render`, parking on a missing slot.
+3. The deadline is checked again immediately before `render` runs.
+4. While a job is parked the inbox is not read, so one output holds at most
+   one combined job, which the facade's single Release cell already enforces
+   at admission. A full result channel is a contract violation: the envelope
+   is dropped and counted, never blocked on.
+
+`run_worker` calls `serve` for every output at the top of each iteration,
+after the wake is cleared and before the next command is taken. A freed slot
+(Release, a failed render's own slot) therefore serves the parked job before
+any later ordinary Render. The earliest parked deadline bounds the wait.
+Cancellation is output detachment: `outputs.retain` at the loop top drops a
+detached output's state, inbox and parked job together with its slots and
+leases, as Deregister does for ordinary work; no slot was taken by a parked
+job, and the lease of a rendered result still in the channel is the
+worker's own record, freed with that output state. Disconnected stays
+unqualified (decision 3).
+
+Wake, both builds, feature on:
+
+- `WorkerControl.command_wake` and the `SignalSender` command wrapper move
+  from `cfg(experimental-shell-capture)` to `cfg(any(capture, combined))`;
+  `shutdown` rings it under the same cfg.
+- Without capture, `run_worker` creates the command `Wake` at start, attaches
+  it to `command_wake`, clears it at the top of each iteration, and replaces
+  `recv()` with `try_recv`, then `Wake::wait(earliest_deadline)`. Wake
+  creation failure ends the worker, as `Captures::new` failure does today; a
+  clear failure falls back to a 1 ms `recv_timeout`, as `wake_failed` does.
+- With capture, `Captures::next` gains `(must_poll, deadline)`. Feature off
+  passes `(false, None)`, which is today's behaviour; feature on passes
+  `(true, earliest)`, so the blocking `recv()` shortcut is never taken and the
+  poll timeout is the earlier of `follow_up` and the parked deadline.
+- Every ordinary command now rings the wake in the non-capture build. The
+  mechanism capture must count that notification.
+
+Tests (backend `tests/support/combined_frame_render.rs`, mounted from
+`combined.rs`, the only new layout exception):
+
+- `serve` with a deterministic render step: a parked job takes the next freed
+  slot before a later ordinary request; expiry at dequeue, at retry, and
+  immediately before render, each returning the token and pixels intact; the
+  inbox is not read while parked; a full result channel drops and counts.
+- `run_worker` with no device, in both capture configurations: a frame
+  forwarded after the worker is idle produces a `Failed` envelope and rings
+  the owner wake (lost wake); an expired frame produces `Expired` (timeout);
+  shutdown while a job is parked ends the worker.
+
+Mutants named before build: `serve` skips the parked job (priority test),
+deadline check removed at retry (retry expiry test), non-capture build waits
+in `recv()` (lost-wake test, no-capture run), `must_poll` ignored (lost-wake
+test, capture run), inbox read while parked (bound test).
