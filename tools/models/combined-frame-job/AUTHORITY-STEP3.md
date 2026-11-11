@@ -1,7 +1,8 @@
 # Step 3 bounded authority review: owner integration of the combined frame job
 
-Revision 3; R1-R5 at the end answer Codex's review of revision 2 (24fe50c62),
-which closed F1-F5 and left three ownership paths open. This is a draft for review by Codex, then niltempus. It is not an
+Revision 4. R1-R5 at the end answer Codex's review of revision 2 (24fe50c62).
+Revision 4 changes only the three R2 transitions Codex reviewed at e33c543aa,
+and folds the superseded fallback sentences into the R4 baseline. This is a draft for review by Codex, then niltempus. It is not an
 authority pass and selects no source. n7fj3c2p requires a design authority
 pass before any gate-3 prototype is written; verifying the prototype is a
 separate, later acceptance.
@@ -89,9 +90,11 @@ Service 2, result. This runs in the turn the result wake rings:
    Stale and Budget checks.
 5. **Install or fall back.** If the bundle belongs to the row's candidate
    and every check in F1 and F2 passes, `submit_rendered_bundle` installs
-   the result and accepts it. Otherwise the held result is retained for
-   Release and today's `submit_bundle` renders conventionally: this is
-   FALLBACK.md's one-shot path.
+   the result and accepts it. Otherwise R4 classifies the decline. Only
+   scene-only churn retains the held result for Release and lets today's
+   `submit_bundle` render conventionally, which is FALLBACK.md's one-shot
+   path. Every other decline takes its existing refusal or the R4
+   failure-terminal baseline.
 6. **Submit.** `service_native` in the same turn exports and submits
    through the unchanged tracked path.
 
@@ -141,8 +144,9 @@ Classification:
   refusal and withdrawal rules apply, through the conventional content
   service. These never become a scene-only fallback.
 - **Head topology changed** (target generation, head disabled or mirrored,
-  output remapped, native owner changed): the fast path is declined and the
-  conventional path decides with its own checks.
+  output remapped, native owner changed): the fast path is declined, and the
+  frame gets the R4 failure-terminal baseline. Conventional re-entry here is
+  decision 3's unapproved extension.
 - **Any other layer or input differs**: this is scene-only churn and takes
   FALLBACK.md's one-shot conventional path.
 
@@ -276,7 +280,7 @@ exactly once:
 | facade reserved, runtime refuses | none | `cancel` | none | refusal as today |
 | runtime admitted, plan build fails | `withdraw(Cancelled)`, row released | `cancel` | none | existing withdrawal |
 | validation fails or inbox refuses | cleared by `take_completed` | `cancel` when the owner plan returns | dropped on the owner | ordinary Malformed or failure reconcile |
-| forwarded, result Failed or Expired | `settle_combined_token` | `Free` | consumed | `receive_forwarded`, then conventional render (decision 3) |
+| forwarded, result Failed or Expired | `settle_combined_token` | `Free` | consumed | `receive_forwarded`, then R4 failure terminal (re-entry is decision 3's extension) |
 | forwarded, result Exported | `settle_combined_token` | `Held` | consumed | `receive_forwarded`, then install or fallback |
 | renderer route disconnects | kept | kept | in flight | kept until `CompletedNativeOwner` |
 | facade dropped | kept | gone with the facade | in flight | kept until qualified proof |
@@ -471,14 +475,14 @@ The exact owner row decides what happens to a `Held` result. It never waits
 on a bundle that may not arrive. In each owner turn, after the image owner's
 service and the content service, the session visits every row whose facade
 is `Held` and was not accepted that turn. It calls `release_held(head, job)`,
-which converts `Held` to `Retained` on the issuing facade so the next poll
-flushes the Release. It does this in any of these cases:
+which converts `Held` to `Retained` on the issuing facade (revision 4: the
+flush that follows is in "Revision 4" below). It does this in any of these
+cases:
 
 - the content grant is gone, or the connection has closed
 - the row's job was withdrawn, stopped or refused in reconciliation
-- the frame-stream candidate is no longer pending or submitted, which a new
-  read-only store query `frame_candidate_live(binding)` reports from the
-  existing `FrameCopyBinding`
+- the frame-stream candidate is terminal, withdrawn, superseded or absent in
+  every one of its live states (revision 4: `frame_candidate_state`, below)
 - the row's admission deadline has passed
 
 The resource, source and journal obligations stay with their own owners:
@@ -490,11 +494,9 @@ covers reconciliation being blocked, or publication returning `EAGAIN`
 before the bundle exists. The existing service runs every owner turn, and
 the session's walk runs in those same turns, so no wake or timer is added.
 
-If `receive_forwarded` returns `Err(pixels)`, the row keeps the pixels and
-tries again next turn while the runtime job still awaits a result. If that
-job has been withdrawn or stopped, the row drops the pixels on the owner
-thread. That frees only memory; the withdrawal already settled the backing
-charge.
+A returned `Err(pixels)` from `receive_forwarded` is handled in "Revision 4"
+below. Revision 3's rule, which dropped pixels for a withdrawn or stopped
+job, is withdrawn.
 
 The row reaches the issuing facade through `CombinedHead`, even after the
 output or the connection's authority is gone. If the facade itself is gone,
@@ -580,3 +582,118 @@ these cases is decision 3's separate, unapproved extension.
   no state changes.
 - **Pixel storage.** F4 now names the owned-ring storage as
   `Owned(Box<[u8]>)`. No copy is made either way.
+
+## Revision 4: the R2 transitions
+
+### Retained Release has an owner-service path
+
+`release_held` cannot rely on the next `poll()`. A declined result creates
+neither a `pending_frame` nor an ordinary or accepted `in_flight`
+(discovery.rs:586-590), so `singleton_tick` returns before export
+(singleton_tick.rs:31-35). On an idle or disabled head, `poll()` is never
+called.
+
+The backend gains a narrow maintenance entry,
+`flush_combined_release(head: &CombinedHead) -> CombinedReleaseFlush`. It
+finds the issuing facade by `CombinedHead`, then calls that facade's
+existing nonblocking `flush_combined_release` (worker/release.rs:103).
+That is the same operation `poll()` calls first, without the rest of
+`poll()`, so it cannot consume an unrelated ordinary result. Because the
+lookup is by `CombinedHead`, it works on a disabled or remapped head.
+
+`release_held` converts `Held` to `Retained` and calls the maintenance
+flush once. The row keeps a Release debt until the flush returns `Enqueued`:
+
+| Flush result | Meaning | Next step |
+| --- | --- | --- |
+| `Enqueued` | ownership has moved to the command queue; the physical slot is freed later, when the worker handles the Release | the row's renderer half is closed |
+| `Full` | the obligation stays in the cell | the session's walk retries |
+| `Disconnected` | the worker cannot take the Release | the debt stays until qualified retirement |
+
+Each owner turn, the session's walk visits rows that are `Held` or carry a
+Release debt. That covers rows on disabled or remapped original heads. The
+walk runs inside existing owner turns, whose authority wait has a 25 ms
+maintenance cap, so no timer or thread is added.
+
+Controls:
+
+- Decline one exported result on an idle output and queue no further
+  render. Its Release must reach the worker.
+- Repeat with `Full` on the first attempt, then a successful retry.
+- Repeat with the head disabled before the decline.
+
+None of these cases may need a later render to finish its cleanup.
+
+### Candidate liveness includes the assembly and its copy gate
+
+An owned-ring candidate can be live while it is still assembling. The
+assembly survives while `assembly.copy` is present (candidates.rs:620). The
+copy gate completes only after resource reconciliation
+(candidates/credits/copy.rs:31), and only then does validation move the
+candidate to pending (candidates.rs:601-603, 716). Revision 3's predicate,
+which checked only pending and submitted, would have discarded `Held` during
+exactly the backpressure R2 meant to retain it.
+
+The read-only store query becomes
+`frame_candidate_state(binding: &FrameCopyBinding, job) -> FrameCandidateState`.
+Its variants:
+
+- `Assembling`: the assembly for `binding.key` has
+  `begin.candidate_generation == binding.generation`, and `assembly.copy`
+  names this `job` (stopped or not yet finished).
+- `Pending` or `Submitted`: the same exact binding is in that table.
+- `Ended`: the binding was seen and reached a terminal, withdrawn or
+  superseded state. The store reports this from the ledger's own records.
+- `Unknown`: none of the above. The walk treats `Unknown` as live until the
+  deadline. It never takes absence from two tables as proof of death.
+
+The walk releases `Held` on `Ended`, on the separate stopped or withdrawn
+check, or at the deadline. It keeps `Held` on `Assembling`, `Pending`,
+`Submitted` and `Unknown` before the deadline.
+
+Controls:
+
+- Block resource reconciliation while the candidate is still assembling.
+  The row stays `Held` until its deadline.
+- Unblock it before the deadline. The candidate becomes eligible and is
+  installed with no second speculative render.
+- Reject the candidate, or withdraw it. Each converts `Held` to `Retained`.
+
+### Withdrawal does not settle the charges, so late pixels go to reconciliation
+
+`CpuImageJobs::withdraw` stops the store row and, for submitted work, only
+calls `worker.cancel` (isb_jobs.rs:97-130). Stopping cannot release the
+worker mapping or its charge (resources.rs:250). `complete_isb` consumes the
+returned result and calls `abort_finished` for a stopped transfer
+(resources.rs:325-356). Revision 3's rule that dropped the pixels of a
+stopped job is therefore withdrawn.
+
+`receive_forwarded` accepts a stopped job. Its predicate is
+`worker_job == job && submitted && result.is_none()`, with no condition on
+`stopped`. A late result for a withdrawn job enters that job's row, and the
+existing `reconcile` → `complete_isb` path consumes it. For a stopped
+transfer that path ends in `abort_finished`, and the staging and reserved
+charges clear exactly once there.
+
+The exact-row invariant leaves only two ways for `receive_forwarded` to
+return `Err(pixels)`:
+
+- **The row's `result` is already `Some`.** That would mean a second result
+  for one job. `settle_combined_token` consumes the token once, so this
+  cannot happen.
+- **No row matches.** This is an invariant failure.
+
+Either way the handling fails closed. The row keeps the pixels and the
+charge obligation and records the failure. It drops neither until exact
+reconciliation or qualified disposition: connection teardown through
+`withdraw_epoch` and its stop reconciliation, or native retirement. The
+renderer half (Held, Retained, Release) is independent and continues
+meanwhile.
+
+Controls:
+
+- Withdraw a submitted combined job before its returned pixels are
+  reconciled. Its staging and reserved charges must remain until
+  `complete_isb` consumes the result, then clear exactly once.
+- A `receive_forwarded` for an unknown or mismatched job must leave the
+  charges unchanged and keep the only copy of the pixels.
