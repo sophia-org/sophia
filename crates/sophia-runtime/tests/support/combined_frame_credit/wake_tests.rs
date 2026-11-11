@@ -3,20 +3,20 @@ use super::*;
 use rustix::event::{PollFd, PollFlags};
 
 struct HeldJob {
-    token: Reservation,
+    token: CombinedReservation,
     entered: mpsc::Receiver<()>,
     resume: mpsc::SyncSender<()>,
-    returned: mpsc::Receiver<ReturnedValidation<ProbePlan>>,
+    returned: mpsc::Receiver<ForwardedValidation<ProbePlan>>,
     owner_plan: mpsc::Receiver<ProbePlan>,
 }
 
-fn reserve(worker: &mut IsbValidationWorker) -> Reservation {
+fn reserve(worker: &mut Worker) -> CombinedReservation {
     worker
         .reserve_combined(8, Instant::now() + CHECKPOINT_WAIT * 2)
         .unwrap()
 }
 
-fn hold(worker: &mut IsbValidationWorker) -> HeldJob {
+fn hold(worker: &mut Worker) -> HeldJob {
     let token = reserve(worker);
     let (entered, arrival) = mpsc::sync_channel(1);
     let (resume, release) = mpsc::sync_channel(1);
@@ -50,7 +50,7 @@ impl HeldJob {
             .expect("validator reached the checkpoint");
     }
 
-    fn finish(self, worker: &mut IsbValidationWorker) {
+    fn finish(self, worker: &mut Worker) {
         self.resume.send(()).expect("resume the held job");
         let returned = self
             .returned
@@ -62,25 +62,25 @@ impl HeldJob {
     }
 }
 
-fn readable(worker: &IsbValidationWorker, deadline: Instant) -> bool {
+fn readable(worker: &Worker, deadline: Instant) -> bool {
     let mut fds = [PollFd::from_borrowed_fd(worker.readiness(), PollFlags::IN)];
     sophia_wake::wait(&mut fds, Some(deadline)).unwrap();
     fds[0].revents().contains(PollFlags::IN)
 }
 
-fn baseline(worker: &mut IsbValidationWorker) {
+fn baseline(worker: &mut Worker) {
     assert!(worker.take_completed().unwrap().is_none());
     assert!(!readable(worker, Instant::now()));
 }
 
 #[test]
 fn forwarded_success_is_quiet_after_the_next_job_enters_and_control_still_wakes() {
-    let mut worker = IsbValidationWorker::new(2, 8).unwrap();
+    let mut worker = Worker::for_combined_plans(2, 8).unwrap();
     baseline(&mut worker);
     let first = reserve(&mut worker);
     let (sender, receiver) = mpsc::sync_channel(1);
     let owner_plan = worker
-        .submit_combined(&first, source(&[0; 8]), plan(first.job), sender)
+        .submit_combined(&first, source(&[0; 8]), plan(first.job), inbox(sender))
         .ok()
         .expect("first job submitted");
     let returned = receiver.recv_timeout(WAIT).unwrap();
@@ -127,7 +127,7 @@ fn validation_errors_ring_before_the_ordered_completion_drain() {
             IsbValidationFailure::Malformed,
         ),
     ] {
-        let mut worker = IsbValidationWorker::new(2, 8).unwrap();
+        let mut worker = Worker::for_combined_plans(2, 8).unwrap();
         baseline(&mut worker);
         let token = reserve(&mut worker);
         if cancelled {
@@ -135,7 +135,7 @@ fn validation_errors_ring_before_the_ordered_completion_drain() {
         }
         let (sender, receiver) = mpsc::sync_channel(1);
         let owner_plan = worker
-            .submit_combined(&token, source(&bytes), plan(token.job), sender)
+            .submit_combined(&token, source(&bytes), plan(token.job), inbox(sender))
             .ok()
             .expect("failing job submitted");
         let next = hold(&mut worker);
@@ -166,7 +166,7 @@ fn validation_errors_ring_before_the_ordered_completion_drain() {
 #[test]
 fn full_and_disconnected_forwarding_keep_the_ordinary_notification() {
     for disconnected in [false, true] {
-        let mut worker = IsbValidationWorker::new(4, 8).unwrap();
+        let mut worker = Worker::for_combined_plans(4, 8).unwrap();
         baseline(&mut worker);
         let (sender, receiver) = mpsc::sync_channel(1);
         let mut receiver = Some(receiver);
@@ -176,14 +176,24 @@ fn full_and_disconnected_forwarding_keep_the_ordinary_notification() {
         } else {
             let first = reserve(&mut worker);
             let _owner_plan = worker
-                .submit_combined(&first, source(&[0; 8]), plan(first.job), sender.clone())
+                .submit_combined(
+                    &first,
+                    source(&[0; 8]),
+                    plan(first.job),
+                    inbox(sender.clone()),
+                )
                 .ok()
                 .expect("fill the destination before the following job");
             Some(first)
         };
         let failed_move = reserve(&mut worker);
         let owner_plan = worker
-            .submit_combined(&failed_move, source(&[0; 8]), plan(failed_move.job), sender)
+            .submit_combined(
+                &failed_move,
+                source(&[0; 8]),
+                plan(failed_move.job),
+                inbox(sender),
+            )
             .ok()
             .expect("failed move uses ordinary completion");
         let next = hold(&mut worker);
@@ -212,7 +222,7 @@ fn full_and_disconnected_forwarding_keep_the_ordinary_notification() {
 
 #[test]
 fn completion_published_after_clear_remains_observable() {
-    let mut worker = IsbValidationWorker::new(1, 8).unwrap();
+    let mut worker = Worker::for_combined_plans(1, 8).unwrap();
     baseline(&mut worker);
     let held = hold(&mut worker);
     held.entered();
@@ -244,7 +254,7 @@ fn completion_published_after_clear_remains_observable() {
 
 #[test]
 fn normal_validator_exit_rings_while_the_owner_keeps_its_wake_alive() {
-    let mut worker = IsbValidationWorker::new(1, 8).unwrap();
+    let mut worker = Worker::for_combined_plans(1, 8).unwrap();
     baseline(&mut worker);
     let (dummy, receiver) = mpsc::sync_channel(1);
     drop(receiver);
@@ -262,7 +272,7 @@ fn normal_validator_exit_rings_while_the_owner_keeps_its_wake_alive() {
 
 #[test]
 fn validator_unwind_rings_but_does_not_clear_an_unreturned_job() {
-    let mut worker = IsbValidationWorker::new(1, 8).unwrap();
+    let mut worker = Worker::for_combined_plans(1, 8).unwrap();
     baseline(&mut worker);
     let held = hold(&mut worker);
     held.entered();
@@ -293,4 +303,37 @@ fn validator_unwind_rings_but_does_not_clear_an_unreturned_job() {
         held.owner_plan.try_recv(),
         Err(mpsc::TryRecvError::Disconnected)
     ));
+}
+
+#[test]
+fn a_forwarded_frame_rings_the_renderer_inbox_once_after_the_move() {
+    let mut worker = Worker::for_combined_plans(1, 8).unwrap();
+    let token = reserve(&mut worker);
+    let renderer = sophia_wake::Wake::new().unwrap();
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let _owner_plan = worker
+        .submit_combined(
+            &token,
+            source(&[0; 8]),
+            plan(token.job),
+            CombinedInbox::new(sender, renderer.notifier()),
+        )
+        .ok()
+        .expect("combined submission");
+    assert!(
+        renderer.wait(Some(Instant::now() + WAIT)).unwrap(),
+        "a successful move rings the renderer inbox"
+    );
+    let forwarded = receiver
+        .try_recv()
+        .expect("the frame is in the inbox once the ring is seen");
+    renderer.clear().unwrap();
+    assert!(
+        worker.settle_combined(token, forwarded).is_ok(),
+        "exact settlement"
+    );
+    assert!(
+        !renderer.wait(Some(Instant::now())).unwrap(),
+        "dropping the route does not ring the renderer again"
+    );
 }

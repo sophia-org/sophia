@@ -138,6 +138,6 @@ inline-tests crates/sophia-cli/src/session_output.rs
 inline-tests crates/sophia-session/src/owner_wait_causes.rs
 inline-tests crates/sophia-session/src/shell_component_connections/fd_readiness.rs
 
-# Combined-frame research: cfg(test) tags/route and ordinary Job initialization.
-inline-tests crates/sophia-runtime/src/shell_content/isb_worker.rs
-inline-tests crates/sophia-runtime/src/shell_content/isb_worker/owned_copy.rs
+# Combined frame jobs: the test checkpoint field and the support mount; test bodies
+# live in crates/sophia-runtime/tests/support/combined_frame_credit/.
+inline-tests crates/sophia-runtime/src/shell_content/isb_worker/combined.rs

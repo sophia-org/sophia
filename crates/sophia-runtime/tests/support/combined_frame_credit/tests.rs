@@ -23,7 +23,7 @@ pub(super) fn source(bytes: &[u8]) -> OwnedFd {
     file.into()
 }
 
-pub(super) fn completion(worker: &mut IsbValidationWorker) -> IsbValidationCompletion {
+pub(super) fn completion(worker: &mut Worker) -> IsbValidationCompletion {
     use rustix::event::{PollFd, PollFlags, Timespec};
     let end = Instant::now() + WAIT;
     loop {
@@ -46,7 +46,7 @@ pub(super) fn completion(worker: &mut IsbValidationWorker) -> IsbValidationCompl
     }
 }
 
-pub(super) fn reserve(worker: &mut IsbValidationWorker) -> Reservation {
+pub(super) fn reserve(worker: &mut Worker) -> CombinedReservation {
     worker.reserve_combined(8, Instant::now() + WAIT).unwrap()
 }
 
@@ -59,12 +59,17 @@ pub(super) fn plan(id: u64) -> ProbePlan {
 }
 
 fn submit(
-    worker: &mut IsbValidationWorker,
-    reservation: &Reservation,
-) -> ReturnedValidation<ProbePlan> {
+    worker: &mut Worker,
+    reservation: &CombinedReservation,
+) -> ForwardedValidation<ProbePlan> {
     let (sender, receiver) = mpsc::sync_channel(1);
     let _returned_plan = worker
-        .submit_combined(reservation, source(&[0; 8]), plan(reservation.job), sender)
+        .submit_combined(
+            reservation,
+            source(&[0; 8]),
+            plan(reservation.job),
+            inbox(sender),
+        )
         .ok()
         .expect("combined submission");
     receiver.recv_timeout(WAIT).unwrap()
@@ -72,7 +77,7 @@ fn submit(
 
 #[test]
 fn ordinary_and_combined_reservations_share_the_real_four_slots() {
-    let mut worker = IsbValidationWorker::new(4, 8).unwrap();
+    let mut worker = Worker::for_combined_plans(4, 8).unwrap();
     let ordinary = worker.reserve(8, Instant::now() + WAIT).unwrap();
     let combined: Vec<_> = (0..3).map(|_| reserve(&mut worker)).collect();
     assert_eq!(worker.pending(), 4);
@@ -95,7 +100,7 @@ fn ordinary_and_combined_reservations_share_the_real_four_slots() {
 
 #[test]
 fn returned_validation_clears_exactly_one_credit_and_preserves_backing() {
-    let mut worker = IsbValidationWorker::new(1, 8).unwrap();
+    let mut worker = Worker::for_combined_plans(1, 8).unwrap();
     let token = reserve(&mut worker);
     let returned = submit(&mut worker, &token);
     assert_eq!(
@@ -127,7 +132,7 @@ fn returned_validation_clears_exactly_one_credit_and_preserves_backing() {
         "cancellation must not remove a returned obligation"
     );
     // Deliberately forge a replay: the public seam types do not implement Clone.
-    let replay = Reservation {
+    let replay = CombinedReservation {
         job: token.job,
         identity: Arc::clone(&token.identity),
     };
@@ -141,7 +146,7 @@ fn returned_validation_clears_exactly_one_credit_and_preserves_backing() {
     assert_eq!(plan.id, job);
     assert_eq!(worker.pending(), 0);
     let next = reserve(&mut worker);
-    let duplicate = ReturnedValidation {
+    let duplicate = ForwardedValidation {
         job,
         identity,
         pixels,
@@ -158,8 +163,8 @@ fn returned_validation_clears_exactly_one_credit_and_preserves_backing() {
 
 #[test]
 fn cross_allocator_and_wrong_job_proofs_return_their_payloads_without_clearing() {
-    let mut first = IsbValidationWorker::new(2, 8).unwrap();
-    let mut second = IsbValidationWorker::new(1, 8).unwrap();
+    let mut first = Worker::for_combined_plans(2, 8).unwrap();
+    let mut second = Worker::for_combined_plans(1, 8).unwrap();
     let a = reserve(&mut first);
     let foreign = reserve(&mut second);
     assert_eq!(
@@ -188,7 +193,7 @@ fn cross_allocator_and_wrong_job_proofs_return_their_payloads_without_clearing()
 
 #[test]
 fn stale_submit_and_original_byte_deadline_bounds_are_preserved() {
-    let mut worker = IsbValidationWorker::new(2, 8).unwrap();
+    let mut worker = Worker::for_combined_plans(2, 8).unwrap();
     let stale = reserve(&mut worker);
     assert!(worker.release_reserved(stale.job));
     let live = reserve(&mut worker);
@@ -198,7 +203,7 @@ fn stale_submit_and_original_byte_deadline_bounds_are_preserved() {
     let submitted_plan = plan(stale.job);
     let plan_raw = submitted_plan.descriptor.as_raw_fd();
     let (error, fd, returned_plan) = worker
-        .submit_combined(&stale, fd, submitted_plan, sender)
+        .submit_combined(&stale, fd, submitted_plan, inbox(sender))
         .expect_err("stale submission");
     assert_eq!(error, IsbSubmitFailure::Invalid);
     assert_eq!(fd.as_raw_fd(), raw);
@@ -231,7 +236,7 @@ fn stale_submit_and_original_byte_deadline_bounds_are_preserved() {
         let submitted_plan = plan(token.job);
         let raw = submitted_plan.descriptor.as_raw_fd();
         let returned_plan = worker
-            .submit_combined(&token, source(&bytes), submitted_plan, sender)
+            .submit_combined(&token, source(&bytes), submitted_plan, inbox(sender))
             .ok()
             .expect("submitted validation failure");
         let result = completion(&mut worker);
@@ -252,12 +257,12 @@ fn stale_submit_and_original_byte_deadline_bounds_are_preserved() {
 
 #[test]
 fn cancelled_before_submission_uses_the_unchanged_completion_route() {
-    let mut worker = IsbValidationWorker::new(1, 8).unwrap();
+    let mut worker = Worker::for_combined_plans(1, 8).unwrap();
     let token = reserve(&mut worker);
     assert!(worker.cancel(token.job));
     let (sender, receiver) = mpsc::sync_channel(1);
     let returned_plan = worker
-        .submit_combined(&token, source(&[0; 8]), plan(token.job), sender)
+        .submit_combined(&token, source(&[0; 8]), plan(token.job), inbox(sender))
         .ok()
         .expect("cancelled submission");
     assert_eq!(worker.pending(), 1);
@@ -275,11 +280,11 @@ fn cancelled_before_submission_uses_the_unchanged_completion_route() {
 
 #[test]
 fn dropping_a_forwarded_destination_loses_the_return_but_keeps_credit() {
-    let mut worker = IsbValidationWorker::new(2, 8).unwrap();
+    let mut worker = Worker::for_combined_plans(2, 8).unwrap();
     let token = reserve(&mut worker);
     let (sender, receiver) = mpsc::sync_channel(1);
     let returned_plan = worker
-        .submit_combined(&token, source(&[0; 8]), plan(token.job), sender)
+        .submit_combined(&token, source(&[0; 8]), plan(token.job), inbox(sender))
         .ok()
         .expect("combined submission");
     // FIFO barrier proves the destination holds the result before it is dropped.
@@ -313,11 +318,16 @@ fn dropping_a_forwarded_destination_loses_the_return_but_keeps_credit() {
 
 #[test]
 fn full_or_disconnected_destination_preserves_the_old_owner_return() {
-    let mut worker = IsbValidationWorker::new(4, 8).unwrap();
+    let mut worker = Worker::for_combined_plans(4, 8).unwrap();
     let (sender, receiver) = mpsc::sync_channel(1);
     let first = reserve(&mut worker);
     let first_plan = worker
-        .submit_combined(&first, source(&[0; 8]), plan(first.job), sender.clone())
+        .submit_combined(
+            &first,
+            source(&[0; 8]),
+            plan(first.job),
+            inbox(sender.clone()),
+        )
         .ok()
         .expect("first submission");
     // FIFO barrier: first is in the destination before the second can try_send.
@@ -329,7 +339,7 @@ fn full_or_disconnected_destination_preserves_the_old_owner_return() {
     assert!(first_plan.try_recv().is_err());
     let second = reserve(&mut worker);
     let second_plan = worker
-        .submit_combined(&second, source(&[0; 8]), plan(second.job), sender)
+        .submit_combined(&second, source(&[0; 8]), plan(second.job), inbox(sender))
         .ok()
         .expect("second submission");
     let result = completion(&mut worker);
@@ -349,7 +359,7 @@ fn full_or_disconnected_destination_preserves_the_old_owner_return() {
     let (sender, receiver) = mpsc::sync_channel(1);
     drop(receiver);
     let third_plan = worker
-        .submit_combined(&third, source(&[0; 8]), plan(third.job), sender)
+        .submit_combined(&third, source(&[0; 8]), plan(third.job), inbox(sender))
         .ok()
         .expect("third submission");
     let result = completion(&mut worker);

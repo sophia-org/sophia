@@ -43,14 +43,13 @@ impl Source {
     }
 }
 
-struct Job {
+struct Job<P> {
     id: u64,
     source: Source,
     bytes: usize,
     deadline: Instant,
     cancelled: Arc<AtomicBool>,
-    #[cfg(test)]
-    combined: Option<combined::Route<combined::ProbePlan>>,
+    combined: combined::RouteSlot<P>,
 }
 
 struct Pending {
@@ -59,8 +58,7 @@ struct Pending {
     deadline: Instant,
     cancelled: Arc<AtomicBool>,
     submitted: bool,
-    #[cfg(test)]
-    combined: Option<Arc<combined::Identity>>,
+    combined: combined::PendingSlot,
 }
 
 /// Result-channel disconnection alone cannot wake an eventfd waiter. Signal
@@ -79,11 +77,16 @@ pub enum IsbSubmitFailure {
     Closed,
 }
 
+/// The plan type of a worker that admits no combined frame jobs; it has no
+/// values, so such a worker can never carry a plan.
+pub enum NoCombinedPlan {}
+
 /// A successful submit owns the source until a completion is taken. The owner
 /// must reconcile every completion with its resource reservation, even after
 /// cancellation. Keep this pool alive while retired epochs still own jobs.
-pub struct IsbValidationWorker {
-    sender: mpsc::SyncSender<Job>,
+/// `P` is the opaque plan a combined frame job carries to the renderer.
+pub struct IsbValidationWorker<P: Send + 'static = NoCombinedPlan> {
+    sender: mpsc::SyncSender<Job<P>>,
     completed: mpsc::Receiver<IsbValidationCompletion>,
     pending: [Option<Pending>; 4],
     next_id: u64,
@@ -104,6 +107,12 @@ impl IsbValidationWorker {
         max_bytes: usize,
         validation_bytes: usize,
     ) -> io::Result<Self> {
+        Self::spawn(max_jobs, max_bytes, validation_bytes)
+    }
+}
+
+impl<P: Send + 'static> IsbValidationWorker<P> {
+    fn spawn(max_jobs: usize, max_bytes: usize, validation_bytes: usize) -> io::Result<Self> {
         if !(1..=4).contains(&max_jobs)
             || max_bytes == 0
             || max_bytes > isize::MAX as usize
@@ -116,7 +125,7 @@ impl IsbValidationWorker {
         }
         let wake = Wake::new()?;
         let notify = wake.notifier();
-        let (sender, jobs) = mpsc::sync_channel::<Job>(max_jobs);
+        let (sender, jobs) = mpsc::sync_channel::<Job<P>>(max_jobs);
         let (results, completed) = mpsc::sync_channel(max_jobs);
         // No callback or owner state enters this thread. Each job returns one
         // owned result before the worker starts another; the queue is bounded.
@@ -130,7 +139,7 @@ impl IsbValidationWorker {
                 let mut raster = None;
                 while let Ok(job) = jobs.recv() {
                     let id = job.id;
-                    #[cfg(test)]
+                    #[cfg(any(test, feature = "experimental-combined-frame-job"))]
                     let (job, combined) = combined::take_route(job);
                     let result = validate(
                         job,
@@ -138,7 +147,7 @@ impl IsbValidationWorker {
                         #[cfg(feature = "experimental-draw")]
                         &mut raster,
                     );
-                    #[cfg(test)]
+                    #[cfg(any(test, feature = "experimental-combined-frame-job"))]
                     let result = match combined::forward(combined, id, result) {
                         Some(result) => result,
                         None => continue,
@@ -208,8 +217,7 @@ impl IsbValidationWorker {
             deadline,
             cancelled: Arc::new(AtomicBool::new(false)),
             submitted: false,
-            #[cfg(test)]
-            combined: None,
+            combined: Default::default(),
         });
         Ok(id)
     }
@@ -236,8 +244,7 @@ impl IsbValidationWorker {
             bytes: pending.bytes,
             deadline: pending.deadline,
             cancelled: pending.cancelled.clone(),
-            #[cfg(test)]
-            combined: None,
+            combined: Default::default(),
         };
         match self.sender.try_send(job) {
             Ok(()) => {
@@ -314,7 +321,7 @@ impl IsbValidationWorker {
     }
 }
 
-impl Drop for IsbValidationWorker {
+impl<P: Send + 'static> Drop for IsbValidationWorker<P> {
     fn drop(&mut self) {
         // Never join on the owner thread. Shutdown cancels bounded units and
         // drops both queues; the worker closes any abandoned source itself.
@@ -324,8 +331,8 @@ impl Drop for IsbValidationWorker {
     }
 }
 
-fn validate(
-    job: Job,
+fn validate<P>(
+    job: Job<P>,
     validation_bytes: usize,
     #[cfg(feature = "experimental-draw")] raster: &mut Option<sophia_draw::Rasterizer>,
 ) -> Result<ValidatedIsbPixels, IsbValidationFailure> {
@@ -380,8 +387,12 @@ fn sealed_validation(
     })?;
     IsbPixelValidation::new(mapping).map_err(|_| IsbValidationFailure::Malformed)
 }
-#[cfg(test)]
-#[path = "../../tests/support/combined_frame_credit.rs"]
+#[cfg(any(test, feature = "experimental-combined-frame-job"))]
+mod combined;
+#[cfg(any(test, feature = "experimental-combined-frame-job"))]
+pub use combined::{CombinedInbox, CombinedReservation, CombinedToken, ForwardedValidation};
+#[cfg(not(any(test, feature = "experimental-combined-frame-job")))]
+#[path = "isb_worker/combined_off.rs"]
 mod combined;
 mod owned_copy;
 
@@ -417,7 +428,7 @@ fn draw_source(
 }
 
 #[cfg(feature = "experimental-draw")]
-impl IsbValidationWorker {
+impl<P: Send + 'static> IsbValidationWorker<P> {
     /// Raster work uses the same bounded slots, cancellation and wake source.
     /// The owner has already charged the exact output size to its resource store.
     pub(crate) fn submit_draw_reserved(
@@ -438,8 +449,7 @@ impl IsbValidationWorker {
             bytes: pending.bytes,
             deadline: pending.deadline,
             cancelled: pending.cancelled.clone(),
-            #[cfg(test)]
-            combined: None,
+            combined: Default::default(),
         };
         match self.sender.try_send(job) {
             Ok(()) => {

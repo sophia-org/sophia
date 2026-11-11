@@ -4,7 +4,7 @@ use std::os::fd::AsRawFd;
 
 #[test]
 fn real_worker_moves_the_plan_and_only_the_owner_drops_the_returned_payload() {
-    let mut worker = IsbValidationWorker::new(2, 8).unwrap();
+    let mut worker = Worker::for_combined_plans(2, 8).unwrap();
     let token = tests::reserve(&mut worker);
     assert!(!token.was_forwarded());
     let lifetime = Arc::new(());
@@ -21,7 +21,7 @@ fn real_worker_moves_the_plan_and_only_the_owner_drops_the_returned_payload() {
                 descriptor,
                 lifetime,
             },
-            sender,
+            inbox(sender),
         )
         .ok()
         .expect("plan submitted with real validation");
@@ -61,7 +61,7 @@ fn real_worker_moves_the_plan_and_only_the_owner_drops_the_returned_payload() {
 fn generic_transport_requires_no_payload_inspection_traits() {
     // Distinct from the concrete Job fixture payload, without Clone or Debug.
     struct MoveOnly(OwnedFd);
-    let mut worker = IsbValidationWorker::new(1, 8).unwrap();
+    let mut worker = Worker::for_combined_plans(1, 8).unwrap();
     let job = worker
         .submit(tests::source(&[0; 8]), 8, Instant::now() + WAIT)
         .unwrap();
@@ -78,7 +78,7 @@ fn generic_transport_requires_no_payload_inspection_traits() {
             Some(Route {
                 identity: Arc::clone(&identity),
                 plan: payload,
-                sender,
+                inbox: inbox(sender),
                 owner_plan,
                 checkpoint: None,
             }),
@@ -96,7 +96,7 @@ fn generic_transport_requires_no_payload_inspection_traits() {
 
 #[test]
 fn abandoning_the_plan_return_does_not_block_the_ordinary_failure_route() {
-    let mut worker = IsbValidationWorker::new(1, 8).unwrap();
+    let mut worker = Worker::for_combined_plans(1, 8).unwrap();
     let token = tests::reserve(&mut worker);
     assert!(worker.cancel(token.job));
     let lifetime = Arc::new(());
@@ -111,7 +111,7 @@ fn abandoning_the_plan_return_does_not_block_the_ordinary_failure_route() {
                 descriptor: tests::source(&[9; 8]),
                 lifetime,
             },
-            sender,
+            inbox(sender),
         )
         .ok()
         .expect("cancelled job accepted for completion");
