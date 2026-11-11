@@ -133,6 +133,9 @@ pub struct LiveRendererWorkerMetrics {
     /// each quarantined the facade (t186).
     pub stalls_abandoned: usize,
     pub release_enqueue_failures: usize,
+    /// Combined frame-job Release sends refused by a full or closed queue,
+    /// counted apart so the ordinary count keeps its meaning.
+    pub combined_release_enqueue_failures: usize,
     pub max_request_age: Duration,
     pub frame_slots: LiveRendererFrameSlotMetrics,
 }
@@ -375,6 +378,7 @@ impl NativeGbmRendererWorkerCore {
             next_request_id: 1,
             in_flight: None,
             discarded_release: None,
+            combined_release: CombinedReleaseCell::Free,
             context_status: None,
             persistent_render_stats: LiveNativePersistentRenderStats::default(),
             gl_identity: NativeGlIdentityState::Unobserved,
@@ -403,6 +407,8 @@ pub(super) struct NativeGbmRendererWorker {
     next_request_id: u64,
     in_flight: Option<InFlightRequest>,
     discarded_release: Option<DiscardedWorkerLease>,
+    /// Never shares a slot with `discarded_release` (FALLBACK.md step 1).
+    combined_release: CombinedReleaseCell,
     context_status: Option<NativeGbmRenderedScanoutContextStatus>,
     persistent_render_stats: LiveNativePersistentRenderStats,
     /// Merged from every reply, so a context the worker reopens cannot
@@ -602,6 +608,8 @@ impl NativeGbmRendererWorker {
     }
 
     pub fn poll(&mut self) -> WorkerPoll {
+        // Busy or idle: a Full-retained combined Release must not wait for idle.
+        self.flush_combined_release();
         let Some(mut in_flight) = self.in_flight.take() else {
             self.flush_discarded_release();
             if self.quarantined
