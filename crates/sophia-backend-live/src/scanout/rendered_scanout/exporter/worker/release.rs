@@ -57,9 +57,11 @@ impl NativeGbmRendererWorker {
     }
 
     /// One combined job per facade, and only when this facade could render it.
-    // No production caller until the stage 4c owner join, which also picks
-    // the visibility and owner-facing result type.
-    #[cfg_attr(not(test), allow(dead_code))]
+    // Reached only through the combined frame-job facade (BRIDGE.md 4c-3).
+    #[cfg_attr(
+        not(any(test, feature = "experimental-combined-frame-job")),
+        allow(dead_code)
+    )]
     fn reserve_combined_release(&mut self) -> bool {
         if self.quarantined
             || self.stalled.is_some()
@@ -75,7 +77,10 @@ impl NativeGbmRendererWorker {
 
     /// Refused results come back intact; their frame or failure still
     /// belongs to the owner.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(any(test, feature = "experimental-combined-frame-job")),
+        allow(dead_code)
+    )]
     fn retain_combined_result(&mut self, result: WorkerResult) -> Option<WorkerResult> {
         if result.output != self.output
             || !matches!(self.combined_release, CombinedReleaseCell::Reserved)

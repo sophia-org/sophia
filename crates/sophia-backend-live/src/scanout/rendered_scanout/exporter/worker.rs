@@ -27,6 +27,10 @@ pub(crate) type CaptureReservation =
 
 #[cfg(feature = "experimental-combined-frame-job")]
 mod combined;
+#[cfg(feature = "experimental-combined-frame-job")]
+pub(crate) use combined::settle_without_renderer;
+#[cfg(feature = "experimental-combined-frame-job")]
+pub use combined::{CombinedRenderPlan, CombinedRenderResult, CombinedSettleRefused};
 mod head_imports;
 mod lifecycle;
 mod maintenance;

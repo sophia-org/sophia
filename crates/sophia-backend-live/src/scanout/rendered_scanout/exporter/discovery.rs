@@ -1,3 +1,5 @@
+#[cfg(all(feature = "libdrm-events", feature = "experimental-combined-frame-job"))]
+mod combined;
 mod preview_custody;
 #[cfg(all(feature = "libdrm-events", feature = "experimental-shell-capture"))]
 mod shell_capture;

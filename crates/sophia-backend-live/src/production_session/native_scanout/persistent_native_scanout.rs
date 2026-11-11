@@ -84,6 +84,8 @@ pub use render_devices::{
     LiveOutputAllocationContext, LiveOutputAllocationFormatPreference,
     LiveOutputAllocationPreference, LiveRenderDeviceNodeIdentity,
 };
+#[cfg(feature = "experimental-combined-frame-job")]
+mod combined_frame;
 #[cfg(test)]
 #[path = "../../../tests/support/output_topology_readback.rs"]
 mod output_topology_readback_tests;

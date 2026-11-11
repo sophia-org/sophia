@@ -3,7 +3,14 @@
 //! frame parked until that output has a free slot.
 
 use super::*;
-use sophia_runtime::{CombinedInbox, CombinedToken, ForwardedValidation, ValidatedIsbPixels};
+use sophia_runtime::{
+    CombinedInbox, CombinedReservation, CombinedToken, ForwardedValidation, IsbValidationWorker,
+    ValidatedIsbPixels,
+};
+
+/// A settlement the validator refused: nothing is lost, the caller still
+/// holds the credit, its token and the pixels.
+pub type CombinedSettleRefused = (CombinedReservation, CombinedToken, ValidatedIsbPixels);
 
 /// Owner-numbered requests start at 1, so this never names one in flight.
 pub(super) const COMBINED_REQUEST: LiveRendererWorkerRequestId = LiveRendererWorkerRequestId(0);
@@ -104,7 +111,6 @@ pub(super) fn register(
 impl NativeGbmRendererWorker {
     /// `None` when this facade cannot take combined work: quarantined,
     /// detached, or its registration could not be queued.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn combined_inbox(&mut self) -> Option<CombinedInbox<CombinedRenderPlan>> {
         if self.quarantined || self.claim.is_detached() {
             return None;
@@ -116,13 +122,76 @@ impl NativeGbmRendererWorker {
         Some(CombinedInbox::new(route.inbox.clone(), route.ring.clone()))
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(super) fn take_combined_result(&self) -> Result<CombinedRenderResult, TryRecvError> {
+    /// Takes the Release cell and returns an inbox, or neither.
+    pub(crate) fn reserve_combined_frame(&mut self) -> Option<CombinedInbox<CombinedRenderPlan>> {
+        if !self.reserve_combined_release() {
+            return None;
+        }
+        let inbox = self.combined_inbox();
+        if inbox.is_none() {
+            self.cancel_combined_frame();
+        }
+        inbox
+    }
+
+    /// The validator refused the submission: no frame can come back.
+    pub(crate) fn cancel_combined_frame(&mut self) {
+        if matches!(self.combined_release, CombinedReleaseCell::Reserved) {
+            self.combined_release = CombinedReleaseCell::Free;
+        }
+    }
+
+    /// Retains an exported lease, then clears the validation credit, in one
+    /// call so no caller can clear the credit while the lease has no owner.
+    pub(crate) fn settle_combined_frame(
+        &mut self,
+        validator: &mut IsbValidationWorker<CombinedRenderPlan>,
+        reservation: CombinedReservation,
+        result: CombinedRenderResult,
+    ) -> Result<ValidatedIsbPixels, CombinedSettleRefused> {
+        let CombinedRenderResult {
+            token,
+            pixels,
+            outcome,
+        } = result;
+        let retained = match outcome {
+            CombinedOutcome::Rendered(result) => self.retain_combined_result(result).is_none(),
+            CombinedOutcome::Expired => false,
+        };
+        if !retained {
+            self.cancel_combined_frame();
+        }
+        settle(validator, reservation, token, pixels)
+    }
+
+    pub(crate) fn take_combined_result(&self) -> Result<CombinedRenderResult, TryRecvError> {
         self.combined
             .as_ref()
             .map_or(Err(TryRecvError::Disconnected), |route| {
                 route.results.try_recv()
             })
+    }
+}
+
+/// Settlement with no renderer left to retain for: its lease record went with
+/// the output state that issued it.
+pub(crate) fn settle_without_renderer(
+    validator: &mut IsbValidationWorker<CombinedRenderPlan>,
+    reservation: CombinedReservation,
+    result: CombinedRenderResult,
+) -> Result<ValidatedIsbPixels, CombinedSettleRefused> {
+    settle(validator, reservation, result.token, result.pixels)
+}
+
+fn settle(
+    validator: &mut IsbValidationWorker<CombinedRenderPlan>,
+    reservation: CombinedReservation,
+    token: CombinedToken,
+    pixels: ValidatedIsbPixels,
+) -> Result<ValidatedIsbPixels, CombinedSettleRefused> {
+    match validator.settle_combined_token(reservation, token) {
+        Ok(()) => Ok(pixels),
+        Err((reservation, token)) => Err((reservation, token, pixels)),
     }
 }
 
