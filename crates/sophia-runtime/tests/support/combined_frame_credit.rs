@@ -44,6 +44,8 @@ fn inbox<P>(sender: mpsc::SyncSender<ForwardedValidation<P>>) -> CombinedInbox<P
 fn ring(wake: &sophia_wake::Wake) -> sophia_wake::WakeSlot {
     let slot = sophia_wake::WakeSlot::default();
     slot.set(wake.notifier());
+    // Attaching rings once by design; tests count only forwarding rings.
+    wake.clear().expect("consume the attach ring");
     slot
 }
 
