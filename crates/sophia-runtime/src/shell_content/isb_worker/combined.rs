@@ -29,16 +29,18 @@ impl CombinedReservation {
 }
 
 /// The renderer's bounded inbox for one output and the wake that tells it a
-/// frame arrived. Only a successful move rings it.
+/// frame arrived. Only a successful move rings it. The wake is a slot because
+/// the renderer attaches its command wake from its own thread, after the
+/// facade that hands out inboxes may already exist.
 pub struct CombinedInbox<P> {
     sender: mpsc::SyncSender<ForwardedValidation<P>>,
-    ring: sophia_wake::Notifier,
+    ring: sophia_wake::WakeSlot,
 }
 
 impl<P> CombinedInbox<P> {
     pub fn new(
         sender: mpsc::SyncSender<ForwardedValidation<P>>,
-        ring: sophia_wake::Notifier,
+        ring: sophia_wake::WakeSlot,
     ) -> Self {
         Self { sender, ring }
     }

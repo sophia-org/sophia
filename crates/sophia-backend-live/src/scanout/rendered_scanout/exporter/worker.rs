@@ -25,6 +25,8 @@ use std::time::{Duration, Instant};
 pub(crate) type CaptureReservation =
     Arc<std::sync::Mutex<Option<sophia_renderer_live::LiveSnapshotReservation>>>;
 
+#[cfg(feature = "experimental-combined-frame-job")]
+mod combined;
 mod head_imports;
 mod lifecycle;
 mod maintenance;
@@ -38,17 +40,29 @@ type CaptureInstallReceiver = Receiver<
         sophia_renderer_live::LiveShellCaptureFacts,
     )>,
 >;
-#[cfg(feature = "experimental-shell-capture")]
+#[cfg(any(
+    feature = "experimental-shell-capture",
+    feature = "experimental-combined-frame-job"
+))]
 type CommandSender = sophia_wake::SignalSender<WorkerCommand>;
-#[cfg(not(feature = "experimental-shell-capture"))]
+#[cfg(not(any(
+    feature = "experimental-shell-capture",
+    feature = "experimental-combined-frame-job"
+)))]
 type CommandSender = SyncSender<WorkerCommand>;
 
 fn wrap_commands(sender: SyncSender<WorkerCommand>, control: &WorkerControl) -> CommandSender {
-    #[cfg(feature = "experimental-shell-capture")]
+    #[cfg(any(
+        feature = "experimental-shell-capture",
+        feature = "experimental-combined-frame-job"
+    ))]
     {
         sophia_wake::SignalSender::new(sender, control.command_wake.clone())
     }
-    #[cfg(not(feature = "experimental-shell-capture"))]
+    #[cfg(not(any(
+        feature = "experimental-shell-capture",
+        feature = "experimental-combined-frame-job"
+    )))]
     {
         let _ = control;
         sender
@@ -379,6 +393,8 @@ impl NativeGbmRendererWorkerCore {
             in_flight: None,
             discarded_release: None,
             combined_release: CombinedReleaseCell::Free,
+            #[cfg(feature = "experimental-combined-frame-job")]
+            combined: None,
             context_status: None,
             persistent_render_stats: LiveNativePersistentRenderStats::default(),
             gl_identity: NativeGlIdentityState::Unobserved,
@@ -409,6 +425,8 @@ pub(super) struct NativeGbmRendererWorker {
     discarded_release: Option<DiscardedWorkerLease>,
     /// Never shares a slot with `discarded_release` (FALLBACK.md step 1).
     combined_release: CombinedReleaseCell,
+    #[cfg(feature = "experimental-combined-frame-job")]
+    combined: Option<combined::FacadeRoute>,
     context_status: Option<NativeGbmRenderedScanoutContextStatus>,
     persistent_render_stats: LiveNativePersistentRenderStats,
     /// Merged from every reply, so a context the worker reopens cannot
@@ -853,6 +871,8 @@ enum WorkerCommand {
         frame_slot_metrics: LiveRendererFrameSlotMetricsHandle,
         claim: Arc<OutputClaim>,
     },
+    #[cfg(feature = "experimental-combined-frame-job")]
+    RegisterCombined(combined::Registration),
     /// Detach an output and free everything it still holds.
     Deregister {
         output: LiveRendererWorkerOutputKey,

@@ -51,7 +51,7 @@ experimental-native-frame-transaction = ["sophia-runtime/experimental-native-fra
 experimental-draw = ["sophia-runtime/experimental-draw"]
 experimental-shell-capture = ["sophia-renderer-live/experimental-shell-capture", "sophia-runtime/experimental-shell-capture", "sophia-backend-live/experimental-shell-capture"]
 experimental-custody-dispatch = ["sophia-runtime/experimental-custody-dispatch"]
-experimental-combined-frame-job = ["sophia-runtime/experimental-combined-frame-job"]
+experimental-combined-frame-job = ["sophia-runtime/experimental-combined-frame-job", "sophia-backend-live/experimental-combined-frame-job"]
 default = []
 native-session = [
     "dep:zbus",

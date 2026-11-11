@@ -24,6 +24,8 @@ struct WorkerOutputState {
     slot_damage: WorkerSlotDamage,
     leases: BTreeMap<LiveRendererWorkerLeaseId, WorkerLeaseBuffer>,
     free_cpu_buffers: Vec<ReusableCpuBuffer>,
+    #[cfg(feature = "experimental-combined-frame-job")]
+    combined: Option<super::combined::OutputRoute>,
 }
 
 impl WorkerOutputState {
@@ -39,6 +41,8 @@ impl WorkerOutputState {
             slot_damage: WorkerSlotDamage::new(),
             leases: BTreeMap::new(),
             free_cpu_buffers: Vec::new(),
+            #[cfg(feature = "experimental-combined-frame-job")]
+            combined: None,
         }
     }
 }
@@ -79,12 +83,38 @@ pub(super) fn run_worker<D>(
     let Ok(mut captures) = super::shell_capture::Captures::new(&control) else {
         return;
     };
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        not(feature = "experimental-shell-capture")
+    ))]
+    let Ok(mut commands) = super::combined::CommandWait::new(&control) else {
+        return;
+    };
     let mut next_lease_id = 1_u64;
     let mut reported_transfers = 0_u64;
     let mut observation_order = 0_u64;
 
     while !control.is_shutdown() {
         outputs.retain(|_, state| !state.claim.is_detached());
+        #[cfg(all(
+            feature = "experimental-combined-frame-job",
+            not(feature = "experimental-shell-capture")
+        ))]
+        let command = {
+            commands.clear();
+            let combined = serve_combined(
+                &mut outputs,
+                &mut context,
+                &mut next_lease_id,
+                context_status,
+                observation_order,
+            );
+            match commands.next(&command_receiver, combined) {
+                Ok(Some(command)) => command,
+                Ok(None) => continue,
+                Err(()) => break,
+            }
+        };
         #[cfg(feature = "experimental-shell-capture")]
         let command = {
             if let Err(error) = captures.service(&mut context) {
@@ -92,7 +122,17 @@ pub(super) fn run_worker<D>(
                 // existing renderer/context serving its other output work.
                 tracing::warn!(%error, "shell capture service closed");
             }
-            match captures.next(&command_receiver) {
+            #[cfg(feature = "experimental-combined-frame-job")]
+            let wait = serve_combined(
+                &mut outputs,
+                &mut context,
+                &mut next_lease_id,
+                context_status,
+                observation_order,
+            );
+            #[cfg(not(feature = "experimental-combined-frame-job"))]
+            let wait: Option<Option<Instant>> = None;
+            match captures.next(&command_receiver, wait.is_some(), wait.flatten()) {
                 Ok(Some(command)) => command,
                 Ok(None) => continue,
                 Err(error) if error.kind() == io::ErrorKind::BrokenPipe => break,
@@ -102,7 +142,10 @@ pub(super) fn run_worker<D>(
                 }
             }
         };
-        #[cfg(not(feature = "experimental-shell-capture"))]
+        #[cfg(not(any(
+            feature = "experimental-shell-capture",
+            feature = "experimental-combined-frame-job"
+        )))]
         let Ok(command) = command_receiver.recv() else {
             break;
         };
@@ -196,6 +239,13 @@ pub(super) fn run_worker<D>(
                     WorkerOutputState::new(reply, frame_slot_metrics, claim),
                 );
             }
+            #[cfg(feature = "experimental-combined-frame-job")]
+            WorkerCommand::RegisterCombined(registration) => {
+                let output = registration.output();
+                if let Some(state) = outputs.get_mut(&output) {
+                    state.combined = registration.route_for(output, &state.claim);
+                }
+            }
             WorkerCommand::Deregister { output, claim } => {
                 // Dropping the state returns this output's buffers and slots
                 // together. Nothing else may reclaim them: they are leased
@@ -287,32 +337,19 @@ pub(super) fn run_worker<D>(
                     }
                     reported_transfers = completed;
                 }
-                let mut persistent_render_stats = context.as_ref().map_or_else(
-                    LiveNativePersistentRenderStats::default,
-                    NativeGbmRenderedScanoutContext::persistent_render_stats,
-                );
-                persistent_render_stats.observation_order = observation_order;
-                let composition_nonzero_rgb_pixels = context.as_ref().map_or(0, |context| {
-                    context.composition_nonzero_rgb_pixels(output.target_set())
-                });
                 // To this output's own channel: the result cannot reach
                 // another output because there is no route to one.
                 if state
                     .reply
-                    .try_send(WorkerResult {
+                    .try_send(worker_result(
+                        context.as_ref(),
                         output,
                         request_id,
                         correlation,
                         context_status,
-                        persistent_render_stats,
-                        gl_identity: context
-                            .as_ref()
-                            .map_or_else(NativeGlIdentityState::default, |context| {
-                                context.gl_identity().clone()
-                            }),
-                        composition_nonzero_rgb_pixels,
+                        observation_order,
                         outcome,
-                    })
+                    ))
                     .is_err()
                 {
                     outputs.remove(&output);
@@ -478,6 +515,118 @@ struct ReusableCpuBuffer {
     buffer: NativeGbmOwnedScanoutBuffer,
     checksum: u64,
     damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
+}
+
+fn worker_result<D>(
+    context: Option<&NativeGbmRenderedScanoutContext<D>>,
+    output: LiveRendererWorkerOutputKey,
+    request_id: LiveRendererWorkerRequestId,
+    correlation: LiveRendererFrameCorrelation,
+    context_status: NativeGbmRenderedScanoutContextStatus,
+    observation_order: u64,
+    outcome: WorkerOutcome,
+) -> WorkerResult
+where
+    D: AsFd,
+{
+    let mut persistent_render_stats = context.map_or_else(
+        LiveNativePersistentRenderStats::default,
+        NativeGbmRenderedScanoutContext::persistent_render_stats,
+    );
+    persistent_render_stats.observation_order = observation_order;
+    WorkerResult {
+        output,
+        request_id,
+        correlation,
+        context_status,
+        persistent_render_stats,
+        gl_identity: context.map_or_else(NativeGlIdentityState::default, |context| {
+            context.gl_identity().clone()
+        }),
+        composition_nonzero_rgb_pixels: context.map_or(0, |context| {
+            context.composition_nonzero_rgb_pixels(output.target_set())
+        }),
+        outcome,
+    }
+}
+
+/// Serves every output's parked or newly forwarded frame, before the next
+/// command, so a slot freed by the last command goes to the parked frame
+/// first. `None` when no output has a combined route: then only the command
+/// channel can need the worker. Otherwise the earliest parked deadline, which
+/// bounds the wait.
+#[cfg(feature = "experimental-combined-frame-job")]
+fn serve_combined<D>(
+    outputs: &mut BTreeMap<LiveRendererWorkerOutputKey, WorkerOutputState>,
+    context: &mut Option<NativeGbmRenderedScanoutContext<D>>,
+    next_lease_id: &mut u64,
+    context_status: NativeGbmRenderedScanoutContextStatus,
+    observation_order: u64,
+) -> Option<Option<Instant>>
+where
+    D: AsFd,
+{
+    let now = Instant::now();
+    let mut routed = false;
+    let mut earliest: Option<Instant> = None;
+    for (&output, state) in outputs.iter_mut() {
+        let Some(mut route) = state.combined.take() else {
+            continue;
+        };
+        routed = true;
+        route.serve(now, |plan| {
+            let super::combined::CombinedRenderPlan {
+                deadline,
+                target,
+                frame,
+                preferred_modifiers,
+                output_format,
+            } = plan;
+            let correlation =
+                super::frame_correlation(&frame, Some(super::combined::COMBINED_REQUEST));
+            let outcome = match context.as_mut() {
+                Some(context) => render_frame(
+                    context,
+                    output,
+                    target,
+                    frame,
+                    sophia_renderer_live::LiveCompositionOutputRequest {
+                        preferred_modifiers: &preferred_modifiers,
+                        format: output_format,
+                    },
+                    next_lease_id,
+                    state,
+                    None,
+                ),
+                None => WorkerOutcome::Failed(
+                    LiveRendererScanoutBufferExportDetail::BackendDeviceUnavailable,
+                ),
+            };
+            match outcome {
+                WorkerOutcome::Deferred(frame) => Err(super::combined::CombinedRenderPlan {
+                    deadline,
+                    target,
+                    frame,
+                    preferred_modifiers,
+                    output_format,
+                }),
+                outcome => Ok(worker_result(
+                    context.as_ref(),
+                    output,
+                    super::combined::COMBINED_REQUEST,
+                    correlation,
+                    context_status,
+                    observation_order,
+                    outcome,
+                )),
+            }
+        });
+        if let Some(deadline) = route.deadline() {
+            earliest = Some(earliest.map_or(deadline, |current| current.min(deadline)));
+        }
+        state.combined = Some(route);
+    }
+    routed.then_some(earliest)
 }
 
 fn render_frame<D>(

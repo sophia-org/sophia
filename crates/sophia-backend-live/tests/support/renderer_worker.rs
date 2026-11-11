@@ -2,6 +2,9 @@
 
 #[path = "combined_frame_release.rs"]
 mod combined_release;
+#[cfg(feature = "experimental-combined-frame-job")]
+#[path = "combined_frame_render.rs"]
+mod combined_render;
 
 use super::reusable_cpu_buffer_damage;
 use sophia_protocol::Size;
@@ -66,7 +69,10 @@ impl SendCommand for SyncSender<WorkerCommand> {
         SyncSender::send(self, command).map_err(Box::new)
     }
 }
-#[cfg(feature = "experimental-shell-capture")]
+#[cfg(any(
+    feature = "experimental-shell-capture",
+    feature = "experimental-combined-frame-job"
+))]
 impl SendCommand for sophia_wake::SignalSender<WorkerCommand> {
     fn send(
         &self,

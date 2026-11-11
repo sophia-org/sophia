@@ -38,7 +38,13 @@ pub(super) fn park<P>(route: Option<&mut Route<P>>) {
 /// their own `Wake`.
 fn inbox<P>(sender: mpsc::SyncSender<ForwardedValidation<P>>) -> CombinedInbox<P> {
     let wake = sophia_wake::Wake::new().expect("fixture wake");
-    CombinedInbox::new(sender, wake.notifier())
+    CombinedInbox::new(sender, ring(&wake))
+}
+
+fn ring(wake: &sophia_wake::Wake) -> sophia_wake::WakeSlot {
+    let slot = sophia_wake::WakeSlot::default();
+    slot.set(wake.notifier());
+    slot
 }
 
 impl<P: Send + 'static> IsbValidationWorker<P> {

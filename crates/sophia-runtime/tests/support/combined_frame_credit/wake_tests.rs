@@ -316,7 +316,7 @@ fn a_forwarded_frame_rings_the_renderer_inbox_once_after_the_move() {
             &token,
             source(&[0; 8]),
             plan(token.job),
-            CombinedInbox::new(sender, renderer.notifier()),
+            CombinedInbox::new(sender, super::ring(&renderer)),
         )
         .ok()
         .expect("combined submission");

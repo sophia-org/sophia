@@ -205,7 +205,7 @@ fn last_managed_lease_wakes_without_an_executor_or_new_command() {
         drop(send); // Unblocks a regressed recv-only wait without stranding it.
         completed
     });
-    let result = captures.next(&receive);
+    let result = captures.next(&receive, false, None);
     let _ = done.send(());
     assert!(thread.join().unwrap().is_ok());
     assert!(result.unwrap().is_none());
