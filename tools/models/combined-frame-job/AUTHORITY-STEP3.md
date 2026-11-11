@@ -642,8 +642,14 @@ Its variants:
   `begin.candidate_generation == binding.generation`, and `assembly.copy`
   names this `job` (stopped or not yet finished).
 - `Pending` or `Submitted`: the same exact binding is in that table.
-- `Ended`: the binding was seen and reached a terminal, withdrawn or
-  superseded state. The store reports this from the ledger's own records.
+- `Ended`: provable from existing state, with no new record. Candidate
+  generations strictly increase, and each output holds at most one
+  assembly and one pending entry (credits.rs:267-269). So the binding has
+  ended when that output's assembly, pending or submitted entry carries a
+  later `candidate_generation` for the same stream key, or when the stream
+  key or ledger is no longer open for `binding.key`. Terminal outcomes are
+  emitted as records (`self.outcome(..)`, credits.rs:315-324) and are not
+  kept for querying, so the query does not read them.
 - `Unknown`: none of the above. The walk treats `Unknown` as live until the
   deadline. It never takes absence from two tables as proof of death.
 
