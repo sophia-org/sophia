@@ -265,3 +265,39 @@ Options for 4c-3, for niltempus:
 Recommendation: (a). It keeps the cross-crate API change reviewable on its
 own and gives step 3 a tested join to call; (b) puts the API change and the
 provisional-composition obligations into one diff.
+
+## 4c-3 design, option (a), frozen before source edits
+
+niltempus selected (a) on 2026-11-11. Narrowed as follows; the deviation
+from "session-side pending row" is stated, not hidden.
+
+- Facade (worker/combined.rs, `pub(crate)`): `reserve_combined_frame` takes
+  the Release cell and returns an inbox, undoing the cell if no inbox can be
+  built; `cancel_combined_frame` frees a Reserved cell (validator refused the
+  submission); `take_combined_result`; `settle_combined_frame(validator,
+  reservation, result)` retains an Exported lease in the cell (or frees the
+  cell when nothing was exported) and only then calls
+  `settle_combined_token`. A refused settlement returns reservation, token
+  and pixels.
+- Exporter (discovery/combined.rs, `pub(crate)`) and `LiveProductionNativeScanout`
+  (persistent_native_scanout/combined_frame.rs, `pub`, keyed by `OutputId`)
+  forward the four calls. The scanout refuses an output served by more than
+  one head (`Unsupported`): each head has its own facade. Without a renderer
+  for the output, settlement clears the credit and returns the pixels; the
+  lease record left with the renderer was freed with its output state.
+- `CombinedRenderPlan`, `CombinedRenderResult` and `CombinedSettleRefused`
+  are re-exported `pub` from the crate root under the feature.
+- Deviation: no session-side pending row in 4c-3. With no production frame
+  entering the join, a session row has no caller and session tests cannot
+  build a native scanout. The retain-before-clear order is enforced by the
+  single backend call instead, which a caller cannot split. Step 3 adds the
+  session row where owned-ring admission gives it a caller.
+- Tests (backend, mounted from tests/support/renderer_worker.rs): reserve
+  refuses while Reserved and cancel frees; a running worker's result settles
+  through the facade with the credit cleared and the cell free; an Exported
+  result is retained (cell Retained, Release sent on the next poll) and the
+  credit cleared; a foreign reservation is refused with reservation, token
+  and pixels back and the lease still retained. The exporter and scanout
+  forwarders are compile-checked only.
+- Mutants: settle skips retention; settle skips the credit; reserve ignores a
+  Reserved cell; cancel frees a Retained cell.
