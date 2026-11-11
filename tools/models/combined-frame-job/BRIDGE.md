@@ -221,3 +221,47 @@ Mutants named before build: `serve` skips the parked job (priority test),
 deadline check removed at retry (retry expiry test), non-capture build waits
 in `recv()` (lost-wake test, no-capture run), `must_poll` ignored (lost-wake
 test, capture run), inbox read while parked (bound test).
+
+## 4c-3 facts at 30979b4fc, before any design is frozen
+
+4c-2 was accepted on 30979b4fc (receipt f2aa281f…, acceptance 86a9700f…).
+A read-only map of the join found:
+
+- Session's validator is `ShellIsbImageOwner.worker`
+  (runtime shell_transport/image_owner.rs:20), fixed to the default plan
+  type, built per shell-component connection (session
+  shell_component_connections/images.rs:43). Its owner turn,
+  `ShellIsbImageOwner::service` (:119), reached from
+  `ShellComponentConnections::turn_connected` (:685), takes no backend handle.
+  Owned-ring admission and submission happen inside runtime
+  (owned_copy/admission.rs, isb_jobs/owned_copy.rs).
+- Renderer facades are per head, private to the backend exporter
+  (exporter/discovery.rs:52), reached only through `LiveProductionNativeScanout`
+  (`pub`, keyed by `OutputId`). Mirror outputs have one facade per head. The
+  shell-capture forwarders are the precedent for the hop pattern (`pub` on
+  the scanout, `pub(crate)` on the exporter, facade method) and refuse
+  outputs spanning more than one card group.
+- `CombinedRenderPlan` and `CombinedRenderResult` are not nameable outside
+  `worker::combined`; render results move only on a scanout tick.
+
+Decision 3 assumed session holds both halves. It can, but only by: (1) new
+`pub` combined methods on `LiveProductionNativeScanout` with exporter
+forwarders, restricted to single-head outputs, and the two types re-exported;
+(2) the combined reservation and submission made where owned-ring frames are
+admitted, which is inside runtime's owner turn and needs the provisional
+plan that plan step 3's service 1 builds.
+
+Options for 4c-3, for niltempus:
+
+- (a) Forwarders only: (1), plus a session-side pending row that reserves
+  both halves, drains the result on the owner turn, retains the rendered
+  lease before settling the credit, and releases. Tested with a combined
+  validator built in the test and the deterministic plan; no owned-ring
+  admission change. The join is real, but no production frame enters it.
+- (b) Fold 4c-3 into plan step 3: build (1) and (2) together where service 1
+  dispatches, so the first join already admits real owned-ring frames, with
+  `ShellIsbImageOwner<P>` and a native handle passed into the owner turn.
+
+Recommendation: (a). It keeps the cross-crate API change reviewable on its
+own and gives step 3 a tested join to call; (b) puts the API change and the
+provisional-composition obligations into one diff.
