@@ -1,6 +1,7 @@
 # Step 3 bounded authority review: owner integration of the combined frame job
 
-Revision 2. This is a draft for review by Codex, then niltempus. It is not an
+Revision 3; R1-R5 at the end answer Codex's review of revision 2 (24fe50c62),
+which closed F1-F5 and left three ownership paths open. This is a draft for review by Codex, then niltempus. It is not an
 authority pass and selects no source. n7fj3c2p requires a design authority
 pass before any gate-3 prototype is written; verifying the prototype is a
 separate, later acceptance.
@@ -67,8 +68,8 @@ calls in this order:
    facade reservation.
 4. **Plan.** `compose_provisional_head_frame` builds the plan (F1, F4) and
    allocates the native frame id.
-5. **Submission.** `submit_combined` receives the plan and the inbox. This
-   replaces `submit_reserved_copy` for this job and for no other.
+5. **Submission.** `submit_reserved_copy` runs in combined mode (R1): the
+   existing operation, with its worker send replaced by `submit_ring_combined`.
 
 Service 2, result. This runs in the turn the result wake rings:
 
@@ -306,10 +307,12 @@ A refusal is a metadata decision made before any reservation.
 
 Validated backing on the renderer: the placeholder layer carries only the
 host-derived description. At dequeue the renderer checks that the validated
-size, stride and extent equal it. It then wraps the `ValidatedIsbPixels` in
-a new `LiveCpuPixelStorage::Validated(Arc<ValidatedIsbPixels>)` and binds
-it as a `Cpu` layer. This adds no copy (the bytes are the sealed mapping,
-isb_pixels.rs:15-25) and no admitted lease. After the render the renderer
+size, stride and extent equal it. Binding follows slot acquisition (R3).
+The renderer then wraps the `ValidatedIsbPixels` in a new
+`LiveCpuPixelStorage::Validated(Arc<ValidatedIsbPixels>)` and binds it as a
+`Cpu` layer. This adds no copy and no admitted lease: in the owned-ring lane
+the pixels are `ImmutableCpuPixels::Owned(Box<[u8]>)` (isb_pixels.rs:22-25),
+and wrapping them in an `Arc` moves a pointer. After the render the renderer
 drops the frame and recovers the pixels with `Arc::try_unwrap` into
 `CombinedRenderResult.pixels`. The row's backing charge stays on the row
 throughout. If the renderer kept a reference beyond the render, as damage
@@ -390,14 +393,190 @@ owner-side pixel work, cached liveness or a new ring.
 
    Accept this scope, or stop at the scaffold.
 2. **Eligibility.** The F4 set is deliberately narrow.
-3. **Render failure or expiry after forwarding.** This revision renders
-   the already-validated pixels conventionally, through the same one-shot
-   latch, and counts it as "renderer-unavailable fallback". FALLBACK.md
-   approved the latch only for scene churn, so this needs approval.
-   Otherwise the frame gets a failure terminal.
+3. **Fallback extensions, not approved; baseline in R4.** FALLBACK.md
+   approved conventional re-entry only for scene-only churn. For every
+   other decline the baseline is a failure terminal. Three extensions are
+   offered as separate choices, each re-entering the conventional path:
+   - after a renderer failure or expiry
+   - after a head topology change that still passes the ordinary checks
+   - when the head is busy with ordinary work
 4. **Order:**
    - this design's authority pass
    - 4c-4
    - the gate-3 prototype on these seams with a deterministic renderer
    - prototype acceptance
    - gate 4, a default-off real integration
+
+## Revision 3: the three ownership paths and clarifications
+
+### R1: the owned-ring submission keeps its bookkeeping
+
+The combined path does not replace `submit_reserved_copy`
+(shell_transport/owned_copy/admission.rs:121). It runs that operation in a
+second mode. The operation keeps every step, in its current order:
+
+1. Open the ring read ticket with `active.ring.offer(slot, bytes)`.
+2. Insert `Work::Working { identity, job, withdrawn: false,
+   handed_off: source.is_ok() }` into the reserved work slot.
+3. Submit through the job table.
+4. If the submit is refused, drop the ticket and call
+   `jobs.withdraw(.., Cancelled, ..)`.
+
+Combined mode changes only step 3. Ordinary mode keeps
+`OwnedCopyImageJobs::submit` (isb_jobs/owned_copy.rs:266).
+
+Combined mode calls a new `OwnedCopyImageJobs::submit_combined(worker, job,
+source, reservation, plan, inbox)`. It makes the same binding check as
+`submit`:
+
+- the `worker_job` matches
+- the job is not submitted and not stopped
+- it has no result
+- `source.matches(binding, slot)`
+
+It then calls `worker.submit_ring_combined(reservation, source, plan,
+inbox)` (isb_worker/combined.rs:200), which also checks the reserved byte
+count against the ticket's. The job table sets `submitted` only after a
+successful send. The worker's own row was marked submitted by
+`send_combined`, so both flags move together or neither does.
+
+A refused send returns `(failure, ticket, plan)`. The ticket is dropped and
+step 4 runs as today. The plan returns to the session, which drops it on the
+owner thread and cancels the facade reservation.
+
+A successful send returns the owner-plan `Receiver`, which goes to the
+session row. A later validation failure or inbox refusal returns the plan
+through it, and its arrival triggers the facade cancel in F3's table.
+
+A plan-build failure goes down the refused-send branch. The session builds
+the plan first and passes `Option<P>`; `None` skips the send. `Work::Working`
+then exists, the ticket is dropped, and the withdrawal reaches `reconcile`
+(shell_transport/owned_copy.rs:159-181) with its owner entry present, so
+that `expect` holds on every path. Today's `publish_releases` then publishes
+the source release from the `Releasing` entry, with the same `identity` and
+`handed_off`.
+
+Controls:
+
+- A real owned-ring combined submission reaches `receive_forwarded`,
+  resource reconciliation and source publication with the same job, ring
+  and slot.
+- A foreign ticket is refused, and the ticket comes back.
+- A forced send refusal leaves no orphaned row, no panic and no lost source
+  release. So does a plan-build failure.
+
+### R2: the owner row disposes of a Held result
+
+The exact owner row decides what happens to a `Held` result. It never waits
+on a bundle that may not arrive. In each owner turn, after the image owner's
+service and the content service, the session visits every row whose facade
+is `Held` and was not accepted that turn. It calls `release_held(head, job)`,
+which converts `Held` to `Retained` on the issuing facade so the next poll
+flushes the Release. It does this in any of these cases:
+
+- the content grant is gone, or the connection has closed
+- the row's job was withdrawn, stopped or refused in reconciliation
+- the frame-stream candidate is no longer pending or submitted, which a new
+  read-only store query `frame_candidate_live(binding)` reports from the
+  existing `FrameCopyBinding`
+- the row's admission deadline has passed
+
+The resource, source and journal obligations stay with their own owners:
+the `Releasing` entry, `publish_releases` and the `EAGAIN` retry. Only the
+renderer lease is given up.
+
+Temporary backpressure keeps the result `Held` until the deadline. That
+covers reconciliation being blocked, or publication returning `EAGAIN`
+before the bundle exists. The existing service runs every owner turn, and
+the session's walk runs in those same turns, so no wake or timer is added.
+
+If `receive_forwarded` returns `Err(pixels)`, the row keeps the pixels and
+tries again next turn while the runtime job still awaits a result. If that
+job has been withdrawn or stopped, the row drops the pixels on the owner
+thread. That frees only memory; the withdrawal already settled the backing
+charge.
+
+The row reaches the issuing facade through `CombinedHead`, even after the
+output or the connection's authority is gone. If the facade itself is gone,
+the row takes F3's qualified-retirement path.
+
+Controls:
+
+- Hold an exported result and revoke the grant before reconciliation. The
+  exact lease is enqueued for Release without any `submit_rendered_bundle`
+  call.
+- Repeat with the allocation lost.
+- Repeat with the candidate rejected by the content service.
+- Apply journal or reconciliation backpressure, then withdraw at the
+  deadline.
+
+### R3: acquire the slot, then bind
+
+`render_frame` acquires the frame slot before it renders
+(exporter/worker/service.rs:646-650). The combined render keeps that order:
+
+1. Check the deadline and cancellation, as `OutputRoute::serve` does.
+2. Call `frame_slots.try_acquire()`:
+   - **`Deferred`:** return `RenderAttempt::NoSlot` with the plan still
+     unbound. The envelope still owns its `ValidatedIsbPixels`, and `serve`
+     parks it as it does today: one parked job, the original deadline, no
+     owner visit and no second capture.
+   - **`Acquired(token)`:** wrap the pixels in an `Arc`, bind the
+     placeholder, and call `render_frame_in_slot` with that token. A
+     failed render releases its slot, as today.
+3. Drop the frame and `Arc::try_unwrap` the pixels into the result.
+
+A `Deferred` attempt never holds a bound frame, so `try_unwrap` never runs
+while a reference is alive. Each render acquires its token once.
+`IncarnationExhausted` is a terminal failure that returns the unbound
+pixels. A reference that survives a terminal render remains a prototype
+stopping condition (F4).
+
+Controls:
+
+- With all three slots occupied, dequeue a combined job, defer it
+  repeatedly, then release one slot. It renders once and returns the exact
+  pixels.
+- Expire or cancel the job while it is parked. The plan, pixels and credit
+  settle without any `try_unwrap`.
+
+### R4: classification aligned with FALLBACK.md
+
+Revision 2's "otherwise fallback" is narrowed. Only scene-only churn takes
+the approved conventional re-entry: every candidate and head check passes,
+and only the `CombinedSceneKey` differs. Every other decline keeps its
+existing classification:
+
+- A failure of the candidate's own authority or geometry leads to the
+  existing refusal or withdrawal.
+- A head topology change, a head busy with ordinary work, or a renderer
+  failure or expiry ends in a failure terminal as the baseline. It uses the
+  terminal today's path emits for the same condition; the prototype pins the
+  exact mapping. The lease goes from `Held` to `Retained`, and the resource
+  and source settle as in R2.
+
+Ordinary work queued for the head does not prove the scene changed. It
+declines as "head busy", not as churn. Conventional re-entry for any of
+these cases is decision 3's separate, unapproved extension.
+
+### R5: clarifications
+
+- **The scene key fails closed.** A `Cpu` layer whose `pixel_version` is
+  `None` makes the plan ineligible. The source type documents `None` as
+  "always uploads", so it is not an immutable version, and two `None`s
+  never count as matching pixels. A text or indicator layer whose current
+  raster key cannot be read without rasterizing declines the fast path;
+  metadata recomposition never rasterizes. This is a testable eligibility
+  rule.
+- **The acceptance preflight covers more than F2 listed.** It also checks:
+  - that `output_frames` permits the pending and rendering transitions with
+    the plan's damage snapshot
+  - that the damage queue accepts mark-rendering
+  - that the facade is not quarantined or stalled
+  - the frame's exact content and retirement identity
+
+  "Commit cannot fail" then covers every fallible `output_frames`
+  transition. The F2 fixture drives each refused preflight and shows that
+  no state changes.
+- **Pixel storage.** F4 now names the owned-ring storage as
+  `Owned(Box<[u8]>)`. No copy is made either way.
