@@ -38,10 +38,21 @@ impl CombinedRenderPlan {
 }
 
 // Read by the 4c-3 owner join; until then only tests inspect results.
+// Moved once per frame through a one-slot channel; boxing the result would
+// add an allocation per frame on the path this lane measures.
 #[cfg_attr(not(test), allow(dead_code))]
+#[allow(clippy::large_enum_variant)]
 pub(super) enum CombinedOutcome {
     Rendered(WorkerResult),
     Expired,
+}
+
+/// What one render attempt did. Moved once per attempt and never stored.
+#[allow(clippy::large_enum_variant)]
+pub(super) enum RenderAttempt {
+    Rendered(WorkerResult),
+    /// No free slot: the plan comes back to be parked.
+    NoSlot(CombinedRenderPlan),
 }
 
 /// The token and pixels always come home, whatever happened to the render.
@@ -153,7 +164,7 @@ impl OutputRoute {
     pub(super) fn serve(
         &mut self,
         now: Instant,
-        render: impl FnOnce(CombinedRenderPlan) -> Result<WorkerResult, CombinedRenderPlan>,
+        render: impl FnOnce(CombinedRenderPlan) -> RenderAttempt,
     ) {
         let job = match self.parked.take() {
             Some((_, job)) => job,
@@ -167,8 +178,8 @@ impl OutputRoute {
             CombinedOutcome::Expired
         } else {
             match render(plan) {
-                Ok(result) => CombinedOutcome::Rendered(result),
-                Err(plan) => {
+                RenderAttempt::Rendered(result) => CombinedOutcome::Rendered(result),
+                RenderAttempt::NoSlot(plan) => {
                     let deadline = plan.deadline;
                     self.parked = Some((
                         deadline,

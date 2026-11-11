@@ -2,7 +2,7 @@
 //! with real validator-forwarded frames and no GPU.
 
 use super::super::combined::{
-    CombinedOutcome, CombinedRenderPlan, CombinedRenderResult, OutputRoute,
+    CombinedOutcome, CombinedRenderPlan, CombinedRenderResult, OutputRoute, RenderAttempt,
 };
 use super::super::{
     DeviceIdentity, LiveRendererWorkerOutputKey, NEXT_IMAGE_STORE, NativeGbmRendererWorker,
@@ -13,7 +13,7 @@ use super::{correlated_facade, correlated_result, mixed_job, run_worker};
 use crate::api::LiveGbmEglFrameTargetRecord;
 use sophia_protocol::Size;
 use sophia_renderer_live::LiveRendererScanoutBufferExportDetail;
-use sophia_runtime::{CombinedReservation, ForwardedValidation, IsbValidationWorker};
+use sophia_runtime::{CombinedReservation, IsbValidationWorker};
 use std::io::Write;
 use std::os::fd::OwnedFd;
 use std::sync::Arc;
@@ -109,6 +109,11 @@ fn settle(
     reservation: CombinedReservation,
     result: CombinedRenderResult,
 ) {
+    assert_eq!(
+        result.pixels.bytes(),
+        &[0; 8],
+        "the validated pixels come home intact"
+    );
     assert!(
         validator
             .settle_combined_token(reservation, result.token)
@@ -124,14 +129,14 @@ fn a_parked_frame_takes_the_next_slot_before_the_inbox_is_read() {
     let mut validator = Validator::for_combined_plans(2, 16).unwrap();
     let later = Instant::now() + WAIT;
     let first = forward(&mut validator, &mut facade, 1, later);
-    route.serve(Instant::now(), Err);
+    route.serve(Instant::now(), RenderAttempt::NoSlot);
     assert!(route.deadline().is_some(), "no slot parks the frame");
     let second = forward(&mut validator, &mut facade, 2, later);
 
     let mut served = None;
     route.serve(Instant::now(), |plan| {
         served = generation(&plan);
-        Ok(rendered(1))
+        RenderAttempt::Rendered(rendered(1))
     });
     assert_eq!(
         served,
@@ -148,7 +153,7 @@ fn a_parked_frame_takes_the_next_slot_before_the_inbox_is_read() {
     let mut served = None;
     route.serve(Instant::now(), |plan| {
         served = generation(&plan);
-        Ok(rendered(2))
+        RenderAttempt::Rendered(rendered(2))
     });
     assert_eq!(served, Some(2), "the inbox frame waited for the parked one");
     settle(
@@ -177,7 +182,7 @@ fn expiry_returns_token_and_pixels_from_the_inbox_and_from_parking() {
 
     let deadline = Instant::now() + WAIT;
     let parked = forward(&mut validator, &mut facade, 4, deadline);
-    route.serve(Instant::now(), Err);
+    route.serve(Instant::now(), RenderAttempt::NoSlot);
     assert_eq!(route.deadline(), Some(deadline));
     route.serve(deadline, |_| panic!("an expired frame is never rendered"));
     let result = facade.take_combined_result().unwrap();
@@ -196,9 +201,9 @@ fn a_full_result_route_is_counted_and_never_blocks() {
     let mut validator = Validator::for_combined_plans(2, 16).unwrap();
     let later = Instant::now() + WAIT;
     let _first = forward(&mut validator, &mut facade, 5, later);
-    route.serve(Instant::now(), |_| Ok(rendered(5)));
+    route.serve(Instant::now(), |_| RenderAttempt::Rendered(rendered(5)));
     let _second = forward(&mut validator, &mut facade, 6, later);
-    route.serve(Instant::now(), |_| Ok(rendered(6)));
+    route.serve(Instant::now(), |_| RenderAttempt::Rendered(rendered(6)));
     assert_eq!(
         route.undelivered, 1,
         "a second result for one output is a broken contract"

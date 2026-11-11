@@ -603,14 +603,16 @@ where
                 ),
             };
             match outcome {
-                WorkerOutcome::Deferred(frame) => Err(super::combined::CombinedRenderPlan {
-                    deadline,
-                    target,
-                    frame,
-                    preferred_modifiers,
-                    output_format,
-                }),
-                outcome => Ok(worker_result(
+                WorkerOutcome::Deferred(frame) => {
+                    super::combined::RenderAttempt::NoSlot(super::combined::CombinedRenderPlan {
+                        deadline,
+                        target,
+                        frame,
+                        preferred_modifiers,
+                        output_format,
+                    })
+                }
+                outcome => super::combined::RenderAttempt::Rendered(worker_result(
                     context.as_ref(),
                     output,
                     super::combined::COMBINED_REQUEST,
