@@ -1,6 +1,6 @@
 # Step 3 bounded authority review: owner integration of the combined frame job
 
-Revision 4. R1-R5 at the end answer Codex's review of revision 2 (24fe50c62).
+Revision 5, which adds only "Revision 5: the Release receipt" at the end. R1-R5 answer Codex's review of revision 2 (24fe50c62).
 Revision 4 changes only the three R2 transitions Codex reviewed at e33c543aa,
 and folds the superseded fallback sentences into the R4 baseline. This is a draft for review by Codex, then niltempus. It is not an
 authority pass and selects no source. n7fj3c2p requires a design authority
@@ -602,7 +602,8 @@ That is the same operation `poll()` calls first, without the rest of
 lookup is by `CombinedHead`, it works on a disabled or remapped head.
 
 `release_held` converts `Held` to `Retained` and calls the maintenance
-flush once. The row keeps a Release debt until the flush returns `Enqueued`:
+flush once. The row keeps a Release debt until that exact job's transfer is evidenced
+(revision 5: the Release receipt, which supersedes the `Enqueued` rule in this table):
 
 | Flush result | Meaning | Next step |
 | --- | --- | --- |
@@ -703,3 +704,54 @@ Controls:
   `complete_isb` consumes the result, then clear exactly once.
 - A `receive_forwarded` for an unknown or mismatched job must leave the
   charges unchanged and keep the only copy of the pixels.
+
+## Revision 5: the Release receipt
+
+The facade's combined flush has two callers: the session's maintenance entry,
+and the ordinary `poll()`, which ignores the flush's return value
+(worker.rs:632-634). Suppose `release_held` flushes and gets `Full`. A later
+ordinary `poll()` then enqueues that same Release and frees the cell. The
+next maintenance call sees `NoRelease` and never `Enqueued`, so under the
+revision-4 rule the row's debt could never close. A bare `NoRelease` cannot
+be read as success either. The shared flush also returns `NoRelease` for
+`Reserved` and `Held`, and for a cell already reused by a successor.
+
+The evidence is owner-local and bounded. It adds no worker acknowledgement
+and no wake:
+
+1. **The job travels with the lease.** `Held` and `Retained` carry the
+   pending job identity, which is the row's `CombinedReservation` job, beside
+   the `DiscardedWorkerLease`.
+2. **One receipt per facade.** The facade gains `released_job: Option<u64>`.
+   The shared flush is the only place that writes it. When it enqueues a
+   `Retained` cell, it sets `released_job = Some(job)` and frees the cell,
+   whichever caller ran it.
+3. **No successor before the acknowledgement.** `reserve_combined_release`
+   refuses while `released_job` is `Some`. The cell therefore cannot hold a
+   successor until the row that owns the receipt has acknowledged it.
+4. **Maintenance reads exact state.** `flush_combined_release(head, job)`
+   first tries the flush when the cell is `Retained` for this job. It then
+   returns one of:
+   - `Transferred`, when `released_job == Some(job)`. It clears the receipt
+     and closes the row's renderer half. Transfer moves the obligation to
+     the command queue; it is not proof that the slot is free.
+   - `Pending`, when the cell is still `Retained` for this job (`Full`). The
+     walk retries.
+   - `Disconnected`. The row waits for qualified retirement.
+   - `Mismatch`, for any other state on the issuing claim. Rule 3 makes this
+     unreachable; if it occurs, the row fails closed and waits for
+     qualified retirement, as it does for a missing or replaced facade.
+
+An ordinary `poll()` that flushes first leaves the receipt in place. The
+next maintenance call reads it as `Transferred`, so the row closes without
+a second Release.
+
+Control: force `Full` in `release_held`, then let an ordinary `poll()`
+perform the successful flush, then run maintenance. Assert all of the
+following:
+
+- exactly one Release command is sent
+- this job's renderer debt closes as `Transferred`
+- the unrelated ordinary result is delivered normally
+- a successor reservation is refused until the acknowledgement, and
+  accepted after it
