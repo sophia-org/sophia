@@ -148,6 +148,9 @@ fn return_plan<P>(owner: mpsc::SyncSender<P>, plan: P) {
     }
 }
 
+/// A combined job ready to send, and the receiver its plan returns on.
+type PreparedJob<P> = (Job<P>, mpsc::Receiver<P>);
+
 impl<P: Send + 'static> IsbValidationWorker<P> {
     pub fn for_combined_plans(max_jobs: usize, max_bytes: usize) -> io::Result<Self> {
         Self::spawn(
@@ -220,7 +223,7 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
         source: Source,
         plan: P,
         inbox: CombinedInbox<P>,
-    ) -> Result<(Job<P>, mpsc::Receiver<P>), (IsbSubmitFailure, Source, P)> {
+    ) -> Result<PreparedJob<P>, (IsbSubmitFailure, Source, P)> {
         let Some(pending) = self.pending.iter().flatten().find(|pending| {
             pending.id == reservation.job
                 && !pending.submitted
