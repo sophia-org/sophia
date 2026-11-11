@@ -301,3 +301,72 @@ from "session-side pending row" is stated, not hidden.
   forwarders are compile-checked only.
 - Mutants: settle skips retention; settle skips the credit; reserve ignores a
   Reserved cell; cancel frees a Retained cell.
+
+## 4c-3 (a) accepted as an inert scaffold (7041a430b)
+
+Claude's acceptance (seal 0b1a6bc7) and Codex's read-only review (seal
+8c85cec1, `~/.local/state/sophia-framejob-stage4c3-codex-review-01`) accept
+7041a430b as the default-off backend scaffold only. The acceptance does not
+establish the session owner join or authorize real-frame admission. Plan step
+3 may begin its bounded authority design and review (n7fj3c2p gates 3 and 4);
+production owner integration waits for that review to pass.
+
+The review found that the routing limit is wider than mirroring.
+Topology installation changes head enablement and logical output identity
+without replacing exporters, so a disabled or remapped output can leave its
+original facade alive. The scanout's settle treats every lookup error as
+"no renderer", but `NotFound` does not prove the issuing output state was
+destroyed. After a single-head remap, settle can also reach a different facade:
+`retain_combined_result` refuses the foreign result, `settle_combined_frame`
+discards that refusal, and then cancels the other facade's Reserved cell.
+Collection and cancellation by `OutputId` have the same gap. The two-head
+`Unsupported` refusal is the right admission rule, but it must not stop an
+already-admitted job from draining after a topology change.
+
+Obligations the step-3 authority review must freeze before source:
+
+1. One owner row with exact identity: connection, grant, epoch, candidate
+   and job, plus the original RenderHeadId, OutputClaim, target generation
+   and native owner incarnation. The identity must locate the original
+   result and Release owner after disable, mirror, remap, replacement,
+   revocation or disconnect; an OutputId or vector index alone is not
+   enough. Reserve both halves or roll both back. Reject unknown, duplicate
+   or stale results without touching another job. Return an unretained
+   exported result intact, or keep it with an exact owner; never discard a
+   retention refusal. For teardown, keep a requested detach apart from
+   qualified destruction or last-use proof.
+2. Provisional geometry and resource binding: split
+   `project_render_bundle`'s metadata checks from its validated-resource
+   binding without manufacturing an admitted lease. Pin the immutable plan
+   references, predecessor retention and destruction on the validator
+   thread. Compare validated size, stride and extent with the declared
+   placeholder at renderer binding and again at owner consumption. Recheck
+   grants, allocation and scale, output extent, viewport and layout,
+   revocation, retirement claims and native availability. Include
+   malformed, overflow and authority-change negatives.
+3. Owner-only installation of the rendered result: a successful lease
+   transfer, specified apart from today's discard-and-Release settlement.
+   `submit_bundle`'s setter queues a render, so reusing it unchanged would
+   render twice. Preserve content, retirement claim, display and input
+   projection, transforms, prior displayed content and error rollback.
+   Define identical-frame `Ok(false)`, pending work and multi-output partial
+   effects. Prepared follows owner acceptance, and presentation follows the
+   exact tracked completion. DRM submission, uncertainty and device detach
+   stay on the existing owner path.
+4. Bounded accounting and failure ownership. The shared validator credit is
+   held through rendering. Cover source and private-backing charges, the four
+   journal reservations, Rwrite custody, journal-first source reuse and
+   repaint-backing lifetime. Cover pre-forward failure, forwarded-flag races,
+   worker death, a full journal, cancellation and expired or withdrawn work.
+   No Release follows from a cancellation flag, a queue disconnect or a
+   missing topology lookup alone. Include a successor that arrives while its
+   predecessor is still retained.
+5. Scene fallback and progress: a full-composition scene comparison and a
+   one-way, once-per-candidate conventional fallback. An authority or
+   geometry failure never becomes a scene-only fallback. Exercise
+   Full/Disconnected Release, an occupied three-slot pool, ordinary and
+   combined contention, deadline and cancel, capture on and off, topology
+   transitions, and no second validation or render on the stable success
+   path. Name the negative controls before validation. Count fallback work,
+   retained age and added notifications. Three services and CPU savings
+   remain claims for later measurement.
