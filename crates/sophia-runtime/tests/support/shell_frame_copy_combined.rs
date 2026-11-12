@@ -8,7 +8,7 @@ use crate::shell_transport::outbound::{Admitted, OutboundRecord};
 use crate::shell_transport::outbox::tests::files::Peer;
 use crate::{
     CombinedFrameAdmitted, CombinedFrameHooks, CombinedInbox, CombinedReservation, CombinedResult,
-    ForwardedValidation, ShellIsbImageOwner,
+    ForwardedValidation, IsbValidationFailure, ShellIsbImageOwner,
 };
 use sophia_protocol::shell_files::{ShellFileAck, ShellFrameCommit};
 use std::sync::mpsc;

@@ -15,7 +15,7 @@ pub type CombinedResult = Result<ValidatedIsbPixels, IsbValidationFailure>;
 
 /// Every ticket `reserve` returns ends in exactly one of `cancel` or
 /// `submitted`.
-pub trait CombinedFrameHooks<P> {
+pub trait CombinedFrameHooks<P: Send + 'static> {
     /// Service 1, before any runtime reservation for a copy-bearing frame:
     /// whole-plan eligibility and the renderer reservation. `None` takes
     /// today's path.

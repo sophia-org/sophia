@@ -7,7 +7,7 @@ use crate::{ContentStoreError, IsbImageAdmissionError, IsbSubmitFailure};
     feature = "experimental-native-frame-transaction",
     any(test, feature = "experimental-combined-frame-job")
 ))]
-pub(super) struct CombinedSubmit<'a, 'h, P> {
+pub(super) struct CombinedSubmit<'a, 'h, P: Send + 'static> {
     pub(super) hooks: &'a mut (dyn crate::CombinedFrameHooks<P> + 'h),
     pub(super) ticket: u64,
     pub(super) inbox: crate::CombinedInbox<P>,
