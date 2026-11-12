@@ -42,15 +42,17 @@ impl<R: RenderDeviceDiscoveryBackend> NativeGbmRenderedScanoutBufferDiscoveryExp
         Some(self.issuing(facade)?.cancel_combined_frame(facade))
     }
 
-    /// `Some(Err(NotConnected))` once the worker's combined route has closed.
+    /// `Some(Err(NotConnected))` once the worker's combined route has closed;
+    /// `Some(Err(InvalidInput))` for an admission that is no longer pending.
     pub(crate) fn take_combined_frame_result(
         &mut self,
         facade: &CombinedFacade,
     ) -> Option<io::Result<Option<CombinedRenderResult>>> {
-        Some(match self.issuing(facade)?.take_combined_result() {
-            Ok(result) => Ok(Some(result)),
-            Err(TryRecvError::Empty) => Ok(None),
-            Err(TryRecvError::Disconnected) => Err(io::ErrorKind::NotConnected.into()),
+        Some(match self.issuing(facade)?.take_combined_frame(facade) {
+            Some(Ok(result)) => Ok(Some(result)),
+            Some(Err(TryRecvError::Empty)) => Ok(None),
+            Some(Err(TryRecvError::Disconnected)) => Err(io::ErrorKind::NotConnected.into()),
+            None => Err(io::ErrorKind::InvalidInput.into()),
         })
     }
 
@@ -78,7 +80,7 @@ impl<R: RenderDeviceDiscoveryBackend> NativeGbmRenderedScanoutBufferDiscoveryExp
     ) -> CombinedRelease {
         self.issuing(facade)
             .map_or(CombinedRelease::NotFound, |worker| {
-                worker.release_combined_held(job)
+                worker.release_combined_held(facade, job)
             })
     }
 
@@ -89,7 +91,7 @@ impl<R: RenderDeviceDiscoveryBackend> NativeGbmRenderedScanoutBufferDiscoveryExp
     ) -> CombinedRelease {
         self.issuing(facade)
             .map_or(CombinedRelease::NotFound, |worker| {
-                worker.flush_combined_release_for(job)
+                worker.flush_combined_release_for(facade, job)
             })
     }
 }

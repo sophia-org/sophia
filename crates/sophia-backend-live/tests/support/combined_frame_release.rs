@@ -2,10 +2,10 @@
 //! with the 4c-4 Held state, admission ticket and Release receipt.
 
 use super::super::{
-    CombinedRelease, CombinedReleaseCell, CombinedReleaseFlush, DiscardedWorkerLease,
-    LiveRendererFrameSlotPool, LiveRendererFrameSlotToken, LiveRendererWorkerLeaseId,
-    LiveRendererWorkerOutputKey, LiveRendererWorkerRequestId, WORKER_COMMAND_CAPACITY,
-    WorkerCommand, WorkerOutcome, WorkerResult, frame_correlation,
+    CombinedAdmission, CombinedRelease, CombinedReleaseCell, CombinedReleaseFlush,
+    DiscardedWorkerLease, LiveRendererFrameSlotPool, LiveRendererFrameSlotToken,
+    LiveRendererWorkerLeaseId, LiveRendererWorkerOutputKey, LiveRendererWorkerRequestId,
+    WORKER_COMMAND_CAPACITY, WorkerCommand, WorkerOutcome, WorkerResult, frame_correlation,
 };
 use super::{correlated_facade, correlated_result, exported_outcome, mixed_job, submit_mixed_job};
 use crate::{LiveRendererFrameSlotAcquire, LiveRendererFrameSlotRelease};
@@ -43,24 +43,29 @@ fn assert_held(
     token: LiveRendererFrameSlotToken,
 ) {
     let CombinedReleaseCell::Retained {
-        job: held,
+        admission,
         lease: release,
     } = &facade.combined_release
     else {
         panic!("Release obligation must remain in its dedicated cell");
     };
-    assert_eq!(*held, job);
+    assert_eq!(admission.job, job);
     assert_eq!(release.output, facade.output);
     assert_eq!(release.lease_id, LiveRendererWorkerLeaseId(lease));
     assert_eq!(release.slot_token, token);
 }
 
 /// Reserves and holds one exported result as the owner row will.
-fn hold(facade: &mut super::super::NativeGbmRendererWorker, job: u64, result: WorkerResult) {
+fn hold(
+    facade: &mut super::super::NativeGbmRendererWorker,
+    job: u64,
+    result: WorkerResult,
+) -> CombinedAdmission {
     let ticket = facade
         .reserve_combined_release()
         .expect("a free facade reserves");
     assert!(facade.hold_combined_result(ticket, job, result).is_none());
+    CombinedAdmission { ticket, job }
 }
 
 /// Fills the command queue so the next Release enqueue sees `Full`.
@@ -116,7 +121,10 @@ fn one_cell_reserves_holds_and_reopens_only_after_the_receipt_is_read() {
     assert!(
         matches!(
             facade.combined_release,
-            CombinedReleaseCell::Held { job: 9, .. }
+            CombinedReleaseCell::Held {
+                admission: CombinedAdmission { job: 9, .. },
+                ..
+            }
         ),
         "an exported result is held, not released"
     );
@@ -127,21 +135,27 @@ fn one_cell_reserves_holds_and_reopens_only_after_the_receipt_is_read() {
     );
     assert!(commands.try_recv().is_err());
     assert!(facade.reserve_combined_release().is_none());
-    assert_eq!(facade.release_combined_held(8), CombinedRelease::Mismatch);
+    assert_eq!(
+        facade.give_up_combined_held(CombinedAdmission { ticket, job: 8 }),
+        CombinedRelease::Mismatch
+    );
     assert!(
         matches!(
             facade.combined_release,
-            CombinedReleaseCell::Held { job: 9, .. }
+            CombinedReleaseCell::Held {
+                admission: CombinedAdmission { job: 9, .. },
+                ..
+            }
         ),
         "another job cannot give this result up"
     );
     assert_eq!(
-        facade.release_combined_held(9),
+        facade.give_up_combined_held(CombinedAdmission { ticket, job: 9 }),
         CombinedRelease::Transferred
     );
     assert_release(commands.try_recv().unwrap(), facade.output, 41, token);
     assert_eq!(
-        facade.flush_combined_release_for(9),
+        facade.combined_release_for(CombinedAdmission { ticket, job: 9 }),
         CombinedRelease::Mismatch,
         "the receipt is read once"
     );
@@ -221,19 +235,16 @@ fn full_retains_both_dedicated_and_ordinary_release_obligations() {
     });
     results.send(result(combined, 43)).unwrap();
     let raw = facade.result_receiver.try_recv().unwrap();
-    hold(&mut facade, 3, raw);
+    let held = hold(&mut facade, 3, raw);
     assert!(
         facade.result_receiver.try_recv().is_err(),
         "raw result drained once, without poll"
     );
     fill(&facade);
     let failures = facade.core.release_enqueue_failures.load(Ordering::Relaxed);
-    assert_eq!(facade.release_combined_held(3), CombinedRelease::Pending);
+    assert_eq!(facade.give_up_combined_held(held), CombinedRelease::Pending);
     assert_held(&facade, 3, 43, combined);
-    assert_eq!(
-        facade.flush_combined_release_for(3),
-        CombinedRelease::Pending
-    );
+    assert_eq!(facade.combined_release_for(held), CombinedRelease::Pending);
     assert_held(&facade, 3, 43, combined);
     assert_eq!(
         facade.core.release_enqueue_failures.load(Ordering::Relaxed),
@@ -255,7 +266,7 @@ fn full_retains_both_dedicated_and_ordinary_release_obligations() {
     drain(&commands);
     assert!(commands.try_recv().is_err());
     assert_eq!(
-        facade.flush_combined_release_for(3),
+        facade.combined_release_for(held),
         CombinedRelease::Transferred
     );
     assert_release(commands.try_recv().unwrap(), facade.output, 43, combined);
@@ -274,15 +285,15 @@ fn disconnected_keeps_the_obligation_and_does_not_authorize_retirement() {
     let (mut facade, commands, _results) = correlated_facade();
     let mut slots = LiveRendererFrameSlotPool::new();
     let token = acquire(&mut slots);
-    hold(&mut facade, 5, result(token, 45));
+    let held = hold(&mut facade, 5, result(token, 45));
     drop(commands);
     assert_eq!(
-        facade.release_combined_held(5),
+        facade.give_up_combined_held(held),
         CombinedRelease::Disconnected
     );
     assert_held(&facade, 5, 45, token);
     assert_eq!(
-        facade.flush_combined_release_for(5),
+        facade.combined_release_for(held),
         CombinedRelease::Disconnected
     );
     assert_held(&facade, 5, 45, token);
@@ -302,9 +313,9 @@ fn enqueue_does_not_allow_reuse_of_an_occupied_slot() {
     let token = acquire(&mut slots);
     let _second = acquire(&mut slots);
     let _third = acquire(&mut slots);
-    hold(&mut facade, 6, result(token, 46));
+    let held = hold(&mut facade, 6, result(token, 46));
     assert_eq!(
-        facade.release_combined_held(6),
+        facade.give_up_combined_held(held),
         CombinedRelease::Transferred
     );
     assert_eq!(
@@ -357,7 +368,7 @@ fn occupied_cell_refuses_a_second_result_without_overwriting_the_first() {
         "a held result is not an unused reservation"
     );
     assert_eq!(
-        facade.release_combined_held(7),
+        facade.give_up_combined_held(CombinedAdmission { ticket, job: 7 }),
         CombinedRelease::Transferred
     );
     assert_release(commands.try_recv().unwrap(), facade.output, 47, first);
@@ -396,9 +407,9 @@ fn poll_enqueues_a_full_release_and_maintenance_reads_its_receipt() {
     let (mut facade, commands, results) = correlated_facade();
     let mut slots = LiveRendererFrameSlotPool::new();
     let token = acquire(&mut slots);
-    hold(&mut facade, 52, result(token, 52));
+    let held = hold(&mut facade, 52, result(token, 52));
     fill(&facade);
-    assert_eq!(facade.release_combined_held(52), CombinedRelease::Pending);
+    assert_eq!(facade.give_up_combined_held(held), CombinedRelease::Pending);
     drain(&commands);
     let (correlation, _) = submit_mixed_job(&mut facade, &commands, 53);
     let mut ordinary = correlated_result(correlation, exported_outcome());
@@ -419,12 +430,20 @@ fn poll_enqueues_a_full_release_and_maintenance_reads_its_receipt() {
         "no successor before the receipt is read"
     );
     assert_eq!(
-        facade.flush_combined_release_for(51),
+        facade.combined_release_for(CombinedAdmission { job: 51, ..held }),
         CombinedRelease::Mismatch,
         "another job's receipt is not this one's"
     );
     assert_eq!(
-        facade.flush_combined_release_for(52),
+        facade.combined_release_for(CombinedAdmission {
+            ticket: held.ticket.wrapping_add(1),
+            ..held
+        }),
+        CombinedRelease::Mismatch,
+        "another admission's receipt is not this one's"
+    );
+    assert_eq!(
+        facade.combined_release_for(held),
         CombinedRelease::Transferred
     );
     assert!(
@@ -443,14 +462,14 @@ fn idle_poll_flushes_the_combined_cell_and_production_never_fills_it() {
     assert!(commands.try_recv().is_err(), "a Free cell sends nothing");
     let mut slots = LiveRendererFrameSlotPool::new();
     let token = acquire(&mut slots);
-    hold(&mut facade, 54, result(token, 54));
+    let held = hold(&mut facade, 54, result(token, 54));
     assert!(matches!(facade.poll(), super::super::WorkerPoll::Idle));
     assert!(
         commands.try_recv().is_err(),
         "poll never gives up a held result"
     );
     fill(&facade);
-    assert_eq!(facade.release_combined_held(54), CombinedRelease::Pending);
+    assert_eq!(facade.give_up_combined_held(held), CombinedRelease::Pending);
     drain(&commands);
     assert!(matches!(facade.poll(), super::super::WorkerPoll::Idle));
     let release = commands
@@ -459,7 +478,7 @@ fn idle_poll_flushes_the_combined_cell_and_production_never_fills_it() {
     assert_release(release, facade.output, 54, token);
     assert!(commands.try_recv().is_err());
     assert_eq!(
-        facade.flush_combined_release_for(54),
+        facade.combined_release_for(held),
         CombinedRelease::Transferred
     );
 }

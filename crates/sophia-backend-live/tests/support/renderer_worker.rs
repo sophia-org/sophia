@@ -4,7 +4,7 @@
 mod combined_release;
 #[cfg(feature = "experimental-combined-frame-job")]
 #[path = "combined_frame_render.rs"]
-mod combined_render;
+pub(super) mod combined_render;
 
 use super::reusable_cpu_buffer_damage;
 use sophia_protocol::Size;

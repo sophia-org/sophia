@@ -29,6 +29,15 @@ pub(crate) struct CombinedFacade {
     ticket: u64,
 }
 
+impl CombinedFacade {
+    fn admission(&self, job: u64) -> CombinedAdmission {
+        CombinedAdmission {
+            ticket: self.ticket,
+            job,
+        }
+    }
+}
+
 /// Owner-numbered requests start at 1, so this never names one in flight.
 pub(super) const COMBINED_REQUEST: LiveRendererWorkerRequestId = LiveRendererWorkerRequestId(0);
 
@@ -223,7 +232,33 @@ impl NativeGbmRendererWorker {
         }
     }
 
-    pub(crate) fn take_combined_result(&self) -> Result<CombinedRenderResult, TryRecvError> {
+    /// `None` for any admission but the one this facade is still waiting on,
+    /// so an old handle cannot drain its successor's result.
+    pub(crate) fn take_combined_frame(
+        &self,
+        facade: &CombinedFacade,
+    ) -> Option<Result<CombinedRenderResult, TryRecvError>> {
+        reserved(&self.combined_release, facade.ticket).then(|| self.take_combined_result())
+    }
+
+    /// The owner declined this admission's held result.
+    pub(crate) fn release_combined_held(
+        &mut self,
+        facade: &CombinedFacade,
+        job: u64,
+    ) -> CombinedRelease {
+        self.give_up_combined_held(facade.admission(job))
+    }
+
+    pub(crate) fn flush_combined_release_for(
+        &mut self,
+        facade: &CombinedFacade,
+        job: u64,
+    ) -> CombinedRelease {
+        self.combined_release_for(facade.admission(job))
+    }
+
+    pub(super) fn take_combined_result(&self) -> Result<CombinedRenderResult, TryRecvError> {
         self.combined
             .as_ref()
             .map_or(Err(TryRecvError::Disconnected), |route| {

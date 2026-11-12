@@ -989,6 +989,8 @@ include!("worker/release.rs");
 mod service;
 #[path = "../../../../tests/support/renderer_worker.rs"]
 pub(crate) mod tests;
+#[cfg(all(test, feature = "experimental-combined-frame-job"))]
+pub(crate) use tests::combined_render::{device_free_core, device_free_plan};
 
 use service::run_worker;
 

@@ -10,9 +10,9 @@ use super::super::combined::{
 use super::super::{
     CombinedFacade, CombinedRelease, CombinedReleaseCell, CombinedSettleRefused, DeviceIdentity,
     LiveRendererWorkerLeaseId, LiveRendererWorkerOutputKey, NEXT_IMAGE_STORE,
-    NativeGbmRendererWorker, NativeGbmRendererWorkerCore, WorkerCommand, WorkerControl,
-    WorkerOutcome, WorkerRegistry, WorkerResult, combined::COMBINED_REQUEST, frame_correlation,
-    wrap_commands,
+    NativeGbmRendererWorker, NativeGbmRendererWorkerCore, WORKER_COMMAND_CAPACITY, WorkerCommand,
+    WorkerControl, WorkerOutcome, WorkerRegistry, WorkerResult, combined::COMBINED_REQUEST,
+    frame_correlation, wrap_commands,
 };
 use super::{correlated_facade, correlated_result, exported_outcome, mixed_job, run_worker};
 use crate::api::LiveGbmEglFrameTargetRecord;
@@ -225,6 +225,16 @@ fn a_full_result_route_is_counted_and_never_blocks() {
     );
 }
 
+/// For the scanout routing tests: a running device-free core, and a plan
+/// that core can take (its render fails for want of a device).
+pub(crate) fn device_free_core(inode: u64) -> Arc<NativeGbmRendererWorkerCore> {
+    running_core(inode).0
+}
+
+pub(crate) fn device_free_plan(generation: u64) -> CombinedRenderPlan {
+    plan(generation, Instant::now() + WAIT)
+}
+
 /// A core whose worker thread runs the real loop without a render device.
 fn running_core(inode: u64) -> (Arc<NativeGbmRendererWorkerCore>, Arc<WorkerControl>) {
     let registry = Arc::new(WorkerRegistry::default());
@@ -376,8 +386,8 @@ fn exported_result(
 
 fn assert_held(facade: &NativeGbmRendererWorker, job: u64, lease: u64, why: &str) {
     assert!(
-        matches!(&facade.combined_release, CombinedReleaseCell::Held { job: held, result }
-            if *held == job && matches!(result.outcome,
+        matches!(&facade.combined_release, CombinedReleaseCell::Held { admission, result }
+            if admission.job == job && matches!(result.outcome,
                 WorkerOutcome::Exported { lease_id, .. } if lease_id == LiveRendererWorkerLeaseId(lease))),
         "{why}"
     );
@@ -470,11 +480,11 @@ fn an_exported_result_is_held_until_the_owner_gives_it_up() {
         "poll never releases a held result"
     );
     assert_eq!(
-        facade.release_combined_held(job.wrapping_add(1)),
+        facade.release_combined_held(&issued, job.wrapping_add(1)),
         CombinedRelease::Mismatch
     );
     assert_eq!(
-        facade.release_combined_held(job),
+        facade.release_combined_held(&issued, job),
         CombinedRelease::Transferred
     );
     assert!(
@@ -569,4 +579,114 @@ fn a_replacement_facade_under_the_same_output_key_is_not_the_issuer() {
         "cleanup on one facade leaves the other's pending work alone"
     );
     assert!(replacement.cancel_combined_frame(&other));
+}
+
+/// Codex 4c-4 review F1: two validators number their jobs from the same
+/// start, so the admission ticket, not the job, separates an old handle from
+/// its successor on one facade.
+#[test]
+fn an_old_handle_cannot_collect_release_or_acknowledge_its_successor() {
+    let (mut facade, commands, _reply) = correlated_facade();
+    let (old, inbox) = facade.reserve_combined_frame().expect("Free reserves");
+    let WorkerCommand::RegisterCombined(registration) = commands.recv().unwrap() else {
+        panic!("first combined use registers the route");
+    };
+    let mut route = registration
+        .route_for(facade.output(), &facade.claim)
+        .expect("route for the live claim");
+    let mut first = Validator::for_combined_plans(1, 8).unwrap();
+    let reservation = submit(&mut first, inbox, 61, Instant::now() + WAIT);
+    route.serve(Instant::now(), |_| {
+        RenderAttempt::Rendered(exported(61, 61))
+    });
+    let result = facade
+        .take_combined_frame(&old)
+        .expect("the pending admission collects")
+        .expect("its result is waiting");
+    let job = reservation.job();
+    assert!(
+        facade
+            .settle_combined_frame(&old, &mut first, reservation, result)
+            .is_ok()
+    );
+    assert_eq!(
+        facade.release_combined_held(&old, job),
+        CombinedRelease::Transferred
+    );
+    assert!(
+        matches!(commands.try_recv(), Ok(WorkerCommand::Release { lease_id, .. })
+        if lease_id == LiveRendererWorkerLeaseId(61))
+    );
+
+    let mut second = Validator::for_combined_plans(1, 8).unwrap();
+    let (current, inbox) = facade
+        .reserve_combined_frame()
+        .expect("the acknowledged cell reopens");
+    let reservation = submit(&mut second, inbox, 62, Instant::now() + WAIT);
+    assert_eq!(
+        reservation.job(),
+        job,
+        "separate validators repeat job numbers"
+    );
+    route.serve(Instant::now(), |_| {
+        RenderAttempt::Rendered(exported(62, 62))
+    });
+    assert!(
+        facade.take_combined_frame(&old).is_none(),
+        "an old handle cannot drain its successor's result"
+    );
+    let result = facade
+        .take_combined_frame(&current)
+        .expect("the current admission collects")
+        .expect("the successor's result is still waiting");
+    assert!(
+        facade
+            .settle_combined_frame(&current, &mut second, reservation, result)
+            .is_ok()
+    );
+    assert_eq!(
+        facade.release_combined_held(&old, job),
+        CombinedRelease::Mismatch
+    );
+    assert_held(
+        &facade,
+        job,
+        62,
+        "an old handle cannot give up its successor's result",
+    );
+
+    for _ in 0..WORKER_COMMAND_CAPACITY {
+        facade
+            .core
+            .command_sender
+            .try_send(WorkerCommand::Shutdown)
+            .unwrap();
+    }
+    assert_eq!(
+        facade.release_combined_held(&current, job),
+        CombinedRelease::Pending
+    );
+    for _ in 0..WORKER_COMMAND_CAPACITY {
+        assert!(matches!(commands.try_recv(), Ok(WorkerCommand::Shutdown)));
+    }
+    assert!(matches!(facade.poll(), super::super::WorkerPoll::Idle));
+    assert!(
+        matches!(commands.try_recv(), Ok(WorkerCommand::Release { lease_id, .. })
+            if lease_id == LiveRendererWorkerLeaseId(62)),
+        "the ordinary poll enqueues the successor's Release"
+    );
+    assert_eq!(
+        facade.flush_combined_release_for(&old, job),
+        CombinedRelease::Mismatch
+    );
+    assert!(
+        facade.reserve_combined_frame().is_none(),
+        "an old handle cannot read its successor's receipt"
+    );
+    assert_eq!(
+        facade.flush_combined_release_for(&current, job),
+        CombinedRelease::Transferred
+    );
+    assert!(commands.try_recv().is_err(), "exactly one Release each");
+    assert!(facade.reserve_combined_frame().is_some());
 }

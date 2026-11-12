@@ -4,27 +4,41 @@ struct DiscardedWorkerLease {
     slot_token: LiveRendererFrameSlotToken,
 }
 
+/// One combined admission on this facade: the facade-local ticket and the
+/// runtime job. Job numbers repeat across validators; the ticket does not.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CombinedAdmission {
+    ticket: u64,
+    job: u64,
+}
+
 /// The combined frame-job Release obligation for this facade. Admission
-/// reserves it under a facade-local ticket, settlement holds an exported
-/// result under the owner row's job, and giving that result up retains its
-/// lease for Release. It frees only once the Release is enqueued, which is
-/// not slot freedom.
+/// reserves it under a ticket, settlement holds an exported result under
+/// that admission, and giving the result up retains its lease for Release.
+/// It frees only once the Release is enqueued, which is not slot freedom.
 // Held is the frame the owner may still accept; boxing it would add an
 // allocation per frame on the path this lane measures.
 #[allow(clippy::large_enum_variant)]
 enum CombinedReleaseCell {
     Free,
     Reserved(u64),
-    Held { job: u64, result: WorkerResult },
-    Retained { job: u64, lease: DiscardedWorkerLease },
+    Held {
+        admission: CombinedAdmission,
+        result: WorkerResult,
+    },
+    Retained {
+        admission: CombinedAdmission,
+        lease: DiscardedWorkerLease,
+    },
 }
 
 /// Owner-local evidence beside the cell: the last admission ticket issued,
-/// and the job whose Release either caller of the shared flush enqueued.
+/// and the admission whose Release either caller of the shared flush
+/// enqueued.
 #[derive(Default)]
 struct CombinedReceipt {
     admissions: u64,
-    released_job: Option<u64>,
+    released: Option<CombinedAdmission>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -55,8 +69,8 @@ fn reserved(cell: &CombinedReleaseCell, ticket: u64) -> bool {
     matches!(cell, CombinedReleaseCell::Reserved(reserved) if *reserved == ticket)
 }
 
-fn retains(cell: &CombinedReleaseCell, job: u64) -> bool {
-    matches!(cell, CombinedReleaseCell::Retained { job: held, .. } if *held == job)
+fn retains(cell: &CombinedReleaseCell, admission: CombinedAdmission) -> bool {
+    matches!(cell, CombinedReleaseCell::Retained { admission: held, .. } if *held == admission)
 }
 
 impl NativeGbmRendererWorker {
@@ -106,7 +120,7 @@ impl NativeGbmRendererWorker {
             || self.stalled.is_some()
             || self.in_flight.is_some()
             || self.claim.is_detached()
-            || self.combined_receipt.released_job.is_some()
+            || self.combined_receipt.released.is_some()
             || !matches!(self.combined_release, CombinedReleaseCell::Free)
         {
             return None;
@@ -148,28 +162,34 @@ impl NativeGbmRendererWorker {
         {
             return Some(result);
         }
-        self.combined_release = CombinedReleaseCell::Held { job, result };
+        self.combined_release = CombinedReleaseCell::Held {
+            admission: CombinedAdmission { ticket, job },
+            result,
+        };
         None
     }
 
-    /// The owner gave up this job's held result: its lease is retained for
-    /// Release and one flush is tried at once (AUTHORITY-STEP3.md rev 4).
+    /// The owner gave up this admission's held result: its lease is retained
+    /// for Release and one flush is tried at once (AUTHORITY-STEP3.md rev 4).
     #[cfg_attr(
         not(any(test, feature = "experimental-combined-frame-job")),
         allow(dead_code)
     )]
-    pub(crate) fn release_combined_held(&mut self, job: u64) -> CombinedRelease {
+    fn give_up_combined_held(&mut self, admission: CombinedAdmission) -> CombinedRelease {
         self.combined_release = match std::mem::replace(
             &mut self.combined_release,
             CombinedReleaseCell::Free,
         ) {
-            CombinedReleaseCell::Held { job: held, result } if held == job => match result.outcome {
+            CombinedReleaseCell::Held {
+                admission: held,
+                result,
+            } if held == admission => match result.outcome {
                 WorkerOutcome::Exported {
                     lease_id,
                     slot_token,
                     ..
                 } => CombinedReleaseCell::Retained {
-                    job,
+                    admission,
                     lease: DiscardedWorkerLease {
                         output: result.output,
                         lease_id,
@@ -177,31 +197,34 @@ impl NativeGbmRendererWorker {
                     },
                 },
                 // Only exported results are held.
-                _ => CombinedReleaseCell::Held { job: held, result },
+                _ => CombinedReleaseCell::Held {
+                    admission: held,
+                    result,
+                },
             },
             other => other,
         };
-        self.flush_combined_release_for(job)
+        self.combined_release_for(admission)
     }
 
-    /// The owner's maintenance entry: the shared flush for this job only, and
-    /// the receipt either caller left. Never `poll()`, so no ordinary result
+    /// The owner's maintenance entry: the shared flush for this admission
+    /// only, and the receipt either caller left. Never `poll()`, so no ordinary result
     /// is taken.
     #[cfg_attr(
         not(any(test, feature = "experimental-combined-frame-job")),
         allow(dead_code)
     )]
-    pub(crate) fn flush_combined_release_for(&mut self, job: u64) -> CombinedRelease {
-        if retains(&self.combined_release, job)
+    fn combined_release_for(&mut self, admission: CombinedAdmission) -> CombinedRelease {
+        if retains(&self.combined_release, admission)
             && self.flush_combined_release() == CombinedReleaseFlush::Disconnected
         {
             return CombinedRelease::Disconnected;
         }
-        if self.combined_receipt.released_job == Some(job) {
-            self.combined_receipt.released_job = None;
+        if self.combined_receipt.released == Some(admission) {
+            self.combined_receipt.released = None;
             return CombinedRelease::Transferred;
         }
-        if retains(&self.combined_release, job) {
+        if retains(&self.combined_release, admission) {
             CombinedRelease::Pending
         } else {
             CombinedRelease::Mismatch
@@ -210,12 +233,16 @@ impl NativeGbmRendererWorker {
 
     /// Full and Disconnected both keep the lease: a closed queue is not proof
     /// that the slot was retired. An enqueue, from `poll()` or maintenance,
-    /// leaves the job's receipt.
+    /// leaves the admission's receipt.
     fn flush_combined_release(&mut self) -> CombinedReleaseFlush {
-        let CombinedReleaseCell::Retained { job, lease: release } = &self.combined_release else {
+        let CombinedReleaseCell::Retained {
+            admission,
+            lease: release,
+        } = &self.combined_release
+        else {
             return CombinedReleaseFlush::NoRelease;
         };
-        let job = *job;
+        let admission = *admission;
         let sent = self.core.command_sender.try_send(WorkerCommand::Release {
             output: release.output,
             lease_id: release.lease_id,
@@ -224,7 +251,7 @@ impl NativeGbmRendererWorker {
         let flush = match sent {
             Ok(()) => {
                 self.combined_release = CombinedReleaseCell::Free;
-                self.combined_receipt.released_job = Some(job);
+                self.combined_receipt.released = Some(admission);
                 return CombinedReleaseFlush::Enqueued;
             }
             Err(TrySendError::Full(_)) => CombinedReleaseFlush::Full,
