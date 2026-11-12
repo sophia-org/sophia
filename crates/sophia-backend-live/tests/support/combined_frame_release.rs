@@ -257,12 +257,12 @@ fn full_retains_both_dedicated_and_ordinary_release_obligations() {
         facade.core.release_enqueue_failures.load(Ordering::Relaxed),
         failures + 1
     );
-    let held = facade
+    let ordinary_lease = facade
         .discarded_release
         .as_ref()
         .expect("ordinary Full retains its lease");
-    assert_eq!(held.lease_id, LiveRendererWorkerLeaseId(44));
-    assert_eq!(held.slot_token, ordinary);
+    assert_eq!(ordinary_lease.lease_id, LiveRendererWorkerLeaseId(44));
+    assert_eq!(ordinary_lease.slot_token, ordinary);
     drain(&commands);
     assert!(commands.try_recv().is_err());
     assert_eq!(

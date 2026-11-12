@@ -237,7 +237,6 @@ fn assert_not_found(
     else {
         panic!("a missing issuer must not settle");
     };
-    assert_eq!(result.pixels.bytes(), &[0; 8], "the pixels come back");
     assert_eq!(validator.pending(), 1, "nothing settled the credit");
     (reservation, *result)
 }
@@ -263,12 +262,17 @@ fn a_missing_issuer_gets_everything_back_and_settles_nothing() {
         assert_not_found(&mut fixture, &head, &mut validator, reservation, result);
     fixture.exporters[0] = original;
 
-    assert!(
-        fixture
-            .routes()
-            .settle(&head, &mut validator, reservation, result)
-            .is_ok(),
-        "the issuer, once back, settles what was returned"
+    // The pixels field is private to the worker, so the returned pixels are
+    // read where settlement finally hands them over.
+    let pixels = fixture
+        .routes()
+        .settle(&head, &mut validator, reservation, result)
+        .ok()
+        .expect("the issuer, once back, settles what was returned");
+    assert_eq!(
+        pixels.bytes(),
+        &[0; 8],
+        "both refusals returned the pixels intact"
     );
     assert_eq!(validator.pending(), 0);
 }
