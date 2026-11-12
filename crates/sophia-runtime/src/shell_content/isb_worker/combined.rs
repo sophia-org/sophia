@@ -26,6 +26,11 @@ impl CombinedReservation {
     pub fn was_forwarded(&self) -> bool {
         self.identity.forwarded.load(Ordering::Acquire)
     }
+
+    /// Whether `token` came back from this reservation's own submission.
+    pub fn owns(&self, token: &CombinedToken) -> bool {
+        self.job == token.job && Arc::ptr_eq(&self.identity, &token.identity)
+    }
 }
 
 /// The renderer's bounded inbox for one output and the wake that tells it a
@@ -284,7 +289,7 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
         reservation: CombinedReservation,
         token: CombinedToken,
     ) -> Result<(), (CombinedReservation, CombinedToken)> {
-        if reservation.job != token.job || !Arc::ptr_eq(&reservation.identity, &token.identity) {
+        if !reservation.owns(&token) {
             return Err((reservation, token));
         }
         let Some(slot) = self.pending.iter_mut().find(|slot| {

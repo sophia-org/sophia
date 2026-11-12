@@ -1,16 +1,18 @@
 //! Stage 4c-2: the renderer's combined inbox, parking, priority and deadline,
 //! with real validator-forwarded frames and no GPU. Stage 4c-3: the facade's
 //! reserve, cancel and settle calls, which keep the Release cell and the
-//! validation credit in one order.
+//! validation credit in one order. Stage 4c-4: the issuing facade, its
+//! admission ticket and the Held result.
 
 use super::super::combined::{
     CombinedOutcome, CombinedRenderPlan, CombinedRenderResult, OutputRoute, RenderAttempt,
 };
 use super::super::{
-    CombinedReleaseCell, DeviceIdentity, LiveRendererWorkerLeaseId, LiveRendererWorkerOutputKey,
-    NEXT_IMAGE_STORE, NativeGbmRendererWorker, NativeGbmRendererWorkerCore, WorkerCommand,
-    WorkerControl, WorkerOutcome, WorkerRegistry, WorkerResult, combined::COMBINED_REQUEST,
-    frame_correlation, wrap_commands,
+    CombinedFacade, CombinedRelease, CombinedReleaseCell, CombinedSettleRefused, DeviceIdentity,
+    LiveRendererWorkerLeaseId, LiveRendererWorkerOutputKey, NEXT_IMAGE_STORE,
+    NativeGbmRendererWorker, NativeGbmRendererWorkerCore, WorkerCommand, WorkerControl,
+    WorkerOutcome, WorkerRegistry, WorkerResult, combined::COMBINED_REQUEST, frame_correlation,
+    wrap_commands,
 };
 use super::{correlated_facade, correlated_result, exported_outcome, mixed_job, run_worker};
 use crate::api::LiveGbmEglFrameTargetRecord;
@@ -355,8 +357,8 @@ fn exported_result(
     commands: &Receiver<WorkerCommand>,
     validator: &mut Validator,
     lease: u64,
-) -> (CombinedReservation, CombinedRenderResult) {
-    let inbox = facade
+) -> (CombinedFacade, CombinedReservation, CombinedRenderResult) {
+    let (issued, inbox) = facade
         .reserve_combined_frame()
         .expect("an idle facade reserves");
     let WorkerCommand::RegisterCombined(registration) = commands.recv().unwrap() else {
@@ -369,21 +371,23 @@ fn exported_result(
     route.serve(Instant::now(), |_| {
         RenderAttempt::Rendered(exported(lease, lease))
     });
-    (reservation, facade.take_combined_result().unwrap())
+    (issued, reservation, facade.take_combined_result().unwrap())
 }
 
-fn assert_retained(facade: &NativeGbmRendererWorker, lease: u64, why: &str) {
+fn assert_held(facade: &NativeGbmRendererWorker, job: u64, lease: u64, why: &str) {
     assert!(
-        matches!(&facade.combined_release, CombinedReleaseCell::Retained(release)
-            if release.lease_id == LiveRendererWorkerLeaseId(lease)),
+        matches!(&facade.combined_release, CombinedReleaseCell::Held { job: held, result }
+            if *held == job && matches!(result.outcome,
+                WorkerOutcome::Exported { lease_id, .. } if lease_id == LiveRendererWorkerLeaseId(lease))),
         "{why}"
     );
 }
 
 #[test]
-fn a_reservation_holds_the_release_cell_until_cancelled() {
+fn a_reservation_holds_the_release_cell_until_its_own_cancel() {
     let (mut facade, commands, _reply) = correlated_facade();
-    assert!(facade.reserve_combined_frame().is_some());
+    let (first, _inbox) = facade.reserve_combined_frame().expect("Free reserves");
+    assert!(facade.issued(&first));
     assert!(matches!(
         commands.try_recv(),
         Ok(WorkerCommand::RegisterCombined(_))
@@ -392,11 +396,23 @@ fn a_reservation_holds_the_release_cell_until_cancelled() {
         facade.reserve_combined_frame().is_none(),
         "one combined job per facade"
     );
-    facade.cancel_combined_frame();
+    assert!(facade.cancel_combined_frame(&first));
     assert!(
-        facade.reserve_combined_frame().is_some(),
-        "a cancelled reservation frees the cell"
+        !facade.cancel_combined_frame(&first),
+        "a cancel is spent once"
     );
+    let (second, _inbox) = facade
+        .reserve_combined_frame()
+        .expect("a cancelled reservation frees the cell");
+    assert!(
+        !facade.cancel_combined_frame(&first),
+        "a stale admission cannot free its successor"
+    );
+    assert!(matches!(
+        facade.combined_release,
+        CombinedReleaseCell::Reserved(_)
+    ));
+    assert!(facade.cancel_combined_frame(&second));
     assert!(commands.try_recv().is_err(), "the route registers once");
 }
 
@@ -407,13 +423,13 @@ fn a_running_renderers_result_settles_its_credit_and_frees_the_cell() {
     let owner = sophia_wake::Wake::new().unwrap();
     facade.attach_owner_wake(&owner.notifier());
     let mut validator = Validator::for_combined_plans(1, 8).unwrap();
-    let inbox = facade
+    let (issued, inbox) = facade
         .reserve_combined_frame()
         .expect("an idle facade reserves");
     let reservation = submit(&mut validator, inbox, 10, Instant::now() + WAIT);
     let result = result_after_wake(&facade, &owner);
     let pixels = facade
-        .settle_combined_frame(&mut validator, reservation, result)
+        .settle_combined_frame(&issued, &mut validator, reservation, result)
         .ok()
         .expect("the frame's own reservation settles");
     assert_eq!(pixels.bytes(), &[0; 8], "the validated pixels come home");
@@ -425,29 +441,48 @@ fn a_running_renderers_result_settles_its_credit_and_frees_the_cell() {
 }
 
 #[test]
-fn an_exported_result_keeps_its_lease_in_the_cell_until_the_next_poll() {
+fn an_exported_result_is_held_until_the_owner_gives_it_up() {
     let (mut facade, commands, _reply) = correlated_facade();
     let mut validator = Validator::for_combined_plans(1, 8).unwrap();
-    let (reservation, result) = exported_result(&mut facade, &commands, &mut validator, 51);
+    let (issued, reservation, result) = exported_result(&mut facade, &commands, &mut validator, 51);
+    let job = reservation.job();
     let pixels = facade
-        .settle_combined_frame(&mut validator, reservation, result)
+        .settle_combined_frame(&issued, &mut validator, reservation, result)
         .ok()
         .expect("the frame's own reservation settles");
     assert_eq!(pixels.bytes(), &[0; 8], "the validated pixels come home");
     assert_eq!(validator.pending(), 0, "settlement clears the credit");
-    assert_retained(&facade, 51, "the lease has an owner once the credit clears");
+    assert_held(
+        &facade,
+        job,
+        51,
+        "the lease has an owner once the credit clears",
+    );
     assert!(
         facade.reserve_combined_frame().is_none(),
-        "a retained lease holds the cell"
+        "a held result holds the cell"
     );
-    facade.cancel_combined_frame();
-    assert_retained(&facade, 51, "a stray cancel cannot drop a retained lease");
-    let _ = facade.poll();
+    assert!(!facade.cancel_combined_frame(&issued));
+    assert_held(&facade, job, 51, "a stray cancel cannot drop a held result");
+    assert!(matches!(facade.poll(), super::super::WorkerPoll::Idle));
+    assert!(
+        commands.try_recv().is_err(),
+        "poll never releases a held result"
+    );
+    assert_eq!(
+        facade.release_combined_held(job.wrapping_add(1)),
+        CombinedRelease::Mismatch
+    );
+    assert_eq!(
+        facade.release_combined_held(job),
+        CombinedRelease::Transferred
+    );
     assert!(
         matches!(commands.try_recv(), Ok(WorkerCommand::Release { lease_id, .. })
             if lease_id == LiveRendererWorkerLeaseId(51)),
-        "the next poll sends the Release"
+        "giving up the held result sends its Release at once"
     );
+    assert!(commands.try_recv().is_err());
     assert!(facade.reserve_combined_frame().is_some());
 }
 
@@ -455,19 +490,83 @@ fn an_exported_result_keeps_its_lease_in_the_cell_until_the_next_poll() {
 fn a_foreign_reservation_is_refused_with_everything_returned() {
     let (mut facade, commands, _reply) = correlated_facade();
     let mut validator = Validator::for_combined_plans(1, 8).unwrap();
-    let (reservation, result) = exported_result(&mut facade, &commands, &mut validator, 52);
+    let (issued, reservation, result) = exported_result(&mut facade, &commands, &mut validator, 52);
     let mut stranger = Validator::for_combined_plans(1, 8).unwrap();
     let foreign = stranger.reserve_combined(8, Instant::now() + WAIT).unwrap();
-    let Err((_foreign, token, pixels)) =
-        facade.settle_combined_frame(&mut validator, foreign, result)
+    let Err(CombinedSettleRefused::Refused(_foreign, result)) =
+        facade.settle_combined_frame(&issued, &mut validator, foreign, result)
     else {
         panic!("a foreign reservation must not settle");
     };
-    assert_eq!(pixels.bytes(), &[0; 8], "refusal returns the pixels");
+    assert_eq!(result.pixels.bytes(), &[0; 8], "refusal returns the pixels");
     assert_eq!(validator.pending(), 1, "refusal keeps the credit");
-    assert_retained(&facade, 52, "refusal keeps the lease owned");
     assert!(
-        validator.settle_combined_token(reservation, token).is_ok(),
-        "the returned token still settles its own reservation"
+        matches!(facade.combined_release, CombinedReleaseCell::Reserved(_)),
+        "refusal changes nothing in the cell"
     );
+    let job = reservation.job();
+    assert!(
+        facade
+            .settle_combined_frame(&issued, &mut validator, reservation, *result)
+            .is_ok(),
+        "the returned result still settles its own reservation"
+    );
+    assert_held(&facade, job, 52, "the retry holds the same lease");
+}
+
+#[test]
+fn a_result_from_a_spent_admission_is_refused_without_touching_the_successor() {
+    let (mut facade, commands, _reply) = correlated_facade();
+    let mut validator = Validator::for_combined_plans(2, 8).unwrap();
+    let (stale, reservation, result) = exported_result(&mut facade, &commands, &mut validator, 53);
+    assert!(facade.cancel_combined_frame(&stale));
+    let (successor, _inbox) = facade.reserve_combined_frame().unwrap();
+    let Err(CombinedSettleRefused::Refused(reservation, result)) =
+        facade.settle_combined_frame(&stale, &mut validator, reservation, result)
+    else {
+        panic!("another admission's result must not settle");
+    };
+    assert!(matches!(
+        &result.outcome,
+        CombinedOutcome::Rendered(WorkerResult { outcome: WorkerOutcome::Exported { lease_id, .. }, .. })
+            if *lease_id == LiveRendererWorkerLeaseId(53)
+    ));
+    assert_eq!(validator.pending(), 1, "refusal keeps the credit");
+    assert!(
+        matches!(facade.combined_release, CombinedReleaseCell::Reserved(_)),
+        "the successor's reservation is untouched"
+    );
+    assert!(facade.cancel_combined_frame(&successor));
+    assert!(
+        validator
+            .settle_combined_token(reservation, result.token)
+            .is_ok()
+    );
+}
+
+#[test]
+fn a_replacement_facade_under_the_same_output_key_is_not_the_issuer() {
+    let (core, _control) = running_core(9_405);
+    let key = LiveRendererWorkerOutputKey::from_raw(945);
+    let mut original = core.attach(key);
+    let (issued, _inbox) = original.reserve_combined_frame().unwrap();
+    let mut replacement = core.attach(key);
+    assert!(original.issued(&issued));
+    assert!(
+        !replacement.issued(&issued),
+        "a new attach under the same key has its own claim"
+    );
+    let (other, _inbox) = replacement
+        .reserve_combined_frame()
+        .expect("an unrelated facade keeps its own cell");
+    assert!(!original.issued(&other));
+    assert!(original.cancel_combined_frame(&issued));
+    assert!(
+        matches!(
+            replacement.combined_release,
+            CombinedReleaseCell::Reserved(_)
+        ),
+        "cleanup on one facade leaves the other's pending work alone"
+    );
+    assert!(replacement.cancel_combined_frame(&other));
 }

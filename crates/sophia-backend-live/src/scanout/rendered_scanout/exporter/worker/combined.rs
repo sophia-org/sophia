@@ -8,9 +8,26 @@ use sophia_runtime::{
     ValidatedIsbPixels,
 };
 
-/// A settlement the validator refused: nothing is lost, the caller still
-/// holds the credit, its token and the pixels.
-pub type CombinedSettleRefused = (CombinedReservation, CombinedToken, ValidatedIsbPixels);
+/// A settlement that did not complete. Nothing is lost in any variant.
+pub enum CombinedSettleRefused {
+    /// No live facade issued this job. Nothing changed; the row waits for
+    /// qualified retirement.
+    RendererNotFound(CombinedReservation, Box<CombinedRenderResult>),
+    /// The issuing facade refused a foreign token, another admission's
+    /// result or a foreign output. Nothing changed.
+    Refused(CombinedReservation, Box<CombinedRenderResult>),
+    /// The facade took its part (an exported result is `Held`); the validator
+    /// refused the credit, which the caller still holds with the pixels.
+    Credit(CombinedReservation, CombinedToken, ValidatedIsbPixels),
+}
+
+/// The issuing facade and the admission it granted. The claim is created per
+/// attach, so a replacement facade under the same output key never matches.
+pub(crate) struct CombinedFacade {
+    image_store: u64,
+    claim: Arc<OutputClaim>,
+    ticket: u64,
+}
 
 /// Owner-numbered requests start at 1, so this never names one in flight.
 pub(super) const COMBINED_REQUEST: LiveRendererWorkerRequestId = LiveRendererWorkerRequestId(0);
@@ -123,45 +140,87 @@ impl NativeGbmRendererWorker {
     }
 
     /// Takes the Release cell and returns an inbox, or neither.
-    pub(crate) fn reserve_combined_frame(&mut self) -> Option<CombinedInbox<CombinedRenderPlan>> {
-        if !self.reserve_combined_release() {
+    pub(crate) fn reserve_combined_frame(
+        &mut self,
+    ) -> Option<(CombinedFacade, CombinedInbox<CombinedRenderPlan>)> {
+        let ticket = self.reserve_combined_release()?;
+        let Some(inbox) = self.combined_inbox() else {
+            self.cancel_combined_release(ticket);
             return None;
-        }
-        let inbox = self.combined_inbox();
-        if inbox.is_none() {
-            self.cancel_combined_frame();
-        }
-        inbox
+        };
+        let facade = CombinedFacade {
+            image_store: self.core.image_store,
+            claim: Arc::clone(&self.claim),
+            ticket,
+        };
+        Some((facade, inbox))
     }
 
-    /// The validator refused the submission: no frame can come back.
-    pub(crate) fn cancel_combined_frame(&mut self) {
-        if matches!(self.combined_release, CombinedReleaseCell::Reserved) {
-            self.combined_release = CombinedReleaseCell::Free;
-        }
+    pub(crate) fn issued(&self, facade: &CombinedFacade) -> bool {
+        self.core.image_store == facade.image_store && Arc::ptr_eq(&self.claim, &facade.claim)
     }
 
-    /// Retains an exported lease, then clears the validation credit, in one
+    /// The validator refused the submission: no frame can come back. Frees
+    /// only this admission's reservation.
+    pub(crate) fn cancel_combined_frame(&mut self, facade: &CombinedFacade) -> bool {
+        self.cancel_combined_release(facade.ticket)
+    }
+
+    /// Holds an exported lease, then clears the validation credit, in one
     /// call so no caller can clear the credit while the lease has no owner.
+    /// The token is checked before the cell changes.
     pub(crate) fn settle_combined_frame(
         &mut self,
+        facade: &CombinedFacade,
         validator: &mut IsbValidationWorker<CombinedRenderPlan>,
         reservation: CombinedReservation,
         result: CombinedRenderResult,
     ) -> Result<ValidatedIsbPixels, CombinedSettleRefused> {
+        if !reservation.owns(&result.token) {
+            return Err(CombinedSettleRefused::Refused(
+                reservation,
+                Box::new(result),
+            ));
+        }
         let CombinedRenderResult {
             token,
             pixels,
             outcome,
         } = result;
-        let retained = match outcome {
-            CombinedOutcome::Rendered(result) => self.retain_combined_result(result).is_none(),
-            CombinedOutcome::Expired => false,
+        let kept = match outcome {
+            CombinedOutcome::Rendered(rendered)
+                if matches!(rendered.outcome, WorkerOutcome::Exported { .. }) =>
+            {
+                match self.hold_combined_result(facade.ticket, reservation.job(), rendered) {
+                    None => Ok(()),
+                    Some(refused) => Err(CombinedOutcome::Rendered(refused)),
+                }
+            }
+            // Nothing was exported: this admission's cell simply frees.
+            outcome => {
+                if self.cancel_combined_release(facade.ticket) {
+                    Ok(())
+                } else {
+                    Err(outcome)
+                }
+            }
         };
-        if !retained {
-            self.cancel_combined_frame();
+        if let Err(outcome) = kept {
+            return Err(CombinedSettleRefused::Refused(
+                reservation,
+                Box::new(CombinedRenderResult {
+                    token,
+                    pixels,
+                    outcome,
+                }),
+            ));
         }
-        settle(validator, reservation, token, pixels)
+        match validator.settle_combined_token(reservation, token) {
+            Ok(()) => Ok(pixels),
+            Err((reservation, token)) => {
+                Err(CombinedSettleRefused::Credit(reservation, token, pixels))
+            }
+        }
     }
 
     pub(crate) fn take_combined_result(&self) -> Result<CombinedRenderResult, TryRecvError> {
@@ -170,28 +229,6 @@ impl NativeGbmRendererWorker {
             .map_or(Err(TryRecvError::Disconnected), |route| {
                 route.results.try_recv()
             })
-    }
-}
-
-/// Settlement with no renderer left to retain for: its lease record went with
-/// the output state that issued it.
-pub(crate) fn settle_without_renderer(
-    validator: &mut IsbValidationWorker<CombinedRenderPlan>,
-    reservation: CombinedReservation,
-    result: CombinedRenderResult,
-) -> Result<ValidatedIsbPixels, CombinedSettleRefused> {
-    settle(validator, reservation, result.token, result.pixels)
-}
-
-fn settle(
-    validator: &mut IsbValidationWorker<CombinedRenderPlan>,
-    reservation: CombinedReservation,
-    token: CombinedToken,
-    pixels: ValidatedIsbPixels,
-) -> Result<ValidatedIsbPixels, CombinedSettleRefused> {
-    match validator.settle_combined_token(reservation, token) {
-        Ok(()) => Ok(pixels),
-        Err((reservation, token)) => Err((reservation, token, pixels)),
     }
 }
 

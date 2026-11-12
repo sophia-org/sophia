@@ -28,7 +28,7 @@ pub(crate) type CaptureReservation =
 #[cfg(feature = "experimental-combined-frame-job")]
 mod combined;
 #[cfg(feature = "experimental-combined-frame-job")]
-pub(crate) use combined::settle_without_renderer;
+pub(crate) use combined::CombinedFacade;
 #[cfg(feature = "experimental-combined-frame-job")]
 pub use combined::{CombinedRenderPlan, CombinedRenderResult, CombinedSettleRefused};
 mod head_imports;
@@ -397,6 +397,7 @@ impl NativeGbmRendererWorkerCore {
             in_flight: None,
             discarded_release: None,
             combined_release: CombinedReleaseCell::Free,
+            combined_receipt: CombinedReceipt::default(),
             #[cfg(feature = "experimental-combined-frame-job")]
             combined: None,
             context_status: None,
@@ -429,6 +430,7 @@ pub(super) struct NativeGbmRendererWorker {
     discarded_release: Option<DiscardedWorkerLease>,
     /// Never shares a slot with `discarded_release` (FALLBACK.md step 1).
     combined_release: CombinedReleaseCell,
+    combined_receipt: CombinedReceipt,
     #[cfg(feature = "experimental-combined-frame-job")]
     combined: Option<combined::FacadeRoute>,
     context_status: Option<NativeGbmRenderedScanoutContextStatus>,
