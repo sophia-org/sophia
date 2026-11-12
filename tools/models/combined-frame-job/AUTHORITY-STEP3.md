@@ -775,3 +775,30 @@ niltempus then made three selections:
   unselected.
 
 These selections authorize no merge, push, native run or default change.
+
+## 4c-4 accepted, 2026-11-11
+
+Codex accepted 4c-4 at 0f29023d8 as the bounded backend scaffold. The
+validation receipt is
+`~/.local/state/sophia-framejob-stage4c4-validation-02` (seal acd72b6e…),
+and the acceptance chain is in
+`~/.local/state/sophia-framejob-stage4c4-acceptance-01` (seal c849ca3d…).
+
+The session's cleanup calls now reach the issuing facade through
+`CombinedHead`, behind the `CombinedRoutes` seam. They still reach it after
+the head is disabled, mirrored or remapped, and never reach a replacement
+facade. Each admission is identified by its ticket and job, so collection,
+giving up a result and the Release receipt all act only on that exact
+admission. A missing issuer is reported as not found, and its results are
+handed back whole.
+
+Codex reviewed the source twice. The first review found that an old handle
+could still reach a successor (F1) and that the routing had no tests (F2).
+The second found two test assertions that would not compile (R1). The first
+validation run then failed when two test files did not compile; a test-only
+fix followed. None of this is a native, GPU or performance result.
+
+The next stage is the gate-3 device-free prototype. It gets its own frozen
+source review, validation and acceptance. It stays within the narrow
+eligibility set and the baseline, and selects none of the three re-entry
+extensions.
