@@ -98,6 +98,8 @@ struct Joined {
     f: Fixture,
     owner: ShellIsbImageOwner<u32>,
     probe: Probe,
+    /// Where journal reads start: the end the test last acknowledged.
+    floor: u64,
 }
 
 impl Joined {
@@ -106,6 +108,7 @@ impl Joined {
             f: Fixture::unserviced(),
             owner: ShellIsbImageOwner::for_combined_plans(1 << 20, 65_536).unwrap(),
             probe: Probe::default(),
+            floor: 0,
         };
         joined.service();
         assert_eq!(joined.take_events(), ["collect"]);
@@ -151,7 +154,8 @@ impl Joined {
     /// The copy's journalled statuses, as (status, reason).
     fn statuses(&mut self) -> Vec<(u16, u16)> {
         let resource = offer(1, 0, 2).request.resource;
-        journal_statuses(self.f.transport.files_mut().unwrap().export())
+        let files = self.f.transport.files_mut().unwrap().export();
+        statuses_in(&journal_bytes_from(files, self.floor))
             .into_iter()
             .filter(|status| status.resource == resource)
             .map(|status| (status.status, status.reason))
@@ -160,7 +164,8 @@ impl Joined {
 
     /// Journalled SlotReleased events, as (slot, reason).
     fn releases(&mut self) -> Vec<(crate::OwnedSlotIdentity, u16)> {
-        journal_events(self.f.transport.files_mut().unwrap().export())
+        let files = self.f.transport.files_mut().unwrap().export();
+        events_in(&journal_bytes_from(files, self.floor))
             .into_iter()
             .filter(|event| event.kind == EventKind::SlotReleased)
             .map(|event| (event.slot, event.reason))
@@ -313,6 +318,8 @@ fn a_full_journal_keeps_the_releasing_entry_until_retry() {
     }
     let files = j.f.transport.files_mut().unwrap().export_mut();
     let sequence = files.journal.records() as u64;
+    // Acknowledging every record moves the read floor to the current end.
+    let floor = files.journal.size();
     files
         .journal
         .ack(
@@ -323,6 +330,14 @@ fn a_full_journal_keeps_the_releasing_entry_until_retry() {
             Instant::now(),
         )
         .unwrap();
+    assert!(
+        matches!(
+            files.journal.read(floor - 1, 1),
+            Err(sophia_9p::Errno::ESTALE)
+        ),
+        "the floor is the acknowledged end"
+    );
+    j.floor = floor;
     j.publishes((2, 0), 0);
 }
 
