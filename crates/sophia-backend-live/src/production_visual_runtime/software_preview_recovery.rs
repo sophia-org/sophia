@@ -3,6 +3,21 @@
 use super::*;
 
 impl LiveProductionVisualRuntime {
+    /// The retained sources, with read custody of every renderer image among them.
+    pub(super) fn retained_composition_source_set(
+        &self,
+        scene: &LiveProductionCpuScene,
+        in_flight_direct_transaction: Option<TransactionId>,
+    ) -> Result<
+        compositor_graphics::LiveProductionRetainedCompositionSourceSet,
+        Box<dyn std::error::Error>,
+    > {
+        let mut set =
+            self.retained_composition_sources(scene, Some(in_flight_direct_transaction))?;
+        set._image_reads = self.image_reads_for_sources(&set.sources);
+        Ok(set)
+    }
+
     pub(super) fn image_reads_for_sources(
         &self,
         sources: &[sophia_renderer_live::LiveOwnedHeadCompositionSource],

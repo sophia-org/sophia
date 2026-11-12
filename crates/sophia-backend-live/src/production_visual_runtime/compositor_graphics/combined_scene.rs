@@ -5,7 +5,8 @@
 //! composition, translation, head plans and damage snapshot as an ordinary
 //! repaint, and the metadata lowering records each one as a placeholder at
 //! its final layer index. Nothing installed is written, no cache is filled or
-//! reordered, and no pixel is read or produced. At consumption the same path
+//! reordered, no renderer-image read is pruned or acquired, no DMA-BUF is
+//! cloned, and no pixel is read or produced. At consumption the same path
 //! runs with the candidate's real frame, and the two keys decide whether the
 //! rendered frame still describes the scene.
 
@@ -15,9 +16,51 @@
 use super::*;
 use sophia_engine::CompositorImageSourceIdentity;
 use sophia_renderer_live::{
-    LiveCompositionPlacement, LiveCpuPixelStorage, LiveImageOccurrence,
-    LiveOwnedMixedCompositionLayer, LiveProvisionalComposition,
+    LiveCompositionPlacement, LiveCpuPixelStorage, LiveHeadCompositionLoweringError,
+    LiveImageOccurrence, LiveOwnedMixedCompositionLayer, LiveProvisionalComposition,
+    LiveProvisionalDecline,
 };
+
+/// The owner's cursor this turn. The owner wiring is G3-5.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum CombinedCursor {
+    /// On the cursor plane at this root position, or hidden; no layer draws it.
+    Plane(Option<sophia_protocol::Point>),
+    /// Drawn into the frame by the software compositor.
+    Software,
+}
+
+impl CombinedCursor {
+    /// The owner's presentation, with the plane cursor's position this turn.
+    pub(crate) fn new(
+        presentation: crate::LiveProductionCursorPresentation,
+        plane: Option<sophia_protocol::Point>,
+    ) -> Self {
+        match presentation {
+            crate::LiveProductionCursorPresentation::HardwarePlane => Self::Plane(plane),
+            crate::LiveProductionCursorPresentation::Software(_) => Self::Software,
+        }
+    }
+
+    /// The plane position as bits; None for a software cursor.
+    fn key(self) -> Option<Option<(u64, u64)>> {
+        match self {
+            Self::Plane(position) => {
+                Some(position.map(|point| (point.x.to_bits(), point.y.to_bits())))
+            }
+            Self::Software => None,
+        }
+    }
+}
+
+/// The owner's facts at dispatch that no composition reads (F4).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CombinedOwnerState {
+    /// A capture of this output is pending or in flight.
+    pub capture_active: bool,
+    /// The output's renderer worker has no render in flight.
+    pub worker_idle: bool,
+}
 
 /// One head's provisional frame for a combined job's candidate.
 pub(crate) struct LiveProvisionalHeadFrame {
@@ -26,8 +69,10 @@ pub(crate) struct LiveProvisionalHeadFrame {
     pub target_generation: u64,
     pub mapping: sophia_protocol::OutputHeadMapping,
     pub content_layout_generation: u64,
-    /// The plan's software cursor, drawn into the frame.
-    pub cursor: Option<sophia_engine::OutputSceneCursor>,
+    /// The owner's cursor this turn.
+    pub cursor: CombinedCursor,
+    /// A cursor the head plan composites into the frame.
+    pub plan_cursor: Option<sophia_engine::OutputSceneCursor>,
     /// The output's other installed content: layer, grant, presented
     /// transform and whether its interaction is revoked.
     pub installed: Vec<InstalledContentKey>,
@@ -51,11 +96,17 @@ pub(crate) struct InstalledContentKey {
 pub(crate) enum CombinedIneligible {
     /// The output does not map to exactly one head.
     HeadCount,
+    /// A capture of the output is pending or in flight.
+    CaptureActive,
+    /// The renderer worker has a render in flight.
+    WorkerBusy,
     /// A layer other than CPU pixels or a solid fill.
     LayerKind,
     ImageReads,
     /// A CPU layer whose pixels carry no version, or a validated binding.
     UnversionedPixels,
+    /// The cursor is drawn into the frame, by the software compositor or
+    /// the head plan.
     SoftwareCursor,
     /// A candidate image that is not a provisional placeholder.
     CandidateNotProvisional,
@@ -73,6 +124,24 @@ pub(crate) enum CombinedRecompose {
     TopologyChange,
     /// Something other than the candidate changed in the scene.
     SceneChurn,
+}
+
+/// Why a composition produced no frames to key.
+#[derive(Debug)]
+pub(crate) enum ProvisionalComposeError {
+    /// The output has no logical viewport or no head, or the planner did not
+    /// cover its head targets.
+    Topology,
+    /// The metadata lowering declined a layer without rasterizing it.
+    Declined(LiveProvisionalDecline),
+    /// Any other failure of the ordinary composition path, unclassified.
+    Composition(Box<dyn std::error::Error>),
+}
+
+impl<E: Into<Box<dyn std::error::Error>>> From<E> for ProvisionalComposeError {
+    fn from(error: E) -> Self {
+        Self::Composition(error.into())
+    }
 }
 
 /// Placement as comparable bits; never equality of pixels.
@@ -112,6 +181,8 @@ struct CpuKey {
 enum LayerKey {
     Cpu(CpuKey, Option<std::num::NonZeroU64>),
     Solid(Rect, sophia_engine::CompositorRgb8),
+    /// A class eligibility refuses, compared by kind alone.
+    Other(std::mem::Discriminant<LiveOwnedMixedCompositionLayer>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -132,7 +203,8 @@ pub(crate) struct CombinedSceneKey {
     target_generation: u64,
     mapping: sophia_protocol::OutputHeadMapping,
     content_layout_generation: u64,
-    cursor: Option<sophia_engine::OutputSceneCursor>,
+    cursor: Option<Option<(u64, u64)>>,
+    plan_cursor: Option<sophia_engine::OutputSceneCursor>,
     installed: Vec<InstalledContentKey>,
     candidate_revoked: bool,
     /// Every lowered layer but the candidate's, in order.
@@ -151,9 +223,9 @@ fn image_render(image: &LiveImageOccurrence) -> CpuKey {
     }
 }
 
-fn layer_key(layer: &LiveOwnedMixedCompositionLayer) -> Option<LayerKey> {
+fn layer_key(layer: &LiveOwnedMixedCompositionLayer) -> LayerKey {
     match layer {
-        LiveOwnedMixedCompositionLayer::Cpu { buffer, placement } => Some(LayerKey::Cpu(
+        LiveOwnedMixedCompositionLayer::Cpu { buffer, placement } => LayerKey::Cpu(
             CpuKey {
                 placement: (*placement).into(),
                 handle: buffer.handle,
@@ -163,24 +235,31 @@ fn layer_key(layer: &LiveOwnedMixedCompositionLayer) -> Option<LayerKey> {
                 generation: buffer.generation,
             },
             buffer.pixel_version,
-        )),
+        ),
         LiveOwnedMixedCompositionLayer::Solid { geometry, color } => {
-            Some(LayerKey::Solid(*geometry, *color))
+            LayerKey::Solid(*geometry, *color)
         }
-        _ => None,
+        other => LayerKey::Other(std::mem::discriminant(other)),
     }
 }
 
-/// F4 and R5 from metadata alone, before any reservation. The capture and
-/// idle-worker conditions are the owner's and are checked where it reserves.
+/// F4 and R5 before any reservation: the composition's metadata and the
+/// owner's capture and worker facts.
 pub(crate) fn combined_eligibility(
     frames: &[LiveProvisionalHeadFrame],
     candidate: &LiveShellContentFrame,
+    owner: CombinedOwnerState,
 ) -> Result<(), CombinedIneligible> {
     let [frame] = frames else {
         return Err(CombinedIneligible::HeadCount);
     };
-    if frame.cursor.is_some() {
+    if owner.capture_active {
+        return Err(CombinedIneligible::CaptureActive);
+    }
+    if !owner.worker_idle {
+        return Err(CombinedIneligible::WorkerBusy);
+    }
+    if frame.cursor == CombinedCursor::Software || frame.plan_cursor.is_some() {
         return Err(CombinedIneligible::SoftwareCursor);
     }
     if !candidate.images.iter().all(|image| {
@@ -247,7 +326,7 @@ impl CombinedSceneKey {
     pub(crate) fn of(
         frame: &LiveProvisionalHeadFrame,
         candidate: &[CompositorImageSourceIdentity],
-    ) -> Option<Self> {
+    ) -> Self {
         let composition = &frame.composition;
         let images = composition
             .images
@@ -280,32 +359,30 @@ impl CombinedSceneKey {
                 index += 1;
             }
             if !candidate_layer(index) {
-                layers.push(layer_key(layer)?);
+                layers.push(layer_key(layer));
             }
             index += 1;
         }
-        Some(Self {
+        Self {
             head: frame.head,
             native_owner: frame.native_owner,
             target_generation: frame.target_generation,
             mapping: frame.mapping,
             content_layout_generation: frame.content_layout_generation,
-            cursor: frame.cursor,
+            cursor: frame.cursor.key(),
+            plan_cursor: frame.plan_cursor,
             installed: frame.installed.clone(),
             candidate_revoked: frame.candidate_revoked,
             layers,
             images,
-        })
+        }
     }
 
     /// Whether the frame rendered from `self` (the dispatch key) still
     /// describes the scene that `current` (the consumption key) was
     /// recomposed from. Only the candidate's pixel storage and version may
     /// differ, and those are not in an image key.
-    pub(crate) fn recompose(&self, current: Option<&Self>) -> CombinedRecompose {
-        let Some(current) = current else {
-            return CombinedRecompose::TopologyChange;
-        };
+    pub(crate) fn recompose(&self, current: &Self) -> CombinedRecompose {
         let topology = |key: &Self| {
             (
                 key.head,
@@ -333,13 +410,42 @@ impl CombinedSceneKey {
         }
         CombinedRecompose::Match
     }
+
+    /// Classifies the recomposition at consumption against this dispatch
+    /// key (F1, R4). An unclassified composition failure is returned, as the
+    /// ordinary repaint of the same state would fail with it.
+    pub(crate) fn classify(
+        &self,
+        current: Result<Vec<LiveProvisionalHeadFrame>, ProvisionalComposeError>,
+        candidate: &[CompositorImageSourceIdentity],
+    ) -> Result<CombinedRecompose, Box<dyn std::error::Error>> {
+        match current {
+            Ok(frames) => match &frames[..] {
+                [frame] => Ok(self.recompose(&Self::of(frame, candidate))),
+                // The output now maps to another number of heads.
+                _ => Ok(CombinedRecompose::TopologyChange),
+            },
+            Err(ProvisionalComposeError::Topology) => Ok(CombinedRecompose::TopologyChange),
+            // A raster or translucent rect the scene now needs is not the
+            // candidate's; it is neither rasterized nor taken as a match.
+            Err(ProvisionalComposeError::Declined(
+                LiveProvisionalDecline::ColdTextRaster
+                | LiveProvisionalDecline::ColdIndicatorRaster
+                | LiveProvisionalDecline::TranslucentRect,
+            )) => Ok(CombinedRecompose::SceneChurn),
+            Err(ProvisionalComposeError::Declined(LiveProvisionalDecline::LayerIndexOverflow)) => {
+                Err("provisional composition overflowed its layer index".into())
+            }
+            Err(ProvisionalComposeError::Composition(error)) => Err(error),
+        }
+    }
 }
 
 impl LiveProductionVisualRuntime {
     /// Composes `output` as it would look with `candidate` installed at
     /// `layer`, every head through the ordinary projection and the metadata
-    /// lowering. Read-only: the installed content, caches and history are
-    /// untouched. `candidate` may carry provisional images (at dispatch) or
+    /// lowering. Read-only: the installed content, caches, history and
+    /// renderer-image reads are untouched. `candidate` may carry provisional images (at dispatch) or
     /// its real leases (at consumption), and `layer` need not hold a frame.
     pub(crate) fn compose_provisional_head_frames<T: NativeCompositionTarget>(
         &self,
@@ -347,13 +453,15 @@ impl LiveProductionVisualRuntime {
         scene: &LiveProductionCpuScene,
         layer: LiveShellContentLayer,
         candidate: &LiveShellContentFrame,
-    ) -> Result<Vec<LiveProvisionalHeadFrame>, Box<dyn std::error::Error>> {
+        cursor: CombinedCursor,
+    ) -> Result<Vec<LiveProvisionalHeadFrame>, ProvisionalComposeError> {
         let output = candidate.output;
         let viewport = self
             .outputs
             .logical_viewport(output)
-            .ok_or("provisional composition targets an unknown logical output")?;
-        let source_set = self.retained_composition_source_set(scene, None)?;
+            .ok_or(ProvisionalComposeError::Topology)?;
+        // Metadata only: no read custody and no cloned DMA-BUF (R5).
+        let source_set = self.retained_composition_sources(scene, None)?;
         let key = (output, layer);
         let installed_keys = self
             .shell_content
@@ -419,9 +527,12 @@ impl LiveProductionVisualRuntime {
             None,
         )?;
         let targets = native_scanout.head_targets(output);
+        if targets.is_empty() {
+            return Err(ProvisionalComposeError::Topology);
+        }
         let plans = sophia_engine::build_output_head_plans(&snapshot, &targets)?;
         if plans.len() != targets.len() {
-            return Err("head composition planner returned partial target coverage".into());
+            return Err(ProvisionalComposeError::Topology);
         }
         let prepared = self.present_scheduler.in_flight_prepared();
         plans
@@ -433,7 +544,13 @@ impl LiveProductionVisualRuntime {
                         &source_set.sources,
                         &self.indicator_strip_cache.borrow(),
                         &self.text_cache.borrow(),
-                    )?;
+                    )
+                    .map_err(|error| match error {
+                        LiveHeadCompositionLoweringError::ProvisionalIneligible(decline) => {
+                            ProvisionalComposeError::Declined(decline)
+                        }
+                        error => ProvisionalComposeError::Composition(error.into()),
+                    })?;
                 self.attach_frame_damage_history(
                     &mut composition.frame,
                     plan,
@@ -446,7 +563,8 @@ impl LiveProductionVisualRuntime {
                     target_generation: plan.target_generation,
                     mapping: plan.mapping,
                     content_layout_generation: self.content_layout_generation,
-                    cursor: plan.cursor,
+                    cursor,
+                    plan_cursor: plan.cursor,
                     installed: installed_keys.clone(),
                     candidate_revoked,
                     composition,

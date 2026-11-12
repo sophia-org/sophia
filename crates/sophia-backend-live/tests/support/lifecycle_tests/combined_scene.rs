@@ -5,15 +5,22 @@
 #![cfg(feature = "experimental-combined-frame-job")]
 use super::super::compositor_graphics::ShellContentPreflight;
 use super::super::compositor_graphics::combined_scene::{
-    CombinedIneligible, CombinedRecompose, CombinedSceneKey, LiveProvisionalHeadFrame,
-    combined_eligibility,
+    CombinedCursor, CombinedIneligible, CombinedOwnerState, CombinedRecompose, CombinedSceneKey,
+    LiveProvisionalHeadFrame, ProvisionalComposeError, combined_eligibility,
 };
 use super::*;
 use sophia_engine::{CompositorImageSource, CompositorImageSourceIdentity};
-use sophia_renderer_live::LiveOwnedMixedCompositionLayer;
+use sophia_protocol::Point;
+use sophia_renderer_live::{LiveOwnedMixedCompositionLayer, LiveProvisionalDecline};
 
 const DOCK: LiveShellContentLayer = LiveShellContentLayer::Dock;
 const SHELL: LiveShellContentLayer = LiveShellContentLayer::Shell;
+/// The owner's plane cursor, shown, as every ordinary control composes.
+const PLANE: CombinedCursor = CombinedCursor::Plane(Some(Point { x: 10.0, y: 4.0 }));
+const IDLE: CombinedOwnerState = CombinedOwnerState {
+    capture_active: false,
+    worker_idle: true,
+};
 
 fn grant_of(epoch: u64) -> ContentGrant {
     ContentGrant {
@@ -86,47 +93,112 @@ fn ids(frame: &LiveShellContentFrame) -> Vec<CompositorImageSourceIdentity> {
         .collect()
 }
 
+fn compose_with(
+    fixture: &Fixture,
+    frame: &LiveShellContentFrame,
+    cursor: CombinedCursor,
+) -> Result<Vec<LiveProvisionalHeadFrame>, ProvisionalComposeError> {
+    fixture.runtime.compose_provisional_head_frames(
+        &fixture.target,
+        &fixture.scene,
+        SHELL,
+        frame,
+        cursor,
+    )
+}
+
 fn compose(fixture: &Fixture, frame: &LiveShellContentFrame) -> Vec<LiveProvisionalHeadFrame> {
-    fixture
-        .runtime
-        .compose_provisional_head_frames(&fixture.target, &fixture.scene, SHELL, frame)
-        .unwrap()
+    compose_with(fixture, frame, PLANE).unwrap()
 }
 
 fn key(frames: &[LiveProvisionalHeadFrame], candidate: &LiveShellContentFrame) -> CombinedSceneKey {
-    CombinedSceneKey::of(&frames[0], &ids(candidate)).expect("an eligible frame has a key")
+    CombinedSceneKey::of(&frames[0], &ids(candidate))
 }
 
-/// The dispatch key, and the classification of a recomposition with the
-/// candidate's real frame against it.
+/// The dispatch key of an eligible provisional composition.
 fn dispatched(fixture: &Fixture) -> CombinedSceneKey {
     let frames = compose(fixture, &provisional(&fixture.candidate));
     assert_eq!(
-        combined_eligibility(&frames, &provisional(&fixture.candidate)),
+        combined_eligibility(&frames, &provisional(&fixture.candidate), IDLE),
         Ok(())
     );
     key(&frames, &fixture.candidate)
 }
 
-fn recompose(fixture: &Fixture, dispatched: &CombinedSceneKey) -> CombinedRecompose {
-    let frames = compose(fixture, &fixture.candidate);
-    dispatched.recompose(CombinedSceneKey::of(&frames[0], &ids(&fixture.candidate)).as_ref())
+/// The classification of a recomposition with the candidate's real frame.
+fn recompose_with(
+    fixture: &Fixture,
+    dispatched: &CombinedSceneKey,
+    cursor: CombinedCursor,
+) -> CombinedRecompose {
+    dispatched
+        .classify(
+            compose_with(fixture, &fixture.candidate, cursor),
+            &ids(&fixture.candidate),
+        )
+        .unwrap()
 }
 
-/// The layer an installed (non-placeholder) image lowered to.
+fn recompose(fixture: &Fixture, dispatched: &CombinedSceneKey) -> CombinedRecompose {
+    recompose_with(fixture, dispatched, PLANE)
+}
+
+/// The classification of frames a control edited after composing them.
+fn classified(
+    fixture: &Fixture,
+    dispatched: &CombinedSceneKey,
+    frames: Vec<LiveProvisionalHeadFrame>,
+) -> CombinedRecompose {
+    dispatched
+        .classify(Ok(frames), &ids(&fixture.candidate))
+        .unwrap()
+}
+
+/// The Dock's occurrence, chosen by its exact grant: at consumption the
+/// candidate's images are real too, and the Shell candidate comes first.
+fn dock(frame: &LiveProvisionalHeadFrame) -> usize {
+    let docks = frame
+        .composition
+        .images
+        .iter()
+        .enumerate()
+        .filter(|(_, image)| {
+            matches!(image.node, CompositorNodeId::ShellContent { grant, .. } if grant == grant_of(100))
+        })
+        .map(|(position, _)| position)
+        .collect::<Vec<_>>();
+    let [position] = docks.as_slice() else {
+        panic!("exactly one Dock occurrence");
+    };
+    let image = &frame.composition.images[*position];
+    assert!(
+        !image.provisional,
+        "the Dock is installed, never a placeholder"
+    );
+    assert!(matches!(
+        &image.resource,
+        CompositorImageSourceIdentity::Shell(description) if description.grant == grant_of(100)
+    ));
+    *position
+}
+
+/// The layer the Dock's image lowered to. A placeholder before it holds a
+/// final index but no lowered layer, so dispatch and consumption differ.
 fn installed_layer(frame: &mut LiveProvisionalHeadFrame) -> &mut LiveOwnedMixedCompositionLayer {
-    let composition = &mut frame.composition;
-    let image = composition
+    let image = &frame.composition.images[dock(frame)];
+    let (index, handle) = (image.index, image.handle);
+    let before = frame
+        .composition
         .images
         .iter()
-        .find(|image| !image.provisional)
-        .expect("the dock's image");
-    let before = composition
-        .images
-        .iter()
-        .filter(|other| other.provisional && other.index < image.index)
+        .filter(|other| other.provisional && other.index < index)
         .count();
-    &mut composition.frame.layers[image.index - before]
+    let layer = &mut frame.composition.frame.layers[index - before];
+    assert!(
+        matches!(layer, LiveOwnedMixedCompositionLayer::Cpu { buffer, .. } if buffer.handle == handle),
+        "the Dock's own layer"
+    );
+    layer
 }
 
 type Observed = (
@@ -197,18 +269,15 @@ fn another_resource_with_the_same_generation_and_geometry_is_churn() {
     let dispatched = dispatched(&fixture);
     // The resource identity alone, its handle and version unchanged.
     let mut frames = compose(&fixture, &fixture.candidate);
-    let image = frames[0]
-        .composition
-        .images
-        .iter_mut()
-        .find(|image| !image.provisional)
-        .unwrap();
-    let CompositorImageSourceIdentity::Shell(description) = &mut image.resource else {
+    let position = dock(&frames[0]);
+    let CompositorImageSourceIdentity::Shell(description) =
+        &mut frames[0].composition.images[position].resource
+    else {
         panic!("the dock is shell content");
     };
     description.resource.id += 1;
     assert_eq!(
-        dispatched.recompose(CombinedSceneKey::of(&frames[0], &ids(&fixture.candidate)).as_ref()),
+        classified(&fixture, &dispatched, frames),
         CombinedRecompose::SceneChurn,
         "another resource under the same handle and version is churn"
     );
@@ -267,8 +336,9 @@ fn a_pixel_version_change_with_the_same_generation_is_churn() {
     let version = buffer.pixel_version.expect("a lease carries its version");
     buffer.pixel_version = Some(version.checked_add(1).expect("the next version fits"));
     assert_eq!(
-        dispatched.recompose(CombinedSceneKey::of(&frames[0], &ids(&fixture.candidate)).as_ref()),
-        CombinedRecompose::SceneChurn
+        classified(&fixture, &dispatched, frames),
+        CombinedRecompose::SceneChurn,
+        "the Dock's new version under its old generation is churn"
     );
 }
 
@@ -302,24 +372,55 @@ fn a_transform_or_layout_generation_change_is_churn() {
 #[test]
 fn a_cursor_move_is_churn() {
     let fixture = fixture();
-    let cursor = |x| sophia_engine::OutputSceneCursor {
-        geometry: Rect {
-            x,
-            y: 0,
-            width: 8,
-            height: 8,
-        },
+    let plane = |x| {
+        CombinedCursor::new(
+            crate::LiveProductionCursorPresentation::HardwarePlane,
+            Some(Point { x, y: 4.0 }),
+        )
+    };
+    assert_eq!(plane(10.0), PLANE, "the owner's plane presentation");
+    let dispatched = dispatched(&fixture);
+    assert_eq!(
+        recompose_with(&fixture, &dispatched, plane(10.0)),
+        CombinedRecompose::Match,
+        "an unchanged plane cursor matches"
+    );
+    assert_eq!(
+        recompose_with(&fixture, &dispatched, plane(11.0)),
+        CombinedRecompose::SceneChurn,
+        "a moved plane cursor is churn"
+    );
+    assert_eq!(
+        recompose_with(&fixture, &dispatched, CombinedCursor::Plane(None)),
+        CombinedRecompose::SceneChurn,
+        "a hidden plane cursor is churn"
+    );
+}
+
+#[test]
+fn a_software_cursor_is_ineligible() {
+    let fixture = fixture();
+    let candidate = provisional(&fixture.candidate);
+    let software = CombinedCursor::new(
+        crate::LiveProductionCursorPresentation::Software(Some(Point { x: 10.0, y: 4.0 })),
+        None,
+    );
+    let frames = compose_with(&fixture, &candidate, software).unwrap();
+    assert_eq!(
+        combined_eligibility(&frames, &candidate, IDLE),
+        Err(CombinedIneligible::SoftwareCursor),
+        "the software compositor draws it into the frame"
+    );
+    let mut frames = compose(&fixture, &candidate);
+    frames[0].plan_cursor = Some(sophia_engine::OutputSceneCursor {
+        geometry: Rect::default(),
         source: BufferSource::CpuBuffer { handle: 5 },
         generation: 1,
-    };
-    let mut dispatch = compose(&fixture, &provisional(&fixture.candidate));
-    dispatch[0].cursor = Some(cursor(0));
-    let dispatched = key(&dispatch, &fixture.candidate);
-    let mut frames = compose(&fixture, &fixture.candidate);
-    frames[0].cursor = Some(cursor(1));
+    });
     assert_eq!(
-        dispatched.recompose(CombinedSceneKey::of(&frames[0], &ids(&fixture.candidate)).as_ref()),
-        CombinedRecompose::SceneChurn
+        combined_eligibility(&frames, &candidate, IDLE),
+        Err(CombinedIneligible::SoftwareCursor),
+        "a cursor the head plan composites"
     );
 }
 
@@ -330,7 +431,7 @@ fn a_target_generation_or_native_owner_change_is_a_topology_change() {
     let mut frames = compose(&fixture, &fixture.candidate);
     frames[0].target_generation += 1;
     assert_eq!(
-        dispatched.recompose(CombinedSceneKey::of(&frames[0], &ids(&fixture.candidate)).as_ref()),
+        classified(&fixture, &dispatched, frames),
         CombinedRecompose::TopologyChange
     );
     // A rebuilt native owner: the same heads under a new owner identity.
@@ -340,6 +441,68 @@ fn a_target_generation_or_native_owner_change_is_a_topology_change() {
         CombinedRecompose::TopologyChange,
         "a new native owner is a topology change"
     );
+    // The output lost its head.
+    fixture.target = Target::new(&outputs()[1..]);
+    assert!(matches!(
+        compose_with(&fixture, &fixture.candidate, PLANE),
+        Err(ProvisionalComposeError::Topology)
+    ));
+    assert_eq!(
+        recompose(&fixture, &dispatched),
+        CombinedRecompose::TopologyChange,
+        "a missing head is a topology change"
+    );
+}
+
+#[test]
+fn a_changed_noncandidate_layer_kind_with_the_same_heads_is_churn() {
+    let fixture = fixture();
+    let dispatched = dispatched(&fixture);
+    let mut frames = compose(&fixture, &fixture.candidate);
+    let layer = installed_layer(&mut frames[0]);
+    let LiveOwnedMixedCompositionLayer::Cpu { buffer, placement } = &*layer else {
+        unreachable!("installed_layer checked the kind");
+    };
+    let (size, format, placement) = (buffer.size, buffer.format, *placement);
+    *layer = LiveOwnedMixedCompositionLayer::RendererImage {
+        image_id: sophia_renderer_live::LiveRendererImageId::from_raw(9),
+        size,
+        format,
+        placement,
+    };
+    assert_eq!(
+        classified(&fixture, &dispatched, frames),
+        CombinedRecompose::SceneChurn,
+        "another surface's new layer kind under the same heads is churn"
+    );
+    // A recomposition the lowering declines is scene churn, never a match.
+    for decline in [
+        LiveProvisionalDecline::ColdTextRaster,
+        LiveProvisionalDecline::ColdIndicatorRaster,
+        LiveProvisionalDecline::TranslucentRect,
+    ] {
+        assert_eq!(
+            dispatched
+                .classify(
+                    Err(ProvisionalComposeError::Declined(decline)),
+                    &ids(&fixture.candidate)
+                )
+                .unwrap(),
+            CombinedRecompose::SceneChurn,
+            "{decline:?}"
+        );
+    }
+    for unclassified in [
+        ProvisionalComposeError::Declined(LiveProvisionalDecline::LayerIndexOverflow),
+        ProvisionalComposeError::Composition("a display list fault".into()),
+    ] {
+        assert!(
+            dispatched
+                .classify(Err(unclassified), &ids(&fixture.candidate))
+                .is_err(),
+            "an unclassified failure is returned, not mapped"
+        );
+    }
 }
 
 #[test]
@@ -402,7 +565,11 @@ fn a_repeated_resource_keys_every_occurrence_and_a_dropped_one_is_a_candidate_fa
         2,
         "one placeholder per occurrence"
     );
-    assert_eq!(recompose(&fixture, &dispatched), CombinedRecompose::Match);
+    assert_eq!(
+        recompose(&fixture, &dispatched),
+        CombinedRecompose::Match,
+        "every occurrence matches its placeholder"
+    );
     fixture.candidate = single;
     assert_eq!(
         recompose(&fixture, &dispatched),
@@ -411,53 +578,110 @@ fn a_repeated_resource_keys_every_occurrence_and_a_dropped_one_is_a_candidate_fa
     );
 }
 
+/// A device-free DMA-BUF: one plane over /dev/null, never imported.
+fn dma_frame() -> sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame {
+    sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame {
+        width: 4,
+        height: 2,
+        format: sophia_renderer_live::LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888,
+        modifier: 0,
+        plane_count: 1,
+        planes: [
+            Some(sophia_renderer_live::LiveOwnedDmaBufPlane {
+                fd: std::fs::File::open("/dev/null").unwrap().into(),
+                offset: 0,
+                stride: 16,
+            }),
+            None,
+            None,
+            None,
+        ],
+    }
+}
+
+/// RendererImage and DmaBuf are the classes a device-free frame can hold.
+/// Snapshot needs a native EGL snapshot and ManagedCapture the capture
+/// feature; both reach the same refusing arm.
 #[test]
 fn each_disallowed_layer_class_and_image_reads_are_ineligible() {
     let fixture = fixture();
     let candidate = provisional(&fixture.candidate);
-    let mut frames = compose(&fixture, &candidate);
-    frames[0]
-        .composition
-        .frame
-        .layers
-        .push(LiveOwnedMixedCompositionLayer::RendererImage {
-            image_id: sophia_renderer_live::LiveRendererImageId::from_raw(9),
-            size: Size {
-                width: 4,
-                height: 2,
-            },
+    let image_id = sophia_renderer_live::LiveRendererImageId::from_raw(9);
+    let placement = sophia_renderer_live::LiveCompositionPlacement {
+        target: Rect::default(),
+        clip: None,
+        transform: sophia_protocol::Transform::IDENTITY,
+        alpha: 1.0,
+        sampling: sophia_engine::HeadSamplingClass::Exact,
+    };
+    let size = Size {
+        width: 4,
+        height: 2,
+    };
+    for layer in [
+        LiveOwnedMixedCompositionLayer::RendererImage {
+            image_id,
+            size,
             format: u32::from_le_bytes(*b"AR24"),
-            placement: sophia_renderer_live::LiveCompositionPlacement {
-                target: Rect::default(),
-                clip: None,
-                transform: sophia_protocol::Transform::IDENTITY,
-                alpha: 1.0,
-                sampling: sophia_engine::HeadSamplingClass::Exact,
-            },
-        });
+            placement,
+        },
+        LiveOwnedMixedCompositionLayer::DmaBuf {
+            image_id,
+            frame: dma_frame(),
+            placement,
+        },
+    ] {
+        let mut frames = compose(&fixture, &candidate);
+        frames[0].composition.frame.layers.push(layer);
+        assert_eq!(
+            combined_eligibility(&frames, &candidate, IDLE),
+            Err(CombinedIneligible::LayerKind)
+        );
+    }
+    // A real device-free read guard, with the frame otherwise eligible.
+    let reads = sophia_renderer_live::LiveRendererImageReads::default();
+    let mut frames = compose(&fixture, &candidate);
+    assert_eq!(combined_eligibility(&frames, &candidate, IDLE), Ok(()));
+    frames[0].composition.frame.image_reads = vec![reads.acquire(image_id)].into_boxed_slice();
     assert_eq!(
-        combined_eligibility(&frames, &candidate),
-        Err(CombinedIneligible::LayerKind)
+        combined_eligibility(&frames, &candidate, IDLE),
+        Err(CombinedIneligible::ImageReads),
+        "a held renderer-image read refuses"
     );
     let mut two = compose(&fixture, &candidate);
     two.extend(compose(&fixture, &candidate));
     assert_eq!(
-        combined_eligibility(&two, &candidate),
+        combined_eligibility(&two, &candidate, IDLE),
         Err(CombinedIneligible::HeadCount)
     );
-    let mut cursor = compose(&fixture, &candidate);
-    cursor[0].cursor = Some(sophia_engine::OutputSceneCursor {
-        geometry: Rect::default(),
-        source: BufferSource::CpuBuffer { handle: 5 },
-        generation: 1,
-    });
+    let frames = compose(&fixture, &candidate);
     assert_eq!(
-        combined_eligibility(&cursor, &candidate),
-        Err(CombinedIneligible::SoftwareCursor)
+        combined_eligibility(
+            &frames,
+            &candidate,
+            CombinedOwnerState {
+                capture_active: true,
+                ..IDLE
+            }
+        ),
+        Err(CombinedIneligible::CaptureActive),
+        "a capture in flight refuses"
+    );
+    assert_eq!(
+        combined_eligibility(
+            &frames,
+            &candidate,
+            CombinedOwnerState {
+                worker_idle: false,
+                ..IDLE
+            }
+        ),
+        Err(CombinedIneligible::WorkerBusy),
+        "a busy renderer worker refuses"
     );
     let real = compose(&fixture, &fixture.candidate);
     assert_eq!(
-        combined_eligibility(&real, &fixture.candidate),
+        combined_eligibility(&real, &fixture.candidate, IDLE),
         Err(CombinedIneligible::CandidateNotProvisional)
     );
 }
@@ -472,7 +696,7 @@ fn an_unversioned_cpu_layer_is_ineligible() {
     };
     buffer.pixel_version = None;
     assert_eq!(
-        combined_eligibility(&frames, &candidate),
+        combined_eligibility(&frames, &candidate, IDLE),
         Err(CombinedIneligible::UnversionedPixels),
         "no version, no exact key"
     );

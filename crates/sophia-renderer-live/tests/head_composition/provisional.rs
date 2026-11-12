@@ -303,3 +303,95 @@ fn a_translucent_rect_declines_and_ordinary_lowering_is_unchanged() {
         [LiveOwnedMixedCompositionLayer::Cpu { .. }]
     ));
 }
+
+/// The indicator strip fixture of tests/indicator_strip.rs.
+fn indicator_command() -> HeadCompositorCommand {
+    let output = OutputId::from_raw(1);
+    let cell = Rect {
+        x: 0,
+        y: 0,
+        width: 48,
+        height: 14,
+    };
+    HeadCompositorCommand::IndicatorStrip(sophia_engine::HeadCompositorIndicatorStrip {
+        node: CompositorNodeId::IndicatorStrip { output },
+        generation: 7,
+        strip: sophia_engine::IndicatorChromeStrip {
+            output,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 14,
+            },
+            labels: vec![(
+                cell,
+                "main".into(),
+                sophia_protocol::POLICY_INDICATOR_STATE_OCCUPIED
+                    | sophia_protocol::POLICY_INDICATOR_STATE_ACTIVE
+                    | sophia_protocol::POLICY_INDICATOR_STATE_URGENT,
+            )],
+            status: Some((
+                Rect {
+                    x: 100,
+                    y: 0,
+                    width: 100,
+                    height: 14,
+                },
+                "Scroller".into(),
+                0,
+            )),
+            hit_targets: vec![sophia_engine::IndicatorChromeHitTarget {
+                publication_generation: 7,
+                connection_epoch: 2,
+                output,
+                indicator: 4,
+                action: Some(sophia_protocol::WmActionId::from_raw(5)),
+                geometry: cell,
+            }],
+        },
+    })
+}
+
+#[test]
+fn a_cold_indicator_raster_is_ineligible_and_a_warm_one_reads_unchanged() {
+    let (mut indicator, text) = caches();
+    let plan = plan_with(vec![indicator_command()]);
+    let cold = indicator.stats();
+    assert_eq!(
+        lower_provisional_head_composition_plan(&plan, &sources(), &indicator, &text).err(),
+        Some(LiveHeadCompositionLoweringError::ProvisionalIneligible(
+            LiveProvisionalDecline::ColdIndicatorRaster
+        ))
+    );
+    assert_eq!(
+        indicator.stats(),
+        cold,
+        "a cold strip is not rasterized or counted"
+    );
+
+    // Warm: the conventional lowering fills the cache once.
+    let HeadCompositorCommand::IndicatorStrip(strip) = indicator_command() else {
+        unreachable!();
+    };
+    indicator.raster_for(&strip).unwrap();
+    let warm = indicator.stats();
+    let versions = (0..2)
+        .map(|_| {
+            let lowered =
+                lower_provisional_head_composition_plan(&plan, &sources(), &indicator, &text)
+                    .unwrap();
+            let [LiveOwnedMixedCompositionLayer::Cpu { buffer, .. }] = &lowered.frame.layers[..]
+            else {
+                panic!("one indicator layer");
+            };
+            (buffer.handle, buffer.pixel_version)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(versions[0], versions[1], "the same metadata twice");
+    assert_eq!(
+        indicator.stats(),
+        warm,
+        "a warm read moves and counts nothing"
+    );
+}

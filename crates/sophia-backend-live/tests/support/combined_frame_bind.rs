@@ -38,6 +38,9 @@ use std::time::Instant;
 // through the real route.
 #[path = "combined_frame_bind_serve.rs"]
 mod serve;
+// G3-3: the real conventional and provisional lowerings through this binder.
+#[path = "combined_frame_lowering.rs"]
+mod lowering;
 
 /// Eight valid premultiplied pixels (no colour above its alpha), distinct so
 /// a checksum tells one occurrence's bytes from another's.

@@ -18,7 +18,7 @@ use sophia_renderer_live::{
 pub struct CombinedPlaceholder {
     /// Where the layer sits in the bound frame's final layer list.
     pub(crate) index: usize,
-    // Read by G3-3's scene key; G3-2 binds by index and reads it nowhere.
+    // Binding is by index; nothing reads the node yet.
     #[allow(dead_code)]
     pub(crate) node: sophia_engine::CompositorNodeId,
     pub(crate) placement: LiveCompositionPlacement,
@@ -27,6 +27,31 @@ pub struct CombinedPlaceholder {
     pub(crate) format: u32,
     pub(crate) handle: u64,
     pub(crate) generation: u64,
+}
+
+impl CombinedPlaceholder {
+    /// The plan's placeholders: one per provisional occurrence of a G3-3
+    /// composition, at its final index, in order.
+    // First production caller is the G3-5 owner turn.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn of_composition(
+        images: &[sophia_renderer_live::LiveImageOccurrence],
+    ) -> Box<[Self]> {
+        images
+            .iter()
+            .filter(|image| image.provisional)
+            .map(|image| Self {
+                index: image.index,
+                node: image.node,
+                placement: image.placement,
+                size: image.size,
+                stride: image.stride,
+                format: image.format,
+                handle: image.handle,
+                generation: image.generation,
+            })
+            .collect()
+    }
 }
 
 /// The renderer's format for a protocol image format. The protocol defines
