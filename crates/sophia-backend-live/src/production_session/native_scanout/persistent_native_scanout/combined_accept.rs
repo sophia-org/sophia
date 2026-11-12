@@ -13,7 +13,7 @@ pub struct CombinedAccept {
     pub job: u64,
     /// The native frame the plan was composed as.
     pub frame: LiveProductionNativeFrameId,
-    pub content: LiveProductionScanoutContent,
+    /// The plan's logical content checksum.
     pub checksum: u64,
     /// The plan's damage snapshot: it becomes the output's rendering frame.
     pub snapshot: sophia_engine::OutputFrameDamageSnapshot,
@@ -51,12 +51,29 @@ pub(crate) trait CombinedAcceptNative {
     fn commit_combined_accept(&mut self, head: &Self::Head, plan: Self::Plan);
 }
 
-/// F2's phase 2 with R5's additions, over the owner's heads and exporters.
-/// Reads only. On a refusal the held result stays for ordinary disposal.
+/// The content a combined shell frame installs: retained content owing the
+/// shell retirement the visual runtime binds to `frame`, as ordinary
+/// admission builds it for an output whose retirement is required.
+fn combined_shell_content(
+    frame: LiveProductionNativeFrameId,
+    checksum: u64,
+) -> LiveProductionScanoutContent {
+    LiveProductionScanoutContent::RetainedMixed {
+        frame,
+        requires_retirement: true,
+        logical_content_checksum: Some(checksum),
+        nonzero_rgb_pixels: 0,
+    }
+}
+
+/// F2's phase 2 with R5's additions, over the owner's heads, exporters and
+/// deferred compositions. Reads only. On a refusal the held result stays for
+/// ordinary disposal.
 fn preflight_accept<R: RenderDeviceDiscoveryBackend>(
     native_owner: crate::NativeFrameOwner,
     heads: &[LiveProductionNativeHead],
     exporters: &[Exporter<R>],
+    deferred: &super::super::composition_queue::DeferredNativeCompositions,
     head: &CombinedHead,
     accept: CombinedAccept,
 ) -> Result<CombinedAcceptPlan, CombinedAcceptRefusal> {
@@ -92,7 +109,9 @@ fn preflight_accept<R: RenderDeviceDiscoveryBackend>(
     if current.rendering_content.is_some() {
         return Err(Refusal::HeadRenderingContent);
     }
-    if current.retirement_protected() {
+    // The output-level fact ordinary admission uses: the one serving head's
+    // content, or a queued generation that owes a retirement.
+    if current.retirement_protected() || deferred.protected(output) {
         return Err(Refusal::RetirementProtected);
     }
     let expected = native_owner.frame(
@@ -105,9 +124,6 @@ fn preflight_accept<R: RenderDeviceDiscoveryBackend>(
         || accept.correlation.native != Some(expected)
     {
         return Err(Refusal::Identity);
-    }
-    if accept.content.frame() != accept.frame {
-        return Err(Refusal::Content);
     }
     if current.output_frames.pending().is_some() {
         return Err(Refusal::PendingFrame);
@@ -122,7 +138,7 @@ fn preflight_accept<R: RenderDeviceDiscoveryBackend>(
     Ok(CombinedAcceptPlan {
         index,
         job: accept.job,
-        content: accept.content,
+        content: combined_shell_content(accept.frame, accept.checksum),
         checksum: accept.checksum,
         presentation,
         correlation: accept.correlation,
@@ -171,6 +187,7 @@ impl CombinedAcceptNative for LiveProductionNativeScanout {
             self.native_frame_owner,
             &self.heads,
             &self.exporters,
+            &self.deferred_mirror_generations,
             head,
             accept,
         )

@@ -8,7 +8,6 @@ use super::super::super::compositor_graphics::CombinedAcceptError;
 use super::*;
 use crate::{
     CombinedAccept, CombinedAcceptNative, CombinedAcceptRefusal, LiveProductionNativeFrameId,
-    LiveProductionScanoutContent,
 };
 use std::cell::RefCell;
 
@@ -64,11 +63,6 @@ fn accept(output: HeadlessOutput) -> CombinedAccept {
     CombinedAccept {
         job: JOB,
         frame: LiveProductionNativeFrameId::from_raw(FRAME),
-        content: LiveProductionScanoutContent::HeadComposition {
-            frame: LiveProductionNativeFrameId::from_raw(FRAME),
-            logical_content_checksum: FRAME,
-            nonzero_rgb_pixels: 0,
-        },
         checksum: FRAME,
         snapshot: sophia_engine::OutputFrameDamageSnapshot {
             damage_history: Default::default(),

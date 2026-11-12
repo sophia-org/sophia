@@ -69,7 +69,8 @@ pub enum CombinedAcceptRefusal {
     OrdinaryPending,
     HeadPendingContent,
     HeadRenderingContent,
-    /// Content on this head still owes a retirement.
+    /// Content on this head, or a queued generation for its output, still
+    /// owes a retirement.
     RetirementProtected,
     /// The head no longer serves the admitted output alone.
     Topology,
@@ -77,8 +78,6 @@ pub enum CombinedAcceptRefusal {
     /// The expected correlation does not name this owner, head, target and
     /// native frame as the combined request.
     Identity,
-    /// The content is not the admitted native frame's.
-    Content,
     /// The output refuses the plan's damage snapshot as its pending frame.
     PendingTransition,
     /// The output already has a pending frame.

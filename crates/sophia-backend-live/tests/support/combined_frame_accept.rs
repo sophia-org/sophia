@@ -36,6 +36,10 @@ const WAIT: Duration = Duration::from_secs(10);
 const FRAME: u64 = 41;
 const LEASE: u64 = 81;
 type Validator = IsbValidationWorker<CombinedRenderPlan>;
+use super::super::super::composition_queue::{
+    DeferredNativeCompositions as Deferred, LiveProductionQueuedMirrorGeneration,
+    LiveProductionQueuedMirrorHeadFrame,
+};
 
 struct NoDevice;
 
@@ -77,6 +81,17 @@ fn content(frame: u64) -> LiveProductionScanoutContent {
     LiveProductionScanoutContent::HeadComposition {
         frame: LiveProductionNativeFrameId::from_raw(frame),
         logical_content_checksum: frame,
+        nonzero_rgb_pixels: 0,
+    }
+}
+
+/// The content a combined shell frame must install, written out here so the
+/// expectation does not follow the production constructor.
+fn shell(frame: u64) -> LiveProductionScanoutContent {
+    LiveProductionScanoutContent::RetainedMixed {
+        frame: LiveProductionNativeFrameId::from_raw(frame),
+        requires_retirement: true,
+        logical_content_checksum: Some(frame),
         nonzero_rgb_pixels: 0,
     }
 }
@@ -151,6 +166,7 @@ struct Fixture {
     stub: StubRenderer,
     _validator: Validator,
     runtime: crate::LiveBackendRuntimeAssembly,
+    deferred: Deferred,
     combined: CombinedHead,
     job: u64,
 }
@@ -224,6 +240,7 @@ impl Fixture {
             stub,
             _validator: validator,
             runtime,
+            deferred: Deferred::default(),
             combined,
             job,
         }
@@ -234,7 +251,6 @@ impl Fixture {
         CombinedAccept {
             job: self.job,
             frame: LiveProductionNativeFrameId::from_raw(FRAME),
-            content: content(FRAME),
             checksum: FRAME,
             snapshot: snapshot(self.heads[0].output),
             correlation: expected(self.native_owner, &self.heads[0]),
@@ -250,6 +266,7 @@ impl Fixture {
             self.native_owner,
             &self.heads,
             &self.exporters,
+            &self.deferred,
             &self.combined,
             accept,
         )
@@ -295,6 +312,40 @@ impl Fixture {
             exporters,
         }
         .release_held(combined, *job)
+    }
+
+    /// Queues on head `index`'s output an earlier generation owing a
+    /// retirement, as mirror deferral leaves one before its service runs.
+    fn queue_protected(&mut self, index: usize) -> LiveProductionNativeFrameId {
+        let head = &self.heads[index];
+        let frame = LiveProductionNativeFrameId::from_raw(FRAME - 1);
+        let generation = LiveProductionQueuedMirrorGeneration {
+            output: head.output.id,
+            frame,
+            logical_content_checksum: Some(frame.raw()),
+            heads: vec![LiveProductionQueuedMirrorHeadFrame {
+                capture_reservation: None,
+                head_index: index,
+                identity: self.native_owner.frame(
+                    head.output.id,
+                    head.head,
+                    head.target_generation,
+                    frame.raw(),
+                ),
+                content: shell(frame.raw()),
+                frame: Default::default(),
+                output_damage_snapshot: None,
+                cpu_nonzero_pixel_bytes: 0,
+            }],
+        };
+        let configured = self.heads.iter().map(|head| head.output.id).collect();
+        assert!(
+            self.deferred
+                .admit_batch(vec![generation], &configured)
+                .is_ok()
+        );
+        assert!(self.deferred.protected(self.heads[index].output.id));
+        frame
     }
 
     fn quiescence(&self) -> Option<&'static str> {
@@ -370,7 +421,11 @@ fn an_accepted_render_reaches_submitted_waiting_for_page_flip() {
     fixture.commit(plan);
     // F2's writes 2 to 4.
     let head = &fixture.heads[0];
-    assert_eq!(head.rendering_content, Some(content(FRAME)));
+    assert!(
+        head.retirement_protected(),
+        "the accepted content owes the shell retirement"
+    );
+    assert_eq!(head.rendering_content, Some(shell(FRAME)));
     assert_eq!(head.last_checksum, FRAME);
     assert_eq!(head.pending_content, None);
     assert!(head.output_frames.pending().is_none());
@@ -424,16 +479,28 @@ fn an_accepted_render_reaches_submitted_waiting_for_page_flip() {
         "another target's captured identity is refused"
     );
     head.target_generation -= 1;
+    head.head = sophia_engine::RenderHeadId::from_raw(7);
+    assert!(
+        head.accepted_native_frame(captured, fixture.native_owner, output.id)
+            .is_err(),
+        "another head's captured identity is refused"
+    );
+    head.head = sophia_engine::RenderHeadId::from_raw(1);
     let native_frame = head
         .accepted_native_frame(captured, fixture.native_owner, output.id)
         .expect("the captured identity is this owner's, head's and target's");
     assert_eq!(native_frame, LiveProductionNativeFrameId::from_raw(FRAME));
     let nonzero = fixture.exporters[0].composition_nonzero_rgb_pixels();
     let head = &mut fixture.heads[0];
+    let taken = head.take_accepted_content(native_frame, nonzero);
     assert_eq!(
-        head.take_accepted_content(native_frame, nonzero),
-        Ok(Some(content(FRAME).with_nonzero_rgb_pixels(nonzero))),
+        taken,
+        Ok(Some(shell(FRAME).with_nonzero_rgb_pixels(nonzero))),
         "the accepted content is the rendering one"
+    );
+    assert!(
+        taken.unwrap().unwrap().requires_retirement(),
+        "the taken content still owes the shell retirement"
     );
     assert_eq!(head.rendering_content, None);
     assert!(head.output_frames.rendering().is_none());
@@ -469,7 +536,7 @@ fn failed(
     let head = &mut fixture.heads[0];
     assert_eq!(
         head.take_failed_content(worker_was_in_flight),
-        Some(content(FRAME)),
+        Some(shell(FRAME)),
         "the failed content is the rendering one"
     );
     assert_eq!(head.rendering_content, None);
@@ -508,7 +575,7 @@ fn refused(
     name: &str,
     refusal: CombinedAcceptRefusal,
     change: impl FnOnce(&mut Fixture, &mut CombinedAccept),
-) {
+) -> Fixture {
     let mut fixture = Fixture::held();
     let mut accept = fixture.accept();
     change(&mut fixture, &mut accept);
@@ -522,6 +589,7 @@ fn refused(
         "{name}: the held result stays for disposal"
     );
     assert_eq!(fixture.stub.releases(), 1);
+    fixture
 }
 
 #[test]
@@ -566,10 +634,6 @@ fn each_refused_preflight_changes_no_state() {
     });
     refused("another frame's identity", R::Identity, |_, accept| {
         accept.frame = LiveProductionNativeFrameId::from_raw(FRAME + 1);
-        accept.content = content(FRAME + 1);
-    });
-    refused("content of another frame", R::Content, |_, accept| {
-        accept.content = content(FRAME + 1);
     });
     refused("pending output frame", R::PendingFrame, |f, _| {
         let output = f.heads[0].output;
@@ -586,6 +650,36 @@ fn each_refused_preflight_changes_no_state() {
         |_, accept| {
             accept.snapshot.output.size = another_size;
         },
+    );
+}
+
+#[test]
+fn a_protected_queued_generation_refuses_only_its_own_output() {
+    let mut queued = None;
+    let fixture = refused(
+        "a protected queued generation",
+        CombinedAcceptRefusal::RetirementProtected,
+        |f, _| queued = Some(f.queue_protected(0)),
+    );
+    let output = fixture.heads[0].output.id;
+    assert!(
+        fixture.deferred.protected(output),
+        "the queue keeps its retirement"
+    );
+    assert_eq!(
+        fixture
+            .deferred
+            .get(output)
+            .map(|generation| generation.frame),
+        queued,
+        "the queued generation is unchanged"
+    );
+
+    let mut fixture = Fixture::held();
+    fixture.queue_protected(1);
+    assert!(
+        fixture.preflight(fixture.accept()).is_ok(),
+        "another output's queued retirement does not refuse this one"
     );
 }
 
