@@ -65,12 +65,9 @@ fn plan(generation: u64, deadline: Instant) -> CombinedRenderPlan {
 }
 
 fn generation(plan: &CombinedRenderPlan) -> Option<u64> {
-    match &plan.frame {
-        super::super::PendingRenderedFrame::Mixed(frame, _) => {
-            frame.trace.as_ref().map(|trace| trace.scene_generation)
-        }
-        _ => None,
-    }
+    plan.correlation()
+        .trace
+        .map(|trace| trace.scene_generation)
 }
 
 /// Validates one frame and forwards it into the facade's real inbox.

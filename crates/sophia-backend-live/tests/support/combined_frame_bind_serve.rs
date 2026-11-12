@@ -6,7 +6,7 @@ use super::super::super::super::combined::{CombinedDisposition, CombinedSettleRe
 use super::super::super::correlated_facade;
 use super::super::{Validator, WAIT, WorkerCommand, forward, route, settle};
 use super::{
-    BYTES, RenderAttempt, Slots, description, occurrence, plan, render_and_record, sealed,
+    BYTES, RenderAttempt, description, occurrence, plan, production, render_and_record, sealed,
 };
 use crate::LiveRendererFrameSlotAcquire;
 use crate::LiveRendererFrameSlotRelease;
@@ -20,7 +20,7 @@ fn stop_after_forward_before_the_first_dequeue_renders_nothing() {
     let mut validator = Validator::for_combined_plans(1, 8).unwrap();
     let reservation = forward(&mut validator, &mut facade, 1, Instant::now() + WAIT);
     assert!(validator.cancel(reservation.job()));
-    let mut slots = Slots::new();
+    let mut slots = production();
     route.serve(Instant::now(), |plan, pixels, described| {
         attempt(&mut slots, plan, pixels, described, |_, _, _| {
             panic!("a stopped job renders nothing")
@@ -28,7 +28,12 @@ fn stop_after_forward_before_the_first_dequeue_renders_nothing() {
     });
     let result = facade.take_combined_result().unwrap();
     assert_eq!(result.disposition(), CombinedDisposition::Stopped);
-    assert!(slots.log.is_empty(), "a stopped job takes no slot");
+    assert_eq!(
+        slots.frame_slots.metrics().acquisitions,
+        0,
+        "a stopped job takes no slot"
+    );
+    assert_eq!(slots.frame_slots.metrics().deferrals, 0);
     settle(&mut validator, reservation, result);
 }
 
@@ -38,9 +43,9 @@ fn stop_while_parked_is_seen_at_the_retry_and_renders_nothing() {
     let mut route = route(&mut facade, &commands);
     let mut validator = Validator::for_combined_plans(1, 8).unwrap();
     let reservation = forward(&mut validator, &mut facade, 2, Instant::now() + WAIT);
-    let mut slots = Slots::new();
+    let mut slots = production();
     let busy = (0..3)
-        .map(|_| match slots.pool.try_acquire() {
+        .map(|_| match slots.frame_slots.try_acquire() {
             LiveRendererFrameSlotAcquire::Acquired(token) => token,
             _ => panic!("an empty pool leases three slots"),
         })
@@ -53,7 +58,7 @@ fn stop_while_parked_is_seen_at_the_retry_and_renders_nothing() {
     assert!(route.deadline().is_some(), "the job parked");
     assert!(validator.cancel(reservation.job()));
     assert_eq!(
-        slots.pool.release(busy[0]),
+        slots.frame_slots.release(busy[0]),
         LiveRendererFrameSlotRelease::Released
     );
     route.serve(Instant::now(), |plan, pixels, described| {
@@ -64,8 +69,16 @@ fn stop_while_parked_is_seen_at_the_retry_and_renders_nothing() {
     let result = facade.take_combined_result().unwrap();
     assert_eq!(result.disposition(), CombinedDisposition::Stopped);
     assert_eq!(
-        slots.log,
-        ["acquire"],
+        slots.frame_slots.metrics().deferrals,
+        1,
+        "only the first serve tried for a slot"
+    );
+    assert_eq!(
+        (
+            slots.frame_slots.metrics().acquisitions,
+            slots.frame_slots.leased()
+        ),
+        (3, 2),
         "the retry read the stop before taking the freed slot"
     );
     settle(&mut validator, reservation, result);
@@ -101,7 +114,7 @@ fn a_mismatch_reaches_the_owner_and_cancels_only_its_own_release() {
         assert!(Instant::now() < end, "the validator did not forward");
         std::thread::yield_now();
     }
-    let mut slots = Slots::new();
+    let mut slots = production();
     route.serve(Instant::now(), |plan, pixels, described| {
         attempt(&mut slots, plan, pixels, described, |_, _, _| {
             panic!("a sealed job with a placeholder renders nothing")
@@ -211,7 +224,7 @@ fn a_ring_job_is_checked_against_the_description_it_was_admitted_with() {
             std::thread::yield_now();
         }
         let mut handed = None;
-        let mut slots = Slots::new();
+        let mut slots = production();
         route.serve(Instant::now(), |plan, pixels, described| {
             handed = described.cloned();
             attempt(

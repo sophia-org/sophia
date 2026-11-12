@@ -1,21 +1,23 @@
 //! G3-2: the renderer binds a combined job's validated pixels only after it
 //! holds a slot, checks them against the job's admitted description first,
 //! and reads the job's stop flag at dequeue and at every retry
-//! (GATE3-SCOPE.md G3-2 and its source decisions). The slot pool and damage
-//! are the real ones; the render function is the deterministic seam that
-//! production fills with `render_frame_in_slot`. No GPU.
+//! (GATE3-SCOPE.md G3-2 and its source decisions). The slots are the
+//! production `CombinedSlots`, a worker output's own pool and damage history,
+//! seeded with a usable history; the render function is the deterministic
+//! seam that production fills with `render_frame_in_slot`. No GPU.
 
 use super::super::super::WorkerSlotDamage;
 use super::super::super::combined::{
     CombinedPlaceholder, CombinedSlots, RenderInput, RenderTarget, admits, attempt, bind,
 };
-use super::super::{correlated_result, exported_outcome};
+use super::super::super::service::WorkerOutputState;
+use super::super::{correlated_facade, correlated_result, exported_outcome};
 use super::{
     CombinedOutcome, CombinedRenderPlan, RenderAttempt, WAIT, WorkerOutcome, WorkerResult,
 };
 use crate::api::LiveGbmEglFrameTargetRecord;
 use crate::{
-    LiveRendererFrameSlotAcquire, LiveRendererFrameSlotPool, LiveRendererFrameSlotRelease,
+    LiveRendererFrameSlotAcquire, LiveRendererFrameSlotId, LiveRendererFrameSlotRelease,
     LiveRendererFrameSlotToken,
 };
 use sophia_protocol::{
@@ -229,52 +231,86 @@ fn validated_arc(layer: &LiveOwnedMixedCompositionLayer) -> Option<&Arc<Validate
     }
 }
 
-/// The real slot pool and damage, with a log of the seam's calls.
-struct Slots {
-    pool: LiveRendererFrameSlotPool,
-    damage: WorkerSlotDamage,
-    log: Vec<&'static str>,
-    exhausted: bool,
+const DAMAGE_SIZE: Size = Size {
+    width: 64,
+    height: 32,
+};
+
+fn slot(index: usize) -> LiveRendererFrameSlotId {
+    LiveRendererFrameSlotId::from_index(index).unwrap()
 }
 
-impl Slots {
-    fn new() -> Self {
-        Self {
-            pool: LiveRendererFrameSlotPool::new(),
-            damage: WorkerSlotDamage::with_enabled(true),
-            log: Vec::new(),
-            exhausted: false,
-        }
+fn damage_snapshot() -> sophia_engine::OutputFrameDamageSnapshot {
+    let output = sophia_engine::HeadlessOutput {
+        id: sophia_protocol::OutputId::from_raw(1),
+        size: DAMAGE_SIZE,
+        scale: 1,
+    };
+    let list = sophia_engine::CompositorDisplayList {
+        output: output.id,
+        commands: Vec::new(),
+    };
+    sophia_engine::output_frame_damage_snapshot(output, list, &[], None).unwrap()
+}
+
+/// A worker output's production state, every slot holding one recorded
+/// export, so an invalidation is visible in its history and its counter.
+pub(super) fn production() -> WorkerOutputState {
+    let (facade, _commands, reply) = correlated_facade();
+    let mut state = WorkerOutputState::new(reply, Default::default(), Arc::clone(&facade.claim));
+    // The production default reads one opt-out variable; tests pin it on.
+    state.slot_damage = WorkerSlotDamage::with_enabled(true);
+    for index in 0..3 {
+        state
+            .slot_damage
+            .settle(slot(index), true, Some(7), Some(damage_snapshot()));
     }
+    assert_eq!(state.slot_damage.metrics().records, 3);
+    assert!((0..3).all(|index| history_kept(&mut state, index)));
+    assert_eq!(state.slot_damage.metrics().invalidations, 0);
+    state
 }
 
-impl CombinedSlots for Slots {
+/// Whether the slot still has a history to repaint an age-one buffer against.
+pub(super) fn history_kept(state: &mut WorkerOutputState, index: usize) -> bool {
+    let table = state
+        .slot_damage
+        .repaint_table(slot(index), Some(&damage_snapshot()), DAMAGE_SIZE)
+        .unwrap();
+    table.full_reason_for_age(1) != Some(sophia_renderer_live::NativeFullRepaintReason::NoHistory)
+}
+
+/// A pool whose one forced answer is an exhausted incarnation; its releases
+/// are the production ones.
+struct Exhausted(WorkerOutputState);
+
+impl CombinedSlots for Exhausted {
     fn try_acquire(&mut self) -> LiveRendererFrameSlotAcquire {
-        self.log.push("acquire");
-        if self.exhausted {
-            // shortcut: the real pool's u64 incarnations cannot be exhausted
-            // in a test, so this one answer is forced; the rest is the pool.
-            return LiveRendererFrameSlotAcquire::IncarnationExhausted;
-        }
-        self.pool.try_acquire()
+        // shortcut: the real pool's u64 incarnations cannot be exhausted in a
+        // test, so this one answer is forced.
+        LiveRendererFrameSlotAcquire::IncarnationExhausted
     }
 
     fn release_unused(&mut self, token: LiveRendererFrameSlotToken) {
-        self.log.push("unused");
-        assert_eq!(
-            self.pool.release(token),
-            LiveRendererFrameSlotRelease::Released
-        );
+        self.0.release_unused(token);
     }
 
     fn release_failed(&mut self, token: LiveRendererFrameSlotToken) {
-        self.log.push("failed");
-        self.damage.invalidate(token.slot_id());
-        assert_eq!(
-            self.pool.release(token),
-            LiveRendererFrameSlotRelease::Released
-        );
+        self.0.release_failed(token);
     }
+}
+
+/// Production returned the slot untouched: free, counted once, every
+/// history kept.
+fn assert_returned_untouched(state: &mut WorkerOutputState) {
+    assert_eq!(state.frame_slots.leased(), 0, "the slot went back");
+    assert_eq!(state.frame_slots.metrics().acquisitions, 1);
+    assert_eq!(
+        state.slot_damage.metrics().invalidations,
+        0,
+        "an untouched slot keeps its damage history"
+    );
+    assert!((0..3).all(|index| history_kept(state, index)));
 }
 
 fn result(outcome: WorkerOutcome) -> WorkerResult {
@@ -289,10 +325,10 @@ fn result(outcome: WorkerOutcome) -> WorkerResult {
 
 /// The deterministic renderer: reads every bound occurrence's bytes, then
 /// exports into the slot it was handed.
-fn render_and_record(
+fn render_and_record<S>(
     seen: &mut Vec<Seen>,
     counts: &mut Vec<usize>,
-) -> impl FnOnce(&mut Slots, RenderInput, RenderTarget) -> WorkerResult {
+) -> impl FnOnce(&mut S, RenderInput, RenderTarget) -> WorkerResult {
     move |_, input, _| {
         let RenderInput::Bound(bound, token) = input else {
             panic!("an admitted job renders bound");
@@ -450,7 +486,7 @@ fn admits_checks_extent_outside_the_loop_and_shape_per_occurrence() {
 fn the_renderer_returns_the_exact_pixels_with_a_strong_count_of_one() {
     let pixels = validated(&BYTES);
     let address = pixels.bytes().as_ptr();
-    let mut slots = Slots::new();
+    let mut slots = production();
     let (mut seen, mut counts) = (Vec::new(), Vec::new());
     let (outcome, pixels) = done(attempt(
         &mut slots,
@@ -476,13 +512,17 @@ fn the_renderer_returns_the_exact_pixels_with_a_strong_count_of_one() {
         "the same backing comes home, never a copy"
     );
     assert_eq!(pixels.bytes(), BYTES.as_slice());
-    assert_eq!(slots.log, ["acquire"], "an exported slot stays leased");
-    assert_eq!(slots.pool.leased(), 1);
+    assert_eq!(
+        slots.frame_slots.leased(),
+        1,
+        "an exported slot stays leased"
+    );
+    assert_eq!(slots.frame_slots.metrics().acquisitions, 1);
 }
 
 #[test]
 fn the_deterministic_renderer_saw_every_bound_occurrence() {
-    let mut slots = Slots::new();
+    let mut slots = production();
     let (mut seen, mut counts) = (Vec::new(), Vec::new());
     let _ = done(attempt(
         &mut slots,
@@ -512,9 +552,9 @@ fn the_deterministic_renderer_saw_every_bound_occurrence() {
 
 #[test]
 fn three_busy_slots_park_the_job_unbound_and_one_release_renders_it_once() {
-    let mut slots = Slots::new();
+    let mut slots = production();
     let busy: Vec<_> = (0..3)
-        .map(|_| match slots.pool.try_acquire() {
+        .map(|_| match slots.frame_slots.try_acquire() {
             LiveRendererFrameSlotAcquire::Acquired(token) => token,
             _ => panic!("an empty pool leases three slots"),
         })
@@ -535,20 +575,11 @@ fn three_busy_slots_park_the_job_unbound_and_one_release_renders_it_once() {
         panic!("no free slot defers");
     };
     assert_eq!(rendered, 0);
-    assert_eq!(
-        kinds(layers(&parked.frame)),
-        [(false, 100)],
-        "the parked plan is unbound"
-    );
-    assert_eq!(
-        parked.placeholders.len(),
-        1,
-        "the placeholders wait with it"
-    );
     assert_eq!(pixels.bytes(), BYTES.as_slice());
+    assert_eq!(slots.frame_slots.metrics().deferrals, 1);
 
     assert_eq!(
-        slots.pool.release(busy[0]),
+        slots.frame_slots.release(busy[0]),
         LiveRendererFrameSlotRelease::Released
     );
     let (mut seen, mut counts) = (Vec::new(), Vec::new());
@@ -559,13 +590,18 @@ fn three_busy_slots_park_the_job_unbound_and_one_release_renders_it_once() {
         Some(&description(2, 4, 32)),
         render_and_record(&mut seen, &mut counts),
     ));
-    assert_eq!(seen.len(), 1, "the released slot renders it once");
-    assert_eq!(slots.log, ["acquire", "acquire"]);
+    assert_eq!(
+        seen.iter().map(|seen| seen.index).collect::<Vec<_>>(),
+        [0],
+        "the released slot renders it once, its one occurrence bound"
+    );
+    assert_eq!(slots.frame_slots.metrics().acquisitions, 4);
+    assert_eq!(slots.frame_slots.metrics().deferrals, 1);
 }
 
 #[test]
 fn an_equal_length_different_description_fails_terminally_unbound() {
-    let mut slots = Slots::new();
+    let mut slots = production();
     let mut tall = occurrence(0, 1, 0);
     tall.size = Size {
         width: 4,
@@ -584,18 +620,13 @@ fn an_equal_length_different_description_fails_terminally_unbound() {
         "4x2 is not 2x4"
     );
     assert_eq!(pixels.bytes(), BYTES.as_slice());
-    assert_eq!(
-        slots.log,
-        ["acquire", "unused"],
-        "the untouched slot goes back without invalidating its damage"
-    );
-    assert_eq!(slots.pool.leased(), 0);
+    assert_returned_untouched(&mut slots);
 }
 
 #[test]
 fn a_byte_extent_different_from_the_admitted_total_fails_terminally_unbound() {
     for placeholders in [vec![occurrence(0, 1, 0)], Vec::new()] {
-        let mut slots = Slots::new();
+        let mut slots = production();
         let (outcome, pixels) = done(attempt(
             &mut slots,
             plan(&[], placeholders),
@@ -605,13 +636,13 @@ fn a_byte_extent_different_from_the_admitted_total_fails_terminally_unbound() {
         ));
         assert!(matches!(outcome, CombinedOutcome::Mismatch));
         assert_eq!(pixels.bytes(), &BYTES[..24]);
-        assert_eq!(slots.log, ["acquire", "unused"]);
+        assert_returned_untouched(&mut slots);
     }
 }
 
 #[test]
 fn a_job_without_a_description_binds_nothing_and_any_placeholder_is_a_mismatch() {
-    let mut slots = Slots::new();
+    let mut slots = production();
     let (outcome, _) = done(attempt(
         &mut slots,
         plan(&[100], Vec::new()),
@@ -623,7 +654,7 @@ fn a_job_without_a_description_binds_nothing_and_any_placeholder_is_a_mismatch()
         matches!(outcome, CombinedOutcome::Rendered(_)),
         "a sealed job with no placeholder renders as planned"
     );
-    let mut slots = Slots::new();
+    let mut slots = production();
     let (outcome, pixels) = done(attempt(
         &mut slots,
         plan(&[100], vec![occurrence(0, 1, 0)]),
@@ -633,13 +664,12 @@ fn a_job_without_a_description_binds_nothing_and_any_placeholder_is_a_mismatch()
     ));
     assert!(matches!(outcome, CombinedOutcome::Mismatch));
     assert_eq!(pixels.bytes(), BYTES.as_slice());
-    assert_eq!(slots.log, ["acquire", "unused"]);
+    assert_returned_untouched(&mut slots);
 }
 
 #[test]
 fn an_exhausted_incarnation_returns_the_pixels_unbound() {
-    let mut slots = Slots::new();
-    slots.exhausted = true;
+    let mut slots = Exhausted(production());
     let (outcome, pixels) = done(attempt(
         &mut slots,
         plan(&[100], vec![occurrence(0, 1, 0)]),
@@ -662,18 +692,24 @@ fn an_exhausted_incarnation_returns_the_pixels_unbound() {
         })
     ));
     assert_eq!(pixels.bytes(), BYTES.as_slice());
-    assert_eq!(slots.log, ["acquire"]);
+    assert_eq!(slots.0.frame_slots.leased(), 0, "no slot was taken");
+    assert_eq!(slots.0.slot_damage.metrics().invalidations, 0);
 }
 
 #[test]
 fn a_failed_render_releases_and_invalidates_its_slot() {
-    let mut slots = Slots::new();
+    let mut slots = production();
+    let mut used = None;
     let (outcome, pixels) = done(attempt(
         &mut slots,
         plan(&[], vec![occurrence(0, 1, 0)]),
         validated(&BYTES),
         Some(&description(2, 4, 32)),
-        |_, _, _| {
+        |_, input, _| {
+            let RenderInput::Bound(_, token) = input else {
+                panic!("an admitted job renders bound");
+            };
+            used = Some(token.slot_id().index());
             result(WorkerOutcome::Failed(
                 LiveRendererScanoutBufferExportDetail::BackendDeviceUnavailable,
             ))
@@ -681,17 +717,21 @@ fn a_failed_render_releases_and_invalidates_its_slot() {
     ));
     assert!(matches!(outcome, CombinedOutcome::Rendered(_)));
     assert_eq!(pixels.bytes(), BYTES.as_slice());
+    let used = used.expect("the render was handed its slot");
+    assert_eq!(slots.frame_slots.leased(), 0, "the failed slot went back");
     assert_eq!(
-        slots.log,
-        ["acquire", "failed"],
-        "a failed render releases and invalidates its slot"
+        slots.slot_damage.metrics().invalidations,
+        1,
+        "a failed render invalidates its slot's history"
     );
-    assert_eq!(slots.pool.leased(), 0);
+    for index in 0..3 {
+        assert_eq!(history_kept(&mut slots, index), index != used);
+    }
 }
 
 #[test]
 fn a_bind_fault_is_compose_refused_and_releases_the_untouched_slot() {
-    let mut slots = Slots::new();
+    let mut slots = production();
     let (outcome, pixels) = done(attempt(
         &mut slots,
         plan(&[100], vec![occurrence(0, 1, 0), occurrence(3, 2, 4)]),
@@ -712,7 +752,7 @@ fn a_bind_fault_is_compose_refused_and_releases_the_untouched_slot() {
         })
     ));
     assert_eq!(pixels.bytes(), BYTES.as_slice());
-    assert_eq!(slots.log, ["acquire", "unused"]);
+    assert_returned_untouched(&mut slots);
 }
 
 #[test]
@@ -720,7 +760,7 @@ fn a_bind_fault_is_compose_refused_and_releases_the_untouched_slot() {
 fn a_reference_that_outlives_the_render_stops_the_worker() {
     let mut kept = Vec::new();
     let _ = attempt(
-        &mut Slots::new(),
+        &mut production(),
         plan(&[], vec![occurrence(0, 1, 0)]),
         validated(&BYTES),
         Some(&description(2, 4, 32)),
@@ -741,7 +781,7 @@ fn unwinding_out_of_the_render_drops_every_bound_reference() {
     let mut watch: Option<Weak<ValidatedIsbPixels>> = None;
     let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         attempt(
-            &mut Slots::new(),
+            &mut production(),
             plan(&[], vec![occurrence(0, 1, 0), occurrence(1, 2, 4)]),
             validated(&BYTES),
             Some(&description(2, 4, 32)),

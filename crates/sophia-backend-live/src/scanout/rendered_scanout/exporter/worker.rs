@@ -30,7 +30,9 @@ mod combined;
 #[cfg(feature = "experimental-combined-frame-job")]
 pub(crate) use combined::CombinedFacade;
 #[cfg(feature = "experimental-combined-frame-job")]
-pub use combined::{CombinedRenderPlan, CombinedRenderResult, CombinedSettleRefused};
+pub use combined::{
+    CombinedDisposition, CombinedRenderPlan, CombinedRenderResult, CombinedSettleRefused,
+};
 mod head_imports;
 mod lifecycle;
 mod maintenance;

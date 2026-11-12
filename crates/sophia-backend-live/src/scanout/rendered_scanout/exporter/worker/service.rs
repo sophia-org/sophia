@@ -17,11 +17,11 @@ use std::sync::mpsc::Receiver;
 /// Slots, damage history, leases, and reusable buffers are all per output.
 /// Buffer reuse in particular is matched on size alone, so two outputs of the
 /// same mode sharing a pool would hand one screen's content to the other.
-struct WorkerOutputState {
+pub(super) struct WorkerOutputState {
     reply: sophia_wake::SignalSender<WorkerResult>,
     claim: Arc<OutputClaim>,
-    frame_slots: LiveRendererFrameSlotPool,
-    slot_damage: WorkerSlotDamage,
+    pub(super) frame_slots: LiveRendererFrameSlotPool,
+    pub(super) slot_damage: WorkerSlotDamage,
     leases: BTreeMap<LiveRendererWorkerLeaseId, WorkerLeaseBuffer>,
     free_cpu_buffers: Vec<ReusableCpuBuffer>,
     #[cfg(feature = "experimental-combined-frame-job")]
@@ -29,7 +29,7 @@ struct WorkerOutputState {
 }
 
 impl WorkerOutputState {
-    fn new(
+    pub(super) fn new(
         reply: sophia_wake::SignalSender<WorkerResult>,
         frame_slot_metrics: LiveRendererFrameSlotMetricsHandle,
         claim: Arc<OutputClaim>,
@@ -575,8 +575,7 @@ where
         };
         routed = true;
         route.serve(now, |plan, pixels, description| {
-            let correlation =
-                super::frame_correlation(&plan.frame, Some(super::combined::COMBINED_REQUEST));
+            let correlation = plan.correlation();
             super::combined::attempt(
                 &mut *state,
                 plan,

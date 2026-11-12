@@ -52,12 +52,14 @@ pub(super) const COMBINED_REQUEST: LiveRendererWorkerRequestId = LiveRendererWor
 pub struct CombinedRenderPlan {
     pub(super) deadline: Instant,
     pub(super) target: LiveGbmEglFrameTargetRecord,
-    pub(super) frame: PendingRenderedFrame,
+    /// Missing every placeholder's layer: private, so only a successful
+    /// bind can make it renderable.
+    frame: PendingRenderedFrame,
     pub(super) preferred_modifiers: Vec<u64>,
     pub(super) output_format: Option<sophia_renderer_live::LiveCompositionFormatRequest>,
     /// One per lowered occurrence of the copied resource, in final layer
     /// order. Empty when the frame shows none of it.
-    pub(super) placeholders: Box<[CombinedPlaceholder]>,
+    placeholders: Box<[CombinedPlaceholder]>,
 }
 
 impl CombinedRenderPlan {
@@ -79,6 +81,12 @@ impl CombinedRenderPlan {
             output_format,
             placeholders,
         }
+    }
+
+    /// The frame's correlation, for the result: metadata only, so no caller
+    /// outside the binding ever holds the unbound frame.
+    pub(super) fn correlation(&self) -> LiveRendererFrameCorrelation {
+        frame_correlation(&self.frame, Some(COMBINED_REQUEST))
     }
 
     /// The target and request without the frame, which drops here unbound.
