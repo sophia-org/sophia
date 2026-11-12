@@ -45,7 +45,7 @@ impl OwnedCopyOwner {
         };
         #[cfg(any(test, feature = "experimental-combined-frame-job"))]
         let mut reservation = None;
-        let step = self.admit_peeked_frame(
+        let step = self.admit_peeked_commit(
             transport,
             epochs,
             worker,
@@ -98,7 +98,7 @@ impl OwnedCopyOwner {
         }
     }
 
-    fn admit_peeked_frame<P: Send + 'static>(
+    fn admit_peeked_commit<P: Send + 'static>(
         &mut self,
         transport: &mut ShellComponentTransport,
         epochs: &mut ContentEpochRegistry,
