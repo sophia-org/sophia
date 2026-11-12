@@ -236,17 +236,18 @@ fn a_mismatched_send_returns_source_and_plan_and_leaves_the_row_unsent() {
     assert_eq!(j.worker.pending(), 1, "the credit stays with the row");
 }
 
+fn state(j: &Joined, binding: &FrameCopyBinding, job: u64) -> FrameCandidateState {
+    j.f.registry
+        .active_candidates(grant())
+        .unwrap()
+        .frame_candidate_state(binding, job)
+}
+
 #[test]
 fn candidate_state_reads_live_tables_and_ends_only_on_proof() {
     let mut j = joined();
     let (job, _reservation) = j.admit(1);
     let binding = j.f.jobs.combined_admitted(job).unwrap().binding;
-    let state = |j: &Joined, binding: &FrameCopyBinding, job: u64| {
-        j.f.registry
-            .active_candidates(grant())
-            .unwrap()
-            .frame_candidate_state(binding, job)
-    };
     assert_eq!(state(&j, &binding, job), FrameCandidateState::Assembling);
     assert_eq!(state(&j, &binding, job + 1), FrameCandidateState::Unknown);
     let earlier = FrameCopyBinding {
@@ -259,11 +260,112 @@ fn candidate_state_reads_live_tables_and_ends_only_on_proof() {
         ..binding
     };
     assert_eq!(state(&j, &later, job), FrameCandidateState::Unknown);
+    let replaced = FrameCopyBinding {
+        key: FrameStreamKey {
+            stream_id: binding.key.stream_id + 1,
+            ..binding.key
+        },
+        ..binding
+    };
+    assert_eq!(
+        state(&j, &replaced, job),
+        FrameCandidateState::Ended,
+        "a live assembly under another stream key is not this binding"
+    );
     j.f.registry
         .active_candidates_mut(grant())
         .unwrap()
         .revoke();
     assert_eq!(state(&j, &binding, job), FrameCandidateState::Ended);
+}
+
+#[test]
+fn candidate_state_ends_on_a_closing_stream_that_keeps_its_key() {
+    let mut j = joined();
+    let (job, _reservation) = j.admit(1);
+    let binding = j.f.jobs.combined_admitted(job).unwrap().binding;
+    let candidates = j.f.registry.active_candidates_mut(grant()).unwrap();
+    candidates
+        .close_frame_stream(tx(40), binding.key, 1)
+        .unwrap();
+    candidates.take_frame_stream_event().unwrap();
+    assert_eq!(
+        state(&j, &binding, job),
+        FrameCandidateState::Assembling,
+        "the copy still owns its live assembly through the close"
+    );
+    assert_eq!(
+        state(&j, &binding, job + 1),
+        FrameCandidateState::Ended,
+        "no live match on a closing stream is proof of its end"
+    );
+}
+
+#[test]
+fn a_begin_isb_refusal_after_the_combined_credit_releases_it_for_the_next_admission() {
+    let mut j = joined();
+    // Replacement generations of a lower id fill the open transfers, so the
+    // copy's own resource stays fresh and only begin_isb refuses it.
+    let resources = j.f.registry.resources_mut(grant()).unwrap();
+    for generation in 2..=5 {
+        resources
+            .begin_isb(
+                tx(200 + generation),
+                ContentResourceBegin {
+                    grant: grant(),
+                    resource: ContentResourceId { id: 1, generation },
+                    width_px: 1,
+                    height_px: 1,
+                    rendered_scale_numerator: 1,
+                    rendered_scale_denominator: 1,
+                    pixel_format: 1,
+                    chunk_count: 1,
+                    total_bytes: 4,
+                },
+                1,
+            )
+            .unwrap();
+    }
+    let charged = j.charged();
+    let mut input = Some(frame(1, true));
+    let (admission, reservation) =
+        j.f.jobs
+            .admit_frame_commit_combined(
+                &mut j.f.registry,
+                &mut j.worker,
+                Some(&j.f.ring),
+                &mut input,
+                4,
+                1,
+                deadline(),
+            )
+            .unwrap();
+    assert_eq!(
+        admission,
+        ContentFrameAdmission::Refused(ContentCandidateError::Budget)
+    );
+    assert!(reservation.is_none());
+    assert!(input.is_none());
+    assert_eq!(j.worker.pending(), 0, "the combined credit was released");
+    assert_eq!(j.f.jobs.pending(), 0);
+    assert_eq!(j.charged(), charged, "the refused copy holds no charge");
+    j.f.refusal(1, ContentReason::Budget);
+    j.f.registry
+        .resources_mut(grant())
+        .unwrap()
+        .cancel(
+            tx(210),
+            &ContentResourceCancel {
+                grant: grant(),
+                resource: ContentResourceId {
+                    id: 1,
+                    generation: 5,
+                },
+            },
+        )
+        .unwrap();
+    let (_job, _reservation) = j.admit(2);
+    assert_eq!(j.worker.pending(), 1, "the next admission takes the credit");
 }
 
 fn completed_any(worker: &mut Worker) -> IsbValidationCompletion {

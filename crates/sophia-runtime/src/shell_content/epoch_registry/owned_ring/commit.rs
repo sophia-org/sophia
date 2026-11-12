@@ -16,7 +16,8 @@ impl ContentEpochRegistry {
         now: u64,
         deadline: std::time::Instant,
         // Some for a combined frame: the copy takes one combined credit and
-        // its reservation lands here, cleared again on refusal.
+        // its reservation lands here. A later refusal releases that credit
+        // as today; callers use the reservation only for an accepted copy.
         #[cfg(any(test, feature = "experimental-combined-frame-job"))] mut combined: Option<
             &mut Option<crate::CombinedReservation>,
         >,
@@ -95,28 +96,22 @@ impl ContentEpochRegistry {
                     let ring = ring.expect("copy source checked");
                     #[cfg(any(test, feature = "experimental-combined-frame-job"))]
                     let reserved = match combined.as_mut() {
-                        Some(out) => {
-                            let reserved = reserve_copy_with(
-                                &epoch.allocations,
-                                &mut epoch.resources,
-                                &epoch.source_bytes,
-                                worker,
-                                ring,
-                                image,
-                                now,
-                                deadline,
-                                |worker, bytes, deadline| {
-                                    let reservation = worker.reserve_combined(bytes, deadline)?;
-                                    let job = reservation.job();
-                                    **out = Some(reservation);
-                                    Ok(job)
-                                },
-                            );
-                            if reserved.is_err() {
-                                **out = None;
-                            }
-                            reserved
-                        }
+                        Some(out) => reserve_copy_with(
+                            &epoch.allocations,
+                            &mut epoch.resources,
+                            &epoch.source_bytes,
+                            worker,
+                            ring,
+                            image,
+                            now,
+                            deadline,
+                            |worker, bytes, deadline| {
+                                let reservation = worker.reserve_combined(bytes, deadline)?;
+                                let job = reservation.job();
+                                **out = Some(reservation);
+                                Ok(job)
+                            },
+                        ),
                         None => reserve_copy(
                             &epoch.allocations,
                             &mut epoch.resources,

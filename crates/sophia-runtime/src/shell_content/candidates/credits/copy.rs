@@ -16,7 +16,8 @@ pub enum FrameCandidateState {
     Assembling,
     Pending,
     Submitted,
-    /// A later generation holds the output, or the stream is closed.
+    /// A later generation holds the output, the store is revoked, or the
+    /// exact stream is closing, closed or replaced.
     Ended,
     /// None of the above; the caller treats this as live until its deadline.
     Unknown,
@@ -29,7 +30,8 @@ pub(crate) struct FrameCopyState {
 
 impl ContentCandidateStore {
     /// Terminal outcomes are emitted, not kept, so absence from these tables
-    /// alone never reports `Ended`.
+    /// alone never reports `Ended`. A live state needs the stream's exact key;
+    /// a closing stream keeps its key, so `Ended` also needs the phase.
     #[cfg(any(test, feature = "experimental-combined-frame-job"))]
     pub fn frame_candidate_state(
         &self,
@@ -40,16 +42,21 @@ impl ContentCandidateStore {
             return FrameCandidateState::Unknown;
         }
         let output = binding.key.output;
+        let ledger = self.streams.entries.get(&output).map(|entry| &entry.ledger);
+        let same_key = ledger.and_then(|ledger| ledger.key()) == Some(binding.key);
         let assembly = self.assemblies.get(&output);
-        if assembly.is_some_and(|assembly| {
-            assembly.begin.candidate_generation == binding.generation
-                && assembly.copy.as_ref().is_some_and(|copy| copy.job == job)
-        }) {
+        let exact = |candidate: Option<&Candidate>| {
+            same_key
+                && candidate.is_some_and(|c| c.begin.candidate_generation == binding.generation)
+        };
+        if same_key
+            && assembly.is_some_and(|assembly| {
+                assembly.begin.candidate_generation == binding.generation
+                    && assembly.copy.as_ref().is_some_and(|copy| copy.job == job)
+            })
+        {
             return FrameCandidateState::Assembling;
         }
-        let exact = |candidate: Option<&Candidate>| {
-            candidate.is_some_and(|c| c.begin.candidate_generation == binding.generation)
-        };
         if exact(self.pending.get(&output)) {
             return FrameCandidateState::Pending;
         }
@@ -72,12 +79,8 @@ impl ContentCandidateStore {
                     .map(|c| c.begin.candidate_generation),
             )
             .any(|generation| generation > binding.generation);
-        let open = self
-            .streams
-            .entries
-            .get(&output)
-            .and_then(|entry| entry.ledger.key())
-            == Some(binding.key);
+        let open =
+            same_key && ledger.is_some_and(|ledger| ledger.phase() == FrameStreamPhase::Open);
         if later || self.revoked || !open {
             FrameCandidateState::Ended
         } else {

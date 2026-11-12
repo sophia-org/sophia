@@ -169,9 +169,12 @@ impl<P: Send + 'static> ShellIsbImageOwner<P> {
 
     /// `service` for a combined frame job (GATE3-SCOPE.md G3-1). Results the
     /// renderer returned are collected first and handed to their exact rows,
-    /// so the unchanged body below reconciles them, makes the resource
-    /// resident and journals the source release in this same call. Frame
-    /// admission inside the body reaches the session through `hooks`.
+    /// so the unchanged body below reconciles them in this same call: the
+    /// copy gate closes and the terminal ResourceStatus waits in the resource
+    /// store. Publication keeps today's order: the host's content-resource
+    /// service journals that status, and a later call publishes SlotReleased
+    /// once the status is journalled. Frame admission inside the body reaches
+    /// the session through `hooks`.
     #[cfg(all(
         feature = "experimental-native-frame-transaction",
         any(test, feature = "experimental-combined-frame-job")
