@@ -192,7 +192,7 @@ fn expiry_returns_token_and_pixels_from_the_inbox_and_from_parking() {
     let mut validator = Validator::for_combined_plans(2, 16).unwrap();
 
     let expired = forward(&mut validator, &mut facade, 3, Instant::now());
-    route.serve(Instant::now(), |_| {
+    route.serve(Instant::now(), |_, _, _| {
         panic!("an expired frame is never rendered")
     });
     let result = facade.take_combined_result().unwrap();
@@ -208,7 +208,9 @@ fn expiry_returns_token_and_pixels_from_the_inbox_and_from_parking() {
         RenderAttempt::NoSlot(plan, pixels)
     });
     assert_eq!(route.deadline(), Some(deadline));
-    route.serve(deadline, |_| panic!("an expired frame is never rendered"));
+    route.serve(deadline, |_, _, _| {
+        panic!("an expired frame is never rendered")
+    });
     let result = facade.take_combined_result().unwrap();
     assert!(
         matches!(result.outcome, CombinedOutcome::Expired),

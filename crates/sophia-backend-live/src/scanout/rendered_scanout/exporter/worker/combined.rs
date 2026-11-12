@@ -7,7 +7,8 @@ use super::*;
 mod render;
 pub use render::CombinedPlaceholder;
 pub(super) use render::{CombinedSlots, RenderInput, RenderTarget, attempt};
-#[cfg(test)]
+// Named by the worker's tests; production reaches them through attempt.
+#[cfg_attr(not(test), allow(unused_imports))]
 pub(super) use render::{admits, bind};
 use sophia_runtime::{
     CombinedInbox, CombinedReservation, CombinedToken, ForwardedValidation, IsbValidationWorker,

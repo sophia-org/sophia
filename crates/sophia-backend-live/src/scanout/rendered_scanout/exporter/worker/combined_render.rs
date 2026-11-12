@@ -18,8 +18,8 @@ use sophia_renderer_live::{
 pub struct CombinedPlaceholder {
     /// Where the layer sits in the bound frame's final layer list.
     pub(crate) index: usize,
-    // Read by G3-3's scene key; G3-2 binds by index.
-    #[cfg_attr(not(test), allow(dead_code))]
+    // Read by G3-3's scene key; G3-2 binds by index and reads it nowhere.
+    #[allow(dead_code)]
     pub(crate) node: sophia_engine::CompositorNodeId,
     pub(crate) placement: LiveCompositionPlacement,
     pub(crate) size: sophia_protocol::Size,
@@ -67,6 +67,8 @@ pub(in super::super) fn admits(
 pub(in super::super) struct BoundFrame(PendingRenderedFrame);
 
 impl BoundFrame {
+    // Production renders the frame by value; tests read it in place.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(in super::super) fn frame(&self) -> &PendingRenderedFrame {
         &self.0
     }
@@ -79,6 +81,8 @@ impl BoundFrame {
 /// Fills every placeholder, or returns the frame untouched. Every index is
 /// checked before the first insertion, so a bad later occurrence leaves no
 /// partial frame and no clone of `pixels`.
+// The refused frame comes back whole and unchanged, by value.
+#[allow(clippy::result_large_err)]
 pub(in super::super) fn bind(
     frame: PendingRenderedFrame,
     placeholders: &[CombinedPlaceholder],
@@ -137,6 +141,8 @@ pub(in super::super) trait CombinedSlots {
 
 /// What the render function is handed: a bound frame in its slot, or the
 /// failure to report without rendering.
+// Moved once per attempt and never stored, as RenderAttempt.
+#[allow(clippy::large_enum_variant)]
 pub(in super::super) enum RenderInput {
     Bound(BoundFrame, LiveRendererFrameSlotToken),
     Failed(LiveRendererScanoutBufferExportDetail),
