@@ -229,14 +229,6 @@ impl Fixture {
         }
     }
 
-    fn routes(&mut self) -> CombinedRoutes<'_, NoDevice> {
-        CombinedRoutes {
-            native_owner: self.native_owner,
-            heads: &mut self.heads,
-            exporters: &mut self.exporters,
-        }
-    }
-
     /// What the owner froze at dispatch for the held result.
     fn accept(&self) -> CombinedAccept {
         CombinedAccept {

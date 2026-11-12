@@ -196,7 +196,10 @@ fn a_runtime_refusal_writes_nothing_and_asks_no_native_preflight() {
             native.service = false;
             fixture.candidate.clone()
         },
-        |error| matches!(error, CombinedAcceptError::Runtime(_)),
+        |error| {
+            matches!(error, CombinedAcceptError::Runtime(message)
+                if message.to_string().contains("native presentation is quiesced"))
+        },
     );
     runtime_refused(
         "an installed frame",

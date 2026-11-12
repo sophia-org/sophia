@@ -6,7 +6,7 @@
 //! production code.
 
 use super::*;
-use crate::LiveRendererScanoutBufferDescriptor;
+use sophia_renderer_live::LiveRendererScanoutBufferDescriptor;
 use std::sync::mpsc::SyncSender;
 
 /// A core whose commands this test reads, and the combined route it serves.
