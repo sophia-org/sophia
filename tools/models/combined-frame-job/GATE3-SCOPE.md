@@ -1,6 +1,16 @@
 # Gate 3 scope: the device-free prototype of the combined frame job
 
-Revision 2. It answers Codex's review of revision 1 (469effbaf, package seal
+Revision 3. It answers Codex's pre-build review of the G3-1 source
+(1ab47bc4f, package seal da774eac; HOLD of 2026-11-11). Finding 1: an
+extant stream key is not an open stream, so `frame_candidate_state` needs
+the exact key for a live state and the Open phase before it can answer
+Unknown. Finding 2: SR1's claim that the collecting call journals the
+source release was wrong, and this revision corrects it to the real
+publication order below; the full-journal control stays in G3-1. Finding 3:
+the post-credit `begin_isb` refusal gets its own control. The rest of
+revision 2 is unchanged.
+
+Revision 2 answered Codex's review of revision 1 (469effbaf, package seal
 e2c4cf06; review of 2026-11-11). Its findings are named SR1 to SR3 here, to
 keep them apart from AUTHORITY-STEP3's R1 to R5. SR1 places result intake
 before reconciliation and content service. SR2 names the provenance of the
@@ -141,9 +151,26 @@ deliver)`. The session drains each row's result, settles it against this
 validator, and `deliver` calls `receive_forwarded`. Only then does the
 existing body run, unchanged: `service_owned` (stops, expiry, `reconcile`,
 `publish_releases`, and service 1 for the next frame), the completion drain,
-and the rest. So a forwarded result is reconciled, made resident and has its
-source release journalled in the same service call that collected it.
-`service` stays as it is and has no hooks.
+and the rest. So a forwarded result is reconciled in the same service call
+that collected it: the copy gate closes, the candidate becomes ready and
+the terminal ResourceStatus waits in the resource store. `service` stays as
+it is and has no hooks.
+
+Publication keeps today's order (revision 3). The status can only reach the
+journal through the outbox, and SlotReleased is refused (EAGAIN) until the
+status is journalled. In the same owner turn the host's existing
+content-resource service moves the status to the outbox and the file turn
+journals it. SlotReleased is then published by the next image-owner call,
+which in the three-service design is service 3, the presentation turn, as
+n7fj3c2p already places source publication at the existing journal
+boundary. Today's path has the same shape: the completion turn journals the
+status and the following turn releases the slot. Neither acceptance nor
+tracked submission waits for SlotReleased, so the one-turn result gate of
+G3-5 is unchanged. The client gets its ring slot back one turn after the
+result turn, as today it does one turn after the completion turn. Adding a
+journal drain inside the image owner to release the slot in service 2 was
+considered and not taken: it would reorder the host's outbox drain for one
+path and buy one turn of slot latency that no gate measures.
 
 Controls, all on the real owned ring, real validator thread and real journal:
 
@@ -152,18 +179,29 @@ Controls, all on the real owned ring, real validator thread and real journal:
 - `cancel_after_forward_is_visible_on_the_envelope` (SR2)
 - `a_combined_submission_reaches_receive_forwarded_reconcile_and_source_release` (R1)
 - `intake_runs_before_reconcile_in_the_same_service_call` (SR1: one call
-  collects, makes the resource resident and journals the source release)
+  collects and reconciles; the host's turn journals the status first, and
+  the next call publishes exactly one SlotReleased and confirms the
+  originating slot, for success, a delivered mismatch and a refused send)
 - `a_forwarded_malformed_result_publishes_malformed_once` (SR2)
 - `a_foreign_ticket_is_refused_and_returned`
 - `a_refused_send_leaves_no_orphan_row_and_publishes_the_source_release`
 - `a_plan_build_failure_takes_the_refused_send_branch`
 - `malformed_validation_and_inbox_refusal_return_the_plan_once` (F3 table)
-- `begin_isb_failure_releases_the_combined_reservation_and_cancels_the_hook` (F3 table)
+- `begin_isb_failure_releases_the_combined_reservation_and_cancels_the_hook` (F3
+  table; revision 3: open transfers block only `begin_isb`, after the
+  combined credit; one cancel, no plan, no surviving job or work entry, the
+  credit restored and used by the next admission)
 - `a_withdrawn_job_keeps_its_charges_until_complete_isb_consumes_late_pixels` (rev 4)
 - `an_unknown_or_mismatched_receive_keeps_the_charges_and_the_pixels` (rev 4)
-- `a_full_journal_keeps_the_releasing_entry_until_retry` (gate 3 full-journal)
+- `a_full_journal_keeps_the_releasing_entry_until_retry` (gate 3 full-journal;
+  revision 3: reserved terminals cannot be refused by the journal itself, so
+  the refusal is an ordinary record ahead of the status in FIFO order; the
+  status, the Releasing entry and custody survive repeated calls, and after
+  the ACK the status and one SlotReleased publish once)
 - `candidate_state_reports_assembling_while_the_copy_gate_is_open` (rev 4)
-- `candidate_state_reports_ended_only_from_a_later_generation_or_closed_stream` (rev 4)
+- `candidate_state_reports_ended_only_from_a_later_generation_or_closed_stream` (rev 4;
+  revision 3: a closing stream keeps its key, so Ended needs the Open phase
+  check, and a live state needs the exact key)
 - `a_duplicate_result_and_a_replayed_job_create_no_candidate_obligation` (F5)
 
 Mutants: combined mode also calls `worker.reserve` (two credits); the
@@ -375,11 +413,14 @@ calls, in this order, with nothing else in between:
 
 1. `ShellIsbImageOwner::service_combined` with the rows as hooks. This
    drains and settles each result, calls `receive_forwarded`, then runs
-   the existing reconciliation and source-release publication, and service
-   1 for the next frame.
-2. The existing content service for that component. It builds the bundle,
-   and `submit_bundle` runs the two preflights, the commit, Prepared and the
-   pending presentation.
+   the existing reconciliation (the copy gate closes and the terminal
+   ResourceStatus is queued), SlotReleased for an earlier result whose
+   status is already journalled, and service 1 for the next frame.
+2. The existing content service for that component: the content-resource
+   service queues the status for the file turn, then the candidate service
+   builds the bundle, and `submit_bundle` runs the two preflights, the
+   commit, Prepared and the pending presentation. SlotReleased for this
+   result follows at the next turn's step 1 (revision 3).
 3. The row walk: Held disposal for rejected, withdrawn, ended or expired
    rows, and Release-debt maintenance (R2, rev 4, rev 5). It never collects
    results.
