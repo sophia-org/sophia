@@ -350,20 +350,37 @@ fn a_begin_isb_refusal_after_the_combined_credit_releases_it_for_the_next_admiss
     assert_eq!(j.f.jobs.pending(), 0);
     assert_eq!(j.charged(), charged, "the refused copy holds no charge");
     j.f.refusal(1, ContentReason::Budget);
-    j.f.registry
-        .resources_mut(grant())
-        .unwrap()
+    // Cancelling only stops the blocker: it keeps its slot and charge until
+    // complete_isb consumes a result. It never launched a validator, so an
+    // explicit failure completes it.
+    let blocker = ContentResourceId {
+        id: 1,
+        generation: 5,
+    };
+    let resources = j.f.registry.resources_mut(grant()).unwrap();
+    resources
         .cancel(
             tx(210),
             &ContentResourceCancel {
                 grant: grant(),
-                resource: ContentResourceId {
-                    id: 1,
-                    generation: 5,
-                },
+                resource: blocker,
             },
         )
         .unwrap();
+    assert_eq!(j.charged(), charged, "a stopped transfer keeps its charge");
+    let mut result = Some(Err(ContentStoreError::Incomplete));
+    let resources = j.f.registry.resources_mut(grant()).unwrap();
+    assert_eq!(
+        resources.complete_isb(grant(), blocker, &mut result, 1),
+        Err(ContentStoreError::Stale),
+        "a stopped transfer settles as an error"
+    );
+    assert!(result.is_none(), "complete_isb consumed the result");
+    assert_eq!(
+        j.charged(),
+        charged - 8,
+        "its staging and reservation freed"
+    );
     let (_job, _reservation) = j.admit(2);
     assert_eq!(j.worker.pending(), 1, "the next admission takes the credit");
 }
