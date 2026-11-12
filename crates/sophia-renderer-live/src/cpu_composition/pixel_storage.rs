@@ -12,6 +12,11 @@ pub enum LiveCpuPixelStorage {
     Bytes(Arc<[u8]>),
     /// Immutable lock backing, including a retained validated sealed mapping.
     Lock(sophia_runtime::SharedPixels),
+    /// A combined frame job's validated pixels, shared by every occurrence
+    /// for one render. No pixel version: a bound layer always uploads.
+    /// Dropping the last clone frees memory or unmaps a sealed mapping only.
+    #[cfg(feature = "experimental-combined-frame-job")]
+    Validated(Arc<sophia_runtime::ValidatedIsbPixels>),
 }
 
 impl LiveCpuPixelStorage {
@@ -20,6 +25,8 @@ impl LiveCpuPixelStorage {
             Self::Content(lease) => lease.pixel_version(),
             Self::Lock(pixels) => pixels.pixel_version(),
             Self::Shared(_) | Self::Bytes(_) => None,
+            #[cfg(feature = "experimental-combined-frame-job")]
+            Self::Validated(_) => None,
         }
     }
 
@@ -61,6 +68,8 @@ impl core::ops::Deref for LiveCpuPixelStorage {
             Self::Content(lease) => lease.bytes(),
             Self::Bytes(bytes) => bytes,
             Self::Lock(pixels) => pixels,
+            #[cfg(feature = "experimental-combined-frame-job")]
+            Self::Validated(pixels) => pixels.bytes(),
         }
     }
 }

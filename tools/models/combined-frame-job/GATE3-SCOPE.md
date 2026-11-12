@@ -294,6 +294,64 @@ fails); compare only total bytes (the 4x2/2x4 control fails); skip
 `stopped()` at retry (the parked-stop control fails); unwrap before dropping
 the frame (fails at the strong-count assertion).
 
+**G3-2 source decisions (Codex, 2026-11-11, before source).**
+
+- D1. The layer-for-layer comparison with conventional lowering, and the
+  clipped-to-nothing comparison, move to G3-3, which must compare
+  independently obtained conventional and provisional/bound frames from the
+  same real scene. G3-2 asserts kinds, order, placement, clip, descriptor
+  fields and bytes of bound layers directly, for interleaved layers and
+  repeated occurrences, and keeps the bind-only-first mutant. Lowering is
+  not changed: ordinary Content and Lock layers keep `bytes.pixel_version()`,
+  handle, sampling, placement and clipping. Only the Validated variant has
+  `pixel_version` None.
+- D2. The deterministic renderer records one checksum per bound occurrence,
+  in order and with identity, into a captured list while it reads each
+  layer. The result route and the exact pixel return are asserted
+  separately. These checksums are test evidence only, never a scene key or
+  submission identity.
+- D3. A job with no description (a sealed ISB job) is accepted only with an
+  empty placeholder list. One or more placeholders with no description is a
+  Mismatch, returned unbound without rendering. With a description,
+  `bytes().len() == total_bytes` is checked outside the placeholder loop,
+  also with no placeholders; width, height, checked `width*4` stride and the
+  explicit protocol-to-renderer format mapping are checked per placeholder.
+  This does not widen G3-3's whole-plan eligibility, and a plan-derived
+  description never replaces the row's.
+- D4. If `Arc::try_unwrap` finds a surviving reference after the bound frame
+  dropped, the renderer worker panics. That ends the shared renderer worker
+  for every output it serves, not one lane. It is a prototype stopping
+  condition, never a terminal outcome, a pass or a reconciliation: no copy,
+  settlement, credit release or fabricated pixels hide it. Its occurrence in
+  any normal control holds G3-2. `WorkerThread::poll_join` keeps the panic as
+  an error; disconnection or a panic never proves that the runtime resource
+  obligation was reconciled.
+
+**Bind is all-or-nothing.** Before inserting anything, `bind` checks every
+placeholder: strictly ascending and unique final-layer indices, each within
+the final layer count (checked arithmetic), and a Mixed frame. A bad later
+occurrence, such as indices [0, 3] against one retained layer, returns the
+input frame unchanged with no retained `Arc` clone. Only a successful bind
+makes a `BoundFrame`.
+
+**The terminal disposition reaches the owner.** `settle_combined_frame`
+consumes the outcome, so `CombinedRenderResult::disposition()` is a
+read-only `Rendered | Expired | Stopped | Mismatch` the owner records before
+settling, and a refused settlement returns the result with it intact. A
+Mismatch cancels only its own admission's Release reservation, and settling
+the credit never implies that the pixels validated or rendered. Publishing
+Malformed from it is G3-5's owner work.
+
+**Slots.** Only a failed attempted render invalidates slot damage; a
+pre-bind mismatch releases the untouched slot. A deferred attempt keeps the
+unbound plan and the pixels, and checks stop and deadline again before it
+acquires a slot on retry.
+
+**Fixture.** Description controls use the existing registry reservation
+with `OwnedRing::admit` and `offer`, and take the description through the
+admitted row where its provenance is under test; a raw
+`submit_ring_combined` fixture states its narrower scope.
+
 ### G3-3: provisional composition and the scene key (F1, F4, R5)
 
 Places: the backend visual runtime, `production_visual_runtime/` beside

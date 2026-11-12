@@ -3,6 +3,12 @@
 //! frame parked until that output has a free slot.
 
 use super::*;
+#[path = "combined_render.rs"]
+mod render;
+pub use render::CombinedPlaceholder;
+pub(super) use render::{CombinedSlots, RenderInput, RenderTarget, attempt};
+#[cfg(test)]
+pub(super) use render::{admits, bind};
 use sophia_runtime::{
     CombinedInbox, CombinedReservation, CombinedToken, ForwardedValidation, IsbValidationWorker,
     ValidatedIsbPixels,
@@ -48,6 +54,9 @@ pub struct CombinedRenderPlan {
     pub(super) frame: PendingRenderedFrame,
     pub(super) preferred_modifiers: Vec<u64>,
     pub(super) output_format: Option<sophia_renderer_live::LiveCompositionFormatRequest>,
+    /// One per lowered occurrence of the copied resource, in final layer
+    /// order. Empty when the frame shows none of it.
+    pub(super) placeholders: Box<[CombinedPlaceholder]>,
 }
 
 impl CombinedRenderPlan {
@@ -59,6 +68,7 @@ impl CombinedRenderPlan {
         frame: PendingRenderedFrame,
         preferred_modifiers: Vec<u64>,
         output_format: Option<sophia_renderer_live::LiveCompositionFormatRequest>,
+        placeholders: Box<[CombinedPlaceholder]>,
     ) -> Self {
         Self {
             deadline,
@@ -66,6 +76,16 @@ impl CombinedRenderPlan {
             frame,
             preferred_modifiers,
             output_format,
+            placeholders,
+        }
+    }
+
+    /// The target and request without the frame, which drops here unbound.
+    fn render_target(self) -> RenderTarget {
+        RenderTarget {
+            target: self.target,
+            preferred_modifiers: self.preferred_modifiers,
+            output_format: self.output_format,
         }
     }
 }
@@ -78,14 +98,31 @@ impl CombinedRenderPlan {
 pub(super) enum CombinedOutcome {
     Rendered(WorkerResult),
     Expired,
+    /// The owner stopped the job before a slot was taken.
+    Stopped,
+    /// The pixels or placeholders disagree with the job's admitted
+    /// description; nothing was bound or rendered.
+    Mismatch,
 }
 
-/// What one render attempt did. Moved once per attempt and never stored.
+/// What became of a combined job, readable before settlement consumes the
+/// result. Settling the credit never implies the pixels rendered.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CombinedDisposition {
+    /// A render ran or was refused by the renderer; the result says which.
+    Rendered,
+    Expired,
+    Stopped,
+    /// For the owner to publish Malformed through failure reconciliation.
+    Mismatch,
+}
+
+/// What one render attempt did. The pixels always come back with it.
 #[allow(clippy::large_enum_variant)]
 pub(super) enum RenderAttempt {
-    Rendered(WorkerResult),
-    /// No free slot: the plan comes back to be parked.
-    NoSlot(CombinedRenderPlan),
+    Done(CombinedOutcome, ValidatedIsbPixels),
+    /// No free slot: the unbound plan and the pixels come back to be parked.
+    NoSlot(CombinedRenderPlan, ValidatedIsbPixels),
 }
 
 /// The token and pixels always come home, whatever happened to the render.
@@ -94,6 +131,17 @@ pub struct CombinedRenderResult {
     pub(super) token: CombinedToken,
     pub(super) pixels: ValidatedIsbPixels,
     pub(super) outcome: CombinedOutcome,
+}
+
+impl CombinedRenderResult {
+    pub fn disposition(&self) -> CombinedDisposition {
+        match self.outcome {
+            CombinedOutcome::Rendered(_) => CombinedDisposition::Rendered,
+            CombinedOutcome::Expired => CombinedDisposition::Expired,
+            CombinedOutcome::Stopped => CombinedDisposition::Stopped,
+            CombinedOutcome::Mismatch => CombinedDisposition::Mismatch,
+        }
+    }
 }
 
 /// Sent once after `Register`; carries the worker's halves of both routes.
@@ -299,13 +347,17 @@ impl Registration {
 
 impl OutputRoute {
     /// A parked frame first; the inbox only when nothing is parked, so one
-    /// output holds one combined job. `render` gives the plan back when no
-    /// slot is free. The deadline is checked where the frame leaves the inbox
-    /// or the parking place, which is also immediately before the render.
+    /// output holds one combined job. `render` gives the plan and pixels back
+    /// when no slot is free. The stop flag and the deadline are checked where
+    /// the frame leaves the inbox or the parking place, before any slot.
     pub(super) fn serve(
         &mut self,
         now: Instant,
-        render: impl FnOnce(CombinedRenderPlan) -> RenderAttempt,
+        render: impl FnOnce(
+            CombinedRenderPlan,
+            ValidatedIsbPixels,
+            Option<&sophia_protocol::ContentResourceBegin>,
+        ) -> RenderAttempt,
     ) {
         let job = match self.parked.take() {
             Some((_, job)) => job,
@@ -314,13 +366,17 @@ impl OutputRoute {
                 Err(_) => return,
             },
         };
+        let stopped = job.stopped();
+        let description = job.description().cloned();
         let (token, pixels, plan) = job.into_parts();
-        let outcome = if now >= plan.deadline {
-            CombinedOutcome::Expired
+        let (outcome, pixels) = if stopped {
+            (CombinedOutcome::Stopped, pixels)
+        } else if now >= plan.deadline {
+            (CombinedOutcome::Expired, pixels)
         } else {
-            match render(plan) {
-                RenderAttempt::Rendered(result) => CombinedOutcome::Rendered(result),
-                RenderAttempt::NoSlot(plan) => {
+            match render(plan, pixels, description.as_ref()) {
+                RenderAttempt::Done(outcome, pixels) => (outcome, pixels),
+                RenderAttempt::NoSlot(plan, pixels) => {
                     let deadline = plan.deadline;
                     self.parked = Some((
                         deadline,

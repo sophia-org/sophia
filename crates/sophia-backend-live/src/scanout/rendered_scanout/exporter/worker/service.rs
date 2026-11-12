@@ -574,54 +574,50 @@ where
             continue;
         };
         routed = true;
-        route.serve(now, |plan| {
-            let super::combined::CombinedRenderPlan {
-                deadline,
-                target,
-                frame,
-                preferred_modifiers,
-                output_format,
-            } = plan;
+        route.serve(now, |plan, pixels, description| {
             let correlation =
-                super::frame_correlation(&frame, Some(super::combined::COMBINED_REQUEST));
-            let outcome = match context.as_mut() {
-                Some(context) => render_frame(
-                    context,
-                    output,
-                    target,
-                    frame,
-                    sophia_renderer_live::LiveCompositionOutputRequest {
-                        preferred_modifiers: &preferred_modifiers,
-                        format: output_format,
-                    },
-                    next_lease_id,
-                    state,
-                    None,
-                ),
-                None => WorkerOutcome::Failed(
-                    LiveRendererScanoutBufferExportDetail::BackendDeviceUnavailable,
-                ),
-            };
-            match outcome {
-                WorkerOutcome::Deferred(frame) => {
-                    super::combined::RenderAttempt::NoSlot(super::combined::CombinedRenderPlan {
-                        deadline,
-                        target,
-                        frame,
-                        preferred_modifiers,
-                        output_format,
-                    })
-                }
-                outcome => super::combined::RenderAttempt::Rendered(worker_result(
-                    context.as_ref(),
-                    output,
-                    super::combined::COMBINED_REQUEST,
-                    correlation,
-                    context_status,
-                    observation_order,
-                    outcome,
-                )),
-            }
+                super::frame_correlation(&plan.frame, Some(super::combined::COMBINED_REQUEST));
+            super::combined::attempt(
+                &mut *state,
+                plan,
+                pixels,
+                description,
+                |state, input, request| {
+                    let outcome = match (input, context.as_mut()) {
+                        (super::combined::RenderInput::Failed(detail), _) => {
+                            WorkerOutcome::Failed(detail)
+                        }
+                        (super::combined::RenderInput::Bound(frame, slot_token), Some(context)) => {
+                            render_frame_in_slot(
+                                context,
+                                output,
+                                request.target,
+                                frame.into_frame(),
+                                sophia_renderer_live::LiveCompositionOutputRequest {
+                                    preferred_modifiers: &request.preferred_modifiers,
+                                    format: request.output_format,
+                                },
+                                next_lease_id,
+                                slot_token,
+                                state,
+                                None,
+                            )
+                        }
+                        (super::combined::RenderInput::Bound(..), None) => WorkerOutcome::Failed(
+                            LiveRendererScanoutBufferExportDetail::BackendDeviceUnavailable,
+                        ),
+                    };
+                    worker_result(
+                        context.as_ref(),
+                        output,
+                        super::combined::COMBINED_REQUEST,
+                        correlation,
+                        context_status,
+                        observation_order,
+                        outcome,
+                    )
+                },
+            )
         });
         if let Some(deadline) = route.deadline() {
             earliest = Some(earliest.map_or(deadline, |current| current.min(deadline)));
@@ -629,6 +625,23 @@ where
         state.combined = Some(route);
     }
     routed.then_some(earliest)
+}
+
+#[cfg(feature = "experimental-combined-frame-job")]
+impl super::combined::CombinedSlots for WorkerOutputState {
+    fn try_acquire(&mut self) -> LiveRendererFrameSlotAcquire {
+        self.frame_slots.try_acquire()
+    }
+
+    fn release_unused(&mut self, token: LiveRendererFrameSlotToken) {
+        let _ = self.frame_slots.release(token);
+    }
+
+    fn release_failed(&mut self, token: LiveRendererFrameSlotToken) {
+        // As render_frame: a failed render may have written part of its damage.
+        self.slot_damage.invalidate(token.slot_id());
+        let _ = self.frame_slots.release(token);
+    }
 }
 
 fn render_frame<D>(

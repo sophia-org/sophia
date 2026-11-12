@@ -25,6 +25,10 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError, sync_channel};
 use std::time::{Duration, Instant};
 
+// G3-2: the bound frame, the description checks and the stop flag.
+#[path = "combined_frame_bind.rs"]
+mod bind;
+
 type Validator = IsbValidationWorker<CombinedRenderPlan>;
 const WAIT: Duration = Duration::from_secs(10);
 
@@ -56,6 +60,7 @@ fn plan(generation: u64, deadline: Instant) -> CombinedRenderPlan {
         mixed_job(generation),
         Vec::new(),
         None,
+        Box::new([]),
     )
 }
 
@@ -144,14 +149,16 @@ fn a_parked_frame_takes_the_next_slot_before_the_inbox_is_read() {
     let mut validator = Validator::for_combined_plans(2, 16).unwrap();
     let later = Instant::now() + WAIT;
     let first = forward(&mut validator, &mut facade, 1, later);
-    route.serve(Instant::now(), RenderAttempt::NoSlot);
+    route.serve(Instant::now(), |plan, pixels, _| {
+        RenderAttempt::NoSlot(plan, pixels)
+    });
     assert!(route.deadline().is_some(), "no slot parks the frame");
     let second = forward(&mut validator, &mut facade, 2, later);
 
     let mut served = None;
-    route.serve(Instant::now(), |plan| {
+    route.serve(Instant::now(), |plan, pixels, _| {
         served = generation(&plan);
-        RenderAttempt::Rendered(rendered(1))
+        RenderAttempt::Done(CombinedOutcome::Rendered(rendered(1)), pixels)
     });
     assert_eq!(
         served,
@@ -166,9 +173,9 @@ fn a_parked_frame_takes_the_next_slot_before_the_inbox_is_read() {
     );
 
     let mut served = None;
-    route.serve(Instant::now(), |plan| {
+    route.serve(Instant::now(), |plan, pixels, _| {
         served = generation(&plan);
-        RenderAttempt::Rendered(rendered(2))
+        RenderAttempt::Done(CombinedOutcome::Rendered(rendered(2)), pixels)
     });
     assert_eq!(served, Some(2), "the inbox frame waited for the parked one");
     settle(
@@ -197,7 +204,9 @@ fn expiry_returns_token_and_pixels_from_the_inbox_and_from_parking() {
 
     let deadline = Instant::now() + WAIT;
     let parked = forward(&mut validator, &mut facade, 4, deadline);
-    route.serve(Instant::now(), RenderAttempt::NoSlot);
+    route.serve(Instant::now(), |plan, pixels, _| {
+        RenderAttempt::NoSlot(plan, pixels)
+    });
     assert_eq!(route.deadline(), Some(deadline));
     route.serve(deadline, |_| panic!("an expired frame is never rendered"));
     let result = facade.take_combined_result().unwrap();
@@ -216,9 +225,13 @@ fn a_full_result_route_is_counted_and_never_blocks() {
     let mut validator = Validator::for_combined_plans(2, 16).unwrap();
     let later = Instant::now() + WAIT;
     let _first = forward(&mut validator, &mut facade, 5, later);
-    route.serve(Instant::now(), |_| RenderAttempt::Rendered(rendered(5)));
+    route.serve(Instant::now(), |_, pixels, _| {
+        RenderAttempt::Done(CombinedOutcome::Rendered(rendered(5)), pixels)
+    });
     let _second = forward(&mut validator, &mut facade, 6, later);
-    route.serve(Instant::now(), |_| RenderAttempt::Rendered(rendered(6)));
+    route.serve(Instant::now(), |_, pixels, _| {
+        RenderAttempt::Done(CombinedOutcome::Rendered(rendered(6)), pixels)
+    });
     assert_eq!(
         route.undelivered, 1,
         "a second result for one output is a broken contract"
@@ -378,8 +391,8 @@ fn exported_result(
         .route_for(facade.output(), &facade.claim)
         .expect("route for the live claim");
     let reservation = submit(validator, inbox, lease, Instant::now() + WAIT);
-    route.serve(Instant::now(), |_| {
-        RenderAttempt::Rendered(exported(lease, lease))
+    route.serve(Instant::now(), |_, pixels, _| {
+        RenderAttempt::Done(CombinedOutcome::Rendered(exported(lease, lease)), pixels)
     });
     (issued, reservation, facade.take_combined_result().unwrap())
 }
@@ -596,8 +609,8 @@ fn an_old_handle_cannot_collect_release_or_acknowledge_its_successor() {
         .expect("route for the live claim");
     let mut first = Validator::for_combined_plans(1, 8).unwrap();
     let reservation = submit(&mut first, inbox, 61, Instant::now() + WAIT);
-    route.serve(Instant::now(), |_| {
-        RenderAttempt::Rendered(exported(61, 61))
+    route.serve(Instant::now(), |_, pixels, _| {
+        RenderAttempt::Done(CombinedOutcome::Rendered(exported(61, 61)), pixels)
     });
     let result = facade
         .take_combined_frame(&old)
@@ -628,8 +641,8 @@ fn an_old_handle_cannot_collect_release_or_acknowledge_its_successor() {
         job,
         "separate validators repeat job numbers"
     );
-    route.serve(Instant::now(), |_| {
-        RenderAttempt::Rendered(exported(62, 62))
+    route.serve(Instant::now(), |_, pixels, _| {
+        RenderAttempt::Done(CombinedOutcome::Rendered(exported(62, 62)), pixels)
     });
     assert!(
         facade.take_combined_frame(&old).is_none(),
