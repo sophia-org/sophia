@@ -9,6 +9,9 @@
 //! runs with the candidate's real frame, and the two keys decide whether the
 //! rendered frame still describes the scene.
 
+// No production caller until the owner turn consumes this (G3-4/G3-5); only lifecycle tests reach it.
+#![cfg_attr(not(test), allow(dead_code))]
+
 use super::*;
 use sophia_engine::CompositorImageSourceIdentity;
 use sophia_renderer_live::{
@@ -107,7 +110,7 @@ struct CpuKey {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LayerKey {
-    Cpu(CpuKey, Option<u64>),
+    Cpu(CpuKey, Option<std::num::NonZeroU64>),
     Solid(Rect, sophia_engine::CompositorRgb8),
 }
 
@@ -287,7 +290,7 @@ impl CombinedSceneKey {
             target_generation: frame.target_generation,
             mapping: frame.mapping,
             content_layout_generation: frame.content_layout_generation,
-            cursor: frame.cursor.clone(),
+            cursor: frame.cursor,
             installed: frame.installed.clone(),
             candidate_revoked: frame.candidate_revoked,
             layers,
@@ -443,7 +446,7 @@ impl LiveProductionVisualRuntime {
                     target_generation: plan.target_generation,
                     mapping: plan.mapping,
                     content_layout_generation: self.content_layout_generation,
-                    cursor: plan.cursor.clone(),
+                    cursor: plan.cursor,
                     installed: installed_keys.clone(),
                     candidate_revoked,
                     composition,

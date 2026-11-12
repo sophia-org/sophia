@@ -265,7 +265,7 @@ fn a_pixel_version_change_with_the_same_generation_is_churn() {
         panic!("the dock lowers to a CPU layer");
     };
     let version = buffer.pixel_version.expect("a lease carries its version");
-    buffer.pixel_version = Some(version + 1);
+    buffer.pixel_version = Some(version.checked_add(1).expect("the next version fits"));
     assert_eq!(
         dispatched.recompose(CombinedSceneKey::of(&frames[0], &ids(&fixture.candidate)).as_ref()),
         CombinedRecompose::SceneChurn
