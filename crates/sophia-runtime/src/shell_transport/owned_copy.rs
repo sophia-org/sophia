@@ -95,7 +95,10 @@ impl OwnedCopyOwner {
         self.jobs.receive(completion)
     }
 
-    #[cfg(any(test, feature = "experimental-combined-frame-job"))]
+    #[cfg(all(
+        feature = "experimental-native-frame-transaction",
+        any(test, feature = "experimental-combined-frame-job")
+    ))]
     pub fn receive_forwarded(
         &mut self,
         job: u64,
