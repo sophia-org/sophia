@@ -152,7 +152,12 @@ fn cleanup_follows_the_issuer(inode: u64, change: impl FnOnce(&mut [LiveProducti
         "only output 2's job is still pending"
     );
     assert_eq!(
-        fixture.routes().take(&head).unwrap_err().kind(),
+        fixture
+            .routes()
+            .take(&head)
+            .err()
+            .expect("a spent admission must refuse collection")
+            .kind(),
         io::ErrorKind::InvalidInput,
         "the issuer is found, and this admission is spent"
     );
@@ -209,7 +214,12 @@ fn assert_not_found(
 ) -> (CombinedReservation, CombinedRenderResult) {
     let job = reservation.job();
     assert_eq!(
-        fixture.routes().take(head).unwrap_err().kind(),
+        fixture
+            .routes()
+            .take(head)
+            .err()
+            .expect("a missing issuer must refuse collection")
+            .kind(),
         io::ErrorKind::NotFound
     );
     assert_eq!(
