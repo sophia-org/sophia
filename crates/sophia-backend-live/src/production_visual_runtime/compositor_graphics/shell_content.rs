@@ -1,5 +1,13 @@
 use super::*;
 
+/// What the setter's checks decided before any write.
+pub(in crate::production_visual_runtime) enum ShellContentPreflight {
+    /// The same frame is already installed: the setter answers Ok(false).
+    Unchanged,
+    /// Admissible now, under this presented transform.
+    Admit(sophia_engine::PresentedContentTransform),
+}
+
 impl LiveProductionVisualRuntime {
     /// Installs one complete shell content candidate and queues a retained
     /// repaint. The prior candidate remains installed if native queueing fails.
@@ -49,6 +57,31 @@ impl LiveProductionVisualRuntime {
         scene: &LiveProductionCpuScene,
         native_scanout: Option<&mut T>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        let transform = match self.preflight_shell_component_content(
+            &frame,
+            layer,
+            native_scanout.as_deref(),
+        )? {
+            ShellContentPreflight::Unchanged => return Ok(false),
+            ShellContentPreflight::Admit(transform) => transform,
+        };
+        // The preflight admits only with native presentation; same refusal.
+        let native_scanout = native_scanout
+            .ok_or("shell content candidate cannot be accepted without native presentation")?;
+        self.install_shell_component_content(frame, layer, transform, scene, native_scanout)
+    }
+
+    /// Every check the setter makes before it writes, in its order, with its
+    /// messages, writing nothing (G3-3). Its answer is for the same owner
+    /// turn only: it is not current authority once the turn moves on.
+    pub(in crate::production_visual_runtime) fn preflight_shell_component_content<
+        T: NativeCompositionTarget,
+    >(
+        &self,
+        frame: &LiveShellContentFrame,
+        layer: LiveShellContentLayer,
+        native_scanout: Option<&T>,
+    ) -> Result<ShellContentPreflight, Box<dyn std::error::Error>> {
         let key = (frame.output, layer);
         if !frame.output.is_valid()
             || frame.candidate_generation == 0
@@ -86,8 +119,8 @@ impl LiveProductionVisualRuntime {
                 "closing component must be removed before another candidate is admitted".into(),
             );
         }
-        if self.shell_content.get(&key).map(|owned| &owned.frame) == Some(&frame) {
-            return Ok(false);
+        if self.shell_content.get(&key).map(|owned| &owned.frame) == Some(frame) {
+            return Ok(ShellContentPreflight::Unchanged);
         }
         let native_scanout = native_scanout
             .ok_or("shell content candidate cannot be accepted without native presentation")?;
@@ -108,13 +141,29 @@ impl LiveProductionVisualRuntime {
                     .into(),
             );
         }
-        let transform = sophia_engine::PresentedContentTransform {
-            viewport: self
-                .outputs
-                .logical_viewport(output)
-                .ok_or("shell content output has no committed viewport")?,
-            layout_generation: self.content_layout_generation,
-        };
+        Ok(ShellContentPreflight::Admit(
+            sophia_engine::PresentedContentTransform {
+                viewport: self
+                    .outputs
+                    .logical_viewport(output)
+                    .ok_or("shell content output has no committed viewport")?,
+                layout_generation: self.content_layout_generation,
+            },
+        ))
+    }
+
+    /// The setter's write: installs a preflighted frame and queues its
+    /// retained repaint, restoring the prior content if queueing fails.
+    fn install_shell_component_content<T: NativeCompositionTarget>(
+        &mut self,
+        frame: LiveShellContentFrame,
+        layer: LiveShellContentLayer,
+        transform: sophia_engine::PresentedContentTransform,
+        scene: &LiveProductionCpuScene,
+        native_scanout: &mut T,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let key = (frame.output, layer);
+        let grant = frame.grant;
         let previous = self.shell_content.insert(
             key,
             AdmittedShellContent {

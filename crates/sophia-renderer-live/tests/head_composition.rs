@@ -6,6 +6,9 @@ mod captured_content;
 use sophia_runtime::{ContentResourceStore, IsbPixelValidation, ValidatedIsbPixels};
 #[path = "../../sophia-runtime/tests/support/content_isb.rs"]
 mod isb;
+#[cfg(feature = "experimental-combined-frame-job")]
+#[path = "head_composition/provisional.rs"]
+mod provisional;
 use sophia_engine::{CompositorContentImage, CompositorNodeId, DirectScanoutVerdict};
 use sophia_engine::{
     HeadBindingOutcome, HeadCompositionPlan, HeadCompositorCommand, HeadLayerBinding,

@@ -125,6 +125,18 @@ impl CompositorTextRasterCache {
         )
     }
 
+    /// The cached raster, read only: no hit or miss is counted and nothing
+    /// is moved, rasterized or evicted (a combined job's provisional
+    /// composition, G3-3).
+    #[cfg(feature = "experimental-combined-frame-job")]
+    pub fn peek(&self, text: &HeadCompositorText) -> Option<LiveSharedCpuBufferSource> {
+        let key = CompositorTextCacheKey(text.clone());
+        self.entries
+            .iter()
+            .find(|entry| entry.key == key)
+            .map(|entry| entry.buffer.clone())
+    }
+
     pub fn raster_for(
         &mut self,
         text: &HeadCompositorText,

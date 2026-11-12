@@ -26,7 +26,7 @@ gbm-probe = ["dep:gbm", "dep:sophia-renderer-native-egl", "sophia-renderer-nativ
 experimental-shell-capture = ["sophia-runtime/experimental-shell-capture", "gbm-probe", "sophia-renderer-native-egl/experimental-shell-capture", "dep:sophia-wake"]
 egl-probe = ["dep:sophia-renderer-native-egl"]
 # Validated shell pixels bound into a combined frame job (n7fj3c2p, G3-2).
-experimental-combined-frame-job = ["sophia-runtime/experimental-combined-frame-job"]
+experimental-combined-frame-job = ["sophia-runtime/experimental-combined-frame-job", "sophia-engine/experimental-combined-frame-job"]
 
 [[example]]
 name = "descriptor_projection_probe"

@@ -50,6 +50,9 @@ impl TryFrom<sophia_engine::CompositorImageSource> for LiveCpuPixelStorage {
                 .map(Self::Content)
                 .map_err(sophia_engine::CompositorImageSource::Shell),
             sophia_engine::CompositorImageSource::Lock(image) => Ok(Self::Lock(image.pixels)),
+            // No pixels exist yet; conventional lowering refuses it.
+            #[cfg(feature = "experimental-combined-frame-job")]
+            source @ sophia_engine::CompositorImageSource::Provisional(_) => Err(source),
         }
     }
 }

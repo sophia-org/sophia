@@ -1,5 +1,7 @@
 use super::*;
 
+#[cfg(feature = "experimental-combined-frame-job")]
+pub(in crate::production_visual_runtime) mod combined_scene;
 mod topology;
 
 /// Head composition frames grouped by the output that will scan them out.
@@ -990,4 +992,6 @@ impl LiveProductionVisualRuntime {
 }
 
 mod shell_content;
+#[cfg(feature = "experimental-combined-frame-job")]
+pub(in crate::production_visual_runtime) use shell_content::ShellContentPreflight;
 mod tests;

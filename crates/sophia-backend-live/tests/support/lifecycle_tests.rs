@@ -1,6 +1,8 @@
 //! Actual shell intake, Engine planning, lowered owners and native queue with
 //! simulated device facts/completions. This is not a KMS/driver proof.
 use super::*;
+#[path = "lifecycle_tests/combined_scene.rs"]
+mod combined_scene;
 #[path = "lifecycle_tests/component_identity.rs"]
 mod component_identity;
 #[path = "lifecycle_tests/component_removal.rs"]

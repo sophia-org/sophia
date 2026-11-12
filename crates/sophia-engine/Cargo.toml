@@ -16,6 +16,11 @@ tracing.workspace = true
 
 xkbcommon = "0.8"
 
+[features]
+default = []
+# A candidate shell image placed by its admitted description alone (n7fj3c2p, G3-3).
+experimental-combined-frame-job = ["sophia-runtime/experimental-combined-frame-job"]
+
 [lints]
 workspace = true
 

@@ -117,6 +117,22 @@ impl Default for IndicatorStripRasterCache {
 }
 
 impl IndicatorStripRasterCache {
+    /// The cached raster, read only: no hit or miss is counted and nothing
+    /// is moved, rasterized or evicted (a combined job's provisional
+    /// composition, G3-3).
+    #[cfg(feature = "experimental-combined-frame-job")]
+    pub fn peek(&self, strip: &HeadCompositorIndicatorStrip) -> Option<LiveSharedCpuBufferSource> {
+        let key = IndicatorStripCacheKey {
+            node: strip.node,
+            generation: strip.generation,
+            strip: strip.strip.clone(),
+        };
+        self.entries
+            .iter()
+            .find(|entry| entry.key == key)
+            .map(|entry| entry.buffer.clone())
+    }
+
     pub fn raster_for(
         &mut self,
         strip: &HeadCompositorIndicatorStrip,
