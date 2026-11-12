@@ -755,3 +755,23 @@ following:
 - the unrelated ordinary result is delivered normally
 - a successor reservation is refused until the acknowledgement, and
   accepted after it
+
+## Selection, 2026-11-11
+
+Codex passed this design at 785efb53d for the baseline variant (seal
+72353e49, `~/.local/state/sophia-framejob-step3-authority-codex-pass-01`).
+That pass covers the design gate only.
+
+niltempus then made three selections:
+
+- **Scope:** the full scope, staged. 4c-4 comes first: the backend routing
+  correction, the `Held` cell, the Release receipt and the maintenance flush.
+  The gate-3 device-free prototype follows, covering all four places with a
+  deterministic renderer. Each stage has its own frozen source review,
+  validation and acceptance. No native run is involved.
+- **Eligibility:** the narrow set exactly as F4 and R5 define it.
+- **Fallbacks:** none. The baseline holds, so every decline that is not
+  scene churn gets a failure terminal. All three re-entry extensions stay
+  unselected.
+
+These selections authorize no merge, push, native run or default change.
