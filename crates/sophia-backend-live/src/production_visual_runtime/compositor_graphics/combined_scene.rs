@@ -16,9 +16,8 @@
 use super::*;
 use sophia_engine::CompositorImageSourceIdentity;
 use sophia_renderer_live::{
-    LiveCompositionPlacement, LiveCpuPixelStorage, LiveHeadCompositionLoweringError,
-    LiveImageOccurrence, LiveOwnedMixedCompositionLayer, LiveProvisionalComposition,
-    LiveProvisionalDecline,
+    LiveCompositionPlacement, LiveCpuPixelStorage, LiveImageOccurrence,
+    LiveOwnedMixedCompositionLayer, LiveProvisionalComposition, LiveProvisionalDecline,
 };
 
 /// The owner's cursor this turn. The owner wiring is G3-5.
@@ -108,6 +107,8 @@ pub(crate) enum CombinedIneligible {
     /// The cursor is drawn into the frame, by the software compositor or
     /// the head plan.
     SoftwareCursor,
+    /// The metadata lowering could not read a layer without pixel work.
+    Declined(LiveProvisionalDecline),
     /// A candidate image that is not a provisional placeholder.
     CandidateNotProvisional,
     /// An installed shell image that did not lower to its own lease.
@@ -126,15 +127,14 @@ pub(crate) enum CombinedRecompose {
     SceneChurn,
 }
 
-/// Why a composition produced no frames to key.
+/// Why a composition produced no frames to key. A lowering decline is not
+/// one: the frame is still composed, carrying it (`declined`).
 #[derive(Debug)]
 pub(crate) enum ProvisionalComposeError {
     /// The output has no logical viewport or no head, or the planner did not
     /// cover its head targets.
     Topology,
-    /// The metadata lowering declined a layer without rasterizing it.
-    Declined(LiveProvisionalDecline),
-    /// Any other failure of the ordinary composition path, unclassified.
+    /// Any other failure, including a layer index overflow; unclassified.
     Composition(Box<dyn std::error::Error>),
 }
 
@@ -207,6 +207,8 @@ pub(crate) struct CombinedSceneKey {
     plan_cursor: Option<sophia_engine::OutputSceneCursor>,
     installed: Vec<InstalledContentKey>,
     candidate_revoked: bool,
+    /// A layer the lowering could not read; never set on an eligible frame.
+    declined: Option<LiveProvisionalDecline>,
     /// Every lowered layer but the candidate's, in order.
     layers: Vec<LayerKey>,
     images: Vec<ImageKey>,
@@ -261,6 +263,9 @@ pub(crate) fn combined_eligibility(
     }
     if frame.cursor == CombinedCursor::Software || frame.plan_cursor.is_some() {
         return Err(CombinedIneligible::SoftwareCursor);
+    }
+    if let Some(decline) = frame.composition.declined {
+        return Err(CombinedIneligible::Declined(decline));
     }
     if !candidate.images.iter().all(|image| {
         matches!(
@@ -373,6 +378,7 @@ impl CombinedSceneKey {
             plan_cursor: frame.plan_cursor,
             installed: frame.installed.clone(),
             candidate_revoked: frame.candidate_revoked,
+            declined: frame.composition.declined,
             layers,
             images,
         }
@@ -381,7 +387,8 @@ impl CombinedSceneKey {
     /// Whether the frame rendered from `self` (the dispatch key) still
     /// describes the scene that `current` (the consumption key) was
     /// recomposed from. Only the candidate's pixel storage and version may
-    /// differ, and those are not in an image key.
+    /// differ, and those are not in an image key. Topology, then the
+    /// candidate, are checked before anything else, a decline included.
     pub(crate) fn recompose(&self, current: &Self) -> CombinedRecompose {
         let topology = |key: &Self| {
             (
@@ -405,15 +412,16 @@ impl CombinedSceneKey {
         if current.candidate_revoked || candidate(self) != candidate(current) {
             return CombinedRecompose::CandidateFailure;
         }
-        if self != current {
+        // A declined frame lacks a layer, so it never matches, even itself.
+        if self != current || current.declined.is_some() {
             return CombinedRecompose::SceneChurn;
         }
         CombinedRecompose::Match
     }
 
     /// Classifies the recomposition at consumption against this dispatch
-    /// key (F1, R4). An unclassified composition failure is returned, as the
-    /// ordinary repaint of the same state would fail with it.
+    /// key (F1, R4). An unclassified composition failure is returned, never
+    /// classified: the caller fails closed.
     pub(crate) fn classify(
         &self,
         current: Result<Vec<LiveProvisionalHeadFrame>, ProvisionalComposeError>,
@@ -426,16 +434,6 @@ impl CombinedSceneKey {
                 _ => Ok(CombinedRecompose::TopologyChange),
             },
             Err(ProvisionalComposeError::Topology) => Ok(CombinedRecompose::TopologyChange),
-            // A raster or translucent rect the scene now needs is not the
-            // candidate's; it is neither rasterized nor taken as a match.
-            Err(ProvisionalComposeError::Declined(
-                LiveProvisionalDecline::ColdTextRaster
-                | LiveProvisionalDecline::ColdIndicatorRaster
-                | LiveProvisionalDecline::TranslucentRect,
-            )) => Ok(CombinedRecompose::SceneChurn),
-            Err(ProvisionalComposeError::Declined(LiveProvisionalDecline::LayerIndexOverflow)) => {
-                Err("provisional composition overflowed its layer index".into())
-            }
             Err(ProvisionalComposeError::Composition(error)) => Err(error),
         }
     }
@@ -544,13 +542,7 @@ impl LiveProductionVisualRuntime {
                         &source_set.sources,
                         &self.indicator_strip_cache.borrow(),
                         &self.text_cache.borrow(),
-                    )
-                    .map_err(|error| match error {
-                        LiveHeadCompositionLoweringError::ProvisionalIneligible(decline) => {
-                            ProvisionalComposeError::Declined(decline)
-                        }
-                        error => ProvisionalComposeError::Composition(error.into()),
-                    })?;
+                    )?;
                 self.attach_frame_damage_history(
                     &mut composition.frame,
                     plan,

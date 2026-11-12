@@ -475,42 +475,34 @@ fn a_changed_noncandidate_layer_kind_with_the_same_heads_is_churn() {
         CombinedRecompose::SceneChurn,
         "another surface's new layer kind under the same heads is churn"
     );
-    // A recomposition the lowering declines is scene churn, never a match.
-    for decline in [
-        LiveProvisionalDecline::ColdTextRaster,
-        LiveProvisionalDecline::ColdIndicatorRaster,
-        LiveProvisionalDecline::TranslucentRect,
-    ] {
-        assert_eq!(
-            dispatched
-                .classify(
-                    Err(ProvisionalComposeError::Declined(decline)),
-                    &ids(&fixture.candidate)
-                )
-                .unwrap(),
-            CombinedRecompose::SceneChurn,
-            "{decline:?}"
-        );
-    }
-    for unclassified in [
-        ProvisionalComposeError::Declined(LiveProvisionalDecline::LayerIndexOverflow),
-        ProvisionalComposeError::Composition("a display list fault".into()),
-    ] {
-        assert!(
-            dispatched
-                .classify(Err(unclassified), &ids(&fixture.candidate))
-                .is_err(),
-            "an unclassified failure is returned, not mapped"
-        );
-    }
+    assert!(
+        dispatched
+            .classify(
+                Err(ProvisionalComposeError::Composition(
+                    "a display list fault".into()
+                )),
+                &ids(&fixture.candidate)
+            )
+            .is_err(),
+        "an unclassified failure is returned, not mapped"
+    );
 }
 
-#[test]
-fn the_candidates_own_grant_loss_is_a_candidate_failure() {
-    let mut fixture = fixture();
+/// The consumption composition as if it had also met `decline`: every
+/// other fact is the real recomposition's.
+fn declined(
+    fixture: &Fixture,
+    dispatched: &CombinedSceneKey,
+    decline: LiveProvisionalDecline,
+) -> CombinedRecompose {
+    let mut frames = compose(fixture, &fixture.candidate);
+    frames[0].composition.declined = Some(decline);
+    classified(fixture, dispatched, frames)
+}
+
+/// The candidate's grant already holds the layer and is now closing.
+fn revoke_candidate(fixture: &mut Fixture) {
     let earlier = provisional(&fixture.candidate);
-    let dispatched = dispatched(&fixture);
-    // The candidate's grant already holds the layer and is now closing.
     fixture.runtime.shell_content.insert(
         (fixture.output.id, SHELL),
         AdmittedShellContent {
@@ -523,6 +515,61 @@ fn the_candidates_own_grant_loss_is_a_candidate_failure() {
             },
         },
     );
+}
+
+#[test]
+fn a_scene_only_decline_does_not_hide_candidate_or_topology_changes() {
+    for decline in [
+        LiveProvisionalDecline::ColdTextRaster,
+        LiveProvisionalDecline::ColdIndicatorRaster,
+        LiveProvisionalDecline::TranslucentRect,
+    ] {
+        let mut fixture = fixture();
+        let dispatched = dispatched(&fixture);
+        assert_eq!(
+            declined(&fixture, &dispatched, decline),
+            CombinedRecompose::SceneChurn,
+            "a decline alone is scene churn: {decline:?}"
+        );
+        let mut frames = compose(&fixture, &fixture.candidate);
+        frames[0].composition.declined = Some(decline);
+        let unbound = key(&frames, &fixture.candidate);
+        assert_eq!(
+            unbound.recompose(&unbound.clone()),
+            CombinedRecompose::SceneChurn,
+            "a declined frame never matches, even itself: {decline:?}"
+        );
+        fixture.target = Target::new(&outputs());
+        assert_eq!(
+            declined(&fixture, &dispatched, decline),
+            CombinedRecompose::TopologyChange,
+            "a decline does not hide a rebuilt native owner: {decline:?}"
+        );
+        let mut frames = compose(&fixture, &fixture.candidate);
+        frames[0].target_generation += 1;
+        frames[0].composition.declined = Some(decline);
+        assert_eq!(
+            classified(&fixture, &dispatched, frames),
+            CombinedRecompose::TopologyChange,
+            "a decline does not hide a target generation change: {decline:?}"
+        );
+
+        let mut fixture = self::fixture();
+        let dispatched = self::dispatched(&fixture);
+        revoke_candidate(&mut fixture);
+        assert_eq!(
+            declined(&fixture, &dispatched, decline),
+            CombinedRecompose::CandidateFailure,
+            "a decline does not hide the candidate's revocation: {decline:?}"
+        );
+    }
+}
+
+#[test]
+fn the_candidates_own_grant_loss_is_a_candidate_failure() {
+    let mut fixture = fixture();
+    let dispatched = dispatched(&fixture);
+    revoke_candidate(&mut fixture);
     assert_eq!(
         recompose(&fixture, &dispatched),
         CombinedRecompose::CandidateFailure,
@@ -653,6 +700,15 @@ fn each_disallowed_layer_class_and_image_reads_are_ineligible() {
     assert_eq!(
         combined_eligibility(&two, &candidate, IDLE),
         Err(CombinedIneligible::HeadCount)
+    );
+    let mut declined = compose(&fixture, &candidate);
+    declined[0].composition.declined = Some(LiveProvisionalDecline::ColdTextRaster);
+    assert_eq!(
+        combined_eligibility(&declined, &candidate, IDLE),
+        Err(CombinedIneligible::Declined(
+            LiveProvisionalDecline::ColdTextRaster
+        )),
+        "a declined composition is ineligible"
     );
     let frames = compose(&fixture, &candidate);
     assert_eq!(

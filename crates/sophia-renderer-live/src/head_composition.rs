@@ -193,50 +193,52 @@ enum Rasters<'a> {
         indicator: &'a mut crate::IndicatorStripRasterCache,
         text: &'a mut crate::CompositorTextRasterCache,
     },
-    /// A combined frame job's metadata lowering: caches are only read, and
-    /// every content image occurrence is recorded (G3-3).
+    /// A combined frame job's metadata lowering: caches are only read, every
+    /// content image occurrence is recorded, and a raster it cannot read is
+    /// recorded as a decline and lowers to no layer (G3-3).
     #[cfg(feature = "experimental-combined-frame-job")]
     Peek(provisional::Peek<'a>),
 }
 
+// Each raster is Some for ordinary lowering; None only for a recorded decline.
 impl Rasters<'_> {
     fn text(
         &mut self,
         text: &sophia_engine::HeadCompositorText,
-    ) -> Result<LiveSharedCpuBufferSource, LiveHeadCompositionLoweringError> {
+    ) -> Result<Option<LiveSharedCpuBufferSource>, LiveHeadCompositionLoweringError> {
         match self {
             Self::Fill { text: cache, .. } => cache
                 .raster_for(text)
+                .map(Some)
                 .map_err(|_| LiveHeadCompositionLoweringError::TextRasterFailed),
             #[cfg(feature = "experimental-combined-frame-job")]
-            Self::Peek(peek) => peek.text(text),
+            Self::Peek(peek) => Ok(peek.text(text)),
         }
     }
 
     fn indicator(
         &mut self,
         strip: &sophia_engine::HeadCompositorIndicatorStrip,
-    ) -> Result<LiveSharedCpuBufferSource, LiveHeadCompositionLoweringError> {
+    ) -> Result<Option<LiveSharedCpuBufferSource>, LiveHeadCompositionLoweringError> {
         match self {
             Self::Fill { indicator, .. } => indicator
                 .raster_for(strip)
+                .map(Some)
                 .map_err(|_| LiveHeadCompositionLoweringError::IndicatorRasterFailed),
             #[cfg(feature = "experimental-combined-frame-job")]
-            Self::Peek(peek) => peek.indicator(strip),
+            Self::Peek(peek) => Ok(peek.indicator(strip)),
         }
     }
 
     fn translucent(
         &mut self,
         color: sophia_engine::CompositorRgb8,
-    ) -> Result<LiveSharedCpuBufferSource, LiveHeadCompositionLoweringError> {
+    ) -> Result<Option<LiveSharedCpuBufferSource>, LiveHeadCompositionLoweringError> {
         match self {
-            Self::Fill { .. } => Ok(crate::solid_color_buffer(color)),
+            Self::Fill { .. } => Ok(Some(crate::solid_color_buffer(color))),
             // Its buffer is new pixels under a new version on every call.
             #[cfg(feature = "experimental-combined-frame-job")]
-            Self::Peek(_) => Err(LiveHeadCompositionLoweringError::ProvisionalIneligible(
-                LiveProvisionalDecline::TranslucentRect,
-            )),
+            Self::Peek(peek) => Ok(peek.decline(LiveProvisionalDecline::TranslucentRect)),
         }
     }
 }
@@ -315,9 +317,9 @@ fn lower_with(
                             geometry: rect.geometry,
                             color: rect.color,
                         });
-                    } else {
+                    } else if let Some(buffer) = rasters.translucent(rect.color)? {
                         layers.push(LiveOwnedMixedCompositionLayer::Cpu {
-                            buffer: rasters.translucent(rect.color)?,
+                            buffer,
                             placement: LiveCompositionPlacement {
                                 target: rect.geometry,
                                 clip: Some(rect.geometry),
@@ -330,8 +332,9 @@ fn lower_with(
                 }
             }
             HeadCompositorCommand::Text(text) => {
-                if !text.geometry.is_empty() {
-                    let buffer = rasters.text(text)?;
+                if !text.geometry.is_empty()
+                    && let Some(buffer) = rasters.text(text)?
+                {
                     layers.push(LiveOwnedMixedCompositionLayer::Cpu {
                         buffer,
                         placement: LiveCompositionPlacement {
@@ -345,17 +348,18 @@ fn lower_with(
                 }
             }
             HeadCompositorCommand::IndicatorStrip(strip) => {
-                let buffer = rasters.indicator(strip)?;
-                layers.push(LiveOwnedMixedCompositionLayer::Cpu {
-                    buffer,
-                    placement: LiveCompositionPlacement {
-                        target: strip.strip.geometry,
-                        clip: Some(strip.strip.geometry),
-                        transform: Transform::IDENTITY,
-                        alpha: 1.0,
-                        sampling: HeadSamplingClass::Exact,
-                    },
-                });
+                if let Some(buffer) = rasters.indicator(strip)? {
+                    layers.push(LiveOwnedMixedCompositionLayer::Cpu {
+                        buffer,
+                        placement: LiveCompositionPlacement {
+                            target: strip.strip.geometry,
+                            clip: Some(strip.strip.geometry),
+                            transform: Transform::IDENTITY,
+                            alpha: 1.0,
+                            sampling: HeadSamplingClass::Exact,
+                        },
+                    });
+                }
             }
             HeadCompositorCommand::ContentImage(content) => {
                 if !content.clip.is_empty() {

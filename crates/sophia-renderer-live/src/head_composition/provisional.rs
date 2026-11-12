@@ -3,8 +3,10 @@
 //! its final layer index and lowers to no layer, so G3-2's bind fills it
 //! with the validated pixels. Every other command lowers through the same
 //! arms as conventional lowering, except that rasters are only read from
-//! warm caches and a translucent rect declines. Nothing here rasterizes,
-//! mints a pixel version, or changes a cache (R5).
+//! warm caches. A cold raster or a translucent rect is recorded as the
+//! composition's decline and lowers to no layer, and lowering goes on, so a
+//! declined composition still carries every other fact for classification.
+//! Nothing here rasterizes, mints a pixel version, or changes a cache (R5).
 
 use super::{
     LiveHeadCompositionLoweringError, LiveOwnedHeadCompositionSource, Rasters, lower_with,
@@ -16,7 +18,7 @@ use sophia_engine::{
 };
 use sophia_protocol::Size;
 
-/// Why the metadata lowering declined a plan: ineligibility, not a fault.
+/// Why a metadata lowering cannot be bound: ineligibility, not a fault.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveProvisionalDecline {
     /// A text raster not already cached; rasterizing it is pixel work.
@@ -26,7 +28,7 @@ pub enum LiveProvisionalDecline {
     /// A translucent rect's buffer is new pixels under a new version each
     /// time, so no two compositions of one scene would agree.
     TranslucentRect,
-    /// The final layer index does not fit.
+    /// The final layer index does not fit. This one is returned as an error.
     LayerIndexOverflow,
 }
 
@@ -53,36 +55,44 @@ pub struct LiveImageOccurrence {
 pub struct LiveProvisionalComposition {
     pub frame: LiveOwnedMixedCompositionFrame,
     pub images: Vec<LiveImageOccurrence>,
+    /// The first layer the lowering could not read. Its layer is absent, so
+    /// such a frame is never bound; it is only classified.
+    pub declined: Option<LiveProvisionalDecline>,
 }
 
 pub(super) struct Peek<'a> {
     indicator: &'a crate::IndicatorStripRasterCache,
     text: &'a crate::CompositorTextRasterCache,
     images: &'a mut Vec<LiveImageOccurrence>,
+    declined: &'a mut Option<LiveProvisionalDecline>,
     placeholders: usize,
 }
 
-fn decline(reason: LiveProvisionalDecline) -> LiveHeadCompositionLoweringError {
+fn ineligible(reason: LiveProvisionalDecline) -> LiveHeadCompositionLoweringError {
     LiveHeadCompositionLoweringError::ProvisionalIneligible(reason)
 }
 
 impl Peek<'_> {
-    pub(super) fn text(
-        &self,
-        text: &HeadCompositorText,
-    ) -> Result<LiveSharedCpuBufferSource, LiveHeadCompositionLoweringError> {
-        self.text
-            .peek(text)
-            .ok_or(decline(LiveProvisionalDecline::ColdTextRaster))
+    /// Records the composition's first decline; its layer lowers to none.
+    pub(super) fn decline(
+        &mut self,
+        reason: LiveProvisionalDecline,
+    ) -> Option<LiveSharedCpuBufferSource> {
+        self.declined.get_or_insert(reason);
+        None
+    }
+
+    pub(super) fn text(&mut self, text: &HeadCompositorText) -> Option<LiveSharedCpuBufferSource> {
+        let warm = self.text.peek(text);
+        warm.or_else(|| self.decline(LiveProvisionalDecline::ColdTextRaster))
     }
 
     pub(super) fn indicator(
-        &self,
+        &mut self,
         strip: &HeadCompositorIndicatorStrip,
-    ) -> Result<LiveSharedCpuBufferSource, LiveHeadCompositionLoweringError> {
-        self.indicator
-            .peek(strip)
-            .ok_or(decline(LiveProvisionalDecline::ColdIndicatorRaster))
+    ) -> Option<LiveSharedCpuBufferSource> {
+        let warm = self.indicator.peek(strip);
+        warm.or_else(|| self.decline(LiveProvisionalDecline::ColdIndicatorRaster))
     }
 
     /// Records one surviving occurrence placed after `layers` lowered
@@ -96,7 +106,7 @@ impl Peek<'_> {
     ) -> Result<bool, LiveHeadCompositionLoweringError> {
         let index = layers
             .checked_add(self.placeholders)
-            .ok_or(decline(LiveProvisionalDecline::LayerIndexOverflow))?;
+            .ok_or(ineligible(LiveProvisionalDecline::LayerIndexOverflow))?;
         let provisional = matches!(image.resource, CompositorImageSource::Provisional(_));
         self.images.push(LiveImageOccurrence {
             index,
@@ -117,7 +127,7 @@ impl Peek<'_> {
 
 /// Lowers `plan` for a combined frame job without pixels for its candidate
 /// images, reading the raster caches only. A cold raster or a translucent
-/// rect declines the plan.
+/// rect is recorded in `declined`; only an index overflow is an error.
 pub fn lower_provisional_head_composition_plan(
     plan: &HeadCompositionPlan,
     sources: &[LiveOwnedHeadCompositionSource],
@@ -125,6 +135,7 @@ pub fn lower_provisional_head_composition_plan(
     text_cache: &crate::CompositorTextRasterCache,
 ) -> Result<LiveProvisionalComposition, LiveHeadCompositionLoweringError> {
     let mut images = Vec::new();
+    let mut declined = None;
     let frame = lower_with(
         plan,
         sources,
@@ -132,8 +143,13 @@ pub fn lower_provisional_head_composition_plan(
             indicator: indicator_cache,
             text: text_cache,
             images: &mut images,
+            declined: &mut declined,
             placeholders: 0,
         }),
     )?;
-    Ok(LiveProvisionalComposition { frame, images })
+    Ok(LiveProvisionalComposition {
+        frame,
+        images,
+        declined,
+    })
 }

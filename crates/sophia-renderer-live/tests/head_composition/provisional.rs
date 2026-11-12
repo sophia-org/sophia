@@ -234,11 +234,15 @@ fn an_unreadable_raster_key_is_ineligible_without_rasterizing() {
     let (indicator, mut text) = caches();
     let plan = plan_with(vec![text_command()]);
     let cold = text.stats();
+    let lowered =
+        lower_provisional_head_composition_plan(&plan, &sources(), &indicator, &text).unwrap();
     assert_eq!(
-        lower_provisional_head_composition_plan(&plan, &sources(), &indicator, &text).err(),
-        Some(LiveHeadCompositionLoweringError::ProvisionalIneligible(
-            LiveProvisionalDecline::ColdTextRaster
-        ))
+        lowered.declined,
+        Some(LiveProvisionalDecline::ColdTextRaster)
+    );
+    assert!(
+        lowered.frame.layers.is_empty(),
+        "the cold raster has no layer"
     );
     assert_eq!(
         text.stats(),
@@ -257,6 +261,7 @@ fn an_unreadable_raster_key_is_ineligible_without_rasterizing() {
             let lowered =
                 lower_provisional_head_composition_plan(&plan, &sources(), &indicator, &text)
                     .unwrap();
+            assert_eq!(lowered.declined, None);
             let [LiveOwnedMixedCompositionLayer::Cpu { buffer, .. }] = &lowered.frame.layers[..]
             else {
                 panic!("one text layer");
@@ -288,15 +293,28 @@ fn a_translucent_rect_declines_and_ordinary_lowering_is_unchanged() {
             blue: 3,
         },
     });
-    let plan = plan_with(vec![rect]);
+    let (_store, lease) = content_resource();
+    // The occurrence after the declined rect is still recorded.
+    let plan = plan_with(vec![rect, content(&lease, 0, 0, true)]);
     let (indicator, text) = caches();
+    let lowered =
+        lower_provisional_head_composition_plan(&plan, &sources(), &indicator, &text).unwrap();
     assert_eq!(
-        lower_provisional_head_composition_plan(&plan, &sources(), &indicator, &text).err(),
-        Some(LiveHeadCompositionLoweringError::ProvisionalIneligible(
-            LiveProvisionalDecline::TranslucentRect
-        )),
+        lowered.declined,
+        Some(LiveProvisionalDecline::TranslucentRect),
         "its buffer would be new pixels under a new version"
     );
+    assert!(lowered.frame.layers.is_empty(), "no buffer was made for it");
+    assert_eq!(
+        lowered
+            .images
+            .iter()
+            .map(|image| (image.index, image.provisional))
+            .collect::<Vec<_>>(),
+        [(0, true)],
+        "lowering goes on past a decline"
+    );
+    let plan = plan_with(vec![plan.compositor[0].clone()]);
     let conventional = lower_head_composition_plan(&plan, &sources()).unwrap();
     assert!(matches!(
         conventional.layers[..],
@@ -358,11 +376,15 @@ fn a_cold_indicator_raster_is_ineligible_and_a_warm_one_reads_unchanged() {
     let (mut indicator, text) = caches();
     let plan = plan_with(vec![indicator_command()]);
     let cold = indicator.stats();
+    let lowered =
+        lower_provisional_head_composition_plan(&plan, &sources(), &indicator, &text).unwrap();
     assert_eq!(
-        lower_provisional_head_composition_plan(&plan, &sources(), &indicator, &text).err(),
-        Some(LiveHeadCompositionLoweringError::ProvisionalIneligible(
-            LiveProvisionalDecline::ColdIndicatorRaster
-        ))
+        lowered.declined,
+        Some(LiveProvisionalDecline::ColdIndicatorRaster)
+    );
+    assert!(
+        lowered.frame.layers.is_empty(),
+        "the cold strip has no layer"
     );
     assert_eq!(
         indicator.stats(),
@@ -381,6 +403,7 @@ fn a_cold_indicator_raster_is_ineligible_and_a_warm_one_reads_unchanged() {
             let lowered =
                 lower_provisional_head_composition_plan(&plan, &sources(), &indicator, &text)
                     .unwrap();
+            assert_eq!(lowered.declined, None);
             let [LiveOwnedMixedCompositionLayer::Cpu { buffer, .. }] = &lowered.frame.layers[..]
             else {
                 panic!("one indicator layer");
