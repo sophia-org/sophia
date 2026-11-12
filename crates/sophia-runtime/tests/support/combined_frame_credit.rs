@@ -59,7 +59,7 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
         checkpoint: Option<Checkpoint>,
     ) -> Result<mpsc::Receiver<P>, (IsbSubmitFailure, OwnedFd, P)> {
         let (mut job, returned_plan) = self
-            .combined_job(reservation, Source::Isb(source), plan, inbox(sender))
+            .combined_job(reservation, Source::Isb(source), None, plan, inbox(sender))
             .map_err(|(failure, source, plan)| (failure, source.into_isb(), plan))?;
         job.combined
             .as_mut()

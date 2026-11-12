@@ -149,6 +149,7 @@ fn returned_validation_clears_exactly_one_credit_and_preserves_backing() {
     let duplicate = ForwardedValidation {
         job,
         identity,
+        facts: JobFacts::unstopped(),
         pixels,
         plan,
     };

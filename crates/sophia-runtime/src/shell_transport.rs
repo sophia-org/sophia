@@ -52,6 +52,16 @@ mod image_offers;
 pub use image_offers::{ShellCaptureAdmission, ShellCaptureImageSource};
 mod image_owner;
 pub use image_owner::ShellIsbImageOwner;
+#[cfg(all(
+    feature = "experimental-native-frame-transaction",
+    any(test, feature = "experimental-combined-frame-job")
+))]
+mod combined_frame;
+#[cfg(all(
+    feature = "experimental-native-frame-transaction",
+    any(test, feature = "experimental-combined-frame-job")
+))]
+pub use combined_frame::{CombinedFrameHooks, CombinedResult};
 mod indicator_responses;
 pub(crate) mod outbound;
 mod outbox;

@@ -77,6 +77,7 @@ fn generic_transport_requires_no_payload_inspection_traits() {
         forward(
             Some(Route {
                 identity: Arc::clone(&identity),
+                facts: JobFacts::unstopped(),
                 plan: payload,
                 inbox: inbox(sender),
                 owner_plan,

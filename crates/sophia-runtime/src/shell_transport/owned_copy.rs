@@ -95,14 +95,78 @@ impl OwnedCopyOwner {
         self.jobs.receive(completion)
     }
 
-    pub fn service(
+    #[cfg(any(test, feature = "experimental-combined-frame-job"))]
+    pub fn receive_forwarded(
+        &mut self,
+        job: u64,
+        result: Result<crate::ValidatedIsbPixels, crate::IsbValidationFailure>,
+    ) -> Result<(), Result<crate::ValidatedIsbPixels, crate::IsbValidationFailure>> {
+        self.jobs.receive_forwarded(job, result)
+    }
+
+    pub fn service<P: Send + 'static>(
         &mut self,
         transport: &mut ShellComponentTransport,
         epochs: &mut ContentEpochRegistry,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         now: u64,
         instant: Instant,
         other_pending: usize,
+    ) -> Result<(), ShellTransportError> {
+        self.service_with(
+            transport,
+            epochs,
+            worker,
+            now,
+            instant,
+            other_pending,
+            #[cfg(all(
+                feature = "experimental-native-frame-transaction",
+                any(test, feature = "experimental-combined-frame-job")
+            ))]
+            None,
+        )
+    }
+
+    /// `service`, with a combined frame admitted through `hooks`.
+    #[cfg(all(
+        feature = "experimental-native-frame-transaction",
+        any(test, feature = "experimental-combined-frame-job")
+    ))]
+    pub fn service_combined<P: Send + 'static>(
+        &mut self,
+        transport: &mut ShellComponentTransport,
+        epochs: &mut ContentEpochRegistry,
+        worker: &mut IsbValidationWorker<P>,
+        now: u64,
+        instant: Instant,
+        other_pending: usize,
+        hooks: &mut (dyn crate::CombinedFrameHooks<P> + '_),
+    ) -> Result<(), ShellTransportError> {
+        self.service_with(
+            transport,
+            epochs,
+            worker,
+            now,
+            instant,
+            other_pending,
+            Some(hooks),
+        )
+    }
+
+    fn service_with<P: Send + 'static>(
+        &mut self,
+        transport: &mut ShellComponentTransport,
+        epochs: &mut ContentEpochRegistry,
+        worker: &mut IsbValidationWorker<P>,
+        now: u64,
+        instant: Instant,
+        other_pending: usize,
+        #[cfg(all(
+            feature = "experimental-native-frame-transaction",
+            any(test, feature = "experimental-combined-frame-job")
+        ))]
+        hooks: Option<&mut (dyn crate::CombinedFrameHooks<P> + '_)>,
     ) -> Result<(), ShellTransportError> {
         let current = transport
             .files_mut()
@@ -153,7 +217,16 @@ impl OwnedCopyOwner {
         self.publish_releases(transport, current, epochs, now)?;
         self.propose_offer(transport, epochs, worker, now, instant, other_pending)?;
         #[cfg(feature = "experimental-native-frame-transaction")]
-        self.propose_frame_commit(transport, epochs, worker, now, instant, other_pending)?;
+        self.propose_frame_commit(
+            transport,
+            epochs,
+            worker,
+            now,
+            instant,
+            other_pending,
+            #[cfg(any(test, feature = "experimental-combined-frame-job"))]
+            hooks,
+        )?;
         Ok(())
     }
 

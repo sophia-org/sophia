@@ -51,11 +51,11 @@ impl ContentEpochRegistry {
             .and_then(|e| e.allocations.owned_copy_description(request).ok())
     }
 
-    pub(crate) fn reserve_owned_copy_image(
+    pub(crate) fn reserve_owned_copy_image<P: Send + 'static>(
         &mut self,
         ring: &crate::OwnedRing,
         request: crate::OwnedCopyImageRequest,
-        worker: &mut crate::IsbValidationWorker,
+        worker: &mut crate::IsbValidationWorker<P>,
         now: u64,
         deadline: std::time::Instant,
     ) -> Result<crate::OwnedCopyImageAdmission, crate::IsbImageAdmissionError> {
@@ -119,15 +119,46 @@ impl ContentEpochRegistry {
     }
 }
 
-fn reserve_copy(
+fn reserve_copy<P: Send + 'static>(
     allocations: &ContentAllocationStore,
     resources: &mut ContentResourceStore,
     source_bytes: &Arc<AtomicU64>,
-    worker: &mut crate::IsbValidationWorker,
+    worker: &mut crate::IsbValidationWorker<P>,
     ring: &crate::OwnedRing,
     request: crate::OwnedCopyImageRequest,
     now: u64,
     deadline: std::time::Instant,
+) -> Result<crate::OwnedCopyImageAdmission, crate::IsbImageAdmissionError> {
+    reserve_copy_with(
+        allocations,
+        resources,
+        source_bytes,
+        worker,
+        ring,
+        request,
+        now,
+        deadline,
+        |worker, bytes, deadline| worker.reserve(bytes, deadline),
+    )
+}
+
+/// `credit` takes the copy's single validation credit: ordinary admission
+/// reserves a plain job, a combined frame one combined job. Either way a
+/// later refusal here releases it.
+fn reserve_copy_with<P: Send + 'static>(
+    allocations: &ContentAllocationStore,
+    resources: &mut ContentResourceStore,
+    source_bytes: &Arc<AtomicU64>,
+    worker: &mut crate::IsbValidationWorker<P>,
+    ring: &crate::OwnedRing,
+    request: crate::OwnedCopyImageRequest,
+    now: u64,
+    deadline: std::time::Instant,
+    credit: impl FnOnce(
+        &mut crate::IsbValidationWorker<P>,
+        usize,
+        std::time::Instant,
+    ) -> Result<u64, crate::IsbSubmitFailure>,
 ) -> Result<crate::OwnedCopyImageAdmission, crate::IsbImageAdmissionError> {
     use crate::IsbImageAdmissionError as Error;
     ring.check_offer(request.slot)
@@ -144,7 +175,7 @@ fn reserve_copy(
     if bytes > ring.geometry().pixel_bytes() || request.slot.offer == 0 {
         return Err(Error::Resource(ContentStoreError::Malformed));
     }
-    let job = worker.reserve(bytes, deadline).map_err(Error::Worker)?;
+    let job = credit(worker, bytes, deadline).map_err(Error::Worker)?;
     if let Err(error) = resources.begin_isb(
         sophia_protocol::TransactionId::from_raw(request.slot.offer),
         description.clone(),

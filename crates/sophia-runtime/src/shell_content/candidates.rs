@@ -18,13 +18,23 @@ mod demands;
 mod presentation;
 #[cfg(feature = "experimental-native-frame-transaction")]
 use credits::CandidateEvents;
+#[cfg(all(
+    feature = "experimental-native-frame-transaction",
+    not(any(test, feature = "experimental-combined-frame-job"))
+))]
+pub(crate) use credits::FrameCopyBinding;
 #[cfg(feature = "experimental-native-frame-transaction")]
 pub use credits::{
     ContentFrameAdmission, ContentFrameCommit, ContentFrameCreditReturn,
     ContentFrameRequestAdmission, ContentFrameStreamEvent, ContentFrameStreamRecord,
 };
 #[cfg(feature = "experimental-native-frame-transaction")]
-pub(crate) use credits::{FrameAdmissionReservation, FrameCommitState, FrameCopyBinding};
+pub(crate) use credits::{FrameAdmissionReservation, FrameCommitState};
+#[cfg(all(
+    feature = "experimental-native-frame-transaction",
+    any(test, feature = "experimental-combined-frame-job")
+))]
+pub use credits::{FrameCandidateState, FrameCopyBinding};
 #[cfg(not(feature = "experimental-native-frame-transaction"))]
 type CandidateEvents = VecDeque<ContentCandidateEvent>;
 mod native;

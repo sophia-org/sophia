@@ -55,14 +55,38 @@ impl<P> CombinedInbox<P> {
 pub struct ForwardedValidation<P> {
     job: u64,
     identity: Arc<Identity>,
+    facts: JobFacts,
     pixels: ValidatedIsbPixels,
     plan: P,
 }
 
-/// Returns to the owner to settle the credit; it grants nothing else.
+/// Returns to the owner to settle the credit; it grants nothing else. It
+/// also carries the runtime's own facts about the job, which only the
+/// envelope exposes.
 pub struct CombinedToken {
     job: u64,
     identity: Arc<Identity>,
+    facts: JobFacts,
+}
+
+/// Set by the runtime from its own job row, never from the plan.
+pub(super) struct JobFacts {
+    /// The validation job's one-way stop flag; the renderer only reads it.
+    stop: Arc<AtomicBool>,
+    /// The host-derived description admitted for this job; None for a sealed
+    /// ISB submission, which has no owned-copy row.
+    description: Option<sophia_protocol::ContentResourceBegin>,
+}
+
+#[cfg(test)]
+impl JobFacts {
+    /// For fixtures that build an envelope or route by hand.
+    pub(super) fn unstopped() -> Self {
+        Self {
+            stop: Arc::new(AtomicBool::new(false)),
+            description: None,
+        }
+    }
 }
 
 impl<P> ForwardedValidation<P> {
@@ -70,10 +94,22 @@ impl<P> ForwardedValidation<P> {
         self.job
     }
 
+    /// Whether the owner stopped this job. False never proves it is still
+    /// wanted: a stop can land just after the read.
+    pub fn stopped(&self) -> bool {
+        self.facts.stop.load(Ordering::Acquire)
+    }
+
+    /// The description the runtime admitted for this exact job.
+    pub fn description(&self) -> Option<&sophia_protocol::ContentResourceBegin> {
+        self.facts.description.as_ref()
+    }
+
     pub fn into_parts(self) -> (CombinedToken, ValidatedIsbPixels, P) {
         let token = CombinedToken {
             job: self.job,
             identity: self.identity,
+            facts: self.facts,
         };
         (token, self.pixels, self.plan)
     }
@@ -82,6 +118,7 @@ impl<P> ForwardedValidation<P> {
         Self {
             job: token.job,
             identity: token.identity,
+            facts: token.facts,
             pixels,
             plan,
         }
@@ -90,6 +127,7 @@ impl<P> ForwardedValidation<P> {
 
 pub(super) struct Route<P> {
     identity: Arc<Identity>,
+    facts: JobFacts,
     plan: P,
     inbox: CombinedInbox<P>,
     owner_plan: mpsc::SyncSender<P>,
@@ -115,6 +153,7 @@ pub(super) fn forward<P>(
     };
     let Route {
         identity,
+        facts,
         plan,
         inbox,
         owner_plan,
@@ -130,6 +169,7 @@ pub(super) fn forward<P>(
     let forwarded = ForwardedValidation {
         job,
         identity: Arc::clone(&identity),
+        facts,
         pixels,
         plan,
     };
@@ -167,6 +207,16 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
         )
     }
 
+    /// `for_combined_plans` with the published validation chunk budget, as
+    /// `with_validation_budget` takes it.
+    pub fn for_combined_plans_with_budget(
+        max_jobs: usize,
+        max_bytes: usize,
+        validation_bytes: usize,
+    ) -> io::Result<Self> {
+        Self::spawn(max_jobs, max_bytes, validation_bytes)
+    }
+
     pub fn reserve_combined(
         &mut self,
         bytes: usize,
@@ -195,17 +245,20 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
         inbox: CombinedInbox<P>,
     ) -> Result<mpsc::Receiver<P>, (IsbSubmitFailure, OwnedFd, P)> {
         let (job, returned_plan) = self
-            .combined_job(reservation, Source::Isb(source), plan, inbox)
+            .combined_job(reservation, Source::Isb(source), None, plan, inbox)
             .map_err(|(failure, source, plan)| (failure, source.into_isb(), plan))?;
         self.send_combined(job)
             .map(|()| returned_plan)
             .map_err(|(failure, source, plan)| (failure, source.into_isb(), plan))
     }
 
+    /// `description` is the owned-copy row's admitted description; the
+    /// renderer checks the plan against it.
     pub fn submit_ring_combined(
         &mut self,
         reservation: &CombinedReservation,
         source: OwnedRingRead,
+        description: sophia_protocol::ContentResourceBegin,
         plan: P,
         inbox: CombinedInbox<P>,
     ) -> Result<mpsc::Receiver<P>, (IsbSubmitFailure, OwnedRingRead, P)> {
@@ -217,7 +270,13 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
             return Err((IsbSubmitFailure::Invalid, source, plan));
         }
         let (job, returned_plan) = self
-            .combined_job(reservation, Source::Ring(source), plan, inbox)
+            .combined_job(
+                reservation,
+                Source::Ring(source),
+                Some(description),
+                plan,
+                inbox,
+            )
             .map_err(|(failure, source, plan)| (failure, into_ring(source), plan))?;
         self.send_combined(job)
             .map(|()| returned_plan)
@@ -228,6 +287,7 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
         &self,
         reservation: &CombinedReservation,
         source: Source,
+        description: Option<sophia_protocol::ContentResourceBegin>,
         plan: P,
         inbox: CombinedInbox<P>,
     ) -> Result<PreparedJob<P>, (IsbSubmitFailure, Source, P)> {
@@ -250,6 +310,10 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
             cancelled: Arc::clone(&pending.cancelled),
             combined: Some(Route {
                 identity: Arc::clone(&reservation.identity),
+                facts: JobFacts {
+                    stop: Arc::clone(&pending.cancelled),
+                    description,
+                },
                 plan,
                 inbox,
                 owner_plan,

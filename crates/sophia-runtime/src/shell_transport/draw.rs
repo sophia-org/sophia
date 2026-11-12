@@ -49,11 +49,11 @@ impl DrawJobs {
         job.result = Some(completion.result.map_err(|_| ContentStoreError::Malformed));
         Ok(())
     }
-    pub fn service(
+    pub fn service<P: Send + 'static>(
         &mut self,
         transport: &mut ShellComponentTransport,
         epochs: &mut ContentEpochRegistry,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         now: u64,
         instant: Instant,
         other_pending: usize,

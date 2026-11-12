@@ -60,11 +60,11 @@ impl ContentEpochRegistry {
     /// output/allocation and topology; a supplied snapshot is not authority.
     /// `deadline` is fixed by the owner from the original admission time and
     /// the smaller of the transfer and validation timeouts.
-    pub fn reserve_isb_image(
+    pub fn reserve_isb_image<P: Send + 'static>(
         &mut self,
         grant: ContentGrant,
         metadata: ShellImageMetadata,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         now: u64,
         deadline: Instant,
     ) -> Result<IsbImageAdmission, IsbImageAdmissionError> {

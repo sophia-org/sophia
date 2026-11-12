@@ -8,7 +8,10 @@ pub(crate) use commit::{FrameAdmissionReservation, FrameCommitState};
 mod control;
 mod copy;
 mod events;
-pub(crate) use copy::{FrameCopyBinding, FrameCopyState};
+#[cfg(any(test, feature = "experimental-combined-frame-job"))]
+pub use copy::FrameCandidateState;
+pub use copy::FrameCopyBinding;
+pub(crate) use copy::FrameCopyState;
 mod intake;
 pub(super) use events::CandidateEvents;
 pub use intake::ContentFrameRequestAdmission;

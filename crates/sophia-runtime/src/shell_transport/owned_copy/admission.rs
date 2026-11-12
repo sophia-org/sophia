@@ -1,12 +1,25 @@
 use super::*;
 use crate::{ContentStoreError, IsbImageAdmissionError, IsbSubmitFailure};
 
+/// A combined frame's half of the submission: the hooks that issued its
+/// ticket, the renderer inbox, and the combined credit's reservation.
+#[cfg(all(
+    feature = "experimental-native-frame-transaction",
+    any(test, feature = "experimental-combined-frame-job")
+))]
+pub(super) struct CombinedSubmit<'a, 'h, P> {
+    pub(super) hooks: &'a mut (dyn crate::CombinedFrameHooks<P> + 'h),
+    pub(super) ticket: u64,
+    pub(super) inbox: crate::CombinedInbox<P>,
+    pub(super) reservation: crate::CombinedReservation,
+}
+
 impl OwnedCopyOwner {
-    pub(super) fn propose_offer(
+    pub(super) fn propose_offer<P: Send + 'static>(
         &mut self,
         transport: &mut ShellComponentTransport,
         epochs: &mut ContentEpochRegistry,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         now: u64,
         instant: Instant,
         other_pending: usize,
@@ -81,7 +94,18 @@ impl OwnedCopyOwner {
                             .export_mut()
                             .owned_take_offer();
                         self.waiting = None;
-                        self.submit_reserved_copy(offer, job, epochs, worker, now)?;
+                        self.submit_reserved_copy(
+                            offer,
+                            job,
+                            epochs,
+                            worker,
+                            now,
+                            #[cfg(all(
+                                feature = "experimental-native-frame-transaction",
+                                any(test, feature = "experimental-combined-frame-job")
+                            ))]
+                            None,
+                        )?;
                         return Ok(());
                     }
                     Err(IsbImageAdmissionError::Worker(IsbSubmitFailure::Capacity))
@@ -118,13 +142,18 @@ impl OwnedCopyOwner {
         Ok(())
     }
 
-    pub(super) fn submit_reserved_copy(
+    pub(super) fn submit_reserved_copy<P: Send + 'static>(
         &mut self,
         offer: Offer,
         job: u64,
         epochs: &mut ContentEpochRegistry,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         now: u64,
+        #[cfg(all(
+            feature = "experimental-native-frame-transaction",
+            any(test, feature = "experimental-combined-frame-job")
+        ))]
+        combined: Option<CombinedSubmit<'_, '_, P>>,
     ) -> Result<(), ShellTransportError> {
         // Admission owns response, worker and source slots before this read ticket.
         let active = self.active.as_mut().expect("matching admitted ring");
@@ -145,6 +174,19 @@ impl OwnedCopyOwner {
             withdrawn: false,
             handed_off: source.is_ok(),
         });
+        #[cfg(all(
+            feature = "experimental-native-frame-transaction",
+            any(test, feature = "experimental-combined-frame-job")
+        ))]
+        if let Some(combined) = combined {
+            // Only the send differs from the ordinary steps around it (R1).
+            let submitted = self.send_combined(worker, job, source, combined);
+            if !submitted {
+                self.jobs
+                    .withdraw(epochs, worker, job, IsbImageWithdrawal::Cancelled, now)?;
+            }
+            return Ok(());
+        }
         let submitted = match source {
             Ok(source) => match self.jobs.submit(worker, job, source) {
                 Ok(()) => true,
@@ -160,5 +202,56 @@ impl OwnedCopyOwner {
                 .withdraw(epochs, worker, job, IsbImageWithdrawal::Cancelled, now)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(all(
+    feature = "experimental-native-frame-transaction",
+    any(test, feature = "experimental-combined-frame-job")
+))]
+impl OwnedCopyOwner {
+    /// The combined send. It ends the ticket exactly once: `submitted` when
+    /// the validator took the job, otherwise `cancel`, after which the caller
+    /// withdraws the job as a refused send. A plan-build failure is a refused
+    /// send. The ring ticket and the plan are dropped here, on the owner.
+    fn send_combined<P: Send + 'static>(
+        &mut self,
+        worker: &mut IsbValidationWorker<P>,
+        job: u64,
+        source: std::io::Result<crate::OwnedRingRead>,
+        combined: CombinedSubmit<'_, '_, P>,
+    ) -> bool {
+        let CombinedSubmit {
+            hooks,
+            ticket,
+            inbox,
+            reservation,
+        } = combined;
+        let plan = match &source {
+            Ok(_) if reservation.job() == job => self
+                .jobs
+                .combined_admitted(job)
+                .and_then(|admitted| hooks.plan(ticket, &admitted)),
+            _ => None,
+        };
+        let (Ok(source), Some(plan)) = (source, plan) else {
+            hooks.cancel(ticket);
+            return false;
+        };
+        match self
+            .jobs
+            .submit_combined(worker, &reservation, source, plan, inbox)
+        {
+            Ok(returned) => {
+                hooks.submitted(ticket, reservation, returned);
+                true
+            }
+            Err((_, source, plan)) => {
+                drop(source);
+                drop(plan);
+                hooks.cancel(ticket);
+                false
+            }
+        }
     }
 }
