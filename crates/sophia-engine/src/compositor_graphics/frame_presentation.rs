@@ -160,6 +160,16 @@ impl OutputFramePresentationState {
         &mut self,
         snapshot: OutputFrameDamageSnapshot,
     ) -> Result<&OutputFramePresentation, OutputFramePresentationError> {
+        let presentation = self.presentation_for(snapshot)?;
+        Ok(self.install_pending(presentation))
+    }
+
+    /// What `queue` would install for `snapshot`, computed without writing, so
+    /// an owner can check every fallible step before its first write.
+    pub fn presentation_for(
+        &self,
+        snapshot: OutputFrameDamageSnapshot,
+    ) -> Result<OutputFramePresentation, OutputFramePresentationError> {
         if snapshot.output != self.output {
             return Err(OutputFramePresentationError::OutputMismatch);
         }
@@ -185,13 +195,21 @@ impl OutputFramePresentationState {
         })?;
         let repaint = plan_output_repaint(self.output.size, &damage, self.repaint_policy)
             .expect("presentation state validates its output and repaint policy");
-        self.pending = Some(OutputFramePresentation {
+        Ok(OutputFramePresentation {
             snapshot,
             compositor_damage,
             damage,
             repaint,
-        });
-        Ok(self.pending.as_ref().expect("assigned above"))
+        })
+    }
+
+    /// Installs a presentation from `presentation_for` as the pending frame,
+    /// replacing any pending one, as `queue` does.
+    pub fn install_pending(
+        &mut self,
+        presentation: OutputFramePresentation,
+    ) -> &OutputFramePresentation {
+        self.pending.insert(presentation)
     }
 
     pub fn discard_pending(&mut self) -> Option<OutputFramePresentation> {

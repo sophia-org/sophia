@@ -13,6 +13,10 @@ use sophia_engine::{CompositorImageSource, CompositorImageSourceIdentity};
 use sophia_protocol::Point;
 use sophia_renderer_live::{LiveOwnedMixedCompositionLayer, LiveProvisionalDecline};
 
+// G3-4: the visual runtime's half of the combined accept, on this fixture.
+#[path = "combined_accept.rs"]
+mod accept;
+
 const DOCK: LiveShellContentLayer = LiveShellContentLayer::Dock;
 const SHELL: LiveShellContentLayer = LiveShellContentLayer::Shell;
 /// The owner's plane cursor, shown, as every ordinary control composes.
@@ -765,7 +769,11 @@ fn the_install_preflight_refuses_without_changing_state() {
     let placeholder = provisional(&fixture.candidate);
     let refused = fixture
         .runtime
-        .preflight_shell_component_content(&placeholder, SHELL, Some(&fixture.target))
+        .preflight_shell_component_content(
+            &placeholder,
+            SHELL,
+            Some(fixture.target.frame_service_available()),
+        )
         .err()
         .map(|error| error.to_string());
     assert_eq!(refused.as_deref(), Some("shell content frame is malformed"));
@@ -773,7 +781,7 @@ fn the_install_preflight_refuses_without_changing_state() {
         fixture.runtime.preflight_shell_component_content(
             &fixture.candidate,
             SHELL,
-            Some(&fixture.target)
+            Some(fixture.target.frame_service_available())
         ),
         Ok(ShellContentPreflight::Admit(_))
     ));

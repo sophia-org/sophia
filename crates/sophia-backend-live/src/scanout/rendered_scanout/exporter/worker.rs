@@ -28,10 +28,11 @@ pub(crate) type CaptureReservation =
 #[cfg(feature = "experimental-combined-frame-job")]
 mod combined;
 #[cfg(feature = "experimental-combined-frame-job")]
-pub(crate) use combined::CombinedFacade;
+pub(crate) use combined::{COMBINED_REQUEST, CombinedFacade};
 #[cfg(feature = "experimental-combined-frame-job")]
 pub use combined::{
-    CombinedDisposition, CombinedRenderPlan, CombinedRenderResult, CombinedSettleRefused,
+    CombinedAcceptRefusal, CombinedDisposition, CombinedRenderPlan, CombinedRenderResult,
+    CombinedSettleRefused,
 };
 mod head_imports;
 mod lifecycle;
@@ -560,6 +561,7 @@ impl NativeGbmRendererWorker {
             output_format,
             submitted_at: Instant::now(),
             soft_stall_reported: false,
+            ready: None,
         });
         self.metrics.requests = self.metrics.requests.saturating_add(1);
         if trace_worker_request(request_id) {
@@ -588,7 +590,13 @@ impl NativeGbmRendererWorker {
         // A stall changes the wait bound, not ownership. Keep validating late
         // replies against the accepted frame so its content can still settle.
         let stalled = self.stalled.take();
-        match self.result_receiver.try_recv() {
+        // An accepted combined result is this request's reply (F2); the
+        // ordinary channel is never read for it.
+        match in_flight
+            .ready
+            .take()
+            .map_or_else(|| self.result_receiver.try_recv(), Ok)
+        {
             Ok(result) => {
                 self.in_flight = None;
                 let age = in_flight.submitted_at.elapsed();
@@ -777,6 +785,8 @@ struct InFlightRequest {
     output_format: Option<sophia_renderer_live::LiveCompositionFormatRequest>,
     submitted_at: Instant,
     soft_stall_reported: bool,
+    /// An accepted combined result, which `poll()` checks as the reply.
+    ready: Option<WorkerResult>,
 }
 
 // The bounded channel already accounts for these fixed-size cells. Boxing the
@@ -933,7 +943,9 @@ mod service;
 #[path = "../../../../tests/support/renderer_worker.rs"]
 pub(crate) mod tests;
 #[cfg(all(test, feature = "experimental-combined-frame-job"))]
-pub(crate) use tests::combined_render::{device_free_core, device_free_plan};
+pub(crate) use tests::combined_render::{
+    StubRenderer, device_free_core, device_free_plan, stub_core,
+};
 
 use service::run_worker;
 

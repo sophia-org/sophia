@@ -17,9 +17,15 @@ mod persistent_native_scanout;
     feature = "gbm-probe",
     feature = "experimental-combined-frame-job"
 ))]
-pub use persistent_native_scanout::CombinedHead;
+pub(crate) use persistent_native_scanout::CombinedAcceptNative;
 #[cfg(all(feature = "libdrm-events", feature = "experimental-shell-capture"))]
 pub use persistent_native_scanout::LiveNativeShellCaptureEndpoint;
+#[cfg(all(
+    feature = "libdrm-events",
+    feature = "gbm-probe",
+    feature = "experimental-combined-frame-job"
+))]
+pub use persistent_native_scanout::{CombinedAccept, CombinedAcceptPlan, CombinedHead};
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use persistent_native_scanout::{

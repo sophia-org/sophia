@@ -12,6 +12,11 @@ use std::io;
 
 #[path = "../../../../tests/support/combined_frame_routing.rs"]
 mod routing_tests;
+// G3-4: the two-phase accept, beside this file.
+#[path = "combined_accept.rs"]
+mod accept;
+pub(crate) use accept::CombinedAcceptNative;
+pub use accept::{CombinedAccept, CombinedAcceptPlan};
 
 type Exporter<R> = NativeGbmRenderedScanoutBufferDiscoveryExporter<R>;
 
@@ -38,7 +43,7 @@ impl CombinedHead {
 /// exporters exercise the same lookup.
 struct CombinedRoutes<'a, R: RenderDeviceDiscoveryBackend> {
     native_owner: crate::NativeFrameOwner,
-    heads: &'a [LiveProductionNativeHead],
+    heads: &'a mut [LiveProductionNativeHead],
     exporters: &'a mut [Exporter<R>],
 }
 
@@ -49,7 +54,7 @@ impl<R: RenderDeviceDiscoveryBackend> CombinedRoutes<'_, R> {
         &mut self,
         output: OutputId,
     ) -> io::Result<(CombinedHead, CombinedInbox<CombinedRenderPlan>)> {
-        let heads = self.heads;
+        let heads = &*self.heads;
         let mut serving = heads
             .iter()
             .enumerate()
@@ -84,7 +89,7 @@ impl<R: RenderDeviceDiscoveryBackend> CombinedRoutes<'_, R> {
         }
         self.exporters
             .iter_mut()
-            .zip(self.heads)
+            .zip(self.heads.iter())
             .find(|(exporter, current)| {
                 current.head == head.head && exporter.issued_combined(&head.facade)
             })
@@ -140,7 +145,7 @@ impl LiveProductionNativeScanout {
     fn combined_routes(&mut self) -> CombinedRoutes<'_, RealAtomicScanoutRenderDeviceDiscovery> {
         CombinedRoutes {
             native_owner: self.native_frame_owner,
-            heads: &self.heads,
+            heads: &mut self.heads,
             exporters: &mut self.exporters,
         }
     }

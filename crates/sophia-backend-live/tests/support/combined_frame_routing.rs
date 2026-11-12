@@ -61,7 +61,7 @@ impl Fixture {
     fn routes(&mut self) -> CombinedRoutes<'_, NoDevice> {
         CombinedRoutes {
             native_owner: self.native_owner,
-            heads: &self.heads,
+            heads: &mut self.heads,
             exporters: &mut self.exporters,
         }
     }

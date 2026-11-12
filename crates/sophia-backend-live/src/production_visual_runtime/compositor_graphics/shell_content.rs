@@ -60,7 +60,9 @@ impl LiveProductionVisualRuntime {
         let transform = match self.preflight_shell_component_content(
             &frame,
             layer,
-            native_scanout.as_deref(),
+            native_scanout
+                .as_deref()
+                .map(NativeCompositionTarget::frame_service_available),
         )? {
             ShellContentPreflight::Unchanged => return Ok(false),
             ShellContentPreflight::Admit(transform) => transform,
@@ -74,13 +76,13 @@ impl LiveProductionVisualRuntime {
     /// Every check the setter makes before it writes, in its order, with its
     /// messages, writing nothing (G3-3). Its answer is for the same owner
     /// turn only: it is not current authority once the turn moves on.
-    pub(in crate::production_visual_runtime) fn preflight_shell_component_content<
-        T: NativeCompositionTarget,
-    >(
+    /// `frame_service` is the native target's answer, `None` without native
+    /// presentation (G3-4: the combined accept supplies its own target's).
+    pub(in crate::production_visual_runtime) fn preflight_shell_component_content(
         &self,
         frame: &LiveShellContentFrame,
         layer: LiveShellContentLayer,
-        native_scanout: Option<&T>,
+        frame_service: Option<bool>,
     ) -> Result<ShellContentPreflight, Box<dyn std::error::Error>> {
         let key = (frame.output, layer);
         if !frame.output.is_valid()
@@ -122,9 +124,9 @@ impl LiveProductionVisualRuntime {
         if self.shell_content.get(&key).map(|owned| &owned.frame) == Some(frame) {
             return Ok(ShellContentPreflight::Unchanged);
         }
-        let native_scanout = native_scanout
+        let frame_service_available = frame_service
             .ok_or("shell content candidate cannot be accepted without native presentation")?;
-        if self.native_suspended || !native_scanout.frame_service_available() {
+        if self.native_suspended || !frame_service_available {
             return Err(
                 "shell content candidate cannot be accepted while native presentation is quiesced"
                     .into(),
@@ -322,3 +324,94 @@ impl LiveProductionVisualRuntime {
 
 #[path = "shell_content/removal.rs"]
 mod removal;
+
+/// Why a combined accept did not happen. Nothing changed in any case: the
+/// frame comes back, and the facade still holds its result for disposal.
+#[cfg(feature = "experimental-combined-frame-job")]
+// First production caller is G3-5's owner row; until then the accept controls.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) enum CombinedAcceptError {
+    /// The setter's own preflight refused the frame, with its message.
+    Runtime(Box<dyn std::error::Error>),
+    /// The frame is already installed: there is nothing to accept.
+    Unchanged,
+    /// The frame is for another output than the admitted plan.
+    Output,
+    /// A retirement claim for this key is still unbound, or the native
+    /// frame already carries claims.
+    RetirementClaim,
+    Native(crate::CombinedAcceptRefusal),
+}
+
+#[cfg(feature = "experimental-combined-frame-job")]
+// First production caller is G3-5's owner row; until then the accept controls.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct CombinedAcceptFailed {
+    pub error: CombinedAcceptError,
+    pub frame: LiveShellContentFrame,
+}
+
+#[cfg(feature = "experimental-combined-frame-job")]
+impl LiveProductionVisualRuntime {
+    /// The two-phase accept of a held combined result (AUTHORITY-STEP3 F2).
+    /// The setter's preflight, then the native preflight, both reading only;
+    /// then the commit: this runtime installs the content and binds its
+    /// retirement claim to the plan's native frame without queueing a
+    /// render (step 1), and the native target writes steps 2 to 4.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn accept_combined_shell_content<N: crate::CombinedAcceptNative>(
+        &mut self,
+        frame: LiveShellContentFrame,
+        layer: LiveShellContentLayer,
+        native: &mut N,
+        head: &N::Head,
+        accept: crate::CombinedAccept,
+    ) -> Result<(), Box<CombinedAcceptFailed>> {
+        let refuse = |error, frame| Err(Box::new(CombinedAcceptFailed { error, frame }));
+        let transform = match self.preflight_shell_component_content(
+            &frame,
+            layer,
+            Some(native.frame_service_available()),
+        ) {
+            Ok(ShellContentPreflight::Admit(transform)) => transform,
+            Ok(ShellContentPreflight::Unchanged) => {
+                return refuse(CombinedAcceptError::Unchanged, frame);
+            }
+            Err(error) => return refuse(CombinedAcceptError::Runtime(error), frame),
+        };
+        if frame.output != accept.snapshot.output.id {
+            return refuse(CombinedAcceptError::Output, frame);
+        }
+        let key = (frame.output, layer);
+        let native_frame = accept.frame;
+        if self.retained_projection_retirements.contains_key(&key)
+            || self
+                .queued_shell_retirements
+                .contains_key(&(frame.output, native_frame))
+        {
+            return refuse(CombinedAcceptError::RetirementClaim, frame);
+        }
+        let plan = match native.preflight_combined_accept(head, accept) {
+            Ok(plan) => plan,
+            Err(refusal) => return refuse(CombinedAcceptError::Native(refusal), frame),
+        };
+        // Step 1: content and its retirement claim, bound to the plan's
+        // native frame as `bind_shell_retirement_claims` binds a queued one.
+        let grant = frame.grant;
+        self.shell_content.insert(
+            key,
+            AdmittedShellContent {
+                frame,
+                retained_content_epoch: None,
+                transform,
+                interaction_revoked: false,
+            },
+        );
+        self.queued_shell_retirements
+            .entry((key.0, native_frame))
+            .or_default()
+            .insert(key, grant);
+        native.commit_combined_accept(head, plan);
+        Ok(())
+    }
+}

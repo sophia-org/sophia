@@ -121,61 +121,18 @@ impl LiveProductionNativeScanout {
             use crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as Status;
             match submit.status {
                 Status::SubmittedWaitingForPageFlip => {
-                    let identity = runtime
-                        .submitted_rendered_frame_correlation(output)
-                        .and_then(|correlation| correlation.native)
-                        .ok_or("accepted native submission has no captured native identity")?;
-                    let native_frame = LiveProductionNativeFrameId::from_raw(identity.frame());
-                    if identity != self.native_frame_identity(index, output, native_frame) {
-                        return Err(
-                            "accepted native submission belongs to another owner/head/target"
-                                .into(),
-                        );
-                    }
-                    let head = &mut self.heads[index];
-                    let selected_rendering = head
-                        .rendering_content
-                        .is_some_and(|content| content.frame() == native_frame);
-                    let selected_pending = head
-                        .pending_content
-                        .is_some_and(|content| content.frame() == native_frame);
-                    if selected_rendering == selected_pending {
-                        return Err("accepted native submission must name exactly one retained content owner".into());
-                    }
-                    let content = if selected_rendering {
-                        head.rendering_content.take()
-                    } else {
-                        head.pending_content.take()
-                    };
-                    // This is the head's pixel proof, not a measurement of
-                    // this frame: a readback costs a whole framebuffer, so
-                    // a renderer context takes a bounded number of them and
-                    // then keeps the last. It answers "this head has put
-                    // light on a screen", which is what startup readiness
-                    // asks of it.
-                    let content = content.map(|content| {
-                        content.with_nonzero_rgb_pixels(
-                            self.exporter(output)
-                                .map_or(0, |exporter| exporter.composition_nonzero_rgb_pixels()),
-                        )
-                    });
-                    if selected_rendering && self.heads[index].output_frames.rendering().is_some() {
-                        self.heads[index]
-                            .output_frames
-                            .promote_rendering_to_submitted()
-                            .map_err(|error| {
-                                format!("compositor display-list worker promotion failed: {error}")
-                            })?;
-                    } else if !selected_rendering
-                        && self.heads[index].output_frames.pending().is_some()
-                    {
-                        self.heads[index]
-                            .output_frames
-                            .mark_submitted()
-                            .map_err(|error| {
-                                format!("compositor display-list submit transition failed: {error}")
-                            })?;
-                    }
+                    let native_frame = self.heads[index].accepted_native_frame(
+                        runtime
+                            .submitted_rendered_frame_correlation(output)
+                            .and_then(|correlation| correlation.native),
+                        self.native_frame_owner,
+                        output,
+                    )?;
+                    let nonzero_rgb_pixels = self
+                        .exporter(output)
+                        .map_or(0, |exporter| exporter.composition_nonzero_rgb_pixels());
+                    let content = self.heads[index]
+                        .take_accepted_content(native_frame, nonzero_rgb_pixels)?;
                     trace_live_native_lifecycle("kms_submit_accepted");
                     self.submissions = self.submissions.saturating_add(1);
                     self.heads[index].submissions = self.heads[index].submissions.saturating_add(1);
@@ -269,16 +226,8 @@ impl LiveProductionNativeScanout {
                     {
                         self.record_preview_failure(failure)?;
                     }
-                    let failed_content = if worker_was_in_flight {
-                        self.heads[index].rendering_content.take()
-                    } else {
-                        self.heads[index].pending_content.take()
-                    };
-                    if worker_was_in_flight {
-                        self.heads[index].output_frames.discard_rendering();
-                    } else {
-                        self.heads[index].output_frames.discard_pending();
-                    }
+                    let failed_content =
+                        self.heads[index].take_failed_content(worker_was_in_flight);
                     self.submit_failures = self.submit_failures.saturating_add(1);
                     tracing::warn!(
                         "sophia_live_native_submit schema=1 status=failed output={} reason={status:?} content={failed_content:?} export={:?} scanout_buffer={:?} resources={:?} framebuffer={:?} submit={:?} commit={:?}",
@@ -298,5 +247,86 @@ impl LiveProductionNativeScanout {
             .max(report.rendered_primary_plane_scanout_in_flight_ticks);
         self.observe_in_flight_depth();
         Ok(report)
+    }
+}
+
+impl LiveProductionNativeHead {
+    /// The native frame an accepted submission names, when its captured
+    /// identity is this owner's, head's and current target's. Shared with
+    /// the combined accept controls.
+    pub(crate) fn accepted_native_frame(
+        &self,
+        captured: Option<crate::LiveNativeFrameIdentity>,
+        owner: crate::NativeFrameOwner,
+        output: OutputId,
+    ) -> Result<LiveProductionNativeFrameId, &'static str> {
+        let identity =
+            captured.ok_or("accepted native submission has no captured native identity")?;
+        let native_frame = LiveProductionNativeFrameId::from_raw(identity.frame());
+        if identity != owner.frame(output, self.head, self.target_generation, native_frame.raw()) {
+            return Err("accepted native submission belongs to another owner/head/target");
+        }
+        Ok(native_frame)
+    }
+
+    /// Takes the one content owner an accepted submission names and moves
+    /// its frame on: rendering promotes to submitted, pending marks
+    /// submitted.
+    pub(crate) fn take_accepted_content(
+        &mut self,
+        native_frame: LiveProductionNativeFrameId,
+        nonzero_rgb_pixels: usize,
+    ) -> Result<Option<LiveProductionScanoutContent>, String> {
+        let selected_rendering = self
+            .rendering_content
+            .is_some_and(|content| content.frame() == native_frame);
+        let selected_pending = self
+            .pending_content
+            .is_some_and(|content| content.frame() == native_frame);
+        if selected_rendering == selected_pending {
+            return Err(
+                "accepted native submission must name exactly one retained content owner".into(),
+            );
+        }
+        let content = if selected_rendering {
+            self.rendering_content.take()
+        } else {
+            self.pending_content.take()
+        };
+        // This is the head's pixel proof, not a measurement of this frame: a
+        // readback costs a whole framebuffer, so a renderer context takes a
+        // bounded number of them and then keeps the last. It answers "this
+        // head has put light on a screen", which is what startup readiness
+        // asks of it.
+        let content = content.map(|content| content.with_nonzero_rgb_pixels(nonzero_rgb_pixels));
+        if selected_rendering && self.output_frames.rendering().is_some() {
+            self.output_frames
+                .promote_rendering_to_submitted()
+                .map_err(|error| format!("compositor display-list worker promotion failed: {error}"))?;
+        } else if !selected_rendering && self.output_frames.pending().is_some() {
+            self.output_frames
+                .mark_submitted()
+                .map_err(|error| format!("compositor display-list submit transition failed: {error}"))?;
+        }
+        Ok(content)
+    }
+
+    /// A failed submission's content: the rendering frame when the worker
+    /// was in flight, else the pending one, with its output frame discarded.
+    pub(crate) fn take_failed_content(
+        &mut self,
+        worker_was_in_flight: bool,
+    ) -> Option<LiveProductionScanoutContent> {
+        let failed_content = if worker_was_in_flight {
+            self.rendering_content.take()
+        } else {
+            self.pending_content.take()
+        };
+        if worker_was_in_flight {
+            self.output_frames.discard_rendering();
+        } else {
+            self.output_frames.discard_pending();
+        }
+        failed_content
     }
 }

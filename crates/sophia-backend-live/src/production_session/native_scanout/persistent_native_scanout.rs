@@ -87,7 +87,9 @@ pub use render_devices::{
 #[cfg(feature = "experimental-combined-frame-job")]
 mod combined_frame;
 #[cfg(feature = "experimental-combined-frame-job")]
-pub use combined_frame::CombinedHead;
+pub(crate) use combined_frame::CombinedAcceptNative;
+#[cfg(feature = "experimental-combined-frame-job")]
+pub use combined_frame::{CombinedAccept, CombinedAcceptPlan, CombinedHead};
 #[cfg(test)]
 #[path = "../../../tests/support/output_topology_readback.rs"]
 mod output_topology_readback_tests;

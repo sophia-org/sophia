@@ -43,10 +43,52 @@ impl CombinedFacade {
             job,
         }
     }
+
+    /// The issuing facade's claim, for the accept fixture's stub renderer.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(super) fn claim(&self) -> &Arc<OutputClaim> {
+        &self.claim
+    }
+}
+
+/// Why a held combined result cannot be accepted now (AUTHORITY-STEP3 F2,
+/// R5). Every check reads only: on a refusal nothing has changed, and the
+/// held result stays for the owner's ordinary disposal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CombinedAcceptRefusal {
+    /// No live facade of this native owner and head issued the admission.
+    NotIssuing,
+    /// The facade does not hold this admission's result.
+    NotHeld,
+    Quarantined,
+    Stalled,
+    /// An ordinary render is in flight on this facade.
+    OrdinaryInFlight,
+    /// An ordinary frame was queued during validation: the head is busy
+    /// (R4), never a scene-only fallback.
+    OrdinaryPending,
+    HeadPendingContent,
+    HeadRenderingContent,
+    /// Content on this head still owes a retirement.
+    RetirementProtected,
+    /// The head no longer serves the admitted output alone.
+    Topology,
+    TargetGeneration,
+    /// The expected correlation does not name this owner, head, target and
+    /// native frame as the combined request.
+    Identity,
+    /// The content is not the admitted native frame's.
+    Content,
+    /// The output refuses the plan's damage snapshot as its pending frame.
+    PendingTransition,
+    /// The output already has a pending frame.
+    PendingFrame,
+    /// The output already has a rendering frame: mark-rendering would fail.
+    RenderingTransition,
 }
 
 /// Owner-numbered requests start at 1, so this never names one in flight.
-pub(super) const COMBINED_REQUEST: LiveRendererWorkerRequestId = LiveRendererWorkerRequestId(0);
+pub(crate) const COMBINED_REQUEST: LiveRendererWorkerRequestId = LiveRendererWorkerRequestId(0);
 
 /// What the owner froze for the renderer at dispatch; opaque to the runtime.
 pub struct CombinedRenderPlan {
@@ -305,6 +347,62 @@ impl NativeGbmRendererWorker {
         job: u64,
     ) -> CombinedRelease {
         self.give_up_combined_held(facade.admission(job))
+    }
+
+    /// The facade's part of the accept preflight: reads only.
+    pub(crate) fn combined_accept_refusal(
+        &self,
+        facade: &CombinedFacade,
+        job: u64,
+    ) -> Option<CombinedAcceptRefusal> {
+        if self.quarantined {
+            return Some(CombinedAcceptRefusal::Quarantined);
+        }
+        if self.stalled.is_some() {
+            return Some(CombinedAcceptRefusal::Stalled);
+        }
+        if self.in_flight.is_some() {
+            return Some(CombinedAcceptRefusal::OrdinaryInFlight);
+        }
+        match &self.combined_release {
+            CombinedReleaseCell::Held { admission, .. } if *admission == facade.admission(job) => {
+                None
+            }
+            _ => Some(CombinedAcceptRefusal::NotHeld),
+        }
+    }
+
+    /// Accept step 4 (F2): the held result becomes this facade's one request
+    /// in flight, as `COMBINED_REQUEST` with the owner's expected correlation
+    /// and format, and the cell frees. `poll()` then checks it as the reply.
+    /// The owner ran `combined_accept_refusal` earlier in this turn, so this
+    /// cannot refuse.
+    pub(crate) fn accept_combined_held(
+        &mut self,
+        facade: &CombinedFacade,
+        job: u64,
+        correlation: LiveRendererFrameCorrelation,
+        output_format: Option<sophia_renderer_live::LiveCompositionFormatRequest>,
+    ) {
+        let CombinedReleaseCell::Held { admission, result } =
+            std::mem::replace(&mut self.combined_release, CombinedReleaseCell::Free)
+        else {
+            unreachable!("the accept preflight found this admission held");
+        };
+        assert_eq!(
+            admission,
+            facade.admission(job),
+            "accept preflighted another admission"
+        );
+        self.in_flight = Some(InFlightRequest {
+            capture: false,
+            request_id: COMBINED_REQUEST,
+            correlation,
+            output_format,
+            submitted_at: Instant::now(),
+            soft_stall_reported: false,
+            ready: Some(result),
+        });
     }
 
     pub(crate) fn flush_combined_release_for(

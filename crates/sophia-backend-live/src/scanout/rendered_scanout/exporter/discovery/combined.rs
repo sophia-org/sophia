@@ -1,8 +1,8 @@
 //! The combined frame job's exporter hop: the facade is private here, so the
 //! native scanout reaches it only through these forwarders.
 use super::super::worker::{
-    CombinedFacade, CombinedRelease, CombinedRenderPlan, CombinedRenderResult,
-    CombinedSettleRefused,
+    CombinedAcceptRefusal, CombinedFacade, CombinedRelease, CombinedRenderPlan,
+    CombinedRenderResult, CombinedSettleRefused,
 };
 use super::*;
 use sophia_runtime::{CombinedInbox, CombinedReservation, IsbValidationWorker, ValidatedIsbPixels};
@@ -71,6 +71,37 @@ impl<R: RenderDeviceDiscoveryBackend> NativeGbmRenderedScanoutBufferDiscoveryExp
                 Box::new(result),
             )),
         }
+    }
+
+    /// The exporter's part of the accept preflight: the issuing facade's
+    /// checks, then no ordinary frame queued on this exporter. Reads only.
+    pub(crate) fn combined_accept_refusal(
+        &self,
+        facade: &CombinedFacade,
+        job: u64,
+    ) -> Option<CombinedAcceptRefusal> {
+        let Some(worker) = self.worker.as_ref().filter(|worker| worker.issued(facade)) else {
+            return Some(CombinedAcceptRefusal::NotIssuing);
+        };
+        worker.combined_accept_refusal(facade, job).or_else(|| {
+            self.pending_frame
+                .is_some()
+                .then_some(CombinedAcceptRefusal::OrdinaryPending)
+        })
+    }
+
+    /// Accept step 4 on the issuing facade, after `combined_accept_refusal`
+    /// passed in this owner turn.
+    pub(crate) fn accept_combined_held(
+        &mut self,
+        facade: &CombinedFacade,
+        job: u64,
+        correlation: crate::LiveRendererFrameCorrelation,
+        output_format: Option<sophia_renderer_live::LiveCompositionFormatRequest>,
+    ) {
+        self.issuing(facade)
+            .expect("the accept preflight found the issuing facade")
+            .accept_combined_held(facade, job, correlation, output_format);
     }
 
     pub(crate) fn release_combined_held(

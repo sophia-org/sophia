@@ -474,17 +474,8 @@ impl LiveProductionNativeScanout {
     }
 
     pub(super) fn installed_retirement_protected(&self, output: OutputId) -> bool {
-        self.head_indices_iter(output).any(|index| {
-            let head = &self.heads[index];
-            [
-                head.pending_content,
-                head.rendering_content,
-                head.submitted_content,
-            ]
-            .into_iter()
-            .flatten()
-            .any(LiveProductionScanoutContent::requires_retirement)
-        })
+        self.head_indices_iter(output)
+            .any(|index| self.heads[index].retirement_protected())
     }
 
     pub(crate) fn retained_repaint_deferred(&self) -> bool {
@@ -976,3 +967,18 @@ impl LiveProductionNativeScanout {
 
 include!("output_frame_queue.rs");
 include!("render_metrics.rs");
+
+impl LiveProductionNativeHead {
+    /// Content on this head still owes a retirement. Shared with the
+    /// combined accept preflight.
+    pub(crate) fn retirement_protected(&self) -> bool {
+        [
+            self.pending_content,
+            self.rendering_content,
+            self.submitted_content,
+        ]
+        .into_iter()
+        .flatten()
+        .any(LiveProductionScanoutContent::requires_retirement)
+    }
+}
