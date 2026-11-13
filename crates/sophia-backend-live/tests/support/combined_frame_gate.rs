@@ -379,8 +379,11 @@ fn a_gate_armed_for_another_output_holds_nothing_here() {
     let (job, _, _) = entered(&handle, "the gated output's job reaches the gate");
     assert_eq!(job, reservation.job());
     handle.release();
-    released(&handle, "the hold ends on release");
-    let result = result_after_wake(&there.facade, &there.owner);
+    let after = released(&handle, "the hold ends on release");
+    assert_eq!((after.job, after.by), (job, GateRelease::Released));
+    // A core rings only the first owner wake attached to it, here's: the
+    // one Session owner per core.
+    let result = result_after_wake(&there.facade, &here.owner);
     assert!(matches!(&result.outcome, CombinedOutcome::Rendered(_)));
     settle(&mut there, &issued, reservation, result);
 }
