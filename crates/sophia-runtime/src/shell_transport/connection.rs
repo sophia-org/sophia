@@ -31,7 +31,10 @@ impl ShellTransportConnection<'_> {
     /// Where a combined job's candidate stands, read from existing state
     /// only (G3-5c C4); `None` when the binding's grant has no active store.
     /// Absence is never death: see `frame_candidate_state`.
-    #[cfg(feature = "experimental-combined-frame-job")]
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction"
+    ))]
     pub fn content_frame_candidate_state(
         &self,
         binding: crate::FrameCopyBinding,

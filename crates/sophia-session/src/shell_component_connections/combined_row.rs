@@ -26,19 +26,14 @@
 //! so the content service's consumption arm is the same code production
 //! builds. No production caller supplies a row until gate 4; the
 //! fault-injection and observation storage stay test-only.
-#![cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "gate 4's owner turn drives the hooks, the walk and the consumption; until then only the controls supply a row"
-    )
-)]
 use super::*;
+#[cfg(test)]
+use sophia_backend_live::LiveShellContentFrame;
 use sophia_backend_live::{
     CombinedComposeRefusal, CombinedComposition, CombinedDispatch, CombinedDisposition,
     CombinedHead, CombinedRelease, CombinedRenderPlan, CombinedRenderResult, CombinedSettleRefused,
     LiveProductionCpuScene, LiveProductionCursorPresentation, LiveProductionVisualRuntime,
-    LiveShellContentFrame, LiveShellContentLayer, ShellContentNative,
+    LiveShellContentLayer, ShellContentNative,
 };
 use sophia_engine::HeadlessOutput;
 use sophia_protocol::Point;
@@ -51,10 +46,13 @@ use sophia_runtime::{
 use std::sync::mpsc;
 use std::time::Instant;
 
+#[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
 type Worker = IsbValidationWorker<CombinedRenderPlan>;
+#[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
 type Failures = [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS];
 
 /// What the hooks read from the owner turn, built once per controlled turn.
+#[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
 pub(crate) struct CombinedTurn<'a, N> {
     pub native: &'a mut N,
     pub runtime: &'a LiveProductionVisualRuntime,
@@ -73,6 +71,7 @@ pub(crate) struct CombinedTurn<'a, N> {
 
 /// The owner loop's cursor rule over one pointer reading, and that reading
 /// as the plane position.
+#[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
 pub(crate) fn turn_cursor(
     native: bool,
     position: Option<Point>,
@@ -96,18 +95,22 @@ pub(crate) struct CombinedConsume<'a> {
 
 #[derive(Default)]
 pub(crate) struct CombinedRow {
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     next_ticket: u64,
     /// The one admission between `reserve` and its end in `cancel` or
     /// `submitted`, inside one proposal.
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     open: Option<Open>,
     jobs: Vec<Job>,
     /// Reservations whose cancellation the facade did not confirm, with the
     /// grant they were made under; the walk retries them.
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     cancels: Vec<(ContentGrant, CombinedHead)>,
     /// Invariant failures not yet reported, with their originating grant.
     errors: Vec<(ContentGrant, String)>,
     /// Invariant failures of attempts that had already ended when they were
     /// reported: kept for the controls, never a slot failure.
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     diagnostics: Vec<(ContentGrant, String)>,
     /// Declared delivery faults still to inject.
     #[cfg(test)]
@@ -118,6 +121,7 @@ pub(crate) struct CombinedRow {
     projections: Vec<LiveShellContentFrame>,
 }
 
+#[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
 struct Open {
     ticket: u64,
     grant: ContentGrant,
@@ -126,11 +130,14 @@ struct Open {
 }
 
 enum Stage {
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     Composed(CombinedComposition),
     /// The dispatch, with the admission's exact candidate and its original
     /// validation deadline (G3-5c).
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     Planned(CombinedDispatch, FrameCopyBinding, Instant),
     /// The plan was not built; the composition went with that attempt.
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     Unplanned,
 }
 
@@ -155,6 +162,7 @@ struct Job {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Verdict {
     /// No decision yet.
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     Open,
     /// The walk released a Held result at its deadline while its candidate
     /// was live: a later bundle takes the failure terminal.
@@ -183,11 +191,13 @@ pub(crate) enum CombinedJoin {
 enum State {
     /// The validator owns the job; a failed validation or a refused move
     /// returns the plan on `returned`.
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     InFlight {
         reservation: CombinedReservation,
         returned: mpsc::Receiver<CombinedRenderPlan>,
     },
     /// Settlement refused and returned everything; it is retried.
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     Unsettled {
         reservation: CombinedReservation,
         result: Box<CombinedRenderResult>,
@@ -195,6 +205,7 @@ enum State {
     },
     /// The facade took its part; only the credit clear is retried, with the
     /// original worker and the returned reservation and token.
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     Credit {
         reservation: CombinedReservation,
         token: CombinedToken,
@@ -202,11 +213,13 @@ enum State {
         disposition: CombinedDisposition,
     },
     /// Settled; the delivery was refused and is offered again.
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     Undelivered {
         result: CombinedResult,
         disposition: CombinedDisposition,
     },
     /// Exported and delivered: the issuing facade holds the lease.
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     Held,
     /// Delivered with no lease held, for c's terminal or its retirement; or
     /// a lease-free expiry whose Release transferred (`Expired`).
@@ -217,6 +230,7 @@ enum State {
 
 /// What one collection step leaves: a state to keep, or a settled result to
 /// deliver.
+#[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
 enum Step {
     Keep(State),
     Deliver(CombinedResult, CombinedDisposition),
@@ -230,6 +244,7 @@ fn report(errors: &mut Vec<(ContentGrant, String)>, job: &mut Job, what: &str) {
 }
 
 /// Mismatch's pixels drop here, on the owner thread; its job is Malformed.
+#[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
 fn delivered(pixels: ValidatedIsbPixels, disposition: CombinedDisposition) -> CombinedResult {
     if disposition == CombinedDisposition::Mismatch {
         drop(pixels);
@@ -242,6 +257,7 @@ fn delivered(pixels: ValidatedIsbPixels, disposition: CombinedDisposition) -> Co
 impl CombinedRow {
     /// Owed work: an open admission, a job in any state, or an unconfirmed
     /// cancellation. It joins final quiescence only.
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     pub(crate) fn pending(&self) -> usize {
         usize::from(self.open.is_some()) + self.jobs.len() + self.cancels.len()
     }
@@ -266,6 +282,7 @@ impl CombinedRow {
             .collect()
     }
 
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     pub(crate) fn unconfirmed_cancels(&self) -> usize {
         self.cancels.len()
     }
@@ -351,6 +368,7 @@ impl CombinedRow {
     /// Held and Failed follow REV3's table over `candidate`, the runtime's
     /// own candidate fact, and the job's unchanged deadline at `instant`.
     /// Every Release completes through `released`.
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     fn walk<N: ShellContentNative>(
         &mut self,
         native: &mut N,
@@ -389,6 +407,7 @@ impl CombinedRow {
 
     /// REV3's table for a Held or Failed job of the current grant. A missing
     /// candidate state is Unknown: absence is never death. True to keep.
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     fn dispose<N: ShellContentNative>(
         &mut self,
         native: &mut N,
@@ -506,6 +525,7 @@ impl CombinedRow {
 
     /// The first error of `current`, the slot's unrevoked attempt; errors of
     /// any other grant become cleanup diagnostics first (R1).
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     fn take_error(&mut self, current: Option<ContentGrant>) -> Option<ShellTransportError> {
         let (errors, ended): (Vec<_>, Vec<_>) = std::mem::take(&mut self.errors)
             .into_iter()
@@ -515,6 +535,7 @@ impl CombinedRow {
         (!self.errors.is_empty()).then(|| ShellTransportError::CombinedRow(self.errors.remove(0).1))
     }
 
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     fn cancel<N: ShellContentNative>(
         &mut self,
         native: &mut N,
@@ -529,6 +550,7 @@ impl CombinedRow {
     }
 
     /// One job's collection; `None` when the job ended here.
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     fn collect_one<N: ShellContentNative>(
         &mut self,
         native: &mut N,
@@ -612,6 +634,7 @@ impl CombinedRow {
         Some(job)
     }
 
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     fn settle<N: ShellContentNative>(
         &mut self,
         native: &mut N,
@@ -658,6 +681,7 @@ impl CombinedRow {
 }
 
 /// The hooks for one slot's one image-owner service.
+#[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
 struct CombinedHooks<'r, 't, 'a, N> {
     row: &'r mut CombinedRow,
     turn: &'t mut CombinedTurn<'a, N>,
@@ -831,6 +855,7 @@ impl ShellComponentConnections {
     /// slot's persistent row, in every phase, revoked and replaced attempts
     /// included; then the row's walk. A row invariant of the current attempt
     /// is the slot's failure; one of an ended attempt is a diagnostic (R1).
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     pub(crate) fn turn_combined<N: ShellContentNative>(
         &mut self,
         turn: &mut CombinedTurn<'_, N>,
@@ -886,15 +911,18 @@ impl ShellComponentConnections {
         ))
     }
 
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     pub(crate) fn combined_row(&self, slot: usize) -> &CombinedRow {
         &self.connections[slot].combined
     }
 
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     pub(crate) fn combined_row_mut(&mut self, slot: usize) -> &mut CombinedRow {
         &mut self.connections[slot].combined
     }
 
     /// The slot's image-owner work, the other final-quiescence blocker.
+    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     pub(crate) fn image_pending(&self, slot: usize) -> usize {
         self.connections[slot]
             .images

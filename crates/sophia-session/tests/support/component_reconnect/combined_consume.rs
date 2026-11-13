@@ -35,7 +35,7 @@ impl Lane {
         at: Instant,
         plane: Option<Point>,
         native: bool,
-    ) -> Result<(), String> {
+    ) -> std::result::Result<(), String> {
         let (cursor, plane) = turn_cursor(true, plane);
         let root = Rect {
             x: 0,
@@ -93,7 +93,7 @@ impl Lane {
         at: Instant,
         plane: Option<Point>,
         native: bool,
-    ) -> Result<(), String> {
+    ) -> std::result::Result<(), String> {
         let deadline = Instant::now() + WAIT;
         loop {
             a.peer.poll_io().unwrap();
