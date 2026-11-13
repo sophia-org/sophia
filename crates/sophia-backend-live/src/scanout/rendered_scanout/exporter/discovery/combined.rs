@@ -114,6 +114,16 @@ impl<R: RenderDeviceDiscoveryBackend> NativeGbmRenderedScanoutBufferDiscoveryExp
         self.capture_requested = Some(expected);
     }
 
+    /// Control only: a capture snapshot reserved on this exporter with no
+    /// request outstanding, for the owner-facts decline (G3-5b R4).
+    #[cfg(all(test, feature = "experimental-combined-frame-job"))]
+    pub(crate) fn reserve_combined_capture_for_control(&mut self) {
+        let reservation = sophia_renderer_live::LiveSnapshotReservation::for_image(16, 16).unwrap();
+        self.capture_reservation = Some(std::sync::Arc::new(std::sync::Mutex::new(Some(
+            reservation,
+        ))));
+    }
+
     /// The exporter's part of the accept preflight: the issuing facade's
     /// checks, then no ordinary frame queued on this exporter. Reads only.
     pub(crate) fn combined_accept_refusal(

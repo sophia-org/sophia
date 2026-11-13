@@ -18,6 +18,7 @@
 //! row keeps what came back and reports once, not that the fault can
 //! happen. The two-proposal call order (R4) and the hooks=None accounting
 //! comparison are the runtime's lane controls, through the same entry.
+use super::super::super::content::reconnect_fixture::project;
 use super::*;
 use crate::shell_component_connections::combined_row::{CombinedTurn, turn_cursor};
 use sophia_backend_live::{
@@ -58,6 +59,8 @@ struct Attempt {
     submitted: u64,
     /// Every frame outcome: candidate generation, kind and reason.
     outcomes: Vec<(u64, u16, u16)>,
+    /// The ordinary projection of each bundle submitted on today's path.
+    bundles: Vec<LiveShellContentFrame>,
     /// ResourceStatus records for the resource, valid and not.
     accepted: usize,
     refused: usize,
@@ -144,6 +147,7 @@ impl Lane {
             stream,
             submitted: 0,
             outcomes: Vec::new(),
+            bundles: Vec::new(),
             accepted: 0,
             refused: 0,
         };
@@ -173,6 +177,11 @@ impl Lane {
     /// Fills and queues frame `n`: candidate generation `n`, resource
     /// generation `n`, one 1x1 pixel.
     fn submit(&mut self, a: &mut Attempt, n: u64, pixel: [u8; 4]) {
+        self.submit_at(a, n, pixel, &[0]);
+    }
+
+    /// As `submit`, with the one resource placed once at each x offset.
+    fn submit_at(&mut self, a: &mut Attempt, n: u64, pixel: [u8; 4], xs: &[i16]) {
         let mut commit = ShellFrameRecord::Commit(ShellFrameCommit {
             transaction: TransactionId::from_raw(40 + n),
             image: None,
@@ -194,15 +203,18 @@ impl Lane {
                     parent_surface_index: u16::MAX,
                     anchor_parent_rect: ContentPixelRect::default(),
                 }],
-                placements: vec![ContentPlacement {
-                    resource: ContentResourceId {
-                        id: RESOURCE.id,
-                        generation: n,
-                    },
-                    surface_index: 0,
-                    destination_x_px: 0,
-                    destination_y_px: 0,
-                }],
+                placements: xs
+                    .iter()
+                    .map(|&x| ContentPlacement {
+                        resource: ContentResourceId {
+                            id: RESOURCE.id,
+                            generation: n,
+                        },
+                        surface_index: 0,
+                        destination_x_px: x.into(),
+                        destination_y_px: 0,
+                    })
+                    .collect(),
                 targets: vec![],
             },
         });
@@ -237,6 +249,7 @@ impl Lane {
         }
         let backend = &mut self.h.backend;
         let submitted = &mut a.submitted;
+        let bundles = &mut a.bundles;
         self.h
             .owner
             .with_service(a.key, |service, t| {
@@ -259,6 +272,7 @@ impl Lane {
                     && generation > *submitted
                 {
                     let bundle = t.begin_content_submission(OUTPUT, generation, now).unwrap();
+                    bundles.push(project(t, output(), &bundle));
                     let ShellComponentService::Bar(bar) = service else {
                         panic!("bar required")
                     };
@@ -301,6 +315,14 @@ impl Lane {
             .with_service(a.key, |_, t| {
                 t.lease_content_resource(a.key.grant, resource).is_ok()
             })
+            .unwrap()
+    }
+
+    /// The owner's content charges under `a`'s grant.
+    fn usage(&mut self, a: &Attempt) -> Option<sophia_runtime::ContentMemoryUsage> {
+        self.h
+            .owner
+            .with_service(a.key, |_, t| t.content_usage())
             .unwrap()
     }
 
@@ -888,3 +910,6 @@ fn a_refused_plan_cancels_once_and_settles_its_consumed_candidate() {
         "rejected once"
     );
 }
+
+#[path = "combined_r4.rs"]
+mod r4;

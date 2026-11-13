@@ -153,6 +153,15 @@ mod combined_capture_predicate {
     }
 
     #[test]
+    fn a_closing_owner_with_nothing_retained_declines_every_output() {
+        let mut owner = CaptureOwner::default();
+        owner.closing = true;
+        assert!(owner.pending.is_none() && owner.active.is_none());
+        assert!(owner.may_capture(OutputId::from_raw(1)));
+        assert!(owner.may_capture(OutputId::from_raw(2)));
+    }
+
+    #[test]
     fn an_owner_with_nothing_installed_or_closing_declines_nothing() {
         let owner = CaptureOwner::default();
         assert!(!owner.may_capture(OutputId::from_raw(1)));

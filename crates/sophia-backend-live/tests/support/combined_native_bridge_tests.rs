@@ -214,6 +214,25 @@ fn an_exporter_capture_request_declines_only_its_output() {
     );
 }
 
+/// R4: a reserved snapshot with no request outstanding is still a capture
+/// of that output's frames.
+#[test]
+fn an_exporter_capture_reservation_alone_declines_only_its_output() {
+    let outputs = outputs();
+    let mut fixture = CombinedNativeFixture::new(&outputs);
+    let candidate = candidate(&outputs);
+    fixture.exporters[1].reserve_combined_capture_for_control();
+    assert!(
+        candidate.compose(&fixture).is_ok(),
+        "another output's reservation is not this output's fact"
+    );
+    fixture.exporters[0].reserve_combined_capture_for_control();
+    assert_eq!(
+        ineligible(candidate.compose(&fixture)),
+        CombinedIneligible::CaptureActive
+    );
+}
+
 #[test]
 fn a_declared_compose_fault_comes_back_unclassified_after_one_composition() {
     let outputs = outputs();

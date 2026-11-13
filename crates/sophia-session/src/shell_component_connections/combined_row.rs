@@ -26,7 +26,7 @@ use sophia_backend_live::{
     CombinedComposeRefusal, CombinedComposition, CombinedDispatch, CombinedDisposition,
     CombinedHead, CombinedRelease, CombinedRenderPlan, CombinedRenderResult, CombinedSettleRefused,
     LiveProductionCpuScene, LiveProductionCursorPresentation, LiveProductionVisualRuntime,
-    LiveShellContentLayer, ShellContentNative,
+    LiveShellContentFrame, LiveShellContentLayer, ShellContentNative,
 };
 use sophia_engine::HeadlessOutput;
 use sophia_protocol::Point;
@@ -85,6 +85,9 @@ pub(crate) struct CombinedRow {
     diagnostics: Vec<(ContentGrant, String)>,
     /// Declared delivery faults still to inject.
     refusals: usize,
+    /// Every reserve-time projection, made from the queued frame and the
+    /// host's description before admission, for the R4 comparison.
+    projections: Vec<LiveShellContentFrame>,
 }
 
 struct Open {
@@ -199,6 +202,11 @@ impl CombinedRow {
 
     pub(crate) fn unconfirmed_cancels(&self) -> usize {
         self.cancels.len()
+    }
+
+    /// The reserve-time projections so far, in proposal order.
+    pub(crate) fn projections(&self) -> &[LiveShellContentFrame] {
+        &self.projections
     }
 
     /// Errors reported after their attempt ended, with that attempt's grant.
@@ -472,6 +480,7 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
         ) else {
             return CombinedReserve::Ordinary;
         };
+        self.row.projections.push(projected.clone());
         let composed = turn.native.compose_combined_frame(
             turn.runtime,
             turn.scene,

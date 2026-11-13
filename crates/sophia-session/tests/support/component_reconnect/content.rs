@@ -44,3 +44,13 @@ pub(in crate::live_session) fn prepare(
         allocations: bundle.surfaces.iter().map(|s| s.allocation).collect(),
     });
 }
+
+/// The ordinary projection of `bundle`, as `prepare` admits it.
+pub(in crate::live_session) fn project(
+    transport: &mut ShellTransportConnection<'_>,
+    descriptor: HeadlessOutput,
+    bundle: &ContentRenderBundle,
+) -> LiveShellContentFrame {
+    let allocations = transport.content_allocation_snapshots();
+    project_render_bundle(bundle, descriptor, bundle.output, &allocations).unwrap()
+}

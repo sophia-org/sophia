@@ -73,6 +73,8 @@ pub struct CombinedNativeFixture {
     pub(crate) settle_fault: Option<CombinedSettleFault>,
     /// Declared plan refusals still to inject.
     pub(crate) plan_refusals: usize,
+    /// Renderer reservations attempted through the bridge, refused or not.
+    pub(crate) reserve_attempts: usize,
 }
 
 /// A declared, one-shot settlement fault (G3-5b R2 refusal controls).
@@ -127,6 +129,7 @@ impl CombinedNativeFixture {
             composes: std::cell::Cell::new(0),
             settle_fault: None,
             plan_refusals: 0,
+            reserve_attempts: 0,
         }
     }
 
@@ -152,6 +155,7 @@ impl CombinedNativeFixture {
         &mut self,
         output: OutputId,
     ) -> io::Result<(CombinedHead, CombinedInbox<CombinedRenderPlan>)> {
+        self.reserve_attempts += 1;
         let (head, inbox) = self.routes().reserve(output)?;
         // The facade queued its route registration in that call, on its
         // first reservation; the renderer side takes it now.
@@ -249,6 +253,11 @@ impl CombinedNativeFixture {
     /// Compositions through the bridge entry so far.
     pub fn composes(&self) -> usize {
         self.composes.get()
+    }
+
+    /// Renderer reservations attempted so far, refused ones included.
+    pub fn reserve_attempts(&self) -> usize {
+        self.reserve_attempts
     }
 
     /// Declared fault: the next plan is a refused send, as a plan that no
