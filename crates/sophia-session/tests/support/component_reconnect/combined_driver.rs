@@ -97,7 +97,7 @@ impl ShellComponentSession {
             self.fail_service(key, &error)?;
         }
         // 2. Content: connected slots with a ready service and a layer.
-        for slot in 0..MAX_SHELL_COMPONENTS {
+        for (slot, failed) in first.iter_mut().enumerate() {
             let Some(key) = self.processes.attempt(slot) else {
                 continue;
             };
@@ -112,7 +112,7 @@ impl ShellComponentSession {
             }
             steps.push(Content(slot));
             if let Err(error) = content(self, key, turn) {
-                first[slot] = Some(error.clone());
+                *failed = Some(error.clone());
                 steps.push(FailService(slot));
                 self.fail_service(key, &error)?;
             }
