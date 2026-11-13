@@ -8,7 +8,7 @@ use crate::{
     LibdrmNativeConnectorSnapshot, LibdrmNativeEncoderSnapshot, LibdrmNativeKmsSelectionDevice,
     LibdrmNativePlaneSnapshot, LibdrmNativePrimaryPlaneResourceDevice,
     LibdrmNativePrimaryPlaneSelection, LibdrmNativePropertyHandleSet,
-    LibdrmNativePropertyLookupDevice,
+    LibdrmNativePropertyLookupDevice, Size,
 };
 use std::cell::Cell;
 use std::io;
@@ -40,6 +40,14 @@ impl CountingDevice {
             framebuffers: Cell::new(0),
             commits: Cell::new(0),
             test_commits: Cell::new(0),
+        }
+    }
+
+    /// G3-5d d-2b2: `new` over a device whose one mode is `size`.
+    pub(super) fn sized(refuse: Refuse, size: Size) -> Self {
+        Self {
+            inner: Inner::sized(size),
+            ..Self::new(refuse)
         }
     }
 

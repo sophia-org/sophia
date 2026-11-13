@@ -166,7 +166,7 @@ impl CombinedNativeFixture {
                         selection: LiveRendererSelectionObservation::CpuFallback,
                     },
                 ),
-                device: CountingDevice::new(Refuse::Nothing),
+                device: CountingDevice::sized(Refuse::Nothing, output.size),
             })
             .collect();
         fixture
