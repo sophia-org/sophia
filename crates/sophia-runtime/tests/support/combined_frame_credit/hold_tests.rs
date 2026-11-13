@@ -8,6 +8,7 @@ use super::super::hold::checkpoint;
 use super::tests::{WAIT, plan, source};
 use super::*;
 use rustix::event::{PollFd, PollFlags};
+use std::time::Duration;
 
 fn readable(worker: &Worker) -> bool {
     let mut fds = [PollFd::from_borrowed_fd(worker.readiness(), PollFlags::IN)];

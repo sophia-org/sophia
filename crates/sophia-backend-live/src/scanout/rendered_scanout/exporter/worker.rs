@@ -843,6 +843,7 @@ enum WorkerCommand {
         any(test, feature = "test-support"),
         feature = "experimental-combined-frame-job"
     ))]
+    #[cfg_attr(not(test), allow(dead_code))]
     InstallCombinedGate(service::CombinedGate),
     /// Detach an output and free everything it still holds.
     Deregister {

@@ -52,12 +52,15 @@ pub(crate) struct CombinedGate {
 }
 
 /// The control's half. Dropping it releases a hold as `Disconnected`.
+// Only this crate's tests construct the control half until the d-2b fixture.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct GateHandle {
     facts: mpsc::Receiver<GateFact>,
     release: Option<mpsc::SyncSender<()>>,
 }
 
 /// A gate for `output` whose hold ends at the latest after `wait`.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn combined_gate(
     output: LiveRendererWorkerOutputKey,
     wait: Duration,
@@ -85,6 +88,7 @@ impl CombinedGate {
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 impl GateHandle {
     /// The worker's next fact, or None after `wait`.
     pub(crate) fn next(&self, wait: Duration) -> Option<GateFact> {

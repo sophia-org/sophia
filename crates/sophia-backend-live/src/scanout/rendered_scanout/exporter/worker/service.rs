@@ -23,6 +23,9 @@ mod seam;
     any(test, feature = "test-support"),
     feature = "experimental-combined-frame-job"
 ))]
+// The gate's control half has only this crate's tests as consumers until
+// the d-2b fixture.
+#[cfg_attr(not(test), allow(unused_imports))]
 pub(crate) use seam::{
     CombinedRenderSeam,
     gate::{CombinedGate, GateFact, GateHandle, GateRelease, combined_gate},
