@@ -100,13 +100,6 @@ struct Connection {
         feature = "experimental-native-frame-transaction",
         feature = "native-session"
     ))]
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "gate 4's owner turn reads it; until then the controls"
-        )
-    )]
     combined: combined_row::CombinedRow,
     /// DRM device number of this slot's independently granted render node.
     /// Only such a slot may be offered DMA-BUF capture.

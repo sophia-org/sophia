@@ -257,7 +257,6 @@ fn delivered(pixels: ValidatedIsbPixels, disposition: CombinedDisposition) -> Co
 impl CombinedRow {
     /// Owed work: an open admission, a job in any state, or an unconfirmed
     /// cancellation. It joins final quiescence only.
-    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     pub(crate) fn pending(&self) -> usize {
         usize::from(self.open.is_some()) + self.jobs.len() + self.cancels.len()
     }

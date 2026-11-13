@@ -204,9 +204,10 @@ pub(super) fn service(
 }
 
 /// Owed combined work in this slot's row, which joins final quiescence and
-/// nothing else (G3-5b R1). No row exists outside the controlled driver.
+/// nothing else (G3-5b R1). The row is compiled with the CS features, so
+/// this predicate is too; until gate 4 only the controlled driver admits a
+/// job into it.
 #[cfg(all(
-    test,
     feature = "experimental-combined-frame-job",
     feature = "experimental-native-frame-transaction",
     feature = "native-session"
@@ -216,7 +217,6 @@ pub(super) fn combined_pending(connection: &Connection) -> usize {
 }
 
 #[cfg(not(all(
-    test,
     feature = "experimental-combined-frame-job",
     feature = "experimental-native-frame-transaction",
     feature = "native-session"
