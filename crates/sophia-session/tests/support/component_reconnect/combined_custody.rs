@@ -1,30 +1,29 @@
 //! G3-5d d-2b3a Session controls: running-core custody, Held/Unknown
 //! against Ended (REV2 R3 as corrected by the d-2b3a reachability review).
-//! Every owner turn is the split driver with native service. Each control
-//! starts from an already-rendered, uncollected result
-//! (`rendered_uncollected`): the render disposition is fixed and the
+//! Every owner turn is the split driver with native service, admission
+//! included (b2's `admitted`). Each control starts from an already-rendered,
+//! uncollected result (`rendered`): the render disposition is fixed and the
 //! exported lease exists before its trigger.
 //!
 //! Two clocks are named where used: the admitted Instant deadline, which
 //! only a turn's supplied Instant passes and which is never refreshed, and
-//! the content candidate clock, advanced only through
-//! `advance_content_clock`. Release has two events, kept apart: the
-//! Transferred receipt, read from the release counters in the turn whose
-//! walk enqueues the Release, and slot freedom, `leased` back to 0 when the
-//! worker consumes it, waited for separately. There is no worker ACK.
+//! the content clock, advanced only through `advance_content_clock`, and
+//! only by the candidate timeout, so that the candidate's own deadline
+//! passes and the resource transfer's does not (control (b)). Release has
+//! two events, kept apart: the Transferred receipt, read from the release
+//! counters in the turn whose walk enqueues the Release, and slot freedom,
+//! `leased` back to 0 when the worker consumes it, waited for separately.
+//! There is no worker ACK.
 //!
 //! Labelled: the trigger in each control is one owner or peer call between
 //! turns (stop, a peer Close with one owner transport read, an owner
 //! allocation invalidation); no control injects anything between a turn's
 //! four calls, and none claims b2's uninterrupted T1 property.
 use super::*;
-use crate::shell_component_connections::images::advance_content_clock;
+use crate::shell_component_connections::images::{advance_content_clock, content_now_msec};
 use sophia_runtime::FrameCandidateState::{Ended, Unknown};
 use sophia_shell_client::FrameStreamState;
 
-/// Past any candidate's preparation deadline on the content clock (as
-/// G3-5c's expiry controls).
-const EXPIRY_MSEC: u64 = 600_000;
 const TIMEOUT: (u16, u16) = (3, ContentReason::Timeout as u16);
 const LOST: (u16, u16) = (3, ContentReason::AllocationLost as u16);
 
@@ -88,13 +87,18 @@ fn peer_reads_terminal(a: &mut Attempt, n: u64, label: &str) {
     }
 }
 
-/// The rendered, uncollected result's job, with its lease held.
+/// Candidate 1 admitted through b2's split-driver turns (`admitted`), then
+/// its render result's ring, with no owner call after the turn that left
+/// the job in flight: the result waits uncollected with its lease held.
 fn rendered(lane: &mut Lane, wake: &sophia_wake::Wake, a: &mut Attempt) -> u64 {
-    lane.rendered_uncollected(wake, a);
-    let states = lane.states();
-    let &[(job, "in flight")] = states.as_slice() else {
-        panic!("one job in flight: {:?}", lane.states())
-    };
+    lane.submit(a, 1, PIXEL);
+    let job = lane.admitted(a);
+    assert!(
+        wake.wait(Some(Instant::now() + WAIT)).unwrap(),
+        "the forwarded frame's render result rings the owner"
+    );
+    assert_eq!(lane.native.seen().len(), 1, "the seam read one occurrence");
+    assert_eq!(lane.states(), [(job, "in flight")], "not yet collected");
     assert_eq!(lane.leased(), 1, "the exported result holds its slot");
     assert_eq!(lane.releases(), (0, 0));
     job
@@ -149,24 +153,48 @@ fn a_grant_revoked_before_the_result_turn_releases_the_held_lease_in_that_turn()
 }
 
 /// REV2 R3's same-generation rejection row, as an expiry-induced rejection
-/// on the content clock (not every possible rejection). The clock moves
-/// before the result turn. That turn's images step delivers the result into
-/// Held, then settles the copy: `finish_frame_copy` takes the copy gate and
-/// its own deadline check rejects the candidate with Timeout, so content
-/// has no bundle to join. With the stream open and the same generation the
+/// on the content clock (not every possible rejection). The candidate's
+/// deadline is its commit time plus the negotiated candidate timeout; the
+/// resource transfer's is its reservation time plus the transfer timeout.
+/// Both begin after `before`, so advancing the clock by exactly the
+/// candidate timeout passes the first at the deciding turn, and the second
+/// stays ahead while that turn ends before `before` plus the transfer
+/// timeout, which is asserted. That turn's images step delivers the result
+/// into Held, then settles the copy: the transfer completes, and
+/// `finish_frame_copy` takes the copy gate with no failure, so its own
+/// deadline check rejects the candidate with Timeout and content has no
+/// bundle to join. With the stream open and the same generation the
 /// candidate fact is Unknown, and the walk keeps Held before the admitted
 /// Instant deadline. A later turn at an Instant past that deadline releases
-/// it once.
+/// it once. The binding is captured first, so the fact is read even if a
+/// faulty walk removed the row.
 #[test]
 fn an_expired_candidate_keeps_held_unknown_until_the_deadline_then_releases() {
     let (mut lane, wake) = Lane::running();
     let mut a = lane.attempt();
+    let limits = lane
+        .h
+        .owner
+        .with_service(a.key, |_, t| t.content_limits().cloned())
+        .unwrap()
+        .expect("negotiated limits");
+    let (candidate, transfer) = (
+        u64::from(limits.candidate_timeout_ms),
+        u64::from(limits.transfer_timeout_ms),
+    );
+    assert!(candidate < transfer, "a window between the two deadlines");
+    let before = content_now_msec();
     let job = rendered(&mut lane, &wake, &mut a);
+    let binding = lane.h.owner.processes.combined_row(0).binding(job).unwrap();
     let deadline = lane.deadline_of(job);
-    advance_content_clock(EXPIRY_MSEC);
+    advance_content_clock(candidate);
     let at = Instant::now();
     assert!(at < deadline, "the deciding turn precedes the deadline");
     let (steps, accepted) = lane.quiet_driver_turn_at(at);
+    assert!(
+        content_now_msec() < before + transfer,
+        "precondition: the deciding turn ended before any transfer deadline"
+    );
     assert_eq!(steps, TURN);
     assert_eq!(accepted, [0], "no bundle joined");
     peer_reads_terminal(&mut a, 1, "rejection");
@@ -176,7 +204,7 @@ fn an_expired_candidate_keeps_held_unknown_until_the_deadline_then_releases() {
         "the candidate's own expiry, once"
     );
     assert_eq!(
-        lane.candidate(&a, job),
+        lane.candidate_of(&a, binding, job),
         Some(Unknown),
         "Unknown: same generation, stream open"
     );
