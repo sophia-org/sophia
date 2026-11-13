@@ -710,13 +710,7 @@ impl ShellComponentConnections {
                     *failure = Some((ComponentConnectionKey { slot, grant }, error));
                 }
             }
-            if let Some(owner) = connection.images.as_mut()
-                && let Err(error) = owner.service(
-                    &mut connection.transport,
-                    &mut self.epochs,
-                    content_now_msec(),
-                    std::time::Instant::now(),
-                )
+            if let Err(error) = images::service(connection, &mut self.epochs)
                 && failure.is_none()
             {
                 *failure = Some((key, error));
@@ -791,14 +785,7 @@ impl ShellComponentConnections {
         let result = connection.transport.disconnect(&mut self.epochs);
         connection.attempt = Some((grant, ComponentConnectionPhase::Revoked));
         result?;
-        if let Some(owner) = connection.images.as_mut() {
-            owner.service(
-                &mut connection.transport,
-                &mut self.epochs,
-                content_now_msec(),
-                std::time::Instant::now(),
-            )?;
-        }
+        images::service(connection, &mut self.epochs)?;
         Ok(())
     }
 

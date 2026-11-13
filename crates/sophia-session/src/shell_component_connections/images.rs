@@ -182,3 +182,20 @@ pub(super) fn visit_worker<'a>(
         ));
     }
 }
+
+/// One service of this slot's retained image owner on the content clock. The
+/// owner outlives its attempt, so a revoked slot is serviced as well.
+pub(super) fn service(
+    connection: &mut Connection,
+    epochs: &mut sophia_runtime::ContentEpochRegistry,
+) -> Result<(), ShellTransportError> {
+    let Some(owner) = connection.images.as_mut() else {
+        return Ok(());
+    };
+    owner.service(
+        &mut connection.transport,
+        epochs,
+        content_now_msec(),
+        Instant::now(),
+    )
+}
