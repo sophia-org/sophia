@@ -291,6 +291,27 @@ impl NativeGbmRendererWorker {
         reservation: CombinedReservation,
         result: CombinedRenderResult,
     ) -> Result<ValidatedIsbPixels, CombinedSettleRefused> {
+        let (reservation, token, pixels) =
+            self.settle_combined_cell(facade, reservation, result)?;
+        match validator.settle_combined_token(reservation, token) {
+            Ok(()) => Ok(pixels),
+            Err((reservation, token)) => {
+                Err(CombinedSettleRefused::Credit(reservation, token, pixels))
+            }
+        }
+    }
+
+    /// The facade's half of settlement: the exported lease is held, or the
+    /// cell frees; the credit is still owed. Callers: `settle_combined_frame`,
+    /// and the combined fixture's declared credit fault, which returns the
+    /// owed credit as refused.
+    pub(crate) fn settle_combined_cell(
+        &mut self,
+        facade: &CombinedFacade,
+        reservation: CombinedReservation,
+        result: CombinedRenderResult,
+    ) -> Result<(CombinedReservation, CombinedToken, ValidatedIsbPixels), CombinedSettleRefused>
+    {
         if !reservation.owns(&result.token) {
             return Err(CombinedSettleRefused::Refused(
                 reservation,
@@ -330,12 +351,7 @@ impl NativeGbmRendererWorker {
                 }),
             ));
         }
-        match validator.settle_combined_token(reservation, token) {
-            Ok(()) => Ok(pixels),
-            Err((reservation, token)) => {
-                Err(CombinedSettleRefused::Credit(reservation, token, pixels))
-            }
-        }
+        Ok((reservation, token, pixels))
     }
 
     /// `None` for any admission but the one this facade is still waiting on,

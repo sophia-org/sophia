@@ -5,6 +5,8 @@ use super::super::worker::{
     CombinedRenderResult, CombinedSettleRefused,
 };
 use super::*;
+#[cfg(any(test, feature = "test-support"))]
+use sophia_runtime::CombinedToken;
 use sophia_runtime::{CombinedInbox, CombinedReservation, IsbValidationWorker, ValidatedIsbPixels};
 use std::io;
 use std::sync::mpsc::TryRecvError;
@@ -81,6 +83,35 @@ impl<R: RenderDeviceDiscoveryBackend> NativeGbmRenderedScanoutBufferDiscoveryExp
                 Box::new(result),
             )),
         }
+    }
+
+    /// The facade's half of settlement alone, for the combined fixture's
+    /// declared credit fault; everything comes back on any other exporter.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn settle_combined_cell(
+        &mut self,
+        facade: &CombinedFacade,
+        reservation: CombinedReservation,
+        result: CombinedRenderResult,
+    ) -> Result<(CombinedReservation, CombinedToken, ValidatedIsbPixels), CombinedSettleRefused>
+    {
+        match self.issuing(facade) {
+            Some(worker) => worker.settle_combined_cell(facade, reservation, result),
+            None => Err(CombinedSettleRefused::RendererNotFound(
+                reservation,
+                Box::new(result),
+            )),
+        }
+    }
+
+    /// Control only: a capture of `expected` requested on this exporter, for
+    /// the owner-facts decline (G3-5b). No snapshot is reserved.
+    #[cfg(all(test, feature = "experimental-combined-frame-job"))]
+    pub(crate) fn request_combined_capture_for_control(
+        &mut self,
+        expected: super::super::LiveNativeFrameIdentity,
+    ) {
+        self.capture_requested = Some(expected);
     }
 
     /// The exporter's part of the accept preflight: the issuing facade's

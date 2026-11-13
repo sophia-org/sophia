@@ -19,7 +19,10 @@
 //! G3-5b Q1: `declare_compose_fault` replaces the result at the compose
 //! boundary with an unclassified error after the real composition ran. It
 //! proves the error's propagation and ownership, not that a real compositor
-//! defect can reach it.
+//! defect can reach it. `declare_settle_fault` is the same kind of declared
+//! fault at settlement, once: a refusal that returns everything, or a credit
+//! refused after the facade's real half. A retry that succeeds afterwards is
+//! not evidence that a real identity mismatch heals.
 //!
 //! Public under test-support and the combined feature for Session's tests,
 //! which reach it only through `new` and `ShellContentNative`; its parts stay
@@ -34,6 +37,9 @@ use super::*;
 
 #[path = "combined_native_fixture_tests.rs"]
 mod tests;
+// G3-5b: the compose/plan bridge and the owner facts.
+#[path = "combined_native_bridge_tests.rs"]
+mod bridge_tests;
 
 /// No render device: renders come from the deterministic boundary.
 pub(crate) struct NoDevice;
@@ -63,6 +69,21 @@ pub struct CombinedNativeFixture {
     pub(crate) compose_fault: Option<&'static str>,
     /// Compositions through the bridge entry.
     pub(crate) composes: std::cell::Cell<usize>,
+    /// The next settlement's declared fault, if any.
+    pub(crate) settle_fault: Option<CombinedSettleFault>,
+    /// Declared plan refusals still to inject.
+    pub(crate) plan_refusals: usize,
+}
+
+/// A declared, one-shot settlement fault (G3-5b R2 refusal controls).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CombinedSettleFault {
+    /// The facade refuses and returns the reservation and result unchanged;
+    /// nothing is held or freed.
+    Refused,
+    /// The facade's real half runs, and the owed credit comes back refused
+    /// as the validator would refuse it.
+    Credit,
 }
 
 impl CombinedNativeFixture {
@@ -104,6 +125,8 @@ impl CombinedNativeFixture {
             renderer,
             compose_fault: None,
             composes: std::cell::Cell::new(0),
+            settle_fault: None,
+            plan_refusals: 0,
         }
     }
 
@@ -155,7 +178,18 @@ impl CombinedNativeFixture {
         reservation: CombinedReservation,
         result: CombinedRenderResult,
     ) -> Result<ValidatedIsbPixels, CombinedSettleRefused> {
-        self.routes().settle(head, validator, reservation, result)
+        match self.settle_fault.take() {
+            None => self.routes().settle(head, validator, reservation, result),
+            Some(CombinedSettleFault::Refused) => Err(CombinedSettleRefused::Refused(
+                reservation,
+                Box::new(result),
+            )),
+            Some(CombinedSettleFault::Credit) => {
+                let (reservation, token, pixels) =
+                    self.routes().settle_cell(head, reservation, result)?;
+                Err(CombinedSettleRefused::Credit(reservation, token, pixels))
+            }
+        }
     }
 
     pub(crate) fn release_combined_held(
@@ -197,6 +231,11 @@ impl CombinedNativeFixture {
         admitted: &sophia_protocol::ContentResourceBegin,
         deadline: std::time::Instant,
     ) -> Option<(CombinedRenderPlan, crate::CombinedDispatch)> {
+        if self.plan_refusals > 0 {
+            self.plan_refusals -= 1;
+            drop(composition);
+            return None;
+        }
         self.routes()
             .plan(composition, head, frame, admitted, deadline)
     }
@@ -210,6 +249,17 @@ impl CombinedNativeFixture {
     /// Compositions through the bridge entry so far.
     pub fn composes(&self) -> usize {
         self.composes.get()
+    }
+
+    /// Declared fault: the next plan is a refused send, as a plan that no
+    /// longer matches its composition would be.
+    pub fn declare_plan_refusal(&mut self) {
+        self.plan_refusals += 1;
+    }
+
+    /// The next settlement takes `fault`, once.
+    pub fn declare_settle_fault(&mut self, fault: CombinedSettleFault) {
+        self.settle_fault = Some(fault);
     }
 
     // The renderer's turn, for Session's tests: the real route decides
@@ -226,9 +276,22 @@ impl CombinedNativeFixture {
         self.renderer.serve(key, at, reply);
     }
 
-    /// Release commands the renderer has received so far.
+    /// Parks the one forwarded combined frame until `serve_combined`, so a
+    /// stop can land between forwarding and render.
+    pub fn park_combined(&mut self) -> bool {
+        self.renderer.park()
+    }
+
+    /// Release commands the renderer has received so far; this also drains
+    /// `fill_renderer_queue`'s filler.
     pub fn renderer_releases(&mut self) -> usize {
         self.renderer.releases()
+    }
+
+    /// Fills the renderer's command queue, so the next Release enqueue sees
+    /// `Full`, until `renderer_releases` drains it.
+    pub fn fill_renderer_queue(&mut self) {
+        self.renderer.fill();
     }
 
     // The owner's ordinary facts and admission, over the same parts.

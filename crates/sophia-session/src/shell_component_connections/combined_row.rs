@@ -74,6 +74,8 @@ pub(crate) struct CombinedRow {
     cancels: Vec<CombinedHead>,
     /// Invariant failures not yet reported.
     errors: Vec<String>,
+    /// Declared delivery faults still to inject.
+    refusals: usize,
 }
 
 struct Open {
@@ -188,6 +190,14 @@ impl CombinedRow {
 
     pub(crate) fn unconfirmed_cancels(&self) -> usize {
         self.cancels.len()
+    }
+
+    /// A declared fault: the next delivery is refused at the runtime
+    /// boundary, as a refused `accept` would be. It proves the row keeps and
+    /// re-offers the result and reports once, not that a real refusal
+    /// happens.
+    pub(crate) fn declare_delivery_refusal(&mut self) {
+        self.refusals += 1;
     }
 
     /// Declines a Held result of the current grant (c's decline, and b's
@@ -542,11 +552,20 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
         deliver: &mut dyn FnMut(u64, CombinedResult) -> Result<(), CombinedResult>,
     ) {
         let native = &mut *self.turn.native;
+        let mut refusals = std::mem::take(&mut self.row.refusals);
+        let mut offer = |job: u64, result: CombinedResult| {
+            if refusals > 0 {
+                refusals -= 1;
+                return Err(result);
+            }
+            deliver(job, result)
+        };
         for job in std::mem::take(&mut self.row.jobs) {
-            if let Some(job) = self.row.collect_one(native, worker, deliver, job) {
+            if let Some(job) = self.row.collect_one(native, worker, &mut offer, job) {
                 self.row.jobs.push(job);
             }
         }
+        self.row.refusals = refusals;
     }
 }
 
@@ -590,5 +609,13 @@ impl ShellComponentConnections {
 
     pub(crate) fn combined_row_mut(&mut self, slot: usize) -> &mut CombinedRow {
         &mut self.connections[slot].combined
+    }
+
+    /// The slot's image-owner work, the other final-quiescence blocker.
+    pub(crate) fn image_pending(&self, slot: usize) -> usize {
+        self.connections[slot]
+            .images
+            .as_ref()
+            .map_or(0, |owner| owner.pending())
     }
 }

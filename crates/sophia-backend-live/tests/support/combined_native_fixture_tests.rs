@@ -14,8 +14,8 @@ use crate::production_visual_runtime::lifecycle_tests::resources::{
     installed_shell, shell_frame, upload,
 };
 use crate::{
-    CombinedAcceptError, CombinedAcceptFailed, CombinedAcceptRefusal, LiveProductionVisualRuntime,
-    LiveShellContentFrame, LiveShellContentLayer,
+    CombinedAcceptError, CombinedAcceptFailed, CombinedAcceptRefusal, CombinedDisposition,
+    LiveProductionVisualRuntime, LiveShellContentFrame, LiveShellContentLayer,
 };
 use crate::{LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as Status, ShellContentNative};
 use device::{CountingDevice, Refuse};
@@ -468,4 +468,136 @@ fn a_refused_bridge_accept_returns_the_frame_and_keeps_the_held_result() {
         "the facade still holds the result for disposal"
     );
     assert_eq!(held.fixture.renderer.releases(), 1);
+}
+
+// G3-5b: the owner's worker fact and the served dispositions.
+
+#[test]
+fn a_busy_renderer_worker_declines_the_lane() {
+    let held = held().accepted();
+    assert!(
+        held.fixture.exporters[0].worker_in_flight(),
+        "the accepted combined frame is the worker's render in flight"
+    );
+    let (runtime, _store, mut frame) = candidate(&held);
+    for image in &mut frame.images {
+        let description = image.resource.shell().unwrap().description().clone();
+        image.resource = sophia_engine::CompositorImageSource::Provisional(description);
+    }
+    let scene = crate::LiveProductionCpuScene::new(held.output().size);
+    match ShellContentNative::compose_combined_frame(
+        &held.fixture,
+        &runtime,
+        &scene,
+        SHELL,
+        &frame,
+        crate::LiveProductionCursorPresentation::HardwarePlane,
+        None,
+    ) {
+        Err(crate::CombinedComposeRefusal::Ineligible(crate::CombinedIneligible::WorkerBusy)) => {}
+        Err(other) => panic!("declined for another reason: {other:?}"),
+        Ok(_) => panic!("a busy worker's output composed for the lane"),
+    }
+}
+
+/// One combined frame on head 0's output, served with `reply` on time or
+/// after its deadline, then settled through the bridge and given up: the
+/// disposition read before settlement, the Release outcome, and the
+/// releases the renderer received.
+fn served(reply: crate::StubReply, late: bool) -> (CombinedDisposition, CombinedRelease, usize) {
+    let outputs = outputs();
+    let mut fixture = CombinedNativeFixture::new(&outputs);
+    let output = outputs[0];
+    let (combined, inbox) = ShellContentNative::reserve_combined_frame(&mut fixture, output.id)
+        .expect("the serving facade reserves");
+    let frame = ShellContentNative::allocate_combined_frame(&mut fixture);
+    let mut validator = Validator::for_combined_plans(1, 8).unwrap();
+    let deadline = Instant::now() + WAIT;
+    let reservation = validator.reserve_combined(8, deadline).unwrap();
+    let head = &fixture.heads[0];
+    let identity =
+        fixture
+            .native_owner
+            .frame(output.id, head.head, head.target_generation, frame.raw());
+    let plan = CombinedRenderPlan::new(
+        deadline,
+        crate::api::LiveGbmEglFrameTargetRecord::new(output.size),
+        crate::PendingRenderedFrame::Mixed(Default::default(), Some(identity)),
+        Vec::new(),
+        None,
+        Box::new([]),
+    );
+    let _owner_plan = validator
+        .submit_combined(&reservation, pixels(), plan, inbox)
+        .ok()
+        .expect("combined submission");
+    let at = if late {
+        deadline + WAIT
+    } else {
+        Instant::now()
+    };
+    fixture.serve_combined(output.id, at, reply);
+    let end = Instant::now() + WAIT;
+    let result = loop {
+        if let Some(result) =
+            ShellContentNative::take_combined_frame_result(&mut fixture, &combined)
+                .expect("the issuer answers")
+        {
+            break result;
+        }
+        assert!(Instant::now() < end, "the stub's frame did not come home");
+        std::thread::sleep(Duration::from_millis(1));
+    };
+    let disposition = result.disposition();
+    let job = reservation.job();
+    assert!(
+        ShellContentNative::settle_combined_frame(
+            &mut fixture,
+            &combined,
+            &mut validator,
+            reservation,
+            result
+        )
+        .is_ok(),
+        "every disposition settles its own token and returns its pixels"
+    );
+    let release = ShellContentNative::release_combined_held(&mut fixture, &combined, job);
+    (disposition, release, fixture.renderer_releases())
+}
+
+#[test]
+fn only_an_exported_render_is_held_and_released() {
+    let size = outputs()[0].size;
+    let exported = crate::StubReply::Exported { size, lease: LEASE };
+    assert_eq!(
+        served(exported, false),
+        (
+            CombinedDisposition::Rendered,
+            CombinedRelease::Transferred,
+            1
+        ),
+        "an exported render is Rendered, held, and released once"
+    );
+    for (reply, late, disposition) in [
+        (
+            crate::StubReply::Failed,
+            false,
+            CombinedDisposition::RenderFailed,
+        ),
+        (
+            crate::StubReply::Mismatch,
+            false,
+            CombinedDisposition::Mismatch,
+        ),
+        (exported, true, CombinedDisposition::Expired),
+    ] {
+        let (read, release, releases) = served(reply, late);
+        assert_eq!(read, disposition, "{reply:?} late={late}");
+        assert_ne!(
+            release,
+            CombinedRelease::Transferred,
+            "{disposition:?} holds nothing to give up"
+        );
+        assert_eq!(releases, 0, "{disposition:?} sends no Release");
+    }
 }

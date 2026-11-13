@@ -19,7 +19,7 @@ use super::{
 use sophia_protocol::Size;
 use sophia_renderer_live::LiveRendererScanoutBufferDescriptor;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, SyncSender};
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
 use std::time::{Duration, Instant};
 
 const WAIT: Duration = Duration::from_secs(10);
@@ -45,10 +45,15 @@ pub(crate) struct StubRenderer {
     _ordinary: Vec<sophia_wake::SignalSender<WorkerResult>>,
     route: Option<OutputRoute>,
     releases: usize,
+    /// The core's command sender, for `fill`.
+    commands_in: super::CommandSender,
+    /// Filler commands `fill` queued and not yet drained.
+    filler: usize,
 }
 
 pub(crate) fn stub_core() -> (Arc<NativeGbmRendererWorkerCore>, StubRenderer) {
     let (core, commands, resume) = inventory_test_core(WORKER_COMMAND_CAPACITY);
+    let commands_in = core.command_sender.clone();
     (
         core,
         StubRenderer {
@@ -57,6 +62,8 @@ pub(crate) fn stub_core() -> (Arc<NativeGbmRendererWorkerCore>, StubRenderer) {
             _ordinary: Vec::new(),
             route: None,
             releases: 0,
+            commands_in,
+            filler: 0,
         },
     )
 }
@@ -151,12 +158,36 @@ impl StubRenderer {
         assert!(route.deadline().is_none(), "the stub never parks a frame");
     }
 
+    /// Parks the one forwarded frame until `serve` decides it, so the owner
+    /// can stop the job between its forwarding and its render.
+    pub(crate) fn park(&mut self) -> bool {
+        self.route
+            .as_mut()
+            .expect("registered before parking")
+            .await_job(WAIT)
+    }
+
+    /// Fills the command queue so the next Release enqueue sees `Full`. The
+    /// queue holds only filler until the next `releases`.
+    pub(crate) fn fill(&mut self) {
+        self.releases();
+        loop {
+            match self.commands_in.try_send(WorkerCommand::Shutdown) {
+                Ok(()) => self.filler += 1,
+                Err(TrySendError::Full(_)) => return,
+                Err(TrySendError::Disconnected(_)) => panic!("the stub owns the receiver"),
+            }
+        }
+    }
+
     /// Release commands the facade sent for leases it dropped or gave up.
+    /// Draining also takes `fill`'s filler, and only that many Shutdowns.
     pub(crate) fn releases(&mut self) -> usize {
         while let Ok(command) = self.commands.try_recv() {
             match command {
                 WorkerCommand::Release { .. } => self.releases += 1,
                 WorkerCommand::Register { reply, .. } => self._ordinary.push(reply),
+                WorkerCommand::Shutdown if self.filler > 0 => self.filler -= 1,
                 _ => panic!("the accept fixture sends no render"),
             }
         }

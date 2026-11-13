@@ -21,7 +21,7 @@ pub use accept::{CombinedAccept, CombinedAcceptPlan};
 #[path = "../../../../tests/support/combined_native_fixture.rs"]
 mod native_fixture;
 #[cfg(any(test, feature = "test-support"))]
-pub use native_fixture::CombinedNativeFixture;
+pub use native_fixture::{CombinedNativeFixture, CombinedSettleFault};
 // The one deterministic device both device-free fixtures drive.
 #[cfg(all(test, feature = "experimental-combined-frame-job"))]
 #[path = "../../../../tests/support/combined_frame_accept_device.rs"]
@@ -128,6 +128,31 @@ impl<R: RenderDeviceDiscoveryBackend> CombinedRoutes<'_, R> {
             Some(exporter) => {
                 exporter.settle_combined_frame(&head.facade, validator, reservation, result)
             }
+            None => Err(CombinedSettleRefused::RendererNotFound(
+                reservation,
+                Box::new(result),
+            )),
+        }
+    }
+
+    /// The facade's half of settlement alone, for the fixture's declared
+    /// credit fault.
+    #[cfg(any(test, feature = "test-support"))]
+    fn settle_cell(
+        &mut self,
+        head: &CombinedHead,
+        reservation: CombinedReservation,
+        result: CombinedRenderResult,
+    ) -> Result<
+        (
+            CombinedReservation,
+            sophia_runtime::CombinedToken,
+            ValidatedIsbPixels,
+        ),
+        CombinedSettleRefused,
+    > {
+        match self.issuing(head) {
+            Some(exporter) => exporter.settle_combined_cell(&head.facade, reservation, result),
             None => Err(CombinedSettleRefused::RendererNotFound(
                 reservation,
                 Box::new(result),

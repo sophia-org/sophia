@@ -100,17 +100,20 @@ pub(super) fn send(
 
 /// Shell r9 with sealed images, over an afid-authenticated attach.
 pub(super) fn client(socket: std::path::PathBuf, slot: usize) -> (ShellConnection, ContentLimits) {
-    client_revision(socket, slot, 10)
+    client_revision(socket, slot, 10, 0)
 }
 
+/// `extra` capabilities are required beside the role's own.
 fn client_revision(
     socket: std::path::PathBuf,
     slot: usize,
     revision: u16,
+    extra: u64,
 ) -> (ShellConnection, ContentLimits) {
     assert!(slot <= 2, "role");
     // Bit 13: sealed images, required for every content attach at r9.
-    let capabilities = SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+    let capabilities = extra
+        | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
         | (1 << 15)
         | if revision == 13 { 1 << 18 } else { 0 }
         | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
@@ -167,10 +170,41 @@ pub(super) fn connect_revision(
     slot: usize,
     revision: u16,
 ) -> (ComponentConnectionKey, ShellConnection) {
+    connect_capabilities(owner, slot, revision, 0)
+}
+
+/// G3-5b: the lean lane's peer, r13 requiring the frame stream, its
+/// terminal-only option and lean; the owner must have permitted both.
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session"
+))]
+pub(super) fn connect_lane(
+    owner: &mut ShellComponentSession,
+    slot: usize,
+) -> (ComponentConnectionKey, ShellConnection) {
+    use sophia_protocol::shell_files::{
+        SHELL_FRAME_LEAN_CAPABILITY, SHELL_FRAME_TERMINAL_ONLY_CAPABILITY,
+    };
+    connect_capabilities(
+        owner,
+        slot,
+        13,
+        SHELL_FRAME_TERMINAL_ONLY_CAPABILITY | SHELL_FRAME_LEAN_CAPABILITY,
+    )
+}
+
+fn connect_capabilities(
+    owner: &mut ShellComponentSession,
+    slot: usize,
+    revision: u16,
+    extra: u64,
+) -> (ComponentConnectionKey, ShellConnection) {
     let (key, socket) = owner
         .processes
         .reconnect_fixture_endpoint(slot, owner.policy);
-    let worker = std::thread::spawn(move || client_revision(socket, slot, revision));
+    let worker = std::thread::spawn(move || client_revision(socket, slot, revision, extra));
     let deadline = Instant::now() + Duration::from_secs(5);
     let welcome = loop {
         let visit = owner.poll(65536).unwrap();

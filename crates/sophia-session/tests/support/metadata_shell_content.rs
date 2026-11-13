@@ -9,6 +9,9 @@ use sophia_runtime::{
 
 // The independently reusable native-launcher fixture also includes this
 // cross-crate helper; neither fixture owns the other's module tree.
+#[cfg(feature = "experimental-combined-frame-job")]
+#[path = "metadata_shell_frame_commit_projection.rs"]
+mod frame_commit_projection;
 #[allow(clippy::duplicate_mod)]
 #[path = "../../../sophia-runtime/tests/support/content_isb.rs"]
 mod isb;

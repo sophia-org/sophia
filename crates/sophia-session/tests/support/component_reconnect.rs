@@ -29,6 +29,14 @@ mod bundled_probe;
 use crate::test_sdk_image as sdk_image;
 #[path = "component_reconnect/wire.rs"]
 mod wire;
+// G3-5b: the combined row through the controlled driver.
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session"
+))]
+#[path = "component_reconnect/combined.rs"]
+mod combined;
 use super::super::content::reconnect_fixture::prepare;
 
 const OUTPUT: ContentOutputId = ContentOutputId {
