@@ -11,8 +11,8 @@ use sophia_protocol::shell_files::{
     SHELL_FILE_MAX_CANDIDATE_BYTES, ShellFileClass, ShellFileCodecError, ShellFileKind,
     ShellFilePayloadError, ShellFileSubmitted, ShellFileTransactionRecord, ShellFrameRecord,
     decode_shell_file_allocation_result, decode_shell_file_record_at_revision,
-    decode_shell_file_resource_status_at_revision, decode_shell_file_submitted,
-    decode_shell_frame_record,
+    decode_shell_file_resource_released, decode_shell_file_resource_status_at_revision,
+    decode_shell_file_submitted_at_revision, decode_shell_frame_record,
 };
 use sophia_protocol::{ShellContentRecord, TransactionId};
 use std::time::Instant;
@@ -281,9 +281,16 @@ impl Journal {
                 decode_shell_file_resource_status_at_revision(record, self.revision),
             ),
             ShellFileKind::AllocationResult => content(decode_shell_file_allocation_result(record)),
-            ShellFileKind::Submitted => decode_shell_file_submitted(record)
-                .map(RecordIdentity::Submitted)
-                .map_err(|error| format!("Submitted: {error:?}")),
+            // Legacy decoders fix revision 8; a Submitted body embeds the
+            // candidate's kind, so it decodes at the negotiated revision.
+            // ResourceReleased (base kind 34) embeds no kind: the legacy
+            // decoder covers it at every revision.
+            ShellFileKind::Submitted => {
+                decode_shell_file_submitted_at_revision(record, self.revision)
+                    .map(RecordIdentity::Submitted)
+                    .map_err(|error| format!("Submitted: {error:?}"))
+            }
+            ShellFileKind::ResourceReleased => content(decode_shell_file_resource_released(record)),
             ShellFileKind::FrameOutcome
             | ShellFileKind::FrameStreamClosed
             | ShellFileKind::FrameStreamOpened

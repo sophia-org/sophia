@@ -47,13 +47,22 @@
 //! The rows assert the tail relation and the marker their traced order predicts.
 //!
 //! Predictions: every window's record kinds and order, the P1 Closed, the
-//! P2 Submitted, the F3 reason and the Submitted-free lean commits are
-//! predictions until this harness runs; a miss is a reported failure. The
-//! P1 status/terminal and P2 status/Closed orders are observed and printed,
-//! the marker prediction conditioned on them. Off/native-session remain
-//! unpassed and unwaived. F4's later presentation outcome is b3d-2 F4-O,
-//! declared separately; no empty-list assertion stands for it. The b3d-2 C3
-//! filler design's Timeout is corrected to RendererFailed, F3's traced reason.
+//! P2 Submitted, the F3 reason, the Submitted-free lean commits, P3's IT
+//! commit and F3's two-record T2 are predictions until this harness runs;
+//! a miss is a reported failure. The P1 status/terminal and P2
+//! status/Closed orders are observed and printed, the marker prediction
+//! conditioned on them. Off/native-session remain unpassed and unwaived.
+//! F4's later presentation outcome is b3d-2 F4-O, declared separately; no
+//! empty-list assertion stands for it. The b3d-2 C3 filler design's Timeout
+//! is corrected to RendererFailed, F3's traced reason.
+//!
+//! Three release facts stay apart: the owned ring's SlotReleased (the
+//! source slot's obligation), the content store's ResourceReleased (the
+//! backing's retirement, a journal commit that is neither peer consumption
+//! nor a renderer acknowledgement) and the renderer lease (`releases`,
+//! `slot_freed`). The store's release joins its resource's admission on the
+//! transaction the owner gives an owned-ring upload: the offer id
+//! (epoch_registry/owned_ring.rs `begin_isb`).
 use super::*;
 use sophia_protocol::shell_files::{ShellFileKind, ShellFileSubmitted};
 use sophia_runtime::owned_ring_protocol::{Event, EventKind, Identity};
@@ -218,13 +227,19 @@ impl Lane {
     }
 
     /// PP1, O2, IT, PP2, O3 after T1's snapshot `s1`, with the H5 verdict
-    /// for T1 against the pre-T1 serial baseline in `s0`. Returns the
-    /// verdict, PP1's and PP2's new peer records, and O3.
+    /// for T1 against the pre-T1 serial baseline in `s0`. `it` is the
+    /// row's exact expectation of what the transport pass commits: the
+    /// identified content records, in order, or nothing. A nonempty `it`
+    /// also requires PP2 to read exactly those records and no frame, with
+    /// the peer's handled sequence at the last of them; H5 is judged on
+    /// T1's reply and PP1 alone. Returns the verdict, PP1's and PP2's new
+    /// peer records, and O3.
     fn schedule(
         &mut self,
         a: &mut Attempt,
         s0: &Snapshot,
         s1: &Snapshot,
+        it: &[(TransactionId, ShellContentRecord)],
         label: &str,
     ) -> (H5, Delivered, Delivered, Snapshot) {
         let (pp1, l1) = peer_poll(a);
@@ -236,19 +251,36 @@ impl Lane {
         );
         assert_eq!(s2.facts.outbox, s1.facts.outbox, "{label} O2: outbox");
         self.input_turn(a);
-        let it = self.snapshot(a, &format!("{label} after IT"));
+        let si = self.snapshot(a, &format!("{label} after IT"));
+        let wi = window(&s2, &si, &format!("{label} IT"));
+        let expected: Vec<RecordIdentity> = it
+            .iter()
+            .map(|(transaction, record)| RecordIdentity::Content {
+                transaction: *transaction,
+                record: record.clone(),
+            })
+            .collect();
         assert_eq!(
-            (it.journal().next_sequence, it.journal().tail),
-            (s1.journal().next_sequence, s1.journal().tail),
-            "{label} IT: the transport pass committed nothing"
+            wi.iter().map(|r| r.identity.clone()).collect::<Vec<_>>(),
+            expected,
+            "{label} IT: the transport pass commits exactly the row's expectation"
         );
         let (pp2, l2) = peer_poll(a);
+        if let Some(last) = wi.last() {
+            assert_eq!(l2.contents, it, "{label} PP2: exactly the IT commits");
+            assert!(l2.frames.is_empty(), "{label} PP2: no frame: {l2:?}");
+            assert_eq!(
+                pp2.handled, last.sequence,
+                "{label} PP2: handled the last IT commit"
+            );
+        }
         let s3 = self.snapshot(a, &format!("{label} O3"));
         let verdict = h5(s0.serial(), s1, &l1, label);
         eprintln!(
-            "{label}: PP1 {pp1:?} L1 {l1:?}; IT ready {:?} pending {}; PP2 {pp2:?} L2 {l2:?}; H5 {}",
-            it.journal().ready,
-            it.journal().pending_evaluations,
+            "{label}: PP1 {pp1:?} L1 {l1:?}; IT ready {:?} pending {} window {:?}; PP2 {pp2:?} L2 {l2:?}; H5 {}",
+            si.journal().ready,
+            si.journal().pending_evaluations,
+            kinds(&wi),
             verdict.describe()
         );
         (verdict, l1, l2, s3)
@@ -385,6 +417,10 @@ fn kinds(records: &[RetainedRecord]) -> Vec<String> {
                 record: ShellContentRecord::AllocationResult(_),
                 ..
             } => "AllocationResult".into(),
+            RecordIdentity::Content {
+                record: ShellContentRecord::ResourceReleased(_),
+                ..
+            } => "ResourceReleased".into(),
             RecordIdentity::Content { record, .. } => format!("Content({record:?})"),
             RecordIdentity::Frame(ShellFrameRecord::Outcome { outcome, .. }) => {
                 format!("FrameOutcome({},{})", outcome.kind, outcome.reason)
@@ -655,6 +691,23 @@ fn h5(serial_before: u64, s1: &Snapshot, l1: &Delivered, label: &str) -> H5 {
     }
 }
 
+/// The content store's release of the lane's resource, joined to its
+/// admission: the transaction is the upload's offer id, the grant the
+/// attempt's, the resource the lane's, the reason None (not Revoked).
+fn released_record(
+    credit: &OwnedCreditFacts,
+    grant: ContentGrant,
+) -> (TransactionId, ShellContentRecord) {
+    (
+        TransactionId::from_raw(credit.offer.request.slot.offer),
+        ShellContentRecord::ResourceReleased(ContentResourceReleased {
+            grant,
+            resource: RESOURCE,
+            reason: ContentReason::None as u16,
+        }),
+    )
+}
+
 /// The one live credit for the lane's resource.
 fn resource_credit(s: &Snapshot, label: &str) -> OwnedCreditFacts {
     let credits: Vec<OwnedCreditFacts> = s
@@ -780,7 +833,10 @@ fn r4_the_accepted_status_commits_deferred_in_t1_and_slot_released_follows_it_in
     );
     let t2 = lane.result_turn();
     assert_eq!(t2.steps, TURN);
-    assert_eq!(t2.accepted, [0], "nothing more to accept");
+    // `accepted` is the fixture's cumulative count at each content boundary.
+    assert_eq!(t2.accepted, t1.accepted, "nothing more to accept");
+    assert_eq!(t2.accepted, [1]);
+    assert_eq!(lane.native.accepts(), 1, "the fixture total");
     let s2 = lane.snapshot(&a, "R4 O2");
     let w2 = window(&s1, &s2, "R4 T2");
     assert_eq!(
@@ -934,7 +990,7 @@ fn p1_a_lost_allocation_journals_its_result_the_refusal_and_the_terminal_in_t1()
     assert!(s1.facts.outbox.is_empty(), "{:?}", s1.facts.outbox);
     assert!(!s1.facts.output_blocked);
     s1.assert_stores_empty("P1 O1");
-    let (verdict, l1, l2, s3) = lane.schedule(&mut a, &s0, &s1, "P1");
+    let (verdict, l1, l2, s3) = lane.schedule(&mut a, &s0, &s1, &[], "P1");
     verdict.assert_established("P1");
     assert_eq!(
         l1.len() + l2.len(),
@@ -1076,7 +1132,7 @@ fn p2_a_close_after_admission_journals_closed_under_its_transaction_and_no_termi
     );
     assert!(s1.facts.outbox.is_empty(), "{:?}", s1.facts.outbox);
     s1.assert_stores_empty("P2 O1");
-    let (verdict, l1, l2, _) = lane.schedule(&mut a, &s0, &s1, "P2");
+    let (verdict, l1, l2, _) = lane.schedule(&mut a, &s0, &s1, &[], "P2");
     verdict.assert_established("P2");
     assert_eq!(
         l1.len() + l2.len(),
@@ -1143,6 +1199,8 @@ fn p3_the_expiry_commits_the_acceptance_then_timeout_and_one_poll_reads_both() {
     let (pp0, _) = peer_poll(&mut a);
     let s0 = lane.snapshot(&a, "P3 O0");
     eprintln!("P3 PP0 {pp0:?}; O0 journal {:?}", s0.journal());
+    let credit = resource_credit(&s0, "P3 O0");
+    let release = released_record(&credit, a.key.grant);
     advance_content_clock(candidate);
     let at = Instant::now();
     assert!(
@@ -1174,19 +1232,34 @@ fn p3_the_expiry_commits_the_acceptance_then_timeout_and_one_poll_reads_both() {
     );
     assert_eq!(s1.facts.lean_frames_in_flight, Some(0));
     assert!(s1.facts.outbox.is_empty(), "{:?}", s1.facts.outbox);
-    s1.assert_stores_empty("P3 O1");
-    let (verdict, l1, l2, _) = lane.schedule(&mut a, &s0, &s1, "P3");
+    // The Timeout abandons the frame image and the pixels are exclusive, so
+    // T1's collect queues the store's release after the pass's drain. It is
+    // pending here, journaled by IT and read by PP2; T1's own reply and PP1
+    // carry the status and terminal alone.
+    assert_eq!(
+        s1.stores.resources,
+        [release.clone()],
+        "P3 O1: exactly the identified release is pending"
+    );
+    assert!(
+        s1.stores.candidates.is_empty() && s1.stores.allocations.is_empty(),
+        "P3 O1: {:?}",
+        s1.stores
+    );
+    let (verdict, l1, _, s3) = lane.schedule(&mut a, &s0, &s1, &[release], "P3");
     assert_eq!(
         (l1.contents.len(), l1.frames.len()),
         (1, 1),
         "one peer-only poll reads both: {l1:?}"
     );
-    assert!(l2.is_empty(), "nothing more: {l2:?}");
     assert_eq!(
         verdict,
         H5::Supported { untruncated: true },
         "T1's one reply returned both records"
     );
+    // The queue drained into the journal; nothing here shows the backing
+    // destroyed (that follows the commit in confirm_isb_release, unobserved).
+    s3.assert_stores_empty("P3 O3");
     assert_eq!(
         peer_terminals(&a.frames, key, n),
         [TIMEOUT],
@@ -1194,7 +1267,8 @@ fn p3_the_expiry_commits_the_acceptance_then_timeout_and_one_poll_reads_both() {
     );
     assert_eq!(
         peer_statuses(&a.contents, a.key.grant),
-        [(2, status_of(status).unwrap().reason)]
+        [(2, status_of(status).unwrap().reason)],
+        "the one status; the release is a content record, not a status"
     );
     assert_eq!((a.accepted, a.refused), (1, 0));
     assert_eq!(lane.candidate_of(&a, binding, job), Some(Unknown));
@@ -1206,291 +1280,6 @@ fn p3_the_expiry_commits_the_acceptance_then_timeout_and_one_poll_reads_both() {
     assert_eq!(lane.releases(), (0, 0));
 }
 
-/// F1: the labelled draw failure (declared before submission). T1 commits
-/// the candidate's one RendererFailed terminal under its exact key; the
-/// resource's statuses, if any, are printed beside it. Nothing is deferred
-/// at the tail.
-#[test]
-fn f1_the_render_failure_terminal_is_journaled_once_in_t1() {
-    let (mut lane, wake) = Lane::running();
-    let mut a = lane.attempt();
-    lane.native.declare_render_failure();
-    let job = faulted(&mut lane, &wake, &mut a);
-    let (key, n) = lane.admitted_key(job);
-    assert_eq!(lane.leased(), 0, "the failed draw freed its slot");
-    let (pp0, _) = peer_poll(&mut a);
-    let s0 = lane.snapshot(&a, "F1 O0");
-    eprintln!("F1 PP0 {pp0:?}; O0 journal {:?}", s0.journal());
-    let (steps, observed) = lane.observed_turn(Instant::now(), None);
-    assert_eq!(steps, TURN);
-    assert_eq!(observed, NOTHING, "content neither accepted nor released");
-    let s1 = lane.snapshot(&a, "F1 O1");
-    let w1 = window(&s0, &s1, "F1 T1");
-    assert_eq!(
-        peer_terminals(&frames_in(&w1), key, n),
-        [FAILED],
-        "one RendererFailed terminal"
-    );
-    let statuses: Vec<(u16, u16)> = w1
-        .iter()
-        .filter_map(status_of)
-        .filter(|s| s.grant == a.key.grant && s.resource == RESOURCE)
-        .map(|s| (s.status, s.reason))
-        .collect();
-    eprintln!("F1: statuses in T1 {statuses:?}");
-    assert_all_visible(s1.journal(), "F1 O1");
-    assert_eq!(s1.facts.lean_frames_in_flight, Some(0));
-    assert!(s1.facts.outbox.is_empty(), "{:?}", s1.facts.outbox);
-    s1.assert_stores_empty("F1 O1");
-    let (verdict, _, _, _) = lane.schedule(&mut a, &s0, &s1, "F1");
-    verdict.assert_established("F1");
-    assert_eq!(
-        peer_terminals(&a.frames, key, n),
-        [FAILED],
-        "the terminal once"
-    );
-    assert_eq!(
-        peer_statuses(&a.contents, a.key.grant),
-        statuses,
-        "the peer read exactly T1's statuses"
-    );
-    assert_eq!(lane.releases(), (0, 0), "nothing was leased to release");
-}
-
-/// F2: the labelled plan mismatch, as separately witnessed facts: (1) the
-/// fixture applied its declared widening (`plan_mismatches`, a fault
-/// counter, not a validator error); (2) the row collected the worker's
-/// Mismatch disposition (the existing collection record); (3) the owner's
-/// conversion of Mismatch to `Err(Malformed)` at delivery (`combined_row.rs`
-/// `delivered`) is source-only evidence with no record at that boundary,
-/// not claimed as executed; (4) the refusal status, predicted exactly from
-/// `complete_isb` -> `abort_finished(Malformed, None)`: status 3, reason
-/// Malformed, under the attempt's grant and the lane's resource; (5) the
-/// candidate's one Malformed terminal under its exact key; (6) the peer's
-/// consumption of (4) and (5).
-#[test]
-fn f2_the_mismatch_journals_the_refusal_status_and_the_malformed_terminal() {
-    let (mut lane, wake) = Lane::running();
-    let mut a = lane.attempt();
-    lane.native.declare_plan_mismatch();
-    let job = faulted(&mut lane, &wake, &mut a);
-    assert_eq!(
-        lane.native.plan_mismatches(),
-        (1, 0),
-        "(1) the declared plan widening was applied"
-    );
-    let binding = lane.h.owner.processes.combined_row(0).binding(job).unwrap();
-    let (key, n) = lane.admitted_key(job);
-    let (pp0, _) = peer_poll(&mut a);
-    let s0 = lane.snapshot(&a, "F2 O0");
-    eprintln!("F2 PP0 {pp0:?}; O0 journal {:?}", s0.journal());
-    let (steps, observed) = lane.observed_turn(Instant::now(), None);
-    assert_eq!(steps, TURN);
-    assert_eq!(observed, NOTHING, "no bundle met the failed entry");
-    assert_eq!(
-        lane.row().collected(),
-        [(job, CombinedDisposition::Mismatch)],
-        "(2) the collected disposition"
-    );
-    let s1 = lane.snapshot(&a, "F2 O1");
-    let w1 = window(&s0, &s1, "F2 T1");
-    let status = one_status(&w1, a.key.grant, "F2 T1");
-    let refusal = status_of(status).unwrap();
-    assert_eq!(
-        (
-            refusal.grant,
-            refusal.resource,
-            refusal.status,
-            refusal.reason
-        ),
-        (a.key.grant, RESOURCE, 3, ContentReason::Malformed as u16),
-        "(4) the copy's Malformed refusal"
-    );
-    assert_eq!(
-        peer_terminals(&frames_in(&w1), key, n),
-        [MALFORMED],
-        "(5) one Malformed terminal"
-    );
-    let terminal = w1
-        .iter()
-        .find(|r| frame_of(r).is_some_and(|f| outcome_for(f, key, n).is_some()))
-        .unwrap();
-    eprintln!(
-        "F2: status {} {} terminal {}",
-        status.sequence,
-        if status.sequence < terminal.sequence {
-            "before"
-        } else {
-            "after"
-        },
-        terminal.sequence
-    );
-    assert_all_visible(s1.journal(), "F2 O1");
-    assert_eq!(s1.facts.lean_frames_in_flight, Some(0));
-    s1.assert_stores_empty("F2 O1");
-    let (verdict, _, _, _) = lane.schedule(&mut a, &s0, &s1, "F2");
-    verdict.assert_established("F2");
-    assert_eq!(
-        peer_terminals(&a.frames, key, n),
-        [MALFORMED],
-        "(6) the terminal once"
-    );
-    assert_eq!(
-        peer_statuses(&a.contents, a.key.grant),
-        [(3, ContentReason::Malformed as u16)],
-        "(6) the refusal once"
-    );
-    assert_eq!((a.accepted, a.refused), (0, 1));
-    assert_eq!(lane.candidate_of(&a, binding, job), Some(Unknown));
-    assert_eq!(lane.states(), [(job, "failed")]);
-    assert_eq!(lane.releases(), (0, 0), "no lease, no Release");
-}
-
-/// F3: C3, the arm's own admitted-deadline decline. T1 commits the
-/// acceptance (deferred: the frame is in flight) and the candidate's
-/// terminal (RendererFailed, the arm's decline reason, by an ordinary
-/// append that leaves the marker stale); then, after slot freedom, T2's
-/// images step commits SlotReleased after the status, as R4, visible at
-/// once since the frame's flight ended.
-#[test]
-fn f3_the_c3_decline_journals_the_status_and_terminal_then_slot_released() {
-    let (mut lane, wake) = Lane::running();
-    let mut a = lane.attempt();
-    let candidate = lane.candidate_timeout(&a);
-    let before = content_now_msec();
-    let job = rendered(&mut lane, &wake, &mut a);
-    let (key, n) = lane.admitted_key(job);
-    let late = lane.deadline_of(job) + MARGIN;
-    let (pp0, _) = peer_poll(&mut a);
-    let s0 = lane.snapshot(&a, "F3 O0");
-    eprintln!("F3 PP0 {pp0:?}; O0 journal {:?}", s0.journal());
-    let credit = resource_credit(&s0, "F3 O0");
-    let (steps, observed) = lane.observed_turn(late, None);
-    assert!(
-        content_now_msec() < before + candidate,
-        "precondition: before the candidate's own deadline"
-    );
-    assert_eq!(steps, TURN);
-    assert_eq!(observed, DECLINED, "C3 declined at the content call");
-    assert_eq!(lane.native.classifies(), 0, "C3 precedes classification");
-    let s1 = lane.snapshot(&a, "F3 O1");
-    let w1 = window(&s0, &s1, "F3 T1");
-    assert_eq!(
-        kinds(&w1),
-        ["ResourceStatus(2)", "FrameOutcome(3,9)"],
-        "the acceptance, then the decline's terminal"
-    );
-    let status = one_status(&w1, a.key.grant, "F3 T1");
-    assert_eq!(peer_terminals(&frames_in(&w1), key, n), [FAILED]);
-    let j1 = s1.journal();
-    assert_all_visible(j1, "F3 O1");
-    assert_eq!(
-        j1.deferred,
-        Some((status.start, status.end)),
-        "the deferred acceptance's marker is stored but stale behind the ordinary terminal"
-    );
-    assert_eq!(s1.facts.lean_frames_in_flight, Some(0));
-    assert_eq!(s1.releasing, [credit.offer.identity], "release owed");
-    s1.assert_stores_empty("F3 O1");
-    let (verdict, _, _, s3) = lane.schedule(&mut a, &s0, &s1, "F3");
-    verdict.assert_established("F3");
-    assert_eq!(
-        peer_terminals(&a.frames, key, n),
-        [FAILED],
-        "the terminal once"
-    );
-    assert_eq!(
-        peer_statuses(&a.contents, a.key.grant),
-        [(2, status_of(status).unwrap().reason)]
-    );
-    assert_eq!((a.accepted, a.refused), (1, 0));
-    assert_eq!(lane.releases(), (1, 1));
-    lane.slot_freed("F3");
-    let (steps, observed) = lane.observed_turn(late, None);
-    assert_eq!(steps, TURN);
-    assert_eq!(observed, DECLINED, "nothing more");
-    let s2 = lane.snapshot(&a, "F3 O2");
-    let w2 = window(&s3, &s2, "F3 T2");
-    assert_eq!(kinds(&w2), ["SlotReleased(0)"]);
-    let released = &w2[0];
-    let event = slot_released_of(released).unwrap();
-    assert_eq!(
-        (event.identity, event.resource, event.slot, event.reason),
-        (
-            credit.offer.identity,
-            RESOURCE,
-            credit.offer.request.slot,
-            0
-        ),
-        "the original source's release"
-    );
-    assert!(
-        status.sequence < released.sequence,
-        "status {} before SlotReleased {}",
-        status.sequence,
-        released.sequence
-    );
-    assert_all_visible(s2.journal(), "F3 O2");
-    assert!(s2.releasing.is_empty());
-    assert_eq!(lane.native.installs(), 0);
-    assert_eq!(lane.acquisitions(), 1, "no later render");
-}
-
-/// F4-P: scene churn, the result declined into one ordinary entry. The
-/// candidate is prepared internally (`prepared_without_notice`: the lane
-/// is terminal-only) and no Prepared record (kind 1) for the exact
-/// candidate is committed, while the acceptance commits deferred,
-/// invisible until a terminal. The ordinary entry's presentation outcome
-/// needs the queued fallback's completion: b3d-2 F4-O, not asserted here.
-#[test]
-fn f4p_scene_churn_prepares_the_candidate_internally_without_a_prepared_record() {
-    let (mut lane, wake) = Lane::running();
-    let mut a = lane.attempt();
-    let job = rendered(&mut lane, &wake, &mut a);
-    let (key, n) = lane.admitted_key(job);
-    assert!(lane.native.ordinary_queue_ready(output().id));
-    let (pp0, _) = peer_poll(&mut a);
-    let s0 = lane.snapshot(&a, "F4-P O0");
-    eprintln!("F4-P PP0 {pp0:?}; O0 journal {:?}", s0.journal());
-    assert_eq!(
-        lane.h.owner.processes.candidate_prepared(0, OUTPUT, n),
-        None,
-        "assembling: not yet a pending candidate"
-    );
-    let (steps, observed) = lane.observed_turn(Instant::now(), MOVED);
-    assert_eq!(steps, TURN);
-    assert_eq!(observed, DECLINED, "declined before the walk");
-    assert_eq!(lane.native.classifies(), 1);
-    assert_eq!(lane.native.installs(), 1, "one ordinary install entry");
-    assert_eq!(lane.native.ordinary_queues(), 1);
-    let s1 = lane.snapshot(&a, "F4-P O1");
-    let w1 = window(&s0, &s1, "F4-P T1");
-    let outcomes = peer_terminals(&frames_in(&w1), key, n);
-    assert!(
-        outcomes.is_empty(),
-        "no Prepared (kind 1) or terminal for the exact candidate: {outcomes:?} in {:?}",
-        kinds(&w1)
-    );
-    assert_eq!(
-        lane.h.owner.processes.candidate_prepared(0, OUTPUT, n),
-        Some(true),
-        "prepared internally, notice suppressed"
-    );
-    assert_eq!(kinds(&w1), ["ResourceStatus(2)"], "the acceptance alone");
-    let status = one_status(&w1, a.key.grant, "F4-P T1");
-    let j1 = s1.journal();
-    assert_eq!(j1.deferred, Some((status.start, status.end)), "deferred");
-    assert_eq!(j1.visible, status.start, "invisible");
-    assert_eq!(s1.facts.lean_frames_in_flight, Some(1));
-    assert_eq!(lane.pending(&a), [(a.key.grant, OUTPUT, 1)]);
-    let (verdict, l1, l2, _) = lane.schedule(&mut a, &s0, &s1, "F4-P");
-    assert!(
-        l1.is_empty() && l2.is_empty(),
-        "nothing visible to read: {l1:?} {l2:?}"
-    );
-    assert_eq!(verdict, H5::Absent, "no reply in T1");
-    assert!(peer_terminals(&a.frames, key, n).is_empty());
-    assert!(peer_statuses(&a.contents, a.key.grant).is_empty());
-    assert_eq!(a.accepted, 0);
-    lane.slot_freed("churn");
-}
+/// The fault rows F1-F4, split for the file-size limit.
+#[path = "combined_publication_faults.rs"]
+mod faults;
