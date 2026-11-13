@@ -943,9 +943,22 @@ mod service;
 #[path = "../../../../tests/support/renderer_worker.rs"]
 pub(crate) mod tests;
 #[cfg(all(test, feature = "experimental-combined-frame-job"))]
-pub(crate) use tests::combined_render::{
-    StubRenderer, device_free_core, device_free_plan, stub_core,
-};
+pub(crate) use tests::combined_render::{device_free_core, device_free_plan};
+// The worker test core, and G3-4's renderer stub on it, for the
+// test-support combined fixture as well as this crate's tests.
+#[cfg(all(
+    any(test, feature = "test-support"),
+    feature = "experimental-combined-frame-job"
+))]
+#[path = "../../../../tests/support/combined_frame_accept_stub.rs"]
+mod accept_stub;
+#[path = "../../../../tests/support/renderer_worker_support.rs"]
+mod support;
+#[cfg(all(
+    any(test, feature = "test-support"),
+    feature = "experimental-combined-frame-job"
+))]
+pub(crate) use accept_stub::{StubRenderer, stub_core};
 
 use service::run_worker;
 

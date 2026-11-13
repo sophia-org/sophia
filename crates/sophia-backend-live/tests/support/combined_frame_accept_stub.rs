@@ -4,10 +4,25 @@
 //! frame: the deterministic render boundary. Admission, forwarding, the
 //! route, settlement, acceptance, `poll()` and everything after it are
 //! production code.
+//!
+//! Mounted beside the worker for this crate's tests and, under test-support,
+//! for the public combined fixture, which reaches only `stub_core` until
+//! G3-5d's running renderer.
 
-use super::*;
+use super::combined::{CombinedOutcome, OutputRoute, RenderAttempt};
+use super::support::{correlated_result, exported_outcome, inventory_test_core};
+use super::{
+    CombinedFacade, LiveRendererWorkerLeaseId, LiveRendererWorkerOutputKey,
+    NativeGbmRendererWorkerCore, WORKER_COMMAND_CAPACITY, WorkerCommand, WorkerOutcome,
+    WorkerResult,
+};
+use sophia_protocol::Size;
 use sophia_renderer_live::LiveRendererScanoutBufferDescriptor;
-use std::sync::mpsc::SyncSender;
+use std::sync::Arc;
+use std::sync::mpsc::{Receiver, SyncSender};
+use std::time::{Duration, Instant};
+
+const WAIT: Duration = Duration::from_secs(10);
 
 /// A core whose commands this test reads, and the combined route it serves.
 pub(crate) struct StubRenderer {
@@ -20,7 +35,7 @@ pub(crate) struct StubRenderer {
 }
 
 pub(crate) fn stub_core() -> (Arc<NativeGbmRendererWorkerCore>, StubRenderer) {
-    let (core, commands, resume) = super::super::inventory_test_core(WORKER_COMMAND_CAPACITY);
+    let (core, commands, resume) = inventory_test_core(WORKER_COMMAND_CAPACITY);
     (
         core,
         StubRenderer {
@@ -33,6 +48,9 @@ pub(crate) fn stub_core() -> (Arc<NativeGbmRendererWorkerCore>, StubRenderer) {
     )
 }
 
+// Until a test-support consumer drives the renderer (G3-5d), only this
+// crate's tests call these.
+#[cfg_attr(not(test), allow(dead_code))]
 impl StubRenderer {
     /// Takes the facade's attach registration and then its route
     /// registration, sent on its first combined reservation, for `output`.

@@ -28,12 +28,10 @@ use std::time::{Duration, Instant};
 // G3-2: the bound frame, the description checks and the stop flag.
 #[path = "combined_frame_bind.rs"]
 mod bind;
-// G3-4: the renderer stub of the accept fixture, and the facade's half.
-#[path = "combined_frame_accept_stub.rs"]
-mod accept_stub;
+// G3-4: the facade's half of the accept; its renderer stub is mounted beside
+// the worker (worker.rs).
 #[path = "combined_frame_accept_worker.rs"]
 mod accept_worker;
-pub(crate) use accept_stub::{StubRenderer, stub_core};
 
 type Validator = IsbValidationWorker<CombinedRenderPlan>;
 const WAIT: Duration = Duration::from_secs(10);

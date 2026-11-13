@@ -53,7 +53,7 @@ use crate::api::LiveGbmEglFrameTargetRecord;
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::time::Duration;
 
-const SETTLE: Duration = Duration::from_secs(2);
+use super::support::{SETTLE, correlated_result, exported_outcome, inventory_test_core};
 
 trait SendCommand {
     fn send(
