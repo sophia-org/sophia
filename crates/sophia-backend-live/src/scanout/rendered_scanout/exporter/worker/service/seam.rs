@@ -3,6 +3,26 @@
 //! damage history and lease table.
 use super::*;
 
+pub(crate) mod gate;
+
+/// G3-5d, test-support only: what the running worker holds for its tests,
+/// the d-1 render seam and the d-2 renderer gate, each installed by its own
+/// worker command.
+#[derive(Default)]
+pub(super) struct Hooks {
+    pub(super) seam: Option<CombinedRenderSeam>,
+    pub(super) gate: Option<gate::CombinedGate>,
+}
+
+impl Hooks {
+    /// Arms the gate, then acknowledges it, before the worker serves anything
+    /// else: a job admitted after the acknowledgement meets an armed gate.
+    pub(super) fn install_gate(&mut self, gate: gate::CombinedGate) {
+        gate.armed();
+        self.gate = Some(gate);
+    }
+}
+
 /// G3-5d d-1, test-support only: the running worker's render of a bound
 /// combined frame in place of the GPU. It is handed what the GPU draw is
 /// handed: the frame, the target and the slot's repaint table. It answers

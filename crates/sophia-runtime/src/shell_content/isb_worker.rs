@@ -93,6 +93,11 @@ pub struct IsbValidationWorker<P: Send + 'static = NoCombinedPlan> {
     max_jobs: usize,
     max_bytes: usize,
     wake: Wake,
+    #[cfg(all(
+        any(test, feature = "test-support"),
+        any(test, feature = "experimental-combined-frame-job")
+    ))]
+    hooks: combined::hold::ValidatorHooks,
 }
 
 impl IsbValidationWorker {
@@ -127,6 +132,16 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
         let notify = wake.notifier();
         let (sender, jobs) = mpsc::sync_channel::<Job<P>>(max_jobs);
         let (results, completed) = mpsc::sync_channel(max_jobs);
+        #[cfg(all(
+            any(test, feature = "test-support"),
+            any(test, feature = "experimental-combined-frame-job")
+        ))]
+        let hooks = combined::hold::ValidatorHooks::new();
+        #[cfg(all(
+            any(test, feature = "test-support"),
+            any(test, feature = "experimental-combined-frame-job")
+        ))]
+        let progress = hooks.progress.clone();
         // No callback or owner state enters this thread. Each job returns one
         // owned result before the worker starts another; the queue is bounded.
         std::thread::Builder::new()
@@ -137,7 +152,15 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
                 let completion_sender = results;
                 #[cfg(feature = "experimental-draw")]
                 let mut raster = None;
-                while let Ok(job) = jobs.recv() {
+                loop {
+                    #[cfg(all(
+                        any(test, feature = "test-support"),
+                        any(test, feature = "experimental-combined-frame-job")
+                    ))]
+                    progress.enter();
+                    let Ok(job) = jobs.recv() else {
+                        break;
+                    };
                     let id = job.id;
                     #[cfg(any(test, feature = "experimental-combined-frame-job"))]
                     let (job, combined) = combined::take_route(job);
@@ -169,6 +192,11 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
             max_jobs,
             max_bytes,
             wake,
+            #[cfg(all(
+                any(test, feature = "test-support"),
+                any(test, feature = "experimental-combined-frame-job")
+            ))]
+            hooks,
         })
     }
 
@@ -389,6 +417,8 @@ fn sealed_validation(
 }
 #[cfg(any(test, feature = "experimental-combined-frame-job"))]
 mod combined;
+#[cfg(all(feature = "test-support", feature = "experimental-combined-frame-job"))]
+pub use combined::hold::{Checkpoint, CheckpointHandle, ValidatorProgress, checkpoint};
 #[cfg(any(test, feature = "experimental-combined-frame-job"))]
 pub use combined::{CombinedInbox, CombinedReservation, CombinedToken, ForwardedValidation};
 #[cfg(not(any(test, feature = "experimental-combined-frame-job")))]

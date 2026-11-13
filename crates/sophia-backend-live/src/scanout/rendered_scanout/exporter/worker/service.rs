@@ -12,6 +12,8 @@ use std::io;
 use std::os::fd::AsFd;
 use std::sync::mpsc::Receiver;
 
+mod lease;
+use lease::lease_export;
 #[cfg(all(
     any(test, feature = "test-support"),
     feature = "experimental-combined-frame-job"
@@ -21,7 +23,10 @@ mod seam;
     any(test, feature = "test-support"),
     feature = "experimental-combined-frame-job"
 ))]
-pub(crate) use seam::CombinedRenderSeam;
+pub(crate) use seam::{
+    CombinedRenderSeam,
+    gate::{CombinedGate, GateFact, GateHandle, GateRelease, combined_gate},
+};
 
 /// One output's private state inside a shared worker.
 ///
@@ -106,7 +111,7 @@ pub(super) fn run_worker<D>(
         any(test, feature = "test-support"),
         feature = "experimental-combined-frame-job"
     ))]
-    let mut seam: Option<CombinedRenderSeam> = None;
+    let mut hooks = seam::Hooks::default();
     let mut reported_transfers = 0_u64;
     let mut observation_order = 0_u64;
 
@@ -128,7 +133,7 @@ pub(super) fn run_worker<D>(
                 &mut next_lease_id,
                 context_status,
                 observation_order,
-                &mut seam,
+                &mut hooks,
             );
             #[cfg(not(all(
                 any(test, feature = "test-support"),
@@ -164,7 +169,7 @@ pub(super) fn run_worker<D>(
                 &mut next_lease_id,
                 context_status,
                 observation_order,
-                &mut seam,
+                &mut hooks,
             );
             #[cfg(all(
                 feature = "experimental-combined-frame-job",
@@ -546,7 +551,12 @@ pub(super) fn run_worker<D>(
                 any(test, feature = "test-support"),
                 feature = "experimental-combined-frame-job"
             ))]
-            WorkerCommand::InstallRenderSeam(installed) => seam = Some(installed),
+            WorkerCommand::InstallRenderSeam(installed) => hooks.seam = Some(installed),
+            #[cfg(all(
+                any(test, feature = "test-support"),
+                feature = "experimental-combined-frame-job"
+            ))]
+            WorkerCommand::InstallCombinedGate(gate) => hooks.install_gate(gate),
             WorkerCommand::Shutdown => break,
         }
     }
@@ -634,7 +644,7 @@ fn serve_combined<D>(
         any(test, feature = "test-support"),
         feature = "experimental-combined-frame-job"
     ))]
-    seam: &mut Option<CombinedRenderSeam>,
+    hooks: &mut seam::Hooks,
 ) -> Option<Option<Instant>>
 where
     D: AsFd,
@@ -647,6 +657,11 @@ where
             continue;
         };
         routed = true;
+        #[cfg(all(
+            any(test, feature = "test-support"),
+            feature = "experimental-combined-frame-job"
+        ))]
+        let now = seam::gate::hold(&mut hooks.gate, output, &mut route, now);
         route.serve(now, |plan, pixels, description| {
             let correlation = plan.correlation();
             super::combined::attempt(
@@ -664,10 +679,10 @@ where
                             feature = "experimental-combined-frame-job"
                         ))]
                         (super::combined::RenderInput::Bound(frame, slot_token), _)
-                            if seam.is_some() =>
+                            if hooks.seam.is_some() =>
                         {
                             seam::render_deterministic(
-                                seam,
+                                &mut hooks.seam,
                                 state,
                                 next_lease_id,
                                 frame.into_frame(),
@@ -967,29 +982,4 @@ where
         lease_id,
         slot_token,
     }
-}
-
-/// The step every exported render shares, whatever its input (G3-5d d-1):
-/// the required format, then a lease id with its exhaustion check, then the
-/// lease in this output's table. A refusal leases nothing and drops the
-/// lease's backing. Damage settlement is not here; it stays with the Mixed
-/// arm that rendered.
-fn lease_export(
-    state: &mut WorkerOutputState,
-    next_lease_id: &mut u64,
-    format: Option<sophia_renderer_live::LiveCompositionFormatRequest>,
-    descriptor: LiveRendererScanoutBufferDescriptor,
-    lease: WorkerLeaseBuffer,
-) -> Result<LiveRendererWorkerLeaseId, LiveRendererScanoutBufferExportDetail> {
-    if matches!(format, Some(sophia_renderer_live::LiveCompositionFormatRequest::Required(format)) if descriptor.format != format)
-    {
-        return Err(LiveRendererScanoutBufferExportDetail::InvalidTarget);
-    }
-    let Some(next_id) = next_lease_id.checked_add(1) else {
-        return Err(LiveRendererScanoutBufferExportDetail::WorkerLeaseIdExhausted);
-    };
-    let lease_id = LiveRendererWorkerLeaseId(*next_lease_id);
-    *next_lease_id = next_id;
-    state.leases.insert(lease_id, lease);
-    Ok(lease_id)
 }

@@ -13,26 +13,8 @@ pub(super) struct ProbePlan {
 
 type Worker = IsbValidationWorker<ProbePlan>;
 
-const CHECKPOINT_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
-
-pub(super) struct Checkpoint {
-    entered: mpsc::SyncSender<()>,
-    resume: mpsc::Receiver<()>,
-}
-
-/// Holds the real validator before validation until the fixture releases it.
-pub(super) fn park<P>(route: Option<&mut Route<P>>) {
-    if let Some(checkpoint) = route.and_then(|route| route.checkpoint.take()) {
-        checkpoint
-            .entered
-            .send(())
-            .expect("checkpoint owner present");
-        checkpoint
-            .resume
-            .recv_timeout(CHECKPOINT_WAIT)
-            .expect("fixture checkpoint deliberately disconnected or timed out");
-    }
-}
+// G3-5d d-2a: the hold moved to test-support (combined_frame_hold.rs).
+use super::hold::{CHECKPOINT_WAIT, Checkpoint};
 
 /// An inbox whose wake has no owner; forwarding tests that need the ring hold
 /// their own `Wake`.
@@ -79,3 +61,6 @@ mod payload_tests;
 
 #[path = "combined_frame_credit/wake_tests.rs"]
 mod wake_tests;
+
+#[path = "combined_frame_credit/hold_tests.rs"]
+mod hold_tests;

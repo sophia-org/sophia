@@ -549,6 +549,15 @@ impl OutputRoute {
         true
     }
 
+    /// Test boundary (G3-5d d-2a): the parked job's validator job number,
+    /// deadline and stop flag, read without moving it.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(super) fn parked_facts(&self) -> Option<(u64, Instant, bool)> {
+        self.parked
+            .as_ref()
+            .map(|(deadline, job)| (job.job(), *deadline, job.stopped()))
+    }
+
     /// Admission allows one combined job per output, so a full route is a
     /// broken contract: say so and never block the renderer on it.
     fn deliver(&mut self, result: CombinedRenderResult) {

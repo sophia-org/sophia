@@ -15,6 +15,9 @@ experimental-shell-capture = ["dep:sophia-renderer-image", "sophia-renderer-imag
 experimental-custody-dispatch = []
 # Validated frames move from the validator straight to the renderer (n7fj3c2p).
 experimental-combined-frame-job = []
+# Instrumentation for downstream combined-frame controls (G3-5d d-2a): the
+# validator's pre-validation hold, loop-head progress and serial. No behaviour.
+test-support = []
 
 [dependencies]
 sophia-draw = { path = "../sophia-draw", optional = true }

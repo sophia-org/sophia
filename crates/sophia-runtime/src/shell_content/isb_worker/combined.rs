@@ -131,15 +131,15 @@ pub(super) struct Route<P> {
     plan: P,
     inbox: CombinedInbox<P>,
     owner_plan: mpsc::SyncSender<P>,
-    #[cfg(test)]
-    checkpoint: Option<support::Checkpoint>,
+    #[cfg(any(test, feature = "test-support"))]
+    pub(super) checkpoint: Option<hold::Checkpoint>,
 }
 
 pub(super) fn take_route<P>(mut job: Job<P>) -> (Job<P>, Option<Route<P>>) {
-    #[cfg_attr(not(test), allow(unused_mut))]
+    #[cfg_attr(not(any(test, feature = "test-support")), allow(unused_mut))]
     let mut route = job.combined.take();
-    #[cfg(test)]
-    support::park(route.as_mut());
+    #[cfg(any(test, feature = "test-support"))]
+    hold::park(route.as_mut());
     (job, route)
 }
 
@@ -317,7 +317,7 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
                 plan,
                 inbox,
                 owner_plan,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 checkpoint: None,
             }),
         };
@@ -325,6 +325,18 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
     }
 
     fn send_combined(&mut self, job: Job<P>) -> Result<(), (IsbSubmitFailure, Source, P)> {
+        // Test-support (G3-5d d-2a): an armed hold rides the next combined
+        // admission that carries none; a refused send drops it with the job.
+        #[cfg(any(test, feature = "test-support"))]
+        let job = {
+            let mut job = job;
+            if let Some(route) = job.combined.as_mut()
+                && route.checkpoint.is_none()
+            {
+                route.checkpoint = self.hooks.armed.take();
+            }
+            job
+        };
         let id = job.id;
         match self.sender.try_send(job) {
             Ok(()) => {
@@ -399,6 +411,28 @@ fn reservation_bytes<P: Send + 'static>(
         .find(|pending| pending.id == reservation.job)
         .map(|pending| pending.bytes)
 }
+
+/// Test-support (G3-5d d-2a): the controls' handles on the real validator.
+#[cfg(any(test, feature = "test-support"))]
+impl<P: Send + 'static> IsbValidationWorker<P> {
+    /// The next combined admission that carries no hold of its own parks
+    /// before validation until the control releases it.
+    pub fn arm_next_combined_checkpoint(&mut self, checkpoint: hold::Checkpoint) {
+        self.hooks.armed = Some(checkpoint);
+    }
+
+    pub fn validator_progress(&self) -> hold::ValidatorProgress {
+        self.hooks.progress.clone()
+    }
+
+    pub fn validator_serial(&self) -> u64 {
+        self.hooks.serial
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+#[path = "../../../tests/support/combined_frame_hold.rs"]
+pub(super) mod hold;
 
 #[cfg(test)]
 #[path = "../../../tests/support/combined_frame_credit.rs"]

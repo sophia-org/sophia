@@ -837,6 +837,13 @@ enum WorkerCommand {
         feature = "experimental-combined-frame-job"
     ))]
     InstallRenderSeam(service::CombinedRenderSeam),
+    /// Test-support (G3-5d d-2a): arms the renderer gate for one output's
+    /// next forwarded combined job; the worker acknowledges it first.
+    #[cfg(all(
+        any(test, feature = "test-support"),
+        feature = "experimental-combined-frame-job"
+    ))]
+    InstallCombinedGate(service::CombinedGate),
     /// Detach an output and free everything it still holds.
     Deregister {
         output: LiveRendererWorkerOutputKey,

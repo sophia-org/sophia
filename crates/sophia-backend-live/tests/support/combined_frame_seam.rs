@@ -12,6 +12,10 @@ use sophia_renderer_live::{
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+// G3-5d d-2a: the renderer gate, on this module's running core and outputs.
+#[path = "combined_frame_gate.rs"]
+mod gate;
+
 /// What the seam was handed: its call count, and per call whether the
 /// worker's repaint table showed the slot with a history at age 1 (`None`
 /// when the worker handed no table).
