@@ -370,7 +370,11 @@ fn an_unexpected_worker_loss_keeps_disconnected_debt_that_refuses_final_quiescen
     // Every other guard of final quiescence is clear.
     assert_eq!(lane.h.owner.processes.image_pending(0), 0, "no image work");
     #[cfg(feature = "experimental-shell-capture")]
-    assert_eq!(lane.h.owner.processes.capture_work(), 0, "no capture work");
+    assert_eq!(
+        lane.h.owner.processes.connections().capture_work(),
+        0,
+        "no capture work"
+    );
     assert!(
         (0..MAX_SHELL_COMPONENTS).all(|slot| lane.h.owner.processes.attempt(slot).is_none_or(
             |key| lane.h.owner.phase(key).unwrap() == ComponentConnectionPhase::Revoked
