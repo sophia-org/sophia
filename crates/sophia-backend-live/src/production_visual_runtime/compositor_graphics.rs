@@ -992,7 +992,7 @@ impl LiveProductionVisualRuntime {
     }
 }
 
-mod shell_content;
+pub(super) mod shell_content;
 #[cfg(feature = "experimental-combined-frame-job")]
 #[cfg_attr(not(test), allow(unused_imports))]
 pub(super) use shell_content::{CombinedAcceptError, CombinedAcceptFailed, ShellContentPreflight};

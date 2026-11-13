@@ -189,5 +189,8 @@ macro_rules! shell_content_native {
 }
 
 shell_content_native!(LiveProductionNativeScanout);
-#[cfg(all(test, feature = "experimental-combined-frame-job"))]
+#[cfg(all(
+    any(test, feature = "test-support"),
+    feature = "experimental-combined-frame-job"
+))]
 shell_content_native!(crate::CombinedNativeFixture);

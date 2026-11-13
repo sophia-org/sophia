@@ -1,15 +1,23 @@
+#![cfg(test)]
 //! G3-5a controls. The fixture is one native authority (G3-5 design review
 //! DR1): ordinary and combined frames share one counter, an accepted combined
 //! retirement protects the output from ordinary replacement, and a protected
-//! ordinary generation refuses combined acceptance. Then G3-4's success path
-//! through the bridge's entries on this authority. The render is G3-4's
-//! injected exported reply, not G3-5d's running renderer.
+//! ordinary generation refuses combined acceptance. Then the bridge's public
+//! accept, `ShellContentNative::accept_combined_shell_content`, with a real
+//! visual runtime and Shell candidate: its success to tracked submission and
+//! a returned refusal. The render is G3-4's injected exported reply, not
+//! G3-5d's running renderer.
 use super::super::accept_device as device;
 
 use super::*;
-use crate::{
-    LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as Status, ShellContentNative, StubRenderer,
+use crate::production_visual_runtime::lifecycle_tests::resources::{
+    installed_shell, shell_frame, upload,
 };
+use crate::{
+    CombinedAcceptError, CombinedAcceptFailed, CombinedAcceptRefusal, LiveProductionVisualRuntime,
+    LiveShellContentFrame, LiveShellContentLayer,
+};
+use crate::{LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as Status, ShellContentNative};
 use device::{CountingDevice, Refuse};
 use sophia_engine::{HeadlessCompositorBackendAssembly, HeadlessOutput, OutputFrameDamageSnapshot};
 use sophia_renderer_live::{
@@ -22,6 +30,7 @@ use std::time::{Duration, Instant};
 
 const WAIT: Duration = Duration::from_secs(10);
 const LEASE: u64 = 81;
+const SHELL: LiveShellContentLayer = LiveShellContentLayer::Shell;
 type Validator = IsbValidationWorker<CombinedRenderPlan>;
 
 fn outputs() -> [HeadlessOutput; 2] {
@@ -90,7 +99,6 @@ fn ordinary(
 /// bridge's entries, with its frame drawn from the fixture's counter.
 struct Held {
     fixture: CombinedNativeFixture,
-    stub: StubRenderer,
     _validator: Validator,
     combined: CombinedHead,
     job: u64,
@@ -99,15 +107,14 @@ struct Held {
 }
 
 fn held() -> Held {
-    let (core, mut stub) = crate::stub_core();
     let outputs = outputs();
-    let mut fixture = CombinedNativeFixture::new(&core, &outputs);
+    let mut fixture = CombinedNativeFixture::new(&outputs);
     let output = outputs[0];
     let frame = ShellContentNative::allocate_combined_frame(&mut fixture);
     let (combined, inbox) = ShellContentNative::reserve_combined_frame(&mut fixture, output.id)
         .expect("the serving facade reserves");
     let key = crate::LiveRendererWorkerOutputKey::from_raw(output.id.raw());
-    stub.register(key, &combined.facade);
+    fixture.renderer.register(key, &combined.facade);
     let mut validator = Validator::for_combined_plans(1, 8).unwrap();
     let reservation = validator
         .reserve_combined(8, Instant::now() + WAIT)
@@ -139,7 +146,7 @@ fn held() -> Held {
         .submit_combined(&reservation, pixels(), plan, inbox)
         .ok()
         .expect("combined submission");
-    stub.serve_exported(key, output.size, LEASE);
+    fixture.renderer.serve_exported(key, output.size, LEASE);
     let end = Instant::now() + WAIT;
     let result = loop {
         if let Some(result) =
@@ -165,7 +172,6 @@ fn held() -> Held {
     );
     Held {
         fixture,
-        stub,
         _validator: validator,
         combined,
         job,
@@ -202,6 +208,25 @@ impl Held {
         }
     }
 
+    /// The accept through the bridge's public entry.
+    fn bridge_accept(
+        &mut self,
+        runtime: &mut LiveProductionVisualRuntime,
+        frame: LiveShellContentFrame,
+        accept: CombinedAccept,
+    ) -> Result<(), Box<CombinedAcceptFailed>> {
+        ShellContentNative::accept_combined_shell_content(
+            &mut self.fixture,
+            runtime,
+            frame,
+            SHELL,
+            &self.combined,
+            accept,
+        )
+    }
+
+    /// The native half alone (G3-4's), for the cross-path control that
+    /// needs only an accepted native retirement.
     fn accepted(mut self) -> Self {
         let plan = CombinedAcceptNative::preflight_combined_accept(
             &self.fixture,
@@ -216,9 +241,8 @@ impl Held {
 
 #[test]
 fn combined_and_ordinary_frames_draw_from_one_counter() {
-    let (core, _stub) = crate::stub_core();
     let outputs = outputs();
-    let mut fixture = CombinedNativeFixture::new(&core, &outputs);
+    let mut fixture = CombinedNativeFixture::new(&outputs);
     let output = outputs[1].id;
     let first = ShellContentNative::allocate_combined_frame(&mut fixture);
     let queued = fixture
@@ -318,13 +342,67 @@ fn a_protected_ordinary_generation_blocks_combined_acceptance() {
         CombinedRelease::Transferred,
         "the held result stays for ordinary disposal"
     );
-    assert_eq!(held.stub.releases(), 1);
+    assert_eq!(held.fixture.renderer.releases(), 1);
+}
+
+/// A visual runtime on the fixture's outputs, the store that owns the
+/// candidate's lease, and a Shell candidate for head 0's output.
+fn candidate(
+    held: &Held,
+) -> (
+    LiveProductionVisualRuntime,
+    sophia_runtime::ContentResourceStore,
+    LiveShellContentFrame,
+) {
+    let outputs = held
+        .fixture
+        .heads
+        .iter()
+        .map(|head| head.output)
+        .collect::<Vec<_>>();
+    let runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let grant = sophia_protocol::ContentGrant {
+        connection_epoch: 200,
+        content_grant_epoch: 200,
+    };
+    let mut store =
+        sophia_runtime::ContentResourceStore::new(sophia_protocol::ContentLimits::prototype(grant))
+            .unwrap();
+    let resource = sophia_protocol::ContentResourceId {
+        id: 1,
+        generation: 1,
+    };
+    let frame = shell_frame(held.output(), 1, upload(&mut store, grant, resource));
+    (runtime, store, frame)
 }
 
 #[test]
-fn the_bridge_reaches_submitted_waiting_for_page_flip() {
-    let mut held = held().accepted();
+fn the_bridge_accept_installs_binds_and_reaches_submitted_waiting_for_page_flip() {
+    let mut held = held();
     let output = held.output();
+    let (mut visual, _store, candidate) = candidate(&held);
+    let accept = held.accept();
+    assert!(
+        held.bridge_accept(&mut visual, candidate.clone(), accept)
+            .is_ok(),
+        "the bridge accepts the held result"
+    );
+    assert_eq!(
+        installed_shell(&visual, output.id, SHELL, held.frame),
+        (Some(candidate.clone()), Some(candidate.grant)),
+        "the runtime installs the candidate and binds its claim to the plan's native frame"
+    );
+    assert_eq!(
+        held.fixture.heads[0].rendering_content,
+        Some(crate::LiveProductionScanoutContent::RetainedMixed {
+            frame: held.frame,
+            requires_retirement: true,
+            logical_content_checksum: Some(held.frame.raw()),
+            nonzero_rgb_pixels: 0,
+        }),
+        "the native head renders retirement-bearing shell content"
+    );
+    assert!(held.fixture.protected(output.id));
     let mut runtime = crate::LiveBackendRuntimeAssembly::from_ready_headless_scanout(
         HeadlessCompositorBackendAssembly::new(output),
         output,
@@ -357,4 +435,38 @@ fn the_bridge_reaches_submitted_waiting_for_page_flip() {
         Ok(held.frame),
         "custody holds the frame drawn from the fixture's counter"
     );
+}
+
+#[test]
+fn a_refused_bridge_accept_returns_the_frame_and_keeps_the_held_result() {
+    let mut held = held();
+    let output = held.output();
+    let (mut visual, _store, candidate) = candidate(&held);
+    let mut accept = held.accept();
+    accept.correlation.native = None;
+    let Err(failed) = held.bridge_accept(&mut visual, candidate.clone(), accept) else {
+        panic!("a missing captured identity is accepted");
+    };
+    assert!(
+        matches!(
+            failed.error,
+            CombinedAcceptError::Native(CombinedAcceptRefusal::Identity)
+        ),
+        "the native preflight's refusal comes back through the bridge"
+    );
+    assert_eq!(failed.frame, candidate, "the refused frame comes back");
+    assert_eq!(
+        installed_shell(&visual, output.id, SHELL, held.frame),
+        (None, None),
+        "the runtime installs nothing and binds no claim"
+    );
+    assert_eq!(held.fixture.heads[0].rendering_content, None);
+    assert!(!held.fixture.protected(output.id));
+    assert!(!held.fixture.exporters[0].worker_in_flight());
+    assert_eq!(
+        ShellContentNative::release_combined_held(&mut held.fixture, &held.combined, held.job),
+        CombinedRelease::Transferred,
+        "the facade still holds the result for disposal"
+    );
+    assert_eq!(held.fixture.renderer.releases(), 1);
 }

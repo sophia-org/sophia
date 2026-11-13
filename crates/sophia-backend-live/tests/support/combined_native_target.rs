@@ -1,4 +1,7 @@
-#![cfg(all(test, feature = "experimental-combined-frame-job"))]
+#![cfg(all(
+    any(test, feature = "test-support"),
+    feature = "experimental-combined-frame-job"
+))]
 //! G3-5a: the combined fixture as the runtime's composition target, over its
 //! one native authority. Each method is the owner's (composition_target.rs)
 //! for a singleton output with no preview or topology state.

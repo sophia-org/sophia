@@ -20,8 +20,8 @@ pub use accept::{CombinedAccept, CombinedAcceptPlan};
 // G3-5a: one device-free native authority over the owner's parts.
 #[path = "../../../../tests/support/combined_native_fixture.rs"]
 mod native_fixture;
-#[cfg(all(test, feature = "experimental-combined-frame-job"))]
-pub(crate) use native_fixture::CombinedNativeFixture;
+#[cfg(any(test, feature = "test-support"))]
+pub use native_fixture::CombinedNativeFixture;
 // The one deterministic device both device-free fixtures drive.
 #[cfg(all(test, feature = "experimental-combined-frame-job"))]
 #[path = "../../../../tests/support/combined_frame_accept_device.rs"]

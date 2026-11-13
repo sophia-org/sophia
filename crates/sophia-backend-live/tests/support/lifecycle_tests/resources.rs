@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn upload(
+pub(crate) fn upload(
     store: &mut sophia_runtime::ContentResourceStore,
     grant: ContentGrant,
     resource: ContentResourceId,
@@ -38,7 +38,7 @@ pub(super) fn upload(
     store.lease(grant, resource).unwrap()
 }
 
-pub(super) fn shell_frame(
+pub(crate) fn shell_frame(
     output: HeadlessOutput,
     candidate: u64,
     lease: sophia_runtime::ContentResourceLease,
@@ -145,4 +145,28 @@ pub(super) fn released(store: &mut sophia_runtime::ContentResourceStore) -> Vec<
         store.confirm_isb_release(*resource).unwrap();
     }
     result
+}
+
+/// What an accept wrote into `runtime` for `layer` on `output`, for controls
+/// outside this module: the installed frame, and the grant whose retirement
+/// claim is bound to native `frame`.
+#[cfg(feature = "experimental-combined-frame-job")]
+pub(crate) fn installed_shell(
+    runtime: &LiveProductionVisualRuntime,
+    output: OutputId,
+    layer: LiveShellContentLayer,
+    frame: crate::LiveProductionNativeFrameId,
+) -> (Option<LiveShellContentFrame>, Option<ContentGrant>) {
+    let key = (output, layer);
+    (
+        runtime
+            .shell_content
+            .get(&key)
+            .map(|owned| owned.frame.clone()),
+        runtime
+            .queued_shell_retirements
+            .get(&(output, frame))
+            .and_then(|bound| bound.get(&key))
+            .copied(),
+    )
 }

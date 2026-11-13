@@ -1,4 +1,7 @@
-#![cfg(test)]
+#![cfg(any(
+    test,
+    all(feature = "test-support", feature = "experimental-combined-frame-job")
+))]
 
 use super::*;
 

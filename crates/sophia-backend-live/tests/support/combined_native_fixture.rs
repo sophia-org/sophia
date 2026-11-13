@@ -1,4 +1,4 @@
-#![cfg(test)]
+#![cfg(any(test, feature = "test-support"))]
 //! G3-5a (GATE3-SCOPE G3-5; G3-5 design review DR1): one device-free native
 //! authority for the Session content path. The fixture holds the owner's own
 //! parts, heads, exporters, the deferred composition queue and the native
@@ -11,7 +11,12 @@
 //! Not the owner: no KMS group or session, no topology transaction (frame
 //! service is always available), no preview recovery, mirror lifecycle,
 //! preview custody or topology cleanup, and no owner tick wrapper. Ordinary
-//! queued generations are admitted, not rendered.
+//! queued generations are admitted, not rendered. The renderer is G3-4's
+//! stub; its one render is the injected exported reply.
+//!
+//! Public under test-support and the combined feature for Session's tests,
+//! which reach it only through `new` and `ShellContentNative`; its parts stay
+//! crate-private.
 use super::super::composition_admission::{
     NativeCompositionOutput, NativeHeadCompositionBatch, prepare_native_composition_batch,
 };
@@ -19,7 +24,6 @@ use super::super::composition_queue::DeferredNativeCompositions;
 use super::super::native_facts;
 use super::super::renderer_images::LiveProductionHeadCompositionContent;
 use super::*;
-use std::sync::Arc;
 
 #[path = "combined_native_fixture_tests.rs"]
 mod tests;
@@ -37,21 +41,25 @@ impl RenderDeviceDiscoveryBackend for NoDevice {
 
 type Frames = BTreeMap<OutputId, LiveProductionNativeFrameId>;
 
-pub(crate) struct CombinedNativeFixture {
+#[doc(hidden)]
+pub struct CombinedNativeFixture {
     pub(crate) native_owner: crate::NativeFrameOwner,
     pub(crate) heads: Vec<LiveProductionNativeHead>,
     pub(crate) exporters: Vec<Exporter<NoDevice>>,
     pub(crate) deferred: DeferredNativeCompositions,
     /// The one native frame counter, as the owner's `next_frame_id`.
     pub(crate) next_frame: u64,
+    /// The renderer side of the shared worker core. It holds the core's
+    /// command channel open; only this crate's tests drive it until G3-5d.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) renderer: crate::StubRenderer,
 }
 
 impl CombinedNativeFixture {
-    /// One enabled head per output, each with an exporter on `core`.
-    pub(crate) fn new(
-        core: &Arc<crate::NativeGbmRendererWorkerCore>,
-        outputs: &[sophia_engine::HeadlessOutput],
-    ) -> Self {
+    /// One enabled head per output, each with an exporter on one shared
+    /// worker core whose renderer is the stub.
+    pub fn new(outputs: &[sophia_engine::HeadlessOutput]) -> Self {
+        let (core, renderer) = crate::stub_core();
         let heads = outputs
             .iter()
             .zip(1u32..)
@@ -73,7 +81,7 @@ impl CombinedNativeFixture {
                 exporter.set_output(crate::LiveRendererWorkerOutputKey::from_raw(
                     output.id.raw(),
                 ));
-                exporter.attach_shared_worker(core);
+                exporter.attach_shared_worker(&core);
                 exporter
             })
             .collect();
@@ -83,6 +91,7 @@ impl CombinedNativeFixture {
             exporters,
             deferred: DeferredNativeCompositions::default(),
             next_frame: 1,
+            renderer,
         }
     }
 
