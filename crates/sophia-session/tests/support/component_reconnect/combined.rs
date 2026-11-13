@@ -748,7 +748,11 @@ fn each_disposition_takes_its_own_row_transition() {
             lane.drive_until(&mut a, "the candidate's rejection", |_, a| {
                 !a.terminals(1).is_empty()
             });
-            assert_eq!(a.terminals(1), [(3, ContentReason::Malformed as u16)]);
+            assert_eq!(
+                a.terminals(1),
+                [(3, ContentReason::Malformed as u16)],
+                "the Mismatch rejected its candidate as Malformed, once"
+            );
             assert_eq!(
                 lane.residency(&a, 1),
                 FrameImageResidency::Absent,
@@ -867,7 +871,11 @@ fn a_returned_plan_cancels_its_reservation_only() {
     lane.drive_until(&mut a, "the candidate's rejection", |_, a| {
         !a.terminals(1).is_empty()
     });
-    assert_eq!(a.terminals(1), [(3, ContentReason::Malformed as u16)]);
+    assert_eq!(
+        a.terminals(1),
+        [(3, ContentReason::Malformed as u16)],
+        "the failed validation rejected its candidate as Malformed, once"
+    );
     assert_eq!(
         lane.residency(&a, 1),
         FrameImageResidency::Absent,
