@@ -566,6 +566,10 @@ struct WorkerLeaseBuffer {
 /// What a lease holds until its exact Release. Production leases a GBM
 /// buffer; the test-support deterministic render (G3-5d d-1) leases its slot
 /// alone, in the same table and under the same Release checks.
+#[allow(
+    clippy::large_enum_variant,
+    reason = "production builds have only Gbm; boxing it would add a production allocation"
+)]
 enum LeaseBacking {
     Gbm(NativeGbmOwnedScanoutBuffer),
     #[cfg(all(

@@ -967,11 +967,13 @@ mod support;
 ))]
 #[doc(hidden)]
 pub use accept_stub::StubReply;
+#[cfg(all(test, feature = "experimental-combined-frame-job"))]
+use accept_stub::running_core;
 #[cfg(all(
     any(test, feature = "test-support"),
     feature = "experimental-combined-frame-job"
 ))]
-pub(crate) use accept_stub::{StubRenderer, running_core, stub_core};
+pub(crate) use accept_stub::{StubRenderer, running_seam_core, stub_core};
 
 use service::run_worker;
 

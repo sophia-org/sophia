@@ -69,10 +69,19 @@ pub(crate) fn stub_core() -> (Arc<NativeGbmRendererWorkerCore>, StubRenderer) {
     )
 }
 
+/// `running_core` with its seam, for the running combined fixture, which
+/// never reads the control.
+pub(crate) fn running_seam_core(
+    inode: u64,
+    seam: CombinedRenderSeam,
+) -> Arc<NativeGbmRendererWorkerCore> {
+    running_core(inode, Some(seam)).0
+}
+
 /// A core whose worker thread runs the real loop without a render device;
 /// with `seam`, its bound combined frames render through that deterministic
 /// seam (G3-5d d-1) before any other command is served.
-pub(crate) fn running_core(
+pub(super) fn running_core(
     inode: u64,
     seam: Option<CombinedRenderSeam>,
 ) -> (Arc<NativeGbmRendererWorkerCore>, Arc<WorkerControl>) {

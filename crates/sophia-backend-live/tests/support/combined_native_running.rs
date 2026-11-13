@@ -97,14 +97,14 @@ impl CombinedNativeFixture {
     pub fn running(outputs: &[sophia_engine::HeadlessOutput]) -> Self {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let record = Arc::clone(&seen);
-        let (core, _control) = crate::running_core(
+        let core = crate::running_seam_core(
             9_500,
-            Some(Box::new(
+            Box::new(
                 move |frame: &crate::PendingRenderedFrame,
                       target: crate::api::LiveGbmEglFrameTargetRecord| {
                     render(&record, frame, target)
                 },
-            )),
+            ),
         );
         let mut fixture = Self::on_core(outputs, &core, None);
         fixture.seen = seen;
