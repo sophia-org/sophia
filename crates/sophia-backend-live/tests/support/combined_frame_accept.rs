@@ -281,7 +281,8 @@ impl Fixture {
     }
 
     /// The consumption guards alone, as G3-5c's check runs them before any
-    /// classification.
+    /// classification. Only the capture controls call it.
+    #[cfg(feature = "experimental-shell-capture")]
     fn check(&self, accept: &CombinedAccept) -> Result<usize, CombinedAcceptRefusal> {
         combined_consumption_guards(
             self.native_owner,
