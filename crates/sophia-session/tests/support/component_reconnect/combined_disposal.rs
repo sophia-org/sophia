@@ -20,6 +20,25 @@ const TIMEOUT: (u16, u16) = (3, ContentReason::Timeout as u16);
 /// Past any candidate's preparation deadline on the content clock.
 const EXPIRY_MSEC: u64 = 600_000;
 
+/// Candidate `n` ended by its own expiry: the content clock moves past its
+/// deadline and one content service publishes the terminal. The peer then
+/// reads it in the poll-then-observe order of `turns_at`, bounded by WAIT,
+/// with no further owner or content service and no deadline refreshed.
+fn expire_candidate(lane: &mut Lane, a: &mut Attempt, n: u64, label: &str) {
+    advance_content_clock(EXPIRY_MSEC);
+    lane.content(a, false);
+    let deadline = Instant::now() + WAIT;
+    while a.terminals(n).is_empty() {
+        a.peer.poll_io().unwrap();
+        observe_peer(a);
+        assert!(
+            Instant::now() < deadline,
+            "{label}: the peer never read the expiry"
+        );
+        std::thread::yield_now();
+    }
+}
+
 /// Candidate `n` Held and reconciled to Pending, then ended by its own
 /// expiry on the advanced content clock, with the stream still open; the
 /// job and the unchanged turn Instant used from here on.
@@ -29,8 +48,7 @@ fn held_then_expired(lane: &mut Lane, a: &mut Attempt, n: u64, label: &str) -> (
     lane.turns_at(a, at, true, "the candidate's reconciliation", |lane, a| {
         lane.candidate(a, job) == Some(Pending)
     });
-    advance_content_clock(EXPIRY_MSEC);
-    lane.content(a, false);
+    expire_candidate(lane, a, n, label);
     assert_eq!(
         a.terminals(n),
         [TIMEOUT],
@@ -168,8 +186,7 @@ fn a_failed_entry_without_a_bundle_retires_on_a_later_generation() {
         "the candidate's reconciliation",
         |lane, a| lane.candidate(a, job) == Some(Pending),
     );
-    advance_content_clock(EXPIRY_MSEC);
-    lane.content(&mut a, false);
+    expire_candidate(&mut lane, &mut a, 1, "c7b");
     assert_eq!(a.terminals(1), [TIMEOUT], "c7b: the candidate's own expiry");
     assert!(lane.turn_at(at).is_none());
     assert_eq!(
