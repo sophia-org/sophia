@@ -4,8 +4,7 @@
 //! ordinary generation refuses combined acceptance. Then G3-4's success path
 //! through the bridge's entries on this authority. The render is G3-4's
 //! injected exported reply, not G3-5d's running renderer.
-#[path = "combined_frame_accept_device.rs"]
-mod device;
+use super::super::accept_device as device;
 
 use super::*;
 use crate::{
@@ -114,12 +113,14 @@ fn held() -> Held {
         .reserve_combined(8, Instant::now() + WAIT)
         .unwrap();
     let head = &fixture.heads[0];
-    let mixed = LiveOwnedMixedCompositionFrame {
-        trace: Some(LiveCompositionTrace {
-            output: output.id,
-            head: head.head,
-            scene_generation: frame.raw(),
-        }),
+    let trace = Some(LiveCompositionTrace {
+        output: output.id,
+        head: head.head,
+        scene_generation: frame.raw(),
+    });
+    // Not Clone: the plan and the expectation each build their own.
+    let mixed = || LiveOwnedMixedCompositionFrame {
+        trace,
         ..Default::default()
     };
     let identity =
@@ -129,7 +130,7 @@ fn held() -> Held {
     let plan = CombinedRenderPlan::new(
         Instant::now() + WAIT,
         crate::api::LiveGbmEglFrameTargetRecord::new(output.size),
-        crate::PendingRenderedFrame::Mixed(mixed.clone(), Some(identity)),
+        crate::PendingRenderedFrame::Mixed(mixed(), Some(identity)),
         Vec::new(),
         None,
         Box::new([]),
@@ -169,7 +170,7 @@ fn held() -> Held {
         combined,
         job,
         frame,
-        mixed,
+        mixed: mixed(),
     }
 }
 

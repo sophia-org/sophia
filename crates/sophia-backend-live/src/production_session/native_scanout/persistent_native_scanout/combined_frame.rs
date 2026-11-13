@@ -22,6 +22,10 @@ pub use accept::{CombinedAccept, CombinedAcceptPlan};
 mod native_fixture;
 #[cfg(all(test, feature = "experimental-combined-frame-job"))]
 pub(crate) use native_fixture::CombinedNativeFixture;
+// The one deterministic device both device-free fixtures drive.
+#[cfg(all(test, feature = "experimental-combined-frame-job"))]
+#[path = "../../../../tests/support/combined_frame_accept_device.rs"]
+mod accept_device;
 
 type Exporter<R> = NativeGbmRenderedScanoutBufferDiscoveryExporter<R>;
 

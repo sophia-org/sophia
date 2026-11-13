@@ -12,8 +12,7 @@
 //! layout witness, retirement and `submitted_content`), the mirror tick, real
 //! page flips, KMS, the GPU and timing. This is not full-owner integration.
 
-#[path = "combined_frame_accept_device.rs"]
-mod device;
+use super::super::accept_device as device;
 
 use super::*;
 use crate::{
