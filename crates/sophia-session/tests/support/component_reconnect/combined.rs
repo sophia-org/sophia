@@ -95,6 +95,11 @@ impl Lane {
     /// the hardware-plane cursor; every other slot has no layer and takes
     /// today's path. Slot 0's failure, if any.
     fn turn(&mut self) -> Option<ShellTransportError> {
+        self.turn_at(Instant::now())
+    }
+
+    /// `turn` at `instant` (G3-5c's deadline controls).
+    fn turn_at(&mut self, instant: Instant) -> Option<ShellTransportError> {
         let outputs = [output()];
         let (cursor, plane) = turn_cursor(true, None);
         let mut turn = CombinedTurn {
@@ -105,6 +110,7 @@ impl Lane {
             layers: std::array::from_fn(|slot| (slot == 0).then_some(LiveShellContentLayer::Shell)),
             cursor,
             plane,
+            instant,
         };
         let mut failures = self.h.owner.processes.turn_combined(&mut turn);
         assert!(failures[1..].iter().all(Option::is_none), "{failures:?}");
@@ -284,24 +290,7 @@ impl Lane {
                 t.poll_io().unwrap();
             })
             .unwrap();
-        while let Some(event) = a.peer.take_frame().unwrap() {
-            a.stream.observe(&event).unwrap();
-            if let ShellFrameRecord::Outcome { outcome, .. } = event {
-                a.outcomes
-                    .push((outcome.candidate_generation, outcome.kind, outcome.reason));
-            }
-        }
-        while let Some((_, event)) = a.peer.take_content().unwrap() {
-            if let ShellContentRecord::ResourceStatus(status) = &event
-                && status.resource.id == RESOURCE.id
-            {
-                if status.status == 2 {
-                    a.accepted += 1;
-                } else {
-                    a.refused += 1;
-                }
-            }
-        }
+        observe_peer(a);
     }
 
     /// The owner's own state for candidate `n`'s copy against exactly that
@@ -430,6 +419,28 @@ impl Lane {
             .processes
             .combined_row_mut(0)
             .decline(&mut self.native, job)
+    }
+}
+
+/// The peer's frame outcomes and content records so far, into `a`.
+fn observe_peer(a: &mut Attempt) {
+    while let Some(event) = a.peer.take_frame().unwrap() {
+        a.stream.observe(&event).unwrap();
+        if let ShellFrameRecord::Outcome { outcome, .. } = event {
+            a.outcomes
+                .push((outcome.candidate_generation, outcome.kind, outcome.reason));
+        }
+    }
+    while let Some((_, event)) = a.peer.take_content().unwrap() {
+        if let ShellContentRecord::ResourceStatus(status) = &event
+            && status.resource.id == RESOURCE.id
+        {
+            if status.status == 2 {
+                a.accepted += 1;
+            } else {
+                a.refused += 1;
+            }
+        }
     }
 }
 
@@ -949,3 +960,9 @@ fn a_refused_plan_cancels_once_and_settles_its_consumed_candidate() {
 
 #[path = "combined_r4.rs"]
 mod r4;
+// G3-5c: the combined arm of `submit_bundle` through the real bar service.
+#[path = "combined_consume.rs"]
+mod consume;
+// G3-5c: REV3's lifetime table through the controlled walk.
+#[path = "combined_lifetime.rs"]
+mod lifetime;

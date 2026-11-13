@@ -24,6 +24,23 @@
 //! refused after the facade's real half. A retry that succeeds afterwards is
 //! not evidence that a real identity mismatch heals.
 //!
+//! G3-5c: `declare_classify_fault` is the same kind of declared fault at the
+//! consumption classification boundary. Three Release facts are counted
+//! apart, and one is not evidence of another: `release_attempts` counts
+//! calls into the facade's held release or flush, `release_transfers` the
+//! Transferred answers among them (the enqueue the owner was told
+//! succeeded), and `renderer_releases` the Release commands the renderer
+//! side actually drained. `accepts` counts committed combined accepts, and
+//! `ordinary_queues` the retained repaints ordinary installs queued.
+//!
+//! G3-5c declared states, each labelled where a control uses it: a declared
+//! classification replaces a real recomposition's class after it ran, and
+//! `declare_head` sets a head as G3-4's refused-preflight controls set it.
+//! They prove the consumption arm's disposition of that class or refusal,
+//! not that Session state reaches it: with the authority check first, a
+//! moved target or owner is refused before any classification, and the
+//! backend's scene controls prove each class from real composition.
+//!
 //! Public under test-support and the combined feature for Session's tests,
 //! which reach it only through `new` and `ShellContentNative`; its parts stay
 //! crate-private.
@@ -75,6 +92,31 @@ pub struct CombinedNativeFixture {
     pub(crate) plan_refusals: usize,
     /// Renderer reservations attempted through the bridge, refused or not.
     pub(crate) reserve_attempts: usize,
+    /// The declared consumption classification fault, if any (G3-5c).
+    pub(crate) classify_fault: Option<&'static str>,
+    /// Classifications through the consumption entry.
+    pub(crate) classifies: std::cell::Cell<usize>,
+    /// Held releases and flushes attempted through the facade.
+    pub(crate) release_attempts: usize,
+    /// Of those, the ones the facade answered Transferred.
+    pub(crate) release_transfers: usize,
+    /// Committed combined accepts.
+    pub(crate) accepts: usize,
+    /// The declared class every later consumption classification takes.
+    pub(crate) classification: Option<crate::CombinedRecompose>,
+    /// Retained repaints queued through this native target.
+    pub(crate) ordinary_queues: usize,
+}
+
+/// A declared head state for G3-5c's refused-consumption controls.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CombinedDeclaredHead {
+    /// An ordinary frame pending on the head.
+    PendingOrdinary,
+    /// Submitted content that owes a shell retirement.
+    RetirementOwed,
+    /// The native owner was replaced: no head issues the held result.
+    OwnerReplaced,
 }
 
 /// A declared, one-shot settlement fault (G3-5b R2 refusal controls).
@@ -130,6 +172,13 @@ impl CombinedNativeFixture {
             settle_fault: None,
             plan_refusals: 0,
             reserve_attempts: 0,
+            classify_fault: None,
+            classifies: std::cell::Cell::new(0),
+            release_attempts: 0,
+            release_transfers: 0,
+            accepts: 0,
+            classification: None,
+            ordinary_queues: 0,
         }
     }
 
@@ -201,7 +250,8 @@ impl CombinedNativeFixture {
         head: &CombinedHead,
         job: u64,
     ) -> CombinedRelease {
-        self.routes().release_held(head, job)
+        let outcome = self.routes().release_held(head, job);
+        self.count_release(outcome)
     }
 
     pub(crate) fn flush_combined_release(
@@ -209,7 +259,16 @@ impl CombinedNativeFixture {
         head: &CombinedHead,
         job: u64,
     ) -> CombinedRelease {
-        self.routes().flush(head, job)
+        let outcome = self.routes().flush(head, job);
+        self.count_release(outcome)
+    }
+
+    fn count_release(&mut self, outcome: CombinedRelease) -> CombinedRelease {
+        self.release_attempts += 1;
+        if outcome == CombinedRelease::Transferred {
+            self.release_transfers += 1;
+        }
+        outcome
     }
 
     /// The owner's combined facts over these parts, with no capture
@@ -258,6 +317,94 @@ impl CombinedNativeFixture {
     /// Renderer reservations attempted so far, refused ones included.
     pub fn reserve_attempts(&self) -> usize {
         self.reserve_attempts
+    }
+
+    /// Every later consumption classification returns `reason` as an
+    /// unclassified error after the real recomposition ran (G3-5c).
+    pub fn declare_classify_fault(&mut self, reason: &'static str) {
+        self.classify_fault = Some(reason);
+    }
+
+    /// Consumption classifications so far.
+    pub fn classifies(&self) -> usize {
+        self.classifies.get()
+    }
+
+    /// Held releases and flushes attempted so far, whatever they answered.
+    pub fn release_attempts(&self) -> usize {
+        self.release_attempts
+    }
+
+    /// The attempts the facade answered Transferred. Not the renderer's
+    /// receipt: see `renderer_releases`.
+    pub fn release_transfers(&self) -> usize {
+        self.release_transfers
+    }
+
+    /// Committed combined accepts so far.
+    pub fn accepts(&self) -> usize {
+        self.accepts
+    }
+
+    /// Declared: every later consumption classification takes `class`
+    /// after the real recomposition ran (G3-5c controls 3 and 4).
+    pub fn declare_classification(&mut self, class: crate::CombinedRecompose) {
+        self.classification = Some(class);
+    }
+
+    /// Retained repaints queued through this target so far: ordinary
+    /// installs that reached the native queue.
+    pub fn ordinary_queues(&self) -> usize {
+        self.ordinary_queues
+    }
+
+    /// Declared: `output`'s head takes `state`, as G3-4's refused-preflight
+    /// controls set it (G3-5c control 9).
+    pub fn declare_head(&mut self, output: OutputId, state: CombinedDeclaredHead) {
+        let head = self
+            .heads
+            .iter_mut()
+            .find(|head| head.output.id == output)
+            .expect("a fixture head serves the output");
+        match state {
+            CombinedDeclaredHead::PendingOrdinary => {
+                head.pending_content = Some(LiveProductionScanoutContent::HeadComposition {
+                    frame: LiveProductionNativeFrameId::from_raw(99),
+                    logical_content_checksum: 99,
+                    nonzero_rgb_pixels: 0,
+                });
+            }
+            CombinedDeclaredHead::RetirementOwed => {
+                head.submitted_content = Some(LiveProductionScanoutContent::RetainedMixed {
+                    frame: LiveProductionNativeFrameId::from_raw(98),
+                    requires_retirement: true,
+                    logical_content_checksum: None,
+                    nonzero_rgb_pixels: 0,
+                });
+            }
+            CombinedDeclaredHead::OwnerReplaced => {
+                self.native_owner = crate::NativeFrameOwner::new();
+            }
+        }
+    }
+
+    /// `output`'s head as the accept guards read it: pending, rendering
+    /// and submitted content, pending and rendering frames, and its target
+    /// generation.
+    pub fn head_observation(&self, output: OutputId) -> (bool, bool, bool, bool, bool, u64) {
+        let head = self
+            .heads
+            .iter()
+            .find(|head| head.output.id == output)
+            .expect("a fixture head serves the output");
+        (
+            head.pending_content.is_some(),
+            head.rendering_content.is_some(),
+            head.submitted_content.is_some(),
+            head.output_frames.pending().is_some(),
+            head.output_frames.rendering().is_some(),
+            head.target_generation,
+        )
     }
 
     /// Declared fault: the next plan is a refused send, as a plan that no
@@ -327,6 +474,7 @@ impl CombinedNativeFixture {
         batches: NativeHeadCompositionBatch,
         required: &BTreeSet<OutputId>,
     ) -> Result<Frames, Box<dyn std::error::Error>> {
+        self.ordinary_queues += 1;
         let batch_outputs = batches
             .iter()
             .map(|(output, _)| *output)
@@ -409,6 +557,22 @@ impl CombinedAcceptNative for CombinedNativeFixture {
         true
     }
 
+    fn check_combined_accept(
+        &self,
+        head: &CombinedHead,
+        accept: &CombinedAccept,
+    ) -> Result<(), crate::CombinedAcceptRefusal> {
+        super::accept::combined_consumption_guards(
+            self.native_owner,
+            &self.heads,
+            &self.exporters,
+            &self.deferred,
+            head,
+            accept,
+        )
+        .map(|_| ())
+    }
+
     fn preflight_combined_accept(
         &self,
         head: &CombinedHead,
@@ -425,6 +589,7 @@ impl CombinedAcceptNative for CombinedNativeFixture {
     }
 
     fn commit_combined_accept(&mut self, head: &CombinedHead, plan: CombinedAcceptPlan) {
+        self.accepts += 1;
         self.routes().commit_accept(head, plan);
     }
 }

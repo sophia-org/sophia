@@ -44,6 +44,16 @@ impl CombinedAcceptNative for Native {
         self.service
     }
 
+    fn check_combined_accept(
+        &self,
+        _head: &(),
+        _accept: &CombinedAccept,
+    ) -> Result<(), CombinedAcceptRefusal> {
+        // The declared refusal stays the native preflight's, as before.
+        self.calls.borrow_mut().push("check");
+        Ok(())
+    }
+
     fn preflight_combined_accept(
         &self,
         _head: &(),
@@ -112,7 +122,10 @@ fn an_accepted_candidate_is_installed_with_its_claim_and_no_render() {
             )
             .is_ok()
     );
-    assert_eq!(native.calls(), ["frame_service", "preflight", "commit"]);
+    assert_eq!(
+        native.calls(),
+        ["frame_service", "check", "preflight", "commit"]
+    );
     assert_eq!(
         fixture
             .runtime
@@ -267,7 +280,7 @@ fn a_native_refusal_leaves_the_runtime_unchanged() {
         CombinedAcceptError::Native(CombinedAcceptRefusal::PendingTransition)
     ));
     assert_eq!(failed.frame, candidate);
-    assert_eq!(native.calls(), ["frame_service", "preflight"]);
+    assert_eq!(native.calls(), ["frame_service", "check", "preflight"]);
     assert!(
         (observed(&fixture), claims(&fixture)) == before,
         "a native refusal leaves the runtime unchanged"
