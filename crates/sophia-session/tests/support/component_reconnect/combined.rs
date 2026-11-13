@@ -7,6 +7,13 @@
 //! with today's turns, before any frame is queued, so a job a control left
 //! in the row is collected only by that control's own hooked turn.
 //!
+//! The lane is terminal-only and lean, so no Prepared notice is sent and an
+//! accepted ResourceStatus stays unpublished until its frame's terminal.
+//! Before a terminal the controls read the owner's own state: the validated
+//! resource is leasable from the store. Peer-visible status is asserted only
+//! after the actual terminal. Every frame outcome is recorded by candidate,
+//! kind and reason, and every wait is a bounded condition.
+//!
 //! Declared faults are labelled where they are used. They prove that the
 //! row keeps what came back and reports once, not that the fault can
 //! happen. The two-proposal call order (R4) and the hooks=None accounting
@@ -49,11 +56,22 @@ struct Attempt {
     stream: FrameStream,
     /// The last candidate generation submitted on today's content path.
     submitted: u64,
-    prepared: usize,
-    presented: usize,
+    /// Every frame outcome: candidate generation, kind and reason.
+    outcomes: Vec<(u64, u16, u16)>,
     /// ResourceStatus records for the resource, valid and not.
     accepted: usize,
     refused: usize,
+}
+
+impl Attempt {
+    /// Candidate `n`'s frame outcomes, as (kind, reason).
+    fn terminals(&self, n: u64) -> Vec<(u16, u16)> {
+        self.outcomes
+            .iter()
+            .filter(|(generation, _, _)| *generation == n)
+            .map(|&(_, kind, reason)| (kind, reason))
+            .collect()
+    }
 }
 
 impl Lane {
@@ -125,8 +143,7 @@ impl Lane {
             peer,
             stream,
             submitted: 0,
-            prepared: 0,
-            presented: 0,
+            outcomes: Vec::new(),
             accepted: 0,
             refused: 0,
         };
@@ -254,11 +271,8 @@ impl Lane {
         while let Some(event) = a.peer.take_frame().unwrap() {
             a.stream.observe(&event).unwrap();
             if let ShellFrameRecord::Outcome { outcome, .. } = event {
-                match outcome.kind {
-                    1 => a.prepared += 1,
-                    2 => a.presented += 1,
-                    _ => panic!("unexpected outcome: {outcome:?}"),
-                }
+                a.outcomes
+                    .push((outcome.candidate_generation, outcome.kind, outcome.reason));
             }
         }
         while let Some((_, event)) = a.peer.take_content().unwrap() {
@@ -274,9 +288,30 @@ impl Lane {
         }
     }
 
+    /// The owner's own validation state: candidate `n`'s copy is in the
+    /// store, leasable under `a`'s grant, whether or not its status is
+    /// published yet.
+    fn resident(&mut self, a: &Attempt, n: u64) -> bool {
+        let resource = ContentResourceId {
+            id: RESOURCE.id,
+            generation: n,
+        };
+        self.h
+            .owner
+            .with_service(a.key, |_, t| {
+                t.lease_content_resource(a.key.grant, resource).is_ok()
+            })
+            .unwrap()
+    }
+
     /// Hooked turns with `a`'s content until `done`; any slot failure
     /// panics.
-    fn drive_until(&mut self, a: &mut Attempt, what: &str, done: impl Fn(&Self, &Attempt) -> bool) {
+    fn drive_until(
+        &mut self,
+        a: &mut Attempt,
+        what: &str,
+        mut done: impl FnMut(&mut Self, &Attempt) -> bool,
+    ) {
         let deadline = Instant::now() + WAIT;
         while !done(self, a) {
             a.peer.poll_io().unwrap();
@@ -318,11 +353,12 @@ impl Lane {
 
     /// Drives `a`'s ordinary candidate `generation` to presentation through
     /// hooked turns, with the backend's submission and completion
-    /// simulated, as the bundled probe does.
+    /// simulated, as the bundled probe does. Terminal-only sends no Prepared
+    /// notice, so the simulation follows the owner's own submission.
     fn finish_ordinary(&mut self, a: &mut Attempt, generation: u64) {
         let deadline = Instant::now() + WAIT;
         let mut completed = false;
-        while a.presented < generation as usize {
+        while a.terminals(generation).is_empty() {
             a.peer.poll_io().unwrap();
             if let Some(error) = self.turn() {
                 panic!("ordinary {generation}: slot failure {error:?}");
@@ -342,7 +378,7 @@ impl Lane {
                     })
                     .unwrap();
             }
-            if a.prepared == generation as usize && !completed {
+            if a.submitted >= generation && !completed {
                 self.h.backend.simulate_submit(output().id);
                 self.h.backend.simulate_completion(output().id);
                 completed = true;
@@ -350,6 +386,11 @@ impl Lane {
             assert!(Instant::now() < deadline, "ordinary {generation} stalled");
             std::thread::yield_now();
         }
+        assert_eq!(
+            a.terminals(generation),
+            [(2, ContentReason::None as u16)],
+            "ordinary {generation} presented once"
+        );
     }
 
     fn decline(&mut self, job: u64) -> Option<CombinedRelease> {
@@ -380,8 +421,13 @@ fn an_exported_job_is_held_then_declined_to_one_release() {
     lane.native
         .serve_combined(output().id, Instant::now(), exported());
     assert_eq!(lane.until(&mut a, "held"), job);
-    lane.drive_until(&mut a, "the validation result", |_, a| a.accepted > 0);
-    assert_eq!((a.accepted, a.refused), (1, 0), "the copy's result is real");
+    lane.drive_until(&mut a, "the owner-side validation result", |lane, a| {
+        lane.resident(a, 1)
+    });
+    assert!(
+        a.terminals(1).is_empty(),
+        "the Held candidate's terminal is c's"
+    );
     assert_eq!(lane.decline(job), Some(CombinedRelease::Transferred));
     assert_eq!(lane.native.renderer_releases(), 1);
     assert_eq!(lane.h.owner.processes.combined_row(0).pending(), 0);
@@ -452,7 +498,7 @@ fn an_exported_late_result_is_collected_after_stop_and_replacement() {
     let mut b = lane.attempt();
     lane.submit(&mut b, 1, PIXEL);
     let deadline = Instant::now() + WAIT;
-    while b.accepted == 0 {
+    while !lane.resident(&b, 1) {
         b.peer.poll_io().unwrap();
         lane.plain_turn();
         lane.content(&mut b, false);
@@ -467,6 +513,8 @@ fn an_exported_late_result_is_collected_after_stop_and_replacement() {
     assert!(lane.states().is_empty());
     assert_eq!(lane.native.renderer_releases(), 1);
     lane.finish_ordinary(&mut b, 1);
+    // The terminal publishes the status lean held back.
+    lane.drive_until(&mut b, "B's published status", |_, b| b.accepted > 0);
     assert_eq!(
         (b.accepted, b.refused),
         (1, 0),
@@ -503,7 +551,7 @@ fn full_release_debt_survives_reconnect_and_holds_final_quiescence() {
     assert_eq!(lane.states(), [(j1, "debt")]);
     let mut b = lane.attempt();
     lane.submit(&mut b, 1, PIXEL);
-    lane.drive_until(&mut b, "B's ordinary copy", |_, b| b.accepted > 0);
+    lane.drive_until(&mut b, "B's ordinary copy", |lane, b| lane.resident(b, 1));
     assert_eq!(
         lane.native.composes(),
         2,
@@ -634,10 +682,10 @@ fn a_stop_before_render_gives_stopped_with_nothing_held() {
 #[test]
 fn each_disposition_takes_its_own_row_transition() {
     for (reply, late, after, valid) in [
-        (exported(), false, "held", 1),
-        (StubReply::Failed, false, "failed", 1),
-        (exported(), true, "failed", 1),
-        (StubReply::Mismatch, false, "failed", 0),
+        (exported(), false, "held", true),
+        (StubReply::Failed, false, "failed", true),
+        (exported(), true, "failed", true),
+        (StubReply::Mismatch, false, "failed", false),
     ] {
         let mut lane = Lane::new();
         let mut a = lane.attempt();
@@ -650,12 +698,22 @@ fn each_disposition_takes_its_own_row_transition() {
         };
         lane.native.serve_combined(output().id, at, reply);
         assert_eq!(lane.until(&mut a, after), job, "{reply:?} late={late}");
-        for _ in 0..50 {
-            a.peer.poll_io().unwrap();
-            assert!(lane.turn().is_none());
-            lane.content(&mut a, false);
+        if valid {
+            // The validation result is real; the candidate's terminal is c's.
+            lane.drive_until(&mut a, "the owner-side validation result", |lane, a| {
+                lane.resident(a, 1)
+            });
+            assert!(a.terminals(1).is_empty(), "{reply:?} late={late}");
+        } else {
+            // Malformed before reconciliation: the copy's own failure rejects
+            // this candidate, once, and nothing is valid.
+            lane.drive_until(&mut a, "the candidate's rejection", |_, a| {
+                !a.terminals(1).is_empty()
+            });
+            assert_eq!(a.terminals(1), [(3, ContentReason::Malformed as u16)]);
+            assert!(!lane.resident(&a, 1));
+            assert_eq!(a.accepted, 0, "no status published as valid");
         }
-        assert_eq!(a.accepted, valid, "{reply:?} late={late}");
         assert_eq!(lane.states(), [(job, after)], "the current grant keeps it");
         assert_eq!(lane.native.renderer_releases(), 0);
         lane.h.owner.stop(a.key).unwrap();
@@ -740,8 +798,10 @@ fn a_refused_delivery_is_offered_again_and_reported_once() {
     );
     assert_eq!(lane.states(), [(job, "undelivered")]);
     assert_eq!(lane.until(&mut a, "held"), job);
-    lane.drive_until(&mut a, "the validation result", |_, a| a.accepted > 0);
-    assert_eq!(a.accepted, 1, "delivered once");
+    lane.drive_until(&mut a, "the owner-side validation result", |lane, a| {
+        lane.resident(a, 1)
+    });
+    assert!(a.terminals(1).is_empty());
     assert_eq!(lane.decline(job), Some(CombinedRelease::Transferred));
 }
 
@@ -761,6 +821,12 @@ fn a_returned_plan_cancels_its_reservation_only() {
         0,
         "the cancellation was confirmed"
     );
+    // The failed copy rejects its candidate once, as Malformed.
+    lane.drive_until(&mut a, "the candidate's rejection", |_, a| {
+        !a.terminals(1).is_empty()
+    });
+    assert_eq!(a.terminals(1), [(3, ContentReason::Malformed as u16)]);
+    assert!(!lane.resident(&a, 1));
     assert_eq!(a.accepted, 0);
     assert_eq!(lane.native.renderer_releases(), 0);
     // The facade's cell is free again: the next admission reserves.
