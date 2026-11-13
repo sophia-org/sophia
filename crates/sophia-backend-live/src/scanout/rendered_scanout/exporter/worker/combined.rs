@@ -141,6 +141,18 @@ impl CombinedRenderPlan {
         frame_correlation(&self.frame, Some(COMBINED_REQUEST))
     }
 
+    /// Test-support (G3-5d d-2b3b1): widens the first placeholder by one
+    /// pixel, so the worker's `admits` disagrees with the job's real admitted
+    /// description. False, and unchanged, when the plan has no placeholder.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn widen_first_placeholder(&mut self) -> bool {
+        let Some(first) = self.placeholders.first_mut() else {
+            return false;
+        };
+        first.size.width += 1;
+        true
+    }
+
     /// The target and request without the frame, which drops here unbound.
     fn render_target(self) -> RenderTarget {
         RenderTarget {

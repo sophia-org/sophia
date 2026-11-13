@@ -57,6 +57,7 @@ fn checksum(bytes: &[u8]) -> u64 {
 /// frame, then answers an XRGB8888 descriptor of the target's size.
 fn render(
     seen: &Mutex<Vec<CombinedSeen>>,
+    fault: &Mutex<Option<LiveRendererScanoutBufferExportDetail>>,
     frame: &crate::PendingRenderedFrame,
     target: crate::api::LiveGbmEglFrameTargetRecord,
     _repaint: Option<&sophia_renderer_live::NativeCompositionRepaintTable>,
@@ -85,6 +86,15 @@ fn render(
                 strong: Arc::strong_count(pixels),
             });
         }
+    }
+    // A declared draw failure (G3-5d d-2b3b1) is taken once, after the
+    // bound frame's occurrences were read, as a GPU draw fails after bind.
+    if let Some(detail) = fault
+        .lock()
+        .map_err(|_| LiveRendererScanoutBufferExportDetail::ComposeRefused)?
+        .take()
+    {
+        return Err(detail);
     }
     let pitch = u32::try_from(target.size.width)
         .ok()
@@ -139,18 +149,21 @@ impl CombinedNativeFixture {
     pub fn running(outputs: &[sophia_engine::HeadlessOutput]) -> Self {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let record = Arc::clone(&seen);
+        let render_fault = Arc::new(Mutex::new(None));
+        let fault = Arc::clone(&render_fault);
         let core = crate::running_seam_core(
             9_500,
             Box::new(
                 move |frame: &crate::PendingRenderedFrame,
                       target: crate::api::LiveGbmEglFrameTargetRecord,
                       repaint: Option<&sophia_renderer_live::NativeCompositionRepaintTable>| {
-                    render(&record, frame, target, repaint)
+                    render(&record, &fault, frame, target, repaint)
                 },
             ),
         );
         let mut fixture = Self::on_core(outputs, &core, None);
         fixture.seen = seen;
+        fixture.render_fault = render_fault;
         fixture.core = Some(core);
         fixture.native = outputs
             .iter()
@@ -256,6 +269,23 @@ impl CombinedNativeFixture {
             .iter()
             .find(|service| service.output == output)
             .map(|service| service.device.counts())
+    }
+
+    /// Labelled fault (G3-5d d-2b3b1): the running seam's next bound render
+    /// reads its occurrences, then fails as a GPU draw does
+    /// (`CompositionDrawFailed`). Once. Panics on the stub, which has no seam.
+    pub fn declare_render_failure(&self) {
+        assert!(self.core.is_some(), "only a running fixture has a seam");
+        *self.render_fault.lock().expect("render fault lock") =
+            Some(LiveRendererScanoutBufferExportDetail::CompositionDrawFailed);
+    }
+
+    /// Whether a declared draw failure is still to be taken.
+    pub fn render_failure_armed(&self) -> bool {
+        self.render_fault
+            .lock()
+            .expect("render fault lock")
+            .is_some()
     }
 
     /// The occurrences the running seam has read so far, in order.

@@ -104,6 +104,14 @@ pub struct CombinedNativeFixture {
     pub(crate) settle_fault: Option<CombinedSettleFault>,
     /// Declared plan refusals still to inject.
     pub(crate) plan_refusals: usize,
+    /// Declared plan/description mismatches still to inject (G3-5d d-2b3b1).
+    plan_mismatches: usize,
+    /// Plans a declared mismatch widened, each with a placeholder present.
+    plan_mismatches_applied: usize,
+    /// The running seam's declared one-shot draw failure (G3-5d d-2b3b1).
+    render_fault: std::sync::Arc<
+        std::sync::Mutex<Option<sophia_renderer_live::LiveRendererScanoutBufferExportDetail>>,
+    >,
     /// Renderer reservations attempted through the bridge, refused or not.
     pub(crate) reserve_attempts: usize,
     /// The declared consumption classification fault, if any (G3-5c).
@@ -196,6 +204,9 @@ impl CombinedNativeFixture {
             composes: std::cell::Cell::new(0),
             settle_fault: None,
             plan_refusals: 0,
+            plan_mismatches: 0,
+            plan_mismatches_applied: 0,
+            render_fault: Default::default(),
             reserve_attempts: 0,
             classify_fault: None,
             classifies: std::cell::Cell::new(0),
@@ -328,8 +339,19 @@ impl CombinedNativeFixture {
             drop(composition);
             return None;
         }
-        self.routes()
-            .plan(composition, head, frame, admitted, deadline)
+        let planned = self
+            .routes()
+            .plan(composition, head, frame, admitted, deadline);
+        match planned {
+            Some((mut plan, dispatch)) if self.plan_mismatches > 0 => {
+                self.plan_mismatches -= 1;
+                if plan.widen_first_placeholder() {
+                    self.plan_mismatches_applied += 1;
+                }
+                Some((plan, dispatch))
+            }
+            planned => planned,
+        }
     }
 
     /// Every later composition through the bridge returns `reason` as an
@@ -470,6 +492,20 @@ impl CombinedNativeFixture {
         self.plan_refusals += 1;
     }
 
+    /// Labelled fault (G3-5d d-2b3b1): the next real plan, after the real
+    /// planning ran, has its first placeholder widened by one pixel, so the
+    /// worker's admission check disagrees with the job's real description.
+    /// Once; the real admission, bytes and worker path are unchanged.
+    pub fn declare_plan_mismatch(&mut self) {
+        self.plan_mismatches += 1;
+    }
+
+    /// Plans a declared mismatch widened (each had a placeholder), and the
+    /// declarations not yet consumed.
+    pub fn plan_mismatches(&self) -> (usize, usize) {
+        (self.plan_mismatches_applied, self.plan_mismatches)
+    }
+
     /// The next settlement takes `fault`, once.
     pub fn declare_settle_fault(&mut self, fault: CombinedSettleFault) {
         self.settle_fault = Some(fault);
@@ -524,6 +560,12 @@ impl CombinedNativeFixture {
         !native_facts::heads_pending_frame(&self.heads, &self.exporters, &self.deferred, output)
             && !native_facts::heads_in_flight(&self.heads, output)
             && !native_facts::heads_cleanup_pending(&self.heads, output)
+    }
+
+    /// Test-support read (G3-5d d-2b3b1): `queue_ready`, for a Session
+    /// precondition on an ordinary entry. Reads only.
+    pub fn ordinary_queue_ready(&self, output: OutputId) -> bool {
+        self.queue_ready(output)
     }
 
     /// `output_retirement_protected`: the queue's or an installed head's.

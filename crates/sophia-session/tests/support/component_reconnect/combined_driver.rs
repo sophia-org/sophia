@@ -225,8 +225,26 @@ impl Lane {
         instant: Instant,
         step4: &mut dyn FnMut(&mut CombinedNativeFixture),
     ) -> (Result<FirstFailures>, Vec<usize>) {
+        let (turned, observed) = self.driver_turn_observed(steps, instant, None, step4);
+        let accepted = observed.into_iter().map(|(accepts, _)| accepts).collect();
+        (turned, accepted)
+    }
+
+    /// `driver_turn_at` with the hardware cursor plane at `plane` (d-2b3b1;
+    /// `driver_turn_at` passes None, its default). Each content call is
+    /// followed by an observation of the fixture's accept count and its
+    /// (release attempts, Transferred receipts), read at that call's
+    /// boundary before the walk. The read is no service, flush or schedule
+    /// change: the four calls and their order are unchanged.
+    fn driver_turn_observed(
+        &mut self,
+        steps: &mut Vec<Step>,
+        instant: Instant,
+        plane: Option<Point>,
+        step4: &mut dyn FnMut(&mut CombinedNativeFixture),
+    ) -> (Result<FirstFailures>, Vec<(usize, (usize, usize))>) {
         let outputs = [output()];
-        let (cursor, plane) = turn_cursor(true, None);
+        let (cursor, plane) = turn_cursor(true, plane);
         let root = Rect {
             x: 0,
             y: 0,
@@ -280,7 +298,13 @@ impl Lane {
                     t.poll_io().unwrap();
                     served
                 });
-                accepted.push(turn.native.accepts());
+                accepted.push((
+                    turn.native.accepts(),
+                    (
+                        turn.native.release_attempts(),
+                        turn.native.release_transfers(),
+                    ),
+                ));
                 served.map_err(|error| error.to_string())?
             },
             step4,
