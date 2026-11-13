@@ -22,6 +22,21 @@ use fd_readiness::FdRole;
 pub(crate) mod images;
 pub(crate) use images::content_now_msec;
 mod tests;
+// G3-5b: the combined row and its controlled driver, until gate 4.
+#[cfg(all(
+    test,
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session"
+))]
+pub(crate) mod combined_row;
+
+/// The image owner's renderer plan. With the combined feature one worker
+/// serves both paths; production admits no combined job until gate 4.
+#[cfg(feature = "experimental-combined-frame-job")]
+type ImagePlan = sophia_backend_live::CombinedRenderPlan;
+#[cfg(not(feature = "experimental-combined-frame-job"))]
+type ImagePlan = sophia_runtime::NoCombinedPlan;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ComponentConnectionKey {
@@ -77,7 +92,16 @@ struct Connection {
         )>,
     >,
     limits: Option<ContentLimits>,
-    images: Option<sophia_runtime::ShellIsbImageOwner>,
+    images: Option<sophia_runtime::ShellIsbImageOwner<ImagePlan>>,
+    /// Beside `images`, for the same lifetime: every attempt in this slot
+    /// reuses it, and stop, close and replacement never drop it (G3-5b R1).
+    #[cfg(all(
+        test,
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    combined: combined_row::CombinedRow,
     /// DRM device number of this slot's independently granted render node.
     /// Only such a slot may be offered DMA-BUF capture.
     #[cfg(feature = "experimental-shell-capture")]
@@ -306,6 +330,13 @@ impl ShellComponentConnections {
             readiness: Cell::new(None),
             limits: None,
             images: None,
+            #[cfg(all(
+                test,
+                feature = "experimental-combined-frame-job",
+                feature = "experimental-native-frame-transaction",
+                feature = "native-session"
+            ))]
+            combined: Default::default(),
             #[cfg(feature = "experimental-shell-capture")]
             capture_device: None,
         });
@@ -685,6 +716,19 @@ impl ShellComponentConnections {
     pub fn turn_connected(
         &mut self,
     ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
+        self.turn_with(|_, connection, epochs| images::service(connection, epochs))
+    }
+
+    /// `turn_connected`'s body; `service` is each slot's one image-owner
+    /// service, the plain one in production.
+    fn turn_with(
+        &mut self,
+        mut service: impl FnMut(
+            usize,
+            &mut Connection,
+            &mut ContentEpochRegistry,
+        ) -> Result<(), ShellTransportError>,
+    ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
         let mut failures = std::array::from_fn(|_| None);
         for (slot, (connection, failure)) in self
             .connections
@@ -710,7 +754,7 @@ impl ShellComponentConnections {
                     *failure = Some((ComponentConnectionKey { slot, grant }, error));
                 }
             }
-            if let Err(error) = images::service(connection, &mut self.epochs)
+            if let Err(error) = service(slot, connection, &mut self.epochs)
                 && failure.is_none()
             {
                 *failure = Some((key, error));
@@ -807,6 +851,7 @@ impl ShellComponentConnections {
                 .images
                 .as_ref()
                 .is_some_and(|owner| owner.pending() != 0)
+                || images::combined_pending(connection) != 0
                 || connection
                     .attempt
                     .is_some_and(|(_, phase)| phase != ComponentConnectionPhase::Revoked)

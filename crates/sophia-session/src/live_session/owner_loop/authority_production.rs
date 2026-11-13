@@ -63,11 +63,8 @@
                     .top_client_positioned_surface()
                     .or_else(|| focus.focused_surface(seat));
                 let focused_surface = focus.focused_surface(seat);
-                let cursor_presentation = if native_scanout.is_some() {
-                    LiveProductionCursorPresentation::HardwarePlane
-                } else {
-                    LiveProductionCursorPresentation::Software(pointer.position())
-                };
+                let cursor_presentation =
+                    turn_cursor_presentation(native_scanout.is_some(), pointer.position());
                 // One scene spans every output, so a layer belongs in it when
                 // any output shows it. Asking only the primary output erased
                 // whatever the policy had placed on the others.

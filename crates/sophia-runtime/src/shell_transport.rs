@@ -100,6 +100,13 @@ pub enum ShellTransportError {
         any(test, feature = "experimental-combined-frame-job")
     ))]
     CombinedComposition(String),
+    /// A combined row's collection or cleanup invariant failed; the row keeps
+    /// every owner it holds and retries (G3-5b).
+    #[cfg(all(
+        feature = "experimental-native-frame-transaction",
+        any(test, feature = "experimental-combined-frame-job")
+    ))]
+    CombinedRow(String),
 }
 
 impl core::fmt::Display for ShellTransportError {

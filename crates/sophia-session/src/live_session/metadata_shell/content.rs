@@ -16,6 +16,8 @@ pub use actions::NativeLauncherActionService;
 mod native_service;
 mod placement;
 mod projection;
+#[cfg(all(test, feature = "experimental-combined-frame-job"))]
+pub(crate) use projection::project_frame_commit;
 use projection::project_render_bundle;
 #[path = "content/submission.rs"]
 mod submission;

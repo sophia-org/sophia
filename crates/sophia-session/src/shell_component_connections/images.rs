@@ -39,10 +39,13 @@ pub(super) fn configure(
         // The worker survives reduced reconnect grants. Its hard resource cap
         // is the role contract ceiling; each admission checks the current grant.
         let maximum = sophia_protocol::ContentLimits::prototype(limits.grant).max_resource_bytes;
-        connection.images = Some(
-            ShellIsbImageOwner::new(maximum as usize, VALIDATION_BYTES as usize)
-                .map_err(|error| ShellTransportError::Io(error.to_string()))?,
-        );
+        #[cfg(feature = "experimental-combined-frame-job")]
+        let owner =
+            ShellIsbImageOwner::for_combined_plans(maximum as usize, VALIDATION_BYTES as usize);
+        #[cfg(not(feature = "experimental-combined-frame-job"))]
+        let owner = ShellIsbImageOwner::new(maximum as usize, VALIDATION_BYTES as usize);
+        connection.images =
+            Some(owner.map_err(|error| ShellTransportError::Io(error.to_string()))?);
     }
     configure_with(limits, capture, |d, l, f, b| {
         connection.transport.configure_image_channel(d, l, f, b)
@@ -198,4 +201,26 @@ pub(super) fn service(
         content_now_msec(),
         Instant::now(),
     )
+}
+
+/// Owed combined work in this slot's row, which joins final quiescence and
+/// nothing else (G3-5b R1). No row exists outside the controlled driver.
+#[cfg(all(
+    test,
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session"
+))]
+pub(super) fn combined_pending(connection: &Connection) -> usize {
+    connection.combined.pending()
+}
+
+#[cfg(not(all(
+    test,
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session"
+)))]
+pub(super) fn combined_pending(_: &Connection) -> usize {
+    0
 }

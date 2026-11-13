@@ -1,6 +1,17 @@
 //! Exact acknowledged allocation geometry to retained composition records.
 use super::*;
 
+/// The candidate tables a render bundle and a frame commit share.
+pub(crate) struct CandidateView<'a> {
+    pub grant: sophia_protocol::ContentGrant,
+    pub output: ContentOutputId,
+    pub candidate_generation: u64,
+    pub interaction_generation: u64,
+    pub surfaces: &'a [sophia_protocol::ContentSurface],
+    pub placements: &'a [sophia_protocol::ContentPlacement],
+    pub targets: &'a [sophia_protocol::ContentTarget],
+}
+
 /// Converts one validated content bundle into the immutable renderer record.
 /// Candidate validation owns references and table shape; this seam owns the
 /// exact allocation-local physical placement and retains each resource lease.
@@ -9,6 +20,64 @@ pub(super) fn project_render_bundle(
     output: HeadlessOutput,
     output_identity: ContentOutputId,
     allocations: &[ContentAllocationSnapshot],
+) -> Result<LiveShellContentFrame, &'static str> {
+    let view = CandidateView {
+        grant: bundle.grant,
+        output: bundle.output,
+        candidate_generation: bundle.candidate_generation,
+        interaction_generation: bundle.interaction_generation,
+        surfaces: &bundle.surfaces,
+        placements: &bundle.placements,
+        targets: &bundle.targets,
+    };
+    project_candidate(view, output, output_identity, allocations, |id| {
+        let lease = bundle.resource(id)?.clone();
+        Some((lease.description().clone(), lease.into()))
+    })
+}
+
+/// G3-5b service 1: a frame commit's candidate before admission, its one
+/// copied resource as the provisional image admission will validate. Any
+/// other resource is absent here, so its frame takes the ordinary path.
+#[cfg(all(test, feature = "experimental-combined-frame-job"))]
+pub(crate) fn project_frame_commit(
+    candidate: &sophia_protocol::ContentCandidate,
+    description: &sophia_protocol::ContentResourceBegin,
+    output: HeadlessOutput,
+    allocations: &[ContentAllocationSnapshot],
+) -> Result<LiveShellContentFrame, &'static str> {
+    let view = CandidateView {
+        grant: candidate.grant,
+        output: candidate.output,
+        candidate_generation: candidate.candidate_generation,
+        interaction_generation: candidate.interaction_generation,
+        surfaces: &candidate.surfaces,
+        placements: &candidate.placements,
+        targets: &candidate.targets,
+    };
+    project_candidate(view, output, candidate.output, allocations, |id| {
+        (id == description.resource).then(|| {
+            (
+                description.clone(),
+                sophia_engine::CompositorImageSource::Provisional(description.clone()),
+            )
+        })
+    })
+}
+
+/// The one checked placement algorithm. `resource` gives a placement's
+/// resource description and image source, or `None` when it is absent.
+fn project_candidate(
+    bundle: CandidateView<'_>,
+    output: HeadlessOutput,
+    output_identity: ContentOutputId,
+    allocations: &[ContentAllocationSnapshot],
+    mut resource: impl FnMut(
+        sophia_protocol::ContentResourceId,
+    ) -> Option<(
+        sophia_protocol::ContentResourceBegin,
+        sophia_engine::CompositorImageSource,
+    )>,
 ) -> Result<LiveShellContentFrame, &'static str> {
     if bundle.output != output_identity
         || bundle.candidate_generation == 0
@@ -34,11 +103,9 @@ pub(super) fn project_render_bundle(
         if allocation.output != output_identity {
             return Err("content placement crosses outputs");
         }
-        let resource = bundle
-            .resource(placement.resource)
-            .ok_or("content placement names an absent resource")?
-            .clone();
-        let description = resource.description();
+        let (description, source) =
+            resource(placement.resource).ok_or("content placement names an absent resource")?;
+        let description = &description;
         let width = i32::try_from(description.width_px)
             .map_err(|_| "content width exceeds renderer geometry")?;
         let height = i32::try_from(description.height_px)
@@ -98,14 +165,14 @@ pub(super) fn project_render_bundle(
                 .checked_mul(4)
                 .ok_or("content stride overflow")?,
             format: DRM_FORMAT_ARGB8888,
-            resource: resource.into(),
+            resource: source,
         });
     }
     if images.is_empty() {
         return Err("content candidate has no visible placements");
     }
     let mut targets = Vec::with_capacity(bundle.targets.len());
-    for target in &bundle.targets {
+    for target in bundle.targets {
         let surface = bundle
             .surfaces
             .get(usize::from(target.surface_index))

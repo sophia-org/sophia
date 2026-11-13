@@ -50,7 +50,7 @@ enum CombinedReleaseFlush {
 }
 
 /// What maintenance found for one job's Release (AUTHORITY-STEP3.md rev 5).
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CombinedRelease {
     /// Enqueued by either caller: the command queue owns the obligation.
     /// It is not proof that the slot is free.

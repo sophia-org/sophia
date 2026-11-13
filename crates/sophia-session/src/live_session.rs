@@ -257,6 +257,20 @@ pub(super) fn plan_validation_device<'a>(
 /// Opens physical input and attaches the owner's wake. Every opening goes
 /// through here, replacements included, so no poller can publish into a
 /// queue the owner sleeps past.
+/// The owner turn's cursor from one pointer reading: the cursor plane when a
+/// native scanout owns the outputs, else the software cursor at `position`.
+/// The combined row's turn snapshot takes the same rule and reading (G3-5b).
+pub(crate) fn turn_cursor_presentation(
+    native: bool,
+    position: Option<sophia_protocol::Point>,
+) -> LiveProductionCursorPresentation {
+    if native {
+        LiveProductionCursorPresentation::HardwarePlane
+    } else {
+        LiveProductionCursorPresentation::Software(position)
+    }
+}
+
 fn open_session_physical_input(
     config: &PersistentXtermSessionConfig,
     device_map: sophia_backend_live::NativeLibinputDeviceMap,

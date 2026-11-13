@@ -304,6 +304,9 @@ pub struct CombinedFrameAdmitted<'a> {
     pub job: u64,
     pub description: &'a sophia_protocol::ContentResourceBegin,
     pub binding: crate::FrameCopyBinding,
+    /// The job's original validation deadline; the renderer's plan expires
+    /// with it.
+    pub deadline: Instant,
 }
 
 #[cfg(all(
@@ -361,6 +364,7 @@ impl OwnedCopyImageJobs {
             job,
             description: &pending.admission.metadata.description,
             binding: pending.admission.metadata.frame?,
+            deadline: pending.admission.deadline,
         })
     }
 

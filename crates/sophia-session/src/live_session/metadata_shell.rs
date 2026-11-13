@@ -1,6 +1,8 @@
 use super::metadata_broker::MetadataBrokerView;
 use super::*;
 mod content;
+#[cfg(all(test, feature = "experimental-combined-frame-job"))]
+pub(crate) use content::project_frame_commit;
 #[path = "../../tests/support/descriptor_work_area.rs"]
 mod descriptor_work_area;
 mod panel_service;
