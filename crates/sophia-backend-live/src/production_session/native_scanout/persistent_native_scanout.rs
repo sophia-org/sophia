@@ -89,6 +89,8 @@ pub use render_devices::{
 mod combined_frame;
 #[cfg(feature = "experimental-combined-frame-job")]
 pub(crate) use combined_frame::CombinedAcceptNative;
+#[cfg(all(test, feature = "experimental-combined-frame-job"))]
+pub(crate) use combined_frame::CombinedNativeFixture;
 #[cfg(feature = "experimental-combined-frame-job")]
 pub use combined_frame::{CombinedAccept, CombinedAcceptPlan, CombinedHead};
 #[cfg(test)]

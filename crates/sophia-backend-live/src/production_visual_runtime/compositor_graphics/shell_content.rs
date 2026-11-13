@@ -330,7 +330,7 @@ mod removal;
 #[cfg(feature = "experimental-combined-frame-job")]
 // First production caller is G3-5's owner row; until then the accept controls.
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) enum CombinedAcceptError {
+pub enum CombinedAcceptError {
     /// The setter's own preflight refused the frame, with its message.
     Runtime(Box<dyn std::error::Error>),
     /// The frame is already installed: there is nothing to accept.
@@ -346,7 +346,7 @@ pub(crate) enum CombinedAcceptError {
 #[cfg(feature = "experimental-combined-frame-job")]
 // First production caller is G3-5's owner row; until then the accept controls.
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) struct CombinedAcceptFailed {
+pub struct CombinedAcceptFailed {
     pub error: CombinedAcceptError,
     pub frame: LiveShellContentFrame,
 }

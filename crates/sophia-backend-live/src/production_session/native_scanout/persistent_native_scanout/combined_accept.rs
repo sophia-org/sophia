@@ -69,7 +69,7 @@ fn combined_shell_content(
 /// F2's phase 2 with R5's additions, over the owner's heads, exporters and
 /// deferred compositions. Reads only. On a refusal the held result stays for
 /// ordinary disposal.
-fn preflight_accept<R: RenderDeviceDiscoveryBackend>(
+pub(super) fn preflight_accept<R: RenderDeviceDiscoveryBackend>(
     native_owner: crate::NativeFrameOwner,
     heads: &[LiveProductionNativeHead],
     exporters: &[Exporter<R>],
@@ -149,7 +149,7 @@ fn preflight_accept<R: RenderDeviceDiscoveryBackend>(
 impl<R: RenderDeviceDiscoveryBackend> CombinedRoutes<'_, R> {
     /// F2's commit steps 2 to 4, after both preflights passed in this owner
     /// turn. Every check ran there, so no step here can fail.
-    fn commit_accept(&mut self, head: &CombinedHead, plan: CombinedAcceptPlan) {
+    pub(super) fn commit_accept(&mut self, head: &CombinedHead, plan: CombinedAcceptPlan) {
         let current = &mut self.heads[plan.index];
         // Step 2, as composition installation writes it.
         current.rendering_content = Some(plan.content);

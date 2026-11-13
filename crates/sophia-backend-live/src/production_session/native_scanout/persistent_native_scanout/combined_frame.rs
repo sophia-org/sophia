@@ -17,6 +17,11 @@ mod routing_tests;
 mod accept;
 pub(crate) use accept::CombinedAcceptNative;
 pub use accept::{CombinedAccept, CombinedAcceptPlan};
+// G3-5a: one device-free native authority over the owner's parts.
+#[path = "../../../../tests/support/combined_native_fixture.rs"]
+mod native_fixture;
+#[cfg(all(test, feature = "experimental-combined-frame-job"))]
+pub(crate) use native_fixture::CombinedNativeFixture;
 
 type Exporter<R> = NativeGbmRenderedScanoutBufferDiscoveryExporter<R>;
 
@@ -148,6 +153,12 @@ impl LiveProductionNativeScanout {
             heads: &mut self.heads,
             exporters: &mut self.exporters,
         }
+    }
+
+    /// The native frame a combined admission is planned as, drawn from the
+    /// counter ordinary batches use, so the two never share an identity.
+    pub fn allocate_combined_frame(&mut self) -> LiveProductionNativeFrameId {
+        native_facts::allocate_frame_id(&mut self.next_frame_id)
     }
 
     /// The renderer half of one combined admission: the output's Release

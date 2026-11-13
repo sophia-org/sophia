@@ -50,6 +50,11 @@ pub mod session_content_fixture;
 pub mod session_policy_presentation_fixture;
 mod software_preview_recovery;
 mod topology_target;
+// G3-5a: the native seam the Session content path drives.
+mod shell_content_native;
+pub use shell_content_native::ShellContentNative;
+#[path = "../tests/support/combined_native_target.rs"]
+mod combined_native_target;
 use composition_target::NativeCompositionTarget;
 pub use policy_presentation::{
     LivePolicyPresentation, LivePolicyPresentationRefusal, LivePolicyPresentationRevocation,
