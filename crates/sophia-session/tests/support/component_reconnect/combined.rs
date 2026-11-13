@@ -9,9 +9,11 @@
 //!
 //! The lane is terminal-only and lean, so no Prepared notice is sent and an
 //! accepted ResourceStatus stays unpublished until its frame's terminal.
-//! Before a terminal the controls read the owner's own state: the validated
-//! resource is leasable from the store. Peer-visible status is asserted only
-//! after the actual terminal. Every frame outcome is recorded by candidate,
+//! Before a terminal the controls read the owner's own state for the exact
+//! frame: a validated copy is held privately for that frame, a refused one
+//! is absent. The generic lease refuses frame-owned images until Presented,
+//! as production needs, so it is not used. Peer-visible status is asserted
+//! only after the actual terminal. Every frame outcome is recorded by candidate,
 //! kind and reason, and every wait is a bounded condition.
 //!
 //! Declared faults are labelled where they are used. They prove that the
@@ -26,7 +28,7 @@ use sophia_backend_live::{
     ShellContentNative, StubReply,
 };
 use sophia_protocol::shell_files::{ShellFrameCommit, ShellFrameRecord, ShellFrameStreamKey};
-use sophia_runtime::ShellTransportError;
+use sophia_runtime::{ContentRetireOwner, FrameImageResidency, ShellTransportError};
 use sophia_shell_client::{FrameStream, RingUpload};
 
 const WAIT: Duration = Duration::from_secs(10);
@@ -302,10 +304,16 @@ impl Lane {
         }
     }
 
-    /// The owner's own validation state: candidate `n`'s copy is in the
-    /// store, leasable under `a`'s grant, whether or not its status is
-    /// published yet.
-    fn resident(&mut self, a: &Attempt, n: u64) -> bool {
+    /// The owner's own state for candidate `n`'s copy against exactly that
+    /// frame, whether or not its status is published yet. Validated, it is
+    /// held privately for the frame until Presented; refused or never
+    /// admitted, it is absent. No lease is made.
+    fn residency(&mut self, a: &Attempt, n: u64) -> FrameImageResidency {
+        let owner = ContentRetireOwner {
+            grant: a.key.grant,
+            output: OUTPUT,
+            candidate_generation: n,
+        };
         let resource = ContentResourceId {
             id: RESOURCE.id,
             generation: n,
@@ -313,9 +321,10 @@ impl Lane {
         self.h
             .owner
             .with_service(a.key, |_, t| {
-                t.lease_content_resource(a.key.grant, resource).is_ok()
+                t.content_frame_image_residency(owner, resource)
             })
             .unwrap()
+            .expect("the lane has a content store")
     }
 
     /// The owner's content charges under `a`'s grant.
@@ -444,7 +453,7 @@ fn an_exported_job_is_held_then_declined_to_one_release() {
         .serve_combined(output().id, Instant::now(), exported());
     assert_eq!(lane.until(&mut a, "held"), job);
     lane.drive_until(&mut a, "the owner-side validation result", |lane, a| {
-        lane.resident(a, 1)
+        lane.residency(a, 1) == FrameImageResidency::HeldForFrame
     });
     assert!(
         a.terminals(1).is_empty(),
@@ -520,7 +529,7 @@ fn an_exported_late_result_is_collected_after_stop_and_replacement() {
     let mut b = lane.attempt();
     lane.submit(&mut b, 1, PIXEL);
     let deadline = Instant::now() + WAIT;
-    while !lane.resident(&b, 1) {
+    while lane.residency(&b, 1) != FrameImageResidency::HeldForFrame {
         b.peer.poll_io().unwrap();
         lane.plain_turn();
         lane.content(&mut b, false);
@@ -541,6 +550,11 @@ fn an_exported_late_result_is_collected_after_stop_and_replacement() {
         (b.accepted, b.refused),
         (1, 0),
         "B's one result stands; J1's never reached B"
+    );
+    assert_eq!(
+        lane.residency(&b, 1),
+        FrameImageResidency::Public,
+        "the Presented terminal transferred B's image"
     );
     assert_eq!(lane.h.owner.processes.image_pending(0), 0);
     // The successor: the same facade reserves now that J1's receipt moved.
@@ -573,7 +587,9 @@ fn full_release_debt_survives_reconnect_and_holds_final_quiescence() {
     assert_eq!(lane.states(), [(j1, "debt")]);
     let mut b = lane.attempt();
     lane.submit(&mut b, 1, PIXEL);
-    lane.drive_until(&mut b, "B's ordinary copy", |lane, b| lane.resident(b, 1));
+    lane.drive_until(&mut b, "B's ordinary copy", |lane, b| {
+        lane.residency(b, 1) == FrameImageResidency::HeldForFrame
+    });
     assert_eq!(
         lane.native.composes(),
         2,
@@ -723,7 +739,7 @@ fn each_disposition_takes_its_own_row_transition() {
         if valid {
             // The validation result is real; the candidate's terminal is c's.
             lane.drive_until(&mut a, "the owner-side validation result", |lane, a| {
-                lane.resident(a, 1)
+                lane.residency(a, 1) == FrameImageResidency::HeldForFrame
             });
             assert!(a.terminals(1).is_empty(), "{reply:?} late={late}");
         } else {
@@ -733,7 +749,11 @@ fn each_disposition_takes_its_own_row_transition() {
                 !a.terminals(1).is_empty()
             });
             assert_eq!(a.terminals(1), [(3, ContentReason::Malformed as u16)]);
-            assert!(!lane.resident(&a, 1));
+            assert_eq!(
+                lane.residency(&a, 1),
+                FrameImageResidency::Absent,
+                "never accepted"
+            );
             assert_eq!(a.accepted, 0, "no status published as valid");
         }
         assert_eq!(lane.states(), [(job, after)], "the current grant keeps it");
@@ -821,7 +841,7 @@ fn a_refused_delivery_is_offered_again_and_reported_once() {
     assert_eq!(lane.states(), [(job, "undelivered")]);
     assert_eq!(lane.until(&mut a, "held"), job);
     lane.drive_until(&mut a, "the owner-side validation result", |lane, a| {
-        lane.resident(a, 1)
+        lane.residency(a, 1) == FrameImageResidency::HeldForFrame
     });
     assert!(a.terminals(1).is_empty());
     assert_eq!(lane.decline(job), Some(CombinedRelease::Transferred));
@@ -848,7 +868,11 @@ fn a_returned_plan_cancels_its_reservation_only() {
         !a.terminals(1).is_empty()
     });
     assert_eq!(a.terminals(1), [(3, ContentReason::Malformed as u16)]);
-    assert!(!lane.resident(&a, 1));
+    assert_eq!(
+        lane.residency(&a, 1),
+        FrameImageResidency::Absent,
+        "never accepted"
+    );
     assert_eq!(a.accepted, 0);
     assert_eq!(lane.native.renderer_releases(), 0);
     // The facade's cell is free again: the next admission reserves.
@@ -893,7 +917,11 @@ fn a_refused_plan_cancels_once_and_settles_its_consumed_candidate() {
         1,
         "the consumed frame is not proposed again"
     );
-    assert!(!lane.resident(&a, 1));
+    assert_eq!(
+        lane.residency(&a, 1),
+        FrameImageResidency::Absent,
+        "never accepted"
+    );
     assert_eq!(lane.native.renderer_releases(), 0);
     // The next admission is a new candidate, after the credit came back.
     lane.drive_until(&mut a, "the frame credit", |_, a| a.stream.has_credit());

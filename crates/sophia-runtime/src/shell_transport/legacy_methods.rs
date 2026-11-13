@@ -27,6 +27,19 @@ macro_rules! transport_facade {
                     .lease_content_resource(&self.content_epochs, grant, resource)
             }
 
+            #[cfg(all(
+                feature = "experimental-native-frame-transaction",
+                any(test, feature = "experimental-combined-frame-job")
+            ))]
+            pub fn content_frame_image_residency(
+                &self,
+                owner: crate::ContentRetireOwner,
+                resource: sophia_protocol::ContentResourceId,
+            ) -> Option<crate::FrameImageResidency> {
+                self.state
+                    .content_frame_image_residency(&self.content_epochs, owner, resource)
+            }
+
             pub fn poll_io(&mut self) -> Result<(), ShellTransportError> {
                 self.state.poll_io(&mut self.content_epochs)
             }

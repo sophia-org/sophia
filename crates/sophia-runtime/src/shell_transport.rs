@@ -389,6 +389,23 @@ impl ShellComponentTransport {
             .map_err(Into::into)
     }
 
+    /// The combined lane's control read of one exact frame's image (G3-5b
+    /// F1); `None` without a content store. No lease is made.
+    #[cfg(all(
+        feature = "experimental-native-frame-transaction",
+        any(test, feature = "experimental-combined-frame-job")
+    ))]
+    pub fn content_frame_image_residency(
+        &self,
+        epochs: &crate::ContentEpochRegistry,
+        owner: crate::ContentRetireOwner,
+        resource: sophia_protocol::ContentResourceId,
+    ) -> Option<crate::FrameImageResidency> {
+        epochs
+            .resources(self.store_grant)
+            .map(|store| store.frame_image_residency(owner, resource))
+    }
+
     /// Starts an owner pass. Call once per pass, before visiting any roles.
     /// Requests arriving afterwards remain level-ready for the next pass.
     pub fn service_owner_turn(

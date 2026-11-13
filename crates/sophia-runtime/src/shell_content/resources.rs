@@ -57,6 +57,11 @@ mod retire_on_present;
 #[cfg(feature = "experimental-shell-capture")]
 pub use backing::ContentCapturedImage;
 pub use backing::{ContentCpuResourceLease, ContentResourceLease};
+#[cfg(all(
+    feature = "experimental-native-frame-transaction",
+    any(test, feature = "experimental-combined-frame-job")
+))]
+pub use frame::FrameImageResidency;
 #[cfg(feature = "experimental-native-frame-transaction")]
 pub use retire_on_present::{ContentRetireOnPresent, ContentRetireOwner, ContentRetireToken};
 

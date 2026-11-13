@@ -109,7 +109,11 @@ fn a_compose_fault_beside_an_unrelated_job_reserves_and_admits_nothing() {
         "no copy admitted"
     );
     assert_eq!(lane.usage(&b), usage, "nothing charged");
-    assert!(!lane.resident(&b, 1));
+    assert_eq!(
+        lane.residency(&b, 1),
+        FrameImageResidency::Absent,
+        "never admitted"
+    );
     assert!(b.terminals(1).is_empty(), "the frame is unanswered");
     let offers: Vec<_> = b
         .peer
