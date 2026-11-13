@@ -284,21 +284,7 @@ pub(super) fn service_components(
             // never turned into a connection retry with uncertain replay.
             Err(IndicatorServiceError::Completion(error)) => return Err(error),
             Err(IndicatorServiceError::Poll(error)) => {
-                crate::session_eprintln!(
-                    "sophia_shell_component schema=1 status=service_failed slot={} reason={error}",
-                    key.slot
-                );
-                components.stop(key)?;
-                // A component that starts cleanly and then fails in service
-                // is a loop as much as one that never starts, and is spaced
-                // by the same count. The transition is recorded here because
-                // the next visit's selection clears it before reading it.
-                if components.record_service_failure(key.slot, Instant::now())? {
-                    crate::session_eprintln!(
-                        "sophia_shell_component schema=1 status=start_backoff slot={}",
-                        key.slot
-                    );
-                }
+                components.fail_service(key, &error)?;
             }
         }
     }

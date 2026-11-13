@@ -348,6 +348,32 @@ impl ShellComponentSession {
         self.revoked.record(key.grant)?;
         self.processes.request_stop(key).map_err(Into::into)
     }
+    /// Ends a component that failed in service: records the failure, stops
+    /// its attempt and spaces its retry. A failed stop or retry deadline is
+    /// returned at once, with the attempt's custody retained; it is not
+    /// completed cleanup.
+    pub fn fail_service(
+        &mut self,
+        key: ComponentConnectionKey,
+        reason: &dyn std::fmt::Display,
+    ) -> Result<()> {
+        crate::session_eprintln!(
+            "sophia_shell_component schema=1 status=service_failed slot={} reason={reason}",
+            key.slot
+        );
+        self.stop(key)?;
+        // A component that starts cleanly and then fails in service is a loop
+        // as much as one that never starts, and is spaced by the same count.
+        // The transition is recorded here because the next visit's selection
+        // clears it before reading it.
+        if self.record_service_failure(key.slot, std::time::Instant::now())? {
+            crate::session_eprintln!(
+                "sophia_shell_component schema=1 status=start_backoff slot={}",
+                key.slot
+            );
+        }
+        Ok(())
+    }
     pub fn start(&mut self, slot: usize) -> Result<ComponentConnectionKey> {
         if !self.available || self.stopping || self.revoked.len() != 0 {
             return Err("component presentation unavailable or cleanup retained".into());
@@ -498,17 +524,7 @@ impl ShellComponentSession {
         // work for that wire. A failure ends that component as a service
         // failure would.
         for (key, error) in self.processes.turn_connected().into_iter().flatten() {
-            crate::session_eprintln!(
-                "sophia_shell_component schema=1 status=service_failed slot={} reason={error}",
-                key.slot
-            );
-            self.stop(key)?;
-            if self.record_service_failure(key.slot, std::time::Instant::now())? {
-                crate::session_eprintln!(
-                    "sophia_shell_component schema=1 status=start_backoff slot={}",
-                    key.slot
-                );
-            }
+            self.fail_service(key, &error)?;
         }
         Ok(visit)
     }
