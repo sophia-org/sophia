@@ -469,13 +469,15 @@ impl LiveProductionNativeScanout {
     }
 
     pub(crate) fn output_retirement_protected(&self, output: OutputId) -> bool {
-        self.deferred_mirror_generations.protected(output)
-            || self.installed_retirement_protected(output)
+        native_facts::output_retirement_protected(
+            &self.heads,
+            &self.deferred_mirror_generations,
+            output,
+        )
     }
 
     pub(super) fn installed_retirement_protected(&self, output: OutputId) -> bool {
-        self.head_indices_iter(output)
-            .any(|index| self.heads[index].retirement_protected())
+        native_facts::installed_retirement_protected(&self.heads, output)
     }
 
     pub(crate) fn retained_repaint_deferred(&self) -> bool {

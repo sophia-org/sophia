@@ -25,6 +25,7 @@ pub use discovery::{
 mod completion_wait;
 mod head_completion;
 mod head_selection;
+mod native_facts;
 #[path = "../../../tests/support/native_head_fixture.rs"]
 mod native_head_fixture;
 mod prepared_cancellation;

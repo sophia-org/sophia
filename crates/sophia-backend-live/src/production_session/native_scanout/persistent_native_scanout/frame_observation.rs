@@ -23,14 +23,12 @@ impl LiveProductionNativeScanout {
     /// never consumed, and Present completions never routed -- a silent
     /// freeze on the first content change rather than an error.
     pub fn output_in_flight(&self, output: OutputId) -> bool {
-        self.head_indices_iter(output)
-            .any(|index| self.heads[index].scanout_custody.submitted().is_some())
+        native_facts::heads_in_flight(&self.heads, output)
     }
 
     /// Whether any head of this output still owes resource cleanup.
     pub fn output_cleanup_pending(&self, output: OutputId) -> bool {
-        self.head_indices_iter(output)
-            .any(|index| self.heads[index].scanout_custody.cleanup_pending())
+        native_facts::heads_cleanup_pending(&self.heads, output)
             || self.output_topology_cleanup.iter().any(|(head, _)| {
                 self.head_index_for_head(*head)
                     .is_some_and(|index| self.heads[index].output.id == output)
@@ -43,15 +41,12 @@ impl LiveProductionNativeScanout {
             // Keep owed work visible to the Session's wait policy meanwhile.
             return true;
         }
-        let mirror = self.is_mirror_output(output);
-        self.deferred_mirror_generations.pending(output)
-            || self.head_indices_iter(output).any(|index| {
-                self.exporters[index].pending_frame()
-                    || self.heads[index].prepared_scanout.is_some()
-                    || self.heads[index].pending_content.is_some()
-                    || self.heads[index].rendering_content.is_some()
-                    || (!mirror && self.heads[index].scanout_custody.submitted().is_some())
-            })
+        native_facts::heads_pending_frame(
+            &self.heads,
+            &self.exporters,
+            &self.deferred_mirror_generations,
+            output,
+        )
     }
 
     pub fn is_mirror_output(&self, output: OutputId) -> bool {

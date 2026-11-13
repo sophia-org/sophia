@@ -210,26 +210,7 @@ impl LiveProductionNativeScanout {
             .iter()
             .map(|output| {
                 let indices = self.head_indices(output.id);
-                let targets = self
-                    .head_render_targets(output.id)
-                    .into_iter()
-                    .map(|target| {
-                        let index = *indices
-                            .iter()
-                            .find(|index| self.heads[**index].head == target.head)
-                            .expect("native head target");
-                        (index, target)
-                    })
-                    .collect();
-                let newest = indices.first().map_or([None; 4], |index| {
-                    let head = &self.heads[*index];
-                    [
-                        head.pending_content,
-                        head.rendering_content,
-                        head.submitted_content,
-                        head.presented_content,
-                    ]
-                });
+                let (targets, newest) = native_facts::composition_targets(&self.heads, output.id);
                 (
                     output.id,
                     super::composition_admission::NativeCompositionOutput {
