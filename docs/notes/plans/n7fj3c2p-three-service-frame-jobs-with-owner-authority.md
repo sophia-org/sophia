@@ -2,7 +2,7 @@
 id: n7fj3c2p
 date: 2026-11-10
 kind: plan
-status: proposed
+status: active
 tags: [plan, performance, custody, sft, portability]
 ---
 # Three-service frame jobs with owner authority
@@ -189,3 +189,133 @@ These are prerequisites to the promised full model and prototype, not decisions
 an implementer may make inside the runtime diff. No new capability, codec,
 production API or native run is selected at this checkpoint. The direct worker
 handoff is selected as a design, subject to the remaining proof/prototype gates.
+
+<a id="gate-dispositions-and-default-off-merge-november-19"></a>
+
+## Gate dispositions and default-off merge, November 19
+
+On November 19 niltempus directed a default-off merge of the lane, with no
+adoption and no further matched block. Codex accepted that direction and
+performs the merge. The merge commit is named here once it exists; this
+section does not predict it. The combined frame job and its diagnostic
+witness stay opt-in: `experimental-combined-frame-job` and
+`diagnostic-combined-witness` are in no default feature list or
+`native-session` closure, and the witness does not enable the combined
+feature. No installed binary, service command, desktop profile or default
+selection changes.
+
+Every acceptance below is scoped to its own evidence. Sealed packages live
+under `~/.local/state/sophia-framejob-*`. They are not rewritten; corrections
+are carried in their reviews and here.
+
+| Gate | Disposition | Head and evidence |
+|---|---|---|
+| 1, 2 | map, models and authority review completed before gate 3 | `tools/models/combined-frame-job/` |
+| 3 | device-free prototype accepted | `0fd5ac842`; stages in `G35D-LEDGER.md` |
+| 4 | default-off integration accepted, scoped, for this merge | C1 `d64a69595`, C2 `e452c0f58`, C2b `cdeb48652`, C3a `2393a7070`, C3b `4349542f4`, binding repair `87c9b98d5`, worker accounting `62fdd0d1e` (validation-01, seal `b33175d8`) |
+| 4, D2 | master parity closed QUALIFIED | below |
+| 5 | mechanism supported; still and moving blocks complete | fj-mech-05, assessment-04 seal `328f2cde`; fj-02, fj-03 below |
+
+Gate 4 is accepted for a default-off merge, not as production acceptance.
+
+### D2, feature-off parity with master
+
+The final comparison
+(`sophia-framejob-gate4-d2-parity-final-01`, seal `25e53df2`) compares the
+lane at `62fdd0d1e` (tree `7f633eb8`) with master `d7f77e54d` (tree
+`c4d0dee0`). It uses master's D2 baseline-01 (seal `965a8f1b`) and the lane's
+worker-accounting validation-01 logs, with the proposal-02 comparator
+unchanged. All six feature-off rows are complete. No shared test is removed,
+failed or differs, and 3,088 shared row entries resolve to source. The lane
+adds 40 tests, all in combined-frame-job modules. Three observations stay
+unresolved and are not promoted to equal outcomes:
+
+- session-ns-nft `protected_descriptor_peer`: lane [ok, ignored, ok, ok],
+  master [ok, ignored, ok];
+- session-ns-nft `authenticated_wm_child`: lane [ignored, ok], master
+  [ignored];
+- runtime-nft
+  `shell_session_nonblocking_negotiation_exposes_idle_authentication_deadline`:
+  lane ok, master has no per-test line.
+
+The four observation limits of the earlier comparison at `2393a7070`
+(baseline-01, addendum-01 seal `dafaea1d`) are retained separately. Master's
+two known clippy failures, its failed gate on
+`only_a_genuinely_stale_group_socket_is_cleared` and the accepted lane
+policy difference `a84d6643` for that test also stand. Equal names and
+totals do not prove equal test bodies.
+
+The commits from `2393a7070` to `62fdd0d1e` leave ordinary production
+builds without either feature unchanged. That is not true of every
+feature-off test build: under `cfg(test)` the runtime serial refactor
+compiles. It moves the validator serial onto the worker and replaces a
+relaxed `fetch_add` with a checked `fetch_update` and an exhaustion
+sentinel. The sealed E1 and validation runs exercise that code.
+
+### Native results
+
+Both blocks measure session plus peer CPU on the process clock, inside the
+2,000-frame counted window, at `62fdd0d1e`. Control A lacks the combined
+frame job; candidate B has it, including its accounting and emission paths.
+Bounds are kernel-accounted CPU boundary intervals, not confidence
+intervals. Injector, observer, sampler and runner are excluded, so this is
+not total-machine CPU. The two blocks ran in separate windows under
+different workload-validity rules and are never pooled. Their difference is
+not a measured cost of pointer motion.
+
+**fj-01** failed before any arm: the nightly pool sweep had removed the peer
+binary (capture `ce6ed50a`).
+
+**fj-02** failed overall, at the first moving arm, on M7's requirement that
+pointer events reach a client. The workload never produces that delivery.
+Its still block completed and is accepted separately (capture `731f9560`,
+package manifest `61561b2b`):
+
+| still | µs/frame |
+|---|---|
+| control (sa1, sa2) | [646.6646655, 647.09651175] |
+| candidate (sb1, sb2) | [591.89153125, 592.29084875] |
+| candidate − control | [−55.2049805, −54.37381675] |
+
+The midpoint change is −8.4698%. Pairs: sa1/sb1 −51.910302
+[−52.3202525, −51.5003515]; sa2/sb2 −57.66849525 [−58.0897085, −57.247282].
+The midpoint timing imbalance is 0.3411695 s. The excluded fj-02 ma1 arm
+stays excluded.
+
+**fj-03** ran the four moving arms under M7 as amended by package proposal
+05. That M7 requires the session's pointer-event count to lie between the
+events offered in the window and all events offered, plus exactly one
+`motion_observed` record; routed delivery is reported, not required (capture
+`267f30d6`, manifest `70633b01`):
+
+| moving | µs/frame |
+|---|---|
+| control (ma1, ma2) | [991.47281975, 991.966418] |
+| candidate (mb1, mb2) | [949.1324915, 949.66313575] |
+| candidate − control | [−42.8339265, −41.809684] |
+
+The midpoint change is −4.2675%, worst case −4.2169%. Pairs: ma1/mb1
+−65.960393 [−66.49721, −65.423576]; ma2/mb2 −18.6832175
+[−19.170643, −18.195792]. Both favour the candidate, but by very different
+amounts, and no pair-agreement gate was frozen, so neither is discarded.
+The aggregate does not establish a stable effect size. The two control arms
+differ by 36.24660125 µs/frame (ma1 1009.8429195, ma2 973.59631825). The
+midpoint timing imbalance is −0.12707575 s. ABBA order alone does not
+cancel drift.
+
+Latency is mixed, not uniformly better. Moving, candidate minus control:
+submission-to-completion medians +13 and +3 µs, p99 +5 and +7 µs;
+peer-offer-to-presented medians −4 and −9 µs, maxima +30 and +5 µs.
+
+Both blocks' frozen decisions are nonregression_pass true,
+demonstrated_saving true and production_adoption false.
+
+### Open after the merge
+
+- Adoption is a separate decision. It needs evidence beyond one panel
+  workload, one host and one block per pointer condition.
+- Native PM1–PM4 hook-order and mutation gaps, the inherited
+  killed-not-detected and surviving mutants, and the worker aggregation and
+  record-detector limits are carried limits.
+- The pointer evidence is whole-session. It does not prove per-event
+  consumption, routing or presentation inside the window.

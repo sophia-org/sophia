@@ -20,9 +20,28 @@ It does not reopen their completed exits or replace `todo.md` as the task ledger
 The exit is a separately qualified improvement, or a documented no-change result
 for each selected mechanism. A profile share is not a savings target.
 
-<a id="current-resumption-november-9"></a>
+## Current resumption, November 19
 
-## Current resumption, November 10
+**Three-service frame job merges default-off; adoption open.** The lane at
+`62fdd0d1e` merges with `experimental-combined-frame-job` off by default, no
+adoption and no further matched block, by niltempus's direction. Its native
+blocks measured session plus peer CPU on the process clock: still −8.47%
+(fj-02) and moving −4.27% (fj-03). They are separate blocks and are never
+pooled. The moving pairs disagree (−65.96 and −18.68 µs/frame) and latency
+is mixed. Gate dispositions, D2, the exact bounds and the carried limits are
+in [n7fj3c2p](n7fj3c2p-three-service-frame-jobs-with-owner-authority.md#gate-dispositions-and-default-off-merge-november-19).
+This task stays open: the merge is not a production saving, and broader
+workloads and the 350 µs/frame FrameCommit target remain unmeasured.
+
+The two earlier experiments are closed without merging. Owned-ring idle
+`a4f599e7a` (ring-01 inconclusive) and the control carrier
+`cpu/sft-control-ring` `4342177d4` (sdk-02, no saving) are both on origin as
+evidence.
+
+<a id="current-resumption-november-9"></a>
+<a id="current-resumption-november-10"></a>
+
+## Previous resumption, November 10
 
 **Control-carrier experiment closed device-free; source disposition open.** The
 separate `cpu/sft-control-ring` branch is held at signed `4342177d4` (not merged).

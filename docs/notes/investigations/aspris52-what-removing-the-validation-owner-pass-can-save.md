@@ -114,6 +114,17 @@ the fallback, not the direct path. The matched comparison must report
 pointer-still and pointer-moving as separate sub-scenarios, each with its
 fallback rate; one mixed figure would not say which path it measured.
 
+That prediction was a source hypothesis, and the native blocks did not bear
+it out. Each candidate arm admitted 2,120 combined frames. With the pointer
+still, both arms accepted all 2,120 and gave up none (fj-02 sb1 and sb2).
+With the pointer moving, the arms accepted 2,081 and 2,064 and gave up 39
+and 56, each give-up followed by one Release enqueue (fj-03 mb1 and mb2).
+These are the combined worker's counters in each arm's postflight record.
+They count give-ups but not their causes, so they do not attribute a give-up
+to pointer churn. The moving block priced mostly the direct path, with a
+small fallback share. Both blocks' results are recorded in
+[n7fj3c2p](../plans/n7fj3c2p-three-service-frame-jobs-with-owner-authority.md#gate-dispositions-and-default-off-merge-november-19).
+
 ## Limits
 
 - One instrumented, traced arm and one topology; every row mean carries clock
@@ -126,10 +137,10 @@ fallback rate; one mixed figure would not say which path it measured.
 
 ## Connections
 
-- Three-service frame jobs with owner authority (n7fj3c2p) is the selected
-  design and its gates. It is branch-only: `design/combined-frame-job-g35d2`
-  in `~/dev/sophia-d2` continues `design/combined-frame-job`;
-  `docs/notes/plans/n7fj3c2p-three-service-frame-jobs-with-owner-authority.md`.
+- [Three-service frame jobs with owner authority](../plans/n7fj3c2p-three-service-frame-jobs-with-owner-authority.md)
+  is the selected design, its gates and its default-off merge. The lane was
+  developed on `design/combined-frame-job-g35d2`, which continues
+  `design/combined-frame-job`.
 - [The four lean owner wakes](edc0te2v-which-action-each-of-the-four-lean-owner-wakes-owes-and-which-transition-a-consolidation-would-remove.md)
   supplies the cycle, the row means and the associations.
 - [The post-lean decomposition](q2m7v8ka-what-the-post-lean-decomposition-says-about-the-next-native-frame-change.md)
