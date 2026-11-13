@@ -601,3 +601,42 @@ fn only_an_exported_render_is_held_and_released() {
         assert_eq!(releases, 0, "{disposition:?} sends no Release");
     }
 }
+
+/// The fixture's head describes the output it was asked for, at a
+/// non-default size (the Session controls' 64x32): selection, output,
+/// render target and presentation state agree, so a snapshot of that
+/// target is a presentation the head accepts.
+#[test]
+fn a_fixture_head_describes_a_non_default_output_coherently() {
+    let output = HeadlessOutput {
+        id: OutputId::from_raw(1),
+        size: sophia_protocol::Size {
+            width: 64,
+            height: 32,
+        },
+        scale: 1,
+    };
+    let fixture = CombinedNativeFixture::new(&[output]);
+    let head = &fixture.heads[0];
+    assert_eq!(head.output, output, "the head serves the output");
+    assert_eq!(
+        head.selection.size, output.size,
+        "the selection is the output's size"
+    );
+    let targets = fixture.head_targets(output.id);
+    assert_eq!(targets.len(), 1, "one render target");
+    assert_eq!(
+        (targets[0].native_size, targets[0].scale),
+        (output.size, 1),
+        "the render target is the output's size"
+    );
+    let frame = snapshot(HeadlessOutput {
+        id: output.id,
+        size: targets[0].native_size,
+        scale: targets[0].scale,
+    });
+    assert!(
+        head.output_frames.presentation_for(frame).is_ok(),
+        "the head accepts a snapshot of its own render target"
+    );
+}

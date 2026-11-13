@@ -143,14 +143,11 @@ impl CombinedNativeFixture {
             .iter()
             .zip(1u32..)
             .map(|(output, id)| {
-                let mut head = super::super::native_head_fixture::head(
+                super::super::native_head_fixture::head_for(
                     id,
-                    output.id.raw(),
+                    *output,
                     crate::LibdrmNativePlaneFormatCapabilities::parse(201, 0, &[]),
-                );
-                head.output = *output;
-                head.output_frames = OutputFramePresentationState::new(*output).unwrap();
-                head
+                )
             })
             .collect();
         let exporters = outputs
