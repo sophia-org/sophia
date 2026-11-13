@@ -720,21 +720,16 @@ impl CombinedNativeFixture {
             .presentation_for(snapshot.clone())
             .map_err(|error| format!("the snapshot would not queue: {error:?}"))?;
         // Ownership: an idle head reduces to Install, so the exact queued
-        // generation leaves the queue. A different generation is returned to
-        // the queue and reported; nothing is dropped.
+        // generation leaves the queue. Under this exclusive borrow and that
+        // reducer no other generation can be taken: an invariant, not a
+        // recoverable case (source-01 review).
         let Some(taken) = self.deferred.take_ready(output, None, None, None) else {
             return Err("take_ready returned nothing after preflight".into());
         };
-        if taken.frame != frame {
-            let other = taken.frame;
-            return match self.deferred.retain_refused(taken) {
-                Ok(()) => Err(format!("took {other:?} instead of {frame:?}; returned")),
-                Err(lost) => Err(format!(
-                    "took {other:?} instead of {frame:?}; {:?} could not be returned",
-                    lost.frame
-                )),
-            };
-        }
+        assert_eq!(
+            taken.frame, frame,
+            "preflighted: take_ready returns the exact queued generation"
+        );
         // Writes, none fallible after the preflight above.
         let head = &mut self.heads[index];
         head.output_frames

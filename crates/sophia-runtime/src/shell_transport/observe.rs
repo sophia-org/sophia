@@ -72,6 +72,19 @@ pub struct TransportFacts {
     pub lean_frames_in_flight: Option<u32>,
 }
 
+/// G3-5d d-2b3d-2: the preconditions `admit_peeked_commit` reads for the
+/// owned-ring offer the owner holds unadmitted: `owned_offer_available`
+/// (the worker below its job limit and the backing budget with the
+/// offer's source and pixel bytes), the worker's pending count it was
+/// given, and the control room (the largest of 0..=4 additional records
+/// `control_capacity_available` admits).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OwnedAdmissionFacts {
+    pub available: bool,
+    pub worker_pending: usize,
+    pub room: usize,
+}
+
 /// The grant's queued store events, not yet transferred to the outbox.
 /// Candidate records are kept as their Debug text: the queue holds two
 /// record types behind one head.
@@ -97,6 +110,31 @@ impl ShellComponentTransport {
                 .and_then(|files| files.owned_pending_offer().map(|(offer, _)| offer)),
             lean_frames_in_flight: export.map(|files| files.lean_frames_in_flight()),
         }
+    }
+
+    /// `None` without a wire, a pending offer or the offer's epoch. Reads
+    /// the same functions the admission reads; reserves, admits and
+    /// services nothing.
+    pub fn owned_admission_facts(
+        &self,
+        epochs: &ContentEpochRegistry,
+        worker_pending: usize,
+    ) -> Option<OwnedAdmissionFacts> {
+        let available = self
+            .wire
+            .as_ref()?
+            .export()
+            .owned_admission_available(epochs, worker_pending)
+            .ok()?;
+        let room = (0..=4)
+            .rev()
+            .find(|room| self.control_capacity_available(epochs, *room))
+            .unwrap_or(0);
+        Some(OwnedAdmissionFacts {
+            available,
+            worker_pending,
+            room,
+        })
     }
 
     /// `None` when the store grant has no active epoch.

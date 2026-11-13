@@ -51,7 +51,8 @@ mod observe;
 pub use files::{JournalFacts, ReadReplyWitness, RecordIdentity, RetainedEntry, RetainedRecord};
 #[cfg(any(test, feature = "test-support"))]
 pub use observe::{
-    OutboxEntryFacts, OutboxRecordFacts, OwnedCreditFacts, StoreEventFacts, TransportFacts,
+    OutboxEntryFacts, OutboxRecordFacts, OwnedAdmissionFacts, OwnedCreditFacts, StoreEventFacts,
+    TransportFacts,
 };
 #[cfg(feature = "experimental-draw")]
 mod draw;

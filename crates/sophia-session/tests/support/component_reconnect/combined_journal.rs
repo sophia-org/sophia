@@ -3,8 +3,9 @@
 //! MD7's full-journal consumer), the next admission's Stop at the
 //! reservation refusal (FJ-stop), the declared completion of F4's queued
 //! fallback (F4-O, a simulated completion) and the nonempty outbox cleared
-//! by disconnect (BP). Design REV3 D3/D5 and REV4 D3/D4-O as corrected by
-//! the accounting REV6 and its clean parity table.
+//! by disconnect (BP). Design REV3 D3/D5 and REV4 D3/D4-O, the accounting
+//! REV6, the fill REV7 (section 2: the baseline ACK) and its amendments
+//! A2 (REV9: the images-step order) and A3 (REV10: the prefix).
 //!
 //! Journal capacity (files/journal.rs `limits`, `append_limits`,
 //! `hold_reservation`): credited records fit while `records < 256 − held`,
@@ -13,84 +14,106 @@
 //! lane, the channel-close record held since ChannelReady (export/image.rs),
 //! so the baseline is H = 1 and an admitted offer makes it 3: the status
 //! hold (spent by the ResourceStatus in T1) and the release hold (spent by
-//! SlotReleased). The byte bound of the bar profile (files.rs: 65536 bytes,
-//! 12800 reserved, every record here at most 200 bytes) binds after the
-//! record bound for this inventory; `bytes` and `held` are printed at every
-//! boundary rather than derived.
+//! SlotReleased). `bytes` and `held` are printed at every boundary rather
+//! than derived. R below is the count of retained records since the
+//! baseline ACK A_B, an occupancy; every ACK is joined to an observed
+//! header sequence, never to R.
 //!
-//! A lean C3 filler journals FOUR records (validation-03 F3): the status
-//! (reserved) and FrameOutcome(3, 9 RendererFailed) (credited) in T1; after
-//! slot freedom SlotReleased (reserved, T2 images) and ResourceReleased
-//! (credited, T2 content: `collect` after the lease release, flushed in the
-//! Resources stage, journaled by the same pass; `confirm_isb_release` only
-//! then releases the backing charge). ΔR = +4, measured after the IT that
-//! follows T2. Holds 1 → 3 → 2 → 1; the ring's publication counter changes
-//! to the status in T1 and to SlotReleased in T2. Each filler completes
-//! only if it starts at R ≤ 251.
+//! Producers (REV10 A3, every count a prediction until this runs). After
+//! A_B the peer reads but never ACKs, so only lean frames accumulate: a
+//! non-lean request journals a Submitted the client must see acknowledged
+//! before its next record (vendored submission.rs `start_next_outbound`).
+//! A lean C3 filler F journals FOUR records (validation-03 F3): the status
+//! (reserved) and FrameOutcome(3, 9 RendererFailed) (credited) in T1;
+//! after slot freedom SlotReleased (reserved, T2 images) and
+//! ResourceReleased (credited, T2 content: `collect` after the lease
+//! release, flushed in the Resources stage; `confirm_isb_release` only
+//! then releases the backing charge). Holds 1 → 3 → 2 → 1. The prefix
+//! frame I is a lean frame whose pixels fail the premultiplied scan (the
+//! returned-plan control's INVALID): the worker consumes the ring read
+//! before the result exists, the combined route returns the plan and the
+//! Err travels the ordinary validator route (no renderer forward, no
+//! lease, no render); the owner's reconcile aborts the transfer
+//! (staging, reserved-resident and backing decharged, a refusal status
+//! queued, no Accepted entry, so never a ResourceReleased) and
+//! `reject_assembly` queues FrameOutcome(3, 3 Malformed) carrying the
+//! stream credit back; the owned release waits (EAGAIN) while the status
+//! is queued and publishes SlotReleased(3) in the next images step. THREE
+//! visible records, holds back to H, nothing leased or acquired. Two I
+//! frames (R 6) and 61 fillers reach 250, the one start from which a
+//! filler's T2 both commits its SlotReleased (253) and admits the next
+//! frame (held 3) before the Resources stage flushes its ResourceReleased,
+//! refused at 253 == 256 − 3 (owned_copy.rs `service_with`: reconcile,
+//! publish_releases, propose_offer, propose_frame_commit, then content).
 //!
-//! The fill, driven by observed R: phase 0 takes the ACK baseline with
-//! automatic ACKs still on and then disables them (the peer still reads;
-//! its queued ACK must not move until the unblock); phase B grants three
-//! spare allocations (+2 each: an uncredited Submitted and a credited
-//! AllocationResult); phase A runs request/reject cycles (+2 each) while
-//! R ≤ 191, to P; phase C runs k_C fillers. The clean table (REV6 review):
-//! FJ odd R_B → P 191, target 251, 15 fillers; even → 188, 252, 16;
-//! FJ-stop odd → 191, 251, 15; even → 190, 250, 15. FJ's target is the
-//! blocking frame's start; FJ-stop's is the final filler's start, which
-//! ends at 254 or 255. k_A = (P − R_B) / 2 must be a whole count.
-//!
-//! FJ: the blocking frame k admitted at R_T0 ∈ {251, 252} holds 3; J =
-//! 254 − R_T0 spare invalidations are queued between T0 and T1 without a
-//! drain; T1's first transport pass commits J − 1 of them and is refused at
-//! the last (records 253, held 3, `output_blocked`), the frame's status and
-//! outcome queue behind it. The slot is freed before T2 so the store's
-//! ResourceReleased reaches the outbox fourth in T2. At O1 the store's
-//! event queue is empty or holds exactly this frame's release, because the
-//! worker may consume the Release before the decline's own collect; it
-//! cannot be in the outbox at O1, since the Resources stage flushes before
-//! the arm runs. An ACK unblocks: the drain commits the four in FIFO order,
-//! T3 commits SlotReleased, so on this path ResourceReleased precedes
-//! SlotReleased, the reverse of a completed filler. MD7 (delete the
+//! FJ: frames 1, 2 = I; 3..=63 = F (R 250); 64 = F whose T2 is the one
+//! designated turn in which frame 65, submitted after 64's terminal
+//! returned the credit, must be admitted (a miss is a gap, never a retry);
+//! ResourceReleased(64) parks, `output_blocked`. T1(65): C3; its status
+//! and outcome queue behind the parked release (three entries). T2(65),
+//! the full driver turn after slot freedom: the status guard refuses
+//! SlotReleased(65) (MD7's site) and the Resources stage parks
+//! ResourceReleased(65) fourth. The ACK is derived from the peer's
+//! observed handled sequence: through SlotReleased(64) (published, lean 0
+//! at its commit) R 0, after the four-record drain 4, after T3's
+//! SlotReleased(65) 5; through outcome(64) 1, 5, 6. No other frontier is
+//! accepted. ResourceReleased(65) precedes SlotReleased(65) on this
+//! blocked path, the reverse of a completed filler. MD7 (delete the
 //! `credit.status.is_some()` guard in owned_ring/release.rs) is caught by
 //! the parent R4's order assertion first; here its full-journal consumer
 //! is the blocked frame's publication counter, which must still equal the
-//! saved pre-block baseline at O1 and O2 while the status is parked.
+//! pre-block baseline (SlotReleased(64)) at O1 and O2 while the status is
+//! parked. Earlier prefix, staging, timing or accounting failures are not
+//! detections.
+//!
+//! FJ-stop (settled scope): 63 fillers (R 252); the final filler 64 ends
+//! with status 253, outcome 254, SlotReleased(64) published at 255 and
+//! ResourceReleased(64) parked (`output_blocked`, backing charged). The
+//! probe 65 is refused at its first reservation hold (255 not < 256 − 1):
+//! `Step::Stop`, the offer waits, nothing is appended or queued, holds
+//! stay H. The other blockers are shown absent from the admission facts
+//! (worker capacity, the backing budget with the parked charge, control
+//! room), the outbox and the stores; the first-hold attribution is an
+//! inference from those facts and the source order. The ACK, then the
+//! drain of the one parked release, then admission.
 //!
 //! Timing: `check_ack_progress` closes a blocked reader 2 s after the
 //! journal's `last_progress`, which only an ACK advances. Before EVERY
-//! input-serving pass of a fill, blocked or not, the budget 2 s − 200 ms
-//! from the baseline is asserted; a miss is the named failure, never a
-//! retry. The turns inside `admitted` are covered by the check before and
-//! after it.
+//! input-serving pass after A_B, blocked or not, including each pass of
+//! the journal-local admission and settlement loops, the budget 2 s −
+//! 200 ms from the baseline is asserted; a miss is the named failure,
+//! never a retry. Every driver turn here is the inherited full turn
+//! (images with the owner pass, content, walk, native service); nothing
+//! pauses native service. A fresh wake boundary precedes every submission
+//! while the previous frame's result is proven collected and its slot
+//! free; I rings no renderer wake and is never waited on it.
 //!
-//! Predictions until this harness runs: R after every phase, the
-//! reachability of the targets within the budget, every window, the
-//! parked inventories, the hold counts, the Stop and its unblock, the
-//! simulated completion's response and the clear. Backing destruction is
-//! not observed; a journal commit is neither peer consumption nor a
-//! renderer acknowledgement; the renderer lease is a third domain.
-//! Off/native-session remain unpassed and unwaived.
+//! Backing destruction is not observed; a journal commit is neither peer
+//! consumption nor a renderer acknowledgement; the renderer lease is a
+//! third domain. Off/native-session remain unpassed and unwaived.
 use super::*;
 use sophia_protocol::shell_files::{
     SHELL_FILE_ACK_PROGRESS_TIMEOUT_MILLIS, SHELL_FILE_MAX_JOURNAL_RECORDS,
     SHELL_FILE_TERMINAL_RESERVE_RECORDS,
 };
-use sophia_runtime::{ContentAllocationError, ContentMemoryUsage, OutboxEntryFacts};
-use sophia_shell_client::Custody;
+use sophia_runtime::{ContentMemoryUsage, OutboxEntryFacts};
 
 /// The protocol's journal record limit and its uncredited limit, asserted
 /// against the constants in phase 0.
 const MAX_RECORDS: usize = 256;
 const UNCREDITED_LIMIT: usize = 192;
-/// The persistent channel-close reservation: total holds between fillers.
+/// The persistent channel-close reservation: total holds between frames.
 const H: usize = 1;
-/// Spare allocations granted in phase B.
-const SPARES: u64 = 3;
-/// The peer's allocation requests go under one transaction, as `send`.
-const REQUEST: TransactionId = TransactionId::from_raw(10);
-/// Spare invalidations: 60 + j.
-const INVALIDATE_BASE: u64 = 60;
 const PRESENTED: (u16, u16) = (2, ContentReason::None as u16);
+/// FJ: the prefix, the fillers to 250, the filler at 250, the blocked frame.
+const PREFIX: u64 = 2;
+const FJ_FILLERS: u64 = 63;
+const FJ_LAST: u64 = 64;
+const FJ_BLOCK: u64 = 65;
+/// FJ-stop: the fillers to 252, the final filler at 252, the probe.
+const STOP_FILLERS: u64 = 63;
+const STOP_FINAL: u64 = 64;
+const STOP_PROBE: u64 = 65;
 
 /// The fill's fixed facts from phase 0.
 struct Fill {
@@ -100,8 +123,6 @@ struct Fill {
     queued_0: u64,
     /// The backing charge with nothing admitted.
     backing_0: u64,
-    /// The spare allocations A_1.., in grant order.
-    spares: Vec<ContentAllocationId>,
 }
 
 /// The ACK-progress budget from the baseline, before an input-serving pass.
@@ -127,6 +148,48 @@ fn usage(lane: &Lane) -> ContentMemoryUsage {
         .processes
         .content_usage(0)
         .expect("the store grant has an active epoch")
+}
+
+/// The fixture's absolute counters: accepts, renderer acquisitions and
+/// (release attempts, Transferred receipts). The content-boundary
+/// observation of a turn is absolute too, so a frame's expectation is the
+/// prior count plus exactly its own change (source-01 R2).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Counters {
+    accepts: usize,
+    acquisitions: usize,
+    releases: (usize, usize),
+}
+
+fn counters(lane: &Lane) -> Counters {
+    Counters {
+        accepts: lane.native.accepts(),
+        acquisitions: lane.acquisitions(),
+        releases: lane.releases(),
+    }
+}
+
+impl Counters {
+    /// The content boundary of a turn in which the arm neither accepted
+    /// nor released.
+    fn unchanged(self) -> [Observed; 1] {
+        [(self.accepts, self.releases)]
+    }
+
+    /// After exactly one release, answered Transferred, before the walk.
+    fn released(self) -> Self {
+        Self {
+            releases: (self.releases.0 + 1, self.releases.1 + 1),
+            ..self
+        }
+    }
+
+    fn after_render(self) -> Self {
+        Self {
+            acquisitions: self.acquisitions + 1,
+            ..self
+        }
+    }
 }
 
 /// The live credit for `resource`.
@@ -162,6 +225,13 @@ fn release_of(
             reason: ContentReason::None as u16,
         }),
     )
+}
+
+fn release_identity(release: &(TransactionId, ShellContentRecord)) -> RecordIdentity {
+    RecordIdentity::Content {
+        transaction: release.0,
+        record: release.1.clone(),
+    }
 }
 
 /// The window's one ResourceStatus under `grant` for `resource`.
@@ -247,19 +317,32 @@ fn outbox_kinds(outbox: &[OutboxEntryFacts]) -> Vec<String> {
         .collect()
 }
 
-/// An outbox entry's AllocationResult as (transaction, allocation).
-fn outbox_result(entry: &OutboxEntryFacts, label: &str) -> (TransactionId, ContentAllocationId) {
-    let OutboxRecordFacts::Content(transaction, ShellContentRecord::AllocationResult(result)) =
-        &entry.record
-    else {
-        panic!("{label}: an AllocationResult: {entry:?}")
-    };
-    (*transaction, result.allocation)
+/// The exact parked release: the outbox entry `at` is `release`.
+fn assert_parked(
+    s: &Snapshot,
+    at: usize,
+    release: &(TransactionId, ShellContentRecord),
+    label: &str,
+) {
+    assert_eq!(
+        s.facts.outbox.get(at).map(|entry| &entry.record),
+        Some(&OutboxRecordFacts::Content(release.0, release.1.clone())),
+        "{label}: the exact release parked at {at}: {:?}",
+        outbox_kinds(&s.facts.outbox)
+    );
+}
+
+/// The first retained record's sequence: the retention floor's identity.
+fn first_retained(s: &Snapshot) -> Option<u64> {
+    s.facts.table.first().and_then(|entry| match entry {
+        RetainedEntry::Record(record) => Some(record.sequence),
+        _ => None,
+    })
 }
 
 /// Phase 0, after `attempt`: the ACK baseline with automatic ACKs on (one
 /// peer poll and one IT apply any ACK already queued), then automatic ACKs
-/// off. Asserts the protocol limits and the persistent hold.
+/// off. Asserts the protocol limits, the persistent hold and R_B = 0.
 fn baseline(lane: &mut Lane, a: &mut Attempt, label: &str) -> Fill {
     assert_eq!(MAX_RECORDS, usize::from(SHELL_FILE_MAX_JOURNAL_RECORDS));
     assert_eq!(
@@ -277,6 +360,7 @@ fn baseline(lane: &mut Lane, a: &mut Attempt, label: &str) -> Fill {
         j.held, H,
         "{label}: the persistent channel-close hold alone: {j:?}"
     );
+    assert_eq!(j.records, 0, "{label}: R_B: everything acknowledged: {j:?}");
     assert!(
         !pp.ack_pending && pp.queued == pp.acknowledged,
         "{label}: no ACK in flight: {pp:?}"
@@ -284,12 +368,18 @@ fn baseline(lane: &mut Lane, a: &mut Attempt, label: &str) -> Fill {
     assert!(!s0.facts.output_blocked);
     a.peer.set_automatic_journal_ack(false).unwrap();
     let usage_0 = usage(lane);
-    eprintln!("{label}: ACK baseline {p0:?} -> {pp:?}; journal {j:?}; usage {usage_0:?}");
+    assert!(
+        a.stream.has_credit(),
+        "{label}: the stream holds its credit"
+    );
+    eprintln!(
+        "{label}: ACK baseline {p0:?} -> {pp:?}; journal {j:?}; usage {usage_0:?}; counters {:?}",
+        counters(lane)
+    );
     Fill {
         progress_0: j.last_progress,
         queued_0: pp.queued,
         backing_0: usage_0.backing,
-        spares: Vec::new(),
     }
 }
 
@@ -300,239 +390,55 @@ fn records(lane: &Lane, a: &Attempt, label: &str) -> (usize, usize) {
     (j.records, j.held)
 }
 
-/// The peer's AllocationRequest `id` (one uncredited Submitted, so R must
-/// be below 192), flushed by `send`'s passes with the budget checked
-/// before each; then the owner takes it from the store.
-fn request(lane: &mut Lane, a: &mut Attempt, fill: &Fill, id: u64, label: &str) {
-    let (r, _) = records(lane, a, label);
+/// A fresh notification boundary before a submission (source-01 R4):
+/// the previous frame's result was collected (no job in flight) and its
+/// renderer slot is free, so the wake's possible ring is that result's,
+/// already observed; it is cleared, and the next ring is the next
+/// result's. Never called after an admission.
+fn boundary(lane: &Lane, wake: &sophia_wake::Wake, a: &Attempt, label: &str) {
     assert!(
-        r < UNCREDITED_LIMIT,
-        "{label}: R {r} leaves no room for an uncredited Submitted"
+        !lane.states().iter().any(|(_, state)| *state == "in flight"),
+        "{label}: a job is still in flight: {:?}",
+        lane.states()
     );
-    let record = ShellContentRecord::AllocationRequest(ContentAllocationRequest {
-        grant: a.key.grant,
-        output: OUTPUT,
-        allocation_request_id: id,
-        operation: 1,
-        role: 1,
-        edge: 1,
-        prior: ContentAllocationId::default(),
-        parent: ContentAllocationId::default(),
-        parent_presentation_epoch: 0,
-        anchor_parent_rect: ContentPixelRect::default(),
-        desired_width: 64,
-        desired_height: 1,
-        margins: ContentMargins::default(),
-    });
-    let admission = a.peer.enqueue_content_tracked(REQUEST, &record).unwrap();
+    assert_eq!(lane.leased(), 0, "{label}: the previous slot is free");
+    assert!(a.stream.has_credit(), "{label}: the stream credit is back");
+    wake.clear().unwrap();
+    assert!(
+        !wake.wait(Some(Instant::now())).unwrap(),
+        "{label}: the wake is empty before the submission"
+    );
+}
+
+/// Driver turns with `a`'s peer polled until the row holds exactly one
+/// job, in flight, with the budget checked before each pass (`admitted`'s
+/// criteria and call order; source-01 R5). The job.
+fn admit(lane: &mut Lane, a: &mut Attempt, fill: &Fill, label: &str) -> u64 {
     let deadline = Instant::now() + WAIT;
+    let mut passes = 0;
     loop {
-        budget(fill, label);
+        budget(fill, &format!("{label} admission pass {passes}"));
         a.peer.poll_io().unwrap();
-        lane.h
-            .owner
-            .with_service(a.key, |_, t| {
-                t.service_owner_turn().unwrap();
-                t.service_content_resources(content_now_msec()).unwrap();
-                t.poll_io().unwrap();
-            })
-            .unwrap();
-        let mut complete = true;
-        for ticket in admission.tickets() {
-            match a.peer.custody(ticket).unwrap() {
-                Custody::Submitted | Custody::Stored => {}
-                Custody::Queued | Custody::InFlight => complete = false,
-                other => panic!("{label}: request custody {other:?}"),
-            }
-        }
-        if complete {
-            break;
+        assert_eq!(lane.quiet_driver_turn(true), TURN);
+        observe_peer(a);
+        passes += 1;
+        if let [(job, "in flight")] = lane.states().as_slice() {
+            eprintln!("{label}: admitted after {passes} pass(es)");
+            return *job;
         }
         assert!(
             Instant::now() < deadline,
-            "{label}: request {id} was never submitted"
+            "{label}: no admission: {:?}",
+            lane.states()
         );
         std::thread::yield_now();
     }
-    observe_peer(a);
-    lane.h
-        .owner
-        .with_service(a.key, |_, t| {
-            t.service_content_allocation_requests(&[], content_now_msec())
-                .unwrap();
-            let (_, pending) = t
-                .next_content_allocation_request()
-                .expect("the request is pending");
-            assert_eq!(
-                pending.allocation_request_id, id,
-                "{label}: the owner holds request {id}"
-            );
-        })
-        .unwrap();
 }
 
-/// One request/reject cycle: the Submitted, then the rejection's credited
-/// AllocationResult drained by one IT. Predicted ΔR +2; R after.
-fn cycle(lane: &mut Lane, a: &mut Attempt, fill: &Fill, id: u64, label: &str) -> usize {
-    let (before, _) = records(lane, a, label);
-    request(lane, a, fill, id, label);
-    lane.h
-        .owner
-        .with_service(a.key, |_, t| {
-            t.reject_content_allocation(id, ContentAllocationError::Budget)
-        })
-        .unwrap()
-        .unwrap();
-    budget(fill, label);
-    lane.input_turn(a);
-    let (after, held) = records(lane, a, label);
-    assert_eq!(
-        after,
-        before + 2,
-        "{label}: a cycle journals Submitted and AllocationResult"
-    );
-    assert_eq!(held, H, "{label}: no hold");
-    after
-}
-
-/// A spare allocation A_j granted to request `id`: the Submitted, then the
-/// grant's credited AllocationResult drained by one IT. Predicted ΔR +2.
-fn grant_spare(lane: &mut Lane, a: &mut Attempt, fill: &mut Fill, id: u64, j: u64, label: &str) {
-    let allocation = ContentAllocationId {
-        id: ALLOCATION.id + j,
-        generation: 1,
-    };
-    let (before, _) = records(lane, a, label);
-    request(lane, a, fill, id, label);
-    lane.h
-        .owner
-        .with_service(a.key, |_, t| {
-            t.grant_content_allocation(
-                id,
-                ContentAllocationSnapshot {
-                    native_opening: None,
-                    output: OUTPUT,
-                    allocation,
-                    scale_generation: 1,
-                    scale_numerator: 1,
-                    scale_denominator: 1,
-                    role: 1,
-                    edge: 1,
-                    margins: ContentMargins::default(),
-                    logical: ContentLogicalRect {
-                        x: 0,
-                        y: 0,
-                        width: 64,
-                        height: 1,
-                    },
-                    pixel: ContentPixelRect {
-                        x: 0,
-                        y: 0,
-                        width: 64,
-                        height: 1,
-                    },
-                    parent: ContentAllocationId::default(),
-                    anchor_parent_rect: ContentPixelRect::default(),
-                    allowed_reservation_extent: 1,
-                },
-                &[],
-            )
-        })
-        .unwrap()
-        .unwrap();
-    budget(fill, label);
-    lane.input_turn(a);
-    let (after, _) = records(lane, a, label);
-    assert_eq!(
-        after,
-        before + 2,
-        "{label}: a grant journals Submitted and AllocationResult"
-    );
-    fill.spares.push(allocation);
-}
-
-/// Phase B: the three spares, ids 2..4, beside the frame's own allocation.
-/// R after.
-fn phase_b(lane: &mut Lane, a: &mut Attempt, fill: &mut Fill, label: &str) -> usize {
-    let (r0, _) = records(lane, a, label);
-    for j in 1..=SPARES {
-        grant_spare(lane, a, fill, 1 + j, j, &format!("{label} spare {j}"));
-    }
-    let (r, _) = records(lane, a, label);
-    assert_eq!(r, r0 + 6, "{label} phase B: ΔR +6");
-    let mut granted: Vec<(u64, u64)> = lane
-        .h
-        .owner
-        .with_service(a.key, |_, t| t.content_allocation_snapshots())
-        .unwrap()
-        .iter()
-        .map(|snapshot| (snapshot.allocation.id, snapshot.allocation.generation))
-        .collect();
-    granted.sort_unstable();
-    let mut expected: Vec<(u64, u64)> = std::iter::once(ALLOCATION)
-        .chain(fill.spares.iter().copied())
-        .map(|allocation| (allocation.id, allocation.generation))
-        .collect();
-    expected.sort_unstable();
-    assert_eq!(
-        granted, expected,
-        "{label}: the frame's allocation and the spares"
-    );
-    eprintln!("{label} phase B: R_B {r}, spares {:?}", fill.spares);
-    r
-}
-
-/// The clean parity table (REV6 review): P, the target and the filler
-/// count from the observed R_B. FJ's target is the blocking frame's start;
-/// FJ-stop's is the final filler's start.
-struct Plan {
-    p: usize,
-    target: usize,
-    k_a: usize,
-    k_c: usize,
-}
-
-fn plan(r_b: usize, stop: bool) -> Plan {
-    let (p, target) = match (r_b % 2 == 1, stop) {
-        (true, _) => (191, 251),
-        (false, false) => (188, 252),
-        (false, true) => (190, 250),
-    };
-    assert!(
-        p >= r_b && (p - r_b) % 2 == 0,
-        "R_B {r_b} reaches P {p} by whole cycles"
-    );
-    assert_eq!(
-        (target - p) % 4,
-        0,
-        "P {p} reaches {target} by whole fillers"
-    );
-    let k_c = (target - p) / 4;
-    assert!(k_c <= 16, "at most 16 completed fillers");
-    Plan {
-        p,
-        target,
-        k_a: (p - r_b) / 2,
-        k_c,
-    }
-}
-
-/// Phase A: k_A cycles with ids 5.., to P. R after.
-fn phase_a(lane: &mut Lane, a: &mut Attempt, fill: &Fill, plan: &Plan, label: &str) -> usize {
-    let (mut r, _) = records(lane, a, label);
-    for i in 0..plan.k_a {
-        let id = 5 + u64::try_from(i).unwrap();
-        r = cycle(lane, a, fill, id, &format!("{label} cycle {i}"));
-    }
-    assert_eq!(r, plan.p, "{label} phase A: R reached P");
-    r
-}
-
-/// Frame `n` through the C3 fill path (F3's accepted path) to source
-/// release, backing retirement, row disposal and a free renderer slot,
-/// with the four records identified and every credit transition asserted.
-/// R after its IT.
-fn filler(
+/// Prefix frame `n` (I): a lean frame of INVALID pixels through the running
+/// validator to its Malformed terminal and the published SlotReleased(3),
+/// with no renderer involvement. Three records; R after.
+fn invalid_frame(
     lane: &mut Lane,
     wake: &sophia_wake::Wake,
     a: &mut Attempt,
@@ -540,61 +446,316 @@ fn filler(
     n: u64,
     label: &str,
 ) -> usize {
-    let count = usize::try_from(n).unwrap();
-    budget(fill, label);
-    lane.submit(a, n, PIXEL);
-    let job = lane.admitted(a);
-    assert!(
-        wake.wait(Some(Instant::now() + WAIT)).unwrap(),
-        "{label}: the render result rings the owner"
+    boundary(lane, wake, a, label);
+    let c0 = counters(lane);
+    let (r0, held0) = records(lane, a, label);
+    assert_eq!(held0, H, "{label}: the persistent hold alone");
+    assert_eq!(
+        usage(lane).backing,
+        fill.backing_0,
+        "{label}: nothing charged"
     );
-    assert_eq!(lane.leased(), 1, "{label}: the result holds its slot");
+    budget(fill, label);
+    lane.submit(a, n, INVALID);
+    let job = admit(lane, a, fill, label);
     let (key, generation) = lane.admitted_key(job);
     assert_eq!(generation, n);
     let resource = resource_n(n);
     let s0 = lane.snapshot(a, &format!("{label} O0"));
     let j0 = s0.journal();
-    let r0 = j0.records;
+    assert_eq!(j0.records, r0, "{label} O0: the admission journals nothing");
     assert_eq!(j0.held, H + 2, "{label} O0: the offer's two holds: {j0:?}");
     let credit = credit_of(&s0, resource, &format!("{label} O0"));
     assert!(credit.status_reserved);
     let identity = credit.offer.identity;
-    let published_0 = s0.facts.owned_publication_sequence;
-    let release = release_of(&credit, a.key.grant, resource);
     assert!(s0.releasing.is_empty());
-    let usage_0 = usage(lane);
     assert!(
-        usage_0.backing > fill.backing_0,
-        "{label} O0: the admission charged the backing: {usage_0:?}"
+        usage(lane).backing > fill.backing_0,
+        "{label} O0: the admission charged the backing"
     );
-    let late = lane.deadline_of(job) + MARGIN;
-    budget(fill, &format!("{label} T1"));
-    let (steps, observed) = lane.observed_turn(late, None);
-    assert_eq!(steps, TURN);
-    assert_eq!(
-        observed, DECLINED,
-        "{label}: C3 declined at the content call"
-    );
-    let s1 = lane.snapshot(a, &format!("{label} O1"));
-    let w1 = window(&s0, &s1, &format!("{label} T1"));
+    assert_eq!(s0.facts.lean_frames_in_flight, Some(1));
+    // Full driver turns until the validator's completion is reconciled:
+    // passes before the result commit nothing and leave the job in flight;
+    // the result-bearing T1 commits the refusal and the terminal.
+    let deadline = Instant::now() + WAIT;
+    let mut pre = 0;
+    let mut prev = s0;
+    let (s1, w1) = loop {
+        budget(fill, &format!("{label} pass after {pre} empty"));
+        a.peer.poll_io().unwrap();
+        let (steps, observed) = lane.observed_turn(Instant::now(), None);
+        assert_eq!(steps, TURN);
+        assert_eq!(observed, c0.unchanged(), "{label}: no accept, no release");
+        let s = lane.snapshot(a, &format!("{label} after a pass"));
+        let w = window(&prev, &s, &format!("{label} pass"));
+        if !w.is_empty() {
+            break (s, w);
+        }
+        assert_eq!(
+            lane.states(),
+            [(job, "in flight")],
+            "{label}: a pre-result pass leaves the job in flight"
+        );
+        assert_eq!(s.facts.outbox, prev.facts.outbox);
+        pre += 1;
+        prev = s;
+        assert!(
+            Instant::now() < deadline,
+            "{label}: the validation result never reached the owner"
+        );
+        std::thread::yield_now();
+    };
     assert_eq!(
         kinds(&w1),
-        ["ResourceStatus(2)", "FrameOutcome(3,9)"],
-        "{label} T1: the acceptance, then the decline's terminal"
+        ["ResourceStatus(3)", "FrameOutcome(3,3)"],
+        "{label} T1: the refusal, then the Malformed terminal"
     );
     let status = status_for(&w1, a.key.grant, resource, &format!("{label} T1"));
-    assert_eq!(peer_terminals(&frames_in(&w1), key, n), [FAILED]);
+    assert_eq!(
+        status_of(status).unwrap().reason,
+        ContentReason::Malformed as u16
+    );
+    assert_eq!(peer_terminals(&frames_in(&w1), key, n), [MALFORMED]);
     let j1 = s1.journal();
     assert_eq!(
         j1.held,
         H + 1,
         "{label} O1: the status hold is spent: {j1:?}"
     );
-    assert_eq!(s1.releasing, [identity], "{label} O1: release owed");
+    assert_eq!(s1.releasing, [identity], "{label} O1: the release owed");
     assert_eq!(
         credit_of(&s1, resource, &format!("{label} O1")),
         OwnedCreditFacts {
             offer: credit.offer,
+            status_reserved: false,
+        }
+    );
+    assert_eq!(s1.facts.owned_publication_sequence, Some(status.sequence));
+    assert!(s1.facts.outbox.is_empty(), "{:?}", s1.facts.outbox);
+    assert!(!s1.facts.output_blocked);
+    assert_all_visible(j1, &format!("{label} O1"));
+    s1.assert_stores_empty(&format!("{label} O1"));
+    assert_eq!(s1.facts.lean_frames_in_flight, Some(0));
+    assert_eq!(
+        usage(lane).backing,
+        fill.backing_0,
+        "{label} O1: the abort decharged the transfer"
+    );
+    assert_eq!(counters(lane), c0, "{label} O1: no render, no release");
+    eprintln!(
+        "{label} T1 after {pre} pre-result pass(es): row {:?}, pending {}, unconfirmed cancels {}, journal {j1:?}",
+        lane.states(),
+        lane.row().pending(),
+        lane.row().unconfirmed_cancels()
+    );
+    // T2: the source release, published (reason 3).
+    budget(fill, &format!("{label} T2"));
+    a.peer.poll_io().unwrap();
+    let (steps, observed) = lane.observed_turn(Instant::now(), None);
+    assert_eq!(steps, TURN);
+    assert_eq!(observed, c0.unchanged(), "{label} T2: nothing");
+    let s2 = lane.snapshot(a, &format!("{label} O2"));
+    let w2 = window(&s1, &s2, &format!("{label} T2"));
+    assert_eq!(
+        kinds(&w2),
+        ["SlotReleased(3)"],
+        "{label} T2: the failed copy's slot"
+    );
+    let event = slot_released_of(&w2[0]).unwrap();
+    assert_eq!(
+        (event.identity, event.resource, event.slot, event.reason),
+        (
+            identity,
+            resource,
+            credit.offer.request.slot,
+            ContentReason::Malformed as u16
+        ),
+        "{label}: the original source's release, Malformed"
+    );
+    let j2 = s2.journal();
+    assert_eq!(j2.held, H, "{label} O2: both holds spent: {j2:?}");
+    assert!(s2.releasing.is_empty());
+    assert!(
+        !s2.facts
+            .owned_live_credits
+            .iter()
+            .any(|c| c.offer == credit.offer),
+        "{label} O2: the slot credit is spent"
+    );
+    assert_eq!(s2.facts.owned_publication_sequence, Some(w2[0].sequence));
+    assert_all_visible(j2, &format!("{label} O2"));
+    s2.assert_stores_empty(&format!("{label} O2"));
+    assert!(s2.facts.outbox.is_empty());
+    assert_eq!(s2.facts.lean_frames_in_flight, Some(0));
+    assert!(lane.states().is_empty(), "{label} O2: the row is clear");
+    assert_eq!(lane.row().pending(), 0, "{label} O2: no owed row work");
+    assert_eq!(
+        lane.row().unconfirmed_cancels(),
+        0,
+        "{label} O2: the cancel confirmed"
+    );
+    assert_eq!(
+        lane.h.owner.processes.image_pending(0),
+        0,
+        "{label} O2: no image work"
+    );
+    assert_eq!(
+        lane.residency(a, n),
+        FrameImageResidency::Absent,
+        "{label}: never accepted"
+    );
+    assert_eq!(lane.leased(), 0);
+    assert_eq!(counters(lane), c0, "{label} O2: no render, no release");
+    assert_eq!(usage(lane).backing, fill.backing_0);
+    assert!(
+        !wake.wait(Some(Instant::now())).unwrap(),
+        "{label}: a validation failure rings no renderer wake"
+    );
+    // The peer reads the terminal: the credit is back.
+    peer_reads_terminal(a, n, label);
+    assert_eq!(a.terminals(n), [MALFORMED]);
+    assert!(
+        a.stream.has_credit(),
+        "{label}: the Malformed terminal returned the credit"
+    );
+    assert_eq!(
+        statuses_for(&a.contents, a.key.grant, resource),
+        [(3, ContentReason::Malformed as u16)]
+    );
+    assert_eq!(
+        a.peer.journal_progress().queued,
+        fill.queued_0,
+        "{label}: no ACK"
+    );
+    let r = j2.records;
+    assert_eq!(
+        r,
+        r0 + 3,
+        "{label}: ΔR +3: {:?}",
+        kinds(&window(&prev, &s2, label))
+    );
+    eprintln!(
+        "{label}: R {r0} -> {r}, bytes {} held {}",
+        j2.bytes, j2.held
+    );
+    r
+}
+
+/// A filler's admitted state after its render result rang.
+struct Admitted {
+    job: u64,
+    key: ShellFrameStreamKey,
+    resource: ContentResourceId,
+    credit: OwnedCreditFacts,
+    identity: Identity,
+    release: (TransactionId, ShellContentRecord),
+    /// Counters before the submission; the render adds one acquisition.
+    c0: Counters,
+    r0: usize,
+    s0: Snapshot,
+}
+
+/// A filler's T1 facts: the status and outcome sequences and O1.
+struct Declined {
+    status: u64,
+    outcome: u64,
+    s1: Snapshot,
+    /// Counters after the decline's one release.
+    c1: Counters,
+}
+
+/// Frame `n` submitted at a fresh boundary, admitted, rendered (the ring),
+/// its lease held, its admission's two holds taken.
+fn filler_start(
+    lane: &mut Lane,
+    wake: &sophia_wake::Wake,
+    a: &mut Attempt,
+    fill: &Fill,
+    n: u64,
+    label: &str,
+) -> Admitted {
+    boundary(lane, wake, a, label);
+    let c0 = counters(lane);
+    budget(fill, label);
+    lane.submit(a, n, PIXEL);
+    let job = admit(lane, a, fill, label);
+    assert!(
+        wake.wait(Some(Instant::now() + WAIT)).unwrap(),
+        "{label}: the render result rings the owner"
+    );
+    assert_eq!(lane.leased(), 1, "{label}: the result holds its slot");
+    assert_eq!(
+        counters(lane),
+        c0.after_render(),
+        "{label}: one render, no release"
+    );
+    let (key, generation) = lane.admitted_key(job);
+    assert_eq!(generation, n);
+    let resource = resource_n(n);
+    let s0 = lane.snapshot(a, &format!("{label} O0"));
+    let j0 = s0.journal();
+    assert_eq!(j0.held, H + 2, "{label} O0: the offer's two holds: {j0:?}");
+    let credit = credit_of(&s0, resource, &format!("{label} O0"));
+    assert!(credit.status_reserved);
+    let identity = credit.offer.identity;
+    let release = release_of(&credit, a.key.grant, resource);
+    assert!(s0.releasing.is_empty());
+    assert!(
+        usage(lane).backing > fill.backing_0,
+        "{label} O0: the admission charged the backing: {:?}",
+        usage(lane)
+    );
+    Admitted {
+        job,
+        key,
+        resource,
+        credit,
+        identity,
+        release,
+        c0: c0.after_render(),
+        r0: j0.records,
+        s0,
+    }
+}
+
+/// T1 at the late instant: C3 declines at the content call; the status
+/// (reserved, deferred) and the terminal (credited) commit; the peer reads
+/// the terminal and holds the credit again; no ACK.
+fn filler_t1(lane: &mut Lane, a: &mut Attempt, fill: &Fill, f: &Admitted, label: &str) -> Declined {
+    let late = lane.deadline_of(f.job) + MARGIN;
+    budget(fill, &format!("{label} T1"));
+    let (steps, observed) = lane.observed_turn(late, None);
+    assert_eq!(steps, TURN);
+    let c1 = f.c0.released();
+    assert_eq!(
+        observed,
+        c1.unchanged(),
+        "{label}: C3 declined once at the content call"
+    );
+    let s1 = lane.snapshot(a, &format!("{label} O1"));
+    let w1 = window(&f.s0, &s1, &format!("{label} T1"));
+    assert_eq!(
+        kinds(&w1),
+        ["ResourceStatus(2)", "FrameOutcome(3,9)"],
+        "{label} T1: the acceptance, then the decline's terminal"
+    );
+    let status = status_for(&w1, a.key.grant, f.resource, &format!("{label} T1"));
+    assert_eq!(
+        peer_terminals(&frames_in(&w1), f.key, f.resource.generation),
+        [FAILED]
+    );
+    let j1 = s1.journal();
+    assert_eq!(j1.records, f.r0 + 2);
+    assert_eq!(
+        j1.held,
+        H + 1,
+        "{label} O1: the status hold is spent: {j1:?}"
+    );
+    assert_eq!(s1.releasing, [f.identity], "{label} O1: release owed");
+    assert_eq!(
+        credit_of(&s1, f.resource, &format!("{label} O1")),
+        OwnedCreditFacts {
+            offer: f.credit.offer,
             status_reserved: false,
         }
     );
@@ -603,11 +764,11 @@ fn filler(
         Some(status.sequence),
         "{label} O1: the status is the ring's last publication (REV6 B3)"
     );
-    assert_ne!(s1.facts.owned_publication_sequence, published_0);
     assert!(s1.facts.outbox.is_empty(), "{:?}", s1.facts.outbox);
     assert!(!s1.facts.output_blocked);
     assert_all_visible(j1, &format!("{label} O1"));
-    let early = store_release(&s1, &release, &format!("{label} O1"));
+    assert_eq!(s1.facts.lean_frames_in_flight, Some(0));
+    let early = store_release(&s1, &f.release, &format!("{label} O1"));
     assert!(
         usage(lane).backing > fill.backing_0,
         "{label} O1: the backing stays charged until the release is journaled"
@@ -616,19 +777,44 @@ fn filler(
         "{label} O1: leased {}, release pending in the store {early}, journal {j1:?}",
         lane.leased()
     );
-    peer_reads_terminal(a, n, label);
+    peer_reads_terminal(a, f.resource.generation, label);
+    assert_eq!(a.terminals(f.resource.generation), [FAILED]);
+    assert!(
+        a.stream.has_credit(),
+        "{label}: the terminal returned the credit"
+    );
     assert_eq!(
         a.peer.journal_progress().queued,
         fill.queued_0,
         "{label}: no ACK while withheld"
     );
+    Declined {
+        status: status.sequence,
+        outcome: w1[1].sequence,
+        s1,
+        c1,
+    }
+}
+
+/// A complete filler's T2 after slot freedom (SlotReleased, then
+/// ResourceReleased, the backing released) and its IT; R after.
+fn filler_finish(
+    lane: &mut Lane,
+    a: &mut Attempt,
+    fill: &Fill,
+    f: &Admitted,
+    d: &Declined,
+    label: &str,
+) -> usize {
     lane.slot_freed(label);
+    let late = lane.deadline_of(f.job) + MARGIN;
     budget(fill, &format!("{label} T2"));
+    a.peer.poll_io().unwrap();
     let (steps, observed) = lane.observed_turn(late, None);
     assert_eq!(steps, TURN);
-    assert_eq!(observed, DECLINED, "{label}: nothing more");
+    assert_eq!(observed, d.c1.unchanged(), "{label} T2: nothing more");
     let s2 = lane.snapshot(a, &format!("{label} O2"));
-    let w2 = window(&s1, &s2, &format!("{label} T2"));
+    let w2 = window(&d.s1, &s2, &format!("{label} T2"));
     assert_eq!(
         kinds(&w2),
         ["SlotReleased(0)", "ResourceReleased"],
@@ -637,17 +823,10 @@ fn filler(
     let event = slot_released_of(&w2[0]).unwrap();
     assert_eq!(
         (event.identity, event.resource, event.slot, event.reason),
-        (identity, resource, credit.offer.request.slot, 0),
+        (f.identity, f.resource, f.credit.offer.request.slot, 0),
         "{label}: the original source's release"
     );
-    assert_eq!(
-        w2[1].identity,
-        RecordIdentity::Content {
-            transaction: release.0,
-            record: release.1.clone()
-        },
-        "{label}: the release joined to the resource's admission"
-    );
+    assert_eq!(w2[1].identity, release_identity(&f.release));
     let j2 = s2.journal();
     assert_eq!(j2.held, H, "{label} O2: both offer holds spent: {j2:?}");
     assert!(s2.releasing.is_empty());
@@ -655,7 +834,7 @@ fn filler(
         !s2.facts
             .owned_live_credits
             .iter()
-            .any(|c| c.offer == credit.offer),
+            .any(|c| c.offer == f.credit.offer),
         "{label} O2: the slot credit is spent"
     );
     assert_eq!(s2.facts.owned_publication_sequence, Some(w2[0].sequence));
@@ -675,150 +854,257 @@ fn filler(
     let (_, l) = peer_poll(a);
     assert_eq!(
         l.contents,
-        std::slice::from_ref(&release),
+        std::slice::from_ref(&f.release),
         "{label}: the peer reads the release on the content queue"
     );
     assert!(l.frames.is_empty(), "{label}: {l:?}");
-    assert_eq!(a.terminals(n), [FAILED]);
     assert!(lane.states().is_empty(), "{label}: the row is clear");
-    assert_eq!(lane.releases(), (count, count));
+    assert_eq!(counters(lane), d.c1, "{label}: one render, one release");
     assert_eq!(lane.native.installs(), 0);
     assert_eq!(lane.native.ordinary_queues(), 0);
-    assert_eq!(lane.acquisitions(), count, "{label}: no later render");
     let r = s3.journal().records;
     assert_eq!(
         r,
-        r0 + 4,
+        f.r0 + 4,
         "{label}: ΔR +4: {:?}",
-        kinds(&window(&s0, &s3, &format!("{label} total")))
+        kinds(&window(&f.s0, &s3, &format!("{label} total")))
     );
     eprintln!(
-        "{label}: R {r0} -> {r}, bytes {} held {}",
+        "{label}: R {} -> {r}, bytes {} held {}, status {} outcome {}",
+        f.r0,
         s3.journal().bytes,
-        s3.journal().held
+        s3.journal().held,
+        d.status,
+        d.outcome
     );
     r
 }
 
-/// Phase C: fillers 1..=k_C. R after the last.
-fn phase_c(
+/// Frame `n` through the C3 fill path (F3's accepted path) to source
+/// release, backing retirement, row disposal and a free renderer slot,
+/// with the four records identified and every credit transition asserted.
+fn filler(
     lane: &mut Lane,
     wake: &sophia_wake::Wake,
     a: &mut Attempt,
     fill: &Fill,
-    k_c: usize,
+    n: u64,
+    label: &str,
+) -> usize {
+    let f = filler_start(lane, wake, a, fill, n, label);
+    let d = filler_t1(lane, a, fill, &f, label);
+    filler_finish(lane, a, fill, &f, &d, label)
+}
+
+/// Fillers `from..=to`; R after the last.
+fn fillers(
+    lane: &mut Lane,
+    wake: &sophia_wake::Wake,
+    a: &mut Attempt,
+    fill: &Fill,
+    from: u64,
+    to: u64,
     label: &str,
 ) -> usize {
     let (mut r, _) = records(lane, a, label);
-    for n in 1..=u64::try_from(k_c).unwrap() {
+    for n in from..=to {
         r = filler(lane, wake, a, fill, n, &format!("{label} filler {n}"));
     }
     r
 }
 
-/// FJ: the fill to the blocking frame, the refused AllocationResult at the
-/// FIFO head with the frame's status, outcome and release parked behind
-/// it, the ring's publication counter unchanged while the status is
-/// parked (MD7's full-journal consumer), the ACK that unblocks, the
-/// four-record drain, then SlotReleased.
+/// Which retention the peer's ACK covers, from its observed sequence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Acked {
+    /// Through the published SlotReleased of the last complete filler.
+    SlotReleased,
+    /// Through that filler's outcome: its SlotReleased stays retained.
+    Outcome,
+}
+
+/// The manual ACK (bound: the client's safe limit, its handled sequence),
+/// sent by one peer poll, joined to `d`'s outcome or the later
+/// `slot_released` sequence; any other frontier fails.
+fn acknowledge(
+    a: &mut Attempt,
+    fill: &Fill,
+    d: &Declined,
+    slot_released: u64,
+    label: &str,
+) -> Acked {
+    let before = a.peer.journal_progress();
+    assert!(
+        a.peer.acknowledge_journal().unwrap(),
+        "{label}: an ACK queued through the safe limit: {before:?}"
+    );
+    let (pp, l) = peer_poll(a);
+    assert!(
+        pp.queued > fill.queued_0,
+        "{label}: the ACK was sent: {pp:?}"
+    );
+    assert!(l.is_empty(), "{label}: nothing new to read: {l:?}");
+    let acked = if pp.queued == slot_released {
+        Acked::SlotReleased
+    } else if pp.queued == d.outcome {
+        Acked::Outcome
+    } else {
+        panic!(
+            "{label}: ACK {} is neither outcome {} nor SlotReleased {slot_released}: {before:?} -> {pp:?}",
+            pp.queued, d.outcome
+        )
+    };
+    eprintln!(
+        "{label}: ACK through {acked:?} ({}); {before:?} -> {pp:?}",
+        pp.queued
+    );
+    acked
+}
+
+/// FJ: two prefix frames and 61 fillers to 250; the filler at 250 whose
+/// one designated T2 commits its SlotReleased, admits frame 65 and parks
+/// its ResourceReleased; frame 65's status and outcome queue behind it,
+/// then its own release; the ring's publication counter unchanged while
+/// the status is parked (MD7's full-journal consumer); the ACK derived
+/// from the observed frontier, the four-record drain, then SlotReleased.
 #[test]
-fn fj_a_refused_allocation_result_parks_the_frames_records_until_an_ack() {
+fn fj_a_parked_release_holds_the_next_frames_records_until_an_ack() {
     let (mut lane, wake) = Lane::running();
     let mut a = lane.attempt();
-    let mut fill = baseline(&mut lane, &mut a, "FJ phase 0");
-    let r_b = phase_b(&mut lane, &mut a, &mut fill, "FJ");
-    let plan = plan(r_b, false);
-    eprintln!(
-        "FJ plan: R_B {r_b} P {} target {} k_A {} k_C {}",
-        plan.p, plan.target, plan.k_a, plan.k_c
+    let fill = baseline(&mut lane, &mut a, "FJ phase 0");
+    let mut r = 0;
+    for n in 1..=PREFIX {
+        r = invalid_frame(
+            &mut lane,
+            &wake,
+            &mut a,
+            &fill,
+            n,
+            &format!("FJ prefix {n}"),
+        );
+    }
+    assert_eq!(r, 6, "FJ: the prefix");
+    r = fillers(
+        &mut lane,
+        &wake,
+        &mut a,
+        &fill,
+        PREFIX + 1,
+        FJ_FILLERS,
+        "FJ",
     );
-    phase_a(&mut lane, &mut a, &fill, &plan, "FJ");
-    let r_c = phase_c(&mut lane, &wake, &mut a, &fill, plan.k_c, "FJ");
-    assert_eq!(r_c, plan.target, "FJ phase C: R reached the target");
-    // The blocking frame k.
-    let k = u64::try_from(plan.k_c).unwrap() + 1;
-    let count = usize::try_from(k).unwrap();
-    budget(&fill, "FJ k");
-    lane.submit(&mut a, k, PIXEL);
-    let job = lane.admitted(&mut a);
-    assert!(wake.wait(Some(Instant::now() + WAIT)).unwrap());
-    assert_eq!(lane.leased(), 1);
-    let (key, _) = lane.admitted_key(job);
-    let resource = resource_n(k);
-    let st0 = lane.snapshot(&a, "FJ T0");
-    let jt0 = st0.journal();
-    assert_eq!(jt0.records, plan.target, "FJ T0: R_T0");
-    assert_eq!(jt0.held, H + 2, "{jt0:?}");
-    let credit = credit_of(&st0, resource, "FJ T0");
+    assert_eq!(r, 250, "FJ: the fillers reached 250");
+    // Frame 64: T1 as every filler, then the staged frame 65.
+    let f = filler_start(&mut lane, &wake, &mut a, &fill, FJ_LAST, "FJ 64");
+    assert_eq!(f.r0, 250);
+    let d = filler_t1(&mut lane, &mut a, &fill, &f, "FJ 64");
+    assert_eq!(d.s1.journal().records, 252);
+    lane.slot_freed("FJ 64");
+    // The staged next frame: submitted on the returned credit, written to
+    // the owner before the one designated turn.
+    boundary(&lane, &wake, &a, "FJ 65 submission");
+    budget(&fill, "FJ 65 submission");
+    lane.submit(&mut a, FJ_BLOCK, PIXEL);
+    assert!(!a.stream.has_credit());
+    a.peer.poll_io().unwrap();
+    // T2(64), the designated turn: SlotReleased(64) published at 253,
+    // frame 65 admitted (held 3), ResourceReleased(64) refused and parked.
+    budget(&fill, "FJ T2(64)");
+    let (steps, observed) = lane.observed_turn(Instant::now(), None);
+    assert_eq!(steps, TURN);
+    assert_eq!(
+        observed,
+        d.c1.unchanged(),
+        "FJ T2(64): nothing at the content call"
+    );
+    let s2 = lane.snapshot(&a, "FJ O2(64)");
+    let w2 = window(&d.s1, &s2, "FJ T2(64)");
+    assert_eq!(
+        kinds(&w2),
+        ["SlotReleased(0)"],
+        "FJ T2(64): the slot's release alone"
+    );
+    let event = slot_released_of(&w2[0]).unwrap();
+    assert_eq!(
+        (event.identity, event.resource, event.slot, event.reason),
+        (f.identity, f.resource, f.credit.offer.request.slot, 0)
+    );
+    let slot_released_64 = w2[0].sequence;
+    let j2 = s2.journal();
+    assert_eq!(j2.records, 253, "FJ O2(64): {j2:?}");
+    assert_all_visible(j2, "FJ O2(64): SlotReleased(64) published with lean 0");
+    let states = lane.states();
+    assert!(
+        matches!(states.as_slice(), [(_, "in flight")]),
+        "FJ: frame 65 admitted in T2(64), or a gap (no retry): {states:?}"
+    );
+    let job = states[0].0;
+    assert_ne!(job, f.job);
+    let (key, generation) = lane.admitted_key(job);
+    assert_eq!(generation, FJ_BLOCK);
+    let resource = resource_n(FJ_BLOCK);
+    assert_eq!(
+        j2.held,
+        H + 2,
+        "FJ O2(64): 64's holds spent, 65's taken: {j2:?}"
+    );
+    assert!(
+        s2.releasing.is_empty(),
+        "FJ O2(64): 64's slot release confirmed"
+    );
+    assert!(
+        s2.facts.output_blocked,
+        "FJ O2(64): the release was refused at 253"
+    );
+    assert_eq!(outbox_kinds(&s2.facts.outbox), ["ResourceReleased"]);
+    assert_parked(&s2, 0, &f.release, "FJ O2(64)");
+    let credit = credit_of(&s2, resource, "FJ O2(64)");
     assert!(credit.status_reserved);
     let identity = credit.offer.identity;
-    let baseline_published = st0.facts.owned_publication_sequence;
     let release = release_of(&credit, a.key.grant, resource);
-    assert!(usage(&lane).backing > fill.backing_0);
-    // J spare invalidations, queued without a drain.
-    let j_count = 254 - plan.target;
-    assert!((2..=fill.spares.len()).contains(&j_count), "J {j_count}");
-    let mut invalidations = Vec::new();
-    for j in 0..j_count {
-        let transaction = TransactionId::from_raw(INVALIDATE_BASE + u64::try_from(j).unwrap());
-        let spare = fill.spares[j];
-        lane.h
-            .owner
-            .with_service(a.key, |_, t| {
-                t.invalidate_content_allocation(transaction, spare, ContentReason::Revoked)
-            })
-            .unwrap()
-            .unwrap();
-        invalidations.push((transaction, spare));
-        let s = lane.snapshot(&a, "FJ invalidation");
-        assert_eq!(
-            committed(s.journal()),
-            committed(jt0),
-            "invalidation {j}: journals nothing itself"
-        );
-        assert_eq!(s.facts.outbox.len(), j + 1, "{:?}", s.facts.outbox);
-        assert_eq!(
-            outbox_result(&s.facts.outbox[j], "FJ invalidation"),
-            (transaction, spare)
-        );
-        assert!(!s.facts.output_blocked);
-        assert!(
-            s.stores.allocations.is_empty(),
-            "transferred without a drain"
-        );
-    }
-    let s_pre = lane.snapshot(&a, "FJ pre-T1");
+    let baseline_published = s2.facts.owned_publication_sequence;
+    assert_eq!(baseline_published, Some(slot_released_64));
+    assert_eq!(s2.facts.lean_frames_in_flight, Some(1));
+    s2.assert_stores_empty("FJ O2(64)");
+    assert!(
+        usage(&lane).backing > fill.backing_0,
+        "FJ O2(64): 64 parked, 65 charged"
+    );
+    assert!(
+        wake.wait(Some(Instant::now() + WAIT)).unwrap(),
+        "FJ 65: the render result rings the owner"
+    );
+    assert_eq!(lane.leased(), 1);
+    let c0 = d.c1.after_render();
+    assert_eq!(counters(&lane), c0);
+    eprintln!(
+        "FJ O2(64): SlotReleased(64) {slot_released_64}, outcome(64) {}, journal {j2:?}",
+        d.outcome
+    );
+    // T1(65): C3; the status and outcome queue behind the parked release.
     let late = lane.deadline_of(job) + MARGIN;
-    budget(&fill, "FJ T1");
+    budget(&fill, "FJ T1(65)");
     let (steps, observed) = lane.observed_turn(late, None);
     assert_eq!(steps, TURN);
-    assert_eq!(observed, DECLINED, "FJ: C3 declined at the content call");
-    // O1: J − 1 invalidations committed, the last refused at the head.
+    let c1 = c0.released();
+    assert_eq!(
+        observed,
+        c1.unchanged(),
+        "FJ T1(65): C3 declined at the content call"
+    );
     let s1 = lane.snapshot(&a, "FJ O1");
     let j1 = s1.journal();
-    assert!(s1.facts.output_blocked, "FJ O1: the drain was refused");
-    let w1 = window(&s_pre, &s1, "FJ T1");
-    assert_eq!(
-        kinds(&w1),
-        vec!["AllocationResult".to_string(); j_count - 1],
-        "FJ T1: J - 1 invalidations committed"
+    assert!(
+        window(&s2, &s1, "FJ T1(65)").is_empty(),
+        "blocked: nothing commits"
     );
-    for (record, (transaction, spare)) in w1.iter().zip(&invalidations) {
-        let (t, result) = allocation_result_of(record).unwrap();
-        assert_eq!((t, result.allocation), (*transaction, *spare));
-    }
-    assert_eq!(j1.records, 253, "FJ O1: blocked at 256 - held: {j1:?}");
-    assert_eq!(j1.held, H + 2, "{j1:?}");
+    assert!(s1.facts.output_blocked);
+    assert_eq!((j1.records, j1.held), (253, H + 2), "{j1:?}");
     assert_eq!(
         outbox_kinds(&s1.facts.outbox),
-        ["AllocationResult", "ResourceStatus(2)", "FrameOutcome(3,9)"],
-        "FJ O1: the refused head, then the frame's status and outcome"
+        ["ResourceReleased", "ResourceStatus(2)", "FrameOutcome(3,9)"],
+        "FJ O1: the parked release, then the frame's status and outcome"
     );
-    assert_eq!(
-        outbox_result(&s1.facts.outbox[0], "FJ O1"),
-        invalidations[j_count - 1],
-        "FJ O1: the last invalidation is the refused head"
-    );
+    assert_parked(&s1, 0, &f.release, "FJ O1");
     assert!(s1.facts.outbox[1].resource_settlement);
     assert_eq!(s1.releasing, [identity], "FJ O1: release owed");
     assert_eq!(
@@ -832,106 +1118,99 @@ fn fj_a_refused_allocation_result_parks_the_frames_records_until_an_ack() {
         "FJ O1: backing charged"
     );
     eprintln!(
-        "FJ O1: leased {}, release pending in the store {early}, deferred {:?}, lean {:?}, journal {j1:?}",
+        "FJ O1: leased {}, release pending in the store {early}, lean {:?} (the outcome is parked, not appended), journal {j1:?}",
         lane.leased(),
-        j1.deferred,
         s1.facts.lean_frames_in_flight
     );
-    // PP1: the committed invalidations are readable; the frame's are not.
+    // PP1: nothing of frame 65 is readable; the peer's frontier is recorded.
     let (pp1, l1) = peer_poll(&mut a);
     assert_eq!(pp1.queued, fill.queued_0, "FJ: no ACK while withheld");
-    let read: Vec<(TransactionId, ContentAllocationId)> = l1
-        .contents
-        .iter()
-        .filter_map(|(t, record)| match record {
-            ShellContentRecord::AllocationResult(result) => Some((*t, result.allocation)),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(read, invalidations[..j_count - 1], "FJ PP1: {l1:?}");
-    assert_eq!(l1.len(), j_count - 1, "FJ PP1: nothing else: {l1:?}");
-    assert!(peer_terminals(&a.frames, key, k).is_empty());
+    assert!(
+        l1.frames.is_empty() && l1.contents.is_empty(),
+        "FJ PP1: {l1:?}"
+    );
+    assert!(peer_terminals(&a.frames, key, FJ_BLOCK).is_empty());
     assert!(statuses_for(&a.contents, a.key.grant, resource).is_empty());
-    lane.slot_freed("FJ k");
-    budget(&fill, "FJ T2");
+    eprintln!("FJ PP1 {pp1:?}");
+    // T2(65), the full turn after slot freedom: SlotReleased(65) refused
+    // by the status guard; the store's release parks fourth.
+    lane.slot_freed("FJ 65");
+    budget(&fill, "FJ T2(65)");
     let (steps, observed) = lane.observed_turn(late, None);
     assert_eq!(steps, TURN);
-    assert_eq!(observed, DECLINED, "FJ T2: nothing more");
-    // O2: the release behind the parked outcome; still blocked.
-    let s2 = lane.snapshot(&a, "FJ O2");
-    let j2 = s2.journal();
-    assert!(s2.facts.output_blocked);
-    assert!(window(&s1, &s2, "FJ T2").is_empty());
+    assert_eq!(observed, c1.unchanged(), "FJ T2(65): nothing more");
+    let s2b = lane.snapshot(&a, "FJ O2");
+    let j2b = s2b.journal();
+    assert!(s2b.facts.output_blocked);
+    assert!(window(&s1, &s2b, "FJ T2(65)").is_empty());
     assert_eq!(
-        outbox_kinds(&s2.facts.outbox),
+        outbox_kinds(&s2b.facts.outbox),
         [
-            "AllocationResult",
+            "ResourceReleased",
             "ResourceStatus(2)",
             "FrameOutcome(3,9)",
             "ResourceReleased"
         ],
         "FJ O2: the store's release joined the parked FIFO"
     );
+    assert_parked(&s2b, 0, &f.release, "FJ O2");
+    assert_parked(&s2b, 3, &release, "FJ O2");
+    assert_eq!(s2b.releasing, [identity]);
     assert_eq!(
-        s2.facts.outbox[3].record,
-        OutboxRecordFacts::Content(release.0, release.1.clone()),
-        "FJ O2: the exact release"
-    );
-    assert_eq!(s2.releasing, [identity]);
-    assert_eq!(
-        s2.facts.owned_publication_sequence, baseline_published,
+        s2b.facts.owned_publication_sequence, baseline_published,
         "MD7: the release committed while its status was still queued"
     );
-    assert!(credit_of(&s2, resource, "FJ O2").status_reserved);
-    s2.assert_stores_empty("FJ O2");
-    assert_eq!((j2.records, j2.held), (253, H + 2), "{j2:?}");
+    assert!(credit_of(&s2b, resource, "FJ O2").status_reserved);
+    s2b.assert_stores_empty("FJ O2");
+    assert_eq!((j2b.records, j2b.held), (253, H + 2), "{j2b:?}");
     assert!(
         usage(&lane).backing > fill.backing_0,
         "FJ O2: backing still charged"
     );
     assert_eq!(lane.leased(), 0);
-    assert_eq!(lane.releases(), (count, count));
+    assert_eq!(counters(&lane), c1);
     // The unblock: the ACK, sent by PP, applied by IT.
     budget(&fill, "FJ unblock");
-    assert!(
-        a.peer.acknowledge_journal().unwrap(),
-        "an ACK queued through the safe limit"
-    );
-    let (pp2, l2) = peer_poll(&mut a);
-    assert!(pp2.queued > fill.queued_0, "the ACK was sent: {pp2:?}");
-    assert!(l2.is_empty(), "nothing new to read: {l2:?}");
+    let acked = acknowledge(&mut a, &fill, &d, slot_released_64, "FJ");
+    let (after_ack, after_drain, after_t3) = match acked {
+        Acked::SlotReleased => (0, 4, 5),
+        Acked::Outcome => (1, 5, 6),
+    };
     budget(&fill, "FJ IT");
-    lane.input_turn(&mut a);
+    lane.input_turn(&a);
     let s3 = lane.snapshot(&a, "FJ O3");
     let j3 = s3.journal();
     assert!(!s3.facts.output_blocked, "FJ O3: unblocked");
     assert!(
-        j3.floor > j2.floor,
+        j3.floor > j2b.floor,
         "FJ O3: the ACK released retention: {} -> {}",
-        j2.floor,
+        j2b.floor,
         j3.floor
     );
-    let w3 = window(&s2, &s3, "FJ IT");
+    let w3 = window(&s2b, &s3, "FJ IT");
     assert_eq!(
         kinds(&w3),
         [
-            "AllocationResult",
+            "ResourceReleased",
             "ResourceStatus(2)",
             "FrameOutcome(3,9)",
             "ResourceReleased"
         ],
         "FJ IT: the drain commits the parked four in FIFO order"
     );
-    let (t, result) = allocation_result_of(&w3[0]).unwrap();
-    assert_eq!((t, result.allocation), invalidations[j_count - 1]);
+    assert_eq!(w3[0].identity, release_identity(&f.release));
     let status = status_for(&w3, a.key.grant, resource, "FJ IT");
-    assert_eq!(peer_terminals(&frames_in(&w3), key, k), [FAILED]);
+    assert_eq!(peer_terminals(&frames_in(&w3), key, FJ_BLOCK), [FAILED]);
+    assert_eq!(w3[3].identity, release_identity(&release));
+    assert_eq!(j3.records, after_drain, "FJ O3: {acked:?}: {j3:?}");
+    assert_eq!(j3.records - 4, after_ack);
     assert_eq!(
-        w3[3].identity,
-        RecordIdentity::Content {
-            transaction: release.0,
-            record: release.1.clone()
-        }
+        first_retained(&s3),
+        Some(match acked {
+            Acked::SlotReleased => w3[0].sequence,
+            Acked::Outcome => slot_released_64,
+        }),
+        "FJ O3: the retention floor's record"
     );
     assert_eq!(
         j3.held,
@@ -949,10 +1228,12 @@ fn fj_a_refused_allocation_result_parks_the_frames_records_until_an_ack() {
     assert_eq!(s3.facts.owned_publication_sequence, Some(status.sequence));
     assert!(s3.facts.outbox.is_empty());
     s3.assert_stores_empty("FJ O3");
+    assert_all_visible(j3, "FJ O3");
+    assert_eq!(s3.facts.lean_frames_in_flight, Some(0));
     assert_eq!(
         usage(&lane).backing,
         fill.backing_0,
-        "FJ O3: backing released"
+        "FJ O3: both backings released"
     );
     eprintln!(
         "FJ O3: records {} bytes {} floor {}",
@@ -962,7 +1243,7 @@ fn fj_a_refused_allocation_result_parks_the_frames_records_until_an_ack() {
     budget(&fill, "FJ T3");
     let (steps, observed) = lane.observed_turn(late, None);
     assert_eq!(steps, TURN);
-    assert_eq!(observed, DECLINED, "FJ T3: nothing more");
+    assert_eq!(observed, c1.unchanged(), "FJ T3: nothing more");
     let s4 = lane.snapshot(&a, "FJ O4");
     let w4 = window(&s3, &s4, "FJ T3");
     assert_eq!(kinds(&w4), ["SlotReleased(0)"], "FJ T3: the slot's release");
@@ -978,6 +1259,7 @@ fn fj_a_refused_allocation_result_parks_the_frames_records_until_an_ack() {
         w4[0].sequence
     );
     let j4 = s4.journal();
+    assert_eq!(j4.records, after_t3, "FJ O4: {acked:?}: {j4:?}");
     assert_eq!(j4.held, H, "FJ O4: back to the persistent hold: {j4:?}");
     assert!(s4.releasing.is_empty());
     assert!(
@@ -992,69 +1274,97 @@ fn fj_a_refused_allocation_result_parks_the_frames_records_until_an_ack() {
     assert!(s4.facts.outbox.is_empty());
     assert_eq!(s4.facts.lean_frames_in_flight, Some(0));
     // The peer reads the rest.
-    peer_reads_terminal(&mut a, k, "FJ");
-    assert_eq!(a.terminals(k), [FAILED]);
+    peer_reads_terminal(&mut a, FJ_BLOCK, "FJ");
+    assert_eq!(a.terminals(FJ_BLOCK), [FAILED]);
     assert_eq!(
         statuses_for(&a.contents, a.key.grant, resource),
         [(2, status_of(status).unwrap().reason)]
     );
-    assert_eq!(
-        a.contents.iter().filter(|r| **r == release).count(),
-        1,
-        "the release once"
-    );
+    for (which, rel) in [("64", &f.release), ("65", &release)] {
+        assert_eq!(
+            a.contents.iter().filter(|r| *r == rel).count(),
+            1,
+            "the release of {which} once"
+        );
+    }
     assert!(lane.states().is_empty());
-    assert_eq!(lane.releases(), (count, count));
+    assert_eq!(counters(&lane), c1);
     assert_eq!(lane.native.installs(), 0);
     assert_eq!(lane.native.ordinary_queues(), 0);
 }
 
-/// FJ-stop: the fill to a completed final filler at R ∈ {254, 255}, then
-/// the next admission refused at its reservation hold: `Step::Stop`
-/// (owned_copy/frame.rs), the offer waits, nothing is appended, holds
-/// return to the persistent one. Which hold refuses follows the source's
-/// order (offer.rs: status first, then release): at 254 the release hold,
-/// at 255 the status hold; it is derived from R, not observed. The other
-/// blockers are shown absent first. An ACK, then a turn, admits it.
+/// FJ-stop: 63 fillers to 252 and the final filler whose SlotReleased
+/// publishes at 255 while its ResourceReleased parks; the probe's
+/// admission refused at its first reservation hold: `Step::Stop`
+/// (owned_copy/frame.rs), the offer waits, nothing is appended or queued,
+/// holds stay H. The other blockers are shown absent. The ACK, the one
+/// parked record's drain, then the admission.
 #[test]
 fn fj_stop_the_next_admission_stops_at_the_reservation_refusal_until_an_ack() {
     let (mut lane, wake) = Lane::running();
     let mut a = lane.attempt();
-    let mut fill = baseline(&mut lane, &mut a, "FJ-stop phase 0");
-    let r_b = phase_b(&mut lane, &mut a, &mut fill, "FJ-stop");
-    let plan = plan(r_b, true);
-    eprintln!(
-        "FJ-stop plan: R_B {r_b} P {} final filler start {} k_A {} k_C {}",
-        plan.p, plan.target, plan.k_a, plan.k_c
-    );
-    phase_a(&mut lane, &mut a, &fill, &plan, "FJ-stop");
-    let r_final = phase_c(&mut lane, &wake, &mut a, &fill, plan.k_c, "FJ-stop");
+    let fill = baseline(&mut lane, &mut a, "FJ-stop phase 0");
+    let r = fillers(&mut lane, &wake, &mut a, &fill, 1, STOP_FILLERS, "FJ-stop");
+    assert_eq!(r, 252, "FJ-stop: the fillers reached 252");
+    // The final filler: T1 as every filler; T2 publishes SlotReleased(64)
+    // at 255 and parks the release.
+    let f = filler_start(&mut lane, &wake, &mut a, &fill, STOP_FINAL, "FJ-stop 64");
+    assert_eq!(f.r0, 252);
+    let d = filler_t1(&mut lane, &mut a, &fill, &f, "FJ-stop 64");
+    assert_eq!(d.outcome, d.status + 1, "status 253, outcome 254");
+    lane.slot_freed("FJ-stop 64");
+    let late = lane.deadline_of(f.job) + MARGIN;
+    budget(&fill, "FJ-stop T2(64)");
+    a.peer.poll_io().unwrap();
+    let (steps, observed) = lane.observed_turn(late, None);
+    assert_eq!(steps, TURN);
+    assert_eq!(observed, d.c1.unchanged(), "FJ-stop T2(64): nothing more");
+    let s2 = lane.snapshot(&a, "FJ-stop O2(64)");
+    let w2 = window(&d.s1, &s2, "FJ-stop T2(64)");
     assert_eq!(
-        r_final,
-        plan.target + 4,
-        "FJ-stop: the final filler completed"
+        kinds(&w2),
+        ["SlotReleased(0)"],
+        "FJ-stop T2(64): the slot's release alone"
     );
-    assert!([254, 255].contains(&r_final), "R_final {r_final}");
-    // No other blocker.
-    let s = lane.snapshot(&a, "FJ-stop before");
-    let j = s.journal();
-    assert_eq!(j.held, H, "{j:?}");
-    assert!(s.facts.owned_live_credits.is_empty());
-    assert_eq!(s.facts.owned_pending_offer, None);
-    assert!(!s.facts.output_blocked);
-    assert_eq!(lane.h.owner.processes.image_pending(0), 0, "no image work");
-    assert_eq!(lane.leased(), 0);
-    assert_eq!(usage(&lane).backing, fill.backing_0);
+    let event = slot_released_of(&w2[0]).unwrap();
+    assert_eq!(
+        (event.identity, event.resource, event.slot, event.reason),
+        (f.identity, f.resource, f.credit.offer.request.slot, 0)
+    );
+    let slot_released_64 = w2[0].sequence;
+    let j2 = s2.journal();
+    assert_eq!((j2.records, j2.held), (255, H), "FJ-stop O2(64): {j2:?}");
+    assert_all_visible(j2, "FJ-stop O2(64): published with lean 0");
+    assert!(s2.releasing.is_empty());
+    assert!(s2.facts.owned_live_credits.is_empty(), "both holds spent");
+    assert!(
+        s2.facts.output_blocked,
+        "FJ-stop O2(64): the release was refused at 255"
+    );
+    assert_eq!(outbox_kinds(&s2.facts.outbox), ["ResourceReleased"]);
+    assert_parked(&s2, 0, &f.release, "FJ-stop O2(64)");
+    assert_eq!(s2.facts.owned_publication_sequence, Some(slot_released_64));
+    assert_eq!(s2.facts.lean_frames_in_flight, Some(0));
+    s2.assert_stores_empty("FJ-stop O2(64)");
+    let charged = usage(&lane).backing;
+    assert!(
+        charged > fill.backing_0,
+        "FJ-stop O2(64): the parked release keeps its charge"
+    );
     assert!(lane.states().is_empty());
-    assert!(s.releasing.is_empty());
-    let k = u64::try_from(plan.k_c).unwrap() + 1;
-    let resource = resource_n(k);
-    lane.submit(&mut a, k, PIXEL);
-    // Turns until the owner holds the offer unadmitted: each is a Stop.
+    assert_eq!(lane.leased(), 0);
+    assert_eq!(counters(&lane), d.c1);
+    eprintln!("FJ-stop O2(64): journal {j2:?}; usage {:?}", usage(&lane));
+    // The probe: turns until the owner holds the offer unadmitted.
+    let resource = resource_n(STOP_PROBE);
+    boundary(&lane, &wake, &a, "FJ-stop probe");
+    budget(&fill, "FJ-stop probe submission");
+    lane.submit(&mut a, STOP_PROBE, PIXEL);
+    assert!(!a.stream.has_credit());
     let deadline = Instant::now() + WAIT;
     let mut turns = 0;
     let s_stop = loop {
-        budget(&fill, "FJ-stop admission");
+        budget(&fill, &format!("FJ-stop admission pass {turns}"));
         a.peer.poll_io().unwrap();
         let (steps, accepted) = lane.quiet_driver_turn_at(Instant::now());
         assert_eq!(steps, TURN);
@@ -1065,6 +1375,11 @@ fn fj_stop_the_next_admission_stops_at_the_reservation_refusal_until_an_ack() {
         if s.facts.owned_pending_offer.is_some() {
             break s;
         }
+        assert!(
+            lane.states().is_empty(),
+            "FJ-stop: admitted: {:?}",
+            lane.states()
+        );
         assert!(
             Instant::now() < deadline,
             "FJ-stop: the offer never reached the owner: {:?}",
@@ -1082,40 +1397,79 @@ fn fj_stop_the_next_admission_stops_at_the_reservation_refusal_until_an_ack() {
     );
     assert!(
         s_stop.facts.owned_live_credits.is_empty(),
-        "the status hold, if taken, was released: {:?}",
+        "no hold was taken and kept: {:?}",
         s_stop.facts.owned_live_credits
     );
     assert_eq!(j_stop.held, H, "{j_stop:?}");
-    assert_eq!(committed(j_stop), committed(j), "nothing appended");
-    assert_eq!(j_stop.records, r_final);
+    assert_eq!(committed(j_stop), committed(j2), "nothing appended");
+    assert_eq!(j_stop.records, 255);
     assert!(
-        !s_stop.facts.output_blocked,
-        "nothing was refused in a drain"
+        s_stop.facts.output_blocked,
+        "the parked release still blocks"
     );
-    assert_eq!(lane.h.owner.processes.image_pending(0), 0);
+    assert_eq!(
+        outbox_kinds(&s_stop.facts.outbox),
+        ["ResourceReleased"],
+        "no refusal status was appended or parked"
+    );
+    assert_parked(&s_stop, 0, &f.release, "FJ-stop stop");
+    s_stop.assert_stores_empty("FJ-stop stop: no refusal status queued");
+    assert!(s_stop.releasing.is_empty());
+    assert_eq!(s_stop.facts.lean_frames_in_flight, Some(0));
     assert_eq!(lane.leased(), 0);
-    let refused = if r_final == 254 {
-        "the release hold, after the status hold was taken and released"
-    } else {
-        "the status hold"
-    };
-    eprintln!(
-        "FJ-stop: R {r_final}, {turns} turn(s); by the source's hold order {refused} refused; journal {j_stop:?}"
+    assert_eq!(
+        usage(&lane).backing,
+        charged,
+        "the parked charge, nothing else"
     );
-    // The unblock: ACK, PP, IT, one turn: admitted.
-    budget(&fill, "FJ-stop unblock");
-    assert!(a.peer.acknowledge_journal().unwrap());
-    let (pp, _) = peer_poll(&mut a);
-    assert!(pp.queued > fill.queued_0, "{pp:?}");
-    budget(&fill, "FJ-stop IT");
-    lane.input_turn(&mut a);
-    let s_u = lane.snapshot(&a, "FJ-stop after IT");
+    // The other admission preconditions, read as the admission reads them.
+    let facts = lane
+        .h
+        .owner
+        .processes
+        .owned_admission_facts(0)
+        .expect("a pending offer has admission facts");
     assert!(
-        s_u.journal().floor > j_stop.floor,
-        "the ACK released retention"
+        facts.available,
+        "worker capacity and the backing budget admit the offer: {facts:?}"
     );
-    assert!(s_u.journal().records < r_final);
-    let job = lane.admitted(&mut a);
+    assert_eq!(facts.worker_pending, 0, "{facts:?}");
+    assert_eq!(facts.room, 4, "control room for the admission: {facts:?}");
+    eprintln!(
+        "FJ-stop: R 255 held {}, {turns} turn(s); image pending {}; admission facts {facts:?}; by the source's order the status hold (255 not < 256 - 1) refused: an inference; journal {j_stop:?}",
+        j_stop.held,
+        lane.h.owner.processes.image_pending(0)
+    );
+    // The unblock: ACK, PP, IT (the one parked release drains), then
+    // the admission.
+    budget(&fill, "FJ-stop unblock");
+    let acked = acknowledge(&mut a, &fill, &d, slot_released_64, "FJ-stop");
+    let after_drain = match acked {
+        Acked::SlotReleased => 1,
+        Acked::Outcome => 2,
+    };
+    budget(&fill, "FJ-stop IT");
+    lane.input_turn(&a);
+    let s_u = lane.snapshot(&a, "FJ-stop after IT");
+    let j_u = s_u.journal();
+    assert!(j_u.floor > j_stop.floor, "the ACK released retention");
+    assert!(!s_u.facts.output_blocked);
+    let w_u = window(&s_stop, &s_u, "FJ-stop IT");
+    assert_eq!(
+        kinds(&w_u),
+        ["ResourceReleased"],
+        "the one parked release drained"
+    );
+    assert_eq!(w_u[0].identity, release_identity(&f.release));
+    assert_eq!(j_u.records, after_drain, "{acked:?}: {j_u:?}");
+    assert_eq!(j_u.held, H);
+    assert!(s_u.facts.outbox.is_empty());
+    assert_eq!(
+        usage(&lane).backing,
+        fill.backing_0,
+        "the charge released with the commit"
+    );
+    let job = admit(&mut lane, &mut a, &fill, "FJ-stop after the ACK");
     let s_adm = lane.snapshot(&a, "FJ-stop admitted");
     assert_eq!(s_adm.journal().held, H + 2, "{:?}", s_adm.journal());
     assert_eq!(s_adm.facts.owned_pending_offer, None);
@@ -1125,249 +1479,6 @@ fn fj_stop_the_next_admission_stops_at_the_reservation_refusal_until_an_ack() {
     eprintln!("FJ-stop: admitted after the ACK: {:?}", s_adm.journal());
 }
 
-/// F4-O (SIMULATED completion): F4-P's churn leaves candidate 1 prepared
-/// internally, installed as one ordinary entry whose retained frame F is
-/// queued in the fixture and claimed by the runtime. The declared
-/// completion `present_queued_retained` takes exactly F out of the queue
-/// and presents it (no exporter render, custody submit, DRM commit, flip
-/// event, `custody.present`, cursor or capture: the fixture has no
-/// device); `publish_presented_from` settles the claim keyed by (output,
-/// F); the owner's `observe_presentation` then finds the presentation
-/// epoch and journals FrameOutcome(2, None) for the exact candidate, which
-/// ends the deferred run so the acceptance becomes visible, and the peer
-/// reads both. Evidence of the publication response to a declared
-/// completion of the exact queued fallback, not native completion
-/// evidence.
-#[test]
-fn f4o_a_declared_completion_of_the_queued_fallback_journals_presented_and_settles_the_claim() {
-    let (mut lane, wake) = Lane::running();
-    let mut a = lane.attempt();
-    let job = rendered(&mut lane, &wake, &mut a);
-    let (key, n) = lane.admitted_key(job);
-    assert!(lane.native.ordinary_queue_ready(output().id));
-    assert_eq!(lane.native.last_retained_admission(), None);
-    assert!(lane.runtime.queued_claims().is_empty());
-    let (pp0, _) = peer_poll(&mut a);
-    let s0 = lane.snapshot(&a, "F4-O O0");
-    eprintln!("F4-O PP0 {pp0:?}; O0 journal {:?}", s0.journal());
-    let (steps, observed) = lane.observed_turn(Instant::now(), MOVED);
-    assert_eq!(steps, TURN);
-    assert_eq!(observed, DECLINED, "declined before the walk");
-    assert_eq!(lane.native.installs(), 1, "one ordinary install entry");
-    assert_eq!(lane.native.ordinary_queues(), 1);
-    let s1 = lane.snapshot(&a, "F4-O O1");
-    let w1 = window(&s0, &s1, "F4-O T1");
-    assert_eq!(kinds(&w1), ["ResourceStatus(2)"], "the acceptance alone");
-    let status = one_status(&w1, a.key.grant, "F4-O T1");
-    assert_eq!(
-        s1.journal().deferred,
-        Some((status.start, status.end)),
-        "deferred"
-    );
-    assert_eq!(s1.facts.lean_frames_in_flight, Some(1));
-    assert_eq!(
-        lane.h.owner.processes.candidate_prepared(0, OUTPUT, n),
-        Some(true)
-    );
-    assert_eq!(lane.pending(&a), [(a.key.grant, OUTPUT, 1)]);
-    assert!(
-        !lane.native.ordinary_queue_ready(output().id),
-        "the fallback is queued, not ready"
-    );
-    let frame = *lane
-        .native
-        .last_retained_admission()
-        .expect("one retained admission")
-        .get(&output().id)
-        .expect("for the lane's output");
-    assert_eq!(
-        lane.runtime.queued_claims(),
-        [(
-            output().id,
-            frame,
-            LiveShellContentLayer::Shell,
-            a.key.grant
-        )],
-        "the runtime's claim on the exact queued frame"
-    );
-    assert_eq!(lane.native.presented_retained(output().id), None);
-    // The declared completion.
-    let presented = lane.native.present_queued_retained(output().id).unwrap();
-    assert_eq!(presented, frame, "the exact queued fallback");
-    assert_eq!(lane.native.presented_retained(output().id), Some(frame));
-    assert!(
-        lane.native.ordinary_queue_ready(output().id),
-        "the queue no longer owns it"
-    );
-    assert_eq!(lane.native.installs(), 1);
-    assert_eq!(lane.native.ordinary_queues(), 1);
-    assert_eq!(lane.native.accepts(), 0);
-    lane.runtime.publish_presented_from(&lane.native);
-    assert!(
-        lane.runtime.queued_claims().is_empty(),
-        "the claim settled on (output, F)"
-    );
-    // The owner observes the presentation: one labelled transport pass.
-    let runtime = &lane.runtime;
-    let found = lane
-        .h
-        .owner
-        .with_service(a.key, |service, t| {
-            let ShellComponentService::Bar(bar) = service else {
-                panic!("bar required")
-            };
-            let found = bar.observe_presentation(t, runtime).unwrap();
-            t.poll_io().unwrap();
-            found
-        })
-        .unwrap();
-    assert!(
-        found,
-        "the presentation epoch was found for the installed frame"
-    );
-    let s2 = lane.snapshot(&a, "F4-O O2");
-    let w2 = window(&s1, &s2, "F4-O OP");
-    assert_eq!(kinds(&w2), ["FrameOutcome(2,0)"], "the Presented outcome");
-    assert_eq!(peer_terminals(&frames_in(&w2), key, n), [PRESENTED]);
-    assert_all_visible(s2.journal(), "F4-O O2");
-    assert_eq!(s2.facts.lean_frames_in_flight, Some(0));
-    assert!(lane.pending(&a).is_empty(), "the pending entry removed");
-    s2.assert_stores_empty("F4-O O2");
-    assert!(s2.facts.outbox.is_empty());
-    peer_reads_terminal(&mut a, n, "F4-O");
-    assert_eq!(a.terminals(n), [PRESENTED]);
-    assert_eq!(
-        peer_statuses(&a.contents, a.key.grant),
-        [(2, status_of(status).unwrap().reason)],
-        "the acceptance became visible with the terminal"
-    );
-    assert_eq!(a.accepted, 1);
-    assert_eq!(lane.releases(), (1, 1));
-    assert!(lane.states().is_empty());
-    lane.slot_freed("F4-O");
-}
-
-/// BP: the real invalidation of a spare allocation, an owner call between
-/// turns, transfers its AllocationResult to the outbox without a drain:
-/// the identified nonempty pre-state, not blocked, the journal unchanged.
-/// `stop` revokes the attempt and the persistent transport's outbox reads
-/// empty afterwards through the slot-indexed observer (the wire is gone;
-/// the outbox is the transport's own field, so the empty read is a read,
-/// not a missing wire). The invalidation's own effects, the frame's
-/// custody and the renderer lease are recorded separately; nothing about
-/// source release or native retirement follows from the clear. The
-/// budget origin is BP's own start: no ACK is withheld here.
-#[test]
-fn bp_a_spares_invalidation_leaves_the_outbox_nonempty_and_stop_clears_it() {
-    let (mut lane, wake) = Lane::running();
-    let mut a = lane.attempt();
-    let mut fill = Fill {
-        progress_0: Instant::now(),
-        queued_0: 0,
-        backing_0: 0,
-        spares: Vec::new(),
-    };
-    grant_spare(&mut lane, &mut a, &mut fill, 2, 1, "BP spare");
-    let spare = fill.spares[0];
-    let job = rendered(&mut lane, &wake, &mut a);
-    let (pp0, _) = peer_poll(&mut a);
-    let s0 = lane.snapshot(&a, "BP O0");
-    eprintln!("BP PP0 {pp0:?}; O0 journal {:?}", s0.journal());
-    assert!(s0.facts.outbox.is_empty());
-    let transaction = TransactionId::from_raw(INVALIDATE_BASE);
-    lane.h
-        .owner
-        .with_service(a.key, |_, t| {
-            t.invalidate_content_allocation(transaction, spare, ContentReason::Revoked)
-        })
-        .unwrap()
-        .unwrap();
-    let granted: Vec<ContentAllocationId> = lane
-        .h
-        .owner
-        .with_service(a.key, |_, t| t.content_allocation_snapshots())
-        .unwrap()
-        .iter()
-        .map(|snapshot| snapshot.allocation)
-        .collect();
-    let s_pre = lane.snapshot(&a, "BP pre-stop");
-    assert_eq!(
-        committed(s_pre.journal()),
-        committed(s0.journal()),
-        "the invalidation journals nothing itself"
-    );
-    assert_eq!(s_pre.facts.outbox.len(), 1, "{:?}", s_pre.facts.outbox);
-    assert_eq!(
-        outbox_result(&s_pre.facts.outbox[0], "BP pre-stop"),
-        (transaction, spare),
-        "the identified nonempty pre-state"
-    );
-    let OutboxRecordFacts::Content(_, ShellContentRecord::AllocationResult(result)) =
-        &s_pre.facts.outbox[0].record
-    else {
-        unreachable!()
-    };
-    assert_eq!(result.reason, ContentReason::Revoked as u16);
-    assert!(!s_pre.facts.output_blocked);
-    assert!(s_pre.facts.wired);
-    assert!(
-        s_pre.stores.allocations.is_empty(),
-        "transferred without a drain"
-    );
-    assert!(s_pre.releasing.is_empty(), "no SlotReleased was owed");
-    assert_eq!(lane.states(), [(job, "in flight")]);
-    assert_eq!(lane.leased(), 1);
-    eprintln!(
-        "BP pre-stop: allocations now {granted:?}; pending presentations {:?}",
-        lane.pending(&a)
-    );
-    lane.h.owner.stop(a.key).unwrap();
-    assert_eq!(
-        lane.h.owner.phase(a.key).unwrap(),
-        ComponentConnectionPhase::Revoked
-    );
-    let (attempt, facts) = lane
-        .h
-        .owner
-        .processes
-        .transport_facts(0)
-        .expect("slot 0 persists after stop");
-    assert_eq!(
-        attempt,
-        Some((a.key.grant, ComponentConnectionPhase::Revoked)),
-        "the slot still names the revoked attempt"
-    );
-    assert!(!facts.wired, "the wire is gone");
-    assert!(
-        facts.outbox.is_empty(),
-        "stop cleared the outbox: {:?}",
-        facts.outbox
-    );
-    assert!(!facts.output_blocked);
-    assert!(facts.journal.is_none(), "no wire, no journal facts");
-    eprintln!(
-        "BP post-stop: releasing {:?}, image pending {}",
-        lane.h.owner.processes.owned_releasing(0),
-        lane.h.owner.processes.image_pending(0)
-    );
-    assert_eq!(
-        lane.states(),
-        [(job, "in flight")],
-        "stop collected nothing"
-    );
-    let (steps, accepted) = lane.quiet_driver_turn_at(Instant::now());
-    assert_eq!(
-        steps,
-        [Images, Walk, Native],
-        "the revoked slot skips content"
-    );
-    assert!(accepted.is_empty());
-    assert_eq!(
-        lane.releases(),
-        (1, 1),
-        "the walk released the ended grant's Held lease"
-    );
-    assert!(lane.states().is_empty());
-    assert_eq!(lane.native.installs(), 0);
-    lane.slot_freed("BP");
-}
+// F4-O and BP, split for the file-size limit.
+#[path = "combined_journal_clear.rs"]
+mod clear;

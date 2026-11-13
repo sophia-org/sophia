@@ -107,3 +107,29 @@ nonempty outbox/disconnect clear remain b3d-2; b3e, b4 and the final
 integrated gate-3 acceptance remain outstanding. No mutant, TLC, native,
 GPU, DRM, real-flip or performance evidence was added. No execution,
 merge, push, default change or gate-4 source authority follows.
+
+## d-2b3d-2 (in progress)
+
+Source-01 at 6900f8e13 was HELD (R1: a manual-ACK peer cannot issue
+successive non-lean requests; R2 cumulative release counts; R3 the
+missing final FJ-stop filler; R4 the reused wake; R5 budget checks
+outside the admission loop; R6 BP occupancy arithmetic under automatic
+ACKs). The fill design went through REV7 (baseline ACK A_B, no spare
+allocations reachable device-free), REV8-A1 (a pending replace request
+is consumed by the first content step; a lost allocation aborts without
+a ResourceReleased; FJ-stop settled as the parked final release),
+REV9-A2 (the images-step order: a filler's T2 publishes its
+SlotReleased and admits the staged next frame before the Resources
+stage flushes its ResourceReleased, so the last filler must start at
+250) and REV10-A3 (PASS for source preparation: the prefix is two lean
+frames of INVALID pixels, +3 visible records each, no renderer
+involvement, the Malformed terminal returning the stream credit). The
+revision over 6900f8e13 carries source-01 R2-R6 and REV10's
+requirements: journal-local budget-checked admission and settlement
+loops, a fresh wake boundary before every submission, cumulative
+counters, the full T2(65) with four parked records, the ACK joined to
+the observed frontier (two cases), the FJ-stop availability facts
+through a read-only admission reader, BP on the frame's own
+allocation, and the fixture's post-preflight invariant. All counts,
+windows and the timing budget remain predictions until a separately
+granted run.
