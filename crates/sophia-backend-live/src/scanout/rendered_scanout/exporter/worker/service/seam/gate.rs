@@ -18,6 +18,8 @@ pub(crate) enum GateFact {
     /// A pausing gate found its output's route empty and paused there once,
     /// before deciding not to serve the route this pass.
     Waiting,
+    /// That pause ended: `Released` only by the control's explicit resume.
+    PauseEnded { by: GateRelease },
     /// A forwarded job reached the gated output's route and is held: its
     /// validator job number, its admitted deadline and its stop flag.
     Entered {
@@ -36,9 +38,9 @@ pub(crate) enum GateFact {
     },
 }
 
-/// How a hold ended. Only `Released` is a control's own action: disconnect
-/// is the cleanup escape when the control's handle drops, and a timeout is a
-/// missing release, never a pass.
+/// How a hold or a pause ended. Only `Released` is a control's own action:
+/// disconnect is the cleanup escape when the control's handle drops, and a
+/// timeout is a missing release, never a pass.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum GateRelease {
     Released,
@@ -171,7 +173,8 @@ pub(in super::super) fn hold(
     if !route.await_job(Duration::ZERO) {
         if let Some(resume) = armed.resume.take() {
             let _ = armed.facts.send(GateFact::Waiting);
-            let _ = resume.recv_timeout(armed.wait);
+            let by = ended(resume.recv_timeout(armed.wait));
+            let _ = armed.facts.send(GateFact::PauseEnded { by });
         }
         return None;
     }
@@ -186,11 +189,7 @@ pub(in super::super) fn hold(
         deadline,
         stopped,
     });
-    let by = match gate.release.recv_timeout(gate.wait) {
-        Ok(()) => GateRelease::Released,
-        Err(RecvTimeoutError::Disconnected) => GateRelease::Disconnected,
-        Err(RecvTimeoutError::Timeout) => GateRelease::TimedOut,
-    };
+    let by = ended(gate.release.recv_timeout(gate.wait));
     let (job, deadline, stopped) = route
         .parked_facts()
         .expect("the gate holds the parked job until serve");
@@ -203,4 +202,12 @@ pub(in super::super) fn hold(
         by,
     });
     Some(fresh)
+}
+
+fn ended(wait: Result<(), RecvTimeoutError>) -> GateRelease {
+    match wait {
+        Ok(()) => GateRelease::Released,
+        Err(RecvTimeoutError::Disconnected) => GateRelease::Disconnected,
+        Err(RecvTimeoutError::Timeout) => GateRelease::TimedOut,
+    }
 }

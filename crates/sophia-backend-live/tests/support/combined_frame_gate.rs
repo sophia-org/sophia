@@ -268,6 +268,7 @@ fn a_job_stopped_at_the_gate_comes_home_stopped_unrendered() {
     let mut handle = arm(&core, output.facade.output(), WAIT);
     let (issued, reservation) = admit(&mut output, 33, Instant::now() + WAIT);
     let (job, _, stopped) = entered(&handle, "the forwarded job reaches the gate");
+    assert_eq!(job, reservation.job(), "the gate holds the admitted job");
     assert!(!stopped, "the job arrives unstopped");
     assert!(
         output.validator.cancel(job),
@@ -430,6 +431,15 @@ fn a_job_forwarded_inside_an_empty_intake_decision_still_meets_the_gate() {
         std::thread::yield_now();
     }
     handle.resume();
+    // Only an explicit resume places the forward inside the empty decision; a
+    // pause that timed out first would let normal admission pass instead.
+    assert_eq!(
+        handle.next(WAIT),
+        Some(GateFact::PauseEnded {
+            by: GateRelease::Released
+        }),
+        "the pause ended on the control's resume"
+    );
     let First::Entered(job) = first_of(&handle, &output) else {
         panic!("a job forwarded after an empty probe still meets the gate");
     };
