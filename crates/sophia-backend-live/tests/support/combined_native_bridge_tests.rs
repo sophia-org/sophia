@@ -134,10 +134,11 @@ fn a_plan_refuses_another_copy_and_another_head() {
     let mut other = candidate.admitted.clone();
     other.resource.generation += 1;
     let frame = ShellContentNative::allocate_combined_frame(&mut fixture);
+    let composition = candidate.compose(&fixture).unwrap();
     assert!(
         ShellContentNative::plan_combined_frame(
             &mut fixture,
-            candidate.compose(&fixture).unwrap(),
+            composition,
             &head,
             frame,
             &other,
@@ -149,10 +150,11 @@ fn a_plan_refuses_another_copy_and_another_head() {
     let (elsewhere, _other_inbox) =
         ShellContentNative::reserve_combined_frame(&mut fixture, outputs[1].id)
             .expect("the other output's facade reserves");
+    let composition = candidate.compose(&fixture).unwrap();
     assert!(
         ShellContentNative::plan_combined_frame(
             &mut fixture,
-            candidate.compose(&fixture).unwrap(),
+            composition,
             &elsewhere,
             frame,
             &candidate.admitted,

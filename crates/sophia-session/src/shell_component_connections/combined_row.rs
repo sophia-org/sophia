@@ -133,9 +133,9 @@ enum State {
     /// Exported and delivered: the issuing facade holds the lease.
     Held,
     /// Delivered with no lease held, for c's terminal or its grant's end.
-    Failed(CombinedDisposition),
+    Failed(#[expect(dead_code, reason = "c reads it as its terminal input")] CombinedDisposition),
     /// A released Held result whose Release did not transfer.
-    Debt(CombinedRelease),
+    Debt(#[expect(dead_code, reason = "kept as the last Release outcome")] CombinedRelease),
 }
 
 /// What one collection step leaves: a state to keep, or a settled result to

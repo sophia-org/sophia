@@ -40,6 +40,10 @@ pub(super) fn project_render_bundle(
 /// copied resource as the provisional image admission will validate. Any
 /// other resource is absent here, so its frame takes the ordinary path.
 #[cfg(all(test, feature = "experimental-combined-frame-job"))]
+#[allow(
+    dead_code,
+    reason = "the backend's lifecycle tests mount this file without the Session row"
+)]
 pub(crate) fn project_frame_commit(
     candidate: &sophia_protocol::ContentCandidate,
     description: &sophia_protocol::ContentResourceBegin,
