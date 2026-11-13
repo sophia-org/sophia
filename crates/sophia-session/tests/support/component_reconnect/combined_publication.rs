@@ -1238,7 +1238,7 @@ fn p3_the_expiry_commits_the_acceptance_then_timeout_and_one_poll_reads_both() {
     // carry the status and terminal alone.
     assert_eq!(
         s1.stores.resources,
-        [release.clone()],
+        std::slice::from_ref(&release),
         "P3 O1: exactly the identified release is pending"
     );
     assert!(
