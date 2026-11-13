@@ -10,16 +10,17 @@
 //! G3-5d's running renderer.
 
 use super::combined::{CombinedOutcome, OutputRoute, RenderAttempt};
+use super::service::CombinedRenderSeam;
 use super::support::{correlated_result, exported_outcome, inventory_test_core};
 use super::{
-    CombinedFacade, LiveRendererWorkerLeaseId, LiveRendererWorkerOutputKey,
-    NativeGbmRendererWorkerCore, WORKER_COMMAND_CAPACITY, WorkerCommand, WorkerOutcome,
-    WorkerResult,
+    CombinedFacade, DeviceIdentity, LiveRendererWorkerLeaseId, LiveRendererWorkerOutputKey,
+    NEXT_IMAGE_STORE, NativeGbmRendererWorkerCore, WORKER_COMMAND_CAPACITY, WorkerCommand,
+    WorkerControl, WorkerOutcome, WorkerRegistry, WorkerResult, run_worker, wrap_commands,
 };
 use sophia_protocol::Size;
 use sophia_renderer_live::LiveRendererScanoutBufferDescriptor;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::time::{Duration, Instant};
 
 const WAIT: Duration = Duration::from_secs(10);
@@ -66,6 +67,59 @@ pub(crate) fn stub_core() -> (Arc<NativeGbmRendererWorkerCore>, StubRenderer) {
             filler: 0,
         },
     )
+}
+
+/// A core whose worker thread runs the real loop without a render device;
+/// with `seam`, its bound combined frames render through that deterministic
+/// seam (G3-5d d-1) before any other command is served.
+pub(crate) fn running_core(
+    inode: u64,
+    seam: Option<CombinedRenderSeam>,
+) -> (Arc<NativeGbmRendererWorkerCore>, Arc<WorkerControl>) {
+    let registry = Arc::new(WorkerRegistry::default());
+    let identity = DeviceIdentity {
+        device: 1,
+        inode,
+        special_device: 226 << 8,
+    };
+    let control = Arc::new(WorkerControl::default());
+    let service_control = Arc::clone(&control);
+    let (commands, receive) = sync_channel(32);
+    let thread = registry
+        .reserve(identity)
+        .unwrap()
+        .start(|| {
+            std::thread::Builder::new().spawn(move || {
+                run_worker::<std::fs::File>(
+                    Err(std::io::Error::other("no render device in this test")),
+                    Vec::new(),
+                    receive,
+                    service_control,
+                );
+            })
+        })
+        .unwrap();
+    let core = Arc::new(NativeGbmRendererWorkerCore {
+        image_store: NEXT_IMAGE_STORE.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        command_sender: wrap_commands(commands, &control),
+        _thread: std::sync::Mutex::new(thread),
+        control: Arc::clone(&control),
+        inventory_replacement: std::sync::Mutex::new(None),
+        #[cfg(feature = "experimental-shell-capture")]
+        capture_install: std::sync::Mutex::new(None),
+        #[cfg(feature = "experimental-shell-capture")]
+        capture_prepare: std::sync::Mutex::new(None),
+        release_enqueue_failures: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+    });
+    if let Some(seam) = seam {
+        assert!(
+            core.command_sender
+                .send(WorkerCommand::InstallRenderSeam(seam))
+                .is_ok(),
+            "the running worker takes its seam first"
+        );
+    }
+    (core, control)
 }
 
 // Until a test-support consumer drives the renderer (G3-5d), only this

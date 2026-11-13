@@ -8,13 +8,12 @@ use super::super::combined::{
     CombinedOutcome, CombinedRenderPlan, CombinedRenderResult, OutputRoute, RenderAttempt,
 };
 use super::super::{
-    CombinedFacade, CombinedRelease, CombinedReleaseCell, CombinedSettleRefused, DeviceIdentity,
-    LiveRendererWorkerLeaseId, LiveRendererWorkerOutputKey, NEXT_IMAGE_STORE,
-    NativeGbmRendererWorker, NativeGbmRendererWorkerCore, WORKER_COMMAND_CAPACITY, WorkerCommand,
-    WorkerControl, WorkerOutcome, WorkerRegistry, WorkerResult, combined::COMBINED_REQUEST,
-    frame_correlation, wrap_commands,
+    CombinedFacade, CombinedRelease, CombinedReleaseCell, CombinedSettleRefused,
+    LiveRendererWorkerLeaseId, LiveRendererWorkerOutputKey, NativeGbmRendererWorker,
+    NativeGbmRendererWorkerCore, WORKER_COMMAND_CAPACITY, WorkerCommand, WorkerOutcome,
+    WorkerResult, combined::COMBINED_REQUEST, frame_correlation, running_core,
 };
-use super::{correlated_facade, correlated_result, exported_outcome, mixed_job, run_worker};
+use super::{correlated_facade, correlated_result, exported_outcome, mixed_job};
 use crate::api::LiveGbmEglFrameTargetRecord;
 use sophia_protocol::Size;
 use sophia_renderer_live::LiveRendererScanoutBufferExportDetail;
@@ -22,7 +21,7 @@ use sophia_runtime::{CombinedInbox, CombinedReservation, IsbValidationWorker};
 use std::io::Write;
 use std::os::fd::OwnedFd;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, TryRecvError, sync_channel};
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 // G3-2: the bound frame, the description checks and the stop flag.
@@ -32,6 +31,9 @@ mod bind;
 // the worker (worker.rs).
 #[path = "combined_frame_accept_worker.rs"]
 mod accept_worker;
+// G3-5d d-1: the deterministic seam against the worker's own lease table.
+#[path = "combined_frame_seam.rs"]
+mod seam;
 
 type Validator = IsbValidationWorker<CombinedRenderPlan>;
 const WAIT: Duration = Duration::from_secs(10);
@@ -242,51 +244,11 @@ fn a_full_result_route_is_counted_and_never_blocks() {
 /// For the scanout routing tests: a running device-free core, and a plan
 /// that core can take (its render fails for want of a device).
 pub(crate) fn device_free_core(inode: u64) -> Arc<NativeGbmRendererWorkerCore> {
-    running_core(inode).0
+    running_core(inode, None).0
 }
 
 pub(crate) fn device_free_plan(generation: u64) -> CombinedRenderPlan {
     plan(generation, Instant::now() + WAIT)
-}
-
-/// A core whose worker thread runs the real loop without a render device.
-fn running_core(inode: u64) -> (Arc<NativeGbmRendererWorkerCore>, Arc<WorkerControl>) {
-    let registry = Arc::new(WorkerRegistry::default());
-    let identity = DeviceIdentity {
-        device: 1,
-        inode,
-        special_device: 226 << 8,
-    };
-    let control = Arc::new(WorkerControl::default());
-    let service_control = Arc::clone(&control);
-    let (commands, receive) = sync_channel(32);
-    let thread = registry
-        .reserve(identity)
-        .unwrap()
-        .start(|| {
-            std::thread::Builder::new().spawn(move || {
-                run_worker::<std::fs::File>(
-                    Err(std::io::Error::other("no render device in this test")),
-                    Vec::new(),
-                    receive,
-                    service_control,
-                );
-            })
-        })
-        .unwrap();
-    let core = Arc::new(NativeGbmRendererWorkerCore {
-        image_store: NEXT_IMAGE_STORE.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-        command_sender: wrap_commands(commands, &control),
-        _thread: std::sync::Mutex::new(thread),
-        control: Arc::clone(&control),
-        inventory_replacement: std::sync::Mutex::new(None),
-        #[cfg(feature = "experimental-shell-capture")]
-        capture_install: std::sync::Mutex::new(None),
-        #[cfg(feature = "experimental-shell-capture")]
-        capture_prepare: std::sync::Mutex::new(None),
-        release_enqueue_failures: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-    });
-    (core, control)
 }
 
 fn result_after_wake(
@@ -310,7 +272,7 @@ fn result_after_wake(
 
 #[test]
 fn a_frame_forwarded_to_an_idle_renderer_comes_home_and_rings_the_owner() {
-    let (core, _control) = running_core(9_401);
+    let (core, _control) = running_core(9_401, None);
     let mut facade = core.attach(LiveRendererWorkerOutputKey::from_raw(941));
     let owner = sophia_wake::Wake::new().unwrap();
     facade.attach_owner_wake(&owner.notifier());
@@ -335,7 +297,7 @@ fn a_frame_forwarded_to_an_idle_renderer_comes_home_and_rings_the_owner() {
 
 #[test]
 fn an_expired_frame_comes_home_expired_from_the_running_renderer() {
-    let (core, _control) = running_core(9_402);
+    let (core, _control) = running_core(9_402, None);
     let mut facade = core.attach(LiveRendererWorkerOutputKey::from_raw(942));
     let owner = sophia_wake::Wake::new().unwrap();
     facade.attach_owner_wake(&owner.notifier());
@@ -348,7 +310,7 @@ fn an_expired_frame_comes_home_expired_from_the_running_renderer() {
 
 #[test]
 fn shutdown_ends_a_renderer_waiting_on_its_command_wake() {
-    let (core, control) = running_core(9_403);
+    let (core, control) = running_core(9_403, None);
     let mut facade = core.attach(LiveRendererWorkerOutputKey::from_raw(943));
     // A combined route moves the renderer from recv() onto its command wake.
     let _ = facade.combined_inbox().expect("facade takes combined work");
@@ -442,7 +404,7 @@ fn a_reservation_holds_the_release_cell_until_its_own_cancel() {
 
 #[test]
 fn a_running_renderers_result_settles_its_credit_and_frees_the_cell() {
-    let (core, _control) = running_core(9_404);
+    let (core, _control) = running_core(9_404, None);
     let mut facade = core.attach(LiveRendererWorkerOutputKey::from_raw(944));
     let owner = sophia_wake::Wake::new().unwrap();
     facade.attach_owner_wake(&owner.notifier());
@@ -570,7 +532,7 @@ fn a_result_from_a_spent_admission_is_refused_without_touching_the_successor() {
 
 #[test]
 fn a_replacement_facade_under_the_same_output_key_is_not_the_issuer() {
-    let (core, _control) = running_core(9_405);
+    let (core, _control) = running_core(9_405, None);
     let key = LiveRendererWorkerOutputKey::from_raw(945);
     let mut original = core.attach(key);
     let (issued, _inbox) = original.reserve_combined_frame().unwrap();

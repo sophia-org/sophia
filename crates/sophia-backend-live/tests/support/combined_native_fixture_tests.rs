@@ -5,8 +5,9 @@
 //! ordinary generation refuses combined acceptance. Then the bridge's public
 //! accept, `ShellContentNative::accept_combined_shell_content`, with a real
 //! visual runtime and Shell candidate: its success to tracked submission and
-//! a returned refusal. The render is G3-4's injected exported reply, not
-//! G3-5d's running renderer.
+//! a returned refusal. The render is G3-4's injected exported reply, except
+//! in the last control, where G3-5d d-1's running worker renders through its
+//! deterministic seam.
 use super::super::accept_device as device;
 
 use super::*;
@@ -107,9 +108,23 @@ struct Held {
 }
 
 fn held() -> Held {
-    let outputs = outputs();
-    let mut fixture = CombinedNativeFixture::new(&outputs);
-    let output = outputs[0];
+    held_on(
+        CombinedNativeFixture::new(&outputs()),
+        |fixture, key, size| fixture.stub().serve_exported(key, size, LEASE),
+    )
+}
+
+/// The first head's frame, forwarded through its reservation and settled
+/// Held, on `fixture`; `serve` drives a renderer the test owns, if any.
+fn held_on(
+    mut fixture: CombinedNativeFixture,
+    serve: impl FnOnce(
+        &mut CombinedNativeFixture,
+        crate::LiveRendererWorkerOutputKey,
+        sophia_protocol::Size,
+    ),
+) -> Held {
+    let output = fixture.heads[0].output;
     let frame = ShellContentNative::allocate_combined_frame(&mut fixture);
     let (combined, inbox) = ShellContentNative::reserve_combined_frame(&mut fixture, output.id)
         .expect("the serving facade reserves");
@@ -145,7 +160,7 @@ fn held() -> Held {
         .submit_combined(&reservation, pixels(), plan, inbox)
         .ok()
         .expect("combined submission");
-    fixture.renderer.serve_exported(key, output.size, LEASE);
+    serve(&mut fixture, key, output.size);
     let end = Instant::now() + WAIT;
     let result = loop {
         if let Some(result) =
@@ -341,7 +356,7 @@ fn a_protected_ordinary_generation_blocks_combined_acceptance() {
         CombinedRelease::Transferred,
         "the held result stays for ordinary disposal"
     );
-    assert_eq!(held.fixture.renderer.releases(), 1);
+    assert_eq!(held.fixture.stub().releases(), 1);
 }
 
 /// A visual runtime on the fixture's outputs, the store that owns the
@@ -467,7 +482,7 @@ fn a_refused_bridge_accept_returns_the_frame_and_keeps_the_held_result() {
         CombinedRelease::Transferred,
         "the facade still holds the result for disposal"
     );
-    assert_eq!(held.fixture.renderer.releases(), 1);
+    assert_eq!(held.fixture.stub().releases(), 1);
 }
 
 // G3-5b: the owner's worker fact and the served dispositions.
@@ -638,5 +653,51 @@ fn a_fixture_head_describes_a_non_default_output_coherently() {
     assert!(
         head.output_frames.presentation_for(frame).is_ok(),
         "the head accepts a snapshot of its own render target"
+    );
+}
+
+#[test]
+fn a_running_seam_render_is_held_accepted_and_reaches_submitted_waiting_for_page_flip() {
+    let mut held = held_on(CombinedNativeFixture::running(&outputs()), |_, _, _| ());
+    let output = held.output();
+    let slots = held
+        .fixture
+        .slot_metrics(output.id)
+        .expect("the head has a worker");
+    assert_eq!(
+        (slots.acquisitions, slots.leased, slots.stale_releases),
+        (1, 1, 0),
+        "the running worker leased one slot for the seam's export"
+    );
+    let (mut visual, _store, candidate) = candidate(&held);
+    let accept = held.accept();
+    assert!(
+        held.bridge_accept(&mut visual, candidate.clone(), accept)
+            .is_ok(),
+        "the bridge accepts the running worker's held result"
+    );
+    assert_eq!(
+        installed_shell(&visual, output.id, SHELL, held.frame),
+        (Some(candidate.clone()), Some(candidate.grant)),
+        "the runtime installs the candidate and binds its claim"
+    );
+    assert_eq!(
+        held.fixture
+            .service_native(output.id)
+            .expect("the native service runs"),
+        Some(Status::SubmittedWaitingForPageFlip),
+        "one native service submits the accepted frame"
+    );
+    assert_eq!(held.fixture.device_counts(output.id), Some((1, 1, 0)));
+    assert_eq!(
+        held.fixture
+            .slot_metrics(output.id)
+            .map(|slots| slots.leased),
+        Some(1),
+        "the submitted lease keeps its slot; this fixture completes no flip"
+    );
+    assert!(
+        held.fixture.seen().is_empty(),
+        "the frame shows no copied resource, so the seam read none"
     );
 }

@@ -830,6 +830,13 @@ enum WorkerCommand {
     },
     #[cfg(feature = "experimental-combined-frame-job")]
     RegisterCombined(combined::Registration),
+    /// Test-support (G3-5d d-1): later bound combined frames render through
+    /// this deterministic seam instead of the GPU.
+    #[cfg(all(
+        any(test, feature = "test-support"),
+        feature = "experimental-combined-frame-job"
+    ))]
+    InstallRenderSeam(service::CombinedRenderSeam),
     /// Detach an output and free everything it still holds.
     Deregister {
         output: LiveRendererWorkerOutputKey,
@@ -964,7 +971,7 @@ pub use accept_stub::StubReply;
     any(test, feature = "test-support"),
     feature = "experimental-combined-frame-job"
 ))]
-pub(crate) use accept_stub::{StubRenderer, stub_core};
+pub(crate) use accept_stub::{StubRenderer, running_core, stub_core};
 
 use service::run_worker;
 

@@ -56,6 +56,10 @@ use super::*;
 
 #[path = "combined_native_fixture_tests.rs"]
 mod tests;
+// G3-5d d-1: the same fixture on a running worker with the deterministic seam.
+#[path = "combined_native_running.rs"]
+mod running;
+pub use running::CombinedSeen;
 // G3-5b: the compose/plan bridge and the owner facts.
 #[path = "combined_native_bridge_tests.rs"]
 mod bridge_tests;
@@ -82,8 +86,13 @@ pub struct CombinedNativeFixture {
     /// The one native frame counter, as the owner's `next_frame_id`.
     pub(crate) next_frame: u64,
     /// The renderer side of the shared worker core: G3-4's stub, one route,
-    /// served only when a test calls `serve_combined`, until G3-5d.
-    pub(crate) renderer: crate::StubRenderer,
+    /// served only when a test calls `serve_combined`. None on a running
+    /// worker (G3-5d d-1), whose own thread serves the route.
+    pub(crate) renderer: Option<crate::StubRenderer>,
+    /// The occurrences the running seam read, in order (G3-5d d-1).
+    seen: std::sync::Arc<std::sync::Mutex<Vec<CombinedSeen>>>,
+    /// Each output's native service on a running worker; empty on the stub.
+    native: Vec<running::NativeService>,
     /// The declared composition fault, if any (Q1).
     pub(crate) compose_fault: Option<&'static str>,
     /// Compositions through the bridge entry.
@@ -139,6 +148,15 @@ impl CombinedNativeFixture {
     /// worker core whose renderer is the stub.
     pub fn new(outputs: &[sophia_engine::HeadlessOutput]) -> Self {
         let (core, renderer) = crate::stub_core();
+        Self::on_core(outputs, &core, Some(renderer))
+    }
+
+    /// One enabled head per output, each with an exporter on `core`.
+    fn on_core(
+        outputs: &[sophia_engine::HeadlessOutput],
+        core: &std::sync::Arc<crate::NativeGbmRendererWorkerCore>,
+        renderer: Option<crate::StubRenderer>,
+    ) -> Self {
         let heads = outputs
             .iter()
             .zip(1u32..)
@@ -157,7 +175,7 @@ impl CombinedNativeFixture {
                 exporter.set_output(crate::LiveRendererWorkerOutputKey::from_raw(
                     output.id.raw(),
                 ));
-                exporter.attach_shared_worker(&core);
+                exporter.attach_shared_worker(core);
                 exporter
             })
             .collect();
@@ -168,6 +186,8 @@ impl CombinedNativeFixture {
             deferred: DeferredNativeCompositions::default(),
             next_frame: 1,
             renderer,
+            seen: Default::default(),
+            native: Vec::new(),
             compose_fault: None,
             composes: std::cell::Cell::new(0),
             settle_fault: None,
@@ -210,8 +230,11 @@ impl CombinedNativeFixture {
         let (head, inbox) = self.routes().reserve(output)?;
         // The facade queued its route registration in that call, on its
         // first reservation; the renderer side takes it now.
-        let key = crate::LiveRendererWorkerOutputKey::from_raw(output.raw());
-        self.renderer.register(key, &head.facade);
+        // A running worker takes the registration itself.
+        if let Some(renderer) = self.renderer.as_mut() {
+            let key = crate::LiveRendererWorkerOutputKey::from_raw(output.raw());
+            renderer.register(key, &head.facade);
+        }
         Ok((head, inbox))
     }
 
@@ -428,6 +451,12 @@ impl CombinedNativeFixture {
     // The renderer's turn, for Session's tests: the real route decides
     // Stopped and Expired, `reply` is the injected render otherwise.
 
+    fn stub(&mut self) -> &mut crate::StubRenderer {
+        self.renderer
+            .as_mut()
+            .expect("a stub-core fixture: a running worker serves itself")
+    }
+
     /// Serves the one forwarded combined frame on `output` at `at`.
     pub fn serve_combined(
         &mut self,
@@ -436,25 +465,25 @@ impl CombinedNativeFixture {
         reply: crate::StubReply,
     ) {
         let key = crate::LiveRendererWorkerOutputKey::from_raw(output.raw());
-        self.renderer.serve(key, at, reply);
+        self.stub().serve(key, at, reply);
     }
 
     /// Parks the one forwarded combined frame until `serve_combined`, so a
     /// stop can land between forwarding and render.
     pub fn park_combined(&mut self) -> bool {
-        self.renderer.park()
+        self.stub().park()
     }
 
     /// Release commands the renderer has received so far; this also drains
     /// `fill_renderer_queue`'s filler.
     pub fn renderer_releases(&mut self) -> usize {
-        self.renderer.releases()
+        self.stub().releases()
     }
 
     /// Fills the renderer's command queue, so the next Release enqueue sees
     /// `Full`, until `renderer_releases` drains it.
     pub fn fill_renderer_queue(&mut self) {
-        self.renderer.fill();
+        self.stub().fill();
     }
 
     // The owner's ordinary facts and admission, over the same parts.

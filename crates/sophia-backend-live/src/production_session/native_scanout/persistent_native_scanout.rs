@@ -95,7 +95,9 @@ pub use combined_frame::{CombinedAccept, CombinedAcceptPlan, CombinedHead};
     any(test, feature = "test-support"),
     feature = "experimental-combined-frame-job"
 ))]
-pub use combined_frame::{CombinedDeclaredHead, CombinedNativeFixture, CombinedSettleFault};
+pub use combined_frame::{
+    CombinedDeclaredHead, CombinedNativeFixture, CombinedSeen, CombinedSettleFault,
+};
 #[cfg(test)]
 #[path = "../../../tests/support/output_topology_readback.rs"]
 mod output_topology_readback_tests;

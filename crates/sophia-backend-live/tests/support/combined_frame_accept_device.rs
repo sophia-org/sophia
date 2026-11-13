@@ -14,6 +14,8 @@ use std::cell::Cell;
 use std::io;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// Under test-support alone the running fixture refuses nothing (G3-5d d-1).
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) enum Refuse {
     Nothing,
     Framebuffer,
