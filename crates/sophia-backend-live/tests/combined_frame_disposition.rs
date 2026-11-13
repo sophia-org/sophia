@@ -14,6 +14,7 @@ use sophia_backend_live::{CombinedDisposition, CombinedRenderResult};
 fn owner_reading(result: &CombinedRenderResult) -> &'static str {
     match result.disposition() {
         CombinedDisposition::Rendered => "rendered",
+        CombinedDisposition::RenderFailed => "render failed",
         CombinedDisposition::Expired => "expired",
         CombinedDisposition::Stopped => "stopped",
         CombinedDisposition::Mismatch => "malformed",

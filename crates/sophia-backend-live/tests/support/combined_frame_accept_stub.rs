@@ -24,6 +24,19 @@ use std::time::{Duration, Instant};
 
 const WAIT: Duration = Duration::from_secs(10);
 
+/// What the injected render does with a frame the route lets it render.
+#[derive(Clone, Copy, Debug)]
+pub enum StubReply {
+    Exported {
+        size: Size,
+        lease: u64,
+    },
+    /// The render ran and did not export.
+    Failed,
+    /// The renderer found the pixels disagree with the admitted description.
+    Mismatch,
+}
+
 /// A core whose commands this test reads, and the combined route it serves.
 pub(crate) struct StubRenderer {
     commands: Receiver<WorkerCommand>,
@@ -54,11 +67,15 @@ pub(crate) fn stub_core() -> (Arc<NativeGbmRendererWorkerCore>, StubRenderer) {
 impl StubRenderer {
     /// Takes the facade's attach registration and then its route
     /// registration, sent on its first combined reservation, for `output`.
+    /// One route per stub: once registered, this does nothing.
     pub(crate) fn register(
         &mut self,
         output: LiveRendererWorkerOutputKey,
         facade: &CombinedFacade,
     ) {
+        if self.route.is_some() {
+            return;
+        }
         loop {
             match self.commands.recv_timeout(WAIT).expect("a registration") {
                 WorkerCommand::Register { reply, .. } => self._ordinary.push(reply),
@@ -84,35 +101,54 @@ impl StubRenderer {
         size: Size,
         lease: u64,
     ) {
+        self.serve(output, Instant::now(), StubReply::Exported { size, lease });
+    }
+
+    /// Serves the one forwarded frame at `at` with `reply`. The real route
+    /// decides Stopped (the owner stopped the job) and Expired (`at` at or
+    /// past the plan's deadline) without rendering; otherwise `reply` is the
+    /// injected render.
+    pub(crate) fn serve(
+        &mut self,
+        output: LiveRendererWorkerOutputKey,
+        at: Instant,
+        reply: StubReply,
+    ) {
         let route = self.route.as_mut().expect("registered before serving");
-        let end = Instant::now() + WAIT;
-        let mut served = false;
-        while !served {
-            assert!(Instant::now() < end, "the validator did not forward");
-            route.serve(Instant::now(), |plan, pixels, _| {
-                served = true;
-                let mut outcome = exported_outcome();
-                let WorkerOutcome::Exported {
-                    descriptor,
-                    lease_id,
-                    ..
-                } = &mut outcome
-                else {
-                    unreachable!();
-                };
-                *descriptor = LiveRendererScanoutBufferDescriptor::new(
-                    size,
-                    u32::try_from(size.width).unwrap() * 4,
-                    sophia_renderer_live::LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-                    1,
-                );
-                *lease_id = LiveRendererWorkerLeaseId(lease);
-                let mut result = correlated_result(plan.correlation(), outcome);
-                result.output = output;
-                RenderAttempt::Done(CombinedOutcome::Rendered(result), pixels)
-            });
-            std::thread::yield_now();
-        }
+        assert!(route.await_job(WAIT), "the validator did not forward");
+        route.serve(at, |plan, pixels, _| {
+            let outcome = match reply {
+                StubReply::Exported { size, lease } => {
+                    let mut outcome = exported_outcome();
+                    let WorkerOutcome::Exported {
+                        descriptor,
+                        lease_id,
+                        ..
+                    } = &mut outcome
+                    else {
+                        unreachable!();
+                    };
+                    *descriptor = LiveRendererScanoutBufferDescriptor::new(
+                        size,
+                        u32::try_from(size.width).unwrap() * 4,
+                        sophia_renderer_live::LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                        1,
+                    );
+                    *lease_id = LiveRendererWorkerLeaseId(lease);
+                    outcome
+                }
+                StubReply::Failed => WorkerOutcome::Failed(
+                    sophia_renderer_live::LiveRendererScanoutBufferExportDetail::InvalidTarget,
+                ),
+                StubReply::Mismatch => {
+                    return RenderAttempt::Done(CombinedOutcome::Mismatch, pixels);
+                }
+            };
+            let mut result = correlated_result(plan.correlation(), outcome);
+            result.output = output;
+            RenderAttempt::Done(CombinedOutcome::Rendered(result), pixels)
+        });
+        assert!(route.deadline().is_none(), "the stub never parks a frame");
     }
 
     /// Release commands the facade sent for leases it dropped or gave up.

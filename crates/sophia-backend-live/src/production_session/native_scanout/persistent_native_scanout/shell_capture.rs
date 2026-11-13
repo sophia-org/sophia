@@ -52,6 +52,21 @@ impl CaptureOwner {
     }
 }
 
+#[cfg(feature = "experimental-combined-frame-job")]
+impl CaptureOwner {
+    /// A capture endpoint may read `output`'s frames (G3-5b R3): a pending or
+    /// active install on that output, or any owner still closing, which
+    /// retains its installs while it retries, so every output declines.
+    pub(super) fn may_capture(&self, output: OutputId) -> bool {
+        self.closing
+            || self
+                .pending
+                .iter()
+                .chain(self.active.iter())
+                .any(|install| install.output == output)
+    }
+}
+
 impl Drop for CaptureOwner {
     fn drop(&mut self) {
         for install in self.pending.iter().chain(self.active.iter()) {

@@ -12,7 +12,14 @@
 //! service is always available), no preview recovery, mirror lifecycle,
 //! preview custody or topology cleanup, and no owner tick wrapper. Ordinary
 //! queued generations are admitted, not rendered. The renderer is G3-4's
-//! stub; its one render is the injected exported reply.
+//! stub; its one render is the injected reply. No shell capture endpoint:
+//! the owner facts read the queue and exporter captures only, and the
+//! endpoint predicate is the owner's, checked under the capture feature.
+//!
+//! G3-5b Q1: `declare_compose_fault` replaces the result at the compose
+//! boundary with an unclassified error after the real composition ran. It
+//! proves the error's propagation and ownership, not that a real compositor
+//! defect can reach it.
 //!
 //! Public under test-support and the combined feature for Session's tests,
 //! which reach it only through `new` and `ShellContentNative`; its parts stay
@@ -49,10 +56,13 @@ pub struct CombinedNativeFixture {
     pub(crate) deferred: DeferredNativeCompositions,
     /// The one native frame counter, as the owner's `next_frame_id`.
     pub(crate) next_frame: u64,
-    /// The renderer side of the shared worker core. It holds the core's
-    /// command channel open; only this crate's tests drive it until G3-5d.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// The renderer side of the shared worker core: G3-4's stub, one route,
+    /// served only when a test calls `serve_combined`, until G3-5d.
     pub(crate) renderer: crate::StubRenderer,
+    /// The declared composition fault, if any (Q1).
+    pub(crate) compose_fault: Option<&'static str>,
+    /// Compositions through the bridge entry.
+    pub(crate) composes: std::cell::Cell<usize>,
 }
 
 impl CombinedNativeFixture {
@@ -92,6 +102,8 @@ impl CombinedNativeFixture {
             deferred: DeferredNativeCompositions::default(),
             next_frame: 1,
             renderer,
+            compose_fault: None,
+            composes: std::cell::Cell::new(0),
         }
     }
 
@@ -117,7 +129,12 @@ impl CombinedNativeFixture {
         &mut self,
         output: OutputId,
     ) -> io::Result<(CombinedHead, CombinedInbox<CombinedRenderPlan>)> {
-        self.routes().reserve(output)
+        let (head, inbox) = self.routes().reserve(output)?;
+        // The facade queued its route registration in that call, on its
+        // first reservation; the renderer side takes it now.
+        let key = crate::LiveRendererWorkerOutputKey::from_raw(output.raw());
+        self.renderer.register(key, &head.facade);
+        Ok((head, inbox))
     }
 
     pub(crate) fn cancel_combined_frame(&mut self, head: &CombinedHead) -> io::Result<bool> {
@@ -155,6 +172,63 @@ impl CombinedNativeFixture {
         job: u64,
     ) -> CombinedRelease {
         self.routes().flush(head, job)
+    }
+
+    /// The owner's combined facts over these parts, with no capture
+    /// endpoint.
+    pub(crate) fn combined_owner_state(
+        &self,
+        output: OutputId,
+    ) -> Option<crate::production_visual_runtime::CombinedOwnerState> {
+        native_facts::combined_owner_state(
+            &self.heads,
+            &self.exporters,
+            &self.deferred,
+            output,
+            false,
+        )
+    }
+
+    pub(crate) fn plan_combined_frame(
+        &mut self,
+        composition: crate::CombinedComposition,
+        head: &CombinedHead,
+        frame: LiveProductionNativeFrameId,
+        admitted: &sophia_protocol::ContentResourceBegin,
+        deadline: std::time::Instant,
+    ) -> Option<(CombinedRenderPlan, crate::CombinedDispatch)> {
+        self.routes()
+            .plan(composition, head, frame, admitted, deadline)
+    }
+
+    /// Every later composition through the bridge returns `reason` as an
+    /// unclassified error after the real one ran (Q1).
+    pub fn declare_compose_fault(&mut self, reason: &'static str) {
+        self.compose_fault = Some(reason);
+    }
+
+    /// Compositions through the bridge entry so far.
+    pub fn composes(&self) -> usize {
+        self.composes.get()
+    }
+
+    // The renderer's turn, for Session's tests: the real route decides
+    // Stopped and Expired, `reply` is the injected render otherwise.
+
+    /// Serves the one forwarded combined frame on `output` at `at`.
+    pub fn serve_combined(
+        &mut self,
+        output: OutputId,
+        at: std::time::Instant,
+        reply: crate::StubReply,
+    ) {
+        let key = crate::LiveRendererWorkerOutputKey::from_raw(output.raw());
+        self.renderer.serve(key, at, reply);
+    }
+
+    /// Release commands the renderer has received so far.
+    pub fn renderer_releases(&mut self) -> usize {
+        self.renderer.releases()
     }
 
     // The owner's ordinary facts and admission, over the same parts.

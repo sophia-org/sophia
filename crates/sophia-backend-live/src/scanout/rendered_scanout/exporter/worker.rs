@@ -28,7 +28,7 @@ pub(crate) type CaptureReservation =
 #[cfg(feature = "experimental-combined-frame-job")]
 mod combined;
 #[cfg(feature = "experimental-combined-frame-job")]
-pub(crate) use combined::{COMBINED_REQUEST, CombinedFacade};
+pub(crate) use combined::{COMBINED_REQUEST, CombinedFacade, CombinedPlaceholder};
 #[cfg(feature = "experimental-combined-frame-job")]
 pub use combined::{
     CombinedAcceptRefusal, CombinedDisposition, CombinedRenderPlan, CombinedRenderResult,
@@ -954,6 +954,12 @@ pub(crate) use tests::combined_render::{device_free_core, device_free_plan};
 mod accept_stub;
 #[path = "../../../../tests/support/renderer_worker_support.rs"]
 mod support;
+#[cfg(all(
+    any(test, feature = "test-support"),
+    feature = "experimental-combined-frame-job"
+))]
+#[doc(hidden)]
+pub use accept_stub::StubReply;
 #[cfg(all(
     any(test, feature = "test-support"),
     feature = "experimental-combined-frame-job"

@@ -108,3 +108,53 @@ fn capture_reply_binds_the_held_card_to_its_granted_render_node() {
         assert!(install.bind_facts(wrong).is_none());
     }
 }
+
+/// G3-5b R3: the combined job's capture predicate on its own, so no other
+/// eligibility fact can decline for it.
+#[cfg(feature = "experimental-combined-frame-job")]
+mod combined_capture_predicate {
+    use super::*;
+
+    fn install(output: u64) -> Install {
+        Install {
+            output: OutputId::from_raw(output),
+            store: 3,
+            card_device: 1,
+            generation: 2,
+            epoch: LiveRendererSnapshotEpoch::new(1, 2, 3),
+        }
+    }
+
+    #[test]
+    fn an_active_install_with_nothing_pending_declines_its_output_only() {
+        let mut owner = CaptureOwner::default();
+        owner.active = Some(install(1));
+        assert!(owner.pending.is_none() && !owner.closing);
+        assert!(owner.may_capture(OutputId::from_raw(1)));
+        assert!(!owner.may_capture(OutputId::from_raw(2)));
+    }
+
+    #[test]
+    fn a_pending_install_declines_its_output_only() {
+        let mut owner = CaptureOwner::default();
+        owner.pending = Some(install(1));
+        assert!(owner.may_capture(OutputId::from_raw(1)));
+        assert!(!owner.may_capture(OutputId::from_raw(2)));
+    }
+
+    #[test]
+    fn a_closing_owner_that_retains_an_install_declines_every_output() {
+        let mut owner = CaptureOwner::default();
+        owner.active = Some(install(1));
+        owner.observe(3, |_, _| true);
+        assert!(owner.closing && owner.active.is_some());
+        assert!(owner.may_capture(OutputId::from_raw(1)));
+        assert!(owner.may_capture(OutputId::from_raw(2)));
+    }
+
+    #[test]
+    fn an_owner_with_nothing_installed_or_closing_declines_nothing() {
+        let owner = CaptureOwner::default();
+        assert!(!owner.may_capture(OutputId::from_raw(1)));
+    }
+}

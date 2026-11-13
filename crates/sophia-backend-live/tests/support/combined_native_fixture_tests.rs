@@ -114,7 +114,6 @@ fn held() -> Held {
     let (combined, inbox) = ShellContentNative::reserve_combined_frame(&mut fixture, output.id)
         .expect("the serving facade reserves");
     let key = crate::LiveRendererWorkerOutputKey::from_raw(output.id.raw());
-    fixture.renderer.register(key, &combined.facade);
     let mut validator = Validator::for_combined_plans(1, 8).unwrap();
     let reservation = validator
         .reserve_combined(8, Instant::now() + WAIT)

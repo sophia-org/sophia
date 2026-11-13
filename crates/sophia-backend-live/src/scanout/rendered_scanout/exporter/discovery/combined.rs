@@ -22,6 +22,16 @@ impl<R: RenderDeviceDiscoveryBackend> NativeGbmRenderedScanoutBufferDiscoveryExp
             .ok_or_else(|| io::ErrorKind::WouldBlock.into())
     }
 
+    /// A capture of this exporter's next frame is requested or reserved.
+    pub(crate) fn combined_capture_pending(&self) -> bool {
+        self.capture_requested.is_some() || self.capture_reservation.is_some()
+    }
+
+    /// The modifiers an ordinary submission on this exporter asks for.
+    pub(crate) fn combined_preferred_modifiers(&self) -> Vec<u64> {
+        self.preferred_modifiers.clone()
+    }
+
     pub(crate) fn issued_combined(&self, facade: &CombinedFacade) -> bool {
         self.worker
             .as_ref()

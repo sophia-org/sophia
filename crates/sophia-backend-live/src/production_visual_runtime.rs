@@ -53,6 +53,12 @@ mod topology_target;
 // G3-5a: the native seam the Session content path drives.
 mod shell_content_native;
 #[cfg(feature = "experimental-combined-frame-job")]
+pub(crate) use compositor_graphics::combined_scene::CombinedOwnerState;
+#[cfg(feature = "experimental-combined-frame-job")]
+pub use compositor_graphics::combined_scene::{
+    CombinedComposeRefusal, CombinedComposition, CombinedDispatch, CombinedIneligible,
+};
+#[cfg(feature = "experimental-combined-frame-job")]
 pub use compositor_graphics::shell_content::{CombinedAcceptError, CombinedAcceptFailed};
 pub use shell_content_native::ShellContentNative;
 #[path = "../tests/support/combined_native_target.rs"]

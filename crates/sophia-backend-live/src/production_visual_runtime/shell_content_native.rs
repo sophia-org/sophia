@@ -5,14 +5,25 @@
 use super::*;
 #[cfg(feature = "experimental-combined-frame-job")]
 use crate::{
-    CombinedAccept, CombinedHead, CombinedRelease, CombinedRenderPlan, CombinedRenderResult,
-    CombinedSettleRefused, LiveProductionNativeFrameId,
+    CombinedAccept, CombinedComposeRefusal, CombinedComposition, CombinedDispatch, CombinedHead,
+    CombinedRelease, CombinedRenderPlan, CombinedRenderResult, CombinedSettleRefused,
+    LiveProductionNativeFrameId,
 };
 #[cfg(feature = "experimental-combined-frame-job")]
 use sophia_runtime::{CombinedInbox, CombinedReservation, IsbValidationWorker, ValidatedIsbPixels};
 
 mod sealed {
-    pub trait Sealed {}
+    pub trait Sealed {
+        /// The compose result boundary (G3-5b Q1). Production passes the
+        /// result through; the fixture may declare a fault here.
+        #[cfg(feature = "experimental-combined-frame-job")]
+        fn compose_result(
+            &self,
+            composed: Result<crate::CombinedComposition, crate::CombinedComposeRefusal>,
+        ) -> Result<crate::CombinedComposition, crate::CombinedComposeRefusal> {
+            composed
+        }
+    }
 }
 
 /// Each method names the Session caller it exists for.
@@ -37,6 +48,33 @@ pub trait ShellContentNative: sealed::Sealed {
         allocation: ContentAllocationId,
         scene: &LiveProductionCpuScene,
     ) -> Result<bool, Box<dyn std::error::Error>>;
+
+    /// One composition of `candidate` at `layer` for a combined job, with
+    /// this native's owner facts and the turn's one cursor snapshot.
+    /// Caller: the row's `reserve` hook, before any reservation.
+    #[cfg(feature = "experimental-combined-frame-job")]
+    fn compose_combined_frame(
+        &self,
+        runtime: &LiveProductionVisualRuntime,
+        scene: &LiveProductionCpuScene,
+        layer: LiveShellContentLayer,
+        candidate: &LiveShellContentFrame,
+        cursor: crate::LiveProductionCursorPresentation,
+        plane: Option<sophia_protocol::Point>,
+    ) -> Result<CombinedComposition, CombinedComposeRefusal>;
+
+    /// The plan for one admitted copy of `composition`, as `frame`, under
+    /// `head`'s reservation; `None` is a refused send. Caller: the row's
+    /// `plan` hook.
+    #[cfg(feature = "experimental-combined-frame-job")]
+    fn plan_combined_frame(
+        &mut self,
+        composition: CombinedComposition,
+        head: &CombinedHead,
+        frame: LiveProductionNativeFrameId,
+        admitted: &sophia_protocol::ContentResourceBegin,
+        deadline: std::time::Instant,
+    ) -> Option<(CombinedRenderPlan, CombinedDispatch)>;
 
     /// The native frame a combined admission is planned as, from the
     /// counter ordinary batches draw from. Caller: the row's `plan` hook.
@@ -96,8 +134,6 @@ pub trait ShellContentNative: sealed::Sealed {
 /// this native as the target, and the type's inherent combined entries.
 macro_rules! shell_content_native {
     ($native:ty) => {
-        impl sealed::Sealed for $native {}
-
         impl ShellContentNative for $native {
             fn install_shell_content(
                 &mut self,
@@ -124,6 +160,36 @@ macro_rules! shell_content_native {
                     scene,
                     Some(self),
                 )
+            }
+
+            #[cfg(feature = "experimental-combined-frame-job")]
+            fn compose_combined_frame(
+                &self,
+                runtime: &LiveProductionVisualRuntime,
+                scene: &LiveProductionCpuScene,
+                layer: LiveShellContentLayer,
+                candidate: &LiveShellContentFrame,
+                cursor: crate::LiveProductionCursorPresentation,
+                plane: Option<sophia_protocol::Point>,
+            ) -> Result<CombinedComposition, CombinedComposeRefusal> {
+                let owner = <$native>::combined_owner_state(self, candidate.output);
+                let cursor =
+                    compositor_graphics::combined_scene::CombinedCursor::new(cursor, plane);
+                let composed =
+                    runtime.compose_combined_frame(self, owner, scene, layer, candidate, cursor);
+                sealed::Sealed::compose_result(self, composed)
+            }
+
+            #[cfg(feature = "experimental-combined-frame-job")]
+            fn plan_combined_frame(
+                &mut self,
+                composition: CombinedComposition,
+                head: &CombinedHead,
+                frame: LiveProductionNativeFrameId,
+                admitted: &sophia_protocol::ContentResourceBegin,
+                deadline: std::time::Instant,
+            ) -> Option<(CombinedRenderPlan, CombinedDispatch)> {
+                <$native>::plan_combined_frame(self, composition, head, frame, admitted, deadline)
             }
 
             #[cfg(feature = "experimental-combined-frame-job")]
@@ -188,7 +254,27 @@ macro_rules! shell_content_native {
     };
 }
 
+impl sealed::Sealed for LiveProductionNativeScanout {}
 shell_content_native!(LiveProductionNativeScanout);
+
+#[cfg(all(
+    any(test, feature = "test-support"),
+    feature = "experimental-combined-frame-job"
+))]
+impl sealed::Sealed for crate::CombinedNativeFixture {
+    /// Counts each composition; a declared fault replaces its result with
+    /// an unclassified error after the real composition ran.
+    fn compose_result(
+        &self,
+        composed: Result<CombinedComposition, CombinedComposeRefusal>,
+    ) -> Result<CombinedComposition, CombinedComposeRefusal> {
+        self.composes.set(self.composes.get() + 1);
+        match self.compose_fault {
+            Some(reason) => Err(CombinedComposeRefusal::Unclassified(reason.into())),
+            None => composed,
+        }
+    }
+}
 #[cfg(all(
     any(test, feature = "test-support"),
     feature = "experimental-combined-frame-job"

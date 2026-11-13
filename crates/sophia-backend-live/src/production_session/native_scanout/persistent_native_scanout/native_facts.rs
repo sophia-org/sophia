@@ -118,3 +118,34 @@ pub(crate) fn allocate_frame_id(next: &mut u64) -> LiveProductionNativeFrameId {
         .expect("native frame ID space exhausted");
     frame
 }
+
+/// The combined job's owner facts for `output` (G3-5b F4, R3), or `None`
+/// when they are unknown: exactly one enabled head must serve it. A capture
+/// is active when the queued generation or the serving exporter holds a
+/// capture request or reservation, or `shell_capture`, the owner's own
+/// endpoint read, says one may read this output.
+#[cfg(feature = "experimental-combined-frame-job")]
+pub(crate) fn combined_owner_state<R: RenderDeviceDiscoveryBackend>(
+    heads: &Heads,
+    exporters: &[NativeGbmRenderedScanoutBufferDiscoveryExporter<R>],
+    deferred: &composition_queue::DeferredNativeCompositions,
+    output: OutputId,
+    shell_capture: bool,
+) -> Option<crate::production_visual_runtime::CombinedOwnerState> {
+    let mut serving = enabled_heads(heads, output);
+    let index = serving.next()?;
+    if serving.next().is_some() {
+        return None;
+    }
+    let exporter = exporters.get(index)?;
+    let queued = deferred.get(output).is_some_and(|generation| {
+        generation
+            .heads
+            .iter()
+            .any(|head| head.capture_reservation.is_some())
+    });
+    Some(crate::production_visual_runtime::CombinedOwnerState {
+        capture_active: shell_capture || queued || exporter.combined_capture_pending(),
+        worker_idle: !exporter.worker_in_flight(),
+    })
+}

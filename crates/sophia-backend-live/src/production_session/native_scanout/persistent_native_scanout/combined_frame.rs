@@ -4,8 +4,8 @@
 //! `CombinedHead`, whatever the output became since.
 use super::*;
 use crate::{
-    CombinedFacade, CombinedRelease, CombinedRenderPlan, CombinedRenderResult,
-    CombinedSettleRefused, RenderDeviceDiscoveryBackend,
+    CombinedComposition, CombinedDispatch, CombinedFacade, CombinedRelease, CombinedRenderPlan,
+    CombinedRenderResult, CombinedSettleRefused, RenderDeviceDiscoveryBackend,
 };
 use sophia_runtime::{CombinedInbox, CombinedReservation, IsbValidationWorker, ValidatedIsbPixels};
 use std::io;
@@ -135,6 +135,86 @@ impl<R: RenderDeviceDiscoveryBackend> CombinedRoutes<'_, R> {
         }
     }
 
+    /// The plan for `composition` as native frame `frame`, sent under the
+    /// admission `head` reserved, or `None` (a refused send): the admitted
+    /// copy must be exactly the composed candidate, and the composed head
+    /// still the enabled head of that output at the reserved generation, on
+    /// the facade that issued `head`. The frame is composed, never direct.
+    fn plan(
+        &self,
+        composition: CombinedComposition,
+        head: &CombinedHead,
+        frame: LiveProductionNativeFrameId,
+        admitted: &sophia_protocol::ContentResourceBegin,
+        deadline: std::time::Instant,
+    ) -> Option<(CombinedRenderPlan, CombinedDispatch)> {
+        let admitted = sophia_engine::CompositorImageSourceIdentity::Shell(admitted.clone());
+        let provisional = &composition.frame;
+        let exact = !composition.candidate.is_empty()
+            && composition.candidate.iter().all(|id| *id == admitted)
+            && provisional
+                .composition
+                .images
+                .iter()
+                .filter(|image| image.provisional)
+                .all(|image| image.resource == admitted);
+        if !exact
+            || head.native_owner != self.native_owner
+            || provisional.native_owner != self.native_owner
+            || provisional.head != head.head
+            || provisional.target_generation != head.target_generation
+        {
+            return None;
+        }
+        let (index, current) = self.heads.iter().enumerate().find(|(_, current)| {
+            current.enabled && current.head == head.head && current.output.id == composition.output
+        })?;
+        let exporter = self.exporters.get(index)?;
+        if current.target_generation != head.target_generation
+            || !exporter.issued_combined(&head.facade)
+        {
+            return None;
+        }
+        let CombinedComposition {
+            frame: provisional,
+            key,
+            candidate,
+            ..
+        } = composition;
+        let sophia_renderer_live::LiveProvisionalComposition {
+            frame: mut mixed,
+            images,
+            ..
+        } = provisional.composition;
+        let snapshot = mixed.output_damage_snapshot.clone()?;
+        mixed.direct_scanout =
+            sophia_engine::DirectScanoutVerdict::CompositionRequired("combined_frame");
+        let identity = self.native_owner.frame(
+            current.output.id,
+            current.head,
+            current.target_generation,
+            frame.raw(),
+        );
+        let plan = CombinedRenderPlan::new(
+            deadline,
+            crate::api::LiveGbmEglFrameTargetRecord::new(current.output.size),
+            crate::PendingRenderedFrame::Mixed(mixed, Some(identity)),
+            exporter.combined_preferred_modifiers(),
+            None,
+            crate::CombinedPlaceholder::of_composition(&images),
+        );
+        let dispatch = CombinedDispatch {
+            frame,
+            key,
+            candidate,
+            checksum: provisional.logical_content_checksum,
+            snapshot,
+            correlation: plan.correlation(),
+            output_format: None,
+        };
+        Some((plan, dispatch))
+    }
+
     fn release_held(&mut self, head: &CombinedHead, job: u64) -> CombinedRelease {
         self.issuing(head)
             .map_or(CombinedRelease::NotFound, |exporter| {
@@ -202,6 +282,39 @@ impl LiveProductionNativeScanout {
     ) -> Result<ValidatedIsbPixels, CombinedSettleRefused> {
         self.combined_routes()
             .settle(head, validator, reservation, result)
+    }
+
+    /// The combined job's owner facts for `output`, with this owner's own
+    /// shell capture endpoint read; `None` when they are unknown.
+    pub(crate) fn combined_owner_state(
+        &self,
+        output: OutputId,
+    ) -> Option<crate::production_visual_runtime::CombinedOwnerState> {
+        #[cfg(feature = "experimental-shell-capture")]
+        let shell_capture = self.preview_images.capture.may_capture(output);
+        #[cfg(not(feature = "experimental-shell-capture"))]
+        let shell_capture = false;
+        native_facts::combined_owner_state(
+            &self.heads,
+            &self.exporters,
+            &self.deferred_mirror_generations,
+            output,
+            shell_capture,
+        )
+    }
+
+    /// The plan for one admitted copy of `composition`; `None` is a refused
+    /// send, and the caller cancels the reservation.
+    pub fn plan_combined_frame(
+        &mut self,
+        composition: CombinedComposition,
+        head: &CombinedHead,
+        frame: LiveProductionNativeFrameId,
+        admitted: &sophia_protocol::ContentResourceBegin,
+        deadline: std::time::Instant,
+    ) -> Option<(CombinedRenderPlan, CombinedDispatch)> {
+        self.combined_routes()
+            .plan(composition, head, frame, admitted, deadline)
     }
 
     /// The owner declined `job`'s held result: retain its lease for Release

@@ -126,7 +126,7 @@ impl CombinedRenderPlan {
 
     /// The frame's correlation, for the result: metadata only, so no caller
     /// outside the binding ever holds the unbound frame.
-    pub(super) fn correlation(&self) -> LiveRendererFrameCorrelation {
+    pub(crate) fn correlation(&self) -> LiveRendererFrameCorrelation {
         frame_correlation(&self.frame, Some(COMBINED_REQUEST))
     }
 
@@ -159,8 +159,11 @@ pub(super) enum CombinedOutcome {
 /// result. Settling the credit never implies the pixels rendered.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CombinedDisposition {
-    /// A render ran or was refused by the renderer; the result says which.
+    /// The render exported a frame: the one outcome settlement holds as the
+    /// combined result (G3-5b R2).
     Rendered,
+    /// The render ran and did not export; nothing is held.
+    RenderFailed,
     Expired,
     Stopped,
     /// For the owner to publish Malformed through failure reconciliation.
@@ -185,8 +188,13 @@ pub struct CombinedRenderResult {
 
 impl CombinedRenderResult {
     pub fn disposition(&self) -> CombinedDisposition {
-        match self.outcome {
-            CombinedOutcome::Rendered(_) => CombinedDisposition::Rendered,
+        match &self.outcome {
+            CombinedOutcome::Rendered(rendered)
+                if matches!(rendered.outcome, WorkerOutcome::Exported { .. }) =>
+            {
+                CombinedDisposition::Rendered
+            }
+            CombinedOutcome::Rendered(_) => CombinedDisposition::RenderFailed,
             CombinedOutcome::Expired => CombinedDisposition::Expired,
             CombinedOutcome::Stopped => CombinedDisposition::Stopped,
             CombinedOutcome::Mismatch => CombinedDisposition::Mismatch,
@@ -501,6 +509,24 @@ impl OutputRoute {
 
     pub(super) fn deadline(&self) -> Option<Instant> {
         self.parked.as_ref().map(|(deadline, _)| *deadline)
+    }
+
+    /// Test boundary: parks the next forwarded job unchanged, so one `serve`
+    /// decides it whatever its outcome. The stop flag travels in the token.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(super) fn await_job(&mut self, wait: Duration) -> bool {
+        if self.parked.is_some() {
+            return true;
+        }
+        let Ok(job) = self.inbox.recv_timeout(wait) else {
+            return false;
+        };
+        let (token, pixels, plan) = job.into_parts();
+        self.parked = Some((
+            plan.deadline,
+            ForwardedValidation::from_parts(token, pixels, plan),
+        ));
+        true
     }
 
     /// Admission allows one combined job per output, so a full route is a

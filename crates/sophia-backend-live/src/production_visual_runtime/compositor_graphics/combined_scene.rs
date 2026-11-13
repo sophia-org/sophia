@@ -15,6 +15,10 @@
 
 use super::*;
 use sophia_engine::CompositorImageSourceIdentity;
+// G3-5b: what Session's combined row composes and plans through.
+#[path = "combined_bridge.rs"]
+mod bridge;
+pub use bridge::{CombinedComposeRefusal, CombinedComposition, CombinedDispatch};
 use sophia_renderer_live::{
     LiveCompositionPlacement, LiveCpuPixelStorage, LiveImageOccurrence,
     LiveOwnedMixedCompositionLayer, LiveProvisionalComposition, LiveProvisionalDecline,
@@ -78,6 +82,8 @@ pub(crate) struct LiveProvisionalHeadFrame {
     /// The candidate's layer is installed and closing under its grant.
     pub candidate_revoked: bool,
     pub composition: LiveProvisionalComposition,
+    /// The head plan's checksum, as an ordinary head frame carries it.
+    pub logical_content_checksum: u64,
 }
 
 /// One other installed component's facts on the output.
@@ -92,7 +98,10 @@ pub(crate) struct InstalledContentKey {
 /// Why a candidate cannot be composed for the combined job. Each falls back
 /// to the conventional path before any reservation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum CombinedIneligible {
+pub enum CombinedIneligible {
+    /// The native owner could not state its capture and worker facts for
+    /// the output: not exactly one enabled head serves it.
+    OwnerFactsUnknown,
     /// The output does not map to exactly one head.
     HeadCount,
     /// A capture of the output is pending or in flight.
@@ -560,6 +569,7 @@ impl LiveProductionVisualRuntime {
                     installed: installed_keys.clone(),
                     candidate_revoked,
                     composition,
+                    logical_content_checksum: plan.logical_content_checksum,
                 })
             })
             .collect()
