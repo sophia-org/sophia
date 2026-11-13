@@ -1,7 +1,8 @@
 //! G3-5d d-1: the deterministic seam on a running worker, against the
-//! worker's own slot pool, lease ids and lease table. Each control forwards
-//! a real validated frame through a facade's reservation and reads the
-//! worker's published slot metrics; Release commands are the worker's own.
+//! worker's own slot pool, damage history, lease ids and lease table. Each
+//! control forwards a real validated frame through a facade's reservation
+//! and reads the worker's published slot metrics, or what the worker handed
+//! the seam; Release commands are the worker's own.
 
 use super::*;
 use crate::LiveRendererFrameSlotMetrics;
@@ -11,23 +12,39 @@ use sophia_renderer_live::{
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+/// What the seam was handed: its call count, and per call whether the
+/// worker's repaint table showed the slot with a history at age 1 (`None`
+/// when the worker handed no table).
+#[derive(Default)]
+struct Probe {
+    calls: AtomicUsize,
+    history: std::sync::Mutex<Vec<Option<bool>>>,
+}
+
 /// A running core whose seam answers an XRGB8888 descriptor of the target,
-/// or, for its first `refuse` calls, ComposeRefused. Counts its calls.
+/// or ComposeRefused for the zero-based calls listed in `refuse`.
 fn seam_core(
     inode: u64,
-    refuse: usize,
+    refuse: &'static [usize],
 ) -> (
     Arc<NativeGbmRendererWorkerCore>,
     Arc<super::super::super::WorkerControl>,
-    Arc<AtomicUsize>,
+    Arc<Probe>,
 ) {
-    let calls = Arc::new(AtomicUsize::new(0));
-    let counted = Arc::clone(&calls);
+    let probe = Arc::new(Probe::default());
+    let seen = Arc::clone(&probe);
     let (core, control) = running_core(
         inode,
         Some(Box::new(
-            move |_: &crate::PendingRenderedFrame, target: LiveGbmEglFrameTargetRecord| {
-                if counted.fetch_add(1, Ordering::SeqCst) < refuse {
+            move |_: &crate::PendingRenderedFrame,
+                  target: LiveGbmEglFrameTargetRecord,
+                  repaint: Option<&sophia_renderer_live::NativeCompositionRepaintTable>| {
+                let call = seen.calls.fetch_add(1, Ordering::SeqCst);
+                seen.history.lock().unwrap().push(repaint.map(|table| {
+                    table.full_reason_for_age(1)
+                        != Some(sophia_renderer_live::NativeFullRepaintReason::NoHistory)
+                }));
+                if refuse.contains(&call) {
                     return Err(LiveRendererScanoutBufferExportDetail::ComposeRefused);
                 }
                 let pitch = u32::try_from(target.size.width)
@@ -42,7 +59,7 @@ fn seam_core(
             },
         )),
     );
-    (core, control, calls)
+    (core, control, probe)
 }
 
 struct Output {
@@ -75,6 +92,20 @@ impl Output {
         u64,
         Result<Lease, LiveRendererScanoutBufferExportDetail>,
     ) {
+        let mut plan = plan(generation, Instant::now() + WAIT);
+        plan.output_format = format;
+        self.render_plan(plan)
+    }
+
+    /// `render` for a plan the caller built.
+    fn render_plan(
+        &mut self,
+        plan: CombinedRenderPlan,
+    ) -> (
+        CombinedFacade,
+        u64,
+        Result<Lease, LiveRendererScanoutBufferExportDetail>,
+    ) {
         let (issued, inbox) = self
             .facade
             .reserve_combined_frame()
@@ -83,8 +114,6 @@ impl Output {
             .validator
             .reserve_combined(8, Instant::now() + WAIT)
             .unwrap();
-        let mut plan = plan(generation, Instant::now() + WAIT);
-        plan.output_format = format;
         let _owner_plan = self
             .validator
             .submit_combined(&reservation, pixels(), plan, inbox)
@@ -155,7 +184,7 @@ fn exported(outcome: &WorkerOutcome) -> Result<Lease, LiveRendererScanoutBufferE
 
 #[test]
 fn a_seam_render_leases_its_slot_and_its_exact_release_frees_it_once() {
-    let (core, _control, calls) = seam_core(9_510, 0);
+    let (core, _control, probe) = seam_core(9_510, &[]);
     let mut output = Output::attach(&core, 951);
     let (_issued, _job, outcome) = output.render(11, None);
     let lease = outcome.expect("the seam's frame exports");
@@ -164,7 +193,7 @@ fn a_seam_render_leases_its_slot_and_its_exact_release_frees_it_once() {
         LiveRendererWorkerLeaseId(1),
         "the worker's first lease id"
     );
-    assert_eq!(calls.load(Ordering::SeqCst), 1, "one render");
+    assert_eq!(probe.calls.load(Ordering::SeqCst), 1, "one render");
     let slots = output.slots();
     assert_eq!(
         (slots.acquisitions, slots.leased, slots.stale_releases),
@@ -185,7 +214,7 @@ fn a_seam_render_leases_its_slot_and_its_exact_release_frees_it_once() {
 
 #[test]
 fn a_wrong_token_or_another_outputs_release_leaves_the_live_lease() {
-    let (core, _control, _calls) = seam_core(9_511, 0);
+    let (core, _control, _probe) = seam_core(9_511, &[]);
     let mut output = Output::attach(&core, 952);
     let other = Output::attach(&core, 953);
     let (issued, job, outcome) = output.render(12, None);
@@ -244,7 +273,7 @@ fn a_wrong_token_or_another_outputs_release_leaves_the_live_lease() {
 
 #[test]
 fn a_refused_render_or_format_frees_its_slot_and_spends_no_lease_id() {
-    let (core, _control, calls) = seam_core(9_512, 1);
+    let (core, _control, probe) = seam_core(9_512, &[0]);
     let mut output = Output::attach(&core, 954);
     let (_issued, _job, outcome) = output.render(14, None);
     assert_eq!(
@@ -269,14 +298,14 @@ fn a_refused_render_or_format_frees_its_slot_and_spends_no_lease_id() {
         Ok(LiveRendererWorkerLeaseId(1)),
         "neither failure spent a lease id"
     );
-    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    assert_eq!(probe.calls.load(Ordering::SeqCst), 3);
     let slots = output.slots();
     assert_eq!((slots.acquisitions, slots.leased), (3, 1));
 }
 
 #[test]
 fn shutdown_ends_a_worker_holding_a_seam_lease() {
-    let (core, control, _calls) = seam_core(9_513, 0);
+    let (core, control, _probe) = seam_core(9_513, &[]);
     let mut output = Output::attach(&core, 955);
     let (_issued, _job, outcome) = output.render(17, None);
     assert!(outcome.is_ok(), "the seam's frame exports");
@@ -287,4 +316,88 @@ fn shutdown_ends_a_worker_holding_a_seam_lease() {
         assert!(Instant::now() < end, "shutdown must end the worker");
         std::thread::yield_now();
     }
+}
+
+/// A frame of the 16x16 target whose output damage snapshot the worker
+/// records for its slot after a successful render.
+fn damaged_plan(generation: u64) -> CombinedRenderPlan {
+    let output = sophia_engine::HeadlessOutput {
+        id: sophia_protocol::OutputId::from_raw(7),
+        size: Size {
+            width: 16,
+            height: 16,
+        },
+        scale: 1,
+    };
+    let snapshot = sophia_engine::output_frame_damage_snapshot(
+        output,
+        sophia_engine::CompositorDisplayList {
+            output: output.id,
+            commands: Vec::new(),
+        },
+        &[],
+        None,
+    )
+    .unwrap();
+    let crate::PendingRenderedFrame::Mixed(mut mixed, identity) = mixed_job(generation) else {
+        unreachable!("mixed_job is Mixed");
+    };
+    mixed.output_damage_snapshot = Some(snapshot);
+    CombinedRenderPlan::new(
+        Instant::now() + WAIT,
+        LiveGbmEglFrameTargetRecord::new(output.size),
+        crate::PendingRenderedFrame::Mixed(mixed, identity),
+        Vec::new(),
+        None,
+        Box::new([]),
+    )
+}
+
+#[test]
+fn a_seam_render_settles_its_slots_damage_and_a_failed_one_clears_only_its_slot() {
+    // Seven renders rotate through the three slots: 0, 1, 2, then the
+    // refused fourth in slot 0, then 1, 2 and 0 again.
+    let (core, _control, probe) = seam_core(9_514, &[3]);
+    let mut output = Output::attach(&core, 956);
+    let mut slots = Vec::new();
+    for generation in 20..27 {
+        let (issued, job, outcome) = output.render_plan(damaged_plan(generation));
+        match outcome {
+            Ok((_, token)) => {
+                slots.push(Some(token.slot_id().index()));
+                assert_eq!(
+                    output.facade.release_combined_held(&issued, job),
+                    CombinedRelease::Transferred
+                );
+                output.until("the held result's Release frees the slot", |slots| {
+                    slots.leased == 0
+                });
+            }
+            Err(detail) => {
+                assert_eq!(
+                    detail,
+                    LiveRendererScanoutBufferExportDetail::ComposeRefused
+                );
+                slots.push(None);
+            }
+        }
+    }
+    assert_eq!(
+        slots,
+        [Some(0), Some(1), Some(2), None, Some(1), Some(2), Some(0)],
+        "the renders took the slots in rotation"
+    );
+    assert_eq!(
+        *probe.history.lock().unwrap(),
+        [
+            Some(false),
+            Some(false),
+            Some(false),
+            Some(true),
+            Some(true),
+            Some(true),
+            Some(false)
+        ],
+        "only the failed render's slot lost its history"
+    );
 }

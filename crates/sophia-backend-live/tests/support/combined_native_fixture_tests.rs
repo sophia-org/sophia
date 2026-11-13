@@ -689,6 +689,29 @@ fn a_running_seam_render_is_held_accepted_and_reaches_submitted_waiting_for_page
         "one native service submits the accepted frame"
     );
     assert_eq!(held.fixture.device_counts(output.id), Some((1, 1, 0)));
+    let head = &held.fixture.heads[0];
+    assert_eq!(
+        head.rendering_content, None,
+        "the rendering owner was taken"
+    );
+    assert!(head.output_frames.rendering().is_none());
+    assert_eq!(
+        head.output_frames
+            .submitted()
+            .map(|presentation| &presentation.snapshot),
+        Some(&snapshot(output)),
+        "the accept's frame was promoted to submitted"
+    );
+    assert_eq!(
+        head.submitted_content,
+        Some(crate::LiveProductionScanoutContent::RetainedMixed {
+            frame: held.frame,
+            requires_retirement: true,
+            logical_content_checksum: Some(held.frame.raw()),
+            nonzero_rgb_pixels: 0,
+        }),
+        "the head keeps the retirement-bearing content it submitted"
+    );
     assert_eq!(
         held.fixture
             .slot_metrics(output.id)
@@ -696,8 +719,36 @@ fn a_running_seam_render_is_held_accepted_and_reaches_submitted_waiting_for_page
         Some(1),
         "the submitted lease keeps its slot; this fixture completes no flip"
     );
+}
+
+#[test]
+fn a_submission_naming_another_target_is_not_recorded_as_the_heads() {
+    let mut held = held_on(CombinedNativeFixture::running(&outputs()), |_, _, _| ());
+    let output = held.output();
+    let (mut visual, _store, candidate) = candidate(&held);
+    let accept = held.accept();
     assert!(
-        held.fixture.seen().is_empty(),
-        "the frame shows no copied resource, so the seam read none"
+        held.bridge_accept(&mut visual, candidate, accept).is_ok(),
+        "the bridge accepts the running worker's held result"
+    );
+    // The head moves to a new target after the accept: the identity the
+    // worker captured now names the old one.
+    held.fixture.heads[0].target_generation += 1;
+    let error = held
+        .fixture
+        .service_native(output.id)
+        .expect_err("a foreign captured identity is refused");
+    assert_eq!(
+        error.to_string(),
+        "accepted native submission belongs to another owner/head/target"
+    );
+    let head = &held.fixture.heads[0];
+    assert!(
+        head.rendering_content.is_some() && head.output_frames.rendering().is_some(),
+        "the head still holds its rendering frame"
+    );
+    assert_eq!(
+        head.submitted_content, None,
+        "nothing was recorded submitted"
     );
 }
