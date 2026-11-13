@@ -206,12 +206,12 @@ impl Lane {
         (turned, errors)
     }
 
-    /// `driver_turn` with `native` as step 4 (d-2b2); also the fixture's
+    /// `driver_turn` with `step4` as step 4 (d-2b2); also the fixture's
     /// accept count read just after each content call, in call order.
     fn driver_turn_with(
         &mut self,
         steps: &mut Vec<Step>,
-        native: &mut dyn FnMut(&mut CombinedNativeFixture),
+        step4: &mut dyn FnMut(&mut CombinedNativeFixture),
     ) -> (Result<FirstFailures>, Vec<usize>) {
         let outputs = [output()];
         let (cursor, plane) = turn_cursor(true, None);
@@ -271,7 +271,7 @@ impl Lane {
                 accepted.push(turn.native.accepts());
                 served.map_err(|error| error.to_string())?
             },
-            native,
+            step4,
             steps,
         );
         (turned, accepted)

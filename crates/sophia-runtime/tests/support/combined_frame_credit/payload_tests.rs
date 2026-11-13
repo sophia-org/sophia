@@ -68,6 +68,7 @@ fn generic_transport_requires_no_payload_inspection_traits() {
     let pixels = tests::completion(&mut worker).result.unwrap();
     let identity = Arc::new(Identity {
         forwarded: AtomicBool::new(false),
+        serial: 0,
     });
     let payload = MoveOnly(tests::source(&[9; 8]));
     let raw = payload.0.as_raw_fd();

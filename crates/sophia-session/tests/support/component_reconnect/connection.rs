@@ -79,4 +79,13 @@ impl ShellComponentProcesses {
     ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
         self.connections.turn_combined_walk(native, instant)
     }
+
+    /// G3-5d d-2b2: the slot's validation worker, for a control's handles.
+    pub(crate) fn combined_validator(
+        &mut self,
+        slot: usize,
+    ) -> Option<&mut sophia_runtime::IsbValidationWorker<sophia_backend_live::CombinedRenderPlan>>
+    {
+        self.connections.combined_validator(slot)
+    }
 }
