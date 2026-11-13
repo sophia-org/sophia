@@ -546,6 +546,62 @@ fn full_release_debt_survives_reconnect_and_holds_final_quiescence() {
     );
 }
 
+/// R1: an old job's invariant error after replacement. A's J1 has rendered
+/// and exported, A stops, and B connects in the same slot; only then is J1
+/// refused settlement (a declared fault). The error names J1 under A's
+/// grant as a cleanup diagnostic. It is not B's failure: B stays connected,
+/// J1 keeps its returned owners and its retry, and B's own combined job then
+/// runs on the facade J1's transfer freed.
+#[test]
+fn an_old_job_refused_after_replacement_stays_a_diagnostic_of_its_attempt() {
+    let mut lane = Lane::new();
+    let mut a = lane.attempt();
+    lane.submit(&mut a, 1, PIXEL);
+    let j1 = lane.until(&mut a, "in flight");
+    let old = a.key;
+    lane.native
+        .serve_combined(output().id, Instant::now(), exported());
+    lane.h.owner.stop(old).unwrap();
+    drop(a);
+    let mut b = lane.attempt();
+    lane.native
+        .declare_settle_fault(CombinedSettleFault::Refused);
+    assert!(lane.turn().is_none(), "A's error is not B's failure");
+    let what = format!("combined job {j1}: the issuing facade refused its result");
+    assert_eq!(
+        lane.h.owner.processes.combined_row(0).cleanup_diagnostics(),
+        [(old.grant, what.clone())],
+        "the error keeps A's grant"
+    );
+    assert_eq!(
+        lane.states(),
+        [(j1, "unsettled")],
+        "J1 keeps its returned owners"
+    );
+    assert_eq!(
+        lane.h.owner.phase(b.key).unwrap(),
+        ComponentConnectionPhase::Connected
+    );
+    // The retry settles J1, unreported; its ended grant gives the lease up.
+    assert!(lane.turn().is_none());
+    assert!(lane.states().is_empty());
+    assert_eq!(lane.native.renderer_releases(), 1);
+    // B's work goes on, on the same facade.
+    lane.submit(&mut b, 1, PIXEL);
+    let j2 = lane.until(&mut b, "in flight");
+    assert_ne!(j2, j1);
+    lane.native
+        .serve_combined(output().id, Instant::now(), exported());
+    assert_eq!(lane.until(&mut b, "held"), j2);
+    assert_eq!(lane.decline(j2), Some(CombinedRelease::Transferred));
+    assert_eq!(lane.native.renderer_releases(), 2);
+    assert_eq!(
+        lane.h.owner.processes.combined_row(0).cleanup_diagnostics(),
+        [(old.grant, what)],
+        "reported once, and nothing of B's"
+    );
+}
+
 #[test]
 fn a_stop_before_render_gives_stopped_with_nothing_held() {
     let mut lane = Lane::new();

@@ -13,8 +13,14 @@
 //! stop become Failed, with no lease held. A Mismatch drops its pixels here
 //! and is delivered as Malformed, before any reconciliation. A settlement
 //! refusal, a refused credit clear and a refused delivery each keep what came
-//! back and retry only their own step. Their invariant error is the slot's
-//! failure, reported once, and reporting never discards the row or an owner.
+//! back and retry only their own step. Their invariant error is reported
+//! once, and reporting never discards the row or an owner.
+//!
+//! Every error and unconfirmed cancellation keeps the grant it arose under.
+//! Only an error of the slot's current, unrevoked attempt is that attempt's
+//! failure. An error of an attempt that already ended is a cleanup
+//! diagnostic: it never stops the replacement, and the old job keeps its
+//! owners and its retry.
 use super::*;
 use sophia_backend_live::{
     CombinedComposeRefusal, CombinedComposition, CombinedDispatch, CombinedDisposition,
@@ -69,11 +75,14 @@ pub(crate) struct CombinedRow {
     /// `submitted`, inside one proposal.
     open: Option<Open>,
     jobs: Vec<Job>,
-    /// Reservations whose cancellation the facade did not confirm; the walk
-    /// retries them.
-    cancels: Vec<CombinedHead>,
-    /// Invariant failures not yet reported.
-    errors: Vec<String>,
+    /// Reservations whose cancellation the facade did not confirm, with the
+    /// grant they were made under; the walk retries them.
+    cancels: Vec<(ContentGrant, CombinedHead)>,
+    /// Invariant failures not yet reported, with their originating grant.
+    errors: Vec<(ContentGrant, String)>,
+    /// Invariant failures of attempts that had already ended when they were
+    /// reported: kept for the controls, never a slot failure.
+    diagnostics: Vec<(ContentGrant, String)>,
     /// Declared delivery faults still to inject.
     refusals: usize,
 }
@@ -145,10 +154,10 @@ enum Step {
     Deliver(CombinedResult, CombinedDisposition),
 }
 
-fn report(errors: &mut Vec<String>, reported: &mut bool, job: u64, what: &str) {
-    if !*reported {
-        *reported = true;
-        errors.push(format!("combined job {job}: {what}"));
+fn report(errors: &mut Vec<(ContentGrant, String)>, job: &mut Job, what: &str) {
+    if !job.reported {
+        job.reported = true;
+        errors.push((job.grant, format!("combined job {}: {what}", job.job)));
     }
 }
 
@@ -192,6 +201,11 @@ impl CombinedRow {
         self.cancels.len()
     }
 
+    /// Errors reported after their attempt ended, with that attempt's grant.
+    pub(crate) fn cleanup_diagnostics(&self) -> &[(ContentGrant, String)] {
+        &self.diagnostics
+    }
+
     /// A declared fault: the next delivery is refused at the runtime
     /// boundary, as a refused `accept` would be. It proves the row keeps and
     /// re-offers the result and reports once, not that a real refusal
@@ -228,8 +242,7 @@ impl CombinedRow {
         if outcome == CombinedRelease::Mismatch {
             report(
                 &mut self.errors,
-                &mut job.reported,
-                job.job,
+                job,
                 "the Release cell does not hold this job",
             );
         }
@@ -242,9 +255,9 @@ impl CombinedRow {
     /// be accepted: Held releases, Failed retires, since its delivery already
     /// transferred. Debt flushes until Transferred.
     fn walk<N: ShellContentNative>(&mut self, native: &mut N, current: Option<ContentGrant>) {
-        for head in std::mem::take(&mut self.cancels) {
+        for (grant, head) in std::mem::take(&mut self.cancels) {
             if !matches!(native.cancel_combined_frame(&head), Ok(true)) {
-                self.cancels.push(head);
+                self.cancels.push((grant, head));
             }
         }
         for mut job in std::mem::take(&mut self.jobs) {
@@ -267,14 +280,27 @@ impl CombinedRow {
         }
     }
 
-    fn take_error(&mut self) -> Option<ShellTransportError> {
-        (!self.errors.is_empty()).then(|| ShellTransportError::CombinedRow(self.errors.remove(0)))
+    /// The first error of `current`, the slot's unrevoked attempt; errors of
+    /// any other grant become cleanup diagnostics first (R1).
+    fn take_error(&mut self, current: Option<ContentGrant>) -> Option<ShellTransportError> {
+        let (errors, ended): (Vec<_>, Vec<_>) = std::mem::take(&mut self.errors)
+            .into_iter()
+            .partition(|(grant, _)| Some(*grant) == current);
+        self.errors = errors;
+        self.diagnostics.extend(ended);
+        (!self.errors.is_empty()).then(|| ShellTransportError::CombinedRow(self.errors.remove(0).1))
     }
 
-    fn cancel<N: ShellContentNative>(&mut self, native: &mut N, head: CombinedHead, what: String) {
+    fn cancel<N: ShellContentNative>(
+        &mut self,
+        native: &mut N,
+        grant: ContentGrant,
+        head: CombinedHead,
+        what: String,
+    ) {
         if !matches!(native.cancel_combined_frame(&head), Ok(true)) {
-            self.errors.push(what);
-            self.cancels.push(head);
+            self.errors.push((grant, what));
+            self.cancels.push((grant, head));
         }
     }
 
@@ -298,7 +324,7 @@ impl CombinedRow {
                 if let Ok(plan) = returned.try_recv() {
                     drop((plan, reservation));
                     let what = format!("combined job {}: returned plan not cancelled", job.job);
-                    self.cancel(native, job.head, what);
+                    self.cancel(native, job.grant, job.head, what);
                     return None;
                 }
                 match native.take_combined_frame_result(&job.head) {
@@ -312,7 +338,7 @@ impl CombinedRow {
                     }
                     Err(error) => {
                         let what = format!("result route: {error}");
-                        report(&mut self.errors, &mut job.reported, job.job, &what);
+                        report(&mut self.errors, &mut job, &what);
                         Step::Keep(State::InFlight {
                             reservation,
                             returned,
@@ -351,12 +377,7 @@ impl CombinedRow {
                 Ok(()) if disposition == CombinedDisposition::Rendered => State::Held,
                 Ok(()) => State::Failed(disposition),
                 Err(result) => {
-                    report(
-                        &mut self.errors,
-                        &mut job.reported,
-                        job.job,
-                        "the runtime refused its result",
-                    );
+                    report(&mut self.errors, &mut job, "the runtime refused its result");
                     State::Undelivered {
                         result,
                         disposition,
@@ -407,7 +428,7 @@ impl CombinedRow {
                 },
             ),
         };
-        report(&mut self.errors, &mut job.reported, job.job, what);
+        report(&mut self.errors, job, what);
         Step::Keep(state)
     }
 }
@@ -516,7 +537,8 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
             return;
         };
         let what = format!("combined reservation {ticket} not confirmed cancelled");
-        self.row.cancel(&mut *self.turn.native, open.head, what);
+        self.row
+            .cancel(&mut *self.turn.native, open.grant, open.head, what);
     }
 
     fn submitted(
@@ -573,7 +595,8 @@ impl ShellComponentConnections {
     /// The controlled driver's owner pass (R1, R4): `turn_connected` for the
     /// turn, whose one image-owner service per slot is hooked over that
     /// slot's persistent row, in every phase, revoked and replaced attempts
-    /// included; then the row's walk. A row invariant is the slot's failure.
+    /// included; then the row's walk. A row invariant of the current attempt
+    /// is the slot's failure; one of an ended attempt is a diagnostic (R1).
     pub(crate) fn turn_combined<N: ShellContentNative>(
         &mut self,
         turn: &mut CombinedTurn<'_, N>,
@@ -599,7 +622,7 @@ impl ShellComponentConnections {
             };
             connection.combined.walk(&mut *turn.native, current);
             serviced?;
-            connection.combined.take_error().map_or(Ok(()), Err)
+            connection.combined.take_error(current).map_or(Ok(()), Err)
         })
     }
 
