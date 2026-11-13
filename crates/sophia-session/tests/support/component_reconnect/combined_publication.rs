@@ -17,7 +17,10 @@
 //! `input_turn`, the labelled transport pass `service_owner_turn` (REV2
 //! D5/section 7 answer 1): it serves the peer's input and also drains,
 //! flushes and applies ACKs, and its effects are recorded, not assumed
-//! absent. A window is the records committed by one turn, identified by
+//! absent. It is `poll_io` alone: the content store's pending events reach
+//! the outbox only in a content-service pass (`service_content_resources`),
+//! so a release pending after T1 is journaled by a later driver turn, not
+//! by IT (validation-02). A window is the records committed by one turn, identified by
 //! sequence, epoch and contiguous byte range from the snapshot taken
 //! immediately after it.
 //!
@@ -47,8 +50,9 @@
 //! The rows assert the tail relation and the marker their traced order predicts.
 //!
 //! Predictions: every window's record kinds and order, the P1 Closed, the
-//! P2 Submitted, the F3 reason, the Submitted-free lean commits, P3's IT
-//! commit and F3's two-record T2 are predictions until this harness runs;
+//! P2 Submitted, the F3 reason, the Submitted-free lean commits, and the
+//! two-record later-turn windows of P3 (T2) and F3 are predictions until
+//! this harness runs;
 //! a miss is a reported failure. The P1 status/terminal and P2
 //! status/Closed orders are observed and printed, the marker prediction
 //! conditioned on them. Off/native-session remain unpassed and unwaived.
@@ -227,19 +231,16 @@ impl Lane {
     }
 
     /// PP1, O2, IT, PP2, O3 after T1's snapshot `s1`, with the H5 verdict
-    /// for T1 against the pre-T1 serial baseline in `s0`. `it` is the
-    /// row's exact expectation of what the transport pass commits: the
-    /// identified content records, in order, or nothing. A nonempty `it`
-    /// also requires PP2 to read exactly those records and no frame, with
-    /// the peer's handled sequence at the last of them; H5 is judged on
-    /// T1's reply and PP1 alone. Returns the verdict, PP1's and PP2's new
-    /// peer records, and O3.
+    /// for T1 against the pre-T1 serial baseline in `s0`. Every row expects
+    /// IT to commit nothing, checked as an empty identified window (epoch,
+    /// floor, sequence and byte coverage); H5 is judged on T1's reply and
+    /// PP1 alone. Returns the verdict, PP1's and PP2's new peer records,
+    /// and O3.
     fn schedule(
         &mut self,
         a: &mut Attempt,
         s0: &Snapshot,
         s1: &Snapshot,
-        it: &[(TransactionId, ShellContentRecord)],
         label: &str,
     ) -> (H5, Delivered, Delivered, Snapshot) {
         let (pp1, l1) = peer_poll(a);
@@ -253,34 +254,18 @@ impl Lane {
         self.input_turn(a);
         let si = self.snapshot(a, &format!("{label} after IT"));
         let wi = window(&s2, &si, &format!("{label} IT"));
-        let expected: Vec<RecordIdentity> = it
-            .iter()
-            .map(|(transaction, record)| RecordIdentity::Content {
-                transaction: *transaction,
-                record: record.clone(),
-            })
-            .collect();
-        assert_eq!(
-            wi.iter().map(|r| r.identity.clone()).collect::<Vec<_>>(),
-            expected,
-            "{label} IT: the transport pass commits exactly the row's expectation"
+        assert!(
+            wi.is_empty(),
+            "{label} IT: the transport pass committed nothing: {:?}",
+            kinds(&wi)
         );
         let (pp2, l2) = peer_poll(a);
-        if let Some(last) = wi.last() {
-            assert_eq!(l2.contents, it, "{label} PP2: exactly the IT commits");
-            assert!(l2.frames.is_empty(), "{label} PP2: no frame: {l2:?}");
-            assert_eq!(
-                pp2.handled, last.sequence,
-                "{label} PP2: handled the last IT commit"
-            );
-        }
         let s3 = self.snapshot(a, &format!("{label} O3"));
         let verdict = h5(s0.serial(), s1, &l1, label);
         eprintln!(
-            "{label}: PP1 {pp1:?} L1 {l1:?}; IT ready {:?} pending {} window {:?}; PP2 {pp2:?} L2 {l2:?}; H5 {}",
+            "{label}: PP1 {pp1:?} L1 {l1:?}; IT ready {:?} pending {}; PP2 {pp2:?} L2 {l2:?}; H5 {}",
             si.journal().ready,
             si.journal().pending_evaluations,
-            kinds(&wi),
             verdict.describe()
         );
         (verdict, l1, l2, s3)
@@ -990,7 +975,7 @@ fn p1_a_lost_allocation_journals_its_result_the_refusal_and_the_terminal_in_t1()
     assert!(s1.facts.outbox.is_empty(), "{:?}", s1.facts.outbox);
     assert!(!s1.facts.output_blocked);
     s1.assert_stores_empty("P1 O1");
-    let (verdict, l1, l2, s3) = lane.schedule(&mut a, &s0, &s1, &[], "P1");
+    let (verdict, l1, l2, s3) = lane.schedule(&mut a, &s0, &s1, "P1");
     verdict.assert_established("P1");
     assert_eq!(
         l1.len() + l2.len(),
@@ -1132,7 +1117,7 @@ fn p2_a_close_after_admission_journals_closed_under_its_transaction_and_no_termi
     );
     assert!(s1.facts.outbox.is_empty(), "{:?}", s1.facts.outbox);
     s1.assert_stores_empty("P2 O1");
-    let (verdict, l1, l2, _) = lane.schedule(&mut a, &s0, &s1, &[], "P2");
+    let (verdict, l1, l2, _) = lane.schedule(&mut a, &s0, &s1, "P2");
     verdict.assert_established("P2");
     assert_eq!(
         l1.len() + l2.len(),
@@ -1177,6 +1162,21 @@ fn p2_a_close_after_admission_journals_closed_under_its_transaction_and_no_termi
 /// poll reads both (the accepted row's `peer_reads_terminal` needed no
 /// owner call). Compared with P1/P2, nothing precedes the terminal that
 /// could answer the read early.
+///
+/// Releases (validation-02 correction): T1's images step reconciles the
+/// settled copy into `Work::Releasing` and attempts SlotReleased, refused
+/// (EAGAIN) while the status reservation is unspent; the content step
+/// then commits the status and, after the Timeout abandons the frame
+/// image with the pixels exclusive, `collect` queues the store's
+/// ResourceReleased behind the pass's drain. Neither the peer polls nor
+/// IT (`poll_io` alone) moves it. One later labelled driver turn T2,
+/// before the admitted deadline, is predicted to commit exactly
+/// [SlotReleased, ResourceReleased]: its images step releases the slot
+/// (status spent), its content step flushes the store event. One peer
+/// poll then reads the ResourceReleased on the content queue; the
+/// SDK's owned-ring path consumes SlotReleased. These are T2 facts, not
+/// evidence of T1 or IT delivery; the renderer lease (Held, no Release)
+/// is a third, unchanged domain.
 #[test]
 fn p3_the_expiry_commits_the_acceptance_then_timeout_and_one_poll_reads_both() {
     let (mut lane, wake) = Lane::running();
@@ -1232,10 +1232,8 @@ fn p3_the_expiry_commits_the_acceptance_then_timeout_and_one_poll_reads_both() {
     );
     assert_eq!(s1.facts.lean_frames_in_flight, Some(0));
     assert!(s1.facts.outbox.is_empty(), "{:?}", s1.facts.outbox);
-    // The Timeout abandons the frame image and the pixels are exclusive, so
-    // T1's collect queues the store's release after the pass's drain. It is
-    // pending here, journaled by IT and read by PP2; T1's own reply and PP1
-    // carry the status and terminal alone.
+    // The store's release is pending (validation-02 observed this); T1's
+    // own reply and PP1 carry the status and terminal alone.
     assert_eq!(
         s1.stores.resources,
         std::slice::from_ref(&release),
@@ -1246,7 +1244,19 @@ fn p3_the_expiry_commits_the_acceptance_then_timeout_and_one_poll_reads_both() {
         "P3 O1: {:?}",
         s1.stores
     );
-    let (verdict, l1, _, s3) = lane.schedule(&mut a, &s0, &s1, &[release], "P3");
+    // Owned ring at O1, as R4: the settled source awaits its SlotReleased,
+    // the status reservation spent in T1, the release reservation kept.
+    let identity = credit.offer.identity;
+    assert_eq!(s1.releasing, [identity], "the source work awaits release");
+    assert_eq!(
+        resource_credit(&s1, "P3 O1"),
+        OwnedCreditFacts {
+            offer: credit.offer,
+            status_reserved: false,
+        }
+    );
+    assert_eq!(s1.facts.owned_publication_sequence, Some(status.sequence));
+    let (verdict, l1, l2, s3) = lane.schedule(&mut a, &s0, &s1, "P3");
     assert_eq!(
         (l1.contents.len(), l1.frames.len()),
         (1, 1),
@@ -1257,9 +1267,21 @@ fn p3_the_expiry_commits_the_acceptance_then_timeout_and_one_poll_reads_both() {
         H5::Supported { untruncated: true },
         "T1's one reply returned both records"
     );
-    // The queue drained into the journal; nothing here shows the backing
-    // destroyed (that follows the commit in confirm_isb_release, unobserved).
-    s3.assert_stores_empty("P3 O3");
+    assert!(l2.is_empty(), "PP2 reads nothing new: {l2:?}");
+    // O3: the peer polls and the transport pass moved nothing.
+    assert_eq!(
+        s3.stores.resources,
+        std::slice::from_ref(&release),
+        "P3 O3: the same release still pending"
+    );
+    assert!(
+        s3.stores.candidates.is_empty() && s3.stores.allocations.is_empty(),
+        "P3 O3: {:?}",
+        s3.stores
+    );
+    assert!(s3.facts.outbox.is_empty(), "{:?}", s3.facts.outbox);
+    assert_eq!(s3.releasing, [identity]);
+    assert_eq!(resource_credit(&s3, "P3 O3"), resource_credit(&s1, "P3 O1"));
     assert_eq!(
         peer_terminals(&a.frames, key, n),
         [TIMEOUT],
@@ -1270,14 +1292,96 @@ fn p3_the_expiry_commits_the_acceptance_then_timeout_and_one_poll_reads_both() {
         [(2, status_of(status).unwrap().reason)],
         "the one status; the release is a content record, not a status"
     );
-    assert_eq!((a.accepted, a.refused), (1, 0));
-    assert_eq!(lane.candidate_of(&a, binding, job), Some(Unknown));
+    let custody = |lane: &mut Lane, a: &Attempt| {
+        (
+            (a.accepted, a.refused),
+            lane.candidate_of(a, binding, job),
+            lane.states(),
+            lane.releases(),
+            lane.native.accepts(),
+            lane.native.installs(),
+        )
+    };
+    let held = custody(&mut lane, &a);
     assert_eq!(
-        lane.states(),
-        [(job, "held")],
-        "Held kept before the deadline"
+        held,
+        ((1, 0), Some(Unknown), vec![(job, "held")], (0, 0), 0, 0),
+        "Held kept before the deadline; the renderer lease is not released"
     );
-    assert_eq!(lane.releases(), (0, 0));
+    // T2: one further labelled driver turn at a fresh Instant, still before
+    // the original admitted deadline (a miss is a failed precondition).
+    let at2 = Instant::now();
+    assert!(at2 < deadline, "T2 precedes the admitted deadline");
+    let (steps2, accepted2) = lane.quiet_driver_turn_at(at2);
+    assert!(
+        content_now_msec() < before + transfer,
+        "precondition: still before any transfer deadline"
+    );
+    assert_eq!(steps2, TURN);
+    assert_eq!(accepted2, [0], "nothing accepted in T2");
+    let s4 = lane.snapshot(&a, "P3 O4");
+    let w2 = window(&s3, &s4, "P3 T2");
+    assert_eq!(
+        kinds(&w2),
+        ["SlotReleased(0)", "ResourceReleased"],
+        "T2: the slot's release, then the backing's retirement"
+    );
+    let released = &w2[0];
+    let event = slot_released_of(released).unwrap();
+    assert_eq!(
+        (event.identity, event.resource, event.slot, event.reason),
+        (identity, RESOURCE, credit.offer.request.slot, 0),
+        "the original source's release"
+    );
+    assert!(
+        status.sequence < released.sequence,
+        "status {} before SlotReleased {}",
+        status.sequence,
+        released.sequence
+    );
+    let (transaction, record) = released_record(&credit, a.key.grant);
+    assert_eq!(
+        w2[1].identity,
+        RecordIdentity::Content {
+            transaction,
+            record
+        },
+        "the release joined to the resource's admission"
+    );
+    assert!(s4.releasing.is_empty(), "the release work is done");
+    assert!(
+        !s4.facts
+            .owned_live_credits
+            .iter()
+            .any(|c| c.offer == credit.offer),
+        "the slot credit is spent: {:?}",
+        s4.facts.owned_live_credits
+    );
+    assert_eq!(s4.facts.owned_publication_sequence, Some(released.sequence));
+    assert_all_visible(s4.journal(), "P3 O4");
+    assert!(s4.facts.outbox.is_empty(), "{:?}", s4.facts.outbox);
+    // The queue drained into the journal; nothing here shows the backing
+    // destroyed (that follows the commit in confirm_isb_release, unobserved).
+    s4.assert_stores_empty("P3 O4");
+    let (pp3, l3) = peer_poll(&mut a);
+    assert_eq!(
+        l3.contents,
+        std::slice::from_ref(&release),
+        "PP3: exactly the identified release on the content queue"
+    );
+    assert!(l3.frames.is_empty(), "PP3: no frame: {l3:?}");
+    assert_eq!(
+        pp3.handled, w2[1].sequence,
+        "PP3: handled the final committed sequence"
+    );
+    eprintln!("P3 T2: window {:?}; PP3 {pp3:?} L3 {l3:?}", kinds(&w2));
+    assert_eq!(
+        peer_terminals(&a.frames, key, n),
+        [TIMEOUT],
+        "still the one expiry"
+    );
+    assert_eq!(peer_statuses(&a.contents, a.key.grant).len(), 1);
+    assert_eq!(custody(&mut lane, &a), held, "T2 changed no custody fact");
 }
 
 /// The fault rows F1-F4, split for the file-size limit.

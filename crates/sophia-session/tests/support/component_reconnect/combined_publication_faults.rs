@@ -39,7 +39,7 @@ fn f1_the_render_failure_terminal_is_journaled_once_in_t1() {
     assert_eq!(s1.facts.lean_frames_in_flight, Some(0));
     assert!(s1.facts.outbox.is_empty(), "{:?}", s1.facts.outbox);
     s1.assert_stores_empty("F1 O1");
-    let (verdict, _, _, _) = lane.schedule(&mut a, &s0, &s1, &[], "F1");
+    let (verdict, _, _, _) = lane.schedule(&mut a, &s0, &s1, "F1");
     verdict.assert_established("F1");
     assert_eq!(
         peer_terminals(&a.frames, key, n),
@@ -125,7 +125,7 @@ fn f2_the_mismatch_journals_the_refusal_status_and_the_malformed_terminal() {
     assert_all_visible(s1.journal(), "F2 O1");
     assert_eq!(s1.facts.lean_frames_in_flight, Some(0));
     s1.assert_stores_empty("F2 O1");
-    let (verdict, _, _, _) = lane.schedule(&mut a, &s0, &s1, &[], "F2");
+    let (verdict, _, _, _) = lane.schedule(&mut a, &s0, &s1, "F2");
     verdict.assert_established("F2");
     assert_eq!(
         peer_terminals(&a.frames, key, n),
@@ -190,7 +190,7 @@ fn f3_the_c3_decline_journals_the_status_and_terminal_then_slot_released() {
     assert_eq!(s1.facts.lean_frames_in_flight, Some(0));
     assert_eq!(s1.releasing, [credit.offer.identity], "release owed");
     s1.assert_stores_empty("F3 O1");
-    let (verdict, _, _, s3) = lane.schedule(&mut a, &s0, &s1, &[], "F3");
+    let (verdict, _, _, s3) = lane.schedule(&mut a, &s0, &s1, "F3");
     verdict.assert_established("F3");
     assert_eq!(
         peer_terminals(&a.frames, key, n),
@@ -297,7 +297,7 @@ fn f4p_scene_churn_prepares_the_candidate_internally_without_a_prepared_record()
     assert_eq!(j1.visible, status.start, "invisible");
     assert_eq!(s1.facts.lean_frames_in_flight, Some(1));
     assert_eq!(lane.pending(&a), [(a.key.grant, OUTPUT, 1)]);
-    let (verdict, l1, l2, _) = lane.schedule(&mut a, &s0, &s1, &[], "F4-P");
+    let (verdict, l1, l2, _) = lane.schedule(&mut a, &s0, &s1, "F4-P");
     assert!(
         l1.is_empty() && l2.is_empty(),
         "nothing visible to read: {l1:?} {l2:?}"
