@@ -5,7 +5,9 @@
 //! after the hold; the result the worker sends home says what the renderer
 //! decided. Expired and Stopped are read only from that result.
 
-use super::super::super::super::service::{GateFact, GateHandle, GateRelease, combined_gate};
+use super::super::super::super::service::{
+    GateFact, GateHandle, GateRelease, combined_gate, pausing_combined_gate,
+};
 use super::*;
 use sophia_runtime::ValidatedIsbPixels;
 
@@ -16,7 +18,16 @@ fn arm(
     output: LiveRendererWorkerOutputKey,
     wait: Duration,
 ) -> GateHandle {
-    let (gate, handle) = combined_gate(output, wait);
+    install(core, combined_gate(output, wait))
+}
+
+fn install(
+    core: &NativeGbmRendererWorkerCore,
+    (gate, handle): (
+        super::super::super::super::service::CombinedGate,
+        GateHandle,
+    ),
+) -> GateHandle {
     assert!(
         core.command_sender
             .send(WorkerCommand::InstallCombinedGate(gate))
@@ -41,13 +52,48 @@ fn admit(
         .facade
         .reserve_combined_frame()
         .expect("an idle facade reserves");
+    (issued, submit(output, inbox, generation, deadline))
+}
+
+/// Validates and forwards one frame into an inbox the facade already gave.
+fn submit(
+    output: &mut Output,
+    inbox: CombinedInbox<CombinedRenderPlan>,
+    generation: u64,
+    deadline: Instant,
+) -> CombinedReservation {
     let reservation = output.validator.reserve_combined(8, deadline).unwrap();
     let _owner_plan = output
         .validator
         .submit_combined(&reservation, pixels(), plan(generation, deadline), inbox)
         .ok()
         .expect("combined submission");
-    (issued, reservation)
+    reservation
+}
+
+/// Which came first for an admitted job: the gate's Entered (its job), or the
+/// renderer's result without one. Bounded.
+enum First {
+    Entered(u64),
+    Result(CombinedRenderResult),
+}
+
+fn first_of(handle: &GateHandle, output: &Output) -> First {
+    let end = Instant::now() + WAIT;
+    loop {
+        match handle.next(Duration::from_millis(1)) {
+            Some(GateFact::Entered { job, .. }) => return First::Entered(job),
+            Some(other) => panic!("unexpected gate fact: {other:?}"),
+            None => {}
+        }
+        if let Ok(result) = output.facade.take_combined_result() {
+            return First::Result(result);
+        }
+        assert!(
+            Instant::now() < end,
+            "neither the gate nor the renderer answered"
+        );
+    }
 }
 
 fn entered(handle: &GateHandle, why: &str) -> (u64, Instant, bool) {
@@ -154,6 +200,12 @@ fn a_gated_job_is_held_after_forwarding_and_served_with_a_fresh_instant() {
     assert!(exported(&rendered.outcome).is_ok());
     assert_eq!(probe.calls.load(Ordering::SeqCst), 1);
     settle(&mut output, &issued, reservation, result);
+    assert_eq!(
+        output.facade.release_combined_held(&issued, job),
+        CombinedRelease::Transferred,
+        "the first admission's held lease goes to Release"
+    );
+    output.until("the first job's slot is free", |slots| slots.leased == 0);
     // One job per arming: the next frame passes without a hold.
     let (_issued, _job, outcome) = output.render(31, None);
     assert!(outcome.is_ok(), "a disarmed gate holds nothing");
@@ -253,6 +305,7 @@ fn a_disconnected_release_ends_the_hold_and_the_job_is_served() {
     let mut handle = arm(&core, output.facade.output(), WAIT);
     let (issued, reservation) = admit(&mut output, 34, Instant::now() + WAIT);
     let (job, _, _) = entered(&handle, "the forwarded job reaches the gate");
+    assert_eq!(job, reservation.job());
     handle.disconnect();
     let after = released(&handle, "the hold ends on disconnect");
     assert_eq!(
@@ -275,7 +328,8 @@ fn a_dropped_gate_handle_never_stalls_the_worker() {
     let mut output = Output::attach(&core, 964);
     let handle = arm(&core, output.facade.output(), WAIT);
     let (issued, reservation) = admit(&mut output, 35, Instant::now() + WAIT);
-    entered(&handle, "the forwarded job reaches the gate");
+    let (job, _, _) = entered(&handle, "the forwarded job reaches the gate");
+    assert_eq!(job, reservation.job());
     drop(handle);
     let result = result_after_wake(&output.facade, &output.owner);
     assert!(
@@ -292,6 +346,7 @@ fn a_missing_release_ends_the_hold_as_timed_out() {
     let handle = arm(&core, output.facade.output(), Duration::from_millis(50));
     let (issued, reservation) = admit(&mut output, 36, Instant::now() + WAIT);
     let (job, _, _) = entered(&handle, "the forwarded job reaches the gate");
+    assert_eq!(job, reservation.job());
     let after = released(&handle, "the hold ends at its bound");
     assert_eq!(
         (after.job, after.by),
@@ -309,13 +364,16 @@ fn a_gate_armed_for_another_output_holds_nothing_here() {
     let mut here = Output::attach(&core, 966);
     let mut there = Output::attach(&core, 967);
     let mut handle = arm(&core, there.facade.output(), WAIT);
-    let (_issued, _job, outcome) = here.render(37, None);
-    assert!(outcome.is_ok(), "this output's frame renders");
-    assert_eq!(
-        handle.next(Duration::from_millis(100)),
-        None,
-        "a gate armed for another output holds nothing here"
+    let (issued, reservation) = admit(&mut here, 37, Instant::now() + WAIT);
+    let First::Result(result) = first_of(&handle, &here) else {
+        panic!("a gate armed for another output holds nothing here");
+    };
+    assert!(
+        matches!(&result.outcome, CombinedOutcome::Rendered(_)),
+        "this output's frame renders"
     );
+    settle(&mut here, &issued, reservation, result);
+    assert_eq!(handle.next(Duration::from_millis(100)), None);
     let (issued, reservation) = admit(&mut there, 38, Instant::now() + WAIT);
     let (job, _, _) = entered(&handle, "the gated output's job reaches the gate");
     assert_eq!(job, reservation.job());
@@ -331,8 +389,9 @@ fn shutdown_while_gated_ends_the_worker_after_the_hold() {
     let (core, control, _probe) = seam_core(9_527, &[]);
     let mut output = Output::attach(&core, 968);
     let mut handle = arm(&core, output.facade.output(), WAIT);
-    let (_issued, _reservation) = admit(&mut output, 39, Instant::now() + WAIT);
-    entered(&handle, "the forwarded job reaches the gate");
+    let (_issued, reservation) = admit(&mut output, 39, Instant::now() + WAIT);
+    let (job, _, _) = entered(&handle, "the forwarded job reaches the gate");
+    assert_eq!(job, reservation.job());
     control.shutdown();
     handle.release();
     released(&handle, "the hold ends on release");
@@ -345,4 +404,41 @@ fn shutdown_while_gated_ends_the_worker_after_the_hold() {
         );
         std::thread::yield_now();
     }
+}
+
+#[test]
+fn a_job_forwarded_inside_an_empty_intake_decision_still_meets_the_gate() {
+    let (core, _control, probe) = seam_core(9_528, &[]);
+    let mut output = Output::attach(&core, 969);
+    let mut handle = install(&core, pausing_combined_gate(output.facade.output(), WAIT));
+    // The reservation registers the route; the worker's next pass finds it
+    // empty with the gate armed, and pauses there.
+    let (issued, inbox) = output
+        .facade
+        .reserve_combined_frame()
+        .expect("an idle facade reserves");
+    assert_eq!(
+        handle.next(WAIT),
+        Some(GateFact::Waiting),
+        "the armed gate found its route empty"
+    );
+    let deadline = Instant::now() + WAIT;
+    let reservation = submit(&mut output, inbox, 40, deadline);
+    let end = Instant::now() + WAIT;
+    while !reservation.was_forwarded() {
+        assert!(Instant::now() < end, "the validator forwards");
+        std::thread::yield_now();
+    }
+    handle.resume();
+    let First::Entered(job) = first_of(&handle, &output) else {
+        panic!("a job forwarded after an empty probe still meets the gate");
+    };
+    assert_eq!(job, reservation.job());
+    assert_eq!(probe.calls.load(Ordering::SeqCst), 0);
+    handle.release();
+    let after = released(&handle, "the hold ends on release");
+    assert_eq!((after.job, after.by), (job, GateRelease::Released));
+    let result = result_after_wake(&output.facade, &output.owner);
+    assert!(matches!(&result.outcome, CombinedOutcome::Rendered(_)));
+    settle(&mut output, &issued, reservation, result);
 }

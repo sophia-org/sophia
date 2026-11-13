@@ -15,6 +15,9 @@ use std::time::Duration;
 pub(crate) enum GateFact {
     /// The worker read the install command; the gate is armed.
     Armed,
+    /// A pausing gate found its output's route empty and paused there once,
+    /// before deciding not to serve the route this pass.
+    Waiting,
     /// A forwarded job reached the gated output's route and is held: its
     /// validator job number, its admitted deadline and its stop flag.
     Entered {
@@ -49,6 +52,9 @@ pub(crate) struct CombinedGate {
     wait: Duration,
     facts: mpsc::Sender<GateFact>,
     release: mpsc::Receiver<()>,
+    /// For a pausing gate, until its one pause: where it waits on an empty
+    /// route.
+    resume: Option<mpsc::Receiver<()>>,
 }
 
 /// The control's half. Dropping it releases a hold as `Disconnected`.
@@ -57,6 +63,7 @@ pub(crate) struct CombinedGate {
 pub(crate) struct GateHandle {
     facts: mpsc::Receiver<GateFact>,
     release: Option<mpsc::SyncSender<()>>,
+    resume: Option<mpsc::SyncSender<()>>,
 }
 
 /// A gate for `output` whose hold ends at the latest after `wait`.
@@ -65,18 +72,46 @@ pub(crate) fn combined_gate(
     output: LiveRendererWorkerOutputKey,
     wait: Duration,
 ) -> (CombinedGate, GateHandle) {
+    gate(output, wait, false)
+}
+
+/// `combined_gate` that also pauses once, bounded by `wait`, the first time
+/// it finds its output's route empty, so a control can forward a job inside
+/// the empty-intake decision.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn pausing_combined_gate(
+    output: LiveRendererWorkerOutputKey,
+    wait: Duration,
+) -> (CombinedGate, GateHandle) {
+    gate(output, wait, true)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn gate(
+    output: LiveRendererWorkerOutputKey,
+    wait: Duration,
+    pausing: bool,
+) -> (CombinedGate, GateHandle) {
     let (facts_in, facts) = mpsc::channel();
     let (release, release_out) = mpsc::sync_channel(1);
+    let (resume, resume_out) = if pausing {
+        let (resume, resume_out) = mpsc::sync_channel(1);
+        (Some(resume), Some(resume_out))
+    } else {
+        (None, None)
+    };
     (
         CombinedGate {
             output,
             wait,
             facts: facts_in,
             release: release_out,
+            resume: resume_out,
         },
         GateHandle {
             facts,
             release: Some(release),
+            resume,
         },
     )
 }
@@ -101,6 +136,13 @@ impl GateHandle {
         self.release = None;
     }
 
+    /// Ends a pausing gate's pause, once.
+    pub(crate) fn resume(&mut self) {
+        if let Some(resume) = self.resume.take() {
+            let _ = resume.try_send(());
+        }
+    }
+
     /// Ends the hold as `Released`, once.
     pub(crate) fn release(&mut self) {
         if let Some(release) = self.release.take() {
@@ -110,24 +152,34 @@ impl GateHandle {
     }
 }
 
-/// Called by `serve_combined` before the output's route serves. When the gate
-/// is armed for `output` and the route holds a forwarded job, the gate parks
-/// it unchanged, reports it, waits for the release, disarms and answers a
-/// fresh instant for `serve`. Otherwise it answers `now` unchanged.
+/// Called by `serve_combined` before the output's route serves; one intake
+/// decision for the gated output. Not armed for `output`: serve with `now`.
+/// Armed and the route holds a forwarded job: park it unchanged, report it,
+/// wait for the release, disarm and serve with a fresh instant. Armed and
+/// the route is empty: `None`, so the route is not served this pass; a job
+/// forwarded after the probe stays in the inbox, its ring wakes the worker,
+/// and the next pass meets the gate with it.
 pub(in super::super) fn hold(
     slot: &mut Option<CombinedGate>,
     output: LiveRendererWorkerOutputKey,
     route: &mut OutputRoute,
     now: Instant,
-) -> Instant {
-    if slot.as_ref().is_none_or(|gate| gate.output != output) || !route.await_job(Duration::ZERO) {
-        return now;
+) -> Option<Instant> {
+    let Some(armed) = slot.as_mut().filter(|gate| gate.output == output) else {
+        return Some(now);
+    };
+    if !route.await_job(Duration::ZERO) {
+        if let Some(resume) = armed.resume.take() {
+            let _ = armed.facts.send(GateFact::Waiting);
+            let _ = resume.recv_timeout(armed.wait);
+        }
+        return None;
     }
     let Some(gate) = slot.take() else {
-        return now;
+        return Some(now);
     };
     let Some((job, deadline, stopped)) = route.parked_facts() else {
-        return now;
+        return Some(now);
     };
     let _ = gate.facts.send(GateFact::Entered {
         job,
@@ -150,5 +202,5 @@ pub(in super::super) fn hold(
         stopped,
         by,
     });
-    fresh
+    Some(fresh)
 }

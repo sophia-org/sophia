@@ -28,7 +28,7 @@ mod seam;
 #[cfg_attr(not(test), allow(unused_imports))]
 pub(crate) use seam::{
     CombinedRenderSeam,
-    gate::{CombinedGate, GateFact, GateHandle, GateRelease, combined_gate},
+    gate::{CombinedGate, GateFact, GateHandle, GateRelease, combined_gate, pausing_combined_gate},
 };
 
 /// One output's private state inside a shared worker.
@@ -664,7 +664,10 @@ where
             any(test, feature = "test-support"),
             feature = "experimental-combined-frame-job"
         ))]
-        let now = seam::gate::hold(&mut hooks.gate, output, &mut route, now);
+        let Some(now) = seam::gate::hold(&mut hooks.gate, output, &mut route, now) else {
+            state.combined = Some(route);
+            continue;
+        };
         route.serve(now, |plan, pixels, description| {
             let correlation = plan.correlation();
             super::combined::attempt(
