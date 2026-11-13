@@ -68,6 +68,10 @@ type ContentStep<'c, 'a, N> = dyn FnMut(
 /// Each slot's first failure in one turn, as text.
 type FirstFailures = [Option<String>; MAX_SHELL_COMPONENTS];
 
+/// One content call's observation: the fixture's accept count and its
+/// (release attempts, Transferred receipts), read at the call's boundary.
+type Observed = (usize, (usize, usize));
+
 impl ShellComponentSession {
     /// The controlled owner turn (module doc). Each slot's first failure in
     /// this turn, or `fail_service`'s own error, returned at once.
@@ -242,7 +246,7 @@ impl Lane {
         instant: Instant,
         plane: Option<Point>,
         step4: &mut dyn FnMut(&mut CombinedNativeFixture),
-    ) -> (Result<FirstFailures>, Vec<(usize, (usize, usize))>) {
+    ) -> (Result<FirstFailures>, Vec<Observed>) {
         let outputs = [output()];
         let (cursor, plane) = turn_cursor(true, plane);
         let root = Rect {

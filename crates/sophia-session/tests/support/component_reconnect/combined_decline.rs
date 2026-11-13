@@ -32,10 +32,10 @@ use sophia_runtime::FrameCandidateState::{Assembling, Unknown};
 const MOVED: Option<Point> = Some(Point { x: 10.0, y: 4.0 });
 /// The content step's observation in a turn where the arm made no accept
 /// and no release.
-const NOTHING: [(usize, (usize, usize)); 1] = [(0, (0, 0))];
+const NOTHING: [Observed; 1] = [(0, (0, 0))];
 /// The content step's observation in a turn where the arm declined once:
 /// one release attempt, answered Transferred, before the walk.
-const DECLINED: [(usize, (usize, usize)); 1] = [(0, (1, 1))];
+const DECLINED: [Observed; 1] = [(0, (1, 1))];
 
 impl Lane {
     /// One driver turn at `instant` with the plane at `plane` and native
@@ -44,7 +44,7 @@ impl Lane {
         &mut self,
         instant: Instant,
         plane: Option<Point>,
-    ) -> (Vec<Step>, Vec<(usize, (usize, usize))>) {
+    ) -> (Vec<Step>, Vec<Observed>) {
         let mut steps = Vec::new();
         let mut errors = Vec::new();
         let (turned, observed) =
