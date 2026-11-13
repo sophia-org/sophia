@@ -10,6 +10,45 @@ enum Step {
     Flush(Option<(Offer, u64)>),
 }
 
+/// The facts the G3-5b lane gate reads before the peek borrows the files.
+#[cfg(any(test, feature = "experimental-combined-frame-job"))]
+struct Lane {
+    capabilities: u64,
+    content_grant: Option<sophia_protocol::ContentGrant>,
+    store_grant: sophia_protocol::ContentGrant,
+    active: Option<crate::owned_ring_protocol::Identity>,
+}
+
+#[cfg(any(test, feature = "experimental-combined-frame-job"))]
+impl Lane {
+    /// A terminal-only, lean frame stream; a copy on the active ring, which
+    /// is admitted only with two slots (owned_ring/commit.rs); the current
+    /// grant; and the description admission derives in this same call.
+    /// Anything else returns `None` and takes today's path. W2 cannot be
+    /// negotiated on this profile and the native stream opens with one
+    /// credit, so neither is read here.
+    fn description(
+        &self,
+        epochs: &ContentEpochRegistry,
+        offer: Offer,
+        grant: sophia_protocol::ContentGrant,
+    ) -> Option<sophia_protocol::ContentResourceBegin> {
+        use sophia_protocol::shell_files::{
+            SHELL_FRAME_LEAN_CAPABILITY, SHELL_FRAME_TERMINAL_ONLY_CAPABILITY,
+        };
+        let lean = SHELL_FRAME_TERMINAL_ONLY_CAPABILITY | SHELL_FRAME_LEAN_CAPABILITY;
+        let in_lane = self.capabilities & lean == lean
+            && self.active == Some(offer.identity)
+            && self.content_grant == Some(grant)
+            && self.store_grant == grant
+            && offer.identity.grant == grant;
+        if !in_lane {
+            return None;
+        }
+        epochs.owned_copy_description(grant, &offer.request)
+    }
+}
+
 impl OwnedCopyOwner {
     pub(super) fn propose_frame_commit<P: Send + 'static>(
         &mut self,
@@ -29,6 +68,13 @@ impl OwnedCopyOwner {
         {
             return Ok(());
         }
+        #[cfg(any(test, feature = "experimental-combined-frame-job"))]
+        let lane = Lane {
+            capabilities: transport.capabilities,
+            content_grant: transport.content_grant(),
+            store_grant: transport.store_grant,
+            active: self.active.as_ref().map(|active| active.identity),
+        };
         let files = transport
             .files_mut()
             .ok_or(ShellTransportError::NotConnected)?;
@@ -37,10 +83,31 @@ impl OwnedCopyOwner {
         };
         let offer = frame.image.map(Offer::from);
         let grant = frame.candidate.grant;
-        // Only a copy-bearing frame can take the combined path.
+        // Only a copy-bearing frame in the lane can take the combined path.
         #[cfg(any(test, feature = "experimental-combined-frame-job"))]
         let ticket = match (hooks.as_mut(), offer) {
-            (Some(hooks), Some(_)) => hooks.reserve(frame),
+            (Some(hooks), Some(offer)) => match lane.description(epochs, offer, grant) {
+                Some(description) => {
+                    let allocations = epochs
+                        .allocations(lane.store_grant)
+                        .map(|store| store.snapshots())
+                        .unwrap_or_default();
+                    let facts = crate::CombinedFrameFacts {
+                        description: &description,
+                        allocations: &allocations,
+                    };
+                    match hooks.reserve(frame, &facts) {
+                        crate::CombinedReserve::Ordinary => None,
+                        crate::CombinedReserve::Combined(id, inbox) => Some((id, inbox)),
+                        // Before any admission: the frame stays queued for the
+                        // owner's failure path to withdraw.
+                        crate::CombinedReserve::Fail(reason) => {
+                            return Err(ShellTransportError::CombinedComposition(reason));
+                        }
+                    }
+                }
+                None => None,
+            },
             _ => None,
         };
         #[cfg(any(test, feature = "experimental-combined-frame-job"))]

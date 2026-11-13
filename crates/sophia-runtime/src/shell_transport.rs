@@ -61,7 +61,7 @@ mod combined_frame;
     feature = "experimental-native-frame-transaction",
     any(test, feature = "experimental-combined-frame-job")
 ))]
-pub use combined_frame::{CombinedFrameHooks, CombinedResult};
+pub use combined_frame::{CombinedFrameFacts, CombinedFrameHooks, CombinedReserve, CombinedResult};
 mod indicator_responses;
 pub(crate) mod outbound;
 mod outbox;
@@ -94,6 +94,12 @@ pub enum ShellTransportError {
     ContentQueueSaturated,
     ActivationQueueSaturated,
     NotConnected,
+    /// A combined frame's first, unclassified composition error (G3-5b).
+    #[cfg(all(
+        feature = "experimental-native-frame-transaction",
+        any(test, feature = "experimental-combined-frame-job")
+    ))]
+    CombinedComposition(String),
 }
 
 impl core::fmt::Display for ShellTransportError {

@@ -7,8 +7,9 @@ use super::*;
 use crate::shell_transport::outbound::{Admitted, OutboundRecord};
 use crate::shell_transport::outbox::tests::files::Peer;
 use crate::{
-    CombinedFrameAdmitted, CombinedFrameHooks, CombinedInbox, CombinedReservation, CombinedResult,
-    ForwardedValidation, IsbValidationFailure, ShellIsbImageOwner,
+    CombinedFrameAdmitted, CombinedFrameFacts, CombinedFrameHooks, CombinedInbox,
+    CombinedReservation, CombinedReserve, CombinedResult, ForwardedValidation,
+    IsbValidationFailure, ShellIsbImageOwner,
 };
 use sophia_protocol::shell_files::{ShellFileAck, ShellFrameCommit};
 use std::sync::mpsc;
@@ -27,22 +28,42 @@ struct Probe {
     arrived: Option<ForwardedValidation<u32>>,
     row: Option<(CombinedReservation, mpsc::Receiver<u32>)>,
     description: Option<ContentResourceBegin>,
+    /// The description and allocation count service 1 was given.
+    reserved: Option<(ContentResourceBegin, usize)>,
+    /// Service 1 fails with this composition error.
+    fail: Option<String>,
 }
 
+#[path = "shell_frame_copy_combined_lane.rs"]
+mod lane;
+
 impl CombinedFrameHooks<u32> for Probe {
-    fn reserve(&mut self, _frame: &ShellFrameCommit) -> Option<(u64, CombinedInbox<u32>)> {
+    fn reserve(
+        &mut self,
+        _frame: &ShellFrameCommit,
+        facts: &CombinedFrameFacts<'_>,
+    ) -> CombinedReserve<u32> {
         self.events.push("reserve");
+        self.reserved = Some((facts.description.clone(), facts.allocations.len()));
+        if let Some(reason) = self.fail.clone() {
+            return CombinedReserve::Fail(reason);
+        }
         let (sender, receiver) = mpsc::sync_channel(1);
         self.inbox = Some(receiver);
-        Some((
+        CombinedReserve::Combined(
             TICKET,
             CombinedInbox::new(sender, sophia_wake::WakeSlot::default()),
-        ))
+        )
     }
 
     fn plan(&mut self, ticket: u64, admitted: &CombinedFrameAdmitted<'_>) -> Option<u32> {
         assert_eq!(ticket, TICKET);
         self.events.push("plan");
+        assert_eq!(
+            self.reserved.as_ref().map(|(description, _)| description),
+            Some(admitted.description),
+            "admission derived the description service 1 composed with"
+        );
         self.description = Some(admitted.description.clone());
         (!self.refuse_plan).then_some(7)
     }
@@ -110,21 +131,34 @@ impl Joined {
             probe: Probe::default(),
             floor: 0,
         };
+        // The lane's negotiated bits on the transport. The files export keeps
+        // the fixture's profile, so journal expectations are unchanged.
+        joined.f.transport.capabilities |=
+            sophia_protocol::shell_files::SHELL_FRAME_TERMINAL_ONLY_CAPABILITY
+                | sophia_protocol::shell_files::SHELL_FRAME_LEAN_CAPABILITY;
         joined.service();
         assert_eq!(joined.take_events(), ["collect"]);
         joined
     }
 
     fn service(&mut self) {
+        self.try_service().unwrap();
+    }
+
+    fn try_service(&mut self) -> Result<(), crate::ShellTransportError> {
+        self.owner.service_combined(
+            &mut self.f.transport,
+            &mut self.f.epochs,
+            1,
+            Instant::now(),
+            &mut self.probe,
+        )
+    }
+
+    /// The same owner serviced as today, with no hooks.
+    fn try_plain_service(&mut self) -> Result<(), crate::ShellTransportError> {
         self.owner
-            .service_combined(
-                &mut self.f.transport,
-                &mut self.f.epochs,
-                1,
-                Instant::now(),
-                &mut self.probe,
-            )
-            .unwrap();
+            .service(&mut self.f.transport, &mut self.f.epochs, 1, Instant::now())
     }
 
     /// The host's part of the same owner turn: the content-resource service

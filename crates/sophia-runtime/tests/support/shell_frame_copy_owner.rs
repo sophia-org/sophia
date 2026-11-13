@@ -179,6 +179,15 @@ impl Fixture {
     }
 
     fn submit(&mut self, stream: u64) {
+        self.submit_with(stream, |_| {});
+    }
+
+    /// `submit`, with `edit` applied to the commit before it is encoded.
+    fn submit_with(
+        &mut self,
+        stream: u64,
+        edit: impl FnOnce(&mut sophia_protocol::shell_files::ShellFrameCommit),
+    ) {
         let ShellFrameRecord::Commit(mut frame) =
             decode_shell_frame_record(&golden("commit-copy"), ShellFileClass::Candidate, 13, 8192)
                 .unwrap()
@@ -217,6 +226,7 @@ impl Fixture {
             width: 48,
             height: 24,
         });
+        edit(&mut frame);
         let record = ShellFrameRecord::Commit(frame);
         let bytes = encode_shell_frame_record(
             ShellFileHeader {

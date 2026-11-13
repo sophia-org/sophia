@@ -13,9 +13,9 @@ pub struct ShellTransportConnection<'a> {
 impl ShellTransportConnection<'_> {
     /// Service the component's persistent image owner using the same clock as
     /// ordinary content resources. The owner itself must outlive this borrow.
-    pub fn service_isb_images(
+    pub fn service_isb_images<P: Send + 'static>(
         &mut self,
-        owner: &mut super::ShellIsbImageOwner,
+        owner: &mut super::ShellIsbImageOwner<P>,
         now_msec: u64,
         now: std::time::Instant,
     ) -> Result<(), super::ShellTransportError> {
