@@ -364,3 +364,7 @@ impl Lane {
 // G3-5d d-2b3b1: running-core decline and in-slot failure.
 #[path = "combined_decline.rs"]
 mod decline;
+
+// G3-5d d-2b3b2: replacement and unexpected worker loss.
+#[path = "combined_replacement.rs"]
+mod replacement;

@@ -21,7 +21,93 @@ pub(crate) struct Binding {
     pub(crate) head: (u64, u64, u64),
 }
 
+/// G3-5d d-2b3b2 (row 5): one collected result's identity, recorded where
+/// the row reads it, from the job and reservation stored at submission;
+/// nothing is taken from the slot's current attempt or validator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Collection {
+    pub(crate) job: u64,
+    pub(crate) grant: ContentGrant,
+    /// The reservation's own validator serial and job.
+    pub(crate) serial: u64,
+    pub(crate) reserved: u64,
+    pub(crate) head: (u64, u64, u64),
+    pub(crate) disposition: CombinedDisposition,
+}
+
+/// G3-5d d-2b3b2 (row 5): one bundle's join, recorded on entry with the
+/// bundle's (grant, output, candidate generation) and every entry present,
+/// as (job, grant stored at submission, state); `matched` is the entry the
+/// join selected, None when it took the ordinary arm.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Join {
+    pub(crate) grant: ContentGrant,
+    pub(crate) output: sophia_protocol::ContentOutputId,
+    pub(crate) generation: u64,
+    pub(crate) present: Vec<(u64, ContentGrant, &'static str)>,
+    pub(crate) matched: Option<u64>,
+}
+
 impl CombinedRow {
+    pub(super) fn record_collection(
+        &mut self,
+        job: &Job,
+        reservation: &CombinedReservation,
+        disposition: CombinedDisposition,
+    ) {
+        self.collections.push(Collection {
+            job: job.job,
+            grant: job.grant,
+            serial: reservation.validator_serial(),
+            reserved: reservation.job(),
+            head: job.head.trace_identity(),
+            disposition,
+        });
+    }
+
+    pub(super) fn record_join(&mut self, bundle: &ContentRenderBundle) {
+        let present = self
+            .jobs
+            .iter()
+            .zip(self.states())
+            .map(|(job, (_, state))| (job.job, job.grant, state))
+            .collect();
+        self.joins.push(Join {
+            grant: bundle.grant,
+            output: bundle.output,
+            generation: bundle.candidate_generation,
+            present,
+            matched: None,
+        });
+    }
+
+    pub(super) fn record_join_match(&mut self, job: u64) {
+        if let Some(join) = self.joins.last_mut() {
+            join.matched = Some(job);
+        }
+    }
+
+    /// Every collection recorded on this row, in collection order.
+    pub(crate) fn collections(&self) -> &[Collection] {
+        &self.collections
+    }
+
+    /// Every join recorded on this row, in call order.
+    pub(crate) fn joins(&self) -> &[Join] {
+        &self.joins
+    }
+
+    /// The job's kept Release outcome, if the row holds it as Debt.
+    pub(crate) fn debt(&self, job: u64) -> Option<CombinedRelease> {
+        self.jobs
+            .iter()
+            .find(|held| held.job == job)
+            .and_then(|held| match &held.state {
+                State::Debt(release) => Some(*release),
+                _ => None,
+            })
+    }
+
     pub(super) fn record_binding(
         &mut self,
         ticket: u64,
@@ -66,6 +152,13 @@ impl CombinedRow {
 }
 
 impl ShellComponentConnections {
+    /// The capture work final quiescence checks first (d-2b3b2 row 7), for
+    /// a control showing that guard clear; only a capture build has it.
+    #[cfg(feature = "experimental-shell-capture")]
+    pub(crate) fn capture_work(&self) -> usize {
+        self.capture_pending()
+    }
+
     /// The slot's validation worker (d-2b2), for a control's hold, progress
     /// and serial handles only; None before the slot has an image owner.
     pub(crate) fn combined_validator(&mut self, slot: usize) -> Option<&mut Worker> {

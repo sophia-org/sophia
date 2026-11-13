@@ -134,6 +134,14 @@ pub(crate) struct CombinedRow {
     /// reads it, before settlement (d-2b2).
     #[cfg(test)]
     collected: Vec<(u64, CombinedDisposition)>,
+    /// Every collected result's identity, from its job and reservation,
+    /// recorded at the same point (d-2b3b2).
+    #[cfg(test)]
+    collections: Vec<steps::Collection>,
+    /// Every bundle's join, with the entries present when it was made
+    /// (d-2b3b2).
+    #[cfg(test)]
+    joins: Vec<steps::Join>,
 }
 
 #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
@@ -240,7 +248,13 @@ enum State {
     /// a lease-free expiry whose Release transferred (`Expired`).
     Failed(CombinedDisposition),
     /// A released Held result whose Release did not transfer.
-    Debt(#[expect(dead_code, reason = "kept as the last Release outcome")] CombinedRelease),
+    Debt(
+        #[cfg_attr(
+            not(test),
+            expect(dead_code, reason = "kept as the last Release outcome")
+        )]
+        CombinedRelease,
+    ),
 }
 
 /// What one collection step leaves: a state to keep, or a settled result to
@@ -485,6 +499,8 @@ impl CombinedRow {
     /// in any other state, or a bundle surface outside the admitted
     /// allocation, is an invariant and changes nothing.
     pub(crate) fn join(&mut self, bundle: &ContentRenderBundle) -> CombinedJoin {
+        #[cfg(test)]
+        self.record_join(bundle);
         let Some(job) = self.jobs.iter_mut().find(|held| {
             held.binding.key.grant == bundle.grant
                 && held.binding.key.output == bundle.output
@@ -510,6 +526,10 @@ impl CombinedRow {
         if !matches!(join, CombinedJoin::Invariant(_)) {
             job.verdict = Verdict::Consumed;
         }
+        #[cfg(test)]
+        let matched = job.job;
+        #[cfg(test)]
+        self.record_join_match(matched);
         join
     }
 
@@ -605,6 +625,8 @@ impl CombinedRow {
                         let disposition = result.disposition();
                         #[cfg(test)]
                         self.collected.push((job.job, disposition));
+                        #[cfg(test)]
+                        self.record_collection(&job, &reservation, disposition);
                         self.settle(native, worker, &mut job, reservation, result, disposition)
                     }
                     Err(error) => {

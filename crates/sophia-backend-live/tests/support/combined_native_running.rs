@@ -288,6 +288,29 @@ impl CombinedNativeFixture {
             .is_some()
     }
 
+    /// Labelled out-of-contract fault (G3-5d d-2b3b2 row 7): unexpected
+    /// renderer-worker loss. It calls `request_shutdown` while native custody
+    /// is still live, which violates that method's documented precondition
+    /// (final shutdown after native custody drained); it is never a legal
+    /// final shutdown, and that contract is unchanged. Returns once this
+    /// exact worker thread has exited, bounded by `wait`, with no owner
+    /// call. Panics on the stub, which has no worker.
+    pub fn lose_renderer_worker(&self, wait: std::time::Duration) {
+        let core = self
+            .core
+            .as_ref()
+            .expect("only a running fixture has a worker");
+        core.request_shutdown();
+        let deadline = std::time::Instant::now() + wait;
+        while !core.poll_shutdown().expect("the loss was requested") {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the renderer worker never exited"
+            );
+            std::thread::yield_now();
+        }
+    }
+
     /// The occurrences the running seam has read so far, in order.
     pub fn seen(&self) -> Vec<CombinedSeen> {
         self.seen
