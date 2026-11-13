@@ -966,3 +966,6 @@ mod consume;
 // G3-5c: REV3's lifetime table through the controlled walk.
 #[path = "combined_lifetime.rs"]
 mod lifetime;
+// G3-5c F3: the walk's disposal distinctions and the generation join.
+#[path = "combined_disposal.rs"]
+mod disposal;

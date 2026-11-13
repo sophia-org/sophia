@@ -292,6 +292,15 @@ impl CombinedRow {
         &self.projections
     }
 
+    /// The job's candidate binding, for the controls' candidate facts.
+    #[cfg(test)]
+    pub(crate) fn binding(&self, job: u64) -> Option<FrameCopyBinding> {
+        self.jobs
+            .iter()
+            .find(|held| held.job == job)
+            .map(|held| held.binding)
+    }
+
     /// The job's verdict, for the controls.
     #[cfg(test)]
     pub(crate) fn verdict(&self, job: u64) -> Option<Verdict> {

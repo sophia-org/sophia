@@ -12,7 +12,25 @@ use std::time::Instant;
 /// against a retired store after its role-specific service has been dropped.
 pub(crate) fn content_now_msec() -> u64 {
     static STARTED: OnceLock<Instant> = OnceLock::new();
-    u64::try_from(STARTED.get_or_init(Instant::now).elapsed().as_millis()).unwrap_or(u64::MAX)
+    let now =
+        u64::try_from(STARTED.get_or_init(Instant::now).elapsed().as_millis()).unwrap_or(u64::MAX);
+    #[cfg(test)]
+    let now = now.saturating_add(CONTENT_CLOCK_ADVANCE.with(std::cell::Cell::get));
+    now
+}
+
+// Test-only content-clock seam (G3-5c F3/F4): this test thread's content
+// clock moves forward only, so the candidate store's own expiry is reached
+// without touching the row's Instant or any other test's clock.
+#[cfg(test)]
+thread_local! {
+    static CONTENT_CLOCK_ADVANCE: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Moves this test thread's content clock forward by `msec` (labelled seam).
+#[cfg(test)]
+pub(crate) fn advance_content_clock(msec: u64) {
+    CONTENT_CLOCK_ADVANCE.with(|advance| advance.set(advance.get() + msec));
 }
 
 /// DMA-BUF facts for one GPU-authorized connection: its granted render
