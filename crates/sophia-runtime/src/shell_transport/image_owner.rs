@@ -63,6 +63,12 @@ impl<P: Send + 'static> ShellIsbImageOwner<P> {
         &mut self.worker
     }
 
+    /// G3-5d d-2b3d, test-support only: `OwnedCopyOwner::releasing`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn owned_releasing(&self) -> Vec<crate::owned_ring_protocol::Identity> {
+        self.owned.releasing()
+    }
+
     pub fn readiness(&self) -> BorrowedFd<'_> {
         self.worker.readiness()
     }

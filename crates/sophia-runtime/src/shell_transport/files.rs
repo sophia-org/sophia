@@ -26,6 +26,8 @@ mod journal;
 pub(super) use export::{CandidateFamily, Inbound, NativeCandidatePart, ShellFiles};
 pub(super) use export::{ImageReadiness, ShellImageChannelConfig};
 pub(super) use journal::JournalBounds;
+#[cfg(any(test, feature = "test-support"))]
+pub use journal::{JournalFacts, ReadReplyWitness, RecordIdentity, RetainedEntry, RetainedRecord};
 
 /// Nonblocking turns spent flushing a revocation; bounded so a peer that
 /// stops reading cannot hold the owner.

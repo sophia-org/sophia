@@ -66,6 +66,16 @@ struct Attempt {
     /// ResourceStatus records for the resource, valid and not.
     accepted: usize,
     refused: usize,
+    /// G3-5d d-2b3d: every frame and content record the peer surfaced, in
+    /// the order taken.
+    log: Vec<PeerRecord>,
+}
+
+/// One record the peer's decoder surfaced (`take_frame`/`take_content`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum PeerRecord {
+    Frame(ShellFrameRecord),
+    Content(TransactionId, ShellContentRecord),
 }
 
 impl Attempt {
@@ -158,6 +168,7 @@ impl Lane {
             bundles: Vec::new(),
             accepted: 0,
             refused: 0,
+            log: Vec::new(),
         };
         let deadline = Instant::now() + WAIT;
         loop {
@@ -429,12 +440,13 @@ impl Lane {
 fn observe_peer(a: &mut Attempt) {
     while let Some(event) = a.peer.take_frame().unwrap() {
         a.stream.observe(&event).unwrap();
-        if let ShellFrameRecord::Outcome { outcome, .. } = event {
+        if let ShellFrameRecord::Outcome { outcome, .. } = &event {
             a.outcomes
                 .push((outcome.candidate_generation, outcome.kind, outcome.reason));
         }
+        a.log.push(PeerRecord::Frame(event));
     }
-    while let Some((_, event)) = a.peer.take_content().unwrap() {
+    while let Some((transaction, event)) = a.peer.take_content().unwrap() {
         if let ShellContentRecord::ResourceStatus(status) = &event
             && status.resource.id == RESOURCE.id
         {
@@ -444,6 +456,7 @@ fn observe_peer(a: &mut Attempt) {
                 a.refused += 1;
             }
         }
+        a.log.push(PeerRecord::Content(transaction, event));
     }
 }
 

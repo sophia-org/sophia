@@ -50,6 +50,10 @@ use std::time::Instant;
 #[cfg(test)]
 #[path = "../../tests/support/combined_row_steps.rs"]
 mod steps;
+// G3-5d d-2b3d: slot-indexed read-only observers (REV2 D5).
+#[cfg(test)]
+#[path = "../../tests/support/combined_observers.rs"]
+mod observers;
 
 #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
 type Worker = IsbValidationWorker<CombinedRenderPlan>;

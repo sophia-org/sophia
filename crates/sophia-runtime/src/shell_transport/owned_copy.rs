@@ -73,6 +73,20 @@ pub(super) struct OwnedCopyOwner {
 }
 
 impl OwnedCopyOwner {
+    /// G3-5d d-2b3d, test-support only: the identities whose settled source
+    /// work still awaits its journaled SlotReleased.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn releasing(&self) -> Vec<Identity> {
+        self.work
+            .iter()
+            .flatten()
+            .filter_map(|work| match work {
+                Work::Releasing { identity, .. } => Some(*identity),
+                Work::Working { .. } => None,
+            })
+            .collect()
+    }
+
     pub fn pending(&self) -> usize {
         self.work.iter().flatten().count()
     }

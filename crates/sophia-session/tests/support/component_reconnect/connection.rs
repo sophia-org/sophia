@@ -80,6 +80,41 @@ impl ShellComponentProcesses {
         self.connections.turn_combined_walk(native, instant)
     }
 
+    /// G3-5d d-2b3d: the slot's transport facts beside its attempt.
+    pub(crate) fn transport_facts(
+        &self,
+        slot: usize,
+    ) -> Option<(
+        Option<(ContentGrant, ComponentConnectionPhase)>,
+        sophia_runtime::TransportFacts,
+    )> {
+        self.connections.transport_facts(slot)
+    }
+
+    /// G3-5d d-2b3d: the slot grant's queued store events.
+    pub(crate) fn store_event_facts(&self, slot: usize) -> Option<sophia_runtime::StoreEventFacts> {
+        self.connections.store_event_facts(slot)
+    }
+
+    /// G3-5d d-2b3d: the slot's owned source work awaiting SlotReleased.
+    pub(crate) fn owned_releasing(
+        &self,
+        slot: usize,
+    ) -> Option<Vec<sophia_runtime::owned_ring_protocol::Identity>> {
+        self.connections.owned_releasing(slot)
+    }
+
+    /// G3-5d d-2b3d: the exact candidate's internal prepared state.
+    pub(crate) fn candidate_prepared(
+        &self,
+        slot: usize,
+        output: ContentOutputId,
+        generation: u64,
+    ) -> Option<bool> {
+        self.connections
+            .candidate_prepared(slot, output, generation)
+    }
+
     /// G3-5d d-2b2: the slot's validation worker, for a control's handles.
     pub(crate) fn combined_validator(
         &mut self,

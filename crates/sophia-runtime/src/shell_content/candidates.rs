@@ -294,6 +294,23 @@ impl ContentCandidateStore {
         self.events.front()
     }
 
+    /// G3-5d d-2b3d, test-support only: every queued record, candidate and
+    /// stream, in FIFO order, as its transaction and Debug text.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn pending_events(&self) -> Vec<(TransactionId, String)> {
+        #[cfg(feature = "experimental-native-frame-transaction")]
+        {
+            self.events.pending()
+        }
+        #[cfg(not(feature = "experimental-native-frame-transaction"))]
+        {
+            self.events
+                .iter()
+                .map(|event| (event.transaction, format!("{:?}", event.record)))
+                .collect()
+        }
+    }
+
     /// All queued control records, including an experimental stream head.
     pub fn pending_event_count(&self) -> usize {
         self.events.len()

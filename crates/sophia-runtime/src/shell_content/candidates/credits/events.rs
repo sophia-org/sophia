@@ -71,6 +71,18 @@ impl CandidateEvents {
         }
     }
 
+    /// G3-5d d-2b3d, test-support only: every queued record in order.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn pending(&self) -> Vec<(sophia_protocol::TransactionId, String)> {
+        self.0
+            .iter()
+            .map(|queued| match queued {
+                Queued::Candidate(event) => (event.transaction, format!("{:?}", event.record)),
+                Queued::Stream(event) => (event.transaction, format!("{:?}", event.record)),
+            })
+            .collect()
+    }
+
     pub(crate) fn has_output(&self, output: ContentOutputId) -> bool {
         self.0.iter().any(|event| match event {
             Queued::Candidate(event) => match &event.record {

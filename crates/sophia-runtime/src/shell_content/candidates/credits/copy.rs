@@ -105,6 +105,22 @@ impl ContentCandidateStore {
             .then_some((entry.ledger.phase(), entry.notice_transaction))
     }
 
+    /// G3-5d d-2b3d, test-support only: the exact pending or submitted
+    /// candidate's internal prepared state; `None` when no such candidate
+    /// is held. Absence is not a notice policy.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        any(test, feature = "test-support")
+    ))]
+    pub fn candidate_prepared(&self, output: ContentOutputId, generation: u64) -> Option<bool> {
+        self.pending
+            .get(&output)
+            .into_iter()
+            .chain(self.submitted.get(&output))
+            .find(|candidate| candidate.begin.candidate_generation == generation)
+            .map(|candidate| candidate.prepared)
+    }
+
     pub(crate) fn frame_stream_key(&self, output: ContentOutputId) -> Option<FrameStreamKey> {
         self.streams.entries.get(&output)?.ledger.key()
     }

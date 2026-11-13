@@ -44,6 +44,15 @@ mod frame_controls;
 #[cfg(feature = "experimental-native-frame-transaction")]
 mod frame_events;
 pub use files::{ShellPollRole, ShellReadinessObservation, ShellReadinessSubscription};
+// G3-5d d-2b3d, test-support only: read-only transport, journal and store facts.
+#[cfg(any(test, feature = "test-support"))]
+mod observe;
+#[cfg(any(test, feature = "test-support"))]
+pub use files::{JournalFacts, ReadReplyWitness, RecordIdentity, RetainedEntry, RetainedRecord};
+#[cfg(any(test, feature = "test-support"))]
+pub use observe::{
+    OutboxEntryFacts, OutboxRecordFacts, OwnedCreditFacts, StoreEventFacts, TransportFacts,
+};
 #[cfg(feature = "experimental-draw")]
 mod draw;
 mod image_configuration;

@@ -207,6 +207,14 @@ impl ContentResourceStore {
     pub fn pending_event(&self) -> Option<&ContentResourceEvent> {
         self.events.front()
     }
+    /// G3-5d d-2b3d, test-support only: every queued event, in order.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn pending_events(&self) -> Vec<(TransactionId, ShellContentRecord)> {
+        self.events
+            .iter()
+            .map(|event| (event.transaction, event.record.clone()))
+            .collect()
+    }
 
     fn check(
         &self,

@@ -293,3 +293,8 @@ fn a_result_collected_past_its_admitted_deadline_is_declined_without_a_later_ren
     assert_eq!(lane.native.ordinary_queues(), 0, "no later render queued");
     assert_eq!(lane.acquisitions(), 1, "no later render");
 }
+
+// G3-5d d-2b3d-1: publication and journal evidence for R4, P1-P3 and F1-F3,
+// and F4's internal preparation.
+#[path = "combined_publication.rs"]
+mod publication;

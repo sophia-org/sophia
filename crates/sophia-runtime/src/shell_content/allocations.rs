@@ -160,6 +160,15 @@ impl ContentAllocationStore {
         self.events.front()
     }
 
+    /// G3-5d d-2b3d, test-support only: every queued event, in order.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn pending_events(&self) -> Vec<(TransactionId, ShellContentRecord)> {
+        self.events
+            .iter()
+            .map(|event| (event.transaction, event.record.clone()))
+            .collect()
+    }
+
     pub fn quiescent(&self) -> bool {
         self.pending.is_empty() && self.active.is_empty()
     }
