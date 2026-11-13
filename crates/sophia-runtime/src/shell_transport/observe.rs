@@ -13,6 +13,10 @@ use sophia_protocol::{ShellContentRecord, TransactionId};
 
 /// A queued record's identity, as the FIFO holds it.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "a test-support snapshot; the size gap depends on the cfg'd Frame variant"
+)]
 pub enum OutboxRecordFacts {
     #[cfg(feature = "experimental-native-frame-transaction")]
     Frame(sophia_protocol::shell_files::ShellFrameRecord),
@@ -101,7 +105,10 @@ impl ShellComponentTransport {
     }
 
     /// `ContentCandidateStore::candidate_prepared` for the store grant.
-    #[cfg(feature = "experimental-combined-frame-job")]
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction"
+    ))]
     pub fn candidate_prepared(
         &self,
         epochs: &ContentEpochRegistry,

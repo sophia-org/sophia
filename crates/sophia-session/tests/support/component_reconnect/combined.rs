@@ -73,6 +73,10 @@ struct Attempt {
 
 /// One record the peer's decoder surfaced (`take_frame`/`take_content`).
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(
+    dead_code,
+    reason = "compared whole through PartialEq by the publication rows"
+)]
 enum PeerRecord {
     Frame(ShellFrameRecord),
     Content(TransactionId, ShellContentRecord),

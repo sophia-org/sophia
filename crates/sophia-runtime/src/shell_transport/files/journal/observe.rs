@@ -84,6 +84,10 @@ pub struct RetainedRecord {
 /// unsupported record is reported as such, never as absent, and ends
 /// the table.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "a test-support table read between turns; boxing buys nothing"
+)]
 pub enum RetainedEntry {
     Record(RetainedRecord),
     Incomplete {

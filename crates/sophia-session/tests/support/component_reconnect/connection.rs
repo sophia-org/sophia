@@ -85,7 +85,7 @@ impl ShellComponentProcesses {
         &self,
         slot: usize,
     ) -> Option<(
-        Option<(ContentGrant, ComponentConnectionPhase)>,
+        Option<(sophia_protocol::ContentGrant, ComponentConnectionPhase)>,
         sophia_runtime::TransportFacts,
     )> {
         self.connections.transport_facts(slot)
@@ -108,7 +108,7 @@ impl ShellComponentProcesses {
     pub(crate) fn candidate_prepared(
         &self,
         slot: usize,
-        output: ContentOutputId,
+        output: sophia_protocol::ContentOutputId,
         generation: u64,
     ) -> Option<bool> {
         self.connections

@@ -166,9 +166,10 @@ impl Lane {
         let s3 = self.snapshot(a, &format!("{label} O3"));
         let verdict = h5(s0.serial(), s1, &l1, label);
         eprintln!(
-            "{label}: PP1 {pp1:?} L1 {l1:?}; IT ready {:?} pending {}; PP2 {pp2:?} L2 {l2:?}; H5 {verdict:?}",
+            "{label}: PP1 {pp1:?} L1 {l1:?}; IT ready {:?} pending {}; PP2 {pp2:?} L2 {l2:?}; H5 {}",
             it.journal().ready,
-            it.journal().pending_evaluations
+            it.journal().pending_evaluations,
+            verdict.describe()
         );
         (verdict, l1, l2, s3)
     }
@@ -364,6 +365,18 @@ enum H5 {
     /// More than one Ready reply in the turn: not attributable to one.
     Insufficient(u64),
     Refuted,
+}
+
+impl H5 {
+    fn describe(self) -> String {
+        match self {
+            Self::Supported { untruncated } => format!("Supported (untruncated {untruncated})"),
+            Self::Vacuous => "Vacuous".into(),
+            Self::Absent => "Absent".into(),
+            Self::Insufficient(replies) => format!("Insufficient ({replies} replies)"),
+            Self::Refuted => "Refuted".into(),
+        }
+    }
 }
 
 fn h5(serial_before: u64, s1: &Snapshot, delivered: &[PeerRecord], label: &str) -> H5 {
@@ -742,7 +755,17 @@ fn p2_a_close_after_admission_journals_closed_under_its_transaction_and_no_termi
         w1.iter().filter_map(closed_of).collect();
     assert_eq!(closed.len(), 1, "one Closed: {:?}", kinds(&w1));
     assert_eq!(closed[0].0, CLOSE, "under the Close's transaction");
-    assert_eq!(closed[0].1, binding.key, "the exact stream key");
+    assert_eq!(
+        closed[0].1,
+        ShellFrameStreamKey {
+            grant: binding.key.grant,
+            output: binding.key.output,
+            allocation: binding.key.allocation,
+            facts_generation: binding.key.facts_generation,
+            stream_id: binding.key.stream_id,
+        },
+        "the exact stream key"
+    );
     eprintln!("P2: Closed reason {}", closed[0].2);
     let status = one_status(&w1, "P2 T1");
     assert_eq!(
