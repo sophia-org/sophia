@@ -75,7 +75,7 @@ fn submit(
 /// renderer's result without one. Bounded.
 enum First {
     Entered(u64),
-    Result(CombinedRenderResult),
+    Result(Box<CombinedRenderResult>),
 }
 
 fn first_of(handle: &GateHandle, output: &Output) -> First {
@@ -87,7 +87,7 @@ fn first_of(handle: &GateHandle, output: &Output) -> First {
             None => {}
         }
         if let Ok(result) = output.facade.take_combined_result() {
-            return First::Result(result);
+            return First::Result(Box::new(result));
         }
         assert!(
             Instant::now() < end,
@@ -372,7 +372,7 @@ fn a_gate_armed_for_another_output_holds_nothing_here() {
         matches!(&result.outcome, CombinedOutcome::Rendered(_)),
         "this output's frame renders"
     );
-    settle(&mut here, &issued, reservation, result);
+    settle(&mut here, &issued, reservation, *result);
     assert_eq!(handle.next(Duration::from_millis(100)), None);
     let (issued, reservation) = admit(&mut there, 38, Instant::now() + WAIT);
     let (job, _, _) = entered(&handle, "the gated output's job reaches the gate");
