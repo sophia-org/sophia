@@ -315,17 +315,31 @@ impl LiveProductionNativeScanout {
         &self,
         output: OutputId,
     ) -> Option<crate::production_visual_runtime::CombinedOwnerState> {
-        #[cfg(feature = "experimental-shell-capture")]
-        let shell_capture = self.preview_images.capture.may_capture(output);
-        #[cfg(not(feature = "experimental-shell-capture"))]
-        let shell_capture = false;
         native_facts::combined_owner_state(
             &self.heads,
             &self.exporters,
             &self.deferred_mirror_generations,
             output,
-            shell_capture,
+            self.combined_shell_capture(output),
         )
+    }
+
+    /// This owner's shell capture endpoint read for `output`, now: eligibility
+    /// at reserve and the consumption guards each call it in their own owner
+    /// call (G3-5d d-0).
+    #[allow(
+        clippy::let_and_return,
+        reason = "the endpoint exists only with shell capture"
+    )]
+    pub(super) fn combined_shell_capture(&self, output: OutputId) -> bool {
+        #[cfg(feature = "experimental-shell-capture")]
+        let capture = self.preview_images.capture.may_capture(output);
+        #[cfg(not(feature = "experimental-shell-capture"))]
+        let capture = {
+            let _ = output;
+            false
+        };
+        capture
     }
 
     /// The plan for one admitted copy of `composition`; `None` is a refused

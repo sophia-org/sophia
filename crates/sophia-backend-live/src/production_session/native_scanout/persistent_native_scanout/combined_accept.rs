@@ -76,15 +76,19 @@ fn combined_shell_content(
 /// The checks of F2's phase 2 that precede the presentation, in their
 /// order: the issuer, the facade's own refusal, topology, the target
 /// generation, the head's pending and rendering content, retirement
-/// protection, identity, and the head's pending and rendering frames. Reads
-/// only. G3-5c runs them at consumption before any classification, so a
-/// scene change cannot excuse their refusal (C1); the accept's preflight
-/// runs them again. Answers the issuing head's index.
+/// protection, identity, the head's pending and rendering frames, and last
+/// capture (G3-5d d-0). Reads only. G3-5c runs them at consumption before any
+/// classification, so a scene change cannot excuse their refusal (C1); the
+/// accept's preflight runs them again. `capture` is the owner's capture
+/// endpoint, read by the caller in this owner call, never at reserve or
+/// dispatch; it is asked only about the confirmed head's output. Answers
+/// the issuing head's index.
 pub(super) fn combined_consumption_guards<R: RenderDeviceDiscoveryBackend>(
     native_owner: crate::NativeFrameOwner,
     heads: &[LiveProductionNativeHead],
     exporters: &[Exporter<R>],
     deferred: &super::super::composition_queue::DeferredNativeCompositions,
+    capture: &dyn Fn(OutputId) -> bool,
     head: &CombinedHead,
     accept: &CombinedAccept,
 ) -> Result<usize, CombinedAcceptRefusal> {
@@ -142,6 +146,18 @@ pub(super) fn combined_consumption_guards<R: RenderDeviceDiscoveryBackend>(
     if current.output_frames.rendering().is_some() {
         return Err(Refusal::RenderingTransition);
     }
+    // Reserve declined a capture (G3-5b R3); one requested, reserved or
+    // left behind since must refuse too. Last, on the confirmed head's
+    // output, so it masks no earlier refusal and no other output's capture
+    // refuses this one.
+    if super::super::native_facts::combined_capture_active(
+        &exporters[index],
+        deferred,
+        output,
+        capture(output),
+    ) {
+        return Err(Refusal::CaptureActive);
+    }
     Ok(index)
 }
 
@@ -153,11 +169,19 @@ pub(super) fn preflight_accept<R: RenderDeviceDiscoveryBackend>(
     heads: &[LiveProductionNativeHead],
     exporters: &[Exporter<R>],
     deferred: &super::super::composition_queue::DeferredNativeCompositions,
+    capture: &dyn Fn(OutputId) -> bool,
     head: &CombinedHead,
     accept: CombinedAccept,
 ) -> Result<CombinedAcceptPlan, CombinedAcceptRefusal> {
-    let index =
-        combined_consumption_guards(native_owner, heads, exporters, deferred, head, &accept)?;
+    let index = combined_consumption_guards(
+        native_owner,
+        heads,
+        exporters,
+        deferred,
+        capture,
+        head,
+        &accept,
+    )?;
     let presentation = heads[index]
         .output_frames
         .presentation_for(accept.snapshot)
@@ -215,6 +239,7 @@ impl CombinedAcceptNative for LiveProductionNativeScanout {
             &self.heads,
             &self.exporters,
             &self.deferred_mirror_generations,
+            &|output| self.combined_shell_capture(output),
             head,
             accept,
         )
@@ -231,6 +256,7 @@ impl CombinedAcceptNative for LiveProductionNativeScanout {
             &self.heads,
             &self.exporters,
             &self.deferred_mirror_generations,
+            &|output| self.combined_shell_capture(output),
             head,
             accept,
         )

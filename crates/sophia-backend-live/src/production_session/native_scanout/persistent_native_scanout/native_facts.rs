@@ -138,14 +138,28 @@ pub(crate) fn combined_owner_state<R: RenderDeviceDiscoveryBackend>(
         return None;
     }
     let exporter = exporters.get(index)?;
+    Some(crate::production_visual_runtime::CombinedOwnerState {
+        capture_active: combined_capture_active(exporter, deferred, output, shell_capture),
+        worker_idle: !exporter.worker_in_flight(),
+    })
+}
+
+/// The one capture fact for `output` that eligibility and the consumption
+/// guards both read: `shell_capture`, the owner's endpoint read, a queued
+/// generation's reservation, or the serving exporter's request or
+/// reservation.
+#[cfg(feature = "experimental-combined-frame-job")]
+pub(crate) fn combined_capture_active<R: RenderDeviceDiscoveryBackend>(
+    exporter: &NativeGbmRenderedScanoutBufferDiscoveryExporter<R>,
+    deferred: &composition_queue::DeferredNativeCompositions,
+    output: OutputId,
+    shell_capture: bool,
+) -> bool {
     let queued = deferred.get(output).is_some_and(|generation| {
         generation
             .heads
             .iter()
             .any(|head| head.capture_reservation.is_some())
     });
-    Some(crate::production_visual_runtime::CombinedOwnerState {
-        capture_active: shell_capture || queued || exporter.combined_capture_pending(),
-        worker_idle: !exporter.worker_in_flight(),
-    })
+    shell_capture || queued || exporter.combined_capture_pending()
 }
