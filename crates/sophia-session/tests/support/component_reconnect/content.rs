@@ -45,7 +45,9 @@ pub(in crate::live_session) fn prepare(
     });
 }
 
-/// The ordinary projection of `bundle`, as `prepare` admits it.
+/// The ordinary projection of `bundle`, as `prepare` admits it. Its only
+/// caller is the combined lane's harness.
+#[cfg(feature = "experimental-combined-frame-job")]
 pub(in crate::live_session) fn project(
     transport: &mut ShellTransportConnection<'_>,
     descriptor: HeadlessOutput,
