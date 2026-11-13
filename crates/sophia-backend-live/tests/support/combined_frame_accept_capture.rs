@@ -141,10 +141,32 @@ fn a_capture_on_another_output_does_not_refuse_this_one() {
 fn earlier_refusals_keep_their_precedence_over_a_capture() {
     use CombinedAcceptRefusal as R;
     let captured = |f: &mut Fixture| endpoint(f, owner::active_on(1));
-    refused("capture and a rebuilt owner", R::NotIssuing, |f, _| {
-        captured(f);
-        f.native_owner = crate::NativeFrameOwner::new();
-    });
+    // As the G3-4 issuer control: the owner is restored before the held
+    // result's disposal, which only the issuing owner can release.
+    let mut f = Fixture::held();
+    captured(&mut f);
+    let accept = f.accept();
+    let before = f.observed();
+    let issuing = f.native_owner;
+    f.native_owner = crate::NativeFrameOwner::new();
+    assert_eq!(
+        f.check(&accept).err(),
+        Some(R::NotIssuing),
+        "capture and a rebuilt owner: the check"
+    );
+    assert_eq!(
+        f.preflight(accept).err(),
+        Some(R::NotIssuing),
+        "capture and a rebuilt owner"
+    );
+    f.native_owner = issuing;
+    assert!(
+        f.observed() == before,
+        "capture and a rebuilt owner: nothing moved"
+    );
+    assert_eq!(f.stub.releases(), 0);
+    assert_eq!(f.release(), CombinedRelease::Transferred);
+    assert_eq!(f.stub.releases(), 1);
     refused("capture and a stale job", R::NotHeld, |f, accept| {
         captured(f);
         accept.job += 1;
