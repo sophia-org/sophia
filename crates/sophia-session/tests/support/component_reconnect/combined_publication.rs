@@ -102,15 +102,14 @@ impl Snapshot {
         );
     }
 
-    /// Every Submitted id in the retained table.
+    /// Every Submitted body's submission id in the retained table (the
+    /// journal envelope's id is always 0; the id lives in the body).
     fn submission_ids(&self) -> Vec<u64> {
         self.facts
             .table
             .iter()
             .filter_map(|entry| match entry {
-                RetainedEntry::Record(record) if submitted_of(record).is_some() => {
-                    Some(record.submission_id)
-                }
+                RetainedEntry::Record(record) => submitted_of(record).map(|s| s.submission_id),
                 _ => None,
             })
             .collect()
@@ -1018,12 +1017,10 @@ fn p2_a_close_after_admission_journals_closed_under_its_transaction_and_no_termi
         peer_terminals(&frames_in(&w1), key, n).is_empty(),
         "no terminal for the admitted frame"
     );
-    let submitted: Vec<(u64, ShellFileSubmitted)> = w1
-        .iter()
-        .filter_map(|r| submitted_of(r).map(|s| (r.submission_id, s)))
-        .collect();
+    let submitted: Vec<ShellFileSubmitted> = w1.iter().filter_map(submitted_of).collect();
     assert_eq!(submitted.len(), 1, "one Submitted: {:?}", kinds(&w1));
-    let (submission_id, submitted) = submitted[0];
+    let submitted = submitted[0];
+    let submission_id = submitted.submission_id;
     assert_eq!(
         submitted.candidate_kind,
         ShellFileKind::FrameStreamClose,

@@ -73,10 +73,6 @@ pub enum RecordIdentity {
 pub struct RetainedRecord {
     pub sequence: u64,
     pub epoch: u64,
-    /// The shell header's submission id: nonzero only for a peer-submitted
-    /// record's `Submitted`; 0 for session-authored records and for an
-    /// owned-ring packet, which carries no shell header.
-    pub submission_id: u64,
     pub start: u64,
     pub end: u64,
     /// `None` for an owned-ring packet, which carries no shell header.
@@ -236,11 +232,7 @@ impl Journal {
             available,
             error,
         };
-        let finish = |sequence: u64,
-                      epoch: u64,
-                      submission_id: u64,
-                      kind: Option<ShellFileKind>,
-                      identity| {
+        let finish = |sequence: u64, epoch: u64, kind: Option<ShellFileKind>, identity| {
             if sequence != counted {
                 return undecodable(format!(
                     "record sequence {sequence} at counted sequence {counted}"
@@ -249,7 +241,6 @@ impl Journal {
             RetainedEntry::Record(RetainedRecord {
                 sequence,
                 epoch,
-                submission_id,
                 start,
                 end,
                 kind,
@@ -261,7 +252,6 @@ impl Journal {
                 Some(event) => finish(
                     event.sequence,
                     event.identity.grant.connection_epoch,
-                    0,
                     None,
                     RecordIdentity::OwnedEvent(event),
                 ),
@@ -311,7 +301,6 @@ impl Journal {
             Ok(identity) => finish(
                 header.sequence,
                 header.connection_epoch,
-                header.submission_id,
                 Some(header.kind),
                 identity,
             ),
