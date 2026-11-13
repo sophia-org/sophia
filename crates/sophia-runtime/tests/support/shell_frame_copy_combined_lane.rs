@@ -54,14 +54,42 @@ fn a_copy_off_the_active_ring_takes_todays_path() {
     });
 }
 
+/// The description the queued copy's actual request derives, before service.
+fn queued_description(j: &mut Joined) -> Option<sophia_protocol::ContentResourceBegin> {
+    let files = j.f.transport.files_mut().unwrap().export();
+    let Some(ShellFrameRecord::Commit(frame)) = files.peek_frame_request() else {
+        panic!("the copy is queued");
+    };
+    let offer = crate::owned_ring_protocol::Offer::from(frame.image.unwrap());
+    j.f.epochs
+        .owned_copy_description(identity().grant, &offer.request)
+}
+
 #[test]
 fn a_copy_without_a_derivable_description_takes_todays_path() {
-    // A stale topology generation: owned_copy_description refuses it.
-    matches_todays_path(|j| {
+    // A wire-valid stale pair: the candidate facts and the image topology
+    // agree on 11 while the store's facts are 12. Ring, grants and lane bits
+    // are the fixture's own.
+    let stale = |j: &mut Joined| {
         j.f.submit_with(1, |frame| {
+            frame.candidate.facts_generation = 11;
             frame.image.as_mut().unwrap().topology_generation = 11;
         });
-    });
+    };
+    let mut valid = Joined::new();
+    valid.f.submit(1);
+    assert!(
+        queued_description(&mut valid).is_some(),
+        "not vacuous: the fixture's own copy derives a description"
+    );
+    let mut probe = Joined::new();
+    stale(&mut probe);
+    assert_eq!(
+        queued_description(&mut probe),
+        None,
+        "the queued stale request derives no description"
+    );
+    matches_todays_path(stale);
 }
 
 #[test]
@@ -142,8 +170,20 @@ fn ack_journal(j: &mut Joined) {
 #[test]
 fn a_deferred_proposal_cancels_its_ticket_and_the_second_proposal_composes_again() {
     let mut j = Joined::new();
-    fill_journal(&mut j);
+    // Submit first: a full journal would refuse the transaction itself.
     j.f.submit(1);
+    fill_journal(&mut j);
+    assert!(
+        matches!(
+            j.f.transport
+                .files_mut()
+                .unwrap()
+                .export()
+                .peek_frame_request(),
+            Some(ShellFrameRecord::Commit(_))
+        ),
+        "the copy is queued under journal pressure"
+    );
     j.service();
     assert_eq!(
         j.take_events(),
