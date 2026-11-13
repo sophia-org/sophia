@@ -93,6 +93,9 @@ pub struct CombinedNativeFixture {
     seen: std::sync::Arc<std::sync::Mutex<Vec<CombinedSeen>>>,
     /// Each output's native service on a running worker; empty on the stub.
     native: Vec<running::NativeService>,
+    /// The running worker's core, for arming its renderer gate (G3-5d
+    /// d-2b2). None on the stub.
+    core: Option<std::sync::Arc<crate::NativeGbmRendererWorkerCore>>,
     /// The declared composition fault, if any (Q1).
     pub(crate) compose_fault: Option<&'static str>,
     /// Compositions through the bridge entry.
@@ -188,6 +191,7 @@ impl CombinedNativeFixture {
             renderer,
             seen: Default::default(),
             native: Vec::new(),
+            core: None,
             compose_fault: None,
             composes: std::cell::Cell::new(0),
             settle_fault: None,

@@ -56,6 +56,13 @@ impl<P: Send + 'static> ShellIsbImageOwner<P> {
         }
     }
 
+    /// Test-support (G3-5d d-2b2): the paired validation worker, for a
+    /// control's hold, progress and serial handles.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn validation_worker(&mut self) -> &mut IsbValidationWorker<P> {
+        &mut self.worker
+    }
+
     pub fn readiness(&self) -> BorrowedFd<'_> {
         self.worker.readiness()
     }

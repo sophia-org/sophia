@@ -9,6 +9,10 @@ pub(super) type PendingSlot = Option<Arc<Identity>>;
 
 pub(super) struct Identity {
     forwarded: AtomicBool,
+    /// Test-support (G3-5d d-2b2): the issuing validator's serial, fixed at
+    /// reservation, so a trace binds (serial, job) where the job is issued.
+    #[cfg(any(test, feature = "test-support"))]
+    serial: u64,
 }
 
 /// The owner's half of one combined validation credit.
@@ -30,6 +34,14 @@ impl CombinedReservation {
     /// Whether `token` came back from this reservation's own submission.
     pub fn owns(&self, token: &CombinedToken) -> bool {
         self.job == token.job && Arc::ptr_eq(&self.identity, &token.identity)
+    }
+
+    /// Test-support (G3-5d d-2b2): the serial of the validator that issued
+    /// this reservation, read from the reservation itself, not from any
+    /// worker's current state.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn validator_serial(&self) -> u64 {
+        self.identity.serial
     }
 }
 
@@ -225,6 +237,8 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
         let job = self.reserve(bytes, deadline)?;
         let identity = Arc::new(Identity {
             forwarded: AtomicBool::new(false),
+            #[cfg(any(test, feature = "test-support"))]
+            serial: self.hooks.serial,
         });
         self.pending
             .iter_mut()
@@ -427,6 +441,17 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
 
     pub fn validator_serial(&self) -> u64 {
         self.hooks.serial
+    }
+
+    /// G3-5d d-2b2: whether the owner has cancelled pending `job`, as the
+    /// stop flag the renderer reads; None when no such job is pending. A
+    /// control waits on it instead of counting owner turns.
+    pub fn cancel_requested(&self, job: u64) -> Option<bool> {
+        self.pending
+            .iter()
+            .flatten()
+            .find(|pending| pending.id == job)
+            .map(|pending| pending.cancelled.load(Ordering::Acquire))
     }
 }
 

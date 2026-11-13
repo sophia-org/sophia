@@ -10,9 +10,11 @@ use super::*;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::Duration;
 
-/// What the worker tells the control, in this order.
+/// What the worker tells the control, in this order. Public, hidden, for
+/// the running fixture's test-support consumers (G3-5d d-2b2).
+#[doc(hidden)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum GateFact {
+pub enum GateFact {
     /// The worker read the install command; the gate is armed.
     Armed,
     /// A pausing gate found its output's route empty and paused there once,
@@ -41,8 +43,9 @@ pub(crate) enum GateFact {
 /// How a hold or a pause ended. Only `Released` is a control's own action:
 /// disconnect is the cleanup escape when the control's handle drops, and a
 /// timeout is a missing release, never a pass.
+#[doc(hidden)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum GateRelease {
+pub enum GateRelease {
     Released,
     Disconnected,
     TimedOut,

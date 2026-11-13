@@ -23,13 +23,19 @@ mod seam;
     any(test, feature = "test-support"),
     feature = "experimental-combined-frame-job"
 ))]
-// The gate's control half has only this crate's tests as consumers until
-// the d-2b fixture.
+// The pausing gate has only this crate's tests as consumers.
 #[cfg_attr(not(test), allow(unused_imports))]
 pub(crate) use seam::{
     CombinedRenderSeam,
-    gate::{CombinedGate, GateFact, GateHandle, GateRelease, combined_gate, pausing_combined_gate},
+    gate::{CombinedGate, GateHandle, combined_gate, pausing_combined_gate},
 };
+// The gate's facts, for the running fixture's test-support consumers
+// (G3-5d d-2b2).
+#[cfg(all(
+    any(test, feature = "test-support"),
+    feature = "experimental-combined-frame-job"
+))]
+pub use seam::gate::{GateFact, GateRelease};
 
 /// One output's private state inside a shared worker.
 ///

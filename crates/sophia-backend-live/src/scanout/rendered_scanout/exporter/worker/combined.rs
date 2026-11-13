@@ -49,6 +49,13 @@ impl CombinedFacade {
     pub(super) fn claim(&self) -> &Arc<OutputClaim> {
         &self.claim
     }
+
+    /// Test-support (G3-5d d-2b2): the facade's admission ticket, for the
+    /// running fixture's trace identity.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn ticket(&self) -> u64 {
+        self.ticket
+    }
 }
 
 /// Why a held combined result cannot be accepted now (AUTHORITY-STEP3 F2,

@@ -10,7 +10,7 @@
 //! G3-5d's running renderer.
 
 use super::combined::{CombinedOutcome, OutputRoute, RenderAttempt};
-use super::service::CombinedRenderSeam;
+use super::service::{CombinedRenderSeam, GateHandle, combined_gate};
 use super::support::{correlated_result, exported_outcome, inventory_test_core};
 use super::{
     CombinedFacade, DeviceIdentity, LiveRendererWorkerLeaseId, LiveRendererWorkerOutputKey,
@@ -67,6 +67,46 @@ pub(crate) fn stub_core() -> (Arc<NativeGbmRendererWorkerCore>, StubRenderer) {
             filler: 0,
         },
     )
+}
+
+/// G3-5d d-2b2: the renderer gate (d-2a) armed on a running core, for the
+/// running fixture's test-support consumers. Only its facts, release and
+/// disconnect cross; the worker half stays in the worker.
+#[doc(hidden)]
+pub struct CombinedRenderGate(GateHandle);
+
+pub use super::service::{GateFact as CombinedGateFact, GateRelease as CombinedGateRelease};
+
+impl CombinedRenderGate {
+    /// The worker's next fact, or None after `wait`.
+    pub fn next(&self, wait: Duration) -> Option<CombinedGateFact> {
+        self.0.next(wait)
+    }
+
+    /// Ends the hold as `Released`, once.
+    pub fn release(&mut self) {
+        self.0.release();
+    }
+
+    /// Drops the release side only: a hold ends as `Disconnected`, observed.
+    pub fn disconnect(&mut self) {
+        self.0.disconnect();
+    }
+}
+
+/// Arms the worker's gate for `output` and waits for its acknowledgement,
+/// so nothing admitted afterwards passes the gate unseen. None if the worker
+/// did not take the gate or did not acknowledge it within `WAIT`.
+pub(crate) fn arm_render_gate(
+    core: &NativeGbmRendererWorkerCore,
+    output: LiveRendererWorkerOutputKey,
+    wait: Duration,
+) -> Option<CombinedRenderGate> {
+    let (gate, handle) = combined_gate(output, wait);
+    core.command_sender
+        .send(WorkerCommand::InstallCombinedGate(gate))
+        .ok()?;
+    (handle.next(WAIT) == Some(CombinedGateFact::Armed)).then_some(CombinedRenderGate(handle))
 }
 
 /// `running_core` with its seam, for the running combined fixture, which

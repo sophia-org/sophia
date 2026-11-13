@@ -98,7 +98,41 @@ fn render(
     ))
 }
 
+impl CombinedHead {
+    /// G3-5d d-2b2: the issuing identity this admission carries, as (native
+    /// owner, head, facade ticket), for a trace record made where the
+    /// admission is submitted.
+    pub fn trace_identity(&self) -> (u64, u64, u64) {
+        (
+            self.native_owner.raw(),
+            self.head.raw(),
+            self.facade.ticket(),
+        )
+    }
+}
+
 impl CombinedNativeFixture {
+    /// G3-5d d-2b2: arms the running worker's renderer gate (d-2a) for
+    /// `output` and waits for its acknowledgement. A hold ends at the latest
+    /// after `wait`, as `TimedOut`. Panics on the stub, which has no worker
+    /// thread, or if the worker does not acknowledge.
+    pub fn arm_render_gate(
+        &self,
+        output: OutputId,
+        wait: std::time::Duration,
+    ) -> crate::CombinedRenderGate {
+        let core = self
+            .core
+            .as_ref()
+            .expect("only a running fixture has a renderer gate");
+        crate::arm_render_gate(
+            core,
+            crate::LiveRendererWorkerOutputKey::from_raw(output.raw()),
+            wait,
+        )
+        .expect("the running worker acknowledged the gate before any admission")
+    }
+
     /// One enabled head per output, each with an exporter on one running
     /// worker core whose combined renders go through the deterministic seam,
     /// and each output with its own native service.
@@ -117,6 +151,7 @@ impl CombinedNativeFixture {
         );
         let mut fixture = Self::on_core(outputs, &core, None);
         fixture.seen = seen;
+        fixture.core = Some(core);
         fixture.native = outputs
             .iter()
             .map(|output| NativeService {
