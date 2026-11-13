@@ -395,6 +395,29 @@ impl CombinedNativeFixture {
         }
     }
 
+    /// G3-5d d-0, a declared owner sequence through real exporter calls: on
+    /// `output`, after reserve, an identified ordinary frame is queued, its
+    /// capture requested, and the frame discarded, as preview recovery's
+    /// discard leaves it. Both capture flags stay. This fixture has no
+    /// CaptureOwner endpoint; its guards read the exporter and queue facts.
+    pub fn capture_left_by_discard(&mut self, output: OutputId) {
+        let index = self
+            .heads
+            .iter()
+            .position(|head| head.output.id == output)
+            .expect("a fixture head serves the output");
+        let head = &self.heads[index];
+        let identity = self
+            .native_owner
+            .frame(output, head.head, head.target_generation, 999);
+        let reservation = sophia_renderer_live::LiveSnapshotReservation::for_image(16, 16).unwrap();
+        let exporter = &mut self.exporters[index];
+        exporter.set_pending_identified_mixed_frame(Default::default(), Some(identity));
+        assert!(exporter.request_pending_frame_capture(identity, reservation));
+        assert!(exporter.discard_pending_frame(), "the queued frame goes");
+        assert!(exporter.combined_capture_pending(), "the flags stay");
+    }
+
     /// `output`'s head as the accept guards read it: pending, rendering
     /// and submitted content, pending and rendering frames, and its target
     /// generation.
@@ -574,6 +597,8 @@ impl CombinedAcceptNative for CombinedNativeFixture {
             &self.heads,
             &self.exporters,
             &self.deferred,
+            // No capture endpoint here: the exporter and queue facts are read.
+            &|_| false,
             head,
             accept,
         )
@@ -590,6 +615,7 @@ impl CombinedAcceptNative for CombinedNativeFixture {
             &self.heads,
             &self.exporters,
             &self.deferred,
+            &|_| false,
             head,
             accept,
         )

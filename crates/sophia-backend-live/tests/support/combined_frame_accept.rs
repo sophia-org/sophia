@@ -34,6 +34,10 @@ const WAIT: Duration = Duration::from_secs(10);
 /// The admitted native frame, and the content and checksum it carries.
 const FRAME: u64 = 41;
 const LEASE: u64 = 81;
+
+#[cfg(feature = "experimental-shell-capture")]
+#[path = "combined_frame_accept_capture.rs"]
+mod capture;
 type Validator = IsbValidationWorker<CombinedRenderPlan>;
 use super::super::super::composition_queue::{
     DeferredNativeCompositions as Deferred, LiveProductionQueuedMirrorGeneration,
@@ -166,6 +170,9 @@ struct Fixture {
     _validator: Validator,
     runtime: crate::LiveBackendRuntimeAssembly,
     deferred: Deferred,
+    /// The owner's capture endpoint as the guards read it: none unless a
+    /// control installs a real owner (G3-5d d-0).
+    capture: Box<dyn Fn(OutputId) -> bool>,
     combined: CombinedHead,
     job: u64,
 }
@@ -240,6 +247,7 @@ impl Fixture {
             _validator: validator,
             runtime,
             deferred: Deferred::default(),
+            capture: Box::new(|_| false),
             combined,
             job,
         }
@@ -266,6 +274,21 @@ impl Fixture {
             &self.heads,
             &self.exporters,
             &self.deferred,
+            &*self.capture,
+            &self.combined,
+            accept,
+        )
+    }
+
+    /// The consumption guards alone, as G3-5c's check runs them before any
+    /// classification.
+    fn check(&self, accept: &CombinedAccept) -> Result<usize, CombinedAcceptRefusal> {
+        combined_consumption_guards(
+            self.native_owner,
+            &self.heads,
+            &self.exporters,
+            &self.deferred,
+            &*self.capture,
             &self.combined,
             accept,
         )

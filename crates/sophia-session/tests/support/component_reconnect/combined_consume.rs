@@ -397,6 +397,47 @@ fn scene_churn_with_a_busy_head_or_a_protected_retirement_takes_the_failure_term
     }
 }
 
+/// G3-5d d-0: a capture acquired after reserve. The consumption check
+/// refuses before any classification, so the result takes the baseline
+/// failure terminal and is released, and nothing enters conventionally. The
+/// capture is the exporter's, left by a discard through real exporter calls;
+/// this fixture has no CaptureOwner endpoint (the backend's accept controls
+/// read one).
+fn a_capture_after_reserve_takes_the_failure_terminal(plane: Option<Point>, label: &str) {
+    let mut lane = Lane::new();
+    let mut a = lane.attempt();
+    lane.held(&mut a, 1);
+    lane.native.capture_left_by_discard(output().id);
+    let before = lane.native.head_observation(output().id);
+    let served = lane.consume(&mut a, 1, Instant::now(), plane, true);
+    assert!(served.is_ok(), "{label}: refused without error: {served:?}");
+    assert_eq!(a.terminals(1), [FAILED], "{label}: the failure terminal");
+    assert_eq!(lane.native.installs(), 0, "{label}: no install entry");
+    assert_eq!(lane.native.ordinary_queues(), 0, "{label}: no queue");
+    assert_eq!(lane.native.accepts(), 0, "{label}: no accept");
+    assert_eq!(lane.native.classifies(), 0, "{label}: before the scene");
+    assert_eq!(lane.native.release_attempts(), 1, "{label}: released");
+    assert_eq!(lane.native.release_transfers(), 1, "{label}: transferred");
+    assert!(lane.states().is_empty(), "{label}: the entry is gone");
+    assert!(lane.pending(&a).is_empty(), "{label}: no Prepared");
+    assert_eq!(
+        lane.native.head_observation(output().id),
+        before,
+        "{label}: native state unchanged"
+    );
+}
+
+#[test]
+fn a_capture_acquired_after_reserve_refuses_an_otherwise_matching_result() {
+    a_capture_after_reserve_takes_the_failure_terminal(None, "d0 capture, match");
+}
+
+/// The moved plane is control 2's real scene change.
+#[test]
+fn a_capture_acquired_after_reserve_refuses_a_scene_churn_result() {
+    a_capture_after_reserve_takes_the_failure_terminal(MOVED, "d0 capture, churn");
+}
+
 /// Control 11: a real setter refusal (native presentation quiesced). The
 /// error is the ordinary setter's own text for that state.
 #[test]
