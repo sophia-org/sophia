@@ -57,6 +57,7 @@ pub(crate) use compositor_graphics::combined_scene::CombinedOwnerState;
 #[cfg(feature = "experimental-combined-frame-job")]
 pub use compositor_graphics::combined_scene::{
     CombinedComposeRefusal, CombinedComposition, CombinedDispatch, CombinedIneligible,
+    CombinedRecompose,
 };
 #[cfg(feature = "experimental-combined-frame-job")]
 pub use compositor_graphics::shell_content::{CombinedAcceptError, CombinedAcceptFailed};

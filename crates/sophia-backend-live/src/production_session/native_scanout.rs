@@ -32,7 +32,9 @@ pub use persistent_native_scanout::{CombinedAccept, CombinedAcceptPlan, Combined
     feature = "gbm-probe",
     feature = "experimental-combined-frame-job"
 ))]
-pub use persistent_native_scanout::{CombinedNativeFixture, CombinedSettleFault};
+pub use persistent_native_scanout::{
+    CombinedDeclaredHead, CombinedNativeFixture, CombinedSettleFault,
+};
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use persistent_native_scanout::{

@@ -21,7 +21,7 @@ pub use accept::{CombinedAccept, CombinedAcceptPlan};
 #[path = "../../../../tests/support/combined_native_fixture.rs"]
 mod native_fixture;
 #[cfg(any(test, feature = "test-support"))]
-pub use native_fixture::{CombinedNativeFixture, CombinedSettleFault};
+pub use native_fixture::{CombinedDeclaredHead, CombinedNativeFixture, CombinedSettleFault};
 // The one deterministic device both device-free fixtures drive.
 #[cfg(all(test, feature = "experimental-combined-frame-job"))]
 #[path = "../../../../tests/support/combined_frame_accept_device.rs"]

@@ -126,7 +126,7 @@ pub enum CombinedIneligible {
 
 /// What a recomposition at consumption found (F1, R4).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum CombinedRecompose {
+pub enum CombinedRecompose {
     Match,
     /// The candidate's own placement, geometry or identity moved.
     CandidateFailure,

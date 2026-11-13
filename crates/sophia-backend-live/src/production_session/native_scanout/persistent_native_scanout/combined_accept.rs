@@ -43,6 +43,13 @@ pub(crate) trait CombinedAcceptNative {
     type Plan;
     /// The setter's native gate: whether frame service is available now.
     fn frame_service_available(&self) -> bool;
+    /// The preflight's guards without the presentation (G3-5c C1). Reads
+    /// only, with the preflight's refusal precedence.
+    fn check_combined_accept(
+        &self,
+        head: &Self::Head,
+        accept: &CombinedAccept,
+    ) -> Result<(), CombinedAcceptRefusal>;
     fn preflight_combined_accept(
         &self,
         head: &Self::Head,
@@ -66,17 +73,21 @@ fn combined_shell_content(
     }
 }
 
-/// F2's phase 2 with R5's additions, over the owner's heads, exporters and
-/// deferred compositions. Reads only. On a refusal the held result stays for
-/// ordinary disposal.
-pub(super) fn preflight_accept<R: RenderDeviceDiscoveryBackend>(
+/// The checks of F2's phase 2 that precede the presentation, in their
+/// order: the issuer, the facade's own refusal, topology, the target
+/// generation, the head's pending and rendering content, retirement
+/// protection, identity, and the head's pending and rendering frames. Reads
+/// only. G3-5c runs them at consumption before any classification, so a
+/// scene change cannot excuse their refusal (C1); the accept's preflight
+/// runs them again. Answers the issuing head's index.
+pub(super) fn combined_consumption_guards<R: RenderDeviceDiscoveryBackend>(
     native_owner: crate::NativeFrameOwner,
     heads: &[LiveProductionNativeHead],
     exporters: &[Exporter<R>],
     deferred: &super::super::composition_queue::DeferredNativeCompositions,
     head: &CombinedHead,
-    accept: CombinedAccept,
-) -> Result<CombinedAcceptPlan, CombinedAcceptRefusal> {
+    accept: &CombinedAccept,
+) -> Result<usize, CombinedAcceptRefusal> {
     use CombinedAcceptRefusal as Refusal;
     if head.native_owner != native_owner {
         return Err(Refusal::NotIssuing);
@@ -131,10 +142,26 @@ pub(super) fn preflight_accept<R: RenderDeviceDiscoveryBackend>(
     if current.output_frames.rendering().is_some() {
         return Err(Refusal::RenderingTransition);
     }
-    let presentation = current
+    Ok(index)
+}
+
+/// F2's phase 2 with R5's additions, over the owner's heads, exporters and
+/// deferred compositions: the guards, then the presentation. Reads only. On
+/// a refusal the held result stays for ordinary disposal.
+pub(super) fn preflight_accept<R: RenderDeviceDiscoveryBackend>(
+    native_owner: crate::NativeFrameOwner,
+    heads: &[LiveProductionNativeHead],
+    exporters: &[Exporter<R>],
+    deferred: &super::super::composition_queue::DeferredNativeCompositions,
+    head: &CombinedHead,
+    accept: CombinedAccept,
+) -> Result<CombinedAcceptPlan, CombinedAcceptRefusal> {
+    let index =
+        combined_consumption_guards(native_owner, heads, exporters, deferred, head, &accept)?;
+    let presentation = heads[index]
         .output_frames
         .presentation_for(accept.snapshot)
-        .map_err(|_| Refusal::PendingTransition)?;
+        .map_err(|_| CombinedAcceptRefusal::PendingTransition)?;
     Ok(CombinedAcceptPlan {
         index,
         job: accept.job,
@@ -176,6 +203,22 @@ impl CombinedAcceptNative for LiveProductionNativeScanout {
 
     fn frame_service_available(&self) -> bool {
         self.output_topology_allows_frame_service()
+    }
+
+    fn check_combined_accept(
+        &self,
+        head: &CombinedHead,
+        accept: &CombinedAccept,
+    ) -> Result<(), CombinedAcceptRefusal> {
+        combined_consumption_guards(
+            self.native_frame_owner,
+            &self.heads,
+            &self.exporters,
+            &self.deferred_mirror_generations,
+            head,
+            accept,
+        )
+        .map(|_| ())
     }
 
     fn preflight_combined_accept(

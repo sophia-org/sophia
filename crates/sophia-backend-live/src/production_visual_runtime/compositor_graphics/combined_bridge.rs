@@ -36,9 +36,7 @@ pub enum CombinedComposeRefusal {
 /// candidate a recomposition is classified against, and the accept's facts.
 pub struct CombinedDispatch {
     pub(crate) frame: crate::LiveProductionNativeFrameId,
-    #[allow(dead_code, reason = "c classifies a recomposition against it")]
     pub(crate) key: CombinedSceneKey,
-    #[allow(dead_code, reason = "c classifies a recomposition against it")]
     pub(crate) candidate: Vec<CompositorImageSourceIdentity>,
     pub(crate) checksum: u64,
     pub(crate) snapshot: sophia_engine::OutputFrameDamageSnapshot,

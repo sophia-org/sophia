@@ -353,8 +353,47 @@ pub struct CombinedAcceptFailed {
 
 #[cfg(feature = "experimental-combined-frame-job")]
 impl LiveProductionVisualRuntime {
+    /// Every read-only check of the accept before its native preflight's
+    /// presentation, in the accept's order (G3-5c C1): the setter's
+    /// preflight, the output, the key's retirement claims, then the native
+    /// guards. Answers the transform the setter admits. Writes nothing; the
+    /// answer is for this owner turn only.
+    pub(crate) fn check_combined_consumption<N: crate::CombinedAcceptNative>(
+        &self,
+        frame: &LiveShellContentFrame,
+        layer: LiveShellContentLayer,
+        native: &N,
+        head: &N::Head,
+        accept: &crate::CombinedAccept,
+    ) -> Result<sophia_engine::PresentedContentTransform, CombinedAcceptError> {
+        let transform = match self.preflight_shell_component_content(
+            frame,
+            layer,
+            Some(native.frame_service_available()),
+        ) {
+            Ok(ShellContentPreflight::Admit(transform)) => transform,
+            Ok(ShellContentPreflight::Unchanged) => return Err(CombinedAcceptError::Unchanged),
+            Err(error) => return Err(CombinedAcceptError::Runtime(error)),
+        };
+        if frame.output != accept.snapshot.output.id {
+            return Err(CombinedAcceptError::Output);
+        }
+        let key = (frame.output, layer);
+        if self.retained_projection_retirements.contains_key(&key)
+            || self
+                .queued_shell_retirements
+                .contains_key(&(frame.output, accept.frame))
+        {
+            return Err(CombinedAcceptError::RetirementClaim);
+        }
+        native
+            .check_combined_accept(head, accept)
+            .map_err(CombinedAcceptError::Native)?;
+        Ok(transform)
+    }
+
     /// The two-phase accept of a held combined result (AUTHORITY-STEP3 F2).
-    /// The setter's preflight, then the native preflight, both reading only;
+    /// The consumption checks, then the native preflight, both reading only;
     /// then the commit: this runtime installs the content and binds its
     /// retirement claim to the plan's native frame without queueing a
     /// render (step 1), and the native target writes steps 2 to 4.
@@ -368,29 +407,13 @@ impl LiveProductionVisualRuntime {
         accept: crate::CombinedAccept,
     ) -> Result<(), Box<CombinedAcceptFailed>> {
         let refuse = |error, frame| Err(Box::new(CombinedAcceptFailed { error, frame }));
-        let transform = match self.preflight_shell_component_content(
-            &frame,
-            layer,
-            Some(native.frame_service_available()),
-        ) {
-            Ok(ShellContentPreflight::Admit(transform)) => transform,
-            Ok(ShellContentPreflight::Unchanged) => {
-                return refuse(CombinedAcceptError::Unchanged, frame);
-            }
-            Err(error) => return refuse(CombinedAcceptError::Runtime(error), frame),
+        let transform = match self.check_combined_consumption(&frame, layer, native, head, &accept)
+        {
+            Ok(transform) => transform,
+            Err(error) => return refuse(error, frame),
         };
-        if frame.output != accept.snapshot.output.id {
-            return refuse(CombinedAcceptError::Output, frame);
-        }
         let key = (frame.output, layer);
         let native_frame = accept.frame;
-        if self.retained_projection_retirements.contains_key(&key)
-            || self
-                .queued_shell_retirements
-                .contains_key(&(frame.output, native_frame))
-        {
-            return refuse(CombinedAcceptError::RetirementClaim, frame);
-        }
         let plan = match native.preflight_combined_accept(head, accept) {
             Ok(plan) => plan,
             Err(refusal) => return refuse(CombinedAcceptError::Native(refusal), frame),

@@ -6,8 +6,8 @@ use super::*;
 #[cfg(feature = "experimental-combined-frame-job")]
 use crate::{
     CombinedAccept, CombinedComposeRefusal, CombinedComposition, CombinedDispatch, CombinedHead,
-    CombinedRelease, CombinedRenderPlan, CombinedRenderResult, CombinedSettleRefused,
-    LiveProductionNativeFrameId,
+    CombinedRecompose, CombinedRelease, CombinedRenderPlan, CombinedRenderResult,
+    CombinedSettleRefused, LiveProductionNativeFrameId,
 };
 #[cfg(feature = "experimental-combined-frame-job")]
 use sophia_runtime::{CombinedInbox, CombinedReservation, IsbValidationWorker, ValidatedIsbPixels};
@@ -22,6 +22,17 @@ mod sealed {
             composed: Result<crate::CombinedComposition, crate::CombinedComposeRefusal>,
         ) -> Result<crate::CombinedComposition, crate::CombinedComposeRefusal> {
             composed
+        }
+
+        /// The recomposition's classification at consumption (G3-5c).
+        /// Production passes it through; the fixture may declare an
+        /// unclassified fault here.
+        #[cfg(feature = "experimental-combined-frame-job")]
+        fn classify_result(
+            &self,
+            classified: Result<crate::CombinedRecompose, Box<dyn std::error::Error>>,
+        ) -> Result<crate::CombinedRecompose, Box<dyn std::error::Error>> {
+            classified
         }
     }
 }
@@ -116,6 +127,36 @@ pub trait ShellContentNative: sealed::Sealed {
     /// Caller: the row walk's Release-debt maintenance.
     #[cfg(feature = "experimental-combined-frame-job")]
     fn flush_combined_release(&mut self, head: &CombinedHead, job: u64) -> CombinedRelease;
+
+    /// The accept's read-only checks before its presentation, in its
+    /// order (G3-5c C1). Caller: Session's `submit_bundle`, combined arm,
+    /// before it classifies, so a scene change never excuses a refusal.
+    #[cfg(feature = "experimental-combined-frame-job")]
+    fn check_combined_consumption(
+        &self,
+        runtime: &LiveProductionVisualRuntime,
+        frame: &LiveShellContentFrame,
+        layer: LiveShellContentLayer,
+        head: &CombinedHead,
+        accept: &CombinedAccept,
+    ) -> Result<(), compositor_graphics::CombinedAcceptError>;
+
+    /// Recomposes `candidate` at `layer` with this native's facts and the
+    /// turn's cursor, and classifies it against the dispatch key (F1, R4).
+    /// An unclassified composition failure comes back as the error.
+    /// Caller: Session's `submit_bundle`, combined arm.
+    #[cfg(feature = "experimental-combined-frame-job")]
+    #[allow(clippy::too_many_arguments)]
+    fn classify_combined_frame(
+        &self,
+        runtime: &LiveProductionVisualRuntime,
+        scene: &LiveProductionCpuScene,
+        layer: LiveShellContentLayer,
+        candidate: &LiveShellContentFrame,
+        cursor: crate::LiveProductionCursorPresentation,
+        plane: Option<sophia_protocol::Point>,
+        dispatch: &CombinedDispatch,
+    ) -> Result<CombinedRecompose, Box<dyn std::error::Error>>;
 
     /// The two-phase accept (G3-4). Caller: Session's `submit_bundle`,
     /// combined arm.
@@ -240,6 +281,39 @@ macro_rules! shell_content_native {
             }
 
             #[cfg(feature = "experimental-combined-frame-job")]
+            fn check_combined_consumption(
+                &self,
+                runtime: &LiveProductionVisualRuntime,
+                frame: &LiveShellContentFrame,
+                layer: LiveShellContentLayer,
+                head: &CombinedHead,
+                accept: &CombinedAccept,
+            ) -> Result<(), compositor_graphics::CombinedAcceptError> {
+                runtime
+                    .check_combined_consumption(frame, layer, self, head, accept)
+                    .map(|_| ())
+            }
+
+            #[cfg(feature = "experimental-combined-frame-job")]
+            fn classify_combined_frame(
+                &self,
+                runtime: &LiveProductionVisualRuntime,
+                scene: &LiveProductionCpuScene,
+                layer: LiveShellContentLayer,
+                candidate: &LiveShellContentFrame,
+                cursor: crate::LiveProductionCursorPresentation,
+                plane: Option<sophia_protocol::Point>,
+                dispatch: &CombinedDispatch,
+            ) -> Result<CombinedRecompose, Box<dyn std::error::Error>> {
+                let cursor =
+                    compositor_graphics::combined_scene::CombinedCursor::new(cursor, plane);
+                let current =
+                    runtime.compose_provisional_head_frames(self, scene, layer, candidate, cursor);
+                let classified = dispatch.key.classify(current, &dispatch.candidate);
+                sealed::Sealed::classify_result(self, classified)
+            }
+
+            #[cfg(feature = "experimental-combined-frame-job")]
             fn accept_combined_shell_content(
                 &mut self,
                 runtime: &mut LiveProductionVisualRuntime,
@@ -272,6 +346,23 @@ impl sealed::Sealed for crate::CombinedNativeFixture {
         match self.compose_fault {
             Some(reason) => Err(CombinedComposeRefusal::Unclassified(reason.into())),
             None => composed,
+        }
+    }
+    /// Test-only fault seam (G3-5c controls 3 to 5): counts each
+    /// classification; a declared fault replaces its answer with an
+    /// unclassified error, and a declared class replaces a classified
+    /// answer, both after the real recomposition ran.
+    fn classify_result(
+        &self,
+        classified: Result<CombinedRecompose, Box<dyn std::error::Error>>,
+    ) -> Result<CombinedRecompose, Box<dyn std::error::Error>> {
+        self.classifies.set(self.classifies.get() + 1);
+        match (self.classify_fault, classified) {
+            (Some(reason), _) => Err(reason.into()),
+            (None, Ok(_)) if self.classification.is_some() => {
+                Ok(self.classification.expect("checked"))
+            }
+            (None, classified) => classified,
         }
     }
 }
