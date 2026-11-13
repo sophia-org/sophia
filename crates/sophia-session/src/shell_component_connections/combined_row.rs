@@ -46,6 +46,11 @@ use sophia_runtime::{
 use std::sync::mpsc;
 use std::time::Instant;
 
+// G3-5d d-2b1: `turn_combined`'s two halves for the Session split driver.
+#[cfg(test)]
+#[path = "../../tests/support/combined_row_steps.rs"]
+mod steps;
+
 #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
 type Worker = IsbValidationWorker<CombinedRenderPlan>;
 #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
@@ -119,6 +124,9 @@ pub(crate) struct CombinedRow {
     /// host's description before admission, for the R4 comparison.
     #[cfg(test)]
     projections: Vec<LiveShellContentFrame>,
+    /// A declared image-service fault still to inject (G3-5d d-2b1).
+    #[cfg(test)]
+    image_fault: Option<&'static str>,
 }
 
 #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]

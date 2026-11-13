@@ -969,3 +969,6 @@ mod lifetime;
 // G3-5c F3: the walk's disposal distinctions and the generation join.
 #[path = "combined_disposal.rs"]
 mod disposal;
+// G3-5d d-2b1: the split owner turn and its failure order.
+#[path = "combined_driver.rs"]
+mod driver;
