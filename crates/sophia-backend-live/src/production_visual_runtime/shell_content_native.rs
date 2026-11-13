@@ -34,6 +34,11 @@ mod sealed {
         ) -> Result<crate::CombinedRecompose, Box<dyn std::error::Error>> {
             classified
         }
+
+        /// Each `install_shell_content` entry, before the runtime setter
+        /// (G3-5c F5). Production does nothing; the fixture counts it.
+        #[cfg(feature = "experimental-combined-frame-job")]
+        fn install_entry(&mut self) {}
     }
 }
 
@@ -183,6 +188,8 @@ macro_rules! shell_content_native {
                 layer: LiveShellContentLayer,
                 scene: &LiveProductionCpuScene,
             ) -> Result<bool, Box<dyn std::error::Error>> {
+                #[cfg(feature = "experimental-combined-frame-job")]
+                sealed::Sealed::install_entry(self);
                 runtime.set_shell_component_content_on_target(frame, layer, scene, Some(self))
             }
 
@@ -364,6 +371,11 @@ impl sealed::Sealed for crate::CombinedNativeFixture {
             }
             (None, classified) => classified,
         }
+    }
+    /// Test-only count (G3-5c F5): every ordinary install entry, whatever
+    /// the setter then answers.
+    fn install_entry(&mut self) {
+        self.installs += 1;
     }
 }
 #[cfg(all(

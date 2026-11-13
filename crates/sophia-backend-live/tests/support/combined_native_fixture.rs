@@ -32,6 +32,8 @@
 //! succeeded), and `renderer_releases` the Release commands the renderer
 //! side actually drained. `accepts` counts committed combined accepts, and
 //! `ordinary_queues` the retained repaints ordinary installs queued.
+//! `installs` counts entries into `install_shell_content` (F5), whatever
+//! the setter then answers: an identical frame returns before any queue.
 //!
 //! G3-5c declared states, each labelled where a control uses it: a declared
 //! classification replaces a real recomposition's class after it ran, and
@@ -106,6 +108,8 @@ pub struct CombinedNativeFixture {
     pub(crate) classification: Option<crate::CombinedRecompose>,
     /// Retained repaints queued through this native target.
     pub(crate) ordinary_queues: usize,
+    /// Entries into `install_shell_content`, before the runtime setter.
+    pub(crate) installs: usize,
 }
 
 /// A declared head state for G3-5c's refused-consumption controls.
@@ -179,6 +183,7 @@ impl CombinedNativeFixture {
             accepts: 0,
             classification: None,
             ordinary_queues: 0,
+            installs: 0,
         }
     }
 
@@ -356,6 +361,11 @@ impl CombinedNativeFixture {
     /// installs that reached the native queue.
     pub fn ordinary_queues(&self) -> usize {
         self.ordinary_queues
+    }
+
+    /// Ordinary install entries so far, counted at the seam (G3-5c F5).
+    pub fn installs(&self) -> usize {
+        self.installs
     }
 
     /// Declared: `output`'s head takes `state`, as G3-4's refused-preflight

@@ -169,7 +169,8 @@ fn a_matching_result_is_accepted_in_submit_bundle_with_prepared_and_pending() {
         1,
         "c1: the matching result is accepted"
     );
-    assert_eq!(lane.native.ordinary_queues(), 0, "c1: no ordinary install");
+    assert_eq!(lane.native.installs(), 0, "c1: no ordinary install entry");
+    assert_eq!(lane.native.ordinary_queues(), 0, "c1: no ordinary queue");
     assert_eq!(
         lane.native.reserve_attempts(),
         reserves,
@@ -210,17 +211,15 @@ fn scene_churn_releases_the_result_and_enters_conventionally_once() {
         lane.states().is_empty(),
         "c2: the transfer removed the entry"
     );
-    assert_eq!(
-        lane.native.ordinary_queues(),
-        1,
-        "c2: one conventional entry"
-    );
+    assert_eq!(lane.native.installs(), 1, "c2: one conventional entry");
+    assert_eq!(lane.native.ordinary_queues(), 1, "c2: one retained queue");
     assert_eq!(lane.pending(&a), [(a.key.grant, OUTPUT, 1)]);
     assert!(a.terminals(1).is_empty());
     let reserves = lane.native.reserve_attempts();
     let moved = Some(Point { x: 20.0, y: 4.0 });
     lane.serve_at(&mut a, Instant::now(), moved, true).unwrap();
-    assert_eq!(lane.native.ordinary_queues(), 1, "c2: no second entry");
+    assert_eq!(lane.native.installs(), 1, "c2: no second entry");
+    assert_eq!(lane.native.ordinary_queues(), 1, "c2: no second queue");
     assert_eq!(lane.native.reserve_attempts(), reserves, "c2: no reserve");
     assert_eq!(lane.native.classifies(), 1);
 }
@@ -243,7 +242,8 @@ fn a_declared_class_takes_the_failure_terminal(class: CombinedRecompose, label: 
     assert_eq!(lane.native.release_attempts(), 1, "{label}: released once");
     assert!(lane.states().is_empty(), "{label}: transferred");
     assert!(lane.pending(&a).is_empty(), "{label}: no Prepared");
-    assert_eq!(lane.native.ordinary_queues(), 0, "{label}: no install");
+    assert_eq!(lane.native.installs(), 0, "{label}: no install entry");
+    assert_eq!(lane.native.ordinary_queues(), 0, "{label}: no queue");
     assert_eq!(lane.native.accepts(), 0, "{label}: no accept");
 }
 
@@ -277,6 +277,7 @@ fn an_unclassified_recomposition_error_is_returned_first_and_releases_once() {
     assert!(lane.states().is_empty());
     assert!(a.terminals(1).is_empty(), "c5: no terminal");
     assert!(lane.pending(&a).is_empty(), "c5: no Prepared");
+    assert_eq!(lane.native.installs(), 0);
     assert_eq!(lane.native.ordinary_queues(), 0);
 }
 
@@ -299,6 +300,7 @@ fn a_render_failed_or_expired_result_takes_the_terminal_once() {
         );
         assert_eq!(lane.native.release_attempts(), 0, "{label}: no lease");
         assert_eq!(lane.native.classifies(), 0);
+        assert_eq!(lane.native.installs(), 0);
         assert_eq!(lane.native.ordinary_queues(), 0);
         assert!(lane.pending(&a).is_empty());
     }
@@ -319,7 +321,8 @@ fn a_bundle_with_no_row_entry_takes_the_ordinary_arm_unchanged() {
     });
     assert!(lane.states().is_empty());
     lane.consume(&mut a, 1, Instant::now(), None, true).unwrap();
-    assert_eq!(lane.native.ordinary_queues(), 1, "c8 absent: ordinary arm");
+    assert_eq!(lane.native.installs(), 1, "c8 absent: ordinary arm");
+    assert_eq!(lane.native.ordinary_queues(), 1);
     assert_eq!(lane.native.classifies(), 0);
     assert_eq!(lane.pending(&a), [(a.key.grant, OUTPUT, 1)]);
 }
@@ -350,6 +353,7 @@ fn an_old_grants_entry_never_joins_a_new_bundle() {
         "c8 old grant: the old entry never joins: {served:?}"
     );
     assert_eq!(lane.states(), [(j1, "debt")], "c8 old grant: untouched");
+    assert_eq!(lane.native.installs(), 1);
     assert_eq!(lane.native.ordinary_queues(), 1);
     assert_eq!(lane.native.classifies(), 0);
 }
@@ -386,7 +390,8 @@ fn scene_churn_with_a_busy_head_or_a_protected_retirement_takes_the_failure_term
             before,
             "{label}: native state unchanged"
         );
-        assert_eq!(lane.native.ordinary_queues(), 0, "{label}: no install");
+        assert_eq!(lane.native.installs(), 0, "{label}: no install entry");
+        assert_eq!(lane.native.ordinary_queues(), 0, "{label}: no queue");
         assert_eq!(lane.native.accepts(), 0);
         assert!(lane.pending(&a).is_empty());
     }
@@ -466,6 +471,7 @@ fn a_result_consumed_after_its_deadline_is_declined_with_the_failure_terminal() 
     );
     assert_eq!(lane.native.classifies(), 0, "c15: nothing classified");
     assert_eq!(lane.native.accepts(), 0);
+    assert_eq!(lane.native.installs(), 0);
     assert_eq!(lane.native.ordinary_queues(), 0);
     assert_eq!(lane.native.release_attempts(), 1);
     assert!(lane.states().is_empty());
