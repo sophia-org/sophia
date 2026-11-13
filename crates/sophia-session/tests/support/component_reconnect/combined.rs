@@ -66,20 +66,12 @@ struct Attempt {
     /// ResourceStatus records for the resource, valid and not.
     accepted: usize,
     refused: usize,
-    /// G3-5d d-2b3d: every frame and content record the peer surfaced, in
-    /// the order taken.
-    log: Vec<PeerRecord>,
-}
-
-/// One record the peer's decoder surfaced (`take_frame`/`take_content`).
-#[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(
-    dead_code,
-    reason = "compared whole through PartialEq by the publication rows"
-)]
-enum PeerRecord {
-    Frame(ShellFrameRecord),
-    Content(TransactionId, ShellContentRecord),
+    /// G3-5d d-2b3d: every record the peer's decoder surfaced, per API
+    /// queue in its own drain order (`take_frame`, then `take_content`,
+    /// each drained whole). The two queues are not one FIFO: nothing here
+    /// orders a frame record against a content record.
+    frames: Vec<ShellFrameRecord>,
+    contents: Vec<(TransactionId, ShellContentRecord)>,
 }
 
 impl Attempt {
@@ -172,7 +164,8 @@ impl Lane {
             bundles: Vec::new(),
             accepted: 0,
             refused: 0,
-            log: Vec::new(),
+            frames: Vec::new(),
+            contents: Vec::new(),
         };
         let deadline = Instant::now() + WAIT;
         loop {
@@ -448,7 +441,7 @@ fn observe_peer(a: &mut Attempt) {
             a.outcomes
                 .push((outcome.candidate_generation, outcome.kind, outcome.reason));
         }
-        a.log.push(PeerRecord::Frame(event));
+        a.frames.push(event);
     }
     while let Some((transaction, event)) = a.peer.take_content().unwrap() {
         if let ShellContentRecord::ResourceStatus(status) = &event
@@ -460,7 +453,7 @@ fn observe_peer(a: &mut Attempt) {
                 a.refused += 1;
             }
         }
-        a.log.push(PeerRecord::Content(transaction, event));
+        a.contents.push((transaction, event));
     }
 }
 

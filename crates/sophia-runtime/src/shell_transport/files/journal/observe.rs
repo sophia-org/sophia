@@ -73,6 +73,10 @@ pub enum RecordIdentity {
 pub struct RetainedRecord {
     pub sequence: u64,
     pub epoch: u64,
+    /// The shell header's submission id: nonzero only for a peer-submitted
+    /// record's `Submitted`; 0 for session-authored records and for an
+    /// owned-ring packet, which carries no shell header.
+    pub submission_id: u64,
     pub start: u64,
     pub end: u64,
     /// `None` for an owned-ring packet, which carries no shell header.
@@ -182,9 +186,15 @@ impl Journal {
         };
         let mut entries = Vec::new();
         let mut cursor = 0usize;
-        let mut counted = facts.next_sequence - facts.records as u64;
+        let mut counted = facts
+            .next_sequence
+            .checked_sub(facts.records as u64)
+            .expect("the retained records precede the next sequence");
         while cursor < bytes.len() {
-            let start = facts.floor + cursor as u64;
+            let start = facts
+                .floor
+                .checked_add(cursor as u64)
+                .expect("the table stays below the tail");
             let rest = &bytes[cursor..];
             let available = rest.len();
             let Some(size) = rest.get(..4) else {
@@ -218,13 +228,19 @@ impl Journal {
 
     fn decode_retained(&self, counted: u64, start: u64, record: &[u8]) -> RetainedEntry {
         let available = record.len();
-        let end = start + available as u64;
+        let end = start
+            .checked_add(available as u64)
+            .expect("a record ends at or below the tail");
         let undecodable = |error: String| RetainedEntry::Undecodable {
             start,
             available,
             error,
         };
-        let finish = |sequence: u64, epoch: u64, kind: Option<ShellFileKind>, identity| {
+        let finish = |sequence: u64,
+                      epoch: u64,
+                      submission_id: u64,
+                      kind: Option<ShellFileKind>,
+                      identity| {
             if sequence != counted {
                 return undecodable(format!(
                     "record sequence {sequence} at counted sequence {counted}"
@@ -233,6 +249,7 @@ impl Journal {
             RetainedEntry::Record(RetainedRecord {
                 sequence,
                 epoch,
+                submission_id,
                 start,
                 end,
                 kind,
@@ -244,6 +261,7 @@ impl Journal {
                 Some(event) => finish(
                     event.sequence,
                     event.identity.grant.connection_epoch,
+                    0,
                     None,
                     RecordIdentity::OwnedEvent(event),
                 ),
@@ -293,6 +311,7 @@ impl Journal {
             Ok(identity) => finish(
                 header.sequence,
                 header.connection_epoch,
+                header.submission_id,
                 Some(header.kind),
                 identity,
             ),

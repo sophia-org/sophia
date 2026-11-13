@@ -7,8 +7,8 @@
 //! ACKs, flushes, services and advances nothing. The five stages are kept
 //! apart: a pending store event, an outbox entry, a journal commit
 //! (identified sequence and byte range, from the retained table), the
-//! journal's visible end, and the peer's actual consumption (its record
-//! log and journal progress).
+//! journal's visible end, and the peer's actual consumption (its per-queue
+//! records and journal progress).
 //!
 //! Calls are named where used. T1 is the accepted row's turn. PP0 is one
 //! peer-only poll before T1 that the accepted rows do not make: it drains
@@ -18,22 +18,42 @@
 //! D5/section 7 answer 1): it serves the peer's input and also drains,
 //! flushes and applies ACKs, and its effects are recorded, not assumed
 //! absent. A window is the records committed by one turn, identified by
-//! sequence and byte range from the snapshot taken immediately after it.
+//! sequence, epoch and contiguous byte range from the snapshot taken
+//! immediately after it.
+//!
+//! Identity: candidate records join on the exact admitted key recorded
+//! before T1 (grant, output, allocation, facts generation, stream id and
+//! candidate generation), resource statuses on the attempt's grant and the
+//! lane's resource, and a Submitted on the peer's own ticket custody.
 //!
 //! H5 is the explanation under test, not a premise: after a turn, the peer
 //! can read only the range the export's one Ready reply returned in that
-//! turn. The witness is export-produced; the peer's decode of the same
-//! range (PP1's new records) establishes delivery. A missing or different
-//! witness leaves H5 Absent/Refuted and establishes nothing else.
+//! turn. The witness is export-produced. Delivery is per-queue evidence:
+//! the peer's decoder surfaces frame and content records through separate
+//! APIs, drained whole one after the other, so PP1's new records are
+//! compared with the same per-kind projection of the reply range, never as
+//! one cross-kind order. Supported needs the retained table to cover the
+//! whole reply range in the reply's epoch with contiguous complete records,
+//! the peer's handled sequence to equal the reply's last record (Submitted
+//! and owned-ring records included, which the client consumes itself) and
+//! each queue to match; untruncated needs the reply to end at the then
+//! visible end with fewer bytes than requested. Anything less is
+//! Unresolved, with its reason, and establishes nothing else.
 //!
-//! Predictions: the exact record kinds and order of every window, the P1
-//! Closed record, the P2 Submitted record, the F3 terminal reason and the
-//! Submitted-free lean commits are predictions until this harness runs; a
-//! miss is a reported failure. The status-before-terminal order in P1 is
-//! observed and printed, not asserted. Session off/native-session remain
-//! unpassed and unwaived. F4's later presentation outcome needs the queued
-//! fallback's completion: that is b3d-2 F4-O, declared separately, and no
-//! empty-list assertion here stands for it.
+//! Deferred visibility (files/journal.rs): only a reservation-consuming
+//! commit touches the marker; an ordinary append leaves a deferred run's
+//! marker stored but stale, and `visible` applies it only while its end is
+//! the tail. FrameStreamClosed zeroes the lean in-flight count (export.rs).
+//! The rows assert the tail relation and the marker their traced order predicts.
+//!
+//! Predictions: every window's record kinds and order, the P1 Closed, the
+//! P2 Submitted, the F3 reason and the Submitted-free lean commits are
+//! predictions until this harness runs; a miss is a reported failure. The
+//! P1 status/terminal and P2 status/Closed orders are observed and printed,
+//! the marker prediction conditioned on them. Off/native-session remain
+//! unpassed and unwaived. F4's later presentation outcome is b3d-2 F4-O,
+//! declared separately; no empty-list assertion stands for it. The b3d-2 C3
+//! filler design's Timeout is corrected to RendererFailed, F3's traced reason.
 use super::*;
 use sophia_protocol::shell_files::{ShellFileKind, ShellFileSubmitted};
 use sophia_runtime::owned_ring_protocol::{Event, EventKind, Identity};
@@ -41,7 +61,7 @@ use sophia_runtime::{
     JournalFacts, OutboxRecordFacts, OwnedCreditFacts, RecordIdentity, RetainedEntry,
     RetainedRecord, StoreEventFacts, TransportFacts,
 };
-use sophia_shell_client::JournalProgress;
+use sophia_shell_client::{Custody, JournalProgress};
 
 /// The lane's stream open (30) and the P1 invalidation (50); clear of the
 /// commits (40 + n).
@@ -81,6 +101,20 @@ impl Snapshot {
             self.stores
         );
     }
+
+    /// Every Submitted id in the retained table.
+    fn submission_ids(&self) -> Vec<u64> {
+        self.facts
+            .table
+            .iter()
+            .filter_map(|entry| match entry {
+                RetainedEntry::Record(record) if submitted_of(record).is_some() => {
+                    Some(record.submission_id)
+                }
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 /// The commit-side facts an owner-free step leaves unchanged.
@@ -91,6 +125,36 @@ fn committed(journal: &JournalFacts) -> (u64, u64, u64, Option<(u64, u64)>) {
         journal.visible,
         journal.deferred,
     )
+}
+
+/// The tail relation (REV HOLD F3): no deferred run ends at the tail, so
+/// everything is visible; the stored marker may be stale.
+fn assert_all_visible(journal: &JournalFacts, label: &str) {
+    assert_eq!(journal.visible, journal.tail, "{label}: all visible");
+    assert!(
+        journal.deferred.is_none_or(|(_, end)| end < journal.tail),
+        "{label}: no deferred run at the tail: {journal:?}"
+    );
+    eprintln!("{label}: stored marker {:?}", journal.deferred);
+}
+
+/// One peer-only poll's new records, per decoder queue, and the peer's
+/// handled sequence after it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Delivered {
+    frames: Vec<ShellFrameRecord>,
+    contents: Vec<(TransactionId, ShellContentRecord)>,
+    handled: u64,
+}
+
+impl Delivered {
+    fn len(&self) -> usize {
+        self.frames.len() + self.contents.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl Lane {
@@ -123,6 +187,27 @@ impl Lane {
         }
     }
 
+    /// The exact admitted key of `job`, recorded while the job is in the row.
+    fn admitted_key(&self, job: u64) -> (ShellFrameStreamKey, u64) {
+        let binding = self
+            .h
+            .owner
+            .processes
+            .combined_row(0)
+            .binding(job)
+            .expect("the job is in the row");
+        (
+            ShellFrameStreamKey {
+                grant: binding.key.grant,
+                output: binding.key.output,
+                allocation: binding.key.allocation,
+                facts_generation: binding.key.facts_generation,
+                stream_id: binding.key.stream_id,
+            },
+            binding.generation,
+        )
+    }
+
     /// IT: one `service_owner_turn` on `a`'s connection, a transport pass
     /// (input service, drain, flush, ACKs), not a pure read.
     fn input_turn(&mut self, a: &Attempt) {
@@ -142,10 +227,8 @@ impl Lane {
         s0: &Snapshot,
         s1: &Snapshot,
         label: &str,
-    ) -> (H5, Vec<PeerRecord>, Vec<PeerRecord>, Snapshot) {
-        let before = a.log.len();
-        let pp1 = peer_poll(a);
-        let l1 = a.log[before..].to_vec();
+    ) -> (H5, Delivered, Delivered, Snapshot) {
+        let (pp1, l1) = peer_poll(a);
         let s2 = self.snapshot(a, label);
         assert_eq!(
             s2.journal(),
@@ -160,9 +243,7 @@ impl Lane {
             (s1.journal().next_sequence, s1.journal().tail),
             "{label} IT: the transport pass committed nothing"
         );
-        let before = a.log.len();
-        let pp2 = peer_poll(a);
-        let l2 = a.log[before..].to_vec();
+        let (pp2, l2) = peer_poll(a);
         let s3 = self.snapshot(a, &format!("{label} O3"));
         let verdict = h5(s0.serial(), s1, &l1, label);
         eprintln!(
@@ -175,16 +256,35 @@ impl Lane {
     }
 }
 
-/// One peer-only poll, then the peer's new records into `a`.
-fn peer_poll(a: &mut Attempt) -> JournalProgress {
+/// One peer-only poll, then the peer's new records per queue.
+fn peer_poll(a: &mut Attempt) -> (JournalProgress, Delivered) {
+    let (frames, contents) = (a.frames.len(), a.contents.len());
     a.peer.poll_io().unwrap();
     observe_peer(a);
-    a.peer.journal_progress()
+    let progress = a.peer.journal_progress();
+    (
+        progress,
+        Delivered {
+            frames: a.frames[frames..].to_vec(),
+            contents: a.contents[contents..].to_vec(),
+            handled: progress.handled,
+        },
+    )
+}
+
+fn entry_start(entry: &RetainedEntry) -> u64 {
+    match entry {
+        RetainedEntry::Record(record) => record.start,
+        RetainedEntry::Incomplete { start, .. } | RetainedEntry::Undecodable { start, .. } => {
+            *start
+        }
+    }
 }
 
 /// The records one turn committed: those in `[before.tail, after.tail)`
 /// of `after`'s table, which must carry exactly the sequences
-/// `[before.next_sequence, after.next_sequence)` with no incomplete or
+/// `[before.next_sequence, after.next_sequence)` in `after`'s epoch,
+/// contiguous from the old tail to the new, with no incomplete or
 /// undecodable entry among them. Retention must still cover the window.
 fn window(before: &Snapshot, after: &Snapshot, label: &str) -> Vec<RetainedRecord> {
     let (b, a) = (before.journal(), after.journal());
@@ -197,33 +297,34 @@ fn window(before: &Snapshot, after: &Snapshot, label: &str) -> Vec<RetainedRecor
         b.tail
     );
     let mut records = Vec::new();
+    let mut next = b.tail;
     for entry in &after.facts.table {
-        let start = match entry {
-            RetainedEntry::Record(record) => record.start,
-            RetainedEntry::Incomplete { start, .. } | RetainedEntry::Undecodable { start, .. } => {
-                *start
-            }
-        };
+        let start = entry_start(entry);
         if start < b.tail || start >= a.tail {
             continue;
         }
-        match entry {
-            RetainedEntry::Record(record) => records.push(record.clone()),
-            other => panic!("{label}: {other:?} inside the window"),
-        }
+        let RetainedEntry::Record(record) = entry else {
+            panic!("{label}: {entry:?} inside the window")
+        };
+        assert_eq!(
+            record.epoch, a.epoch,
+            "{label}: record {} epoch",
+            record.sequence
+        );
+        assert_eq!(
+            record.start, next,
+            "{label}: record {} is contiguous",
+            record.sequence
+        );
+        next = record.end;
+        records.push(record.clone());
     }
+    assert_eq!(next, a.tail, "{label}: the window ends at the new tail");
     let sequences: Vec<u64> = records.iter().map(|record| record.sequence).collect();
     let expected: Vec<u64> = (b.next_sequence..a.next_sequence).collect();
     assert_eq!(sequences, expected, "{label}: the window's sequences");
-    match (records.first(), records.last()) {
-        (Some(first), Some(last)) => {
-            assert_eq!(
-                first.start, b.tail,
-                "{label}: the window starts at T's tail"
-            );
-            assert_eq!(last.end, a.tail, "{label}: the window ends at the new tail");
-        }
-        _ => eprintln!("{label}: empty window (vacuous)"),
+    if records.is_empty() {
+        eprintln!("{label}: empty window (vacuous)");
     }
     eprintln!("{label}: window {:?}", kinds(&records));
     records
@@ -251,20 +352,9 @@ fn allocation_result_of(
     }
 }
 
-fn outcome_of(record: &RetainedRecord) -> Option<&ContentCandidateOutcome> {
+fn frame_of(record: &RetainedRecord) -> Option<&ShellFrameRecord> {
     match &record.identity {
-        RecordIdentity::Frame(ShellFrameRecord::Outcome { outcome, .. }) => Some(outcome),
-        _ => None,
-    }
-}
-
-fn closed_of(record: &RetainedRecord) -> Option<(TransactionId, ShellFrameStreamKey, u16)> {
-    match &record.identity {
-        RecordIdentity::Frame(ShellFrameRecord::Closed {
-            transaction,
-            key,
-            reason,
-        }) => Some((*transaction, *key, *reason)),
+        RecordIdentity::Frame(frame) => Some(frame),
         _ => None,
     }
 }
@@ -309,117 +399,257 @@ fn kinds(records: &[RetainedRecord]) -> Vec<String> {
         .collect()
 }
 
-/// Candidate `n`'s frame outcomes in a window, as (kind, reason).
-fn terminals_in(records: &[RetainedRecord], n: u64) -> Vec<(u16, u16)> {
-    records
+/// A frame outcome's (kind, reason) when it names exactly the admitted
+/// `key` and candidate `n`: grant, output, stream, allocation, facts
+/// generation and candidate generation all joined.
+fn outcome_for(frame: &ShellFrameRecord, key: ShellFrameStreamKey, n: u64) -> Option<(u16, u16)> {
+    match frame {
+        ShellFrameRecord::Outcome {
+            outcome,
+            stream_id,
+            allocation,
+            facts_generation,
+            ..
+        } if outcome.grant == key.grant
+            && outcome.output == key.output
+            && *stream_id == key.stream_id
+            && *allocation == key.allocation
+            && *facts_generation == key.facts_generation
+            && outcome.candidate_generation == n =>
+        {
+            Some((outcome.kind, outcome.reason))
+        }
+        _ => None,
+    }
+}
+
+/// A Closed's (transaction, reason) when it names exactly `key`.
+fn closed_for(frame: &ShellFrameRecord, key: ShellFrameStreamKey) -> Option<(TransactionId, u16)> {
+    match frame {
+        ShellFrameRecord::Closed {
+            transaction,
+            key: closed,
+            reason,
+        } if *closed == key => Some((*transaction, *reason)),
+        _ => None,
+    }
+}
+
+/// A window's frame records, for the same joins as the peer's.
+fn frames_in(records: &[RetainedRecord]) -> Vec<ShellFrameRecord> {
+    records.iter().filter_map(frame_of).cloned().collect()
+}
+
+/// Candidate `n`'s exact-key frame outcomes the peer surfaced.
+fn peer_terminals(
+    frames: &[ShellFrameRecord],
+    key: ShellFrameStreamKey,
+    n: u64,
+) -> Vec<(u16, u16)> {
+    frames
         .iter()
-        .filter_map(outcome_of)
-        .filter(|outcome| outcome.output == OUTPUT && outcome.candidate_generation == n)
-        .map(|outcome| (outcome.kind, outcome.reason))
+        .filter_map(|frame| outcome_for(frame, key, n))
         .collect()
 }
 
-/// The window's one ResourceStatus for the lane's resource.
-fn one_status<'a>(records: &'a [RetainedRecord], label: &str) -> &'a RetainedRecord {
+/// Exact-key Closed records the peer surfaced.
+fn peer_closed(frames: &[ShellFrameRecord], key: ShellFrameStreamKey) -> Vec<(TransactionId, u16)> {
+    frames
+        .iter()
+        .filter_map(|frame| closed_for(frame, key))
+        .collect()
+}
+
+/// The window's one ResourceStatus under `grant` for the lane's resource.
+fn one_status<'a>(
+    records: &'a [RetainedRecord],
+    grant: ContentGrant,
+    label: &str,
+) -> &'a RetainedRecord {
     let statuses: Vec<&RetainedRecord> = records
         .iter()
-        .filter(|record| status_of(record).is_some_and(|status| status.resource == RESOURCE))
+        .filter(|record| {
+            status_of(record)
+                .is_some_and(|status| status.grant == grant && status.resource == RESOURCE)
+        })
         .collect();
     assert_eq!(
         statuses.len(),
         1,
-        "{label}: one ResourceStatus for the resource in {:?}",
+        "{label}: one ResourceStatus for the grant's resource in {:?}",
         kinds(records)
     );
     statuses[0]
 }
 
-/// What the peer surfaces for a retained record, if anything: Submitted
-/// and owned-ring events are consumed inside the client.
-fn peer_record(record: &RetainedRecord) -> Option<PeerRecord> {
-    match &record.identity {
-        RecordIdentity::Content {
-            transaction,
-            record,
-        } => Some(PeerRecord::Content(*transaction, record.clone())),
-        RecordIdentity::Frame(frame) => Some(PeerRecord::Frame(frame.clone())),
-        RecordIdentity::Submitted(_) | RecordIdentity::OwnedEvent(_) | RecordIdentity::Other => {
-            None
-        }
-    }
+/// The (status, reason) of every status the peer surfaced under `grant`
+/// for the lane's resource.
+fn peer_statuses(
+    contents: &[(TransactionId, ShellContentRecord)],
+    grant: ContentGrant,
+) -> Vec<(u16, u16)> {
+    contents
+        .iter()
+        .filter_map(|(_, record)| match record {
+            ShellContentRecord::ResourceStatus(status)
+                if status.grant == grant && status.resource == RESOURCE =>
+            {
+                Some((status.status, status.reason))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// The H5 verdict for one turn: exactly one new Ready reply in the turn,
-/// whose returned range decodes to exactly PP1's new records.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// whose returned range is covered by the retained table and decodes,
+/// per queue, to exactly PP1's new records.
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum H5 {
     /// The reply's records are PP1's records; `untruncated` when the reply
-    /// reached the then-visible end.
+    /// reached the then-visible end and returned less than requested.
     Supported {
         untruncated: bool,
     },
-    /// No reply and nothing delivered.
+    /// An empty reply and nothing delivered.
     Vacuous,
     /// The turn produced no Ready reply (nothing attributable).
     Absent,
     /// More than one Ready reply in the turn: not attributable to one.
     Insufficient(u64),
+    /// The reply is not established well enough to compare: its reason.
+    Unresolved(String),
     Refuted,
 }
 
 impl H5 {
-    fn describe(self) -> String {
+    fn describe(&self) -> String {
         match self {
             Self::Supported { untruncated } => format!("Supported (untruncated {untruncated})"),
             Self::Vacuous => "Vacuous".into(),
             Self::Absent => "Absent".into(),
             Self::Insufficient(replies) => format!("Insufficient ({replies} replies)"),
+            Self::Unresolved(why) => format!("Unresolved ({why})"),
             Self::Refuted => "Refuted".into(),
         }
     }
+
+    /// Neither refuted nor unresolved; the rows' minimum.
+    fn assert_established(&self, label: &str) {
+        assert!(
+            !matches!(self, Self::Refuted | Self::Unresolved(_)),
+            "{label}: H5 {}",
+            self.describe()
+        );
+    }
 }
 
-fn h5(serial_before: u64, s1: &Snapshot, delivered: &[PeerRecord], label: &str) -> H5 {
+fn h5(serial_before: u64, s1: &Snapshot, l1: &Delivered, label: &str) -> H5 {
     let journal = s1.journal();
     let Some(witness) = journal.ready.filter(|w| w.serial > serial_before) else {
-        return if delivered.is_empty() {
+        return if l1.is_empty() {
             H5::Absent
         } else {
-            eprintln!("{label}: records delivered with no new Ready reply: {delivered:?}");
+            eprintln!("{label}: records delivered with no new Ready reply: {l1:?}");
             H5::Refuted
         };
     };
     if witness.serial != serial_before + 1 {
         return H5::Insufficient(witness.serial - serial_before);
     }
-    assert_eq!(witness.epoch, journal.epoch, "{label}: the reply's epoch");
-    let end = witness.offset + witness.returned as u64;
-    let expected: Vec<PeerRecord> = s1
-        .facts
-        .table
-        .iter()
-        .filter_map(|entry| match entry {
-            RetainedEntry::Record(record)
-                if record.start >= witness.offset && record.end <= end =>
-            {
-                peer_record(record)
-            }
-            _ => None,
-        })
-        .collect();
+    let unresolved = |why: String| {
+        eprintln!("{label}: H5 unresolved: {why}");
+        H5::Unresolved(why)
+    };
+    if witness.epoch != journal.epoch {
+        return unresolved(format!(
+            "reply epoch {} in journal epoch {}",
+            witness.epoch, journal.epoch
+        ));
+    }
+    let Some(end) = witness.offset.checked_add(witness.returned as u64) else {
+        return unresolved(format!("reply range overflows: {witness:?}"));
+    };
+    if witness.returned == 0 {
+        return if l1.is_empty() {
+            H5::Vacuous
+        } else {
+            unresolved(format!("an empty reply, yet the peer surfaced {l1:?}"))
+        };
+    }
+    if journal.floor > witness.offset {
+        return unresolved(format!(
+            "retention floor {} passed the reply offset {}",
+            journal.floor, witness.offset
+        ));
+    }
+    let mut covered: Vec<&RetainedRecord> = Vec::new();
+    let mut next = witness.offset;
+    for entry in &s1.facts.table {
+        let start = entry_start(entry);
+        if start < witness.offset || start >= end {
+            continue;
+        }
+        let RetainedEntry::Record(record) = entry else {
+            return unresolved(format!("{entry:?} inside the reply range"));
+        };
+        if record.start != next {
+            return unresolved(format!(
+                "record {} starts at {} where {next} was expected",
+                record.sequence, record.start
+            ));
+        }
+        if record.epoch != witness.epoch {
+            return unresolved(format!(
+                "record {} epoch {} in reply epoch {}",
+                record.sequence, record.epoch, witness.epoch
+            ));
+        }
+        next = record.end;
+        covered.push(record);
+    }
+    if next != end {
+        return unresolved(format!(
+            "the reply ends at {end} but the covered records end at {next}"
+        ));
+    }
+    let last = covered.last().expect("a nonempty covered range");
+    if l1.handled != last.sequence {
+        return unresolved(format!(
+            "handled {} after PP1, the reply's last record is {}",
+            l1.handled, last.sequence
+        ));
+    }
+    let expected = Delivered {
+        frames: covered
+            .iter()
+            .filter_map(|r| frame_of(r).cloned())
+            .collect(),
+        contents: covered
+            .iter()
+            .filter_map(|r| match &r.identity {
+                RecordIdentity::Content {
+                    transaction,
+                    record,
+                } => Some((*transaction, record.clone())),
+                _ => None,
+            })
+            .collect(),
+        handled: last.sequence,
+    };
     eprintln!(
-        "{label}: Ready serial {} [{}, {end}) of visible {} (requested {}, clamped {}): expected {expected:?}",
+        "{label}: Ready serial {} [{}, {end}) of visible {} (requested {}, clamped {}), covered {:?}: expected {expected:?}",
         witness.serial,
         witness.offset,
         witness.visible,
         witness.count_requested,
-        witness.count_clamped
+        witness.count_clamped,
+        covered.iter().map(|r| r.sequence).collect::<Vec<_>>()
     );
-    if expected.is_empty() && delivered.is_empty() {
-        H5::Vacuous
-    } else if expected == delivered {
+    if expected == *l1 {
         H5::Supported {
-            untruncated: end == witness.visible,
+            untruncated: end == witness.visible
+                && (witness.returned as u64) < u64::from(witness.count_requested),
         }
     } else {
         H5::Refuted
@@ -462,8 +692,9 @@ fn resource_credit(s: &Snapshot, label: &str) -> OwnedCreditFacts {
 fn r4_the_accepted_status_commits_deferred_in_t1_and_slot_released_follows_it_in_t2() {
     let (mut lane, wake) = Lane::running();
     let mut a = lane.attempt();
-    let _job = rendered(&mut lane, &wake, &mut a);
-    let pp0 = peer_poll(&mut a);
+    let job = rendered(&mut lane, &wake, &mut a);
+    let (key, n) = lane.admitted_key(job);
+    let (pp0, _) = peer_poll(&mut a);
     let s0 = lane.snapshot(&a, "R4 O0");
     eprintln!("R4 PP0 {pp0:?}; O0 journal {:?}", s0.journal());
     let credit = resource_credit(&s0, "R4 O0");
@@ -490,12 +721,16 @@ fn r4_the_accepted_status_commits_deferred_in_t1_and_slot_released_follows_it_in
         ["ResourceStatus(2)"],
         "MD7: the release committed before its status"
     );
-    let status = &w1[0];
+    let status = one_status(&w1, a.key.grant, "R4 T1");
     let settled = status_of(status).unwrap();
     assert_eq!(
         (settled.grant, settled.resource, settled.status),
         (a.key.grant, RESOURCE, 2),
         "the identified acceptance"
+    );
+    assert!(
+        peer_terminals(&frames_in(&w1), key, n).is_empty(),
+        "no terminal"
     );
     assert_eq!(
         s1.facts.owned_publication_sequence,
@@ -531,15 +766,19 @@ fn r4_the_accepted_status_commits_deferred_in_t1_and_slot_released_follows_it_in
         s0.serial(),
         "no Ready reply in T1: nothing became visible"
     );
-    let pp1 = peer_poll(&mut a);
+    let (pp1, l1) = peer_poll(&mut a);
     assert!(
         pp1.handled < status.sequence,
         "unread: handled {} before status {}",
         pp1.handled,
         status.sequence
     );
-    assert!(a.terminals(1).is_empty());
-    assert_eq!(a.accepted, 0, "the peer has not read the acceptance");
+    assert!(l1.is_empty(), "nothing readable: {l1:?}");
+    assert!(peer_terminals(&a.frames, key, n).is_empty());
+    assert!(
+        peer_statuses(&a.contents, a.key.grant).is_empty(),
+        "the peer has not read the acceptance"
+    );
     let t2 = lane.result_turn();
     assert_eq!(t2.steps, TURN);
     assert_eq!(t2.accepted, [0], "nothing more to accept");
@@ -582,9 +821,9 @@ fn r4_the_accepted_status_commits_deferred_in_t1_and_slot_released_follows_it_in
     assert_eq!(j2.visible, status.start, "still invisible: no terminal yet");
     assert_eq!(s2.facts.lean_frames_in_flight, Some(1));
     assert_eq!(s2.serial(), s0.serial(), "no Ready reply in T2 either");
-    let pp2 = peer_poll(&mut a);
+    let (pp2, l2) = peer_poll(&mut a);
     assert!(pp2.handled < status.sequence, "still unread");
-    assert!(a.terminals(1).is_empty());
+    assert!(l2.is_empty(), "{l2:?}");
     assert_eq!(a.accepted, 0);
     assert_eq!(lane.releases(), (0, 0), "the head holds the lease");
     assert_eq!(lane.leased(), 1);
@@ -594,17 +833,22 @@ fn r4_the_accepted_status_commits_deferred_in_t1_and_slot_released_follows_it_in
 /// turns without a drain (flush_content_allocation_events); the journal is
 /// unchanged. T1 commits it, the resource's refusal status and the
 /// candidate's one AllocationLost terminal; the stream's Closed record for
-/// the lost allocation is the predicted fourth. The result commits before
-/// the status; the status/terminal order is observed. Nothing stays
-/// deferred: the terminal ends the frame's flight. Then the schedule: PP1
-/// reads what T1's one reply returned, IT serves the re-armed read, PP2
-/// reads the rest.
+/// the lost allocation is the predicted fourth, under the exact admitted
+/// key. The result commits before the status; the status/terminal order
+/// is observed. Nothing is deferred at the tail: the terminal ended the
+/// frame's flight. Then the schedule: PP1 reads what T1's one reply
+/// returned, IT serves the re-armed read, PP2 reads the rest.
 #[test]
 fn p1_a_lost_allocation_journals_its_result_the_refusal_and_the_terminal_in_t1() {
     let (mut lane, wake) = Lane::running();
     let mut a = lane.attempt();
-    let _job = rendered(&mut lane, &wake, &mut a);
-    let pp0 = peer_poll(&mut a);
+    let job = rendered(&mut lane, &wake, &mut a);
+    let (key, n) = lane.admitted_key(job);
+    assert_eq!(
+        (key.grant, key.output, key.allocation),
+        (a.key.grant, OUTPUT, ALLOCATION)
+    );
+    let (pp0, _) = peer_poll(&mut a);
     let s0 = lane.snapshot(&a, "P1 O0");
     eprintln!("P1 PP0 {pp0:?}; O0 journal {:?}", s0.journal());
     lane.h
@@ -645,20 +889,29 @@ fn p1_a_lost_allocation_journals_its_result_the_refusal_and_the_terminal_in_t1()
         .iter()
         .find(|record| allocation_result_of(record).is_some_and(|(t, _)| t == INVALIDATE))
         .expect("AllocationResult(50) committed in T1");
-    let status = one_status(&w1, "P1 T1");
+    let status = one_status(&w1, a.key.grant, "P1 T1");
     let refusal = status_of(status).unwrap();
     assert_ne!(refusal.status, 2, "a refusal: {refusal:?}");
-    assert_eq!(terminals_in(&w1, 1), [LOST], "one AllocationLost terminal");
-    let terminal = w1.iter().find(|r| outcome_of(r).is_some()).unwrap();
-    let closed: Vec<(ContentOutputId, ContentAllocationId, u16)> = w1
-        .iter()
-        .filter_map(closed_of)
-        .map(|(_, key, reason)| (key.output, key.allocation, reason))
-        .collect();
     assert_eq!(
-        closed,
-        [(OUTPUT, ALLOCATION, ContentReason::AllocationLost as u16)],
-        "the stream closed with its allocation"
+        peer_terminals(&frames_in(&w1), key, n),
+        [LOST],
+        "one AllocationLost terminal"
+    );
+    let terminal = w1
+        .iter()
+        .find(|r| frame_of(r).is_some_and(|f| outcome_for(f, key, n).is_some()))
+        .unwrap();
+    let closed = peer_closed(&frames_in(&w1), key);
+    assert_eq!(
+        closed.len(),
+        1,
+        "the stream closed under its exact key: {:?}",
+        kinds(&w1)
+    );
+    assert_eq!(
+        closed[0].1,
+        ContentReason::AllocationLost as u16,
+        "closed with its allocation"
     );
     assert!(
         result.sequence < status.sequence,
@@ -667,31 +920,40 @@ fn p1_a_lost_allocation_journals_its_result_the_refusal_and_the_terminal_in_t1()
         status.sequence
     );
     eprintln!(
-        "P1: status {} {} terminal {}",
+        "P1: refusal {refusal:?}; status {} {} terminal {}; Closed under {:?}",
         status.sequence,
         if status.sequence < terminal.sequence {
             "before"
         } else {
             "after"
         },
-        terminal.sequence
+        terminal.sequence,
+        closed[0].0
     );
-    let j1 = s1.journal();
-    assert_eq!(j1.visible, j1.tail, "nothing deferred after the terminal");
-    assert_eq!(j1.deferred, None);
+    assert_all_visible(s1.journal(), "P1 O1");
     assert_eq!(s1.facts.lean_frames_in_flight, Some(0));
     assert!(s1.facts.outbox.is_empty(), "{:?}", s1.facts.outbox);
     assert!(!s1.facts.output_blocked);
     s1.assert_stores_empty("P1 O1");
     let (verdict, l1, l2, s3) = lane.schedule(&mut a, &s0, &s1, "P1");
-    assert_ne!(verdict, H5::Refuted, "H5 refuted for P1");
+    verdict.assert_established("P1");
     assert_eq!(
         l1.len() + l2.len(),
         4,
         "the peer surfaced T1's four records once"
     );
-    assert_eq!(a.terminals(1), [LOST], "the terminal once");
-    assert_eq!((a.accepted, a.refused), (0, 1), "the refusal once");
+    assert_eq!(
+        peer_terminals(&a.frames, key, n),
+        [LOST],
+        "the terminal once"
+    );
+    assert_eq!(
+        peer_statuses(&a.contents, a.key.grant),
+        [(refusal.status, refusal.reason)],
+        "the refusal once"
+    );
+    assert_eq!((a.accepted, a.refused), (0, 1));
+    assert_eq!(peer_closed(&a.frames, key), closed, "the Closed once");
     assert!(!a.stream.has_credit(), "closed: {:?}", a.stream.state());
     eprintln!(
         "P1: O3 floor {} records {} (O1 floor {}); peer {:?}",
@@ -706,21 +968,36 @@ fn p1_a_lost_allocation_journals_its_result_the_refusal_and_the_terminal_in_t1()
 
 /// P2: the Close is read by T1's input service and admitted by its content
 /// step, which still accepts the admitted frame. T1 commits the Close's
-/// Submitted (FrameStreamClose is a candidate-class request), Closed under
-/// the Close's own transaction with the exact key, and the frame's
-/// acceptance, and no terminal for candidate 1. Whether the acceptance
-/// stays deferred depends on whether it is the last of the three; the
-/// peer gains Closed and, only if visible, the acceptance.
+/// Submitted (a candidate-class request, joined to the peer's close ticket
+/// through its custody), Closed under the Close's transaction with the
+/// exact key, and the acceptance; no terminal for candidate 1. The
+/// status/Closed order is observed and the marker follows it: a status
+/// committed in flight is deferred and the ordinary Closed leaves its
+/// marker stale; a status after Closed publishes at once. Either way Closed
+/// zeroed the lean count, all is visible and the peer gains Closed and the
+/// acceptance. The still-submitted head and its pending presentation are
+/// separate facts, unchanged by the close.
 #[test]
 fn p2_a_close_after_admission_journals_closed_under_its_transaction_and_no_terminal() {
     let (mut lane, wake) = Lane::running();
     let mut a = lane.attempt();
     let job = rendered(&mut lane, &wake, &mut a);
     let binding = lane.h.owner.processes.combined_row(0).binding(job).unwrap();
-    a.stream.close(&mut a.peer, CLOSE).unwrap();
-    let pp0 = peer_poll(&mut a);
+    let (key, n) = lane.admitted_key(job);
+    let admission = a.stream.close(&mut a.peer, CLOSE).unwrap();
+    assert_eq!(admission.count, 1, "one Close record");
+    let (pp0, _) = peer_poll(&mut a);
     let s0 = lane.snapshot(&a, "P2 O0");
-    eprintln!("P2 PP0 {pp0:?}; O0 journal {:?}", s0.journal());
+    let custody0 = a.peer.custody(admission.first);
+    eprintln!(
+        "P2 PP0 {pp0:?}; O0 journal {:?}; close custody {custody0:?}",
+        s0.journal()
+    );
+    assert_ne!(
+        custody0,
+        Some(Custody::Submitted),
+        "not yet admitted by the owner"
+    );
     assert_eq!(
         lane.stream_fact(&a, binding),
         Some((FrameStreamPhase::Open, OPEN)),
@@ -738,80 +1015,115 @@ fn p2_a_close_after_admission_journals_closed_under_its_transaction_and_no_termi
     let s1 = lane.snapshot(&a, "P2 O1");
     let w1 = window(&s0, &s1, "P2 T1");
     assert!(
-        terminals_in(&w1, 1).is_empty(),
+        peer_terminals(&frames_in(&w1), key, n).is_empty(),
         "no terminal for the admitted frame"
     );
-    let submitted: Vec<ShellFileKind> = w1
+    let submitted: Vec<(u64, ShellFileSubmitted)> = w1
         .iter()
-        .filter_map(submitted_of)
-        .map(|s| s.candidate_kind)
+        .filter_map(|r| submitted_of(r).map(|s| (r.submission_id, s)))
         .collect();
+    assert_eq!(submitted.len(), 1, "one Submitted: {:?}", kinds(&w1));
+    let (submission_id, submitted) = submitted[0];
     assert_eq!(
-        submitted,
-        [ShellFileKind::FrameStreamClose],
+        submitted.candidate_kind,
+        ShellFileKind::FrameStreamClose,
         "the Close's own Submitted"
     );
-    let closed: Vec<(TransactionId, ShellFrameStreamKey, u16)> =
-        w1.iter().filter_map(closed_of).collect();
-    assert_eq!(closed.len(), 1, "one Closed: {:?}", kinds(&w1));
-    assert_eq!(closed[0].0, CLOSE, "under the Close's transaction");
-    assert_eq!(
-        closed[0].1,
-        ShellFrameStreamKey {
-            grant: binding.key.grant,
-            output: binding.key.output,
-            allocation: binding.key.allocation,
-            facts_generation: binding.key.facts_generation,
-            stream_id: binding.key.stream_id,
-        },
-        "the exact stream key"
+    assert_ne!(submission_id, 0, "a peer submission id");
+    assert!(
+        !s0.submission_ids().contains(&submission_id),
+        "a new submission id, not an earlier record's"
     );
-    eprintln!("P2: Closed reason {}", closed[0].2);
-    let status = one_status(&w1, "P2 T1");
+    let closed = peer_closed(&frames_in(&w1), key);
     assert_eq!(
-        status_of(status).unwrap().status,
-        2,
+        closed.len(),
+        1,
+        "one Closed under the exact key: {:?}",
+        kinds(&w1)
+    );
+    assert_eq!(closed[0].0, CLOSE, "under the Close's transaction");
+    eprintln!("P2: Closed reason {}", closed[0].1);
+    let closed_record = w1
+        .iter()
+        .find(|r| frame_of(r).is_some_and(|f| closed_for(f, key).is_some()))
+        .unwrap();
+    let status = one_status(&w1, a.key.grant, "P2 T1");
+    let settled = status_of(status).unwrap();
+    assert_eq!(
+        (settled.grant, settled.resource, settled.status),
+        (a.key.grant, RESOURCE, 2),
         "the frame's acceptance"
     );
-    let j1 = s1.journal();
-    let status_last = w1
-        .last()
-        .is_some_and(|last| last.sequence == status.sequence);
-    assert_eq!(
-        j1.deferred.is_some(),
-        status_last,
-        "the acceptance is deferred only while it is the tail: {j1:?}"
+    let status_first = status.sequence < closed_record.sequence;
+    eprintln!(
+        "P2: status {} {} Closed {}",
+        status.sequence,
+        if status_first { "before" } else { "after" },
+        closed_record.sequence
     );
-    assert_eq!(s1.facts.lean_frames_in_flight, Some(1));
+    let j1 = s1.journal();
+    assert_eq!(
+        s1.facts.lean_frames_in_flight,
+        Some(0),
+        "Closed ended every flight (export: FrameStreamClosed zeroes the count)"
+    );
+    assert_all_visible(j1, "P2 O1");
+    assert_eq!(
+        j1.deferred,
+        if status_first {
+            Some((status.start, status.end))
+        } else {
+            None
+        },
+        "the marker: stale behind the ordinary Closed, or cleared by a status published at once"
+    );
     assert!(s1.facts.outbox.is_empty(), "{:?}", s1.facts.outbox);
     s1.assert_stores_empty("P2 O1");
     let (verdict, l1, l2, _) = lane.schedule(&mut a, &s0, &s1, "P2");
-    assert_ne!(verdict, H5::Refuted, "H5 refuted for P2");
-    let delivered: Vec<&PeerRecord> = l1.iter().chain(&l2).collect();
-    let closed_seen = delivered
-        .iter()
-        .filter(|r| matches!(r, PeerRecord::Frame(ShellFrameRecord::Closed { transaction, .. }) if *transaction == CLOSE))
-        .count();
-    assert_eq!(closed_seen, 1, "the peer read Closed once: {delivered:?}");
-    assert!(a.terminals(1).is_empty(), "no terminal reached the peer");
+    verdict.assert_established("P2");
     assert_eq!(
-        a.accepted,
-        usize::from(!status_last),
-        "the acceptance reaches the peer only when visible"
+        l1.len() + l2.len(),
+        2,
+        "the peer surfaced Closed and the acceptance once (Submitted is consumed by the client)"
     );
+    assert_eq!(
+        peer_closed(&a.frames, key),
+        [(CLOSE, closed[0].1)],
+        "the peer read Closed once"
+    );
+    assert_eq!(
+        a.peer.custody(admission.first),
+        Some(Custody::Submitted),
+        "the peer's Close ticket observed its Submitted"
+    );
+    assert!(
+        peer_terminals(&a.frames, key, n).is_empty(),
+        "no terminal reached the peer"
+    );
+    assert_eq!(
+        peer_statuses(&a.contents, a.key.grant),
+        [(2, settled.reason)],
+        "the acceptance reached the peer"
+    );
+    assert_eq!((a.accepted, a.refused), (1, 0));
     assert!(!a.stream.has_credit(), "{:?}", a.stream.state());
-    assert_eq!(lane.pending(&a), [(a.key.grant, OUTPUT, 1)]);
+    assert_eq!(
+        lane.pending(&a),
+        [(a.key.grant, OUTPUT, 1)],
+        "the head's presentation is still pending"
+    );
     assert_eq!(lane.releases(), (0, 0), "the head holds the lease");
     assert_eq!(lane.leased(), 1);
 }
 
 /// P3: the candidate's own expiry. T1's content service drains the
-/// acceptance first (deferred), then its expiry commits the Timeout
-/// terminal, which ends the deferred run: both are visible after T1 and
-/// the terminal's own commit answers the peer's parked read, so one
-/// peer-only poll reads both (the accepted row's `peer_reads_terminal`
-/// needed no owner call). Compared with P1/P2, nothing precedes the
-/// terminal that could answer the read early.
+/// acceptance first (deferred, since the frame is in flight), then its
+/// expiry commits the Timeout terminal by an ordinary append: the marker
+/// stays stored but stale, both records are visible after T1 and the
+/// terminal's own commit answers the peer's parked read, so one peer-only
+/// poll reads both (the accepted row's `peer_reads_terminal` needed no
+/// owner call). Compared with P1/P2, nothing precedes the terminal that
+/// could answer the read early.
 #[test]
 fn p3_the_expiry_commits_the_acceptance_then_timeout_and_one_poll_reads_both() {
     let (mut lane, wake) = Lane::running();
@@ -829,8 +1141,9 @@ fn p3_the_expiry_commits_the_acceptance_then_timeout_and_one_poll_reads_both() {
     let before = content_now_msec();
     let job = rendered(&mut lane, &wake, &mut a);
     let binding = lane.h.owner.processes.combined_row(0).binding(job).unwrap();
+    let (key, n) = lane.admitted_key(job);
     let deadline = lane.deadline_of(job);
-    let pp0 = peer_poll(&mut a);
+    let (pp0, _) = peer_poll(&mut a);
     let s0 = lane.snapshot(&a, "P3 O0");
     eprintln!("P3 PP0 {pp0:?}; O0 journal {:?}", s0.journal());
     advance_content_clock(candidate);
@@ -853,22 +1166,39 @@ fn p3_the_expiry_commits_the_acceptance_then_timeout_and_one_poll_reads_both() {
         ["ResourceStatus(2)", "FrameOutcome(3,6)"],
         "the acceptance, then the Timeout terminal"
     );
-    assert_eq!(terminals_in(&w1, 1), [TIMEOUT]);
+    let status = one_status(&w1, a.key.grant, "P3 T1");
+    assert_eq!(peer_terminals(&frames_in(&w1), key, n), [TIMEOUT]);
     let j1 = s1.journal();
-    assert_eq!(j1.visible, j1.tail, "the terminal ended the deferred run");
-    assert_eq!(j1.deferred, None);
+    assert_all_visible(j1, "P3 O1");
+    assert_eq!(
+        j1.deferred,
+        Some((status.start, status.end)),
+        "the deferred acceptance's marker is stored but stale behind the ordinary terminal"
+    );
     assert_eq!(s1.facts.lean_frames_in_flight, Some(0));
     assert!(s1.facts.outbox.is_empty(), "{:?}", s1.facts.outbox);
     s1.assert_stores_empty("P3 O1");
     let (verdict, l1, l2, _) = lane.schedule(&mut a, &s0, &s1, "P3");
-    assert_eq!(l1.len(), 2, "one peer-only poll reads both: {l1:?}");
+    assert_eq!(
+        (l1.contents.len(), l1.frames.len()),
+        (1, 1),
+        "one peer-only poll reads both: {l1:?}"
+    );
     assert!(l2.is_empty(), "nothing more: {l2:?}");
     assert_eq!(
         verdict,
         H5::Supported { untruncated: true },
         "T1's one reply returned both records"
     );
-    assert_eq!(a.terminals(1), [TIMEOUT], "the expiry, once");
+    assert_eq!(
+        peer_terminals(&a.frames, key, n),
+        [TIMEOUT],
+        "the expiry, once"
+    );
+    assert_eq!(
+        peer_statuses(&a.contents, a.key.grant),
+        [(2, status_of(status).unwrap().reason)]
+    );
     assert_eq!((a.accepted, a.refused), (1, 0));
     assert_eq!(lane.candidate_of(&a, binding, job), Some(Unknown));
     assert_eq!(
@@ -880,16 +1210,18 @@ fn p3_the_expiry_commits_the_acceptance_then_timeout_and_one_poll_reads_both() {
 }
 
 /// F1: the labelled draw failure (declared before submission). T1 commits
-/// the candidate's one RendererFailed terminal; the resource's status, if
-/// any, is printed beside it. Nothing stays deferred.
+/// the candidate's one RendererFailed terminal under its exact key; the
+/// resource's statuses, if any, are printed beside it. Nothing is deferred
+/// at the tail.
 #[test]
 fn f1_the_render_failure_terminal_is_journaled_once_in_t1() {
     let (mut lane, wake) = Lane::running();
     let mut a = lane.attempt();
     lane.native.declare_render_failure();
-    let _job = faulted(&mut lane, &wake, &mut a);
+    let job = faulted(&mut lane, &wake, &mut a);
+    let (key, n) = lane.admitted_key(job);
     assert_eq!(lane.leased(), 0, "the failed draw freed its slot");
-    let pp0 = peer_poll(&mut a);
+    let (pp0, _) = peer_poll(&mut a);
     let s0 = lane.snapshot(&a, "F1 O0");
     eprintln!("F1 PP0 {pp0:?}; O0 journal {:?}", s0.journal());
     let (steps, observed) = lane.observed_turn(Instant::now(), None);
@@ -898,31 +1230,47 @@ fn f1_the_render_failure_terminal_is_journaled_once_in_t1() {
     let s1 = lane.snapshot(&a, "F1 O1");
     let w1 = window(&s0, &s1, "F1 T1");
     assert_eq!(
-        terminals_in(&w1, 1),
+        peer_terminals(&frames_in(&w1), key, n),
         [FAILED],
         "one RendererFailed terminal"
     );
-    let statuses: Vec<u16> = w1.iter().filter_map(status_of).map(|s| s.status).collect();
+    let statuses: Vec<(u16, u16)> = w1
+        .iter()
+        .filter_map(status_of)
+        .filter(|s| s.grant == a.key.grant && s.resource == RESOURCE)
+        .map(|s| (s.status, s.reason))
+        .collect();
     eprintln!("F1: statuses in T1 {statuses:?}");
-    let j1 = s1.journal();
-    assert_eq!(j1.visible, j1.tail, "nothing deferred after the terminal");
+    assert_all_visible(s1.journal(), "F1 O1");
     assert_eq!(s1.facts.lean_frames_in_flight, Some(0));
     assert!(s1.facts.outbox.is_empty(), "{:?}", s1.facts.outbox);
     s1.assert_stores_empty("F1 O1");
     let (verdict, _, _, _) = lane.schedule(&mut a, &s0, &s1, "F1");
-    assert_ne!(verdict, H5::Refuted, "H5 refuted for F1");
-    assert_eq!(a.terminals(1), [FAILED], "the terminal once");
-    eprintln!(
-        "F1: peer statuses accepted {} refused {}",
-        a.accepted, a.refused
+    verdict.assert_established("F1");
+    assert_eq!(
+        peer_terminals(&a.frames, key, n),
+        [FAILED],
+        "the terminal once"
+    );
+    assert_eq!(
+        peer_statuses(&a.contents, a.key.grant),
+        statuses,
+        "the peer read exactly T1's statuses"
     );
     assert_eq!(lane.releases(), (0, 0), "nothing was leased to release");
 }
 
-/// F2: the labelled plan mismatch. Kept separate: the worker's validation
-/// error (plan_mismatches), the copy's Malformed answer, the resource's
-/// refusal status and the candidate's Malformed terminal, both committed
-/// in T1, and the peer's reads.
+/// F2: the labelled plan mismatch, as separately witnessed facts: (1) the
+/// fixture applied its declared widening (`plan_mismatches`, a fault
+/// counter, not a validator error); (2) the row collected the worker's
+/// Mismatch disposition (the existing collection record); (3) the owner's
+/// conversion of Mismatch to `Err(Malformed)` at delivery (`combined_row.rs`
+/// `delivered`) is source-only evidence with no record at that boundary,
+/// not claimed as executed; (4) the refusal status, predicted exactly from
+/// `complete_isb` -> `abort_finished(Malformed, None)`: status 3, reason
+/// Malformed, under the attempt's grant and the lane's resource; (5) the
+/// candidate's one Malformed terminal under its exact key; (6) the peer's
+/// consumption of (4) and (5).
 #[test]
 fn f2_the_mismatch_journals_the_refusal_status_and_the_malformed_terminal() {
     let (mut lane, wake) = Lane::running();
@@ -932,22 +1280,44 @@ fn f2_the_mismatch_journals_the_refusal_status_and_the_malformed_terminal() {
     assert_eq!(
         lane.native.plan_mismatches(),
         (1, 0),
-        "the validation error"
+        "(1) the declared plan widening was applied"
     );
     let binding = lane.h.owner.processes.combined_row(0).binding(job).unwrap();
-    let pp0 = peer_poll(&mut a);
+    let (key, n) = lane.admitted_key(job);
+    let (pp0, _) = peer_poll(&mut a);
     let s0 = lane.snapshot(&a, "F2 O0");
     eprintln!("F2 PP0 {pp0:?}; O0 journal {:?}", s0.journal());
     let (steps, observed) = lane.observed_turn(Instant::now(), None);
     assert_eq!(steps, TURN);
     assert_eq!(observed, NOTHING, "no bundle met the failed entry");
+    assert_eq!(
+        lane.row().collected(),
+        [(job, CombinedDisposition::Mismatch)],
+        "(2) the collected disposition"
+    );
     let s1 = lane.snapshot(&a, "F2 O1");
     let w1 = window(&s0, &s1, "F2 T1");
-    let status = one_status(&w1, "F2 T1");
+    let status = one_status(&w1, a.key.grant, "F2 T1");
     let refusal = status_of(status).unwrap();
-    assert_ne!(refusal.status, 2, "the copy's refusal: {refusal:?}");
-    assert_eq!(terminals_in(&w1, 1), [MALFORMED], "one Malformed terminal");
-    let terminal = w1.iter().find(|r| outcome_of(r).is_some()).unwrap();
+    assert_eq!(
+        (
+            refusal.grant,
+            refusal.resource,
+            refusal.status,
+            refusal.reason
+        ),
+        (a.key.grant, RESOURCE, 3, ContentReason::Malformed as u16),
+        "(4) the copy's Malformed refusal"
+    );
+    assert_eq!(
+        peer_terminals(&frames_in(&w1), key, n),
+        [MALFORMED],
+        "(5) one Malformed terminal"
+    );
+    let terminal = w1
+        .iter()
+        .find(|r| frame_of(r).is_some_and(|f| outcome_for(f, key, n).is_some()))
+        .unwrap();
     eprintln!(
         "F2: status {} {} terminal {}",
         status.sequence,
@@ -958,24 +1328,33 @@ fn f2_the_mismatch_journals_the_refusal_status_and_the_malformed_terminal() {
         },
         terminal.sequence
     );
-    let j1 = s1.journal();
-    assert_eq!(j1.visible, j1.tail, "nothing deferred after the terminal");
+    assert_all_visible(s1.journal(), "F2 O1");
     assert_eq!(s1.facts.lean_frames_in_flight, Some(0));
     s1.assert_stores_empty("F2 O1");
     let (verdict, _, _, _) = lane.schedule(&mut a, &s0, &s1, "F2");
-    assert_ne!(verdict, H5::Refuted, "H5 refuted for F2");
-    assert_eq!(a.terminals(1), [MALFORMED], "the terminal once");
-    assert_eq!((a.accepted, a.refused), (0, 1), "the refusal once");
+    verdict.assert_established("F2");
+    assert_eq!(
+        peer_terminals(&a.frames, key, n),
+        [MALFORMED],
+        "(6) the terminal once"
+    );
+    assert_eq!(
+        peer_statuses(&a.contents, a.key.grant),
+        [(3, ContentReason::Malformed as u16)],
+        "(6) the refusal once"
+    );
+    assert_eq!((a.accepted, a.refused), (0, 1));
     assert_eq!(lane.candidate_of(&a, binding, job), Some(Unknown));
     assert_eq!(lane.states(), [(job, "failed")]);
     assert_eq!(lane.releases(), (0, 0), "no lease, no Release");
 }
 
 /// F3: C3, the arm's own admitted-deadline decline. T1 commits the
-/// acceptance and the candidate's terminal (predicted RendererFailed, the
-/// arm's decline reason); then, after slot freedom, T2's images step
-/// commits SlotReleased after the status, as R4, visible at once since
-/// the frame's flight ended.
+/// acceptance (deferred: the frame is in flight) and the candidate's
+/// terminal (RendererFailed, the arm's decline reason, by an ordinary
+/// append that leaves the marker stale); then, after slot freedom, T2's
+/// images step commits SlotReleased after the status, as R4, visible at
+/// once since the frame's flight ended.
 #[test]
 fn f3_the_c3_decline_journals_the_status_and_terminal_then_slot_released() {
     let (mut lane, wake) = Lane::running();
@@ -983,8 +1362,9 @@ fn f3_the_c3_decline_journals_the_status_and_terminal_then_slot_released() {
     let candidate = lane.candidate_timeout(&a);
     let before = content_now_msec();
     let job = rendered(&mut lane, &wake, &mut a);
+    let (key, n) = lane.admitted_key(job);
     let late = lane.deadline_of(job) + MARGIN;
-    let pp0 = peer_poll(&mut a);
+    let (pp0, _) = peer_poll(&mut a);
     let s0 = lane.snapshot(&a, "F3 O0");
     eprintln!("F3 PP0 {pp0:?}; O0 journal {:?}", s0.journal());
     let credit = resource_credit(&s0, "F3 O0");
@@ -1003,16 +1383,29 @@ fn f3_the_c3_decline_journals_the_status_and_terminal_then_slot_released() {
         ["ResourceStatus(2)", "FrameOutcome(3,9)"],
         "the acceptance, then the decline's terminal"
     );
-    let status = &w1[0];
-    assert_eq!(terminals_in(&w1, 1), [FAILED]);
+    let status = one_status(&w1, a.key.grant, "F3 T1");
+    assert_eq!(peer_terminals(&frames_in(&w1), key, n), [FAILED]);
     let j1 = s1.journal();
-    assert_eq!(j1.visible, j1.tail, "the terminal ended the deferred run");
+    assert_all_visible(j1, "F3 O1");
+    assert_eq!(
+        j1.deferred,
+        Some((status.start, status.end)),
+        "the deferred acceptance's marker is stored but stale behind the ordinary terminal"
+    );
     assert_eq!(s1.facts.lean_frames_in_flight, Some(0));
     assert_eq!(s1.releasing, [credit.offer.identity], "release owed");
     s1.assert_stores_empty("F3 O1");
     let (verdict, _, _, s3) = lane.schedule(&mut a, &s0, &s1, "F3");
-    assert_ne!(verdict, H5::Refuted, "H5 refuted for F3");
-    assert_eq!(a.terminals(1), [FAILED], "the terminal once");
+    verdict.assert_established("F3");
+    assert_eq!(
+        peer_terminals(&a.frames, key, n),
+        [FAILED],
+        "the terminal once"
+    );
+    assert_eq!(
+        peer_statuses(&a.contents, a.key.grant),
+        [(2, status_of(status).unwrap().reason)]
+    );
     assert_eq!((a.accepted, a.refused), (1, 0));
     assert_eq!(lane.releases(), (1, 1));
     lane.slot_freed("F3");
@@ -1023,9 +1416,16 @@ fn f3_the_c3_decline_journals_the_status_and_terminal_then_slot_released() {
     let w2 = window(&s3, &s2, "F3 T2");
     assert_eq!(kinds(&w2), ["SlotReleased(0)"]);
     let released = &w2[0];
+    let event = slot_released_of(released).unwrap();
     assert_eq!(
-        slot_released_of(released).unwrap().identity,
-        credit.offer.identity
+        (event.identity, event.resource, event.slot, event.reason),
+        (
+            credit.offer.identity,
+            RESOURCE,
+            credit.offer.request.slot,
+            0
+        ),
+        "the original source's release"
     );
     assert!(
         status.sequence < released.sequence,
@@ -1033,8 +1433,7 @@ fn f3_the_c3_decline_journals_the_status_and_terminal_then_slot_released() {
         status.sequence,
         released.sequence
     );
-    let j2 = s2.journal();
-    assert_eq!(j2.visible, j2.tail, "published at once: no frame in flight");
+    assert_all_visible(s2.journal(), "F3 O2");
     assert!(s2.releasing.is_empty());
     assert_eq!(lane.native.installs(), 0);
     assert_eq!(lane.acquisitions(), 1, "no later render");
@@ -1042,21 +1441,22 @@ fn f3_the_c3_decline_journals_the_status_and_terminal_then_slot_released() {
 
 /// F4-P: scene churn, the result declined into one ordinary entry. The
 /// candidate is prepared internally (`prepared_without_notice`: the lane
-/// is terminal-only) and no Prepared record (kind 1) for candidate 1 is
-/// committed, while the acceptance commits deferred, invisible until a
-/// terminal. The ordinary entry's presentation outcome needs the queued
-/// fallback's completion: b3d-2 F4-O, not asserted here.
+/// is terminal-only) and no Prepared record (kind 1) for the exact
+/// candidate is committed, while the acceptance commits deferred,
+/// invisible until a terminal. The ordinary entry's presentation outcome
+/// needs the queued fallback's completion: b3d-2 F4-O, not asserted here.
 #[test]
 fn f4p_scene_churn_prepares_the_candidate_internally_without_a_prepared_record() {
     let (mut lane, wake) = Lane::running();
     let mut a = lane.attempt();
-    let _job = rendered(&mut lane, &wake, &mut a);
+    let job = rendered(&mut lane, &wake, &mut a);
+    let (key, n) = lane.admitted_key(job);
     assert!(lane.native.ordinary_queue_ready(output().id));
-    let pp0 = peer_poll(&mut a);
+    let (pp0, _) = peer_poll(&mut a);
     let s0 = lane.snapshot(&a, "F4-P O0");
     eprintln!("F4-P PP0 {pp0:?}; O0 journal {:?}", s0.journal());
     assert_eq!(
-        lane.h.owner.processes.candidate_prepared(0, OUTPUT, 1),
+        lane.h.owner.processes.candidate_prepared(0, OUTPUT, n),
         None,
         "assembling: not yet a pending candidate"
     );
@@ -1068,20 +1468,19 @@ fn f4p_scene_churn_prepares_the_candidate_internally_without_a_prepared_record()
     assert_eq!(lane.native.ordinary_queues(), 1);
     let s1 = lane.snapshot(&a, "F4-P O1");
     let w1 = window(&s0, &s1, "F4-P T1");
+    let outcomes = peer_terminals(&frames_in(&w1), key, n);
     assert!(
-        !w1.iter().any(|r| outcome_of(r)
-            .is_some_and(|o| { o.output == OUTPUT && o.candidate_generation == 1 && o.kind == 1 })),
-        "no Prepared record for candidate 1: {:?}",
+        outcomes.is_empty(),
+        "no Prepared (kind 1) or terminal for the exact candidate: {outcomes:?} in {:?}",
         kinds(&w1)
     );
-    assert!(terminals_in(&w1, 1).is_empty(), "no terminal");
     assert_eq!(
-        lane.h.owner.processes.candidate_prepared(0, OUTPUT, 1),
+        lane.h.owner.processes.candidate_prepared(0, OUTPUT, n),
         Some(true),
         "prepared internally, notice suppressed"
     );
     assert_eq!(kinds(&w1), ["ResourceStatus(2)"], "the acceptance alone");
-    let status = &w1[0];
+    let status = one_status(&w1, a.key.grant, "F4-P T1");
     let j1 = s1.journal();
     assert_eq!(j1.deferred, Some((status.start, status.end)), "deferred");
     assert_eq!(j1.visible, status.start, "invisible");
@@ -1093,7 +1492,8 @@ fn f4p_scene_churn_prepares_the_candidate_internally_without_a_prepared_record()
         "nothing visible to read: {l1:?} {l2:?}"
     );
     assert_eq!(verdict, H5::Absent, "no reply in T1");
-    assert!(a.terminals(1).is_empty());
+    assert!(peer_terminals(&a.frames, key, n).is_empty());
+    assert!(peer_statuses(&a.contents, a.key.grant).is_empty());
     assert_eq!(a.accepted, 0);
     lane.slot_freed("churn");
 }
