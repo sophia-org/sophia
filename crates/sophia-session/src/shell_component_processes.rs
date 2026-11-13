@@ -249,6 +249,23 @@ impl ShellComponentProcesses {
     ) -> Result<R, ComponentConnectionError> {
         self.connections.with_connection(key, service)
     }
+    /// `with_connection` lending the slot's combined row too (G3-5c C2).
+    #[cfg(all(
+        test,
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    pub(crate) fn with_connection_and_row<R>(
+        &mut self,
+        key: ComponentConnectionKey,
+        service: impl FnOnce(
+            &mut ShellTransportConnection<'_>,
+            &mut crate::shell_component_connections::combined_row::CombinedRow,
+        ) -> R,
+    ) -> Result<R, ComponentConnectionError> {
+        self.connections.with_connection_and_row(key, service)
+    }
     pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
         self.connections.poll_fds()
     }

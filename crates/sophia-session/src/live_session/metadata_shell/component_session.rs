@@ -576,6 +576,40 @@ impl ShellComponentSession {
             .processes
             .with_connection(key, |transport| service(&mut ready.service, transport))?)
     }
+
+    /// `with_service` for the controlled combined caller (G3-5c C2): the
+    /// same checks in the same order, and the slot's combined row lent
+    /// beside the transport.
+    #[cfg(all(
+        test,
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    pub(crate) fn with_combined_service<T>(
+        &mut self,
+        key: ComponentConnectionKey,
+        service: impl FnOnce(
+            &mut ShellComponentService,
+            &mut ShellTransportConnection<'_>,
+            &mut crate::shell_component_connections::combined_row::CombinedRow,
+        ) -> T,
+    ) -> Result<T> {
+        if !self.available || self.stopping {
+            return Err("component service paused".into());
+        }
+        let ready = self
+            .ready
+            .get_mut(key.slot)
+            .and_then(Option::as_mut)
+            .filter(|ready| ready.key == key)
+            .ok_or("component service has no negotiated owner")?;
+        Ok(self
+            .processes
+            .with_connection_and_row(key, |transport, row| {
+                service(&mut ready.service, transport, row)
+            })?)
+    }
     pub fn settle_revocations(
         &mut self,
         runtime: Option<&mut LiveProductionVisualRuntime>,

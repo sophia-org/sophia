@@ -22,9 +22,9 @@ use fd_readiness::FdRole;
 pub(crate) mod images;
 pub(crate) use images::content_now_msec;
 mod tests;
-// G3-5b: the combined row and its controlled driver, until gate 4.
+// G3-5b/c: the combined row, its consumption and its controlled driver;
+// feature-compiled, with no production row until gate 4.
 #[cfg(all(
-    test,
     feature = "experimental-combined-frame-job",
     feature = "experimental-native-frame-transaction",
     feature = "native-session"
@@ -96,11 +96,17 @@ struct Connection {
     /// Beside `images`, for the same lifetime: every attempt in this slot
     /// reuses it, and stop, close and replacement never drop it (G3-5b R1).
     #[cfg(all(
-        test,
         feature = "experimental-combined-frame-job",
         feature = "experimental-native-frame-transaction",
         feature = "native-session"
     ))]
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "gate 4's owner turn reads it; until then the controls"
+        )
+    )]
     combined: combined_row::CombinedRow,
     /// DRM device number of this slot's independently granted render node.
     /// Only such a slot may be offered DMA-BUF capture.
@@ -331,7 +337,6 @@ impl ShellComponentConnections {
             limits: None,
             images: None,
             #[cfg(all(
-                test,
                 feature = "experimental-combined-frame-job",
                 feature = "experimental-native-frame-transaction",
                 feature = "native-session"

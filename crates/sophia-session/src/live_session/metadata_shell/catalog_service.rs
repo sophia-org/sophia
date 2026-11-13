@@ -73,7 +73,7 @@ impl CatalogComponentService {
             transport,
             runtime,
             scene,
-            native,
+            super::content::ContentNative::ordinary(native),
             outputs,
             bounds,
             root,

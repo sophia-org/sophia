@@ -21,6 +21,18 @@
 //! failure. An error of an attempt that already ended is a cleanup
 //! diagnostic: it never stops the replacement, and the old job keeps its
 //! owners and its retry.
+//!
+//! G3-5c: the module is feature-compiled under the row's three gates (CS),
+//! so the content service's consumption arm is the same code production
+//! builds. No production caller supplies a row until gate 4; the
+//! fault-injection and observation storage stay test-only.
+#![cfg_attr(
+    not(test),
+    allow(
+        dead_code,
+        reason = "gate 4's owner turn drives the hooks, the walk and the consumption; until then only the controls supply a row"
+    )
+)]
 use super::*;
 use sophia_backend_live::{
     CombinedComposeRefusal, CombinedComposition, CombinedDispatch, CombinedDisposition,
@@ -33,8 +45,8 @@ use sophia_protocol::Point;
 use sophia_protocol::shell_files::ShellFrameCommit;
 use sophia_runtime::{
     CombinedFrameAdmitted, CombinedFrameFacts, CombinedFrameHooks, CombinedReservation,
-    CombinedReserve, CombinedResult, CombinedToken, IsbValidationFailure, IsbValidationWorker,
-    ValidatedIsbPixels,
+    CombinedReserve, CombinedResult, CombinedToken, ContentRenderBundle, FrameCandidateState,
+    FrameCopyBinding, IsbValidationFailure, IsbValidationWorker, ValidatedIsbPixels,
 };
 use std::sync::mpsc;
 use std::time::Instant;
@@ -54,6 +66,9 @@ pub(crate) struct CombinedTurn<'a, N> {
     /// The turn's one cursor snapshot, which every proposal uses (R4).
     pub cursor: LiveProductionCursorPresentation,
     pub plane: Option<Point>,
+    /// The turn's one Instant: the image-owner service and the walk's
+    /// deadlines read it (G3-5c).
+    pub instant: Instant,
 }
 
 /// The owner loop's cursor rule over one pointer reading, and that reading
@@ -66,6 +81,17 @@ pub(crate) fn turn_cursor(
         crate::live_session::turn_cursor_presentation(native, position),
         position,
     )
+}
+
+/// What a caller lends the content service for one turn so `submit_bundle`
+/// can join its bundles with the row (G3-5c C2). Only the controlled caller
+/// builds one until gate 4.
+pub(crate) struct CombinedConsume<'a> {
+    pub(crate) row: &'a mut CombinedRow,
+    pub(crate) cursor: LiveProductionCursorPresentation,
+    pub(crate) plane: Option<Point>,
+    /// The owner turn's one Instant, the one its image-owner service used.
+    pub(crate) instant: Instant,
 }
 
 #[derive(Default)]
@@ -84,9 +110,11 @@ pub(crate) struct CombinedRow {
     /// reported: kept for the controls, never a slot failure.
     diagnostics: Vec<(ContentGrant, String)>,
     /// Declared delivery faults still to inject.
+    #[cfg(test)]
     refusals: usize,
     /// Every reserve-time projection, made from the queued frame and the
     /// host's description before admission, for the R4 comparison.
+    #[cfg(test)]
     projections: Vec<LiveShellContentFrame>,
 }
 
@@ -99,7 +127,9 @@ struct Open {
 
 enum Stage {
     Composed(CombinedComposition),
-    Planned(CombinedDispatch),
+    /// The dispatch, with the admission's exact candidate and its original
+    /// validation deadline (G3-5c).
+    Planned(CombinedDispatch, FrameCopyBinding, Instant),
     /// The plan was not built; the composition went with that attempt.
     Unplanned,
 }
@@ -108,12 +138,46 @@ struct Job {
     job: u64,
     grant: ContentGrant,
     head: CombinedHead,
-    /// c's consumption reads it; b only keeps it with its job.
-    #[allow(dead_code)]
     dispatch: CombinedDispatch,
+    /// The runtime's own identity of the admitted candidate (G3-5c row
+    /// identity): grant, output, allocation, facts generation, stream and
+    /// candidate generation.
+    binding: FrameCopyBinding,
+    /// The admission's validation deadline, unchanged since admission.
+    deadline: Instant,
+    verdict: Verdict,
     state: State,
     /// This job's invariant failure was reported; its retries stay quiet.
     reported: bool,
+}
+
+/// The owner's one-way decision for the job's candidate (G3-5c C4, REV3).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Verdict {
+    /// No decision yet.
+    Open,
+    /// The walk released a Held result at its deadline while its candidate
+    /// was live: a later bundle takes the failure terminal.
+    Expired,
+    /// The arm decided for this candidate. The entry never joins again.
+    Consumed,
+}
+
+/// What the row holds for a bundle's exact candidate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CombinedJoin {
+    /// No entry for the bundle's (grant, output, candidate generation):
+    /// the ordinary arm, unchanged.
+    Ordinary,
+    /// A Held result with no decision yet. Marked Consumed.
+    Held(u64),
+    /// A delivered failure, or a lease-free expiry, with no decision yet.
+    /// Marked Consumed.
+    Failed(u64),
+    /// Release debt of an expired result. Marked Consumed; the debt stays.
+    Debt(u64),
+    /// An exact entry in a state no bundle can meet. Nothing is changed.
+    Invariant(u64),
 }
 
 enum State {
@@ -144,8 +208,9 @@ enum State {
     },
     /// Exported and delivered: the issuing facade holds the lease.
     Held,
-    /// Delivered with no lease held, for c's terminal or its grant's end.
-    Failed(#[expect(dead_code, reason = "c reads it as its terminal input")] CombinedDisposition),
+    /// Delivered with no lease held, for c's terminal or its retirement; or
+    /// a lease-free expiry whose Release transferred (`Expired`).
+    Failed(CombinedDisposition),
     /// A released Held result whose Release did not transfer.
     Debt(#[expect(dead_code, reason = "kept as the last Release outcome")] CombinedRelease),
 }
@@ -182,6 +247,7 @@ impl CombinedRow {
     }
 
     /// Each job and the name of its state, for the controls.
+    #[cfg(test)]
     pub(crate) fn states(&self) -> Vec<(u64, &'static str)> {
         self.jobs
             .iter()
@@ -205,11 +271,22 @@ impl CombinedRow {
     }
 
     /// The reserve-time projections so far, in proposal order.
+    #[cfg(test)]
     pub(crate) fn projections(&self) -> &[LiveShellContentFrame] {
         &self.projections
     }
 
+    /// The job's verdict, for the controls.
+    #[cfg(test)]
+    pub(crate) fn verdict(&self, job: u64) -> Option<Verdict> {
+        self.jobs
+            .iter()
+            .find(|held| held.job == job)
+            .map(|held| held.verdict)
+    }
+
     /// Errors reported after their attempt ended, with that attempt's grant.
+    #[cfg(test)]
     pub(crate) fn cleanup_diagnostics(&self) -> &[(ContentGrant, String)] {
         &self.diagnostics
     }
@@ -218,13 +295,14 @@ impl CombinedRow {
     /// boundary, as a refused `accept` would be. It proves the row keeps and
     /// re-offers the result and reports once, not that a real refusal
     /// happens.
+    #[cfg(test)]
     pub(crate) fn declare_delivery_refusal(&mut self) {
         self.refusals += 1;
     }
 
-    /// Declines a Held result of the current grant (c's decline, and b's
-    /// controls'): its lease is retained for Release. `None` when `job` is
-    /// not Held.
+    /// Declines a Held result (the combined arm's decline, and b's
+    /// controls'): its lease goes to Release, completed through `released`.
+    /// `None` when `job` is not Held.
     pub(crate) fn decline<N: ShellContentNative>(
         &mut self,
         native: &mut N,
@@ -242,9 +320,17 @@ impl CombinedRow {
         Some(outcome)
     }
 
-    /// True when `job` must stay, as Debt, after a Release attempt.
+    /// The one completion rule for every Release attempt, from `decline`,
+    /// a walk release or a Debt flush (REV3). True when `job` must stay.
+    /// Transferred ends the renderer's custody only: an `Expired` decision
+    /// not yet consumed stays as a lease-free `Failed(Expired)`. Every other
+    /// outcome is Debt, and no outcome changes the verdict.
     fn released(&mut self, job: &mut Job, outcome: CombinedRelease) -> bool {
         if outcome == CombinedRelease::Transferred {
+            if job.verdict == Verdict::Expired {
+                job.state = State::Failed(CombinedDisposition::Expired);
+                return true;
+            }
             return false;
         }
         if outcome == CombinedRelease::Mismatch {
@@ -261,8 +347,17 @@ impl CombinedRow {
     /// Disposal and debt maintenance, after the slot's one hooked service.
     /// It takes no results. A Held or Failed job whose grant ended can never
     /// be accepted: Held releases, Failed retires, since its delivery already
-    /// transferred. Debt flushes until Transferred.
-    fn walk<N: ShellContentNative>(&mut self, native: &mut N, current: Option<ContentGrant>) {
+    /// transferred. Debt flushes until Transferred. For the current grant,
+    /// Held and Failed follow REV3's table over `candidate`, the runtime's
+    /// own candidate fact, and the job's unchanged deadline at `instant`.
+    /// Every Release completes through `released`.
+    fn walk<N: ShellContentNative>(
+        &mut self,
+        native: &mut N,
+        current: Option<ContentGrant>,
+        candidate: &dyn Fn(FrameCopyBinding, u64) -> Option<FrameCandidateState>,
+        instant: Instant,
+    ) {
         for (grant, head) in std::mem::take(&mut self.cancels) {
             if !matches!(native.cancel_combined_frame(&head), Ok(true)) {
                 self.cancels.push((grant, head));
@@ -280,12 +375,133 @@ impl CombinedRow {
                     self.released(&mut job, outcome)
                 }
                 State::Failed(_) if ended => false,
+                State::Held | State::Failed(_) => {
+                    let state = candidate(job.binding, job.job);
+                    self.dispose(native, &mut job, state, instant)
+                }
                 _ => true,
             };
             if keep {
                 self.jobs.push(job);
             }
         }
+    }
+
+    /// REV3's table for a Held or Failed job of the current grant. A missing
+    /// candidate state is Unknown: absence is never death. True to keep.
+    fn dispose<N: ShellContentNative>(
+        &mut self,
+        native: &mut N,
+        job: &mut Job,
+        state: Option<FrameCandidateState>,
+        instant: Instant,
+    ) -> bool {
+        use FrameCandidateState::{Assembling, Ended, Pending, Submitted, Unknown};
+        let state = state.unwrap_or(Unknown);
+        let past = instant >= job.deadline;
+        let live = matches!(state, Assembling | Pending | Submitted);
+        let release = match (&job.state, job.verdict) {
+            // The recorded decision, whatever the candidate (R2-2).
+            (State::Held, Verdict::Consumed) => true,
+            (State::Held, Verdict::Open) if state == Ended || (state == Unknown && past) => true,
+            (State::Held, Verdict::Open) if live && past => {
+                job.verdict = Verdict::Expired;
+                true
+            }
+            (State::Held, Verdict::Open) => false,
+            (State::Failed(_), Verdict::Consumed) => return false,
+            (State::Failed(_), Verdict::Open | Verdict::Expired)
+                if state == Ended || (state == Unknown && past) =>
+            {
+                return false;
+            }
+            // Unknown before its deadline: unchanged until then.
+            (State::Failed(_), Verdict::Open | Verdict::Expired) if state == Unknown => {
+                return true;
+            }
+            (State::Failed(_), Verdict::Open | Verdict::Expired) => return true,
+            // The walk expires and releases in one step, so Held never
+            // keeps Expired. Fail closed: report, and release through the
+            // one rule rather than drop the lease.
+            (State::Held, Verdict::Expired) => {
+                report(&mut self.errors, job, "a Held result kept an expiry");
+                true
+            }
+            // The walk passes only Held and Failed; anything else stays.
+            _ => return true,
+        };
+        if !release {
+            return true;
+        }
+        let outcome = native.release_combined_held(&job.head, job.job);
+        self.released(job, outcome)
+    }
+
+    /// The join of a bundle with the row (G3-5c): the exact entry for its
+    /// grant, output and candidate generation. A matched decision is marked
+    /// `Consumed` here, before any fallible step of the arm. An exact entry
+    /// in any other state, or a bundle surface outside the admitted
+    /// allocation, is an invariant and changes nothing.
+    pub(crate) fn join(&mut self, bundle: &ContentRenderBundle) -> CombinedJoin {
+        let Some(job) = self.jobs.iter_mut().find(|held| {
+            held.binding.key.grant == bundle.grant
+                && held.binding.key.output == bundle.output
+                && held.binding.generation == bundle.candidate_generation
+        }) else {
+            return CombinedJoin::Ordinary;
+        };
+        let admitted = bundle
+            .surfaces
+            .iter()
+            .all(|surface| surface.allocation == job.binding.key.allocation);
+        let join = match (&job.state, job.verdict) {
+            _ if !admitted => CombinedJoin::Invariant(job.job),
+            (State::Held, Verdict::Open) => CombinedJoin::Held(job.job),
+            (State::Failed(disposition), Verdict::Open | Verdict::Expired)
+                if *disposition != CombinedDisposition::Mismatch =>
+            {
+                CombinedJoin::Failed(job.job)
+            }
+            (State::Debt(_), Verdict::Expired) => CombinedJoin::Debt(job.job),
+            _ => CombinedJoin::Invariant(job.job),
+        };
+        if !matches!(join, CombinedJoin::Invariant(_)) {
+            job.verdict = Verdict::Consumed;
+        }
+        join
+    }
+
+    /// A Held job's head, dispatch and deadline, for its consumption.
+    pub(crate) fn consumption(
+        &self,
+        job: u64,
+    ) -> Option<(&CombinedHead, &CombinedDispatch, Instant)> {
+        self.jobs
+            .iter()
+            .find(|held| held.job == job && matches!(held.state, State::Held))
+            .map(|held| (&held.head, &held.dispatch, held.deadline))
+    }
+
+    /// Removes a Held job after its accept committed: the lease is the
+    /// native pending frame's now. False when no such entry is here.
+    pub(crate) fn accepted(&mut self, job: u64) -> bool {
+        self.remove(job, |state| matches!(state, State::Held))
+    }
+
+    /// Removes a Failed job after its terminal was issued. It holds no
+    /// lease. False when no such entry is here.
+    pub(crate) fn consumed_failed(&mut self, job: u64) -> bool {
+        self.remove(job, |state| matches!(state, State::Failed(_)))
+    }
+
+    fn remove(&mut self, job: u64, state: impl Fn(&State) -> bool) -> bool {
+        let Some(index) = self.jobs.iter().position(|held| {
+            held.job == job && held.verdict == Verdict::Consumed && state(&held.state)
+        }) else {
+            return false;
+        };
+        self.jobs.remove(index);
+        true
     }
 
     /// The first error of `current`, the slot's unrevoked attempt; errors of
@@ -480,6 +696,7 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
         ) else {
             return CombinedReserve::Ordinary;
         };
+        #[cfg(test)]
         self.row.projections.push(projected.clone());
         let composed = turn.native.compose_combined_frame(
             turn.runtime,
@@ -534,7 +751,7 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
             admitted.description,
             admitted.deadline,
         )?;
-        open.stage = Stage::Planned(dispatch);
+        open.stage = Stage::Planned(dispatch, admitted.binding, admitted.deadline);
         Some(plan)
     }
 
@@ -561,7 +778,7 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
             .open
             .take_if(|open| open.ticket == ticket)
             .expect("the runtime submits the admission it planned");
-        let Stage::Planned(dispatch) = open.stage else {
+        let Stage::Planned(dispatch, binding, deadline) = open.stage else {
             unreachable!("only a planned admission is submitted");
         };
         self.row.jobs.push(Job {
@@ -569,6 +786,9 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
             grant: open.grant,
             head: open.head,
             dispatch,
+            binding,
+            deadline,
+            verdict: Verdict::Open,
             state: State::InFlight {
                 reservation,
                 returned,
@@ -583,8 +803,10 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
         deliver: &mut dyn FnMut(u64, CombinedResult) -> Result<(), CombinedResult>,
     ) {
         let native = &mut *self.turn.native;
+        #[cfg(test)]
         let mut refusals = std::mem::take(&mut self.row.refusals);
         let mut offer = |job: u64, result: CombinedResult| {
+            #[cfg(test)]
             if refusals > 0 {
                 refusals -= 1;
                 return Err(result);
@@ -596,7 +818,10 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
                 self.row.jobs.push(job);
             }
         }
-        self.row.refusals = refusals;
+        #[cfg(test)]
+        {
+            self.row.refusals = refusals;
+        }
     }
 }
 
@@ -615,12 +840,13 @@ impl ShellComponentConnections {
                 .attempt
                 .filter(|(_, phase)| *phase != ComponentConnectionPhase::Revoked)
                 .map(|(grant, _)| grant);
+            let instant = turn.instant;
             let serviced = match connection.images.as_mut() {
                 Some(owner) => owner.service_combined(
                     &mut connection.transport,
                     epochs,
                     content_now_msec(),
-                    Instant::now(),
+                    instant,
                     &mut CombinedHooks {
                         row: &mut connection.combined,
                         turn: &mut *turn,
@@ -629,10 +855,35 @@ impl ShellComponentConnections {
                 ),
                 None => Ok(()),
             };
-            connection.combined.walk(&mut *turn.native, current);
+            let view = connection.transport.connection(epochs);
+            connection.combined.walk(
+                &mut *turn.native,
+                current,
+                &|binding: FrameCopyBinding, job: u64| {
+                    view.content_frame_candidate_state(binding, job)
+                },
+                instant,
+            );
             serviced?;
             connection.combined.take_error(current).map_or(Ok(()), Err)
         })
+    }
+
+    /// `with_connection` that also lends the slot's row (G3-5c C2): the same
+    /// Connected-phase check, and the row borrowed beside the transport, for
+    /// the controlled caller only.
+    #[cfg(test)]
+    pub(crate) fn with_connection_and_row<R>(
+        &mut self,
+        key: ComponentConnectionKey,
+        service: impl FnOnce(&mut ShellTransportConnection<'_>, &mut CombinedRow) -> R,
+    ) -> Result<R, ComponentConnectionError> {
+        self.require_phase(key, ComponentConnectionPhase::Connected)?;
+        let connection = &mut self.connections[key.slot];
+        Ok(service(
+            &mut connection.transport.connection(&mut self.epochs),
+            &mut connection.combined,
+        ))
     }
 
     pub(crate) fn combined_row(&self, slot: usize) -> &CombinedRow {
