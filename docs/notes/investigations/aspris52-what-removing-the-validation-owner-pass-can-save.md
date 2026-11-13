@@ -91,10 +91,28 @@ That makes the production stages worth pricing by a real build. It does not
 predict their result. A smaller net effect, after the added work, may still be
 inconclusive in one matched block, and this note sets no detectability floor.
 
-The decision is niltempus's. Option (a) of the stage 4b scoping
-(`tools/models/combined-frame-job/PLACEMENT-SCOPING.md` on
-`design/combined-frame-job`, `02ca8874f`) starts the production diff. Option
-(c) records the lane at its test-only boundary.
+Niltempus selected option (a) of the stage 4b scoping
+(`tools/models/combined-frame-job/PLACEMENT-SCOPING.md`, `02ca8874f`), the
+production diff, over option (c), which would have recorded the lane at its
+test-only boundary. On 2026-11-13, with the test-only prototype (gate 3, on
+`design/combined-frame-job-g35d2` at `cbe58ec27`) accepted through its
+d-2b3c stage, niltempus directed the rest of the lane: finish gate 3 at full
+device-free scope, including the journal-capacity and disconnect controls;
+draft the bounded authority review for the production hook now; and wire
+the production owner turn only after the final integrated gate-3 acceptance.
+The native comparison after that is one matched ABBA that niltempus
+launches. None of this is a saving claim, and every gate keeps its own stop.
+
+## What the comparison must separate
+
+The combined scene key includes the plane cursor position
+(`compositor_graphics/combined_scene.rs:49-56` on the branch). A pointer
+move between admission and consumption makes the acceptance check classify
+the rendered result as scene churn, which takes the conventional fallback
+with its retained Release. A workload with a moving pointer therefore prices
+the fallback, not the direct path. The matched comparison must report
+pointer-still and pointer-moving as separate sub-scenarios, each with its
+fallback rate; one mixed figure would not say which path it measured.
 
 ## Limits
 
@@ -109,8 +127,8 @@ The decision is niltempus's. Option (a) of the stage 4b scoping
 ## Connections
 
 - Three-service frame jobs with owner authority (n7fj3c2p) is the selected
-  design and its gates. It is branch-only: `~/dev/sophia-framejob`,
-  `design/combined-frame-job`,
+  design and its gates. It is branch-only: `design/combined-frame-job-g35d2`
+  in `~/dev/sophia-d2` continues `design/combined-frame-job`;
   `docs/notes/plans/n7fj3c2p-three-service-frame-jobs-with-owner-authority.md`.
 - [The four lean owner wakes](edc0te2v-which-action-each-of-the-four-lean-owner-wakes-owes-and-which-transition-a-consolidation-would-remove.md)
   supplies the cycle, the row means and the associations.
