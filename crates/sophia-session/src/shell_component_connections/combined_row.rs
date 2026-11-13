@@ -127,6 +127,13 @@ pub(crate) struct CombinedRow {
     /// A declared image-service fault still to inject (G3-5d d-2b1).
     #[cfg(test)]
     image_fault: Option<&'static str>,
+    /// Every admission's binding, recorded where it is submitted (d-2b2).
+    #[cfg(test)]
+    bindings: Vec<steps::Binding>,
+    /// Every collected result's job and disposition, recorded where the row
+    /// reads it, before settlement (d-2b2).
+    #[cfg(test)]
+    collected: Vec<(u64, CombinedDisposition)>,
 }
 
 #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
@@ -596,6 +603,8 @@ impl CombinedRow {
                     }),
                     Ok(Some(result)) => {
                         let disposition = result.disposition();
+                        #[cfg(test)]
+                        self.collected.push((job.job, disposition));
                         self.settle(native, worker, &mut job, reservation, result, disposition)
                     }
                     Err(error) => {
@@ -818,6 +827,8 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
             .open
             .take_if(|open| open.ticket == ticket)
             .expect("the runtime submits the admission it planned");
+        #[cfg(test)]
+        self.row.record_binding(ticket, &reservation, &open);
         let Stage::Planned(dispatch, binding, deadline) = open.stage else {
             unreachable!("only a planned admission is submitted");
         };

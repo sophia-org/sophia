@@ -188,8 +188,9 @@ impl Lane {
         self.submit_at(a, n, pixel, &[0]);
     }
 
-    /// As `submit`, with the one resource placed once at each x offset.
-    fn submit_at(&mut self, a: &mut Attempt, n: u64, pixel: [u8; 4], xs: &[i16]) {
+    /// As `submit`, with the one resource placed once at each x offset; the
+    /// ring offer the frame took.
+    fn submit_at(&mut self, a: &mut Attempt, n: u64, pixel: [u8; 4], xs: &[i16]) -> u64 {
         let mut commit = ShellFrameRecord::Commit(ShellFrameCommit {
             transaction: TransactionId::from_raw(40 + n),
             image: None,
@@ -226,7 +227,8 @@ impl Lane {
                 targets: vec![],
             },
         });
-        a.stream
+        let (_, offer) = a
+            .stream
             .submit_ring(
                 &mut a.peer,
                 &mut commit,
@@ -246,6 +248,7 @@ impl Lane {
             )
             .unwrap();
         assert!(!a.stream.has_credit());
+        offer
     }
 
     /// A connected attempt's content turn: resources and candidates, with

@@ -197,6 +197,22 @@ impl Lane {
         steps: &mut Vec<Step>,
         serve_native: bool,
     ) -> (Result<FirstFailures>, Vec<String>) {
+        let mut errors = Vec::new();
+        let (turned, _) = self.driver_turn_with(steps, &mut |native| {
+            if serve_native && let Err(error) = native.service_native(output().id) {
+                errors.push(error.to_string());
+            }
+        });
+        (turned, errors)
+    }
+
+    /// `driver_turn` with `native` as step 4 (d-2b2); also the fixture's
+    /// accept count read just after each content call, in call order.
+    fn driver_turn_with(
+        &mut self,
+        steps: &mut Vec<Step>,
+        native: &mut dyn FnMut(&mut CombinedNativeFixture),
+    ) -> (Result<FirstFailures>, Vec<usize>) {
         let outputs = [output()];
         let (cursor, plane) = turn_cursor(true, None);
         let root = Rect {
@@ -221,7 +237,7 @@ impl Lane {
             plane,
             instant: Instant::now(),
         };
-        let mut errors = Vec::new();
+        let mut accepted = Vec::new();
         let turned = h.owner.combined_owner_turn(
             &mut turn,
             &mut |owner, key, turn| {
@@ -252,16 +268,13 @@ impl Lane {
                     t.poll_io().unwrap();
                     served
                 });
+                accepted.push(turn.native.accepts());
                 served.map_err(|error| error.to_string())?
             },
-            &mut |native| {
-                if serve_native && let Err(error) = native.service_native(output().id) {
-                    errors.push(error.to_string());
-                }
-            },
+            native,
             steps,
         );
-        (turned, errors)
+        (turned, accepted)
     }
 
     /// A driver turn in which no slot fails and native service succeeds;
@@ -476,6 +489,10 @@ fn an_unclassified_error_with_a_full_release_keeps_debt_through_stop() {
         "with the debt transferred nothing refuses"
     );
 }
+
+// G3-5d d-2b2: the running core end to end through this driver.
+#[path = "combined_running.rs"]
+mod running;
 
 /// The split driver's call order (MD4), stub core, labelled: candidate 1 is
 /// Held and validated, and every turn until content accepts it runs the
