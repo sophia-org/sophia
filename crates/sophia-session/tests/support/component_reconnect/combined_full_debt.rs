@@ -59,7 +59,7 @@ fn counts(native: &CombinedNativeFixture) -> (usize, usize) {
 
 /// The successor guard, probed outside any Session turn: one reservation
 /// through the native's own entry, cancelled at once when it is granted.
-fn successor(lane: &mut Lane) -> Result<(), std::io::ErrorKind> {
+fn successor(lane: &mut Lane) -> std::result::Result<(), std::io::ErrorKind> {
     let (head, _inbox) = ShellContentNative::reserve_combined_frame(&mut lane.native, output().id)
         .map_err(|error| error.kind())?;
     assert_eq!(
