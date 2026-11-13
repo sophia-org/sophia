@@ -96,6 +96,11 @@ impl ShellComponentProcesses {
         self.connections.store_event_facts(slot)
     }
 
+    /// G3-5d d-2b3d-2: the slot grant's content memory usage.
+    pub(crate) fn content_usage(&self, slot: usize) -> Option<sophia_runtime::ContentMemoryUsage> {
+        self.connections.content_usage(slot)
+    }
+
     /// G3-5d d-2b3d: the slot's owned source work awaiting SlotReleased.
     pub(crate) fn owned_releasing(
         &self,

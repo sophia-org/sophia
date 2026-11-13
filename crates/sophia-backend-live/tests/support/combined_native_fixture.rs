@@ -104,6 +104,9 @@ pub struct CombinedNativeFixture {
     pub(crate) settle_fault: Option<CombinedSettleFault>,
     /// Declared plan refusals still to inject.
     pub(crate) plan_refusals: usize,
+    /// G3-5d d-2b3d-2: the native frames the last `queue_retained` admitted,
+    /// per output (the F a declared completion must name).
+    last_retained_admission: Option<Frames>,
     /// Declared plan/description mismatches still to inject (G3-5d d-2b3b1).
     plan_mismatches: usize,
     /// Plans a declared mismatch widened, each with a placeholder present.
@@ -208,6 +211,7 @@ impl CombinedNativeFixture {
             composes: std::cell::Cell::new(0),
             settle_fault: None,
             plan_refusals: 0,
+            last_retained_admission: None,
             plan_mismatches: 0,
             plan_mismatches_applied: 0,
             render_fault: Default::default(),
@@ -621,11 +625,129 @@ impl CombinedNativeFixture {
         if !required.is_subset(&batch_outputs) {
             return Err("required retained retirement targets an absent output".into());
         }
-        self.admit(
+        let frames = self.admit(
             batches,
             required,
             LiveProductionHeadCompositionContent::Retained,
-        )
+        )?;
+        self.last_retained_admission = Some(frames.clone());
+        Ok(frames)
+    }
+
+    /// G3-5d d-2b3d-2: what the last retained queueing admitted, read only.
+    pub fn last_retained_admission(&self) -> Option<&Frames> {
+        self.last_retained_admission.as_ref()
+    }
+
+    /// G3-5d d-2b3d-2: `output`'s presented native frame, if any (the
+    /// target's `presented_frame_id`), read only.
+    pub fn presented_retained(&self, output: OutputId) -> Option<LiveProductionNativeFrameId> {
+        self.heads[self.head_index(output)]
+            .presented_content
+            .map(crate::LiveProductionScanoutContent::frame)
+    }
+
+    /// G3-5d d-2b3d-2 F4-O, a SIMULATED completion of the exact queued
+    /// fallback on `output` (design REV3 D4-O, REV4 D4-O): takes the one
+    /// queued retained generation out of the deferred queue and walks the
+    /// head's engine presentation state pending, submitted, presented, then
+    /// records its content as presented. Omitted, because this fixture has
+    /// no device: the owner's `activate_deferred_mirror_generation`, the
+    /// exporter's render, `PersistentScanoutCustody::submit`, the DRM
+    /// atomic commit, the page-flip event, `custody.present`, cursor plane
+    /// and capture. Every check runs read-only before the first write; a
+    /// refused preflight returns `Err` with the queue and head untouched,
+    /// and no fallible exit follows the first write. Returns F, the frame
+    /// `queue_retained` admitted.
+    pub fn present_queued_retained(
+        &mut self,
+        output: OutputId,
+    ) -> Result<LiveProductionNativeFrameId, String> {
+        let index = self.head_index(output);
+        let queued = self
+            .deferred
+            .get(output)
+            .ok_or("no queued generation for the output")?;
+        let frame = queued.frame;
+        if queued.heads.len() != 1 {
+            return Err(format!("{} queued heads, not one", queued.heads.len()));
+        }
+        let head_frame = &queued.heads[0];
+        if head_frame.head_index != index {
+            return Err(format!(
+                "queued head index {} is not the output's {index}",
+                head_frame.head_index
+            ));
+        }
+        if head_frame.identity.output() != output || head_frame.identity.frame() != frame.raw() {
+            return Err(format!(
+                "queued identity {:?} is not ({output:?}, {frame:?})",
+                head_frame.identity
+            ));
+        }
+        if head_frame.content.frame() != frame {
+            return Err(format!(
+                "queued content frame {:?} is not {frame:?}",
+                head_frame.content.frame()
+            ));
+        }
+        let content = head_frame.content;
+        let snapshot = head_frame
+            .output_damage_snapshot
+            .clone()
+            .ok_or("retained frame carries no damage snapshot")?;
+        let head = &self.heads[index];
+        if !head.enabled {
+            return Err("the head is disabled".into());
+        }
+        if head.pending_content.is_some()
+            || head.rendering_content.is_some()
+            || head.submitted_content.is_some()
+            || head.presented_content.is_some()
+        {
+            return Err("the head already holds content".into());
+        }
+        if head.scanout_custody.submitted().is_some() {
+            return Err("the head's custody holds a submission".into());
+        }
+        if head.output_frames.pending().is_some()
+            || head.output_frames.rendering().is_some()
+            || head.output_frames.submitted().is_some()
+        {
+            return Err("the head's presentation state is not idle".into());
+        }
+        head.output_frames
+            .presentation_for(snapshot.clone())
+            .map_err(|error| format!("the snapshot would not queue: {error:?}"))?;
+        // Ownership: an idle head reduces to Install, so the exact queued
+        // generation leaves the queue. A different generation is returned to
+        // the queue and reported; nothing is dropped.
+        let Some(taken) = self.deferred.take_ready(output, None, None, None) else {
+            return Err("take_ready returned nothing after preflight".into());
+        };
+        if taken.frame != frame {
+            let other = taken.frame;
+            return match self.deferred.retain_refused(taken) {
+                Ok(()) => Err(format!("took {other:?} instead of {frame:?}; returned")),
+                Err(lost) => Err(format!(
+                    "took {other:?} instead of {frame:?}; {:?} could not be returned",
+                    lost.frame
+                )),
+            };
+        }
+        // Writes, none fallible after the preflight above.
+        let head = &mut self.heads[index];
+        head.output_frames
+            .queue(snapshot)
+            .expect("preflighted: the snapshot queues");
+        head.output_frames
+            .mark_submitted()
+            .expect("preflighted: pending becomes submitted");
+        head.output_frames
+            .mark_presented()
+            .expect("preflighted: submitted becomes presented");
+        head.presented_content = Some(content);
+        Ok(frame)
     }
 
     /// `queue_ordinary_head_composition_batch`.

@@ -1387,3 +1387,8 @@ fn p3_the_expiry_commits_the_acceptance_then_timeout_and_one_poll_reads_both() {
 /// The fault rows F1-F4, split for the file-size limit.
 #[path = "combined_publication_faults.rs"]
 mod faults;
+
+// G3-5d d-2b3d-2: the full journal under a withheld ACK (FJ, MD7), the next
+// admission's Stop, the declared fallback completion and the disconnect clear.
+#[path = "combined_journal.rs"]
+mod journal;

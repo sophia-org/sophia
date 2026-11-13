@@ -7,7 +7,7 @@
 use super::*;
 use sophia_protocol::ContentOutputId;
 use sophia_runtime::owned_ring_protocol::Identity;
-use sophia_runtime::{StoreEventFacts, TransportFacts};
+use sophia_runtime::{ContentMemoryUsage, StoreEventFacts, TransportFacts};
 
 impl ShellComponentConnections {
     pub(crate) fn transport_facts(
@@ -26,6 +26,15 @@ impl ShellComponentConnections {
             .get(slot)?
             .transport
             .store_event_facts(&self.epochs)
+    }
+
+    /// G3-5d d-2b3d-2: the slot grant's content memory usage (its backing
+    /// charge among them). `None` without an active epoch.
+    pub(crate) fn content_usage(&self, slot: usize) -> Option<ContentMemoryUsage> {
+        self.connections
+            .get(slot)?
+            .transport
+            .content_usage(&self.epochs)
     }
 
     /// `None` without an image owner in the slot.

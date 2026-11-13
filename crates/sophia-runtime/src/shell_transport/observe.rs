@@ -66,6 +66,9 @@ pub struct TransportFacts {
     pub table: Vec<RetainedEntry>,
     pub owned_live_credits: Vec<OwnedCreditFacts>,
     pub owned_publication_sequence: Option<u64>,
+    /// G3-5d d-2b3d-2: the owned-ring offer the owner holds unadmitted
+    /// (an admission refused by `Step::Stop` waits here).
+    pub owned_pending_offer: Option<Offer>,
     pub lean_frames_in_flight: Option<u32>,
 }
 
@@ -90,6 +93,8 @@ impl ShellComponentTransport {
             table: export.map_or_else(Vec::new, |files| files.journal().retained_table()),
             owned_live_credits: export.map_or_else(Vec::new, |files| files.owned_live_credits()),
             owned_publication_sequence: export.map(|files| files.owned_publication_sequence()),
+            owned_pending_offer: export
+                .and_then(|files| files.owned_pending_offer().map(|(offer, _)| offer)),
             lean_frames_in_flight: export.map(|files| files.lean_frames_in_flight()),
         }
     }
