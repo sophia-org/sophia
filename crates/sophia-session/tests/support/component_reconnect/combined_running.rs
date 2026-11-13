@@ -587,3 +587,7 @@ fn a_repeated_resource_frame_is_accepted_with_every_occurrence_rendered() {
     assert_eq!(t1.status, Some(Submit::SubmittedWaitingForPageFlip));
     assert_eq!(t1.accepted, [1]);
 }
+
+// G3-5d d-2b3a: running-core custody, Held/Unknown against Ended.
+#[path = "combined_custody.rs"]
+mod custody;

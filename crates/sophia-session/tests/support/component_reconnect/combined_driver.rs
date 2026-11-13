@@ -213,6 +213,18 @@ impl Lane {
         steps: &mut Vec<Step>,
         step4: &mut dyn FnMut(&mut CombinedNativeFixture),
     ) -> (Result<FirstFailures>, Vec<usize>) {
+        self.driver_turn_at(steps, Instant::now(), step4)
+    }
+
+    /// `driver_turn_with` with `instant` as the turn's one Instant (d-2b3a),
+    /// for a walk past an admitted deadline. The four calls are unchanged
+    /// and no job's deadline is touched.
+    fn driver_turn_at(
+        &mut self,
+        steps: &mut Vec<Step>,
+        instant: Instant,
+        step4: &mut dyn FnMut(&mut CombinedNativeFixture),
+    ) -> (Result<FirstFailures>, Vec<usize>) {
         let outputs = [output()];
         let (cursor, plane) = turn_cursor(true, None);
         let root = Rect {
@@ -235,7 +247,7 @@ impl Lane {
             layers: std::array::from_fn(|slot| (slot == 0).then_some(LiveShellContentLayer::Shell)),
             cursor,
             plane,
-            instant: Instant::now(),
+            instant,
         };
         let mut accepted = Vec::new();
         let turned = h.owner.combined_owner_turn(
