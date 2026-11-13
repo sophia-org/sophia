@@ -1,10 +1,16 @@
 //! G3-5c Session controls for the walk's disposal distinctions (F3): Held
-//! while Assembling, Held or Failed on Unknown and on an exact Ended fact,
-//! and a same-grant entry of another generation at the join. Each reads
-//! the runtime's own candidate fact before relying on it.
+//! on Unknown before content reconciliation, Held or Failed on Unknown
+//! after a same-generation end and on an exact Ended fact, and a same-grant
+//! entry of another generation at the join. Each reads the runtime's own
+//! candidate fact before relying on it.
 //!
 //! Labelled: control 13a holds back reconciliation by not running the
 //! content service between the result and the walks; nothing is stood in.
+//! The successful result turn collects the result, the owner's image
+//! service settles it (`finish_frame_copy` takes the copy) and only then
+//! does the row walk, so the fact there is Unknown, not Assembling. Held
+//! while Assembling is not exercised by these controls; whether an error
+//! or interruption path reaches it stays an open reachability question.
 //! Controls 13b, 13c and 7b advance only the content candidate's clock,
 //! through the test-only `advance_content_clock` seam, so the candidate's
 //! own expiry ends it; the row's Instant is supplied separately and never
@@ -13,7 +19,7 @@ use super::consume::LATER;
 use super::*;
 use crate::shell_component_connections::images::advance_content_clock;
 use sophia_backend_live::CombinedRecompose;
-use sophia_runtime::FrameCandidateState::{Assembling, Ended, Pending, Unknown};
+use sophia_runtime::FrameCandidateState::{Ended, Pending, Unknown};
 
 const FAILED: (u16, u16) = (3, ContentReason::RendererFailed as u16);
 const TIMEOUT: (u16, u16) = (3, ContentReason::Timeout as u16);
@@ -62,11 +68,12 @@ fn held_then_expired(lane: &mut Lane, a: &mut Attempt, n: u64, label: &str) -> (
     (job, at)
 }
 
-/// Control 13a (rev 4): reconciliation held back before the deadline, then
-/// run; the walks keep Held while Assembling, and the result is a Match
-/// with no further reserve.
+/// Control 13a (rev 5): the result settled and reconciliation held back
+/// before the deadline, so the fact is Unknown; the walks keep Held, then
+/// reconciliation gives Pending and the result is a Match with no further
+/// reserve. Rev 4 claimed Held while Assembling; this path cannot show it.
 #[test]
-fn held_waits_while_assembling_then_installs_without_a_second_render() {
+fn held_waits_unknown_before_reconciliation_then_installs_without_a_second_render() {
     let mut lane = Lane::new();
     let mut a = lane.attempt();
     lane.submit(&mut a, 1, PIXEL);
@@ -80,8 +87,8 @@ fn held_waits_while_assembling_then_installs_without_a_second_render() {
     });
     assert_eq!(
         lane.candidate(&a, job),
-        Some(Assembling),
-        "c13a: reconciliation held back"
+        Some(Unknown),
+        "c13a: settled, reconciliation held back"
     );
     let reserves = lane.native.reserve_attempts();
     for _ in 0..3 {
@@ -90,7 +97,7 @@ fn held_waits_while_assembling_then_installs_without_a_second_render() {
     assert_eq!(
         lane.states(),
         [(job, "held")],
-        "c13a: the walks keep Held while Assembling"
+        "c13a: the walks keep Held while Unknown"
     );
     assert_eq!(lane.native.release_attempts(), 0, "c13a: nothing released");
     lane.content(&mut a, false);
