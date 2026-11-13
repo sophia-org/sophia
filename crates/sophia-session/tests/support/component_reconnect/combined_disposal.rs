@@ -9,6 +9,7 @@
 //! through the test-only `advance_content_clock` seam, so the candidate's
 //! own expiry ends it; the row's Instant is supplied separately and never
 //! goes back.
+use super::consume::LATER;
 use super::*;
 use crate::shell_component_connections::images::advance_content_clock;
 use sophia_backend_live::CombinedRecompose;

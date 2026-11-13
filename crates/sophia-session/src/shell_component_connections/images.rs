@@ -28,7 +28,13 @@ thread_local! {
 }
 
 /// Moves this test thread's content clock forward by `msec` (labelled seam).
-#[cfg(test)]
+/// Only the combined disposal controls use it.
+#[cfg(all(
+    test,
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session"
+))]
 pub(crate) fn advance_content_clock(msec: u64) {
     CONTENT_CLOCK_ADVANCE.with(|advance| advance.set(advance.get() + msec));
 }
