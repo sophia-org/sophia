@@ -838,21 +838,53 @@ fn a_returned_plan_cancels_its_reservation_only() {
     ));
 }
 
-/// Declared fault: the first plan is a refused send. The runtime cancels
-/// that one reservation, the row confirms it and ends the admission, and
-/// the second proposal of the same service composes again with fresh facts
-/// and is admitted (R4: reserve, cancel, reserve, plan, submitted).
+/// R3, declared fault: the plan is refused after admission consumed the
+/// frame, so this is the refused send, not a deferral. The runtime cancels
+/// that one reservation and the row confirms it; no entry outlives the
+/// proposal. The consumed candidate is withdrawn Cancelled and rejected
+/// once; nothing re-proposes it. A genuinely new candidate, sent once the
+/// rejection returned the frame credit, is the next admission. Same-frame
+/// reserve, cancel, reserve is a pre-admission deferral and stays the
+/// runtime's call-order control.
 #[test]
-fn a_refused_plan_cancels_once_and_the_next_proposal_composes_again() {
+fn a_refused_plan_cancels_once_and_settles_its_consumed_candidate() {
     let mut lane = Lane::new();
     let mut a = lane.attempt();
     lane.native.declare_plan_refusal();
     lane.submit(&mut a, 1, PIXEL);
-    lane.until(&mut a, "in flight");
-    assert_eq!(lane.native.composes(), 2, "one composition per proposal");
+    lane.drive_until(&mut a, "the consumed candidate's rejection", |_, a| {
+        !a.terminals(1).is_empty()
+    });
+    assert_eq!(a.terminals(1), [(3, ContentReason::Cancelled as u16)]);
+    assert_eq!(
+        lane.h.owner.processes.combined_row(0).pending(),
+        0,
+        "no entry outlived its proposal"
+    );
     assert_eq!(
         lane.h.owner.processes.combined_row(0).unconfirmed_cancels(),
         0,
         "the refused admission's cancellation was confirmed"
+    );
+    assert_eq!(
+        lane.native.composes(),
+        1,
+        "the consumed frame is not proposed again"
+    );
+    assert!(!lane.resident(&a, 1));
+    assert_eq!(lane.native.renderer_releases(), 0);
+    // The next admission is a new candidate, after the credit came back.
+    lane.drive_until(&mut a, "the frame credit", |_, a| a.stream.has_credit());
+    lane.submit(&mut a, 2, PIXEL);
+    let job = lane.until(&mut a, "in flight");
+    assert_eq!(lane.native.composes(), 2);
+    lane.native
+        .serve_combined(output().id, Instant::now(), exported());
+    assert_eq!(lane.until(&mut a, "held"), job);
+    assert_eq!(lane.decline(job), Some(CombinedRelease::Transferred));
+    assert_eq!(
+        a.terminals(1),
+        [(3, ContentReason::Cancelled as u16)],
+        "rejected once"
     );
 }
