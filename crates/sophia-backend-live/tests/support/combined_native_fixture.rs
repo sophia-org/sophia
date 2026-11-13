@@ -141,6 +141,10 @@ pub enum CombinedDeclaredHead {
     RetirementOwed,
     /// The native owner was replaced: no head issues the held result.
     OwnerReplaced,
+    /// The head is disabled, as a topology change leaves it; its exporter
+    /// and the facade it issued stay (G3-5d d-2b3c MD1). No other topology
+    /// work runs.
+    Disabled,
 }
 
 /// A declared, one-shot settlement fault (G3-5b R2 refusal controls).
@@ -441,6 +445,7 @@ impl CombinedNativeFixture {
             CombinedDeclaredHead::OwnerReplaced => {
                 self.native_owner = crate::NativeFrameOwner::new();
             }
+            CombinedDeclaredHead::Disabled => head.enabled = false,
         }
     }
 
@@ -484,6 +489,35 @@ impl CombinedNativeFixture {
             head.output_frames.rendering().is_some(),
             head.target_generation,
         )
+    }
+
+    /// `output`'s head is enabled (G3-5d d-2b3c MD1). Reads only.
+    pub fn head_enabled(&self, output: OutputId) -> bool {
+        self.heads[self.head_index(output)].enabled
+    }
+
+    /// The Release receipt of `output`'s exporter as (admission ticket,
+    /// job), read without consuming it (G3-5d d-2b3c). The output's exporter
+    /// whatever its head's state; the caller compares the ticket with the
+    /// issuing identity it recorded.
+    pub fn combined_receipt(&self, output: OutputId) -> Option<(u64, u64)> {
+        self.exporters[self.head_index(output)].combined_receipt_for_control()
+    }
+
+    /// Labelled native-only service (G3-5d d-2b3c MD2): one ordinary
+    /// `poll()` of `output`'s worker, as the owner's export service reaches
+    /// it between owner visits. No Session call, collection or walk runs.
+    /// True when the poll found nothing in flight.
+    pub fn ordinary_poll(&mut self, output: OutputId) -> bool {
+        let index = self.head_index(output);
+        self.exporters[index].poll_worker_for_control()
+    }
+
+    fn head_index(&self, output: OutputId) -> usize {
+        self.heads
+            .iter()
+            .position(|head| head.output.id == output)
+            .expect("a fixture head serves the output")
     }
 
     /// Declared fault: the next plan is a refused send, as a plan that no

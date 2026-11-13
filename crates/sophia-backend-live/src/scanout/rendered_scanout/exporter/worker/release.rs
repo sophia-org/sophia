@@ -231,6 +231,18 @@ impl NativeGbmRendererWorker {
         }
     }
 
+    /// Test-support (G3-5d d-2b3c): the revision-5 receipt as (admission
+    /// ticket, job), read without consuming it.
+    #[cfg(all(
+        any(test, feature = "test-support"),
+        feature = "experimental-combined-frame-job"
+    ))]
+    pub(crate) fn combined_receipt_for_control(&self) -> Option<(u64, u64)> {
+        self.combined_receipt
+            .released
+            .map(|admission| (admission.ticket, admission.job))
+    }
+
     /// Full and Disconnected both keep the lease: a closed queue is not proof
     /// that the slot was retired. An enqueue, from `poll()` or maintenance,
     /// leaves the admission's receipt.

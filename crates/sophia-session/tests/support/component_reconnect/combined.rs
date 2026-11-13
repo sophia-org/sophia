@@ -975,3 +975,6 @@ mod disposal;
 // G3-5d d-2b1: the split owner turn and its failure order.
 #[path = "combined_driver.rs"]
 mod driver;
+// G3-5d d-2b3c: the stub Full-debt controls MD1 and MD2.
+#[path = "combined_full_debt.rs"]
+mod full_debt;

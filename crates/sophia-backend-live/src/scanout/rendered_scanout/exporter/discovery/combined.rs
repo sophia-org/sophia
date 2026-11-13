@@ -176,4 +176,23 @@ impl<R: RenderDeviceDiscoveryBackend> NativeGbmRenderedScanoutBufferDiscoveryExp
                 worker.flush_combined_release_for(facade, job)
             })
     }
+
+    /// Test-support (G3-5d d-2b3c MD2): one ordinary `poll()` of this
+    /// exporter's worker, the call the native-only export service makes
+    /// (worker_export.rs), and nothing else of that export. True when the
+    /// poll found nothing in flight.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn poll_worker_for_control(&mut self) -> bool {
+        let worker = self.worker.as_mut().expect("a worker exporter");
+        matches!(worker.poll(), super::super::worker::WorkerPoll::Idle)
+    }
+
+    /// Test-support (G3-5d d-2b3c): the worker's Release receipt as
+    /// (admission ticket, job), read without consuming it.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn combined_receipt_for_control(&self) -> Option<(u64, u64)> {
+        self.worker
+            .as_ref()
+            .and_then(|worker| worker.combined_receipt_for_control())
+    }
 }
