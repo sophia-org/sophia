@@ -138,7 +138,7 @@ impl ShellComponentSession {
 
 impl Lane {
     /// The lane on d-1's running core, with an owner wake every render
-    /// result rings (the core's one owner wake).
+    /// result rings (the core's one owner wake), empty when returned.
     fn running() -> (Self, sophia_wake::Wake) {
         let mut h = Harness::new();
         h.owner.enable_frame_transactions(true, true).unwrap();
@@ -150,6 +150,14 @@ impl Lane {
         };
         let wake = sophia_wake::Wake::new().unwrap();
         lane.native.attach_owner_wake(&wake.notifier());
+        // Attaching rings once (WakeSlot::set). Nothing has been submitted,
+        // so that ring announces no result: clear it now, while the fixture
+        // is empty, and never after an admission.
+        wake.clear().unwrap();
+        assert!(
+            !wake.wait(Some(Instant::now())).unwrap(),
+            "the attach ring is cleared before any submission"
+        );
         (lane, wake)
     }
 
@@ -164,7 +172,9 @@ impl Lane {
 
     /// Candidate 1 admitted and forwarded through hooked turns, then its
     /// render result's ring: the result waits uncollected, since no owner
-    /// turn has run after the one that left the job in flight.
+    /// turn has run after the one that left the job in flight. The wake was
+    /// emptied before submission and only this job publishes a result, so
+    /// the ring is its publication; the wait does not clear it.
     fn rendered_uncollected(&mut self, wake: &sophia_wake::Wake, a: &mut Attempt) {
         self.submit(a, 1, PIXEL);
         let job = self.until(a, "in flight");
