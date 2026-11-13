@@ -44,6 +44,26 @@ impl ShellTransportConnection<'_> {
             .active_candidates(binding.key.grant)
             .map(|store| store.frame_candidate_state(&binding, job))
     }
+
+    /// The exact frame stream's owner-side phase and close-notice
+    /// transaction (`frame_stream_fact`); `None` without its active store
+    /// or stream. Test support only (G3-5d d-2b3a).
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        any(test, feature = "test-support")
+    ))]
+    pub fn content_frame_stream_fact(
+        &self,
+        key: crate::frame_credits::FrameStreamKey,
+    ) -> Option<(
+        crate::frame_credits::FrameStreamPhase,
+        sophia_protocol::TransactionId,
+    )> {
+        self.content_epochs
+            .active_candidates(key.grant)?
+            .frame_stream_fact(key)
+    }
 }
 
 impl ShellComponentTransport {

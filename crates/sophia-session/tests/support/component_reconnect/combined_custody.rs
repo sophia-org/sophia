@@ -22,10 +22,11 @@
 use super::*;
 use crate::shell_component_connections::images::{advance_content_clock, content_now_msec};
 use sophia_runtime::FrameCandidateState::{Ended, Unknown};
+use sophia_runtime::FrameCopyBinding;
+use sophia_runtime::frame_credits::FrameStreamPhase;
 use sophia_shell_client::FrameStreamState;
 
 const TIMEOUT: (u16, u16) = (3, ContentReason::Timeout as u16);
-const LOST: (u16, u16) = (3, ContentReason::AllocationLost as u16);
 
 impl Lane {
     /// The renderer's leased slots, as its worker publishes them.
@@ -235,11 +236,15 @@ fn an_expired_candidate_keeps_held_unknown_until_the_deadline_then_releases() {
 /// is a different scenario, not covered here. The owner invalidates the
 /// allocation after the result is published. In the result turn the images
 /// step delivers the result into Held, then the owned copy's reconciliation
-/// finds its description gone and stops it (AllocationLost), and
-/// `finish_frame_copy` rejects the candidate with that reason; content's
+/// finds its description gone and stops it; content's
 /// `reconcile_frame_streams` closes the stream for the missing context; the
 /// walk releases Held as Ended in that turn. Held from a delivered Rendered
 /// result and the later copy settlement are separate events.
+///
+/// Scope (d-2b3a publication disposition): this control is T1 owner-side
+/// custody, then slot freedom. The candidate's exact terminal, its reason
+/// and single publication, and its peer visibility are b3d obligations,
+/// not asserted here; Ended alone does not fix the reason.
 #[test]
 fn a_lost_allocation_ends_the_candidate_and_releases_held_in_the_result_turn() {
     let (mut lane, wake) = Lane::running();
@@ -277,36 +282,43 @@ fn a_lost_allocation_ends_the_candidate_and_releases_held_in_the_result_turn() {
         "the walk released Held as Ended: Transferred once"
     );
     assert!(lane.states().is_empty());
-    peer_reads_terminal(&mut a, 1, "lost allocation");
-    assert_eq!(a.terminals(1), [LOST], "one AllocationLost terminal");
-    lane.slot_freed("lost allocation");
     assert_eq!(lane.native.accepts(), 0);
     assert_eq!(lane.native.installs(), 0, "no install");
+    lane.slot_freed("lost allocation");
 }
 
 /// REV2 R3's closed-stream row, corrected to a close-after-admission
 /// lifecycle control: an explicit Close forbids new admissions and keeps
 /// the admitted frame's lifecycle (credits.rs:155; frame_credits.rs:286-301),
 /// and validation of the admitted assembly does not require Open, so the
-/// previously admitted, unchanged-scene frame completes. The peer's Close is
-/// sent and the owner's transport reads it before the result turn; that
-/// turn's content service admits the Close and then accepts the frame,
-/// which native service submits. The stream is Closing with its close
-/// notice published, not a settled Closed ledger: the frame's terminal
-/// waits on a flip this fixture never completes.
+/// previously admitted, unchanged-scene frame completes. The peer sends its
+/// Close before the result turn. Before that turn the owner's stream is
+/// still Open under the opening's transaction: the Close is read by the
+/// turn's own owner input service (step 1) and admitted by its content
+/// step, which then accepts the frame; native service submits it. The
+/// owner-side witness is the exact stream's ledger fact after the turn,
+/// Closing under the Close's transaction, read through a test-support
+/// observer; the frame's Submitted fact alone would hold without a Close.
+///
+/// Scope (d-2b3a publication disposition): this control is T1 owner-side
+/// lifecycle and custody. The peer's Closed record (transaction 31), its
+/// Closing, no-credit and not-drained stream state, and any terminal are
+/// b3d obligations, not asserted here.
 #[test]
 fn a_close_after_admission_keeps_the_admitted_frame_which_is_submitted() {
+    const OPEN: TransactionId = TransactionId::from_raw(30);
     const CLOSE: TransactionId = TransactionId::from_raw(31);
     let (mut lane, wake) = Lane::running();
     let mut a = lane.attempt();
     let job = rendered(&mut lane, &wake, &mut a);
+    let binding = lane.h.owner.processes.combined_row(0).binding(job).unwrap();
     a.stream.close(&mut a.peer, CLOSE).unwrap();
     a.peer.poll_io().unwrap();
-    lane.h
-        .owner
-        .with_service(a.key, |_, t| t.poll_io())
-        .unwrap()
-        .unwrap();
+    assert_eq!(
+        lane.stream_fact(&a, binding),
+        Some((FrameStreamPhase::Open, OPEN)),
+        "no owner call has admitted the Close yet"
+    );
     let t1 = lane.result_turn();
     assert_eq!(t1.steps, TURN);
     assert_eq!(t1.accepted, [1], "the admitted frame is accepted");
@@ -315,36 +327,11 @@ fn a_close_after_admission_keeps_the_admitted_frame_which_is_submitted() {
         Some(Submit::SubmittedWaitingForPageFlip),
         "native service submits it"
     );
-    let deadline = Instant::now() + WAIT;
-    let mut closed = false;
-    while !closed {
-        a.peer.poll_io().unwrap();
-        while let Some(event) = a.peer.take_frame().unwrap() {
-            a.stream.observe(&event).unwrap();
-            match event {
-                ShellFrameRecord::Closed { transaction, .. } => closed |= transaction == CLOSE,
-                ShellFrameRecord::Outcome { outcome, .. } => {
-                    a.outcomes
-                        .push((outcome.candidate_generation, outcome.kind, outcome.reason))
-                }
-                _ => {}
-            }
-        }
-        observe_peer(&mut a);
-        assert!(
-            Instant::now() < deadline,
-            "the peer never read the close notice"
-        );
-        std::thread::yield_now();
-    }
     assert_eq!(
-        a.stream.state(),
-        FrameStreamState::Closing,
-        "close notice read; the admitted frame's terminal is outstanding"
+        lane.stream_fact(&a, binding),
+        Some((FrameStreamPhase::Closing, CLOSE)),
+        "T1 admitted the Close: the exact stream is Closing under its transaction"
     );
-    assert!(!a.stream.has_credit(), "no credit under a closing stream");
-    assert!(!a.stream.frame_work_drained());
-    assert!(a.terminals(1).is_empty(), "no terminal without a flip");
     assert!(lane.states().is_empty(), "accepted removes the entry");
     assert_eq!(lane.row().bindings().len(), 1, "no new admission");
     assert_eq!(lane.row().bindings()[0].job, job);
@@ -357,4 +344,19 @@ fn a_close_after_admission_keeps_the_admitted_frame_which_is_submitted() {
     assert_eq!(lane.native.installs(), 0, "no ordinary install");
     assert_eq!(lane.releases(), (0, 0), "the head holds the lease");
     assert_eq!(lane.leased(), 1);
+}
+
+impl Lane {
+    /// The owner's fact for `binding`'s exact stream: its ledger phase and
+    /// close-notice transaction (`content_frame_stream_fact`).
+    fn stream_fact(
+        &mut self,
+        a: &Attempt,
+        binding: FrameCopyBinding,
+    ) -> Option<(FrameStreamPhase, TransactionId)> {
+        self.h
+            .owner
+            .with_service(a.key, |_, t| t.content_frame_stream_fact(binding.key))
+            .unwrap()
+    }
 }

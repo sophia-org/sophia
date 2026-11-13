@@ -88,6 +88,23 @@ impl ContentCandidateStore {
         }
     }
 
+    /// The exact stream's ledger phase and the transaction its close
+    /// notice carries (the opening's until a Close is admitted), read from
+    /// existing state only; `None` unless `key` is its output's current
+    /// stream key. A test-support observer (G3-5d d-2b3a's Close witness).
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        any(test, feature = "test-support")
+    ))]
+    pub fn frame_stream_fact(
+        &self,
+        key: FrameStreamKey,
+    ) -> Option<(FrameStreamPhase, TransactionId)> {
+        let entry = self.streams.entries.get(&key.output)?;
+        (entry.ledger.key() == Some(key))
+            .then_some((entry.ledger.phase(), entry.notice_transaction))
+    }
+
     pub(crate) fn frame_stream_key(&self, output: ContentOutputId) -> Option<FrameStreamKey> {
         self.streams.entries.get(&output)?.ledger.key()
     }
