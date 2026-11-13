@@ -75,6 +75,10 @@ pub enum CombinedAcceptRefusal {
     /// The head no longer serves the admitted output alone.
     Topology,
     TargetGeneration,
+    /// A capture may read the output's next frame (G3-5d d-0): the owner's
+    /// capture endpoint, a queued generation's reservation, or the serving
+    /// exporter's request or reservation, read in the consuming owner call.
+    CaptureActive,
     /// The expected correlation does not name this owner, head, target and
     /// native frame as the combined request.
     Identity,

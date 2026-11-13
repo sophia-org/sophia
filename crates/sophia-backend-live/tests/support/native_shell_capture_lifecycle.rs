@@ -110,10 +110,42 @@ fn capture_reply_binds_the_held_card_to_its_granted_render_node() {
 }
 
 /// G3-5b R3: the combined job's capture predicate on its own, so no other
-/// eligibility fact can decline for it.
+/// eligibility fact can decline for it. G3-5d d-0: the owners below are
+/// these states for the accept's consumption guards.
 #[cfg(feature = "experimental-combined-frame-job")]
-mod combined_capture_predicate {
+pub(in crate::production_session::native_scanout::persistent_native_scanout) mod combined_capture_predicate {
     use super::*;
+
+    /// A real owner with a pending install on `output`.
+    pub(in crate::production_session::native_scanout::persistent_native_scanout) fn pending_on(
+        output: u64,
+    ) -> CaptureOwner {
+        // CaptureOwner is Drop: no struct update from a default.
+        let mut owner = CaptureOwner::default();
+        owner.pending = Some(install(output));
+        owner
+    }
+
+    /// A real owner with an active install on `output`.
+    pub(in crate::production_session::native_scanout::persistent_native_scanout) fn active_on(
+        output: u64,
+    ) -> CaptureOwner {
+        // CaptureOwner is Drop: no struct update from a default.
+        let mut owner = CaptureOwner::default();
+        owner.active = Some(install(output));
+        owner
+    }
+
+    /// A real owner closing by its own observation (a generation change)
+    /// while it retains its active install on `output`.
+    pub(in crate::production_session::native_scanout::persistent_native_scanout) fn closing_on(
+        output: u64,
+    ) -> CaptureOwner {
+        let mut owner = active_on(output);
+        owner.observe(3, |_, _| true);
+        assert!(owner.closing && owner.active.is_some());
+        owner
+    }
 
     fn install(output: u64) -> Install {
         Install {

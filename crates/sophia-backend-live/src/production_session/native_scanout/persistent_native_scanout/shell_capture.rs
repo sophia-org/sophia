@@ -378,4 +378,4 @@ fn evict_all_stores<E>(
 
 #[cfg(test)]
 #[path = "../../../../tests/support/native_shell_capture_lifecycle.rs"]
-mod tests;
+pub(super) mod tests;
