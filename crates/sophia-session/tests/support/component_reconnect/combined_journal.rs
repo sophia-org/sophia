@@ -349,11 +349,38 @@ fn baseline(lane: &mut Lane, a: &mut Attempt, label: &str) -> Fill {
         UNCREDITED_LIMIT,
         MAX_RECORDS - usize::from(SHELL_FILE_TERMINAL_RESERVE_RECORDS)
     );
+    // A_B (REV7 section 2). 1: the peer has processed every committed
+    // record and no ACK is in flight. The pass before it drains a lone
+    // automatic lean ACK still in flight.
     let p0 = a.peer.journal_progress();
     a.peer.poll_io().unwrap();
     observe_peer(a);
     lane.input_turn(a);
+    let (p1, _) = peer_poll(a);
+    let s_pre = lane.snapshot(a, label);
+    let j_pre = s_pre.journal();
+    assert_eq!(
+        p1.handled,
+        j_pre.next_sequence - 1,
+        "{label}: the peer processed every committed record: {p1:?} {j_pre:?}"
+    );
+    assert_eq!(j_pre.deferred, None, "{label}: nothing deferred: {j_pre:?}");
+    assert!(!p1.ack_pending, "{label}: no ACK in flight: {p1:?}");
+    // 2: manual from here; retracts nothing.
+    a.peer.set_automatic_journal_ack(false).unwrap();
+    // 3: the covering ACK, bound = handled; sent by the peer's poll, applied
+    // by one owner input-serving turn, confirmed by the peer's next poll. A
+    // false return means the automatic ACK already covered handled.
+    let sent = a.peer.acknowledge_journal().unwrap();
+    a.peer.poll_io().unwrap();
+    lane.input_turn(a);
     let (pp, _) = peer_poll(a);
+    assert!(
+        pp.acknowledged == pp.queued && pp.queued == p1.handled && !pp.ack_pending,
+        "{label}: A_B covers handled {} (sent {sent}): {pp:?}",
+        p1.handled
+    );
+    // 4: the released prefix is everything committed.
     let s0 = lane.snapshot(a, label);
     let j = s0.journal();
     assert_eq!(
@@ -361,19 +388,17 @@ fn baseline(lane: &mut Lane, a: &mut Attempt, label: &str) -> Fill {
         "{label}: the persistent channel-close hold alone: {j:?}"
     );
     assert_eq!(j.records, 0, "{label}: R_B: everything acknowledged: {j:?}");
-    assert!(
-        !pp.ack_pending && pp.queued == pp.acknowledged,
-        "{label}: no ACK in flight: {pp:?}"
-    );
+    assert_eq!(j.floor, j.tail, "{label}: {j:?}");
     assert!(!s0.facts.output_blocked);
-    a.peer.set_automatic_journal_ack(false).unwrap();
     let usage_0 = usage(lane);
     assert!(
         a.stream.has_credit(),
         "{label}: the stream holds its credit"
     );
+    // 5: the bound; `queued` must stay equal to it until the deliberate
+    // unblocking ACK.
     eprintln!(
-        "{label}: ACK baseline {p0:?} -> {pp:?}; journal {j:?}; usage {usage_0:?}; counters {:?}",
+        "{label}: A_B {p0:?} -> {p1:?} -> {pp:?} (sent {sent}); journal {j:?}; usage {usage_0:?}; counters {:?}",
         counters(lane)
     );
     Fill {
@@ -644,6 +669,10 @@ fn invalid_frame(
 /// A filler's admitted state after its render result rang.
 struct Admitted {
     job: u64,
+    /// The admitted deadline plus MARGIN, read while the row holds the
+    /// entry: C3 removes it, so later turns reuse this instant (source-02
+    /// R1); never refreshed.
+    late: Instant,
     key: ShellFrameStreamKey,
     resource: ContentResourceId,
     credit: OwnedCreditFacts,
@@ -679,6 +708,7 @@ fn filler_start(
     budget(fill, label);
     lane.submit(a, n, PIXEL);
     let job = admit(lane, a, fill, label);
+    let late = lane.deadline_of(job) + MARGIN;
     assert!(
         wake.wait(Some(Instant::now() + WAIT)).unwrap(),
         "{label}: the render result rings the owner"
@@ -707,6 +737,7 @@ fn filler_start(
     );
     Admitted {
         job,
+        late,
         key,
         resource,
         credit,
@@ -722,9 +753,8 @@ fn filler_start(
 /// (reserved, deferred) and the terminal (credited) commit; the peer reads
 /// the terminal and holds the credit again; no ACK.
 fn filler_t1(lane: &mut Lane, a: &mut Attempt, fill: &Fill, f: &Admitted, label: &str) -> Declined {
-    let late = lane.deadline_of(f.job) + MARGIN;
     budget(fill, &format!("{label} T1"));
-    let (steps, observed) = lane.observed_turn(late, None);
+    let (steps, observed) = lane.observed_turn(f.late, None);
     assert_eq!(steps, TURN);
     let c1 = f.c0.released();
     assert_eq!(
@@ -807,10 +837,9 @@ fn filler_finish(
     label: &str,
 ) -> usize {
     lane.slot_freed(label);
-    let late = lane.deadline_of(f.job) + MARGIN;
     budget(fill, &format!("{label} T2"));
     a.peer.poll_io().unwrap();
-    let (steps, observed) = lane.observed_turn(late, None);
+    let (steps, observed) = lane.observed_turn(f.late, None);
     assert_eq!(steps, TURN);
     assert_eq!(observed, d.c1.unchanged(), "{label} T2: nothing more");
     let s2 = lane.snapshot(a, &format!("{label} O2"));
@@ -1293,192 +1322,8 @@ fn fj_a_parked_release_holds_the_next_frames_records_until_an_ack() {
     assert_eq!(lane.native.ordinary_queues(), 0);
 }
 
-/// FJ-stop: 63 fillers to 252 and the final filler whose SlotReleased
-/// publishes at 255 while its ResourceReleased parks; the probe's
-/// admission refused at its first reservation hold: `Step::Stop`
-/// (owned_copy/frame.rs), the offer waits, nothing is appended or queued,
-/// holds stay H. The other blockers are shown absent. The ACK, the one
-/// parked record's drain, then the admission.
-#[test]
-fn fj_stop_the_next_admission_stops_at_the_reservation_refusal_until_an_ack() {
-    let (mut lane, wake) = Lane::running();
-    let mut a = lane.attempt();
-    let fill = baseline(&mut lane, &mut a, "FJ-stop phase 0");
-    let r = fillers(&mut lane, &wake, &mut a, &fill, 1, STOP_FILLERS, "FJ-stop");
-    assert_eq!(r, 252, "FJ-stop: the fillers reached 252");
-    // The final filler: T1 as every filler; T2 publishes SlotReleased(64)
-    // at 255 and parks the release.
-    let f = filler_start(&mut lane, &wake, &mut a, &fill, STOP_FINAL, "FJ-stop 64");
-    assert_eq!(f.r0, 252);
-    let d = filler_t1(&mut lane, &mut a, &fill, &f, "FJ-stop 64");
-    assert_eq!(d.outcome, d.status + 1, "status 253, outcome 254");
-    lane.slot_freed("FJ-stop 64");
-    let late = lane.deadline_of(f.job) + MARGIN;
-    budget(&fill, "FJ-stop T2(64)");
-    a.peer.poll_io().unwrap();
-    let (steps, observed) = lane.observed_turn(late, None);
-    assert_eq!(steps, TURN);
-    assert_eq!(observed, d.c1.unchanged(), "FJ-stop T2(64): nothing more");
-    let s2 = lane.snapshot(&a, "FJ-stop O2(64)");
-    let w2 = window(&d.s1, &s2, "FJ-stop T2(64)");
-    assert_eq!(
-        kinds(&w2),
-        ["SlotReleased(0)"],
-        "FJ-stop T2(64): the slot's release alone"
-    );
-    let event = slot_released_of(&w2[0]).unwrap();
-    assert_eq!(
-        (event.identity, event.resource, event.slot, event.reason),
-        (f.identity, f.resource, f.credit.offer.request.slot, 0)
-    );
-    let slot_released_64 = w2[0].sequence;
-    let j2 = s2.journal();
-    assert_eq!((j2.records, j2.held), (255, H), "FJ-stop O2(64): {j2:?}");
-    assert_all_visible(j2, "FJ-stop O2(64): published with lean 0");
-    assert!(s2.releasing.is_empty());
-    assert!(s2.facts.owned_live_credits.is_empty(), "both holds spent");
-    assert!(
-        s2.facts.output_blocked,
-        "FJ-stop O2(64): the release was refused at 255"
-    );
-    assert_eq!(outbox_kinds(&s2.facts.outbox), ["ResourceReleased"]);
-    assert_parked(&s2, 0, &f.release, "FJ-stop O2(64)");
-    assert_eq!(s2.facts.owned_publication_sequence, Some(slot_released_64));
-    assert_eq!(s2.facts.lean_frames_in_flight, Some(0));
-    s2.assert_stores_empty("FJ-stop O2(64)");
-    let charged = usage(&lane).backing;
-    assert!(
-        charged > fill.backing_0,
-        "FJ-stop O2(64): the parked release keeps its charge"
-    );
-    assert!(lane.states().is_empty());
-    assert_eq!(lane.leased(), 0);
-    assert_eq!(counters(&lane), d.c1);
-    eprintln!("FJ-stop O2(64): journal {j2:?}; usage {:?}", usage(&lane));
-    // The probe: turns until the owner holds the offer unadmitted.
-    let resource = resource_n(STOP_PROBE);
-    boundary(&lane, &wake, &a, "FJ-stop probe");
-    budget(&fill, "FJ-stop probe submission");
-    lane.submit(&mut a, STOP_PROBE, PIXEL);
-    assert!(!a.stream.has_credit());
-    let deadline = Instant::now() + WAIT;
-    let mut turns = 0;
-    let s_stop = loop {
-        budget(&fill, &format!("FJ-stop admission pass {turns}"));
-        a.peer.poll_io().unwrap();
-        let (steps, accepted) = lane.quiet_driver_turn_at(Instant::now());
-        assert_eq!(steps, TURN);
-        assert_eq!(accepted, [0]);
-        observe_peer(&mut a);
-        turns += 1;
-        let s = lane.snapshot(&a, "FJ-stop stop");
-        if s.facts.owned_pending_offer.is_some() {
-            break s;
-        }
-        assert!(
-            lane.states().is_empty(),
-            "FJ-stop: admitted: {:?}",
-            lane.states()
-        );
-        assert!(
-            Instant::now() < deadline,
-            "FJ-stop: the offer never reached the owner: {:?}",
-            lane.states()
-        );
-        std::thread::yield_now();
-    };
-    let j_stop = s_stop.journal();
-    let pending = s_stop.facts.owned_pending_offer.unwrap();
-    assert_eq!(pending.request.resource, resource, "the offer waits");
-    assert!(
-        lane.states().is_empty(),
-        "no admission: {:?}",
-        lane.states()
-    );
-    assert!(
-        s_stop.facts.owned_live_credits.is_empty(),
-        "no hold was taken and kept: {:?}",
-        s_stop.facts.owned_live_credits
-    );
-    assert_eq!(j_stop.held, H, "{j_stop:?}");
-    assert_eq!(committed(j_stop), committed(j2), "nothing appended");
-    assert_eq!(j_stop.records, 255);
-    assert!(
-        s_stop.facts.output_blocked,
-        "the parked release still blocks"
-    );
-    assert_eq!(
-        outbox_kinds(&s_stop.facts.outbox),
-        ["ResourceReleased"],
-        "no refusal status was appended or parked"
-    );
-    assert_parked(&s_stop, 0, &f.release, "FJ-stop stop");
-    s_stop.assert_stores_empty("FJ-stop stop: no refusal status queued");
-    assert!(s_stop.releasing.is_empty());
-    assert_eq!(s_stop.facts.lean_frames_in_flight, Some(0));
-    assert_eq!(lane.leased(), 0);
-    assert_eq!(
-        usage(&lane).backing,
-        charged,
-        "the parked charge, nothing else"
-    );
-    // The other admission preconditions, read as the admission reads them.
-    let facts = lane
-        .h
-        .owner
-        .processes
-        .owned_admission_facts(0)
-        .expect("a pending offer has admission facts");
-    assert!(
-        facts.available,
-        "worker capacity and the backing budget admit the offer: {facts:?}"
-    );
-    assert_eq!(facts.worker_pending, 0, "{facts:?}");
-    assert_eq!(facts.room, 4, "control room for the admission: {facts:?}");
-    eprintln!(
-        "FJ-stop: R 255 held {}, {turns} turn(s); image pending {}; admission facts {facts:?}; by the source's order the status hold (255 not < 256 - 1) refused: an inference; journal {j_stop:?}",
-        j_stop.held,
-        lane.h.owner.processes.image_pending(0)
-    );
-    // The unblock: ACK, PP, IT (the one parked release drains), then
-    // the admission.
-    budget(&fill, "FJ-stop unblock");
-    let acked = acknowledge(&mut a, &fill, &d, slot_released_64, "FJ-stop");
-    let after_drain = match acked {
-        Acked::SlotReleased => 1,
-        Acked::Outcome => 2,
-    };
-    budget(&fill, "FJ-stop IT");
-    lane.input_turn(&a);
-    let s_u = lane.snapshot(&a, "FJ-stop after IT");
-    let j_u = s_u.journal();
-    assert!(j_u.floor > j_stop.floor, "the ACK released retention");
-    assert!(!s_u.facts.output_blocked);
-    let w_u = window(&s_stop, &s_u, "FJ-stop IT");
-    assert_eq!(
-        kinds(&w_u),
-        ["ResourceReleased"],
-        "the one parked release drained"
-    );
-    assert_eq!(w_u[0].identity, release_identity(&f.release));
-    assert_eq!(j_u.records, after_drain, "{acked:?}: {j_u:?}");
-    assert_eq!(j_u.held, H);
-    assert!(s_u.facts.outbox.is_empty());
-    assert_eq!(
-        usage(&lane).backing,
-        fill.backing_0,
-        "the charge released with the commit"
-    );
-    let job = admit(&mut lane, &mut a, &fill, "FJ-stop after the ACK");
-    let s_adm = lane.snapshot(&a, "FJ-stop admitted");
-    assert_eq!(s_adm.journal().held, H + 2, "{:?}", s_adm.journal());
-    assert_eq!(s_adm.facts.owned_pending_offer, None);
-    assert!(credit_of(&s_adm, resource, "FJ-stop admitted").status_reserved);
-    assert!(wake.wait(Some(Instant::now() + WAIT)).unwrap());
-    assert_eq!(lane.states(), [(job, "in flight")]);
-    eprintln!("FJ-stop: admitted after the ACK: {:?}", s_adm.journal());
-}
-
-// F4-O and BP, split for the file-size limit.
+// FJ-stop, F4-O and BP, split for the file-size limit.
 #[path = "combined_journal_clear.rs"]
 mod clear;
+#[path = "combined_journal_stop.rs"]
+mod stop;

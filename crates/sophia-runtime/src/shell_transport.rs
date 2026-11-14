@@ -49,10 +49,14 @@ pub use files::{ShellPollRole, ShellReadinessObservation, ShellReadinessSubscrip
 mod observe;
 #[cfg(any(test, feature = "test-support"))]
 pub use files::{JournalFacts, ReadReplyWitness, RecordIdentity, RetainedEntry, RetainedRecord};
+#[cfg(all(
+    any(test, feature = "test-support"),
+    feature = "experimental-native-frame-transaction"
+))]
+pub use observe::QueuedFrameFacts;
 #[cfg(any(test, feature = "test-support"))]
 pub use observe::{
-    OutboxEntryFacts, OutboxRecordFacts, OwnedAdmissionFacts, OwnedCreditFacts, StoreEventFacts,
-    TransportFacts,
+    OutboxEntryFacts, OutboxRecordFacts, OwnedCreditFacts, StoreEventFacts, TransportFacts,
 };
 #[cfg(feature = "experimental-draw")]
 mod draw;

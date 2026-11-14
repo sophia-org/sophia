@@ -133,3 +133,25 @@ through a read-only admission reader, BP on the frame's own
 allocation, and the fixture's post-preflight invariant. All counts,
 windows and the timing budget remain predictions until a separately
 granted run.
+
+Source-02 at 436b51c0d was HELD (R1: `deadline_of` after the C3
+decline reaches its expect, the row entry having been removed; R2:
+the FJ-stop stop witness and its availability reader read the
+ordinary `Control::Offer` field, which the lean frame commit never
+writes, so the probe could not break on the Stop and the reader
+returned `None` in that state; baseline: one automatic-ACK pass with
+R_B asserted 0 rather than the explicit covering A_B). Source-03 over
+436b51c0d: `Admitted.late` is read at admission and reused by T1, T2
+and the FJ-stop T2(64), never refreshed; `queued_frame_facts`
+(test-support, `experimental-native-frame-transaction`) reads the
+queued frame commit's transaction, candidate generation and embedded
+offer with the admission's `owned_offer_available`, grant check and
+control room, `None` without such a commit; FJ-stop breaks on the
+identified frame 65 commit, runs one more turn in which it stays
+queued with the committed boundary unchanged, asserts the ordinary
+offer queue empty and the copy owner idle, and asserts the commit
+consumed by the admission after the ACK; the baseline performs REV7
+section 2's A_B (handled == next_sequence − 1, deferred None, manual,
+`acknowledge_journal`, one input-serving turn, acknowledged == queued
+== handled confirmed, R_B == 0, floor == tail). FJ-stop moved to
+combined_journal_stop.rs for the file-size limit. Still unexecuted.

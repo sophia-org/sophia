@@ -101,13 +101,13 @@ impl ShellComponentProcesses {
         self.connections.content_usage(slot)
     }
 
-    /// G3-5d d-2b3d-2: the admission preconditions for the slot's pending
-    /// owned-ring offer.
-    pub(crate) fn owned_admission_facts(
+    /// G3-5d d-2b3d-2: the slot's queued, unadmitted lean frame commit and
+    /// the admission preconditions read from its embedded offer.
+    pub(crate) fn queued_frame_facts(
         &mut self,
         slot: usize,
-    ) -> Option<sophia_runtime::OwnedAdmissionFacts> {
-        self.connections.owned_admission_facts(slot)
+    ) -> Option<sophia_runtime::QueuedFrameFacts> {
+        self.connections.queued_frame_facts(slot)
     }
 
     /// G3-5d d-2b3d: the slot's owned source work awaiting SlotReleased.

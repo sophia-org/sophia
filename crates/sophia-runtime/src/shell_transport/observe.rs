@@ -72,15 +72,25 @@ pub struct TransportFacts {
     pub lean_frames_in_flight: Option<u32>,
 }
 
-/// G3-5d d-2b3d-2: the preconditions `admit_peeked_commit` reads for the
-/// owned-ring offer the owner holds unadmitted: `owned_offer_available`
-/// (the worker below its job limit and the backing budget with the
-/// offer's source and pixel bytes), the worker's pending count it was
-/// given, and the control room (the largest of 0..=4 additional records
-/// `control_capacity_available` admits).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct OwnedAdmissionFacts {
-    pub available: bool,
+/// G3-5d d-2b3d-2 (source-02 R2): the lean frame commit queued in the
+/// inbound SFT queue, unadmitted, with the preconditions
+/// `admit_peeked_commit` reads for ITS embedded offer: the grants it
+/// requires, `owned_offer_available` (the worker below its job limit and
+/// the backing budget with the offer's source and pixel bytes) with the
+/// worker's pending count it was given, and the control room (the
+/// largest of 0..=4 additional records `control_capacity_available`
+/// admits). A reservation refused EAGAIN (`Step::Stop`) leaves the frame
+/// queued here; the ordinary `Control::Offer` queue (`owned_pending_offer`)
+/// is a different field the lean path never writes.
+#[cfg(feature = "experimental-native-frame-transaction")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct QueuedFrameFacts {
+    pub transaction: TransactionId,
+    pub candidate_generation: u64,
+    /// The commit's grant is the current content and store grant.
+    pub grant_current: bool,
+    pub offer: Offer,
+    pub available: Result<bool, sophia_9p::Errno>,
     pub worker_pending: usize,
     pub room: usize,
 }
@@ -112,28 +122,34 @@ impl ShellComponentTransport {
         }
     }
 
-    /// `None` without a wire, a pending offer or the offer's epoch. Reads
-    /// the same functions the admission reads; reserves, admits and
+    /// `None` without a wire or a queued frame commit carrying an offer
+    /// (never an empty success: callers assert the exact frame). Reads the
+    /// same functions the admission reads; reserves, admits, consumes and
     /// services nothing.
-    pub fn owned_admission_facts(
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub fn queued_frame_facts(
         &self,
         epochs: &ContentEpochRegistry,
         worker_pending: usize,
-    ) -> Option<OwnedAdmissionFacts> {
-        let available = self
-            .wire
-            .as_ref()?
-            .export()
-            .owned_admission_available(epochs, worker_pending)
-            .ok()?;
-        let room = (0..=4)
-            .rev()
-            .find(|room| self.control_capacity_available(epochs, *room))
-            .unwrap_or(0);
-        Some(OwnedAdmissionFacts {
-            available,
+    ) -> Option<QueuedFrameFacts> {
+        use sophia_protocol::shell_files::ShellFrameRecord;
+        let files = self.wire.as_ref()?.export();
+        let ShellFrameRecord::Commit(frame) = files.peek_frame_request()? else {
+            return None;
+        };
+        let offer = Offer::from(frame.image?);
+        let grant = frame.candidate.grant;
+        Some(QueuedFrameFacts {
+            transaction: frame.transaction,
+            candidate_generation: frame.candidate.candidate_generation,
+            grant_current: self.content_grant == Some(grant) && self.store_grant == grant,
+            offer,
+            available: files.owned_offer_available(offer, epochs, worker_pending),
             worker_pending,
-            room,
+            room: (0..=4)
+                .rev()
+                .find(|room| self.control_capacity_available(epochs, *room))
+                .unwrap_or(0),
         })
     }
 

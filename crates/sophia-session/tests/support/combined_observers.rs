@@ -7,7 +7,7 @@
 use super::*;
 use sophia_protocol::ContentOutputId;
 use sophia_runtime::owned_ring_protocol::Identity;
-use sophia_runtime::{ContentMemoryUsage, OwnedAdmissionFacts, StoreEventFacts, TransportFacts};
+use sophia_runtime::{ContentMemoryUsage, QueuedFrameFacts, StoreEventFacts, TransportFacts};
 
 impl ShellComponentConnections {
     pub(crate) fn transport_facts(
@@ -37,15 +37,16 @@ impl ShellComponentConnections {
             .content_usage(&self.epochs)
     }
 
-    /// G3-5d d-2b3d-2: the admission preconditions for the slot's pending
-    /// owned-ring offer, with its validation worker's pending count. `None`
-    /// without an image owner, a wire or a pending offer.
-    pub(crate) fn owned_admission_facts(&mut self, slot: usize) -> Option<OwnedAdmissionFacts> {
+    /// G3-5d d-2b3d-2: the slot's queued, unadmitted lean frame commit and
+    /// the admission preconditions read from its embedded offer, with its
+    /// validation worker's pending count. `None` without an image owner, a
+    /// wire or a queued commit carrying an offer.
+    pub(crate) fn queued_frame_facts(&mut self, slot: usize) -> Option<QueuedFrameFacts> {
         let worker_pending = self.combined_validator(slot)?.pending();
         self.connections
             .get(slot)?
             .transport
-            .owned_admission_facts(&self.epochs, worker_pending)
+            .queued_frame_facts(&self.epochs, worker_pending)
     }
 
     /// `None` without an image owner in the slot.
