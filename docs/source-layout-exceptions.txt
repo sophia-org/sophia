@@ -148,3 +148,6 @@ inline-tests crates/sophia-runtime/src/shell_content/isb_worker/combined.rs
 # inline test functions, production fault hooks or unrelated additions.
 inline-tests crates/sophia-session/src/shell_component_connections/combined_row.rs
 inline-tests crates/sophia-session/src/shell_component_connections/images.rs
+# Gate 4 C2: the moved image step reads the row's test-only fault field under
+# cfg(test); no test function, no production fault hook.
+inline-tests crates/sophia-session/src/shell_component_connections/combined_row/turn.rs

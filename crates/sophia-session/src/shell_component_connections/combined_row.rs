@@ -54,6 +54,9 @@ pub(crate) mod steps;
 #[cfg(test)]
 #[path = "../../tests/support/combined_observers.rs"]
 mod observers;
+// G3-5d gate 4 C2: the split combined turn, production code under the
+// parent's gate; `image_fault` is read there under cfg(test) only.
+mod turn;
 
 #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
 type Worker = IsbValidationWorker<CombinedRenderPlan>;
