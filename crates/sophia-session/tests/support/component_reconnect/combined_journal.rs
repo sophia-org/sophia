@@ -13,11 +13,13 @@
 //! credited rule. `held` is a total. One reservation is persistent in this
 //! lane, the channel-close record held since ChannelReady (export/image.rs),
 //! so the baseline is H = 1 and an admitted offer makes it 3: the status
-//! hold (spent by the ResourceStatus in T1) and the release hold (spent by
-//! SlotReleased). `bytes` and `held` are printed at every boundary rather
-//! than derived. R below is the count of retained records since the
-//! baseline ACK A_B, an occupancy; every ACK is joined to an observed
-//! header sequence, never to R.
+//! hold (spent by the ResourceStatus, in T1 or, for a prefix frame whose
+//! validator result the admitting Images call already took, in the
+//! admission turn itself: validation-03 diagnosis) and the release hold
+//! (spent by SlotReleased). `bytes` and `held` are printed at every
+//! boundary rather than derived. R below is the count of retained records
+//! since the baseline ACK A_B, an occupancy; every ACK is joined to an
+//! observed header sequence, never to R.
 //!
 //! Producers (REV10 A3, every count a prediction until this runs). After
 //! A_B the peer reads but never ACKs, so only lean frames accumulate: a
@@ -475,7 +477,12 @@ fn admit(lane: &mut Lane, a: &mut Attempt, fill: &Fill, label: &str) -> u64 {
 
 /// Prefix frame `n` (I): a lean frame of INVALID pixels through the running
 /// validator to its Malformed terminal and the published SlotReleased(3),
-/// with no renderer involvement. Three records; R after.
+/// with no renderer involvement. Three records; R after. The admission
+/// window is one of two (validation-03 diagnosis, both exact): A, empty,
+/// the result reconciled by a later turn; B, the refusal and the terminal,
+/// the admitting Images call's completion loop having taken the result
+/// and the content step having published both. The release follows the
+/// status turn by one turn either way.
 fn invalid_frame(
     lane: &mut Lane,
     wake: &sophia_wake::Wake,
@@ -505,54 +512,99 @@ fn invalid_frame(
     let s0 = lane.snapshot(a, &format!("{label} O0"));
     let j0 = s0.journal();
     admission_facts(lane, a, &s_pre, &s0, &format!("{label} O0"));
-    assert_eq!(j0.records, r0, "{label} O0: the admission journals nothing");
-    assert_eq!(j0.held, H + 2, "{label} O0: the offer's two holds: {j0:?}");
+    let w0 = window(&s_pre, &s0, &format!("{label} O0"));
     let credit = credit_of(&s0, resource, &format!("{label} O0"));
-    assert!(credit.status_reserved);
     let identity = credit.offer.identity;
-    assert!(s0.releasing.is_empty());
-    assert!(
-        usage(lane).backing > fill.backing_0,
-        "{label} O0: the admission charged the backing"
+    assert_eq!(
+        lane.states(),
+        [(job, "in flight")],
+        "{label} O0: the row first examines its new entry next pass"
     );
-    assert_eq!(s0.facts.lean_frames_in_flight, Some(1));
-    // Full driver turns until the validator's completion is reconciled:
-    // passes before the result commit nothing and leave the job in flight;
-    // the result-bearing T1 commits the refusal and the terminal.
-    let deadline = Instant::now() + WAIT;
-    let mut pre = 0;
-    let mut prev = s0;
-    let (s1, w1) = loop {
-        budget(fill, &format!("{label} pass after {pre} empty"));
-        a.peer.poll_io().unwrap();
-        let (steps, observed) = lane.observed_turn(Instant::now(), None);
-        assert_eq!(steps, TURN);
-        assert_eq!(observed, c0.unchanged(), "{label}: no accept, no release");
-        let s = lane.snapshot(a, &format!("{label} after a pass"));
-        let w = window(&prev, &s, &format!("{label} pass"));
-        if !w.is_empty() {
-            break (s, w);
+    // The validator's failure races the admitting Images call's completion
+    // loop (validation-03 diagnosis). A: nothing journaled, the result
+    // arrives in a later turn. B: the loop took the result, the second
+    // owned service reconciled it, and the content step published exactly
+    // this frame's refusal and terminal; the row still reads in flight.
+    // Any other window fails. Every later message names the turn that
+    // produced the status/outcome and the turn that produced SlotReleased.
+    let k0 = kinds(&w0);
+    let k0: Vec<&str> = k0.iter().map(String::as_str).collect();
+    let (s1, w1, status_turn, release_turn) = match k0.as_slice() {
+        [] => {
+            assert_eq!(
+                j0.records, r0,
+                "{label} O0 A: the admission journals nothing"
+            );
+            assert_eq!(
+                j0.held,
+                H + 2,
+                "{label} O0 A: the offer's two holds: {j0:?}"
+            );
+            assert!(credit.status_reserved, "{label} O0 A: the status reserved");
+            assert!(s0.releasing.is_empty(), "{label} O0 A: no release owed yet");
+            assert!(
+                usage(lane).backing > fill.backing_0,
+                "{label} O0 A: the admission charged the backing"
+            );
+            assert_eq!(s0.facts.lean_frames_in_flight, Some(1));
+            assert!(s0.facts.outbox.is_empty(), "{:?}", s0.facts.outbox);
+            s0.assert_stores_empty(&format!("{label} O0 A"));
+            assert_eq!(counters(lane), c0, "{label} O0 A: no render, no release");
+            // Full driver turns until the validator's completion is
+            // reconciled: passes before the result commit nothing and leave
+            // the job in flight; the result-bearing T1 commits the refusal
+            // and the terminal.
+            let deadline = Instant::now() + WAIT;
+            let mut pre = 0;
+            let mut prev = s0;
+            let (s1, w1) = loop {
+                budget(fill, &format!("{label} pass after {pre} empty"));
+                a.peer.poll_io().unwrap();
+                let (steps, observed) = lane.observed_turn(Instant::now(), None);
+                assert_eq!(steps, TURN);
+                assert_eq!(observed, c0.unchanged(), "{label}: no accept, no release");
+                let s = lane.snapshot(a, &format!("{label} after a pass"));
+                let w = window(&prev, &s, &format!("{label} pass"));
+                if !w.is_empty() {
+                    break (s, w);
+                }
+                assert_eq!(
+                    lane.states(),
+                    [(job, "in flight")],
+                    "{label}: a pre-result pass leaves the job in flight"
+                );
+                assert_eq!(s.facts.outbox, prev.facts.outbox);
+                pre += 1;
+                prev = s;
+                assert!(
+                    Instant::now() < deadline,
+                    "{label}: the validation result never reached the owner"
+                );
+                std::thread::yield_now();
+            };
+            (s1, w1, format!("T1 after {pre} pre-result pass(es)"), "T2")
         }
-        assert_eq!(
-            lane.states(),
-            [(job, "in flight")],
-            "{label}: a pre-result pass leaves the job in flight"
-        );
-        assert_eq!(s.facts.outbox, prev.facts.outbox);
-        pre += 1;
-        prev = s;
-        assert!(
-            Instant::now() < deadline,
-            "{label}: the validation result never reached the owner"
-        );
-        std::thread::yield_now();
+        ["ResourceStatus(3)", "FrameOutcome(3,3)"] => {
+            assert_eq!(
+                j0.records,
+                r0 + 2,
+                "{label} O0 B: the refusal and the terminal, nothing else"
+            );
+            (s0, w0, "the admission turn".to_string(), "T1")
+        }
+        other => panic!("{label} O0: the admission window {other:?}"),
     };
     assert_eq!(
         kinds(&w1),
         ["ResourceStatus(3)", "FrameOutcome(3,3)"],
-        "{label} T1: the refusal, then the Malformed terminal"
+        "{label} {status_turn}: the refusal, then the Malformed terminal"
     );
-    let status = status_for(&w1, a.key.grant, resource, &format!("{label} T1"));
+    let status = status_for(
+        &w1,
+        a.key.grant,
+        resource,
+        &format!("{label} {status_turn}"),
+    );
     assert_eq!(
         status_of(status).unwrap().reason,
         ContentReason::Malformed as u16
@@ -562,11 +614,15 @@ fn invalid_frame(
     assert_eq!(
         j1.held,
         H + 1,
-        "{label} O1: the status hold is spent: {j1:?}"
+        "{label} after {status_turn}: the status hold is spent: {j1:?}"
     );
-    assert_eq!(s1.releasing, [identity], "{label} O1: the release owed");
     assert_eq!(
-        credit_of(&s1, resource, &format!("{label} O1")),
+        s1.releasing,
+        [identity],
+        "{label} after {status_turn}: the release owed"
+    );
+    assert_eq!(
+        credit_of(&s1, resource, &format!("{label} after {status_turn}")),
         OwnedCreditFacts {
             offer: credit.offer,
             status_reserved: false,
@@ -575,33 +631,37 @@ fn invalid_frame(
     assert_eq!(s1.facts.owned_publication_sequence, Some(status.sequence));
     assert!(s1.facts.outbox.is_empty(), "{:?}", s1.facts.outbox);
     assert!(!s1.facts.output_blocked);
-    assert_all_visible(j1, &format!("{label} O1"));
-    s1.assert_stores_empty(&format!("{label} O1"));
+    assert_all_visible(j1, &format!("{label} after {status_turn}"));
+    s1.assert_stores_empty(&format!("{label} after {status_turn}"));
     assert_eq!(s1.facts.lean_frames_in_flight, Some(0));
     assert_eq!(
         usage(lane).backing,
         fill.backing_0,
-        "{label} O1: the abort decharged the transfer"
+        "{label} after {status_turn}: the abort decharged the transfer"
     );
-    assert_eq!(counters(lane), c0, "{label} O1: no render, no release");
+    assert_eq!(
+        counters(lane),
+        c0,
+        "{label} after {status_turn}: no render, no release"
+    );
     eprintln!(
-        "{label} T1 after {pre} pre-result pass(es): row {:?}, pending {}, unconfirmed cancels {}, journal {j1:?}",
+        "{label}: status and terminal from {status_turn}: row {:?}, pending {}, unconfirmed cancels {}, journal {j1:?}",
         lane.states(),
         lane.row().pending(),
         lane.row().unconfirmed_cancels()
     );
-    // T2: the source release, published (reason 3).
-    budget(fill, &format!("{label} T2"));
+    // The release turn: the source release, published (reason 3).
+    budget(fill, &format!("{label} {release_turn}"));
     a.peer.poll_io().unwrap();
     let (steps, observed) = lane.observed_turn(Instant::now(), None);
     assert_eq!(steps, TURN);
-    assert_eq!(observed, c0.unchanged(), "{label} T2: nothing");
-    let s2 = lane.snapshot(a, &format!("{label} O2"));
-    let w2 = window(&s1, &s2, &format!("{label} T2"));
+    assert_eq!(observed, c0.unchanged(), "{label} {release_turn}: nothing");
+    let s2 = lane.snapshot(a, &format!("{label} after {release_turn}"));
+    let w2 = window(&s1, &s2, &format!("{label} {release_turn}"));
     assert_eq!(
         kinds(&w2),
         ["SlotReleased(3)"],
-        "{label} T2: the failed copy's slot"
+        "{label} {release_turn}: the failed copy's slot"
     );
     let event = slot_released_of(&w2[0]).unwrap();
     assert_eq!(
@@ -615,31 +675,41 @@ fn invalid_frame(
         "{label}: the original source's release, Malformed"
     );
     let j2 = s2.journal();
-    assert_eq!(j2.held, H, "{label} O2: both holds spent: {j2:?}");
+    assert_eq!(
+        j2.held, H,
+        "{label} after {release_turn}: both holds spent: {j2:?}"
+    );
     assert!(s2.releasing.is_empty());
     assert!(
         !s2.facts
             .owned_live_credits
             .iter()
             .any(|c| c.offer == credit.offer),
-        "{label} O2: the slot credit is spent"
+        "{label} after {release_turn}: the slot credit is spent"
     );
     assert_eq!(s2.facts.owned_publication_sequence, Some(w2[0].sequence));
-    assert_all_visible(j2, &format!("{label} O2"));
-    s2.assert_stores_empty(&format!("{label} O2"));
+    assert_all_visible(j2, &format!("{label} after {release_turn}"));
+    s2.assert_stores_empty(&format!("{label} after {release_turn}"));
     assert!(s2.facts.outbox.is_empty());
     assert_eq!(s2.facts.lean_frames_in_flight, Some(0));
-    assert!(lane.states().is_empty(), "{label} O2: the row is clear");
-    assert_eq!(lane.row().pending(), 0, "{label} O2: no owed row work");
+    assert!(
+        lane.states().is_empty(),
+        "{label} after {release_turn}: the row is clear"
+    );
+    assert_eq!(
+        lane.row().pending(),
+        0,
+        "{label} after {release_turn}: no owed row work"
+    );
     assert_eq!(
         lane.row().unconfirmed_cancels(),
         0,
-        "{label} O2: the cancel confirmed"
+        "{label} after {release_turn}: the cancel confirmed"
     );
     assert_eq!(
         lane.h.owner.processes.image_pending(0),
         0,
-        "{label} O2: no image work"
+        "{label} after {release_turn}: no image work"
     );
     assert_eq!(
         lane.residency(a, n),
@@ -647,7 +717,11 @@ fn invalid_frame(
         "{label}: never accepted"
     );
     assert_eq!(lane.leased(), 0);
-    assert_eq!(counters(lane), c0, "{label} O2: no render, no release");
+    assert_eq!(
+        counters(lane),
+        c0,
+        "{label} after {release_turn}: no render, no release"
+    );
     assert_eq!(usage(lane).backing, fill.backing_0);
     assert!(
         !wake.wait(Some(Instant::now())).unwrap(),
@@ -690,8 +764,8 @@ fn invalid_frame(
     assert_eq!(
         r,
         r0 + 3,
-        "{label}: ΔR +3: {:?}",
-        kinds(&window(&prev, &s2, label))
+        "{label}: ΔR +3 ({status_turn}, then {release_turn}): {:?}",
+        kinds(&window(&s_pre, &s2, label))
     );
     eprintln!(
         "{label}: R {r0} -> {r}, bytes {} held {}",

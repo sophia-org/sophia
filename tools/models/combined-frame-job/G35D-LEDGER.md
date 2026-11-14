@@ -217,3 +217,28 @@ drains the journal with an input turn. Codex chose one correction:
 source-06 over 0200747f4 adds exactly one peer poll before filler_t1's
 owner turn, with the budget check kept immediately before the turn, no
 other change. One bounded poll's success is a prediction until run.
+
+Validation-03 of source-06 at 23211bebe ran once and FAILED at the
+ss-row invocation (72 passed, 1 failed): FJ-stop passed the whole fill
+again; FJ failed at prefix 2's admission window, which this time held
+exactly the frame's own ResourceStatus(3, Malformed) and
+FrameOutcome(3, 3), identified by transaction, resource generation,
+candidate generation and stream, with the row still in flight, the
+backing decharged, lean 0 and the release owed. The read-only diagnosis
+traced the race: the validator returns the INVALID frame's plan and
+sends its failure on the owner's completion channel, and the Images
+call that admitted the frame drains that channel between its two owned
+services, so when the validator wins the second owned service
+reconciles the failure and the content step journals the status and
+the terminal in the admission turn itself; when the owner wins, the
+next turn does. The row's only exit from in flight is the collect that
+opens the next Images call, so the entry reads in flight either way.
+Codex approved a two-branch admission contract: A, the window empty
+with the pending-source facts and the existing result loop; B, exactly
+the two identified records with the settled-source facts and no loop;
+every other window fails. Source-07 over 23211bebe implements it in the
+prefix control, names in every message which turn produced the status
+and terminal and which the SlotReleased, keeps the +3 accounting and
+adds no poll, pass, ACK, delay or deadline change. MD7-FJ's expected
+early kill may now land at either the admission classification or the
+later result window; the harness freezes both sites. Unexecuted.
