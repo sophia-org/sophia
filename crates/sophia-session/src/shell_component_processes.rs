@@ -281,6 +281,7 @@ impl ShellComponentProcesses {
     }
 
     /// The connection owner, for wait subscriptions made beside other descriptors.
+    #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
     pub(crate) fn connections(
         &self,
     ) -> &crate::shell_component_connections::ShellComponentConnections {
