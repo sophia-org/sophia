@@ -379,7 +379,7 @@ fn scene_churn_with_a_busy_head_or_a_protected_retirement_takes_the_failure_term
     ] {
         let mut lane = Lane::new();
         let mut a = lane.attempt();
-        lane.held(&mut a, 1);
+        let job = lane.held(&mut a, 1);
         lane.native.declare_head(output().id, state);
         let before = lane.native.head_observation(output().id);
         let served = lane.consume(&mut a, 1, Instant::now(), MOVED, true);
@@ -404,7 +404,24 @@ fn scene_churn_with_a_busy_head_or_a_protected_retirement_takes_the_failure_term
         assert_eq!(lane.native.ordinary_queues(), 0, "{label}: no queue");
         assert_eq!(lane.native.accepts(), 0);
         assert!(lane.pending(&a).is_empty());
-        lane.trace_end(&[], &[]);
+        // The declined result's one release: through the issuing exporter
+        // it transfers and the entry goes; with the native owner replaced
+        // no exporter issues the head any more, the release is NotFound and
+        // the entry stays Debt, the custody no release is inferred from.
+        // Transfers are command ownership, not slot freedom.
+        let replaced = state == CombinedDeclaredHead::OwnerReplaced;
+        assert_eq!(
+            lane.native.release_transfers(),
+            usize::from(!replaced),
+            "{label}: the release transferred unless the owner was replaced"
+        );
+        assert_eq!(
+            lane.h.owner.processes.combined_row(0).debt(job),
+            replaced.then_some(CombinedRelease::NotFound),
+            "{label}: NotFound kept as Debt only for the replaced owner"
+        );
+        let retained: &[(u64, &str)] = if replaced { &[(job, "debt")] } else { &[] };
+        lane.trace_end(retained, &[]);
     }
 }
 

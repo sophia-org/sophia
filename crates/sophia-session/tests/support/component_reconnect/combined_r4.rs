@@ -67,7 +67,11 @@ fn a_queued_frame_projects_as_the_bundle_its_admission_produced() {
         ShellContentNative::cancel_combined_frame(&mut lane.native, &unrelated),
         Ok(true)
     ));
-    assert!(lane.trace_no_admission() >= 1, "the ordinary join");
+    assert_eq!(
+        lane.trace_no_admission(),
+        0,
+        "no join on this path: the lane's helper prepares the frame; nothing goes through submit_bundle"
+    );
 }
 
 /// R4: a declared compose fault while an unrelated real job occupies the

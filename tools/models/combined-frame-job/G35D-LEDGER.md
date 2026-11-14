@@ -322,3 +322,39 @@ the unchanged d-0 rows. No endpoint, native flip, renderer
 acknowledgement or slot freedom follows. Validation-01 stays failed;
 off and native-session clippy unpassed and unwaived; MD7's full-journal
 non-detection and final-head rerun stay with b4.
+
+b4 recorded the row's calls and checked their order. Source-01 (a020dfafd)
+added a test-only trace to the row, one event per call named by the
+admission's key, a replay checker over it, thirteen synthetic rows and a
+checkpoint at the end of every combined control; it was held for three
+rule gaps (a Collected without the collection's own identity, a
+no-admission join that could carry a verdict, walk branches without the
+grant they read), which source-02 (105c26646) closed; its three
+compiler/lint attempts left the signed repair a4d8036a4, byte-equal to
+the third attempt's diff, ruled compiler-only (the synthetic rows'
+"Full" became the enum's Pending). At that head the 24 TLC pairs of the
+five design projections ran once under their own frozen runner and every
+pair gave exactly its frozen finding (tlc-01, PASSED, accepted as
+design-projection evidence and nothing more). The integrated harness
+(62 mutant cases, every stage mutant re-frozen at the head plus four of
+the recorder and checker) was held once for a survivor rule that never
+read the consumer's own ok line and a same-file site frozen in the clean
+text, then granted; its validation-01 ran at a4d8036a4 and failed at the
+combined row's filtered run, 86 of 89 passed, each failure a b4
+checkpoint whose expected end state was wrong, not a control, a driver,
+a fixture or production: the declared-head loop's owner-replaced
+iteration keeps its declined job as Debt(NotFound), since no exporter
+issues the head once the native owner is replaced, while the two other
+iterations transfer and remove; the later-generation retirement control
+ends with the successor's own admission still in flight, since the stub
+produced no result for it and the loop stopped on the old job's absence;
+and the queued-frame projection control joins nothing, since the lane's
+helper prepares the frame through the fixture and never calls
+submit_bundle. Source-03 corrects the three expectations in place (the
+owner-replaced iteration asserts its zero transfers and the row's kept
+NotFound beside the retained set; the successor is read from its own
+Bound event by grant, output and candidate; the projection control asks
+for exactly zero joins) and changes nothing else. Validation-01 stays
+failed; the mutants, libraries and gate of the integrated run are still
+unexecuted at this head; off and native-session clippy unpassed and
+unwaived.

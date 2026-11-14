@@ -222,7 +222,36 @@ fn a_failed_entry_without_a_bundle_retires_on_a_later_generation() {
         "c7b: no RendererFailed from the row"
     );
     assert_eq!(lane.native.release_attempts(), 0, "c7b: no lease");
-    lane.trace_end(&[], &[]);
+    // The later generation's own admission stays in flight: the loop above
+    // ended on the old job's absence, not on an empty row, and the stub
+    // produced no result for it on this schedule, so no collection moved
+    // it. Its job is read from its admission's Bound event (the attempt's
+    // grant, the output, candidate 2), not from the row's live set.
+    let successor = {
+        use crate::shell_component_connections::combined_row::steps::Event;
+        let bound: Vec<u64> = lane
+            .h
+            .owner
+            .processes
+            .combined_row(0)
+            .trace()
+            .iter()
+            .filter_map(|event| match event {
+                Event::Bound {
+                    key,
+                    grant,
+                    output,
+                    generation: 2,
+                    ..
+                } if *grant == a.key.grant && *output == OUTPUT => Some(key.job),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(bound.len(), 1, "c7b: one admission of candidate 2");
+        assert_ne!(bound[0], job, "c7b: not the retired job");
+        bound[0]
+    };
+    lane.trace_end(&[(successor, "in flight")], &[]);
 }
 
 /// Control 8, other generation: candidate 1 took its terminal while its
