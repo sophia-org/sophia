@@ -200,3 +200,20 @@ the exact release writes, Settled with Accepted for a filler and
 Refused with Rejected for the prefix, the status compared by its Debug
 text because the client does not re-export the kind. Prefix 2's
 additional records remain unidentified. Still unexecuted.
+
+Validation-02 of source-05 at 0200747f4 ran once and FAILED at the
+ss-row invocation (72 passed, 1 failed): FJ-stop passed the whole fill,
+so the offer lifecycle held; FJ passed prefix 2's admission with 3
+retained records (validation-01's 5 did not recur, and the two records
+remain unidentified) and failed at filler 3 with "the peer never read
+the terminal". The read-only diagnosis traced it to the schedule: the
+client keeps one read outstanding, the owner registers a new read only
+in an input-serving pass, and filler 3's admission pass answered the
+peer's read at once with prefix 2's visible SlotReleased(3), so through
+T1 the server held no parked read and the peer-only wait afterwards
+could never receive the terminal; the INVALID T1 loop polls the peer
+before each owner pass, and FJ-stop's fillers follow a finish that
+drains the journal with an input turn. Codex chose one correction:
+source-06 over 0200747f4 adds exactly one peer poll before filler_t1's
+owner turn, with the budget check kept immediately before the turn, no
+other change. One bounded poll's success is a prediction until run.

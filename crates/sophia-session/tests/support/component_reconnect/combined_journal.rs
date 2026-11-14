@@ -789,7 +789,13 @@ fn filler_start(
 
 /// T1 at the late instant: C3 declines at the content call; the status
 /// (reserved, deferred) and the terminal (credited) commit; the peer reads
-/// the terminal and holds the credit again; no ACK.
+/// the terminal and holds the credit again; no ACK. One peer poll precedes
+/// the turn (source-06, the validation-02 diagnosis): the peer consumes a
+/// reply the admission pass may have answered at once and queues its next
+/// read, which the turn's input-serving pass registers; otherwise the
+/// peer-only terminal wait has no read registered at the owner. The same
+/// ordering as the INVALID T1 loop; no owner pass, ACK or wait is added,
+/// and the poll's time is charged to the unchanged budget.
 fn filler_t1(
     lane: &mut Lane,
     a: &mut Attempt,
@@ -797,6 +803,7 @@ fn filler_t1(
     f: &Admitted,
     label: &str,
 ) -> Declined {
+    a.peer.poll_io().unwrap();
     budget(fill, &format!("{label} T1"));
     let (steps, observed) = lane.observed_turn(f.late, None);
     assert_eq!(steps, TURN);
