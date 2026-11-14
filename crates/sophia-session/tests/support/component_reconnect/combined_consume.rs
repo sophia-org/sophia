@@ -16,14 +16,14 @@ use super::super::super::super::content::reconnect_fixture::{
 use super::*;
 use crate::live_session::metadata_shell::ContentNative;
 use crate::shell_component_connections::combined_row::{CombinedConsume, Verdict};
-use sophia_backend_live::{CombinedDeclaredHead, CombinedRecompose};
+use sophia_backend_live::{CombinedAcceptRefusal, CombinedDeclaredHead, CombinedRecompose};
 use sophia_protocol::{ContentGrant, Point, Rect};
 
 /// Far past any admission's deadline.
 pub(super) const LATER: Duration = Duration::from_secs(3600);
 /// A plane cursor moved from the turn's (None): real scene churn.
 pub(super) const MOVED: Option<Point> = Some(Point { x: 10.0, y: 4.0 });
-const FAILED: (u16, u16) = (3, ContentReason::RendererFailed as u16);
+pub(super) const FAILED: (u16, u16) = (3, ContentReason::RendererFailed as u16);
 
 impl Lane {
     /// One pass of the bar's real content service with the row lent, at
@@ -402,15 +402,23 @@ fn scene_churn_with_a_busy_head_or_a_protected_retirement_takes_the_failure_term
 /// failure terminal and is released, and nothing enters conventionally. The
 /// capture is the exporter's, left by a discard through real exporter calls;
 /// this fixture has no CaptureOwner endpoint (the backend's accept controls
-/// read one).
+/// read one). d-2b3e form 3: the fixture's own record of its check names
+/// the guard that answered, CaptureActive; the Session's disposition alone
+/// could not.
 fn a_capture_after_reserve_takes_the_failure_terminal(plane: Option<Point>, label: &str) {
     let mut lane = Lane::new();
     let mut a = lane.attempt();
     lane.held(&mut a, 1);
+    let (checks, _) = lane.native.check_observation();
     lane.native.capture_left_by_discard(output().id);
     let before = lane.native.head_observation(output().id);
     let served = lane.consume(&mut a, 1, Instant::now(), plane, true);
     assert!(served.is_ok(), "{label}: refused without error: {served:?}");
+    assert_eq!(
+        lane.native.check_observation(),
+        (checks + 1, Some(Err(CombinedAcceptRefusal::CaptureActive))),
+        "{label}: one check, answered by the capture guard"
+    );
     assert_eq!(a.terminals(1), [FAILED], "{label}: the failure terminal");
     assert_eq!(lane.native.installs(), 0, "{label}: no install entry");
     assert_eq!(lane.native.ordinary_queues(), 0, "{label}: no queue");

@@ -255,3 +255,37 @@ branch-B count is an ordinary check, not an expected kill. It asserts
 the status's transaction equals the offer's and the outcome's equals
 the submission's, beside the existing joins, and carries the A-branch
 unblocked assertion. Nothing else moved. Unexecuted.
+
+Validation-04 ran harness-05 at source-08 and passed every row at its
+predicted count; Codex accepted d-2b3d-2, scoped, at c8f5efc9a (receipt
+seal aca8cd7a…, harness seal c34d62ae…). Both INVALID prefixes took
+schedule A, sixty-one fillers brought the retained count to 250, frame
+64's release committed with its ResourceReleased parked and the journal
+blocked at 253 records with three holds, frame 65 stayed unadmitted
+until the ACK through the observed SlotReleased, and the drain left the
+0/4/5 retention case. FJ-stop found the backpressure stop after two
+probe turns at 255 records; the first-hold refusal remains a source-order
+inference. F4-O proved the publication response to a declared
+completion only; BP closed the non-vacuous outbox clear for its one
+sequence. MD7-R4 was detected; MD7-FJ was killed at the first prefix's
+status window under schedule A and not detected, one executed outcome,
+so direct full-journal mutation detection stays a named gap; the
+schedule-B branch and its classification site were not executed.
+Erratum carried: validation-03 was 72 passed and 1 failed (71/2 was
+validation-01). No renderer ACK, slot freedom, backing destruction, real
+flip, TLC or native evidence; off and native-session clippy unpassed and
+unwaived.
+
+d-2b3e source-01, over the accepted head and the REV2 design Codex
+passed: the fixture records each pre-classification consumption check
+where it runs, a count and the last result, so a row can say whether no
+check ran, one accepted, or one refused and with which refusal; the
+preflight is not recorded. Form 2 gets a declared producer, the
+discard-less half of the existing capture helper, with the queued mixed
+frame and the requested capture each witnessed before and after the
+refusal. Three Session rows: a capture before reserve declines to the
+ordinary path with no check run; an ordinary frame queued with a capture
+answers OrdinaryPending ahead of CaptureActive; the two d-0 discarded-
+capture rows keep their names and effects and now also read
+CaptureActive. Stub fixture composition throughout; no endpoint, no
+completed capture, no production change. Unexecuted.

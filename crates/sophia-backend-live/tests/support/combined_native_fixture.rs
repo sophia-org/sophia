@@ -133,6 +133,11 @@ pub struct CombinedNativeFixture {
     pub(crate) ordinary_queues: usize,
     /// Entries into `install_shell_content`, before the runtime setter.
     pub(crate) installs: usize,
+    /// G3-5d d-2b3e: consumption checks run so far, and the last one's own
+    /// result, recorded where it runs (`check_combined_accept`); the
+    /// preflight is not recorded. None until one ran.
+    checks: std::cell::Cell<usize>,
+    last_check: std::cell::Cell<Option<Result<(), crate::CombinedAcceptRefusal>>>,
 }
 
 /// A declared head state for G3-5c's refused-consumption controls.
@@ -224,6 +229,8 @@ impl CombinedNativeFixture {
             classification: None,
             ordinary_queues: 0,
             installs: 0,
+            checks: std::cell::Cell::new(0),
+            last_check: std::cell::Cell::new(None),
         }
     }
 
@@ -474,6 +481,44 @@ impl CombinedNativeFixture {
         assert!(exporter.request_pending_frame_capture(identity, reservation));
         assert!(exporter.discard_pending_frame(), "the queued frame goes");
         assert!(exporter.combined_capture_pending(), "the flags stay");
+    }
+
+    /// G3-5d d-2b3e form 2: `capture_left_by_discard` without its discard, a
+    /// declared fixture state: an identified ordinary frame queued on
+    /// `output`'s exporter with its capture requested, both still present.
+    pub fn capture_queued_on_pending_frame(&mut self, output: OutputId) {
+        let index = self.head_index(output);
+        let head = &self.heads[index];
+        let identity = self
+            .native_owner
+            .frame(output, head.head, head.target_generation, 999);
+        let reservation = sophia_renderer_live::LiveSnapshotReservation::for_image(16, 16).unwrap();
+        let exporter = &mut self.exporters[index];
+        exporter.set_pending_identified_mixed_frame(Default::default(), Some(identity));
+        assert!(exporter.request_pending_frame_capture(identity, reservation));
+        assert!(exporter.pending_mixed_frame(), "the frame is queued");
+        assert!(
+            exporter.combined_capture_pending(),
+            "its capture is requested"
+        );
+    }
+
+    /// `output`'s exporter has queued mixed work. Not the worker's in-flight
+    /// state, which `pending_frame` would include. Reads only.
+    pub fn pending_mixed_frame(&self, output: OutputId) -> bool {
+        self.exporters[self.head_index(output)].pending_mixed_frame()
+    }
+
+    /// `output`'s exporter has a capture requested or reserved. Reads only.
+    pub fn capture_pending(&self, output: OutputId) -> bool {
+        self.exporters[self.head_index(output)].combined_capture_pending()
+    }
+
+    /// The consumption checks run so far and the last one's result: None
+    /// when none ran, `Some(Ok(()))` when it accepted, `Some(Err(refusal))`
+    /// when it refused. Reads only; runs no guard.
+    pub fn check_observation(&self) -> (usize, Option<Result<(), crate::CombinedAcceptRefusal>>) {
+        (self.checks.get(), self.last_check.get())
     }
 
     /// `output`'s head as the accept guards read it: pending, rendering
@@ -818,7 +863,7 @@ impl CombinedAcceptNative for CombinedNativeFixture {
         head: &CombinedHead,
         accept: &CombinedAccept,
     ) -> Result<(), crate::CombinedAcceptRefusal> {
-        super::accept::combined_consumption_guards(
+        let result = super::accept::combined_consumption_guards(
             self.native_owner,
             &self.heads,
             &self.exporters,
@@ -828,7 +873,11 @@ impl CombinedAcceptNative for CombinedNativeFixture {
             head,
             accept,
         )
-        .map(|_| ())
+        .map(|_| ());
+        // The observation (d-2b3e): the result as computed, returned unchanged.
+        self.checks.set(self.checks.get() + 1);
+        self.last_check.set(Some(result));
+        result
     }
 
     fn preflight_combined_accept(

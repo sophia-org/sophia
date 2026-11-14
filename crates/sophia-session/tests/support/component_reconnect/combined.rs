@@ -976,6 +976,9 @@ mod r4;
 // G3-5c: the combined arm of `submit_bundle` through the real bar service.
 #[path = "combined_consume.rs"]
 mod consume;
+// G3-5d d-2b3e: the three Session capture forms (form 3 stays in consume).
+#[path = "combined_capture.rs"]
+mod capture;
 // G3-5c: REV3's lifetime table through the controlled walk.
 #[path = "combined_lifetime.rs"]
 mod lifetime;
