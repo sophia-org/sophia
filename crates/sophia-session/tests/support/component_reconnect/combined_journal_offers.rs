@@ -3,11 +3,15 @@
 //! validation-01 diagnosis, sections 2 and 3). The vendored producer keeps
 //! four offer records (sophia-image-producer ring.rs `offers: [Offer; 4]`,
 //! `MAX_OFFERS`); the exact `SlotReleased` frees the slot and leaves the
-//! record Settled or Refused, and only `image_forget` frees the record, so
-//! a fill of more than four frames must forget each offer after its exact
-//! release was read and applied. Decoded (the peer's read), routed,
-//! applied (the record's state), slot reusable and record reusable are
-//! distinct facts; the owner's journal window shows commitment only. The
+//! record Settled or Refused with the compatible status written beside it,
+//! and only `image_forget` frees the record, so a fill of more than four
+//! frames must forget each offer after its exact release was read and
+//! applied. The state alone is not that evidence: a refused offer write
+//! (`begin_refused`) also leaves Refused, without a release and without a
+//! status, so a forget requires the state and status pair. Decoded (the
+//! peer's read), routed, applied (the record's state), slot reusable and
+//! record reusable are distinct facts; the owner's journal window shows
+//! commitment only. The
 //! diagnostics print raw facts before the frozen assertions and add no
 //! turn, poll, ACK, wait or assertion change.
 use super::*;
@@ -22,6 +26,18 @@ pub(super) struct LiveOffer {
     /// The end state its exact release produces: Settled for a filler,
     /// Refused for the INVALID prefix.
     pub(super) expected: RingOfferState,
+}
+
+/// The status `slot_released` writes beside the expected end state:
+/// Accepted with Settled, Rejected with Refused.
+// shortcut: the client does not re-export ResourceStatusKind, so the
+// status is compared by its Debug text; name the type if it is exported.
+fn expected_status(expected: RingOfferState) -> &'static str {
+    match expected {
+        RingOfferState::Settled => "Some(Accepted)",
+        RingOfferState::Refused => "Some(Rejected)",
+        other => panic!("{other:?} is not a release end state"),
+    }
 }
 
 /// The producer's offer-record capacity.
@@ -89,16 +105,19 @@ fn info_of(a: &Attempt, live: LiveOffer, label: &str) -> RingOfferInfo {
     info
 }
 
-/// Forget the live offer at `index`: its record is in its expected end
-/// state (Pending and Unknown are refused), the forget succeeds and the
-/// record is absent afterwards.
+/// Forget the live offer at `index`: its record carries the expected end
+/// state and the status the exact release wrote beside it (Pending,
+/// Unknown and a Refused without Rejected are refused), the forget
+/// succeeds and the record is absent afterwards.
 fn forget(fill: &mut Fill, a: &mut Attempt, index: usize, label: &str) {
     let live = fill.offers[index];
     let info = info_of(a, live, label);
     assert_eq!(
-        info.state, live.expected,
+        (info.state, format!("{:?}", info.status)),
+        (live.expected, expected_status(live.expected).to_string()),
         "{label}: offer {} of frame {} before forget: {info:?}",
-        live.offer, live.frame
+        live.offer,
+        live.frame
     );
     eprintln!(
         "{label}: forget offer {} of frame {}: {info:?}",
@@ -132,9 +151,9 @@ pub(super) fn forget_frame(fill: &mut Fill, a: &mut Attempt, frame: u64, label: 
     forget(fill, a, index, label);
 }
 
-/// After a peer read: every live offer whose exact release has been
-/// applied (its expected end state) is forgotten; one still Pending stays
-/// live and is printed; any other state fails.
+/// After a peer read: every live offer no longer Pending is forgotten,
+/// which requires its expected end state and status; one still Pending
+/// stays live and is printed.
 pub(super) fn forget_observed(fill: &mut Fill, a: &mut Attempt, label: &str) {
     let mut index = 0;
     while index < fill.offers.len() {

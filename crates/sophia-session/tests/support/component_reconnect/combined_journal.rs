@@ -655,7 +655,23 @@ fn invalid_frame(
     );
     // The peer reads the terminal: the credit is back.
     peer_reads_terminal(a, n, label);
+    // This frame's offer before the sweep: still Pending, or Refused once
+    // its SlotReleased(3) was read; the sweep forgets a Refused one.
+    let own = a.peer.image_ring_offer(offer);
+    eprintln!("{label}: offer {offer} after the terminal read: {own:?}");
+    let own_state = own
+        .map(|info| info.state)
+        .unwrap_or_else(|| panic!("{label}: the INVALID offer {offer} is gone"));
+    assert!(
+        matches!(own_state, RingOfferState::Pending | RingOfferState::Refused),
+        "{label}: the INVALID offer after the terminal read: {own:?}"
+    );
     forget_observed(fill, a, &format!("{label} after the terminal read"));
+    assert_eq!(
+        a.peer.image_ring_offer(offer).map(|info| info.state),
+        (own_state == RingOfferState::Pending).then_some(RingOfferState::Pending),
+        "{label}: the sweep forgot the offer only if it was Refused"
+    );
     assert_eq!(a.terminals(n), [MALFORMED]);
     assert!(
         a.stream.has_credit(),
@@ -670,15 +686,6 @@ fn invalid_frame(
         fill.queued_0,
         "{label}: no ACK"
     );
-    let own = a.peer.image_ring_offer(offer);
-    assert!(
-        own.is_some_and(|info| matches!(
-            info.state,
-            RingOfferState::Pending | RingOfferState::Refused
-        )),
-        "{label}: the INVALID offer after the terminal read: {own:?}"
-    );
-    eprintln!("{label}: offer {offer} after the terminal read: {own:?}");
     let r = j2.records;
     assert_eq!(
         r,

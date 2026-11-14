@@ -187,3 +187,16 @@ succeed and leave the record absent; the staged or blocked frame 65
 stays live. The prefix-2 count remains a prediction to be observed,
 not revised. Still unexecuted; compiler-only diagnosis and validation
 each need their own grant.
+
+Source-04 at 99d60e5f9 was HELD on two semantic corrections (R1: the
+INVALID offer was required to exist after the sweep that forgets a
+Refused one, so the completed-refusal case the control accepts would
+fail; R2: Refused alone is not the exact release, since a refused offer
+write also leaves Refused without a status). Source-05 over 99d60e5f9:
+the INVALID offer is read, printed and required Pending or Refused
+before the sweep, and afterwards required absent if it was Refused and
+still Pending otherwise; a forget requires the state and status pair
+the exact release writes, Settled with Accepted for a filler and
+Refused with Rejected for the prefix, the status compared by its Debug
+text because the client does not re-export the kind. Prefix 2's
+additional records remain unidentified. Still unexecuted.
