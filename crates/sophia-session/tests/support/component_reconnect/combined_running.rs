@@ -160,6 +160,7 @@ impl Lane {
             );
             std::thread::yield_now();
         }
+        self.trace_end(&[], &[]);
     }
 
     /// The facade's cell is free again: a later reservation succeeds.
@@ -231,6 +232,7 @@ fn an_unchanged_scene_is_accepted_and_submitted_in_the_result_turn() {
     assert_eq!(lane.native.accepts(), 1);
     assert_eq!(lane.native.installs(), 0, "no ordinary install");
     assert!(lane.states().is_empty(), "accepted removes the entry");
+    lane.trace_end(&[], &[]);
     assert_eq!(
         lane.pending(&a),
         [(a.key.grant, OUTPUT, 1)],
@@ -286,6 +288,7 @@ fn the_normal_path_has_no_intermediate_validation_return() {
     assert_eq!(t1.steps, TURN);
     assert_eq!(t1.status, Some(Submit::SubmittedWaitingForPageFlip));
     assert_eq!(t1.accepted, [1]);
+    lane.trace_end(&[], &[]);
 }
 
 /// REV3 section 3, interrupted. The admission is held before validation
@@ -586,6 +589,7 @@ fn a_repeated_resource_frame_is_accepted_with_every_occurrence_rendered() {
     let t1 = lane.result_turn();
     assert_eq!(t1.status, Some(Submit::SubmittedWaitingForPageFlip));
     assert_eq!(t1.accepted, [1]);
+    lane.trace_end(&[], &[]);
 }
 
 // G3-5d d-2b3a: running-core custody, Held/Unknown against Ended.

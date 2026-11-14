@@ -67,6 +67,7 @@ fn a_queued_frame_projects_as_the_bundle_its_admission_produced() {
         ShellContentNative::cancel_combined_frame(&mut lane.native, &unrelated),
         Ok(true)
     ));
+    assert!(lane.trace_no_admission() >= 1, "the ordinary join");
 }
 
 /// R4: a declared compose fault while an unrelated real job occupies the
@@ -141,6 +142,7 @@ fn a_compose_fault_beside_an_unrelated_job_reserves_and_admits_nothing() {
         lane.states().is_empty(),
         "J1 settled Stopped and retired with its ended grant"
     );
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.renderer_releases(), 0, "J1 was never held");
     assert_eq!(lane.native.reserve_attempts(), reserves);
 }

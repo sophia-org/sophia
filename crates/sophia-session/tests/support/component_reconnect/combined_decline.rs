@@ -125,6 +125,7 @@ fn a_render_failure_in_its_slot_frees_the_slot_and_takes_the_failure_path() {
         lane.states().is_empty(),
         "the failure path consumed the entry"
     );
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.releases(), (0, 0), "nothing was leased to release");
     assert_eq!(lane.leased(), 0);
     assert_eq!(lane.native.accepts(), 0);
@@ -194,6 +195,7 @@ fn a_plan_description_mismatch_is_malformed_and_frees_the_slot_unbound() {
         lane.states().is_empty(),
         "past its deadline the walk removed it"
     );
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.releases(), (0, 0));
     assert_eq!(lane.acquisitions(), 1, "no later render");
     assert!(lane.native.seen().is_empty());
@@ -227,6 +229,7 @@ fn scene_churn_releases_the_result_and_makes_one_ordinary_entry() {
         [(job, CombinedDisposition::Rendered)]
     );
     assert!(lane.states().is_empty(), "the receipt removed it");
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.releases(), (1, 1), "the walk released nothing more");
     assert_eq!(lane.native.accepts(), 0, "churn is never accepted");
     assert_eq!(lane.native.installs(), 1, "one ordinary install entry");
@@ -281,6 +284,7 @@ fn a_result_collected_past_its_admitted_deadline_is_declined_without_a_later_ren
         [(job, CombinedDisposition::Rendered)]
     );
     assert!(lane.states().is_empty(), "the receipt removed it");
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.releases(), (1, 1), "the walk released nothing more");
     assert_eq!(lane.native.accepts(), 0);
     assert_eq!(lane.native.installs(), 0, "no ordinary install");

@@ -108,6 +108,7 @@ fn a_full_first_flush_retries_and_a_disabled_head_still_releases() {
         "one enqueue answered Transferred"
     );
     assert!(lane.states().is_empty(), "the row closed");
+    lane.trace_end(&[], &[]);
     assert_eq!(
         lane.native.combined_receipt(output().id),
         None,
@@ -186,6 +187,7 @@ fn an_ordinary_poll_flush_closes_the_debt_as_transferred_once() {
         "MD2: the walk consumed the admission's receipt"
     );
     assert!(lane.states().is_empty(), "the row closed");
+    lane.trace_end(&[], &[]);
     assert_eq!(
         counts(&lane.native),
         (2, 1),

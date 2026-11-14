@@ -52,6 +52,7 @@ fn f1_the_render_failure_terminal_is_journaled_once_in_t1() {
         "the peer read exactly T1's statuses"
     );
     assert_eq!(lane.releases(), (0, 0), "nothing was leased to release");
+    lane.trace_end(&[], &[]);
 }
 
 /// F2: the labelled plan mismatch, as separately witnessed facts: (1) the
@@ -140,6 +141,7 @@ fn f2_the_mismatch_journals_the_refusal_status_and_the_malformed_terminal() {
     assert_eq!((a.accepted, a.refused), (0, 1));
     assert_eq!(lane.candidate_of(&a, binding, job), Some(Unknown));
     assert_eq!(lane.states(), [(job, "failed")]);
+    lane.trace_end(&[(job, "failed")], &[]);
     assert_eq!(lane.releases(), (0, 0), "no lease, no Release");
 }
 
@@ -248,6 +250,7 @@ fn f3_the_c3_decline_journals_the_status_and_terminal_then_slot_released() {
     assert!(s2.releasing.is_empty());
     assert_eq!(lane.native.installs(), 0);
     assert_eq!(lane.acquisitions(), 1, "no later render");
+    lane.trace_end(&[], &[]);
 }
 
 /// F4-P: scene churn, the result declined into one ordinary entry. The
@@ -304,6 +307,7 @@ fn f4p_scene_churn_prepares_the_candidate_internally_without_a_prepared_record()
     );
     assert_eq!(verdict, H5::Absent, "no reply in T1");
     assert!(peer_terminals(&a.frames, key, n).is_empty());
+    lane.trace_end(&[], &[]);
     assert!(peer_statuses(&a.contents, a.key.grant).is_empty());
     assert_eq!(a.accepted, 0);
     lane.slot_freed("churn");

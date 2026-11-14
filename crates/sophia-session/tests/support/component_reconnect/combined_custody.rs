@@ -143,6 +143,7 @@ fn a_grant_revoked_before_the_result_turn_releases_the_held_lease_in_that_turn()
         "the walk released the ended grant's Held lease: Transferred once"
     );
     assert!(lane.states().is_empty(), "the row is clear at the receipt");
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.accepts(), 0);
     assert_eq!(lane.native.installs(), 0, "no ordinary install");
     lane.slot_freed("revoke");
@@ -221,6 +222,7 @@ fn an_expired_candidate_keeps_held_unknown_until_the_deadline_then_releases() {
     assert_eq!(lane.quiet_driver_turn_at(late).0, TURN);
     assert_eq!(lane.releases(), (1, 1), "one release at its deadline");
     assert!(lane.states().is_empty(), "the receipt removed it");
+    lane.trace_end(&[], &[]);
     lane.slot_freed("rejection");
     assert_eq!(lane.quiet_driver_turn_at(late).0, TURN);
     assert_eq!(lane.releases(), (1, 1), "nothing more");
@@ -282,6 +284,7 @@ fn a_lost_allocation_ends_the_candidate_and_releases_held_in_the_result_turn() {
         "the walk released Held as Ended: Transferred once"
     );
     assert!(lane.states().is_empty());
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.accepts(), 0);
     assert_eq!(lane.native.installs(), 0, "no install");
     lane.slot_freed("lost allocation");
@@ -333,6 +336,7 @@ fn a_close_after_admission_keeps_the_admitted_frame_which_is_submitted() {
         "T1 admitted the Close: the exact stream is Closing under its transaction"
     );
     assert!(lane.states().is_empty(), "accepted removes the entry");
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.row().bindings().len(), 1, "no new admission");
     assert_eq!(lane.row().bindings()[0].job, job);
     assert_eq!(

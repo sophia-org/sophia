@@ -208,3 +208,52 @@ pub(super) fn admission_facts(
         a.peer.journal_progress()
     );
 }
+
+// Moved from `combined_journal.rs` (b4, for room): the manual ACK of the
+// fills.
+/// Which retention the peer's ACK covers, from its observed sequence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Acked {
+    /// Through the published SlotReleased of the last complete filler.
+    SlotReleased,
+    /// Through that filler's outcome: its SlotReleased stays retained.
+    Outcome,
+}
+
+/// The manual ACK (bound: the client's safe limit, its handled sequence),
+/// sent by one peer poll, joined to `d`'s outcome or the later
+/// `slot_released` sequence; any other frontier fails.
+pub(super) fn acknowledge(
+    a: &mut Attempt,
+    fill: &Fill,
+    d: &Declined,
+    slot_released: u64,
+    label: &str,
+) -> Acked {
+    let before = a.peer.journal_progress();
+    assert!(
+        a.peer.acknowledge_journal().unwrap(),
+        "{label}: an ACK queued through the safe limit: {before:?}"
+    );
+    let (pp, l) = peer_poll(a);
+    assert!(
+        pp.queued > fill.queued_0,
+        "{label}: the ACK was sent: {pp:?}"
+    );
+    assert!(l.is_empty(), "{label}: nothing new to read: {l:?}");
+    let acked = if pp.queued == slot_released {
+        Acked::SlotReleased
+    } else if pp.queued == d.outcome {
+        Acked::Outcome
+    } else {
+        panic!(
+            "{label}: ACK {} is neither outcome {} nor SlotReleased {slot_released}: {before:?} -> {pp:?}",
+            pp.queued, d.outcome
+        )
+    };
+    eprintln!(
+        "{label}: ACK through {acked:?} ({}); {before:?} -> {pp:?}",
+        pp.queued
+    );
+    acked
+}

@@ -115,6 +115,7 @@ fn held_waits_unknown_before_reconciliation_then_installs_without_a_second_rende
     );
     assert_eq!(lane.native.installs(), 0);
     assert!(lane.states().is_empty());
+    lane.trace_end(&[], &[]);
 }
 
 /// Control 13b: a same-generation end (the candidate's own expiry) leaves
@@ -139,6 +140,7 @@ fn held_on_a_same_generation_rejection_waits_unknown_until_its_deadline() {
         "c13b: one release at its deadline"
     );
     assert!(lane.states().is_empty(), "c13b: the transfer removed it");
+    lane.trace_end(&[], &[]);
     assert!(lane.turn_at(late).is_none());
     assert_eq!(lane.native.release_attempts(), 1, "c13b: nothing more");
     assert_eq!(lane.native.renderer_releases(), 1);
@@ -174,6 +176,7 @@ fn held_on_a_later_generation_releases_promptly_as_ended() {
     );
     assert_eq!(lane.native.renderer_releases(), 1);
     assert_eq!(a.terminals(1), [TIMEOUT], "c13c: no second outcome");
+    lane.trace_end(&[], &[]);
 }
 
 /// Control 7b: a delivered failure (RenderFailed) whose bundle never comes,
@@ -219,6 +222,7 @@ fn a_failed_entry_without_a_bundle_retires_on_a_later_generation() {
         "c7b: no RendererFailed from the row"
     );
     assert_eq!(lane.native.release_attempts(), 0, "c7b: no lease");
+    lane.trace_end(&[], &[]);
 }
 
 /// Control 8, other generation: candidate 1 took its terminal while its
@@ -255,6 +259,7 @@ fn a_same_grant_entry_of_another_generation_never_joins() {
         "c8 generation: the old generation's entry never joins: {served:?}"
     );
     assert_eq!(lane.states(), [(j1, "debt")], "c8 generation: untouched");
+    lane.trace_end(&[(j1, "debt")], &[]);
     assert_eq!(lane.native.installs(), 1);
     assert_eq!(lane.native.classifies(), 1);
     assert_eq!(lane.pending(&a), [(a.key.grant, OUTPUT, 2)]);

@@ -431,6 +431,26 @@ impl Lane {
             .combined_row_mut(0)
             .decline(&mut self.native, job)
     }
+
+    /// b4: the trace checkpoint after a control's own final row assertion:
+    /// the states as before, then the replay against the row's snapshot.
+    fn trace_end(
+        &self,
+        expected: &[(u64, &'static str)],
+        unconfirmed: &[(ContentGrant, (u64, u64, u64))],
+    ) {
+        trace_end(
+            self.h.owner.processes.combined_row(0),
+            expected,
+            unconfirmed,
+        );
+    }
+
+    /// b4: the checkpoint of a control that admits nothing; its ordinary
+    /// joins.
+    fn trace_no_admission(&self) -> usize {
+        trace_no_admission(self.h.owner.processes.combined_row(0))
+    }
 }
 
 /// The peer's frame outcomes and content records so far, into `a`.
@@ -486,6 +506,7 @@ fn an_exported_job_is_held_then_declined_to_one_release() {
     assert_eq!(lane.decline(job), Some(CombinedRelease::Transferred));
     assert_eq!(lane.native.renderer_releases(), 1);
     assert_eq!(lane.h.owner.processes.combined_row(0).pending(), 0);
+    lane.trace_end(&[], &[]);
 }
 
 #[test]
@@ -524,6 +545,11 @@ fn a_declared_compose_fault_fails_the_slot_with_nothing_reserved() {
     );
     assert!(lane.turn().is_none());
     assert_eq!(lane.native.composes(), 1, "a revoked slot proposes nothing");
+    assert_eq!(
+        lane.trace_no_admission(),
+        0,
+        "nothing proposed, nothing consumed"
+    );
 }
 
 /// R1a: J1 renders and exports before A stops; only its collection waits.
@@ -589,6 +615,7 @@ fn an_exported_late_result_is_collected_after_stop_and_replacement() {
         .serve_combined(output().id, Instant::now(), exported());
     assert_eq!(lane.until(&mut b, "held"), j2);
     assert_eq!(lane.decline(j2), Some(CombinedRelease::Transferred));
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.renderer_releases(), 2);
 }
 
@@ -645,6 +672,7 @@ fn full_release_debt_survives_reconnect_and_holds_final_quiescence() {
     assert_eq!(lane.native.renderer_releases(), 0, "only filler was queued");
     assert!(lane.turn().is_none());
     assert!(lane.states().is_empty(), "the receipt transferred");
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.renderer_releases(), 1);
     assert!(
         lane.h
@@ -704,6 +732,7 @@ fn an_old_job_refused_after_replacement_stays_a_diagnostic_of_its_attempt() {
         .serve_combined(output().id, Instant::now(), exported());
     assert_eq!(lane.until(&mut b, "held"), j2);
     assert_eq!(lane.decline(j2), Some(CombinedRelease::Transferred));
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.renderer_releases(), 2);
     assert_eq!(
         lane.h.owner.processes.combined_row(0).cleanup_diagnostics(),
@@ -734,6 +763,7 @@ fn a_stop_before_render_gives_stopped_with_nothing_held() {
         lane.states().is_empty(),
         "Stopped settles, delivers and retires with its ended grant"
     );
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.renderer_releases(), 0, "nothing was held");
 }
 
@@ -789,6 +819,7 @@ fn each_disposition_takes_its_own_row_transition() {
         lane.h.owner.stop(a.key).unwrap();
         assert!(lane.turn().is_none());
         assert!(lane.states().is_empty(), "{after} ends with its grant");
+        lane.trace_end(&[], &[]);
         assert_eq!(
             lane.native.renderer_releases(),
             usize::from(after == "held"),
@@ -820,6 +851,7 @@ fn a_settlement_refusal_keeps_the_result_and_reports_once() {
         "the retry settles, unreported"
     );
     assert_eq!(lane.decline(job), Some(CombinedRelease::Transferred));
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.renderer_releases(), 1);
 }
 
@@ -843,6 +875,7 @@ fn a_refused_credit_retries_only_the_credit() {
     assert_eq!(lane.states(), [(job, "credit")]);
     assert_eq!(lane.until(&mut a, "held"), job);
     assert_eq!(lane.decline(job), Some(CombinedRelease::Transferred));
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.renderer_releases(), 1);
 }
 
@@ -873,6 +906,7 @@ fn a_refused_delivery_is_offered_again_and_reported_once() {
     });
     assert!(a.terminals(1).is_empty());
     assert_eq!(lane.decline(job), Some(CombinedRelease::Transferred));
+    lane.trace_end(&[], &[]);
 }
 
 /// A failed validation returns the plan: the row cancels the reservation,
@@ -914,6 +948,7 @@ fn a_returned_plan_cancels_its_reservation_only() {
         ShellContentNative::cancel_combined_frame(&mut lane.native, &head),
         Ok(true)
     ));
+    lane.trace_end(&[], &[]);
 }
 
 /// R3, declared fault: the plan is refused after admission consumed the
@@ -969,6 +1004,7 @@ fn a_refused_plan_cancels_once_and_settles_its_consumed_candidate() {
         [(3, ContentReason::Cancelled as u16)],
         "rejected once"
     );
+    lane.trace_end(&[], &[]);
 }
 
 #[path = "combined_r4.rs"]
@@ -991,3 +1027,7 @@ mod driver;
 // G3-5d d-2b3c: the stub Full-debt controls MD1 and MD2.
 #[path = "combined_full_debt.rs"]
 mod full_debt;
+// G3-5d b4: the row trace checker and the checkpoints every control calls.
+#[path = "combined_trace.rs"]
+mod trace;
+use trace::*;

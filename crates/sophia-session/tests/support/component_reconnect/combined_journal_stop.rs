@@ -249,6 +249,7 @@ fn fj_stop_the_next_admission_stops_at_the_reservation_refusal_until_an_ack() {
     assert!(credit_of(&s_adm, resource, "FJ-stop admitted").status_reserved);
     assert!(wake.wait(Some(Instant::now() + WAIT)).unwrap());
     assert_eq!(lane.states(), [(job, "in flight")]);
+    lane.trace_end(&[(job, "in flight")], &[]);
     forget_observed(&mut fill, &mut a, "FJ-stop end");
     eprintln!("FJ-stop: admitted after the ACK: {:?}", s_adm.journal());
 }

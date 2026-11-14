@@ -116,6 +116,7 @@ fn a_malformed_mismatch_entry_retires_without_a_second_outcome() {
     );
     assert!(lane.turn_at(late).is_none());
     assert!(lane.states().is_empty(), "c7a: retired at its deadline");
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.h.owner.processes.combined_row(0).pending(), 0);
     lane.turns_at(&mut a, late, true, "c7a: the source release", |_, a| {
         offers(a, 1) != [RingOfferState::Pending]
@@ -132,6 +133,7 @@ fn a_malformed_mismatch_entry_retires_without_a_second_outcome() {
     );
     assert_eq!((a.accepted, a.refused), (0, 1), "c7a: one ResourceStatus");
     assert_eq!(lane.native.release_attempts(), 0, "c7a: no lease");
+    lane.trace_end(&[], &[]);
 }
 
 /// Candidate `n` Held with its result validated, and the runtime's
@@ -186,6 +188,7 @@ fn an_expiry_verdict_survives_a_later_debt_transfer_and_fails_its_bundle() {
     assert_eq!(lane.native.accepts(), 0);
     assert_eq!(lane.native.classifies(), 0);
     assert!(lane.states().is_empty(), "c16: consumed");
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.release_attempts(), 2, "release, then flush");
     assert_eq!(lane.native.release_transfers(), 1);
     assert_eq!(
@@ -222,6 +225,7 @@ fn an_expiry_verdict_survives_an_immediate_transfer_and_fails_its_bundle() {
     assert_eq!(lane.native.installs(), 0);
     assert_eq!(lane.native.ordinary_queues(), 0);
     assert!(lane.states().is_empty());
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.release_attempts(), 1);
     assert_eq!(lane.native.renderer_releases(), 1);
 }
@@ -264,6 +268,7 @@ fn a_no_native_consumption_records_its_decision_and_the_next_walk_releases_it() 
     assert_eq!(lane.native.renderer_releases(), 0, "only filler was queued");
     assert!(lane.turn().is_none());
     assert!(lane.states().is_empty(), "c17: the flush transferred");
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.release_transfers(), 1);
     assert_eq!(lane.native.renderer_releases(), 1);
     assert!(lane.turn().is_none());

@@ -1095,53 +1095,6 @@ fn fillers(
     r
 }
 
-/// Which retention the peer's ACK covers, from its observed sequence.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Acked {
-    /// Through the published SlotReleased of the last complete filler.
-    SlotReleased,
-    /// Through that filler's outcome: its SlotReleased stays retained.
-    Outcome,
-}
-
-/// The manual ACK (bound: the client's safe limit, its handled sequence),
-/// sent by one peer poll, joined to `d`'s outcome or the later
-/// `slot_released` sequence; any other frontier fails.
-fn acknowledge(
-    a: &mut Attempt,
-    fill: &Fill,
-    d: &Declined,
-    slot_released: u64,
-    label: &str,
-) -> Acked {
-    let before = a.peer.journal_progress();
-    assert!(
-        a.peer.acknowledge_journal().unwrap(),
-        "{label}: an ACK queued through the safe limit: {before:?}"
-    );
-    let (pp, l) = peer_poll(a);
-    assert!(
-        pp.queued > fill.queued_0,
-        "{label}: the ACK was sent: {pp:?}"
-    );
-    assert!(l.is_empty(), "{label}: nothing new to read: {l:?}");
-    let acked = if pp.queued == slot_released {
-        Acked::SlotReleased
-    } else if pp.queued == d.outcome {
-        Acked::Outcome
-    } else {
-        panic!(
-            "{label}: ACK {} is neither outcome {} nor SlotReleased {slot_released}: {before:?} -> {pp:?}",
-            pp.queued, d.outcome
-        )
-    };
-    eprintln!(
-        "{label}: ACK through {acked:?} ({}); {before:?} -> {pp:?}",
-        pp.queued
-    );
-    acked
-}
-
 /// FJ: two prefix frames and 61 fillers to 250; the filler at 250 whose
 /// one designated T2 commits its SlotReleased, admits frame 65 and parks
 /// its ResourceReleased; frame 65's status and outcome queue behind it,
@@ -1486,6 +1439,7 @@ fn fj_a_parked_release_holds_the_next_frames_records_until_an_ack() {
     }
     forget_observed(&mut fill, &mut a, "FJ end");
     assert!(lane.states().is_empty());
+    lane.trace_end(&[], &[]);
     assert_eq!(counters(&lane), c1);
     assert_eq!(lane.native.installs(), 0);
     assert_eq!(lane.native.ordinary_queues(), 0);

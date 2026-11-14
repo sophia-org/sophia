@@ -178,6 +178,7 @@ fn a_matching_result_is_accepted_in_submit_bundle_with_prepared_and_pending() {
     );
     assert_eq!(lane.native.release_attempts(), 0, "c1: nothing released");
     assert!(lane.states().is_empty(), "c1: accepted removes the entry");
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.pending(&a), [(a.key.grant, OUTPUT, 1)], "c1: pending");
     assert!(
         a.terminals(1).is_empty(),
@@ -211,6 +212,7 @@ fn scene_churn_releases_the_result_and_enters_conventionally_once() {
         lane.states().is_empty(),
         "c2: the transfer removed the entry"
     );
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.installs(), 1, "c2: one conventional entry");
     assert_eq!(lane.native.ordinary_queues(), 1, "c2: one retained queue");
     assert_eq!(lane.pending(&a), [(a.key.grant, OUTPUT, 1)]);
@@ -241,6 +243,7 @@ fn a_declared_class_takes_the_failure_terminal(class: CombinedRecompose, label: 
     );
     assert_eq!(lane.native.release_attempts(), 1, "{label}: released once");
     assert!(lane.states().is_empty(), "{label}: transferred");
+    lane.trace_end(&[], &[]);
     assert!(lane.pending(&a).is_empty(), "{label}: no Prepared");
     assert_eq!(lane.native.installs(), 0, "{label}: no install entry");
     assert_eq!(lane.native.ordinary_queues(), 0, "{label}: no queue");
@@ -275,6 +278,7 @@ fn an_unclassified_recomposition_error_is_returned_first_and_releases_once() {
     assert_eq!(lane.native.classifies(), 1);
     assert_eq!(lane.native.release_attempts(), 1, "c5: released once");
     assert!(lane.states().is_empty());
+    lane.trace_end(&[], &[]);
     assert!(a.terminals(1).is_empty(), "c5: no terminal");
     assert!(lane.pending(&a).is_empty(), "c5: no Prepared");
     assert_eq!(lane.native.installs(), 0);
@@ -298,6 +302,7 @@ fn a_render_failed_or_expired_result_takes_the_terminal_once() {
             lane.states().is_empty(),
             "{label}: consumed_failed removes the entry"
         );
+        lane.trace_end(&[], &[]);
         assert_eq!(lane.native.release_attempts(), 0, "{label}: no lease");
         assert_eq!(lane.native.classifies(), 0);
         assert_eq!(lane.native.installs(), 0);
@@ -325,6 +330,10 @@ fn a_bundle_with_no_row_entry_takes_the_ordinary_arm_unchanged() {
     assert_eq!(lane.native.ordinary_queues(), 1);
     assert_eq!(lane.native.classifies(), 0);
     assert_eq!(lane.pending(&a), [(a.key.grant, OUTPUT, 1)]);
+    assert!(
+        lane.trace_no_admission() >= 1,
+        "c8 absent: the ordinary join"
+    );
 }
 
 /// Control 8, old grant: A's entry is Debt under A's grant; B's bundle for
@@ -353,6 +362,7 @@ fn an_old_grants_entry_never_joins_a_new_bundle() {
         "c8 old grant: the old entry never joins: {served:?}"
     );
     assert_eq!(lane.states(), [(j1, "debt")], "c8 old grant: untouched");
+    lane.trace_end(&[(j1, "debt")], &[]);
     assert_eq!(lane.native.installs(), 1);
     assert_eq!(lane.native.ordinary_queues(), 1);
     assert_eq!(lane.native.classifies(), 0);
@@ -394,6 +404,7 @@ fn scene_churn_with_a_busy_head_or_a_protected_retirement_takes_the_failure_term
         assert_eq!(lane.native.ordinary_queues(), 0, "{label}: no queue");
         assert_eq!(lane.native.accepts(), 0);
         assert!(lane.pending(&a).is_empty());
+        lane.trace_end(&[], &[]);
     }
 }
 
@@ -427,6 +438,7 @@ fn a_capture_after_reserve_takes_the_failure_terminal(plane: Option<Point>, labe
     assert_eq!(lane.native.release_attempts(), 1, "{label}: released");
     assert_eq!(lane.native.release_transfers(), 1, "{label}: transferred");
     assert!(lane.states().is_empty(), "{label}: the entry is gone");
+    lane.trace_end(&[], &[]);
     assert!(lane.pending(&a).is_empty(), "{label}: no Prepared");
     assert_eq!(
         lane.native.head_observation(output().id),
@@ -468,6 +480,7 @@ fn a_setter_refusal_returns_the_ordinary_error_and_releases() {
     assert_eq!(lane.native.release_attempts(), 1, "c11: released once");
     assert!(a.terminals(1).is_empty(), "c11: no terminal");
     assert_eq!(lane.native.classifies(), 0);
+    lane.trace_end(&[], &[]);
 }
 
 /// Control 12: CandidateFailure (declared, labelled) with the Release cell
@@ -499,6 +512,7 @@ fn a_full_release_cell_keeps_debt_through_the_terminal_and_reconnect() {
     assert_eq!(lane.native.renderer_releases(), 0, "only filler was queued");
     assert!(lane.turn().is_none());
     assert!(lane.states().is_empty(), "c12: the free flush transferred");
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.release_attempts(), 2);
     assert_eq!(lane.native.release_transfers(), 1);
     assert_eq!(lane.native.renderer_releases(), 1);
@@ -524,5 +538,6 @@ fn a_result_consumed_after_its_deadline_is_declined_with_the_failure_terminal() 
     assert_eq!(lane.native.ordinary_queues(), 0);
     assert_eq!(lane.native.release_attempts(), 1);
     assert!(lane.states().is_empty());
+    lane.trace_end(&[], &[]);
     assert!(lane.pending(&a).is_empty(), "c15: no Prepared");
 }

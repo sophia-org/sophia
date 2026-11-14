@@ -215,6 +215,7 @@ fn a_replacement_bundle_meets_the_join_beside_the_old_held_result_and_goes_ordin
         "one pending presentation, under B's grant"
     );
     assert!(lane.states().is_empty(), "the walk released J1");
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.releases(), (1, 1), "J1's one Release, Transferred");
     assert_eq!(
         lane.row().bindings(),
@@ -245,6 +246,7 @@ fn replacement_discards_the_old_role_tracking_and_inherits_none_of_it() {
     assert_eq!(t1.status, Some(Submit::SubmittedWaitingForPageFlip));
     assert_eq!(t1.accepted, [1]);
     assert!(lane.states().is_empty(), "accepted removes the entry");
+    lane.trace_end(&[], &[]);
     assert_eq!(
         lane.row().collected(),
         [(job, CombinedDisposition::Rendered)]
@@ -396,4 +398,5 @@ fn an_unexpected_worker_loss_keeps_disconnected_debt_that_refuses_final_quiescen
     };
     lane.h.backend = backend;
     assert_eq!(lane.states(), [(job, "debt")], "refusal changed nothing");
+    lane.trace_end(&[(job, "debt")], &[]);
 }

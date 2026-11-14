@@ -49,7 +49,7 @@ use std::time::Instant;
 // G3-5d d-2b1: `turn_combined`'s two halves for the Session split driver.
 #[cfg(test)]
 #[path = "../../tests/support/combined_row_steps.rs"]
-mod steps;
+pub(crate) mod steps;
 // G3-5d d-2b3d: slot-indexed read-only observers (REV2 D5).
 #[cfg(test)]
 #[path = "../../tests/support/combined_observers.rs"]
@@ -146,6 +146,9 @@ pub(crate) struct CombinedRow {
     /// (d-2b3b2).
     #[cfg(test)]
     joins: Vec<steps::Join>,
+    /// b4: the row's own calls in order, one event each (REV3/REV4).
+    #[cfg(test)]
+    trace: Vec<steps::Event>,
 }
 
 #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
@@ -183,6 +186,9 @@ struct Job {
     state: State,
     /// This job's invariant failure was reported; its retries stay quiet.
     reported: bool,
+    /// b4: the admission's key, named by every trace event.
+    #[cfg(test)]
+    key: steps::Key,
 }
 
 /// The owner's one-way decision for the job's candidate (G3-5c C4, REV3).
@@ -294,68 +300,9 @@ impl CombinedRow {
         usize::from(self.open.is_some()) + self.jobs.len() + self.cancels.len()
     }
 
-    /// Each job and the name of its state, for the controls.
-    #[cfg(test)]
-    pub(crate) fn states(&self) -> Vec<(u64, &'static str)> {
-        self.jobs
-            .iter()
-            .map(|job| {
-                let state = match &job.state {
-                    State::InFlight { .. } => "in flight",
-                    State::Unsettled { .. } => "unsettled",
-                    State::Credit { .. } => "credit",
-                    State::Undelivered { .. } => "undelivered",
-                    State::Held => "held",
-                    State::Failed(_) => "failed",
-                    State::Debt(_) => "debt",
-                };
-                (job.job, state)
-            })
-            .collect()
-    }
-
     #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     pub(crate) fn unconfirmed_cancels(&self) -> usize {
         self.cancels.len()
-    }
-
-    /// The reserve-time projections so far, in proposal order.
-    #[cfg(test)]
-    pub(crate) fn projections(&self) -> &[LiveShellContentFrame] {
-        &self.projections
-    }
-
-    /// The job's candidate binding, for the controls' candidate facts.
-    #[cfg(test)]
-    pub(crate) fn binding(&self, job: u64) -> Option<FrameCopyBinding> {
-        self.jobs
-            .iter()
-            .find(|held| held.job == job)
-            .map(|held| held.binding)
-    }
-
-    /// The job's verdict, for the controls.
-    #[cfg(test)]
-    pub(crate) fn verdict(&self, job: u64) -> Option<Verdict> {
-        self.jobs
-            .iter()
-            .find(|held| held.job == job)
-            .map(|held| held.verdict)
-    }
-
-    /// Errors reported after their attempt ended, with that attempt's grant.
-    #[cfg(test)]
-    pub(crate) fn cleanup_diagnostics(&self) -> &[(ContentGrant, String)] {
-        &self.diagnostics
-    }
-
-    /// A declared fault: the next delivery is refused at the runtime
-    /// boundary, as a refused `accept` would be. It proves the row keeps and
-    /// re-offers the result and reports once, not that a real refusal
-    /// happens.
-    #[cfg(test)]
-    pub(crate) fn declare_delivery_refusal(&mut self) {
-        self.refusals += 1;
     }
 
     /// Declines a Held result (the combined arm's decline, and b's
@@ -372,7 +319,10 @@ impl CombinedRow {
             .position(|held| held.job == job && matches!(held.state, State::Held))?;
         let mut held = self.jobs.remove(index);
         let outcome = native.release_combined_held(&held.head, held.job);
-        if self.released(&mut held, outcome) {
+        let keep = self.released(&mut held, outcome);
+        #[cfg(test)]
+        self.record_release(&held, steps::Cause::Decline, outcome, keep, None);
+        if keep {
             self.jobs.push(held);
         }
         Some(outcome)
@@ -418,7 +368,10 @@ impl CombinedRow {
         instant: Instant,
     ) {
         for (grant, head) in std::mem::take(&mut self.cancels) {
-            if !matches!(native.cancel_combined_frame(&head), Ok(true)) {
+            let confirmed = matches!(native.cancel_combined_frame(&head), Ok(true));
+            #[cfg(test)]
+            self.record_cancel_later(grant, &head, confirmed);
+            if !confirmed {
                 self.cancels.push((grant, head));
             }
         }
@@ -427,13 +380,23 @@ impl CombinedRow {
             let keep = match job.state {
                 State::Held if ended => {
                     let outcome = native.release_combined_held(&job.head, job.job);
-                    self.released(&mut job, outcome)
+                    let keep = self.released(&mut job, outcome);
+                    #[cfg(test)]
+                    self.record_release(&job, steps::Cause::WalkEndedHeld, outcome, keep, None);
+                    keep
                 }
                 State::Debt(_) => {
                     let outcome = native.flush_combined_release(&job.head, job.job);
-                    self.released(&mut job, outcome)
+                    let keep = self.released(&mut job, outcome);
+                    #[cfg(test)]
+                    self.record_release(&job, steps::Cause::DebtFlush, outcome, keep, None);
+                    keep
                 }
-                State::Failed(_) if ended => false,
+                State::Failed(_) if ended => {
+                    #[cfg(test)]
+                    self.record_removed(job.key, steps::Cause::WalkEndedFailed);
+                    false
+                }
                 State::Held | State::Failed(_) => {
                     let state = candidate(job.binding, job.job);
                     self.dispose(native, &mut job, state, instant)
@@ -460,41 +423,60 @@ impl CombinedRow {
         let state = state.unwrap_or(Unknown);
         let past = instant >= job.deadline;
         let live = matches!(state, Assembling | Pending | Submitted);
+        #[cfg(test)]
+        let before = job.verdict;
+        // Some(true) releases, Some(false) keeps, None retires.
         let release = match (&job.state, job.verdict) {
             // The recorded decision, whatever the candidate (R2-2).
-            (State::Held, Verdict::Consumed) => true,
-            (State::Held, Verdict::Open) if state == Ended || (state == Unknown && past) => true,
+            (State::Held, Verdict::Consumed) => Some(true),
+            (State::Held, Verdict::Open) if state == Ended || (state == Unknown && past) => {
+                Some(true)
+            }
             (State::Held, Verdict::Open) if live && past => {
                 job.verdict = Verdict::Expired;
-                true
+                Some(true)
             }
-            (State::Held, Verdict::Open) => false,
-            (State::Failed(_), Verdict::Consumed) => return false,
+            (State::Held, Verdict::Open) => Some(false),
+            (State::Failed(_), Verdict::Consumed) => None,
             (State::Failed(_), Verdict::Open | Verdict::Expired)
                 if state == Ended || (state == Unknown && past) =>
             {
-                return false;
+                None
             }
-            // Unknown before its deadline: unchanged until then.
-            (State::Failed(_), Verdict::Open | Verdict::Expired) if state == Unknown => {
-                return true;
-            }
-            (State::Failed(_), Verdict::Open | Verdict::Expired) => return true,
+            // Unknown before its deadline, or live at any time: unchanged.
+            (State::Failed(_), Verdict::Open | Verdict::Expired) => Some(false),
             // The walk expires and releases in one step, so Held never
             // keeps Expired. Fail closed: report, and release through the
             // one rule rather than drop the lease.
             (State::Held, Verdict::Expired) => {
                 report(&mut self.errors, job, "a Held result kept an expiry");
-                true
+                Some(true)
             }
             // The walk passes only Held and Failed; anything else stays.
-            _ => return true,
+            _ => Some(false),
         };
-        if !release {
-            return true;
-        }
-        let outcome = native.release_combined_held(&job.head, job.job);
-        self.released(job, outcome)
+        #[cfg(test)]
+        let facts = steps::Dispose {
+            candidate: state,
+            past,
+            released: release == Some(true),
+            expired: before != job.verdict,
+            fail_closed: before == Verdict::Expired && matches!(job.state, State::Held),
+        };
+        let keep = match release {
+            Some(true) => {
+                let outcome = native.release_combined_held(&job.head, job.job);
+                let keep = self.released(job, outcome);
+                #[cfg(test)]
+                self.record_release(job, steps::Cause::Dispose, outcome, keep, Some(facts));
+                return keep;
+            }
+            Some(false) => true,
+            None => false,
+        };
+        #[cfg(test)]
+        self.record_kept(job, keep, facts);
+        keep
     }
 
     /// The join of a bundle with the row (G3-5c): the exact entry for its
@@ -531,9 +513,9 @@ impl CombinedRow {
             job.verdict = Verdict::Consumed;
         }
         #[cfg(test)]
-        let matched = job.job;
+        let matched = (job.job, job.key, admitted, job.verdict);
         #[cfg(test)]
-        self.record_join_match(matched);
+        self.record_join_match(matched, &join);
         join
     }
 
@@ -551,23 +533,27 @@ impl CombinedRow {
     /// Removes a Held job after its accept committed: the lease is the
     /// native pending frame's now. False when no such entry is here.
     pub(crate) fn accepted(&mut self, job: u64) -> bool {
-        self.remove(job, |state| matches!(state, State::Held))
+        let removed = self.remove(job, |state| matches!(state, State::Held));
+        #[cfg(test)]
+        self.record_consumed(removed.as_ref(), steps::Cause::Accepted);
+        removed.is_some()
     }
 
     /// Removes a Failed job after its terminal was issued. It holds no
     /// lease. False when no such entry is here.
     pub(crate) fn consumed_failed(&mut self, job: u64) -> bool {
-        self.remove(job, |state| matches!(state, State::Failed(_)))
+        let removed = self.remove(job, |state| matches!(state, State::Failed(_)));
+        #[cfg(test)]
+        self.record_consumed(removed.as_ref(), steps::Cause::ConsumedFailed);
+        removed.is_some()
     }
 
-    fn remove(&mut self, job: u64, state: impl Fn(&State) -> bool) -> bool {
-        let Some(index) = self.jobs.iter().position(|held| {
+    /// The removed job, for the trace; it holds nothing the row needs.
+    fn remove(&mut self, job: u64, state: impl Fn(&State) -> bool) -> Option<Job> {
+        let index = self.jobs.iter().position(|held| {
             held.job == job && held.verdict == Verdict::Consumed && state(&held.state)
-        }) else {
-            return false;
-        };
-        self.jobs.remove(index);
-        true
+        })?;
+        Some(self.jobs.remove(index))
     }
 
     /// The first error of `current`, the slot's unrevoked attempt; errors of
@@ -582,6 +568,8 @@ impl CombinedRow {
         (!self.errors.is_empty()).then(|| ShellTransportError::CombinedRow(self.errors.remove(0).1))
     }
 
+    /// True when the native confirmed the cancellation; otherwise it is
+    /// reported and retried by the walk.
     #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     fn cancel<N: ShellContentNative>(
         &mut self,
@@ -589,11 +577,13 @@ impl CombinedRow {
         grant: ContentGrant,
         head: CombinedHead,
         what: String,
-    ) {
-        if !matches!(native.cancel_combined_frame(&head), Ok(true)) {
+    ) -> bool {
+        let confirmed = matches!(native.cancel_combined_frame(&head), Ok(true));
+        if !confirmed {
             self.errors.push((grant, what));
             self.cancels.push((grant, head));
         }
+        confirmed
     }
 
     /// One job's collection; `None` when the job ended here.
@@ -607,6 +597,8 @@ impl CombinedRow {
     ) -> Option<Job> {
         // Every path below sets the state again or ends the job.
         let state = std::mem::replace(&mut job.state, State::Held);
+        #[cfg(test)]
+        let from = steps::Label::of(&state);
         let step = match state {
             State::InFlight {
                 reservation,
@@ -617,7 +609,9 @@ impl CombinedRow {
                 if let Ok(plan) = returned.try_recv() {
                     drop((plan, reservation));
                     let what = format!("combined job {}: returned plan not cancelled", job.job);
-                    self.cancel(native, job.grant, job.head, what);
+                    let confirmed = self.cancel(native, job.grant, job.head, what);
+                    #[cfg(test)]
+                    self.record_removed(job.key, steps::Cause::ReturnedPlan { confirmed });
                     return None;
                 }
                 match native.take_combined_frame_result(&job.head) {
@@ -682,6 +676,8 @@ impl CombinedRow {
                 }
             },
         };
+        #[cfg(test)]
+        self.record_step(&job, from);
         Some(job)
     }
 
@@ -838,8 +834,14 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
             return;
         };
         let what = format!("combined reservation {ticket} not confirmed cancelled");
-        self.row
+        #[cfg(test)]
+        let identity = (open.grant, open.head.trace_identity());
+        let confirmed = self
+            .row
             .cancel(&mut *self.turn.native, open.grant, open.head, what);
+        #[cfg(test)]
+        self.row
+            .record_reserve_cancelled(ticket, identity, confirmed);
     }
 
     fn submitted(
@@ -854,7 +856,7 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
             .take_if(|open| open.ticket == ticket)
             .expect("the runtime submits the admission it planned");
         #[cfg(test)]
-        self.row.record_binding(ticket, &reservation, &open);
+        let key = self.row.record_binding(ticket, &reservation, &open);
         let Stage::Planned(dispatch, binding, deadline) = open.stage else {
             unreachable!("only a planned admission is submitted");
         };
@@ -871,6 +873,8 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
                 returned,
             },
             reported: false,
+            #[cfg(test)]
+            key,
         });
     }
 
@@ -945,23 +949,6 @@ impl ShellComponentConnections {
             serviced?;
             connection.combined.take_error(current).map_or(Ok(()), Err)
         })
-    }
-
-    /// `with_connection` that also lends the slot's row (G3-5c C2): the same
-    /// Connected-phase check, and the row borrowed beside the transport, for
-    /// the controlled caller only.
-    #[cfg(test)]
-    pub(crate) fn with_connection_and_row<R>(
-        &mut self,
-        key: ComponentConnectionKey,
-        service: impl FnOnce(&mut ShellTransportConnection<'_>, &mut CombinedRow) -> R,
-    ) -> Result<R, ComponentConnectionError> {
-        self.require_phase(key, ComponentConnectionPhase::Connected)?;
-        let connection = &mut self.connections[key.slot];
-        Ok(service(
-            &mut connection.transport.connection(&mut self.epochs),
-            &mut connection.combined,
-        ))
     }
 
     #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]

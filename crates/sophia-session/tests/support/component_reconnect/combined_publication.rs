@@ -867,6 +867,7 @@ fn r4_the_accepted_status_commits_deferred_in_t1_and_slot_released_follows_it_in
     assert_eq!(a.accepted, 0);
     assert_eq!(lane.releases(), (0, 0), "the head holds the lease");
     assert_eq!(lane.leased(), 1);
+    lane.trace_end(&[], &[]);
 }
 
 /// P1: the invalidation queues AllocationResult(50) in the outbox between
@@ -1003,6 +1004,7 @@ fn p1_a_lost_allocation_journals_its_result_the_refusal_and_the_terminal_in_t1()
         a.peer.journal_progress()
     );
     assert_eq!(lane.releases(), (1, 1), "the walk released Held as Ended");
+    lane.trace_end(&[], &[]);
     lane.slot_freed("P1");
 }
 
@@ -1152,6 +1154,7 @@ fn p2_a_close_after_admission_journals_closed_under_its_transaction_and_no_termi
     );
     assert_eq!(lane.releases(), (0, 0), "the head holds the lease");
     assert_eq!(lane.leased(), 1);
+    lane.trace_end(&[], &[]);
 }
 
 /// P3: the candidate's own expiry. T1's content service drains the
@@ -1382,6 +1385,7 @@ fn p3_the_expiry_commits_the_acceptance_then_timeout_and_one_poll_reads_both() {
     );
     assert_eq!(peer_statuses(&a.contents, a.key.grant).len(), 1);
     assert_eq!(custody(&mut lane, &a), held, "T2 changed no custody fact");
+    lane.trace_end(&[(job, "held")], &[]);
 }
 
 /// The fault rows F1-F4, split for the file-size limit.

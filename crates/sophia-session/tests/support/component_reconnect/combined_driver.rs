@@ -398,6 +398,7 @@ fn a_declared_image_service_failure_stops_the_slot_before_content_and_the_walk_r
         "5.1-3: the walk released the ended grant's Held lease: Transferred once"
     );
     assert!(lane.states().is_empty(), "5.1-3: the row is clear");
+    lane.trace_end(&[], &[]);
     assert_eq!(
         first,
         [
@@ -451,6 +452,7 @@ fn an_unclassified_error_stops_the_component_and_backs_off() {
         "released once, and the running core transferred it"
     );
     assert!(lane.states().is_empty());
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.accepts(), 0);
     assert_eq!(
         lane.h.owner.phase(a.key).unwrap(),
@@ -514,6 +516,7 @@ fn an_unclassified_error_with_a_full_release_keeps_debt_through_stop() {
     assert_eq!(lane.native.renderer_releases(), 0, "only filler was queued");
     assert_eq!(lane.quiet_driver_turn(false), [Images, Walk, Native]);
     assert!(lane.states().is_empty(), "5.2: the walk flushed the debt");
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.release_transfers(), 1, "5.2: Transferred once");
     assert_eq!(
         lane.native.renderer_releases(),
@@ -562,4 +565,5 @@ fn the_split_driver_serves_content_before_the_walk_and_native_last() {
         std::thread::yield_now();
     }
     assert_eq!(lane.native.accepts(), 1, "content accepted the Held result");
+    lane.trace_end(&[], &[]);
 }

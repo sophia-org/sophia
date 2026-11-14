@@ -76,6 +76,7 @@ fn a_capture_before_reserve_declines_to_the_ordinary_path() {
         lane.native.capture_pending(output().id),
         "form 1: the capture flags stay"
     );
+    assert!(lane.trace_no_admission() >= 1, "form 1: the ordinary join");
 }
 
 /// Form 2: an ordinary frame queued after reserve with its capture
@@ -119,6 +120,7 @@ fn an_ordinary_frame_queued_with_a_capture_takes_the_failure_terminal(
     assert_eq!(lane.native.release_attempts(), 1, "{label}: released");
     assert_eq!(lane.native.release_transfers(), 1, "{label}: transferred");
     assert!(lane.states().is_empty(), "{label}: the entry is gone");
+    lane.trace_end(&[], &[]);
     assert!(lane.pending(&a).is_empty(), "{label}: no Prepared");
     assert_eq!(
         lane.native.head_observation(output().id),

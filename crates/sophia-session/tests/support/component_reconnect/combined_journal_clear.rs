@@ -123,6 +123,7 @@ fn f4o_a_declared_completion_of_the_queued_fallback_journals_presented_and_settl
     assert_eq!(a.accepted, 1);
     assert_eq!(lane.releases(), (1, 1));
     assert!(lane.states().is_empty());
+    lane.trace_end(&[], &[]);
     lane.slot_freed("F4-O");
 }
 
@@ -246,6 +247,7 @@ fn bp_the_frames_invalidation_leaves_the_outbox_nonempty_and_stop_clears_it() {
         "the walk released the ended grant's Held lease"
     );
     assert!(lane.states().is_empty());
+    lane.trace_end(&[], &[]);
     assert_eq!(lane.native.installs(), 0);
     lane.slot_freed("BP");
 }
