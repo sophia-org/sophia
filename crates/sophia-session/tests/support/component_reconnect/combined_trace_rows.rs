@@ -113,22 +113,22 @@ fn release(
     }
 }
 
-fn kept(key: Key, state: Label, dispose: Dispose) -> Event {
+fn kept(key: Key, state: Label, facts: Dispose) -> Event {
     Event::Retained {
         key,
         cause: dispose(),
         outcome: None,
         state,
-        dispose: Some(dispose),
+        dispose: Some(facts),
     }
 }
 
-fn retired(key: Key, dispose: Dispose) -> Event {
+fn retired(key: Key, facts: Dispose) -> Event {
     Event::Removed {
         key,
         cause: dispose(),
         outcome: None,
-        dispose: Some(dispose),
+        dispose: Some(facts),
     }
 }
 
@@ -156,12 +156,13 @@ fn accepted(trace: &[Event]) -> Replay {
 }
 
 fn rejected(trace: &[Event], rule: &str) {
-    let why = replay(trace).err().expect("the checker rejects the trace");
+    let why = replay(trace).expect_err("the checker rejects the trace");
     assert!(why.contains(rule), "{why}");
 }
 
 const TRANSFERRED: CombinedRelease = CombinedRelease::Transferred;
-const FULL: CombinedRelease = CombinedRelease::Full;
+// The full-queue retention outcome (the stage rows' "Full").
+const PENDING: CombinedRelease = CombinedRelease::Pending;
 
 #[test]
 fn the_accepted_path_and_the_direct_decline_replay_to_an_empty_row() {
@@ -200,10 +201,16 @@ fn a_refused_release_keeps_debt_until_a_flush_transfers() {
         bound(k, grant(), 1),
         c,
         s,
-        release(k, Cause::Decline, FULL, Some(Label::Debt), None),
+        release(k, Cause::Decline, PENDING, Some(Label::Debt), None),
     ];
     assert_eq!(accepted(&trace).live_set(), [(k, Label::Debt)]);
-    trace.push(release(k, Cause::DebtFlush, FULL, Some(Label::Debt), None));
+    trace.push(release(
+        k,
+        Cause::DebtFlush,
+        PENDING,
+        Some(Label::Debt),
+        None,
+    ));
     assert_eq!(accepted(&trace).live_set(), [(k, Label::Debt)]);
     trace.push(release(k, Cause::DebtFlush, TRANSFERRED, None, None));
     assert!(accepted(&trace).live_set().is_empty());
@@ -225,7 +232,7 @@ fn a_refused_release_keeps_debt_until_a_flush_transfers() {
             bound(k, grant(), 1),
             c,
             s,
-            release(k, Cause::Decline, FULL, None, None),
+            release(k, Cause::Decline, PENDING, None, None),
         ],
         "REV4 R1",
     );
@@ -240,7 +247,7 @@ fn an_expiry_survives_a_debt_transfer_as_failed_expired_and_joins_failed() {
         bound(k, grant(), 1),
         c,
         s,
-        release(k, dispose(), FULL, Some(Label::Debt), Some(expired)),
+        release(k, dispose(), PENDING, Some(Label::Debt), Some(expired)),
         release(
             k,
             Cause::DebtFlush,
@@ -294,7 +301,7 @@ fn an_expiry_survives_a_debt_transfer_as_failed_expired_and_joins_failed() {
             bound(k, grant(), 1),
             c,
             s,
-            release(k, dispose(), FULL, Some(Label::Debt), Some(expired)),
+            release(k, dispose(), PENDING, Some(Label::Debt), Some(expired)),
             release(k, Cause::DebtFlush, TRANSFERRED, None, None),
         ],
         "REV4 R1",
@@ -310,7 +317,7 @@ fn the_debt_arm_consumes_and_a_consumed_entry_joins_invariant_after() {
         bound(k, grant(), 1),
         c,
         s,
-        release(k, dispose(), FULL, Some(Label::Debt), Some(expired)),
+        release(k, dispose(), PENDING, Some(Label::Debt), Some(expired)),
     ];
     let present = [(k, grant(), Label::Debt, Verdict::Expired)];
     trace.push(joined(

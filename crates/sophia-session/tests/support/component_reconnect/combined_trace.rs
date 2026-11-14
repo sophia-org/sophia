@@ -24,7 +24,7 @@ use sophia_protocol::ContentOutputId;
 use sophia_runtime::FrameCandidateState;
 use sophia_runtime::FrameCandidateState::{Assembling, Ended, Pending, Submitted, Unknown};
 
-type Check = Result<(), String>;
+type Check = std::result::Result<(), String>;
 
 fn require(ok: bool, why: &str) -> Check {
     if ok { Ok(()) } else { Err(why.to_string()) }
@@ -60,7 +60,7 @@ pub(super) struct Replay {
 }
 
 /// The trace replayed, or the first event the rules reject, named.
-pub(super) fn replay(trace: &[Event]) -> Result<Replay, String> {
+pub(super) fn replay(trace: &[Event]) -> std::result::Result<Replay, String> {
     let mut replay = Replay::default();
     for (index, event) in trace.iter().enumerate() {
         replay
@@ -93,7 +93,7 @@ impl Replay {
         self.ordinary
     }
 
-    fn row(&mut self, key: Key) -> Result<&mut Row, String> {
+    fn row(&mut self, key: Key) -> std::result::Result<&mut Row, String> {
         let row = self
             .rows
             .iter_mut()
@@ -639,7 +639,7 @@ pub(super) fn trace_no_admission(row: &CombinedRow) -> usize {
     ordinary_only(row.trace()).unwrap_or_else(|why| panic!("no admission: {why}"))
 }
 
-fn ordinary_only(trace: &[Event]) -> Result<usize, String> {
+fn ordinary_only(trace: &[Event]) -> std::result::Result<usize, String> {
     let mut joins = 0;
     for event in trace {
         match event {
