@@ -2,6 +2,13 @@
 //! reap plus the service's retirement marker before a fresh grant/launch.
 //! The application ignores TERM, but Bubblewrap may end its namespace without
 //! delivering that signal; this is not a two-second grace-duration claim.
+//! The ordering itself, reap and marker in either order before any start, is
+//! the deterministic control in tests/session_lock_succession.rs
+//! (`the_successor_waits_for_both_the_marker_and_the_reap_in_either_order`);
+//! the real-process test here is evidence that the owner step does not block
+//! and that the successor eventually replaces the old process. One poll may
+//! observe the exit and drain the marker in the same pass, so after the poll
+//! each succession answer is checked against its own owner state.
 #![cfg(test)]
 use std::time::{Duration, Instant};
 
@@ -123,6 +130,22 @@ fn a_protected_provider_replacement_does_not_hold_the_owner_step() {
 
     let step = Instant::now();
     provider.replace_process(Instant::now(), &mut auth.coordinator);
+    // The barrier is owed where the test controls the boundary: before any
+    // poll, the old process is asked to exit and the retirement is queued
+    // but unmarked, so no successor may start.
+    assert!(
+        !provider.succession.admits_provider_events(),
+        "the retirement is owed before the first poll"
+    );
+    assert_eq!(
+        provider.succession.start(true),
+        LockProviderStart::Wait,
+        "no successor before the first poll"
+    );
+    assert_eq!(
+        provider.grant_epoch, 1,
+        "the old grant before the first poll"
+    );
     assert!(
         provider
             .poll(Instant::now(), &mut auth.coordinator)
@@ -132,10 +155,26 @@ fn a_protected_provider_replacement_does_not_hold_the_owner_step() {
         step.elapsed() < GRACE / 2,
         "the step waited for the process"
     );
-    // A fast protected exit still owes the service retirement barrier.
-    assert_eq!(provider.succession.start(true), LockProviderStart::Wait);
-    assert_eq!(provider.grant_epoch, 1, "no successor yet");
-    assert!(provider.restart_at.is_some(), "the successor is still owed");
+    // The poll observes the exit before it drains the service events, so one
+    // pass may complete the barrier and reserve the successor, or leave it
+    // owed. Each answer has its own owner state; nothing else is accepted.
+    match provider.succession.start(true) {
+        LockProviderStart::Wait => {
+            assert_eq!(provider.grant_epoch, 1, "no successor yet");
+            assert!(provider.registration.is_none(), "nothing reserved");
+            assert!(provider.restart_at.is_some(), "the successor is still owed");
+        }
+        LockProviderStart::Start { regrant: false } => {
+            assert!(
+                provider.succession.admits_provider_events(),
+                "reaped and marked in that pass"
+            );
+            assert_eq!(provider.grant_epoch, 2, "regranted in that pass");
+            assert!(provider.registration.is_some(), "the successor is reserved");
+            assert!(provider.restart_at.is_none(), "no restart is owed");
+        }
+        other => panic!("after one poll: {other:?}"),
+    }
 
     let deadline = Instant::now() + 3 * GRACE;
     while provider
