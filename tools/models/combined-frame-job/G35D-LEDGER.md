@@ -289,3 +289,36 @@ answers OrdinaryPending ahead of CaptureActive; the two d-0 discarded-
 capture rows keep their names and effects and now also read
 CaptureActive. Stub fixture composition throughout; no endpoint, no
 completed capture, no production change. Unexecuted.
+
+Validation-01 of the b3e harness ran at 9b5cf6c5e and failed, not in a
+capture row but in the inherited protected-provider lock test of the
+session-ns-nft whole library, which asserted that one owner poll could
+not both reap the old process and drain the service's retirement
+marker; the poll reads the supervisor before the events, so one pass
+can complete the barrier and reserve the successor, which is the
+intended order. The three capture rows had passed; the mutants did not
+run. The repair ff34d204a is test-only and separate from the capture
+change: the control asserts the owed barrier before the poll, where it
+controls the boundary, and after the poll checks the owner state that
+belongs to the answer it got; the deterministic either-order control in
+tests/session_lock_succession.rs stays the ordering evidence. Its
+diagnosis carries two errata (a regrant implies the new epoch, not a
+successful reservation; a marker before the reap leaves events admitted
+while the start still waits).
+
+Validation-02 ran harness-02 at ff34d204a and passed every row at its
+frozen count (session-ns-nft 1139 = 1074 + 65 ignored, the comb library
+1218 = 1153 + 65; the repaired test and the either-order integration
+test both ok in the gate log); Codex accepted d-2b3e, scoped, at
+ff34d204a (receipt seal 809768a8…, harness seal e5690a4e…). MC1 and MC2
+were detected at their frozen observation assertions; MC3 was killed
+by the bounded-nonprogress assertion and not detected by the intended
+reservation and state assertions, an executed non-detection that stays
+open. The acceptance covers the three capture forms on the stub fixture:
+a capture before reserve goes ordinary with no check run; a capture
+queued on a pending ordinary frame refuses OrdinaryPending ahead of
+CaptureActive; a capture left after the discard refuses CaptureActive in
+the unchanged d-0 rows. No endpoint, native flip, renderer
+acknowledgement or slot freedom follows. Validation-01 stays failed;
+off and native-session clippy unpassed and unwaived; MD7's full-journal
+non-detection and final-head rerun stay with b4.
