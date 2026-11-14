@@ -20,6 +20,9 @@ native-session clippy remain UNPASSED and UNWAIVED throughout.
 | d-2b3b2 | 188318dc8 | replacement evidence, scoped; row-6 outbox-clear sub-claim HOLD |
 | d-2b3c | cbe58ec27 | stub Full-debt evidence (MD1, MD2), scoped |
 | d-2b3d-1 | 2200ca0b1 | publication/journal evidence, below |
+| d-2b3d-2 | c8f5efc9a | FJ, FJ-stop, F4-O declared completion, BP, below |
+| d-2b3e | ff34d204a | three capture forms; lock-test repair, below |
+| b4 | 0fd5ac842 | trace recorder/checker, integrated rerun; TLC at a4d8036a4, below |
 
 ## d-2b3d-1 (2026-11-13)
 
@@ -108,7 +111,7 @@ integrated gate-3 acceptance remain outstanding. No mutant, TLC, native,
 GPU, DRM, real-flip or performance evidence was added. No execution,
 merge, push, default change or gate-4 source authority follows.
 
-## d-2b3d-2 (in progress)
+## d-2b3d-2, d-2b3e and b4 (2026-11-13 to 2026-11-14)
 
 Source-01 at 6900f8e13 was HELD (R1: a manual-ACK peer cannot issue
 successive non-lean requests; R2 cumulative release counts; R3 the
@@ -358,3 +361,32 @@ for exactly zero joins) and changes nothing else. Validation-01 stays
 failed; the mutants, libraries and gate of the integrated run are still
 unexecuted at this head; off and native-session clippy unpassed and
 unwaived.
+
+Diagnosis-02 compiled source-03 clean (eleven rows, empty diff, no
+repair). Harness-03 re-pinned harness-02 and relocated four d-0 consumer
+sites by text; its validation-02 ran every control, library and restored
+control green and all 62 mutants, six of them killed at their frozen
+file:line but missed by the frozen text (three metrics regexes cut at a
+fixed width and then end-anchored, one marker still naming the stage-era
+line, two rule texts without the replay's event context), and its gate
+failed on sophia-engine's allocation-count test, unchanged since the b3e
+gate that passed it. The read-only diagnosis traced the only in-process
+activity outside the measured work that it could name to the libtest
+main thread's first blocking receive after spawning the test thread,
+unordered against the test's window, and withdrew its timing, count and
+history claims under review; a twenty-run probe of the sealed gate binary
+passed twenty times under its recorded conditions and ruled nothing.
+Harness-04 froze the six complete sealed lines; validation-03 ran the
+whole workflow green at 0fd5ac842: 145 invocations, 62 of 62 mutants as
+frozen (MD7-FJ and MC3 killed without detection, MT4 surviving with its
+consumer's own line), the full gate of 744 binaries and fmt. Codex
+accepted b4, scoped, at 0fd5ac842 (receipt seal 519ce075b9ba…, harness-04
+0e3b27934cdc…): the recorder/checker controls and finite-prefix
+checkpoints, the final-head control/library/gate execution, the frozen
+mutant classifications, and the TLC evidence at a4d8036a4 carried by the
+byte-identity of its 29 model inputs with this tree. Validations 01 and
+02 stay failed; off and native-session clippy unpassed and unwaived;
+MD7-FJ's full-journal negative, MC3, MT4 and the synthetic-only Debt and
+Invariant arms stay named gaps; this is scoped b4 acceptance, not final
+integrated gate-3 acceptance. This ledger commit is documentation over
+the tested head: no source file changes.
