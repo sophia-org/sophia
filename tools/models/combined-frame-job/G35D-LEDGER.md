@@ -242,3 +242,16 @@ and terminal and which the SlotReleased, keeps the +3 accounting and
 adds no poll, pass, ACK, delay or deadline change. MD7-FJ's expected
 early kill may now land at either the admission classification or the
 later result window; the harness freezes both sites. Unexecuted.
+
+Source-07 was held on two test-contract findings: the common
+post-status block joined the status by grant and resource and the
+outcome by stream and candidate but neither by transaction, so wrong
+transactions would have passed; and the live-credit read preceded the
+window classification, so the early-SlotReleased schedule of MD7 would
+have failed at the credit reader rather than at the one named
+classification. Source-08 classifies the window first, at a single
+catch-all assertion, before any read that presumes a live credit; the
+branch-B count is an ordinary check, not an expected kill. It asserts
+the status's transaction equals the offer's and the outcome's equals
+the submission's, beside the existing joins, and carries the A-branch
+unblocked assertion. Nothing else moved. Unexecuted.
