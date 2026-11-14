@@ -62,16 +62,19 @@ impl Label {
     }
 }
 
-/// Why an entry left the row or stayed after a decision.
+/// Why an entry left the row or stayed after a decision. The walk's
+/// branches carry the current grant the walk compared against, as it
+/// read it: ended when it differs from the entry's, current for a
+/// disposal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Cause {
     Accepted,
     ConsumedFailed,
     Decline,
-    WalkEndedHeld,
-    WalkEndedFailed,
+    WalkEndedHeld { current: Option<ContentGrant> },
+    WalkEndedFailed { current: Option<ContentGrant> },
     DebtFlush,
-    Dispose,
+    Dispose { current: Option<ContentGrant> },
     ReturnedPlan { confirmed: bool },
 }
 
@@ -123,9 +126,16 @@ pub(crate) enum Event {
         generation: u64,
         head: HeadIdentity,
     },
-    /// The owner took this key's result, before settlement.
+    /// The owner took this key's result, before settlement, with the
+    /// identity read at that site: the reservation's validator serial and
+    /// job, the entry's stored grant and the issuing head. The checker
+    /// compares them with `Bound`.
     Collected {
         key: Key,
+        serial: u64,
+        reserved: u64,
+        grant: ContentGrant,
+        head: HeadIdentity,
         disposition: CombinedDisposition,
     },
     /// One `collect_one` call changed the state, or retried a refused
@@ -223,16 +233,21 @@ impl CombinedRow {
         reservation: &CombinedReservation,
         disposition: CombinedDisposition,
     ) {
-        self.collections.push(Collection {
+        let collection = Collection {
             job: job.job,
             grant: job.grant,
             serial: reservation.validator_serial(),
             reserved: reservation.job(),
             head: job.head.trace_identity(),
             disposition,
-        });
+        };
+        self.collections.push(collection);
         self.trace.push(Event::Collected {
             key: job.key,
+            serial: collection.serial,
+            reserved: collection.reserved,
+            grant: collection.grant,
+            head: collection.head,
             disposition,
         });
     }
@@ -325,12 +340,19 @@ impl CombinedRow {
     }
 
     /// A disposal that attempted no Release: kept unchanged, or retired.
-    pub(super) fn record_kept(&mut self, job: &Job, kept: bool, dispose: Dispose) {
+    pub(super) fn record_kept(
+        &mut self,
+        job: &Job,
+        kept: bool,
+        dispose: Dispose,
+        current: Option<ContentGrant>,
+    ) {
         let key = job.key;
+        let cause = Cause::Dispose { current };
         self.trace.push(if kept {
             Event::Retained {
                 key,
-                cause: Cause::Dispose,
+                cause,
                 outcome: None,
                 state: Label::of(&job.state),
                 dispose: Some(dispose),
@@ -338,7 +360,7 @@ impl CombinedRow {
         } else {
             Event::Removed {
                 key,
-                cause: Cause::Dispose,
+                cause,
                 outcome: None,
                 dispose: Some(dispose),
             }

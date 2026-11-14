@@ -382,7 +382,13 @@ impl CombinedRow {
                     let outcome = native.release_combined_held(&job.head, job.job);
                     let keep = self.released(&mut job, outcome);
                     #[cfg(test)]
-                    self.record_release(&job, steps::Cause::WalkEndedHeld, outcome, keep, None);
+                    self.record_release(
+                        &job,
+                        steps::Cause::WalkEndedHeld { current },
+                        outcome,
+                        keep,
+                        None,
+                    );
                     keep
                 }
                 State::Debt(_) => {
@@ -394,12 +400,16 @@ impl CombinedRow {
                 }
                 State::Failed(_) if ended => {
                     #[cfg(test)]
-                    self.record_removed(job.key, steps::Cause::WalkEndedFailed);
+                    self.record_removed(job.key, steps::Cause::WalkEndedFailed { current });
                     false
                 }
                 State::Held | State::Failed(_) => {
                     let state = candidate(job.binding, job.job);
-                    self.dispose(native, &mut job, state, instant)
+                    #[cfg(not(test))]
+                    let keep = self.dispose(native, &mut job, state, instant);
+                    #[cfg(test)]
+                    let keep = self.dispose(native, &mut job, state, instant, current);
+                    keep
                 }
                 _ => true,
             };
@@ -418,6 +428,7 @@ impl CombinedRow {
         job: &mut Job,
         state: Option<FrameCandidateState>,
         instant: Instant,
+        #[cfg(test)] current: Option<ContentGrant>,
     ) -> bool {
         use FrameCandidateState::{Assembling, Ended, Pending, Submitted, Unknown};
         let state = state.unwrap_or(Unknown);
@@ -468,14 +479,20 @@ impl CombinedRow {
                 let outcome = native.release_combined_held(&job.head, job.job);
                 let keep = self.released(job, outcome);
                 #[cfg(test)]
-                self.record_release(job, steps::Cause::Dispose, outcome, keep, Some(facts));
+                self.record_release(
+                    job,
+                    steps::Cause::Dispose { current },
+                    outcome,
+                    keep,
+                    Some(facts),
+                );
                 return keep;
             }
             Some(false) => true,
             None => false,
         };
         #[cfg(test)]
-        self.record_kept(job, keep, facts);
+        self.record_kept(job, keep, facts, current);
         keep
     }
 
@@ -609,9 +626,14 @@ impl CombinedRow {
                 if let Ok(plan) = returned.try_recv() {
                     drop((plan, reservation));
                     let what = format!("combined job {}: returned plan not cancelled", job.job);
-                    let confirmed = self.cancel(native, job.grant, job.head, what);
+                    let _confirmed = self.cancel(native, job.grant, job.head, what);
                     #[cfg(test)]
-                    self.record_removed(job.key, steps::Cause::ReturnedPlan { confirmed });
+                    self.record_removed(
+                        job.key,
+                        steps::Cause::ReturnedPlan {
+                            confirmed: _confirmed,
+                        },
+                    );
                     return None;
                 }
                 match native.take_combined_frame_result(&job.head) {
@@ -836,12 +858,12 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
         let what = format!("combined reservation {ticket} not confirmed cancelled");
         #[cfg(test)]
         let identity = (open.grant, open.head.trace_identity());
-        let confirmed = self
+        let _confirmed = self
             .row
             .cancel(&mut *self.turn.native, open.grant, open.head, what);
         #[cfg(test)]
         self.row
-            .record_reserve_cancelled(ticket, identity, confirmed);
+            .record_reserve_cancelled(ticket, identity, _confirmed);
     }
 
     fn submitted(
