@@ -16,14 +16,29 @@ use super::*;
 fn fj_stop_the_next_admission_stops_at_the_reservation_refusal_until_an_ack() {
     let (mut lane, wake) = Lane::running();
     let mut a = lane.attempt();
-    let fill = baseline(&mut lane, &mut a, "FJ-stop phase 0");
-    let r = fillers(&mut lane, &wake, &mut a, &fill, 1, STOP_FILLERS, "FJ-stop");
+    let mut fill = baseline(&mut lane, &mut a, "FJ-stop phase 0");
+    let r = fillers(
+        &mut lane,
+        &wake,
+        &mut a,
+        &mut fill,
+        1,
+        STOP_FILLERS,
+        "FJ-stop",
+    );
     assert_eq!(r, 252, "FJ-stop: the fillers reached 252");
     // The final filler: T1 as every filler; T2 publishes SlotReleased(64)
     // at 255 and parks the release.
-    let f = filler_start(&mut lane, &wake, &mut a, &fill, STOP_FINAL, "FJ-stop 64");
+    let f = filler_start(
+        &mut lane,
+        &wake,
+        &mut a,
+        &mut fill,
+        STOP_FINAL,
+        "FJ-stop 64",
+    );
     assert_eq!(f.r0, 252);
-    let d = filler_t1(&mut lane, &mut a, &fill, &f, "FJ-stop 64");
+    let d = filler_t1(&mut lane, &mut a, &mut fill, &f, "FJ-stop 64");
     assert_eq!(d.outcome, d.status + 1, "status 253, outcome 254");
     lane.slot_freed("FJ-stop 64");
     budget(&fill, "FJ-stop T2(64)");
@@ -75,7 +90,16 @@ fn fj_stop_the_next_admission_stops_at_the_reservation_refusal_until_an_ack() {
     let probe_transaction = TransactionId::from_raw(40 + STOP_PROBE);
     boundary(&lane, &wake, &a, "FJ-stop probe");
     budget(&fill, "FJ-stop probe submission");
-    lane.submit(&mut a, STOP_PROBE, PIXEL);
+    client_facts(&a, &fill, "FJ-stop probe submission");
+    let offer_65 = lane.submit_at(&mut a, STOP_PROBE, PIXEL, &[0]);
+    offered(
+        &mut fill,
+        &a,
+        STOP_PROBE,
+        offer_65,
+        RingOfferState::Settled,
+        "FJ-stop probe",
+    );
     assert!(!a.stream.has_credit());
     let deadline = Instant::now() + WAIT;
     let mut turns = 0;
@@ -119,6 +143,7 @@ fn fj_stop_the_next_admission_stops_at_the_reservation_refusal_until_an_ack() {
     };
     let s_first = lane.snapshot(&a, "FJ-stop first stop");
     let j_first = s_first.journal();
+    admission_facts(&lane, &a, &s2, &s_first, "FJ-stop first stop");
     assert_eq!(committed(j_first), committed(j2), "nothing appended");
     turns += 1;
     let still = probe_turn(&mut lane, &mut a, turns)
@@ -214,6 +239,7 @@ fn fj_stop_the_next_admission_stops_at_the_reservation_refusal_until_an_ack() {
     );
     let job = admit(&mut lane, &mut a, &fill, "FJ-stop after the ACK");
     let s_adm = lane.snapshot(&a, "FJ-stop admitted");
+    admission_facts(&lane, &a, &s_u, &s_adm, "FJ-stop admitted");
     assert_eq!(s_adm.journal().held, H + 2, "{:?}", s_adm.journal());
     assert_eq!(
         lane.h.owner.processes.queued_frame_facts(0),
@@ -223,5 +249,6 @@ fn fj_stop_the_next_admission_stops_at_the_reservation_refusal_until_an_ack() {
     assert!(credit_of(&s_adm, resource, "FJ-stop admitted").status_reserved);
     assert!(wake.wait(Some(Instant::now() + WAIT)).unwrap());
     assert_eq!(lane.states(), [(job, "in flight")]);
+    forget_observed(&mut fill, &mut a, "FJ-stop end");
     eprintln!("FJ-stop: admitted after the ACK: {:?}", s_adm.journal());
 }

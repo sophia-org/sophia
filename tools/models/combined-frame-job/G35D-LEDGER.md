@@ -155,3 +155,35 @@ section 2's A_B (handled == next_sequence − 1, deferred None, manual,
 `acknowledge_journal`, one input-serving turn, acknowledged == queued
 == handled confirmed, R_B == 0, floor == tail). FJ-stop moved to
 combined_journal_stop.rs for the file-size limit. Still unexecuted.
+
+Validation-01 of source-03 at e973c7b22 ran once and FAILED at the
+ss-row invocation (71 passed, 2 failed, 73 total): FJ stopped at
+prefix 2's O0 assertion with 5 retained records against the predicted
+3, the two new records unidentified; FJ-stop ran fillers 1 to 4 with
+the predicted windows and counts through 16 and then `submit_ring` for
+filler 5 returned `Image(Busy)`. The read-only diagnosis traced the
+Busy to the vendored producer's four offer records: the exact
+`SlotReleased` frees a slot and leaves the record Settled or Refused,
+only `image_forget` frees the record, and the fixture never forgot
+one. Codex carried two errata on that note: fillers 3 and 4 passing
+shows that some recycling occurred, not that both earlier releases
+were applied; and an owner-side journal window establishes commitment,
+not client decoding. Source-04 over e973c7b22 has the two directed
+parts. (a) Diagnostics at the existing observation boundaries: before
+each submission the peer's progress and every live offer's record;
+across each admission (the two prefixes, every filler, frame 65's
+T2(64), the FJ-stop first stop and its admission after the ACK) the
+appended entries, both journals, the outbox, the owned credits, the
+releasing list, the stores, the row, the worker and the peer's
+progress, printed before the unchanged assertions, with no added turn,
+poll, ACK or wait. (b) The client offer lifecycle, local to the fill
+controls: `Fill` carries the live offers; the offer id `submit_at`
+returns is checked Pending with the frame's resource identity; a
+filler's offer is forgotten at the end of its T2 after the peer's read
+of its SlotReleased and ResourceReleased, with the record required
+Settled; the INVALID prefix's offer is forgotten after a later read
+finds it Refused; Pending and Unknown are refused, a forget must
+succeed and leave the record absent; the staged or blocked frame 65
+stays live. The prefix-2 count remains a prediction to be observed,
+not revised. Still unexecuted; compiler-only diagnosis and validation
+each need their own grant.

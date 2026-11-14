@@ -91,12 +91,22 @@
 //! Backing destruction is not observed; a journal commit is neither peer
 //! consumption nor a renderer acknowledgement; the renderer lease is a
 //! third domain. Off/native-session remain unpassed and unwaived.
+//!
+//! Client offer records (source-04, the validation-01 diagnosis): the
+//! producer's four offer records are freed only by `image_forget`, so a
+//! filler's offer is forgotten once its exact release was read and
+//! applied (`combined_journal_offers.rs`); the INVALID prefix's refusal
+//! release is read in the following frame's polls and forgotten there.
+//! Every admission boundary prints its raw facts before the frozen
+//! assertions.
 use super::*;
+use offers::*;
 use sophia_protocol::shell_files::{
     SHELL_FILE_ACK_PROGRESS_TIMEOUT_MILLIS, SHELL_FILE_MAX_JOURNAL_RECORDS,
     SHELL_FILE_TERMINAL_RESERVE_RECORDS,
 };
 use sophia_runtime::{ContentMemoryUsage, OutboxEntryFacts};
+use sophia_shell_client::RingOfferState;
 
 /// The protocol's journal record limit and its uncredited limit, asserted
 /// against the constants in phase 0.
@@ -123,6 +133,8 @@ struct Fill {
     queued_0: u64,
     /// The backing charge with nothing admitted.
     backing_0: u64,
+    /// The ring offers submitted and not yet forgotten.
+    offers: Vec<LiveOffer>,
 }
 
 /// The ACK-progress budget from the baseline, before an input-serving pass.
@@ -405,6 +417,7 @@ fn baseline(lane: &mut Lane, a: &mut Attempt, label: &str) -> Fill {
         progress_0: j.last_progress,
         queued_0: pp.queued,
         backing_0: usage_0.backing,
+        offers: Vec::new(),
     }
 }
 
@@ -467,13 +480,14 @@ fn invalid_frame(
     lane: &mut Lane,
     wake: &sophia_wake::Wake,
     a: &mut Attempt,
-    fill: &Fill,
+    fill: &mut Fill,
     n: u64,
     label: &str,
 ) -> usize {
     boundary(lane, wake, a, label);
     let c0 = counters(lane);
-    let (r0, held0) = records(lane, a, label);
+    let s_pre = lane.snapshot(a, &format!("{label} pre"));
+    let (r0, held0) = (s_pre.journal().records, s_pre.journal().held);
     assert_eq!(held0, H, "{label}: the persistent hold alone");
     assert_eq!(
         usage(lane).backing,
@@ -481,13 +495,16 @@ fn invalid_frame(
         "{label}: nothing charged"
     );
     budget(fill, label);
-    lane.submit(a, n, INVALID);
+    client_facts(a, fill, label);
+    let offer = lane.submit_at(a, n, INVALID, &[0]);
+    offered(fill, a, n, offer, RingOfferState::Refused, label);
     let job = admit(lane, a, fill, label);
     let (key, generation) = lane.admitted_key(job);
     assert_eq!(generation, n);
     let resource = resource_n(n);
     let s0 = lane.snapshot(a, &format!("{label} O0"));
     let j0 = s0.journal();
+    admission_facts(lane, a, &s_pre, &s0, &format!("{label} O0"));
     assert_eq!(j0.records, r0, "{label} O0: the admission journals nothing");
     assert_eq!(j0.held, H + 2, "{label} O0: the offer's two holds: {j0:?}");
     let credit = credit_of(&s0, resource, &format!("{label} O0"));
@@ -638,6 +655,7 @@ fn invalid_frame(
     );
     // The peer reads the terminal: the credit is back.
     peer_reads_terminal(a, n, label);
+    forget_observed(fill, a, &format!("{label} after the terminal read"));
     assert_eq!(a.terminals(n), [MALFORMED]);
     assert!(
         a.stream.has_credit(),
@@ -652,6 +670,15 @@ fn invalid_frame(
         fill.queued_0,
         "{label}: no ACK"
     );
+    let own = a.peer.image_ring_offer(offer);
+    assert!(
+        own.is_some_and(|info| matches!(
+            info.state,
+            RingOfferState::Pending | RingOfferState::Refused
+        )),
+        "{label}: the INVALID offer after the terminal read: {own:?}"
+    );
+    eprintln!("{label}: offer {offer} after the terminal read: {own:?}");
     let r = j2.records;
     assert_eq!(
         r,
@@ -699,14 +726,17 @@ fn filler_start(
     lane: &mut Lane,
     wake: &sophia_wake::Wake,
     a: &mut Attempt,
-    fill: &Fill,
+    fill: &mut Fill,
     n: u64,
     label: &str,
 ) -> Admitted {
     boundary(lane, wake, a, label);
     let c0 = counters(lane);
+    let s_pre = lane.snapshot(a, &format!("{label} pre"));
     budget(fill, label);
-    lane.submit(a, n, PIXEL);
+    client_facts(a, fill, label);
+    let offer = lane.submit_at(a, n, PIXEL, &[0]);
+    offered(fill, a, n, offer, RingOfferState::Settled, label);
     let job = admit(lane, a, fill, label);
     let late = lane.deadline_of(job) + MARGIN;
     assert!(
@@ -724,6 +754,7 @@ fn filler_start(
     let resource = resource_n(n);
     let s0 = lane.snapshot(a, &format!("{label} O0"));
     let j0 = s0.journal();
+    admission_facts(lane, a, &s_pre, &s0, &format!("{label} O0"));
     assert_eq!(j0.held, H + 2, "{label} O0: the offer's two holds: {j0:?}");
     let credit = credit_of(&s0, resource, &format!("{label} O0"));
     assert!(credit.status_reserved);
@@ -752,7 +783,13 @@ fn filler_start(
 /// T1 at the late instant: C3 declines at the content call; the status
 /// (reserved, deferred) and the terminal (credited) commit; the peer reads
 /// the terminal and holds the credit again; no ACK.
-fn filler_t1(lane: &mut Lane, a: &mut Attempt, fill: &Fill, f: &Admitted, label: &str) -> Declined {
+fn filler_t1(
+    lane: &mut Lane,
+    a: &mut Attempt,
+    fill: &mut Fill,
+    f: &Admitted,
+    label: &str,
+) -> Declined {
     budget(fill, &format!("{label} T1"));
     let (steps, observed) = lane.observed_turn(f.late, None);
     assert_eq!(steps, TURN);
@@ -808,6 +845,7 @@ fn filler_t1(lane: &mut Lane, a: &mut Attempt, fill: &Fill, f: &Admitted, label:
         lane.leased()
     );
     peer_reads_terminal(a, f.resource.generation, label);
+    forget_observed(fill, a, &format!("{label} after T1"));
     assert_eq!(a.terminals(f.resource.generation), [FAILED]);
     assert!(
         a.stream.has_credit(),
@@ -831,7 +869,7 @@ fn filler_t1(lane: &mut Lane, a: &mut Attempt, fill: &Fill, f: &Admitted, label:
 fn filler_finish(
     lane: &mut Lane,
     a: &mut Attempt,
-    fill: &Fill,
+    fill: &mut Fill,
     f: &Admitted,
     d: &Declined,
     label: &str,
@@ -887,6 +925,7 @@ fn filler_finish(
         "{label}: the peer reads the release on the content queue"
     );
     assert!(l.frames.is_empty(), "{label}: {l:?}");
+    forget_frame(fill, a, f.resource.generation, label);
     assert!(lane.states().is_empty(), "{label}: the row is clear");
     assert_eq!(counters(lane), d.c1, "{label}: one render, one release");
     assert_eq!(lane.native.installs(), 0);
@@ -916,7 +955,7 @@ fn filler(
     lane: &mut Lane,
     wake: &sophia_wake::Wake,
     a: &mut Attempt,
-    fill: &Fill,
+    fill: &mut Fill,
     n: u64,
     label: &str,
 ) -> usize {
@@ -930,7 +969,7 @@ fn fillers(
     lane: &mut Lane,
     wake: &sophia_wake::Wake,
     a: &mut Attempt,
-    fill: &Fill,
+    fill: &mut Fill,
     from: u64,
     to: u64,
     label: &str,
@@ -999,14 +1038,14 @@ fn acknowledge(
 fn fj_a_parked_release_holds_the_next_frames_records_until_an_ack() {
     let (mut lane, wake) = Lane::running();
     let mut a = lane.attempt();
-    let fill = baseline(&mut lane, &mut a, "FJ phase 0");
+    let mut fill = baseline(&mut lane, &mut a, "FJ phase 0");
     let mut r = 0;
     for n in 1..=PREFIX {
         r = invalid_frame(
             &mut lane,
             &wake,
             &mut a,
-            &fill,
+            &mut fill,
             n,
             &format!("FJ prefix {n}"),
         );
@@ -1016,23 +1055,37 @@ fn fj_a_parked_release_holds_the_next_frames_records_until_an_ack() {
         &mut lane,
         &wake,
         &mut a,
-        &fill,
+        &mut fill,
         PREFIX + 1,
         FJ_FILLERS,
         "FJ",
     );
     assert_eq!(r, 250, "FJ: the fillers reached 250");
+    assert!(
+        fill.offers.is_empty(),
+        "FJ: every prefix and filler offer forgotten: {:?}",
+        fill.offers
+    );
     // Frame 64: T1 as every filler, then the staged frame 65.
-    let f = filler_start(&mut lane, &wake, &mut a, &fill, FJ_LAST, "FJ 64");
+    let f = filler_start(&mut lane, &wake, &mut a, &mut fill, FJ_LAST, "FJ 64");
     assert_eq!(f.r0, 250);
-    let d = filler_t1(&mut lane, &mut a, &fill, &f, "FJ 64");
+    let d = filler_t1(&mut lane, &mut a, &mut fill, &f, "FJ 64");
     assert_eq!(d.s1.journal().records, 252);
     lane.slot_freed("FJ 64");
     // The staged next frame: submitted on the returned credit, written to
     // the owner before the one designated turn.
     boundary(&lane, &wake, &a, "FJ 65 submission");
     budget(&fill, "FJ 65 submission");
-    lane.submit(&mut a, FJ_BLOCK, PIXEL);
+    client_facts(&a, &fill, "FJ 65 submission");
+    let offer_65 = lane.submit_at(&mut a, FJ_BLOCK, PIXEL, &[0]);
+    offered(
+        &mut fill,
+        &a,
+        FJ_BLOCK,
+        offer_65,
+        RingOfferState::Settled,
+        "FJ 65",
+    );
     assert!(!a.stream.has_credit());
     a.peer.poll_io().unwrap();
     // T2(64), the designated turn: SlotReleased(64) published at 253,
@@ -1046,6 +1099,7 @@ fn fj_a_parked_release_holds_the_next_frames_records_until_an_ack() {
         "FJ T2(64): nothing at the content call"
     );
     let s2 = lane.snapshot(&a, "FJ O2(64)");
+    admission_facts(&lane, &a, &d.s1, &s2, "FJ O2(64)");
     let w2 = window(&d.s1, &s2, "FJ T2(64)");
     assert_eq!(
         kinds(&w2),
@@ -1316,6 +1370,7 @@ fn fj_a_parked_release_holds_the_next_frames_records_until_an_ack() {
             "the release of {which} once"
         );
     }
+    forget_observed(&mut fill, &mut a, "FJ end");
     assert!(lane.states().is_empty());
     assert_eq!(counters(&lane), c1);
     assert_eq!(lane.native.installs(), 0);
@@ -1325,5 +1380,7 @@ fn fj_a_parked_release_holds_the_next_frames_records_until_an_ack() {
 // FJ-stop, F4-O and BP, split for the file-size limit.
 #[path = "combined_journal_clear.rs"]
 mod clear;
+#[path = "combined_journal_offers.rs"]
+mod offers;
 #[path = "combined_journal_stop.rs"]
 mod stop;
