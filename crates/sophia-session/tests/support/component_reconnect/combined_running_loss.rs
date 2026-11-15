@@ -10,8 +10,13 @@
 //! (`PauseEnded` by `Released`) and the worker's exit awaited. The worker
 //! serves nothing in the pass whose pause ended and reads the requested
 //! shutdown at its next control check, so the forwarded job is dropped
-//! unserved with its route: it never entered the gate, the seam read
-//! nothing, and no result rang the owner.
+//! unserved with its route: it never entered the gate and the seam read
+//! nothing. The owner wake rings once for that closure: the route's result
+//! sender notifies the wake when it drops (`sophia_wake::SignalSender`), a
+//! disconnect notification, not a publication; a wake is neither a result
+//! nor a count of results. That no result was buffered is shown by the
+//! producer boundaries above and by the next collection, which meets the
+//! closed route.
 //!
 //! The owner's next images step finds the route closed (`NotConnected`,
 //! reported once as the result-route error, the current attempt's failure)
@@ -28,28 +33,6 @@
 //! schedule. The worker's slot metrics are stale after its exit and are not
 //! read.
 use super::*;
-
-/// Every guard of final quiescence other than the two this row charges.
-fn other_guards_clear(lane: &Lane) {
-    #[cfg(feature = "experimental-shell-capture")]
-    assert_eq!(
-        lane.h.owner.processes.connections().capture_work(),
-        0,
-        "no capture work"
-    );
-    assert!(
-        (0..MAX_SHELL_COMPONENTS).all(|slot| lane.h.owner.processes.attempt(slot).is_none_or(
-            |key| lane.h.owner.phase(key).unwrap() == ComponentConnectionPhase::Revoked
-        )),
-        "no attempt is active"
-    );
-    assert_eq!(
-        lane.h.owner.accounting().active_epochs,
-        0,
-        "no active epoch"
-    );
-    assert_eq!(lane.row().unconfirmed_cancels(), 0, "no cancel owed");
-}
 
 #[test]
 fn a_worker_lost_after_forwarding_keeps_the_job_in_flight_and_refuses_final_quiescence() {
@@ -98,8 +81,8 @@ fn a_worker_lost_after_forwarding_keeps_the_job_in_flight_and_refuses_final_quie
         "4: the forwarded job never entered the gate: the exited worker served nothing"
     );
     assert!(
-        !wake.wait(Some(Instant::now())).unwrap(),
-        "4: no result rang the owner"
+        wake.wait(Some(Instant::now())).unwrap(),
+        "4: the owner wake rang for the route's closure (the result sender's drop notification, not a result)"
     );
     assert!(lane.native.seen().is_empty(), "4: the seam read nothing");
     assert!(lane.row().collected().is_empty(), "4: nothing collected");

@@ -6,8 +6,9 @@
 //! release is the walk's own, with native present, where the row says so.
 //!
 //! The table's five cases: rows 1-3 are here (native None with a Held
-//! job; a replaced owner's NotFound debt; a result whose issuing facade is
-//! gone at its settlement retry). Case 4, the worker lost after the
+//! job, in two boundaries, the first attempt's and an ordinary successor's;
+//! a replaced owner's NotFound debt; a result whose issuing facade is gone
+//! at its settlement retry). Case 4, the worker lost after the
 //! validator forwarded its job and before the worker served it, is
 //! `driver::running::loss`. Case 5, the worker lost after its result is
 //! buffered, is `driver::running`'s replacement control
@@ -102,60 +103,163 @@ impl Lane {
     }
 }
 
-/// R1 row 1, labelled: native None at pass time with a Held job. The pass
-/// without native scanout is the session's own `poll` (its turn is
-/// `turn_connected`) and the bar's ordinary content service; candidate 2
-/// takes today's path to a pending presentation while the Held job is
-/// untouched, with no row attempt, release, accept or install. Final
-/// quiescence refuses the Held entry; one hooked walk after the ended grant
-/// releases it and nothing else refuses.
+/// R1 row 1, labelled: native None at pass time with a Held job, in two
+/// boundaries, neither the original same-stream two-frame premise (a Held
+/// job keeps its stream's one credit, so a second frame on that stream is
+/// refused by the client, `QueueSaturated`, and is not a producer here).
+/// First, with the first attempt still connected: the pass without native
+/// scanout, the session's own `poll` (its turn is `turn_connected`) and the
+/// bar's ordinary content service with native None and no new submission,
+/// leaves the Held job untouched, its stream still charged. Second, that
+/// attempt ends by `stop` and ordinary polling only (no combined walk, no
+/// native step), the Held job retained; a successor connects in the same
+/// slot with a distinct grant and a fresh credit, and its candidate 2 takes
+/// today's path to a pending presentation under the successor's grant,
+/// beside the retained old-grant job, with no row attempt, release, accept,
+/// install or queue. After the successor ends the same way, every other
+/// guard of final quiescence is clear and the Held entry alone refuses it;
+/// one hooked walk with native present releases the ended grant's result
+/// and nothing else refuses. Every pass is named where it runs.
 #[test]
 fn a_held_job_is_untouched_by_the_pass_without_native_and_refuses_final_quiescence() {
     let mut lane = Lane::new();
     let mut a = lane.attempt();
     let job = lane.held(&mut a, 1);
+    let old = a.key;
     let before = native_counts(&lane.native);
-    lane.submit(&mut a, 2, PIXEL);
-    let deadline = Instant::now() + WAIT;
-    while lane.pending(&a).is_empty() {
+    assert!(
+        !a.stream.has_credit(),
+        "the Held job keeps the stream's credit"
+    );
+    // 1. The first attempt connected, native None, nothing new submitted.
+    // Each iteration: the peer's poll_io, the session's own poll (the
+    // production turn with native None: image service and ordinary
+    // content, no walk) and one bar content service pass.
+    for _ in 0..3 {
         a.peer.poll_io().unwrap();
         lane.h.owner.poll(65536).unwrap();
         assert_eq!(lane.serve_ordinary(&mut a), Ok(()), "R1 native None");
+    }
+    assert_eq!(
+        lane.states(),
+        [(job, "held")],
+        "1: the pass without native touched nothing in the row"
+    );
+    assert_eq!(
+        native_counts(&lane.native),
+        before,
+        "1: no row attempt, release, accept, install or queue"
+    );
+    assert!(
+        lane.pending(&a).is_empty(),
+        "1: nothing of the first attempt pends presentation"
+    );
+    assert!(!a.stream.has_credit(), "1: the stream is still charged");
+    assert_eq!(
+        lane.h.owner.phase(old).unwrap(),
+        ComponentConnectionPhase::Connected,
+        "1: nothing stops"
+    );
+    // 2. The first attempt ends: stop, its peer dropped, ordinary polls
+    // only (the session's own poll, native None). The Held job is retained
+    // through the transition; no combined walk and no native step runs.
+    lane.h.owner.stop(old).unwrap();
+    drop(a);
+    for _ in 0..3 {
+        lane.h.owner.poll(65536).unwrap();
+        assert_eq!(
+            lane.states(),
+            [(job, "held")],
+            "2: retained through the drain"
+        );
+    }
+    assert_eq!(
+        lane.h.owner.phase(old).unwrap(),
+        ComponentConnectionPhase::Revoked
+    );
+    assert_eq!(
+        native_counts(&lane.native),
+        before,
+        "2: the drain touched nothing"
+    );
+    let mut b = lane.attempt();
+    assert_eq!(b.key.slot, old.slot, "2: the same persistent slot");
+    assert_ne!(b.key.grant, old.grant, "2: a distinct grant");
+    assert!(b.stream.has_credit(), "2: the successor's own fresh credit");
+    assert_eq!(
+        lane.states(),
+        [(job, "held")],
+        "2: the old grant's job is still Held"
+    );
+    // 3. The successor's candidate 2 on its own stream, today's path. Each
+    // iteration: the successor's poll_io, the session's own poll (native
+    // None) and one bar content service pass for the successor.
+    lane.submit(&mut b, 2, PIXEL);
+    let deadline = Instant::now() + WAIT;
+    while lane.pending(&b).is_empty() {
+        b.peer.poll_io().unwrap();
+        lane.h.owner.poll(65536).unwrap();
+        assert_eq!(
+            lane.serve_ordinary(&mut b),
+            Ok(()),
+            "R1 native None: successor"
+        );
         assert!(
             Instant::now() < deadline,
-            "candidate 2 never reached the ordinary path: {:?}",
+            "3: candidate 2 never reached the ordinary path: {:?}",
             lane.states()
         );
         std::thread::yield_now();
     }
     assert_eq!(
+        lane.pending(&b),
+        [(b.key.grant, OUTPUT, 2)],
+        "3: candidate 2 pends presentation under the successor's grant"
+    );
+    assert!(
+        b.terminals(2).is_empty(),
+        "3: candidate 2 awaits its presentation"
+    );
+    assert_eq!(
         lane.states(),
         [(job, "held")],
-        "R1 native None: the pass without native touched nothing in the row"
+        "3: no new admission or join; the old job untouched"
+    );
+    assert_eq!(
+        lane.h.owner.processes.combined_row(0).pending(),
+        1,
+        "3: the row owes the one entry"
     );
     assert_eq!(
         native_counts(&lane.native),
         before,
-        "R1 native None: no row attempt, release, accept, install or queue"
-    );
-    assert!(
-        a.terminals(2).is_empty(),
-        "candidate 2 awaits its presentation"
+        "3: no row attempt, release, accept, install or queue"
     );
     assert_eq!(
-        lane.h.owner.phase(a.key).unwrap(),
+        lane.h.owner.phase(b.key).unwrap(),
         ComponentConnectionPhase::Connected,
-        "R1 native None: nothing stops"
+        "3: nothing stops the successor"
     );
-    let key = a.key;
-    drop(a);
+    // 4. The successor ends the same way; the Held entry alone refuses.
+    let key = b.key;
+    drop(b);
     quiesce(&mut lane, key, |lane| {
         lane.h.owner.poll(65536).unwrap();
     });
-    assert_eq!(lane.states(), [(job, "held")]);
-    assert_eq!(lane.h.owner.processes.combined_row(0).pending(), 1);
+    assert_eq!(lane.states(), [(job, "held")], "4: retained");
+    assert_eq!(
+        lane.h.owner.processes.combined_row(0).pending(),
+        1,
+        "4: blocking guard: the Held entry"
+    );
+    assert_eq!(
+        lane.h.owner.processes.image_pending(0),
+        0,
+        "4: no image work"
+    );
+    other_guards_clear(&lane);
     refused(&mut lane, "R1 native None");
-    assert_eq!(lane.states(), [(job, "held")], "refusal changed nothing");
+    assert_eq!(lane.states(), [(job, "held")], "4: refusal changed nothing");
     assert_eq!(native_counts(&lane.native), before);
     // With native present again, the walk releases the ended grant's Held
     // result, and the row was the only refusal.

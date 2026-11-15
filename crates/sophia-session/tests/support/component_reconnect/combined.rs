@@ -1035,3 +1035,31 @@ mod trace;
 #[path = "combined_retention.rs"]
 mod retention;
 use trace::*;
+
+/// Every guard of final quiescence other than the ones a retention control
+/// charges: capture work, an active attempt, an active epoch, an owed
+/// cancellation. The image work is asserted by each control itself.
+fn other_guards_clear(lane: &Lane) {
+    #[cfg(feature = "experimental-shell-capture")]
+    assert_eq!(
+        lane.h.owner.processes.connections().capture_work(),
+        0,
+        "no capture work"
+    );
+    assert!(
+        (0..MAX_SHELL_COMPONENTS).all(|slot| lane.h.owner.processes.attempt(slot).is_none_or(
+            |key| lane.h.owner.phase(key).unwrap() == ComponentConnectionPhase::Revoked
+        )),
+        "no attempt is active"
+    );
+    assert_eq!(
+        lane.h.owner.accounting().active_epochs,
+        0,
+        "no active epoch"
+    );
+    assert_eq!(
+        lane.h.owner.processes.combined_row(0).unconfirmed_cancels(),
+        0,
+        "no cancel owed"
+    );
+}
