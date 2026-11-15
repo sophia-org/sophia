@@ -370,20 +370,21 @@ impl CombinedRow {
         candidate: &dyn Fn(FrameCopyBinding, u64) -> Option<FrameCandidateState>,
         instant: Instant,
     ) {
-        for (grant, head) in std::mem::take(&mut self.cancels) {
-            let confirmed = matches!(native.cancel_combined_frame(&head), Ok(true));
+        let mut cancels = std::mem::take(&mut self.cancels);
+        cancels.retain(|(grant, head)| {
+            let confirmed = matches!(native.cancel_combined_frame(head), Ok(true));
             #[cfg(test)]
-            self.record_cancel_later(grant, &head, confirmed);
-            if !confirmed {
-                self.cancels.push((grant, head));
-            }
-        }
-        for mut job in std::mem::take(&mut self.jobs) {
+            self.record_cancel_later(*grant, head, confirmed);
+            !confirmed
+        });
+        self.cancels = cancels;
+        let mut jobs = std::mem::take(&mut self.jobs);
+        jobs.retain_mut(|job| {
             let ended = current != Some(job.grant);
             let keep = match job.state {
                 State::Held if ended => {
                     let outcome = native.release_combined_held(&job.head, job.job);
-                    let keep = self.released(&mut job, outcome);
+                    let keep = self.released(job, outcome);
                     #[cfg(test)]
                     self.record_release(
                         &job,
@@ -396,7 +397,7 @@ impl CombinedRow {
                 }
                 State::Debt(_) => {
                     let outcome = native.flush_combined_release(&job.head, job.job);
-                    let keep = self.released(&mut job, outcome);
+                    let keep = self.released(job, outcome);
                     #[cfg(test)]
                     self.record_release(&job, steps::Cause::DebtFlush, outcome, keep, None);
                     keep
@@ -409,17 +410,16 @@ impl CombinedRow {
                 State::Held | State::Failed(_) => {
                     let state = candidate(job.binding, job.job);
                     #[cfg(not(test))]
-                    let keep = self.dispose(native, &mut job, state, instant);
+                    let keep = self.dispose(native, job, state, instant);
                     #[cfg(test)]
-                    let keep = self.dispose(native, &mut job, state, instant, current);
+                    let keep = self.dispose(native, job, state, instant, current);
                     keep
                 }
                 _ => true,
             };
-            if keep {
-                self.jobs.push(job);
-            }
-        }
+            keep
+        });
+        self.jobs = jobs;
     }
 
     /// REV3's table for a Held or Failed job of the current grant. A missing
@@ -606,15 +606,15 @@ impl CombinedRow {
         confirmed
     }
 
-    /// One job's collection; `None` when the job ended here.
+    /// One job's collection; false when the job ended here.
     #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     fn collect_one<N: ShellContentNative>(
         &mut self,
         native: &mut N,
         worker: &mut Worker,
         deliver: &mut dyn FnMut(u64, CombinedResult) -> Result<(), CombinedResult>,
-        mut job: Job,
-    ) -> Option<Job> {
+        job: &mut Job,
+    ) -> bool {
         // Every path below sets the state again or ends the job.
         let state = std::mem::replace(&mut job.state, State::Held);
         #[cfg(test)]
@@ -637,7 +637,7 @@ impl CombinedRow {
                             confirmed: _confirmed,
                         },
                     );
-                    return None;
+                    return false;
                 }
                 match native.take_combined_frame_result(&job.head) {
                     Ok(None) => Step::Keep(State::InFlight {
@@ -650,11 +650,11 @@ impl CombinedRow {
                         self.collected.push((job.job, disposition));
                         #[cfg(test)]
                         self.record_collection(&job, &reservation, disposition);
-                        self.settle(native, worker, &mut job, reservation, result, disposition)
+                        self.settle(native, worker, job, reservation, result, disposition)
                     }
                     Err(error) => {
                         let what = format!("result route: {error}");
-                        report(&mut self.errors, &mut job, &what);
+                        report(&mut self.errors, job, &what);
                         Step::Keep(State::InFlight {
                             reservation,
                             returned,
@@ -666,7 +666,7 @@ impl CombinedRow {
                 reservation,
                 result,
                 disposition,
-            } => self.settle(native, worker, &mut job, reservation, *result, disposition),
+            } => self.settle(native, worker, job, reservation, *result, disposition),
             State::Credit {
                 reservation,
                 token,
@@ -693,7 +693,7 @@ impl CombinedRow {
                 Ok(()) if disposition == CombinedDisposition::Rendered => State::Held,
                 Ok(()) => State::Failed(disposition),
                 Err(result) => {
-                    report(&mut self.errors, &mut job, "the runtime refused its result");
+                    report(&mut self.errors, job, "the runtime refused its result");
                     State::Undelivered {
                         result,
                         disposition,
@@ -703,7 +703,7 @@ impl CombinedRow {
         };
         #[cfg(test)]
         self.record_step(&job, from);
-        Some(job)
+        true
     }
 
     #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
@@ -919,11 +919,9 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
             }
             deliver(job, result)
         };
-        for job in std::mem::take(&mut self.row.jobs) {
-            if let Some(job) = self.row.collect_one(native, worker, &mut offer, job) {
-                self.row.jobs.push(job);
-            }
-        }
+        let mut jobs = std::mem::take(&mut self.row.jobs);
+        jobs.retain_mut(|job| self.row.collect_one(native, worker, &mut offer, job));
+        self.row.jobs = jobs;
         #[cfg(test)]
         {
             self.row.refusals = refusals;
