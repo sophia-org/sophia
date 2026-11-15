@@ -14,6 +14,15 @@ mod reader;
 
 const CHILD_ENV: &str = "SOPHIA_WITNESS_CHILD";
 const CAPTURE_ENV: &str = "SOPHIA_WITNESS_CAPTURE";
+const EXPECTED_ENV: &str = "SOPHIA_WITNESS_EXPECTED_SLOTS";
+
+/// The registered connection rows of the child's fixture, pinned here and
+/// nowhere in the stream: `Lane::running()` builds `Harness::new()`, which is
+/// `with_dock(false)`, registering the Bar and ApplicationLauncher rows and
+/// leaving the Dock row unregistered. `MAX_SHELL_COMPONENTS` is the capacity
+/// bound, not this count; the reader obligates exactly these rows.
+const FIXTURE_ROWS: usize = 2;
+const _: () = assert!(FIXTURE_ROWS <= sophia_config::MAX_SHELL_COMPONENTS);
 
 /// The child's libtest name: this module's path without the crate.
 fn child_name() -> String {
@@ -184,9 +193,9 @@ fn the_witness_stream_of_one_accepted_admission_is_consistent() {
         .find(|r| r.get("slot") == "0" && r.get("cpass") == expect.passes.to_string())
         .expect("the last pass walks slot 0");
     assert!(walk.index > c.index, "the walk follows the content step");
-    // The reader's contract over the complete fixture stream.
-    let summary = reader::check(&records, sophia_config::MAX_SHELL_COMPONENTS)
-        .unwrap_or_else(|f| panic!("{f:?}"));
+    // The reader's contract over the complete fixture stream, obligated to
+    // the independently pinned registered rows, never to a count it read.
+    let summary = reader::check(&records, FIXTURE_ROWS).unwrap_or_else(|f| panic!("{f:?}"));
     assert!(summary.fixture);
     assert_eq!(summary.passes.len() as u64, expect.passes);
     assert!(
@@ -272,8 +281,14 @@ fn witness_child() {
         [(job, CombinedDisposition::Rendered)]
     );
     assert_eq!(lane.row().bindings(), bindings, "no later binding");
-    // The complete inventory, then the terminal record (spec 04 R2).
+    // The complete inventory, then the terminal record (spec 04 R2). The
+    // inventory enumerates the registered rows; it must agree with the pin,
+    // but the pin, not this return value, is what the parent checks against.
     let slots = lane.h.owner.processes.witness_inventory();
+    assert_eq!(
+        slots, FIXTURE_ROWS,
+        "the inventory covers the registered rows"
+    );
     witness::fixture_end(lane.witness_pass(), slots);
     let (head_owner, head, head_ticket) = bindings[0].head;
     println!(
@@ -285,14 +300,23 @@ fn witness_child() {
     );
 }
 
-/// The reader over a sealed capture, for a later native harness.
+/// The reader over a sealed capture, for a later native harness. That
+/// harness must freeze `SOPHIA_WITNESS_EXPECTED_SLOTS` from the registered
+/// component rows of the captured session (stable over the capture
+/// interval) and bind the value to the capture receipt; the entry infers
+/// nothing from the capture, and a successful read with an unverified value
+/// claims no completeness. Missing, malformed or over-capacity input fails.
 #[test]
 #[ignore = "reader entry for sealed captures, invoked by a harness"]
 fn witness_reader_over_file() {
     let path = std::env::var_os(CAPTURE_ENV).expect("SOPHIA_WITNESS_CAPTURE names the capture");
+    let expected: usize = std::env::var(EXPECTED_ENV)
+        .expect("SOPHIA_WITNESS_EXPECTED_SLOTS pins the registered rows")
+        .parse()
+        .expect("SOPHIA_WITNESS_EXPECTED_SLOTS is a count");
     let text = std::fs::read_to_string(&path).unwrap();
     let records = reader::parse(text.lines()).unwrap_or_else(|f| panic!("{f:?}"));
-    match reader::check(&records, sophia_config::MAX_SHELL_COMPONENTS) {
+    match reader::check(&records, expected) {
         Ok(summary) => println!("{summary:#?}"),
         Err(findings) => panic!("{findings:#?}"),
     }

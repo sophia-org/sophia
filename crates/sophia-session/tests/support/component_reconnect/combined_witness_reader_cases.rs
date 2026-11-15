@@ -96,7 +96,12 @@ fn the_reader_rejects_incomplete_and_contradictory_streams() {
         ]
         .to_vec(),
     );
+    // Two registered rows under a capacity of three: the valid stream names
+    // and walks exactly its rows; slot 2 is unregistered, not owed.
+    const MAX: usize = sophia_config::MAX_SHELL_COMPONENTS;
+    const _: () = assert!(2 < MAX, "the two-row cases sit below capacity");
     let s = accepted("good", good.run(2));
+    assert_eq!(s.expected_slots, 2);
     assert!(s.fixture && s.retention_demonstrated && s.live.is_empty());
     assert_eq!((s.bindings, s.consumes, s.passes.len()), (1, 1, 1));
     assert_eq!(
@@ -188,6 +193,59 @@ fn the_reader_rejects_incomplete_and_contradictory_streams() {
         "out of set",
     );
     expect("own count", good.run(3), true, "out of set");
+    // The registered-row domain is the caller's: three rows walked and
+    // inventoried are accepted at three; a count above capacity is rejected
+    // before the grammar even when the stream agrees with it; a declared
+    // final row must be present and walked.
+    let three = good
+        .clone()
+        .after(
+            "walk_visit",
+            1,
+            &format!("walk_visit {at} slot=2 jobs=0 open=0 cancels=0"),
+        )
+        .after(
+            "retained_row",
+            1,
+            "retained_row slot=2 jobs=0 open=0 cancels=0",
+        )
+        .edit("inventory_begin", 0, "slots=2", "slots=3")
+        .edit("fixture_end", 0, "slots=2", "slots=3");
+    let s = accepted("three rows", three.run(3));
+    assert_eq!((s.expected_slots, s.retained.len()), (3, 0));
+    expect(
+        "above capacity",
+        good.run(MAX + 1),
+        true,
+        "exceeds MAX_SHELL_COMPONENTS",
+    );
+    expect(
+        "self-declared above capacity",
+        three
+            .clone()
+            .edit(
+                "inventory_begin",
+                0,
+                "slots=3",
+                &format!("slots={}", MAX + 1),
+            )
+            .edit("fixture_end", 0, "slots=3", &format!("slots={}", MAX + 1))
+            .run(MAX + 1),
+        true,
+        "exceeds MAX_SHELL_COMPONENTS",
+    );
+    expect(
+        "last row missing",
+        three.clone().without("retained_row", 2).run(3),
+        true,
+        "2 retained_row headers, 3 declared",
+    );
+    expect(
+        "last row unwalked",
+        three.clone().without("walk_visit", 2).run(3),
+        false,
+        "walk: slot 2",
+    );
     expect(
         "early inventory",
         good.clone()
@@ -721,6 +779,12 @@ fn the_reader_rejects_incomplete_and_contradictory_streams() {
         .to_vec(),
     );
     let s = accepted("production", production.run(2));
+    expect(
+        "production own count",
+        production.run(3),
+        true,
+        "out of set",
+    );
     expect(
         "native none pass",
         production

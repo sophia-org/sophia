@@ -5,8 +5,9 @@
 //! The outcome separates REJECTION (malformed, incomplete or contradictory
 //! stream: nothing can be judged), VIOLATION (a contract a complete stream
 //! breaks) and INSUFFICIENT evidence (a predicate no pass of this stream
-//! could test), which the summary lists. The slot count is pinned by the
-//! caller: an untrusted stream cannot choose its own obligations away.
+//! could test), which the summary lists. The registered-row count is pinned
+//! by the caller, at most `MAX_SHELL_COMPONENTS`: an untrusted stream cannot
+//! choose its own obligations away.
 use std::collections::{BTreeMap, BTreeSet};
 
 const PREFIX: &str = "sophia_combined_witness schema=1 kind=";
@@ -121,6 +122,8 @@ pub(super) struct Pass {
 #[derive(Clone, Debug, Default)]
 pub(super) struct Summary {
     pub(super) fixture: bool,
+    /// The caller's registered-row count, which every numeric inventory and
+    /// terminal `slots` equals and whose rows the walk and inventory cover.
     pub(super) expected_slots: usize,
     pub(super) passes: Vec<Pass>,
     pub(super) bindings: usize,
@@ -179,9 +182,17 @@ pub(super) fn parse<'a>(lines: impl Iterator<Item = &'a str>) -> Result<Vec<Reco
 }
 
 /// Spec 03 sections 1-4 and spec 04 R1-R3 over one complete stream, with
-/// `expected_slots` the pinned slot count (MAX_SHELL_COMPONENTS in
-/// production and in the fixture).
+/// `expected_slots` the caller's independently pinned number of registered
+/// connection rows (every registered row, connected or not), at most
+/// `MAX_SHELL_COMPONENTS`. Numeric `slots` must equal it exactly; it is
+/// never taken from the stream.
 pub(super) fn check(records: &[Record], expected_slots: usize) -> Result<Summary, Vec<Finding>> {
+    if expected_slots > sophia_config::MAX_SHELL_COMPONENTS {
+        return Err(vec![Finding::Reject(format!(
+            "expected_slots {expected_slots} exceeds MAX_SHELL_COMPONENTS {}",
+            sophia_config::MAX_SHELL_COMPONENTS
+        ))]);
+    }
     let mut c = Checker {
         expected: expected_slots,
         ..Checker::default()
@@ -282,7 +293,7 @@ impl Checker {
     }
 
     /// Exactly the fields of the kind, each from its closed set, every slot
-    /// within the pinned count.
+    /// within the pinned registered-row count.
     fn grammar(&mut self, records: &[Record]) {
         for r in records {
             let at: &[&str] = &["iteration", "cpass"];
@@ -947,7 +958,7 @@ impl Checker {
     }
 
     /// Spec 04 R2: the inventory phase, checked for completeness against the
-    /// pinned slot count before anything is compared with it.
+    /// pinned registered-row count before anything is compared with it.
     fn inventory(&mut self, records: &[Record]) {
         let begins: Vec<&Record> = records
             .iter()
