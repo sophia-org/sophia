@@ -371,10 +371,10 @@ impl CombinedRow {
         instant: Instant,
     ) {
         let mut cancels = std::mem::take(&mut self.cancels);
-        cancels.retain(|(grant, head)| {
+        cancels.retain(|(_grant, head)| {
             let confirmed = matches!(native.cancel_combined_frame(head), Ok(true));
             #[cfg(test)]
-            self.record_cancel_later(*grant, head, confirmed);
+            self.record_cancel_later(*_grant, head, confirmed);
             !confirmed
         });
         self.cancels = cancels;
@@ -606,15 +606,15 @@ impl CombinedRow {
         confirmed
     }
 
-    /// One job's collection; false when the job ended here.
+    /// One job's collection; `None` when the job ended here.
     #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     fn collect_one<N: ShellContentNative>(
         &mut self,
         native: &mut N,
         worker: &mut Worker,
         deliver: &mut dyn FnMut(u64, CombinedResult) -> Result<(), CombinedResult>,
-        job: &mut Job,
-    ) -> bool {
+        mut job: Job,
+    ) -> Option<Job> {
         // Every path below sets the state again or ends the job.
         let state = std::mem::replace(&mut job.state, State::Held);
         #[cfg(test)]
@@ -637,7 +637,7 @@ impl CombinedRow {
                             confirmed: _confirmed,
                         },
                     );
-                    return false;
+                    return None;
                 }
                 match native.take_combined_frame_result(&job.head) {
                     Ok(None) => Step::Keep(State::InFlight {
@@ -650,11 +650,11 @@ impl CombinedRow {
                         self.collected.push((job.job, disposition));
                         #[cfg(test)]
                         self.record_collection(&job, &reservation, disposition);
-                        self.settle(native, worker, job, reservation, result, disposition)
+                        self.settle(native, worker, &mut job, reservation, result, disposition)
                     }
                     Err(error) => {
                         let what = format!("result route: {error}");
-                        report(&mut self.errors, job, &what);
+                        report(&mut self.errors, &mut job, &what);
                         Step::Keep(State::InFlight {
                             reservation,
                             returned,
@@ -666,7 +666,7 @@ impl CombinedRow {
                 reservation,
                 result,
                 disposition,
-            } => self.settle(native, worker, job, reservation, *result, disposition),
+            } => self.settle(native, worker, &mut job, reservation, *result, disposition),
             State::Credit {
                 reservation,
                 token,
@@ -693,7 +693,7 @@ impl CombinedRow {
                 Ok(()) if disposition == CombinedDisposition::Rendered => State::Held,
                 Ok(()) => State::Failed(disposition),
                 Err(result) => {
-                    report(&mut self.errors, job, "the runtime refused its result");
+                    report(&mut self.errors, &mut job, "the runtime refused its result");
                     State::Undelivered {
                         result,
                         disposition,
@@ -703,7 +703,7 @@ impl CombinedRow {
         };
         #[cfg(test)]
         self.record_step(&job, from);
-        true
+        Some(job)
     }
 
     #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
@@ -919,9 +919,11 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
             }
             deliver(job, result)
         };
-        let mut jobs = std::mem::take(&mut self.row.jobs);
-        jobs.retain_mut(|job| self.row.collect_one(native, worker, &mut offer, job));
-        self.row.jobs = jobs;
+        for job in std::mem::take(&mut self.row.jobs) {
+            if let Some(job) = self.row.collect_one(native, worker, &mut offer, job) {
+                self.row.jobs.push(job);
+            }
+        }
         #[cfg(test)]
         {
             self.row.refusals = refusals;
