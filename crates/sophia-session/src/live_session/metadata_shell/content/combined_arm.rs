@@ -31,7 +31,9 @@ use sophia_backend_live::{
     feature = "native-session",
     feature = "diagnostic-combined-witness"
 ))]
-type EntryWitness = crate::shell_component_connections::combined_row::witness::WitnessEntry;
+// Boxed so the witness does not grow `CombinedEntry` past clippy's variant
+// size limit: one allocation per W ordinary entry, freed at the submission read.
+type EntryWitness = Box<crate::shell_component_connections::combined_row::witness::WitnessEntry>;
 #[cfg(not(all(
     feature = "experimental-combined-frame-job",
     feature = "experimental-native-frame-transaction",
@@ -59,7 +61,7 @@ pub(super) enum CombinedEntry {
 ))]
 macro_rules! ordinary {
     ($witness:ident, $frame:expr) => {
-        CombinedEntry::Ordinary($frame, $witness.entry())
+        CombinedEntry::Ordinary($frame, Box::new($witness.entry()))
     };
 }
 #[cfg(not(all(

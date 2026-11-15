@@ -127,7 +127,7 @@ fn kind(state: &State) -> (&'static str, Option<CombinedDisposition>) {
 }
 
 /// `collect_one`'s pre-step state, for its record (spec 03 3.1 table).
-pub(crate) fn step_from(state: &State) -> (&'static str, Option<CombinedDisposition>) {
+pub(super) fn step_from(state: &State) -> (&'static str, Option<CombinedDisposition>) {
     match state {
         State::Unsettled { disposition, .. } => ("retry_settle", Some(*disposition)),
         State::Credit { disposition, .. } => ("retry_credit", Some(*disposition)),
@@ -136,7 +136,7 @@ pub(crate) fn step_from(state: &State) -> (&'static str, Option<CombinedDisposit
     }
 }
 
-pub(crate) fn state_label(state: &State) -> String {
+pub(super) fn state_label(state: &State) -> String {
     match state {
         State::InFlight { .. } => "InFlight".to_owned(),
         State::Unsettled { .. } => "Unsettled".to_owned(),
@@ -548,11 +548,14 @@ pub(crate) fn capture_end(
     );
 }
 
-/// The fixture envelope (spec 04 R2): opened once by the witness child.
+/// The fixture envelope (spec 04 R2): opened once by the witness child. The
+/// four fixture emitters are called only by the `cfg(test)` reconnect fixture.
+#[cfg(test)]
 pub(crate) fn fixture_begin() {
     record("fixture_begin", format_args!("owner=child"));
 }
 
+#[cfg(test)]
 pub(crate) fn fixture_pass_begin(pass: WitnessPass, slots: &[usize]) {
     record(
         "fixture_pass_begin",
@@ -564,11 +567,13 @@ pub(crate) fn fixture_pass_begin(pass: WitnessPass, slots: &[usize]) {
     );
 }
 
+#[cfg(test)]
 pub(crate) fn fixture_pass_end(pass: WitnessPass) {
     record("fixture_pass_end", format_args!("{}", pass.fields()));
 }
 
 /// The terminal record of a fixture stream, after the child's inventory.
+#[cfg(test)]
 pub(crate) fn fixture_end(pass: WitnessPass, slots: usize) {
     record(
         "fixture_end",

@@ -57,7 +57,7 @@ impl LiveContentSession {
                 combined_arm::CombinedEntry::Ordinary(frame, _witness) => {
                     crate::combined_witness!(
                         crate::shell_component_connections::combined_row::witness::ordinary_entry(
-                            Some(_witness),
+                            Some(*_witness),
                         );
                     );
                     Some(frame)

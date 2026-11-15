@@ -565,7 +565,7 @@ impl Checker {
         };
         let mut open: Option<Pass> = None;
         let mut native_open: Option<(u64, String)> = None;
-        let mut last_cpass = 0;
+        let mut last_cpass: u64 = 0;
         for (i, r) in records.iter().enumerate() {
             let kind = r.kind.as_str();
             if kind == begin {

@@ -151,3 +151,5 @@ inline-tests crates/sophia-session/src/shell_component_connections/images.rs
 # Gate 4 C2: the moved image step reads the row's test-only fault field under
 # cfg(test); no test function, no production fault hook.
 inline-tests crates/sophia-session/src/shell_component_connections/combined_row/turn.rs
+# Gate 4 C3b: `cfg(test)` gates the four fixture-envelope emitters called only by the test reconnect fixture; no inline test bodies.
+inline-tests crates/sophia-session/src/shell_component_connections/combined_row/witness.rs
