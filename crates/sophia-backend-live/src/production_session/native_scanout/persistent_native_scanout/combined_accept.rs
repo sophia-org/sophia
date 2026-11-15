@@ -56,6 +56,14 @@ pub(crate) trait CombinedAcceptNative {
         accept: CombinedAccept,
     ) -> Result<Self::Plan, CombinedAcceptRefusal>;
     fn commit_combined_accept(&mut self, head: &Self::Head, plan: Self::Plan);
+    /// The native owner identity and the current render targets of
+    /// `output`, read only: what the binding record the runtime writes after
+    /// a commit names (gate 4 binding repair).
+    fn frame_owner(&self) -> crate::NativeFrameOwner;
+    fn head_targets(
+        &self,
+        output: sophia_protocol::OutputId,
+    ) -> Vec<sophia_engine::HeadRenderTarget>;
 }
 
 /// The content a combined shell frame installs: retained content owing the
@@ -264,5 +272,17 @@ impl CombinedAcceptNative for LiveProductionNativeScanout {
 
     fn commit_combined_accept(&mut self, head: &CombinedHead, plan: CombinedAcceptPlan) {
         self.combined_routes().commit_accept(head, plan);
+    }
+
+    fn frame_owner(&self) -> crate::NativeFrameOwner {
+        self.native_frame_owner
+    }
+
+    fn head_targets(
+        &self,
+        output: sophia_protocol::OutputId,
+    ) -> Vec<sophia_engine::HeadRenderTarget> {
+        // The inherent method, named apart from this one.
+        self.head_render_targets(output)
     }
 }

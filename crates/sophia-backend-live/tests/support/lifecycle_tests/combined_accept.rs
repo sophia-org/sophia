@@ -3,22 +3,35 @@
 //! The setter's preflight and the retirement-claim checks run before the
 //! native preflight and refuse without writing; a native refusal leaves the
 //! runtime as it was; the commit installs the candidate and binds its claim
-//! to the plan's native frame without queueing a render.
+//! to the plan's native frame without queueing a render. Gate 4 binding
+//! repair: the binding record follows the commit, once, with the native
+//! half's declared identity, and no refusal emits one.
 use super::super::super::compositor_graphics::CombinedAcceptError;
 use super::*;
 use crate::{
     CombinedAccept, CombinedAcceptNative, CombinedAcceptRefusal, LiveProductionNativeFrameId,
 };
 use std::cell::RefCell;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const FRAME: u64 = 51;
 const JOB: u64 = 7;
+/// The declared target of this native half, distinct from every fixture
+/// head and from the candidate's numbers.
+const HEAD: u64 = 3;
+const TARGET_GENERATION: u64 = 5;
+const REFRESH_MILLIHZ: u32 = 59_940;
 
 /// The native half: answers as told and records what it was asked.
 struct Native {
     service: bool,
     refusal: Option<CombinedAcceptRefusal>,
     calls: RefCell<Vec<&'static str>>,
+    owner: crate::NativeFrameOwner,
+    /// Set by the commit; the order control's subscriber reads it as each
+    /// binding record arrives.
+    committed: Arc<AtomicBool>,
 }
 
 impl Native {
@@ -27,6 +40,8 @@ impl Native {
             service: true,
             refusal: None,
             calls: RefCell::new(Vec::new()),
+            owner: crate::NativeFrameOwner::new(),
+            committed: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -66,7 +81,48 @@ impl CombinedAcceptNative for Native {
     fn commit_combined_accept(&mut self, _head: &(), plan: u64) {
         assert_eq!(plan, JOB, "the commit consumes its own preflight's plan");
         self.calls.get_mut().push("commit");
+        self.committed.store(true, Ordering::SeqCst);
     }
+
+    fn frame_owner(&self) -> crate::NativeFrameOwner {
+        self.owner
+    }
+
+    fn head_targets(&self, output: OutputId) -> Vec<sophia_engine::HeadRenderTarget> {
+        vec![sophia_engine::HeadRenderTarget {
+            head: sophia_engine::RenderHeadId::from_raw(HEAD),
+            output,
+            target_generation: TARGET_GENERATION,
+            native_size: outputs()[0].size,
+            scale: 1,
+            refresh_millihz: REFRESH_MILLIHZ,
+            transform: sophia_protocol::OutputTransform::Normal,
+            mapping: sophia_protocol::OutputHeadMapping::Fit,
+        }]
+    }
+}
+
+/// The binding record as the ordinary emitter writes it, from values this
+/// control holds independently of the accept.
+fn binding_record(native: &Native, candidate: &LiveShellContentFrame) -> String {
+    let identity = native.owner.frame(
+        candidate.output,
+        sophia_engine::RenderHeadId::from_raw(HEAD),
+        TARGET_GENERATION,
+        FRAME,
+    );
+    format!(
+        "sophia_shell_native_binding schema=1 connection_epoch={} content_grant_epoch={} output={} candidate_generation={} native_owner={} native_frame={} head={} target_generation={} heads=1 mode_refresh_millihz={}",
+        candidate.grant.connection_epoch,
+        candidate.grant.content_grant_epoch,
+        candidate.output.raw(),
+        candidate.candidate_generation,
+        identity.owner(),
+        identity.frame(),
+        HEAD,
+        TARGET_GENERATION,
+        REFRESH_MILLIHZ,
+    )
 }
 
 fn accept(output: HeadlessOutput) -> CombinedAccept {
@@ -159,6 +215,39 @@ fn an_accepted_candidate_is_installed_with_its_claim_and_no_render() {
     assert_eq!(fixture.target.next, next, "nothing reached the target");
 }
 
+/// The binding record arrives once, after the commit has returned (the
+/// native half's commit flag is already set when the subscriber sees it),
+/// and names the declared owner, head, target generation and refresh with
+/// the candidate's grant and generation and the plan's native frame.
+#[test]
+fn the_binding_record_follows_the_commit_with_the_declared_identity() {
+    let mut fixture = fixture();
+    let mut native = Native::new();
+    let events = Arc::new(BindingEvents::new(Some(native.committed.clone())));
+    let dispatch = tracing::Dispatch::new(events.clone());
+    let candidate = fixture.candidate.clone();
+    let output = fixture.output;
+    let accepted = tracing::dispatcher::with_default(&dispatch, || {
+        fixture.runtime.accept_combined_shell_content(
+            candidate.clone(),
+            SHELL,
+            &mut native,
+            &(),
+            accept(output),
+        )
+    });
+    assert!(accepted.is_ok());
+    assert_eq!(
+        native.calls(),
+        ["frame_service", "check", "preflight", "commit"]
+    );
+    assert_eq!(
+        events.seen(),
+        vec![(binding_record(&native, &candidate), Some(true))],
+        "one binding record, written after the commit returned"
+    );
+}
+
 /// A refusal before the native preflight: it writes nothing, never asks the
 /// native half to preflight or commit, and hands the frame back.
 fn runtime_refused(
@@ -172,16 +261,21 @@ fn runtime_refused(
     let mut accept = accept(fixture.output);
     let frame = change(&mut fixture, &mut native, &mut accept);
     let before = (observed(&fixture), claims(&fixture));
-    let Err(failed) = fixture.runtime.accept_combined_shell_content(
-        frame.clone(),
-        layer,
-        &mut native,
-        &(),
-        accept,
-    ) else {
+    let events = Arc::new(BindingEvents::new(None));
+    let dispatch = tracing::Dispatch::new(events.clone());
+    let Err(failed) = tracing::dispatcher::with_default(&dispatch, || {
+        fixture.runtime.accept_combined_shell_content(
+            frame.clone(),
+            layer,
+            &mut native,
+            &(),
+            accept,
+        )
+    }) else {
         panic!("{name}: must refuse");
     };
     assert!(expected(&failed.error), "{name}: its own refusal");
+    assert!(events.seen().is_empty(), "{name}: no binding record");
     assert_eq!(failed.frame, frame, "{name}: the frame comes back");
     assert_eq!(
         native.calls(),
@@ -266,13 +360,18 @@ fn a_native_refusal_leaves_the_runtime_unchanged() {
     native.refusal = Some(CombinedAcceptRefusal::PendingTransition);
     let before = (observed(&fixture), claims(&fixture));
     let candidate = fixture.candidate.clone();
-    let Err(failed) = fixture.runtime.accept_combined_shell_content(
-        candidate.clone(),
-        SHELL,
-        &mut native,
-        &(),
-        accept(fixture.output),
-    ) else {
+    let output = fixture.output;
+    let events = Arc::new(BindingEvents::new(None));
+    let dispatch = tracing::Dispatch::new(events.clone());
+    let Err(failed) = tracing::dispatcher::with_default(&dispatch, || {
+        fixture.runtime.accept_combined_shell_content(
+            candidate.clone(),
+            SHELL,
+            &mut native,
+            &(),
+            accept(output),
+        )
+    }) else {
         panic!("a native refusal must refuse");
     };
     assert!(matches!(
@@ -281,6 +380,10 @@ fn a_native_refusal_leaves_the_runtime_unchanged() {
     ));
     assert_eq!(failed.frame, candidate);
     assert_eq!(native.calls(), ["frame_service", "check", "preflight"]);
+    assert!(
+        events.seen().is_empty(),
+        "no binding record before the commit"
+    );
     assert!(
         (observed(&fixture), claims(&fixture)) == before,
         "a native refusal leaves the runtime unchanged"

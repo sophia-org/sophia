@@ -900,4 +900,12 @@ impl CombinedAcceptNative for CombinedNativeFixture {
         self.accepts += 1;
         self.routes().commit_accept(head, plan);
     }
+
+    fn frame_owner(&self) -> crate::NativeFrameOwner {
+        self.native_owner
+    }
+
+    fn head_targets(&self, output: OutputId) -> Vec<sophia_engine::HeadRenderTarget> {
+        native_facts::head_render_targets(&self.heads, output)
+    }
 }

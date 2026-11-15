@@ -396,7 +396,8 @@ impl LiveProductionVisualRuntime {
     /// The consumption checks, then the native preflight, both reading only;
     /// then the commit: this runtime installs the content and binds its
     /// retirement claim to the plan's native frame without queueing a
-    /// render (step 1), and the native target writes steps 2 to 4.
+    /// render (step 1), and the native target writes steps 2 to 4. After the
+    /// commit returns, the binding record (gate 4 binding repair).
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn accept_combined_shell_content<N: crate::CombinedAcceptNative>(
         &mut self,
@@ -421,6 +422,7 @@ impl LiveProductionVisualRuntime {
         // Step 1: content and its retirement claim, bound to the plan's
         // native frame as `bind_shell_retirement_claims` binds a queued one.
         let grant = frame.grant;
+        let candidate_generation = frame.candidate_generation;
         self.shell_content.insert(
             key,
             AdmittedShellContent {
@@ -435,6 +437,35 @@ impl LiveProductionVisualRuntime {
             .or_default()
             .insert(key, grant);
         native.commit_combined_accept(head, plan);
+        // The record the timing runner joins a native completion to. The
+        // ordinary emitter (projection/retirement.rs) writes it when it
+        // queues a retained projection, which an accepted combined frame
+        // never passes through; so the same record, in the same form, for
+        // the committed frame here. Reads and a log line: no domain-state
+        // mutation, ownership decision or fallible step follows the commit.
+        let targets = native.head_targets(key.0);
+        for target in &targets {
+            let identity = native.frame_owner().frame(
+                key.0,
+                target.head,
+                target.target_generation,
+                native_frame.raw(),
+            );
+            tracing::info!(
+                target: "sophia_scanout_evidence",
+                "sophia_shell_native_binding schema=1 connection_epoch={} content_grant_epoch={} output={} candidate_generation={} native_owner={} native_frame={} head={} target_generation={} heads={} mode_refresh_millihz={}",
+                grant.connection_epoch,
+                grant.content_grant_epoch,
+                key.0.raw(),
+                candidate_generation,
+                identity.owner(),
+                identity.frame(),
+                target.head.raw(),
+                target.target_generation,
+                targets.len(),
+                target.refresh_millihz,
+            );
+        }
         Ok(())
     }
 }

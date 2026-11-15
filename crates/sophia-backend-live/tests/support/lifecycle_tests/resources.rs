@@ -170,3 +170,68 @@ pub(crate) fn installed_shell(
             .copied(),
     )
 }
+
+/// A scoped `tracing` subscriber for the binding-record controls (gate 4
+/// binding repair): every `sophia_shell_native_binding` message, in order,
+/// each with the state of `marker` at the moment it arrived. The marker is
+/// the recording native's commit flag in the order control and absent
+/// elsewhere. Thread-local through `tracing::dispatcher::with_default`;
+/// never installed globally.
+#[cfg(feature = "experimental-combined-frame-job")]
+pub(crate) struct BindingEvents {
+    marker: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    seen: std::sync::Mutex<Vec<(String, Option<bool>)>>,
+}
+
+#[cfg(feature = "experimental-combined-frame-job")]
+impl BindingEvents {
+    pub(crate) fn new(marker: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>) -> Self {
+        Self {
+            marker,
+            seen: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    pub(crate) fn seen(&self) -> Vec<(String, Option<bool>)> {
+        self.seen.lock().unwrap().clone()
+    }
+}
+
+#[cfg(feature = "experimental-combined-frame-job")]
+impl tracing::Subscriber for BindingEvents {
+    fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+        metadata.target() == "sophia_scanout_evidence"
+    }
+
+    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        tracing::span::Id::from_u64(1)
+    }
+
+    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+
+    fn event(&self, event: &tracing::Event<'_>) {
+        struct Message(String);
+        impl tracing::field::Visit for Message {
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                if field.name() == "message" {
+                    self.0 = format!("{value:?}");
+                }
+            }
+        }
+        let mut message = Message(String::new());
+        event.record(&mut message);
+        if message.0.starts_with("sophia_shell_native_binding ") {
+            let marker = self
+                .marker
+                .as_ref()
+                .map(|marker| marker.load(std::sync::atomic::Ordering::SeqCst));
+            self.seen.lock().unwrap().push((message.0, marker));
+        }
+    }
+
+    fn enter(&self, _: &tracing::span::Id) {}
+
+    fn exit(&self, _: &tracing::span::Id) {}
+}

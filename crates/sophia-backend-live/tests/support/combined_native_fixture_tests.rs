@@ -12,7 +12,7 @@ use super::super::accept_device as device;
 
 use super::*;
 use crate::production_visual_runtime::lifecycle_tests::resources::{
-    installed_shell, shell_frame, upload,
+    BindingEvents, installed_shell, shell_frame, upload,
 };
 use crate::{
     CombinedAcceptError, CombinedAcceptFailed, CombinedAcceptRefusal, CombinedDisposition,
@@ -27,6 +27,7 @@ use sophia_renderer_live::{
 };
 use std::io::Write;
 use std::os::fd::OwnedFd;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const WAIT: Duration = Duration::from_secs(10);
@@ -363,6 +364,7 @@ fn a_protected_ordinary_generation_blocks_combined_acceptance() {
 /// candidate's lease, and a Shell candidate for head 0's output.
 fn candidate(
     held: &Held,
+    generation: u64,
 ) -> (
     LiveProductionVisualRuntime,
     sophia_runtime::ContentResourceStore,
@@ -386,15 +388,97 @@ fn candidate(
         id: 1,
         generation: 1,
     };
-    let frame = shell_frame(held.output(), 1, upload(&mut store, grant, resource));
+    let frame = shell_frame(
+        held.output(),
+        generation,
+        upload(&mut store, grant, resource),
+    );
     (runtime, store, frame)
+}
+
+/// Gate 4 binding repair: the bridge accept writes the ordinary emitter's
+/// `sophia_shell_native_binding` record once for the fixture's one target,
+/// naming the committed native frame, the fixture's owner and head, and
+/// the candidate's grant and generation; the install and claim are as in
+/// the control below.
+#[test]
+fn the_bridge_accept_writes_one_binding_record_for_the_committed_frame() {
+    let mut fixture = CombinedNativeFixture::new(&outputs());
+    // One frame drawn and left aside, so the held frame, the job and the
+    // candidate generation are three different numbers.
+    ShellContentNative::allocate_combined_frame(&mut fixture);
+    let mut held = held_on(fixture, |fixture, key, size| {
+        fixture.stub().serve_exported(key, size, LEASE)
+    });
+    let output = held.output();
+    let (mut visual, _store, candidate) = candidate(&held, 3);
+    assert_eq!(held.frame.raw(), 2);
+    assert_ne!(held.job, 2);
+    assert_ne!(held.job, 3);
+    let head = &held.fixture.heads[0];
+    assert_eq!(
+        (
+            head.head.raw(),
+            head.target_generation,
+            head.refresh_millihz
+        ),
+        (1, 1, 60_000),
+        "the fixture head as native_head_fixture declares it"
+    );
+    assert_eq!(
+        held.fixture.head_targets(output.id).len(),
+        1,
+        "one current target, before any record is counted"
+    );
+    let identity = held.fixture.native_owner.frame(
+        output.id,
+        head.head,
+        head.target_generation,
+        held.frame.raw(),
+    );
+    let expected = format!(
+        "sophia_shell_native_binding schema=1 connection_epoch={} content_grant_epoch={} output={} candidate_generation={} native_owner={} native_frame={} head={} target_generation={} heads=1 mode_refresh_millihz={}",
+        candidate.grant.connection_epoch,
+        candidate.grant.content_grant_epoch,
+        output.id.raw(),
+        candidate.candidate_generation,
+        identity.owner(),
+        identity.frame(),
+        head.head.raw(),
+        head.target_generation,
+        head.refresh_millihz,
+    );
+    let events = Arc::new(BindingEvents::new(None));
+    let dispatch = tracing::Dispatch::new(events.clone());
+    let accept = held.accept();
+    let accepted = tracing::dispatcher::with_default(&dispatch, || {
+        held.bridge_accept(&mut visual, candidate.clone(), accept)
+    });
+    assert!(accepted.is_ok(), "the bridge accepts the held result");
+    assert_eq!(events.seen(), vec![(expected, None)]);
+    assert_eq!(
+        installed_shell(&visual, output.id, SHELL, held.frame),
+        (Some(candidate.clone()), Some(candidate.grant)),
+        "the runtime installs the candidate and binds its claim to the plan's native frame"
+    );
+    assert_eq!(
+        held.fixture.heads[0].rendering_content,
+        Some(crate::LiveProductionScanoutContent::RetainedMixed {
+            frame: held.frame,
+            requires_retirement: true,
+            logical_content_checksum: Some(held.frame.raw()),
+            nonzero_rgb_pixels: 0,
+        }),
+        "the native head renders retirement-bearing shell content"
+    );
+    assert!(held.fixture.protected(output.id));
 }
 
 #[test]
 fn the_bridge_accept_installs_binds_and_reaches_submitted_waiting_for_page_flip() {
     let mut held = held();
     let output = held.output();
-    let (mut visual, _store, candidate) = candidate(&held);
+    let (mut visual, _store, candidate) = candidate(&held, 1);
     let accept = held.accept();
     assert!(
         held.bridge_accept(&mut visual, candidate.clone(), accept)
@@ -455,7 +539,7 @@ fn the_bridge_accept_installs_binds_and_reaches_submitted_waiting_for_page_flip(
 fn a_refused_bridge_accept_returns_the_frame_and_keeps_the_held_result() {
     let mut held = held();
     let output = held.output();
-    let (mut visual, _store, candidate) = candidate(&held);
+    let (mut visual, _store, candidate) = candidate(&held, 1);
     let mut accept = held.accept();
     accept.correlation.native = None;
     let Err(failed) = held.bridge_accept(&mut visual, candidate.clone(), accept) else {
@@ -494,7 +578,7 @@ fn a_busy_renderer_worker_declines_the_lane() {
         held.fixture.exporters[0].worker_in_flight(),
         "the accepted combined frame is the worker's render in flight"
     );
-    let (runtime, _store, mut frame) = candidate(&held);
+    let (runtime, _store, mut frame) = candidate(&held, 1);
     for image in &mut frame.images {
         let description = image.resource.shell().unwrap().description().clone();
         image.resource = sophia_engine::CompositorImageSource::Provisional(description);
@@ -669,7 +753,7 @@ fn a_running_seam_render_is_held_accepted_and_reaches_submitted_waiting_for_page
         (1, 1, 0),
         "the running worker leased one slot for the seam's export"
     );
-    let (mut visual, _store, candidate) = candidate(&held);
+    let (mut visual, _store, candidate) = candidate(&held, 1);
     let accept = held.accept();
     assert!(
         held.bridge_accept(&mut visual, candidate.clone(), accept)
@@ -725,7 +809,7 @@ fn a_running_seam_render_is_held_accepted_and_reaches_submitted_waiting_for_page
 fn a_submission_naming_another_target_is_not_recorded_as_the_heads() {
     let mut held = held_on(CombinedNativeFixture::running(&outputs()), |_, _, _| ());
     let output = held.output();
-    let (mut visual, _store, candidate) = candidate(&held);
+    let (mut visual, _store, candidate) = candidate(&held, 1);
     let accept = held.accept();
     assert!(
         held.bridge_accept(&mut visual, candidate, accept).is_ok(),
