@@ -655,6 +655,29 @@ fn the_reader_rejects_incomplete_and_contradictory_streams() {
         true,
         "imply each other",
     );
+    // R8: an empty envelope orders itself; a malformed maximum counter is a
+    // structured rejection, never an overflow.
+    let empty = Stream(
+        [
+            "capture_begin iteration=1",
+            "inventory_begin slots=none",
+            "capture_end iteration=1 cpass=none exit=normal slots=none",
+        ]
+        .iter()
+        .map(|l| (*l).to_owned())
+        .collect(),
+    );
+    let s = accepted("empty envelope", empty.run(2));
+    assert!(s.retention_demonstrated && s.passes.is_empty());
+    expect(
+        "empty backwards",
+        empty
+            .clone()
+            .edit("capture_begin", 0, "iteration=1", "iteration=2")
+            .run(2),
+        true,
+        "before the capture's begin",
+    );
     expect(
         "absent with pass",
         absent
@@ -698,6 +721,37 @@ fn the_reader_rejects_incomplete_and_contradictory_streams() {
         .to_vec(),
     );
     let s = accepted("production", production.run(2));
+    expect(
+        "native none pass",
+        production
+            .clone()
+            .edit("cpass_begin", 0, "native=present", "native=none")
+            .without("images_visit", 0)
+            .without("walk_visit", 0)
+            .without("walk_visit", 0)
+            .run(2),
+        true,
+        "out of set",
+    );
+    expect(
+        "native none fixture pass",
+        good.clone()
+            .edit("fixture_pass_begin", 0, "native=present", "native=none")
+            .run(2),
+        true,
+        "out of set",
+    );
+    let max = "18446744073709551615";
+    expect(
+        "counter maximum",
+        production
+            .clone()
+            .edit("cpass_begin", 0, "cpass=1", &format!("cpass={max}"))
+            .edit("cpass_end", 0, "cpass=1", &format!("cpass={max}"))
+            .run(2),
+        true,
+        "advance by one",
+    );
     assert_eq!(s.passes.len(), 3);
     assert!(s.notes.iter().any(|n| n.contains("ended before the walk")));
     assert!(

@@ -395,7 +395,10 @@ impl Checker {
                         v == "none" || v.parse::<usize>().is_ok_and(|s| s == expected)
                     }
                 }
-                "native" => matches!(v, "present" | "absent" | "none"),
+                // A pass declares native present or absent; only the consume
+                // table has a `none` (the arm never reached the native step).
+                "native" if r.kind == "consume" => matches!(v, "present" | "absent" | "none"),
+                "native" => matches!(v, "present" | "absent"),
                 "paused" | "keep" | "confirmed" => matches!(v, "true" | "false"),
                 "hooked" => v == "true",
                 "poll" => matches!(v, "ok" | "failed"),
@@ -576,14 +579,17 @@ impl Checker {
                     self.reject(r, "pass without identity");
                     continue;
                 };
-                if cpass != last_cpass + 1 {
+                // Checked: a numeric maximum is a malformed counter, rejected
+                // without advancing the trusted sequence or overflowing.
+                if last_cpass.checked_add(1) == Some(cpass) {
+                    last_cpass = cpass;
+                } else {
                     self.reject(r, "pass counters do not advance by one");
                 }
                 if self.summary.fixture && iteration != cpass {
                     self.reject(r, "fixture passes have iteration = cpass");
                 }
                 self.iteration_seen(r, iteration);
-                last_cpass = cpass;
                 open = Some(Pass {
                     iteration,
                     cpass,
@@ -1063,6 +1069,10 @@ impl Checker {
         if let Some(begin) = first.num("iteration") {
             if self.first_iteration.is_some_and(|seen| seen < begin) {
                 self.reject(first, "capture_begin iteration is after a later record's");
+            }
+            // With no interior observation the envelope still orders itself.
+            if last.num("iteration").is_some_and(|end| end < begin) {
+                self.reject(last, "terminal iteration is before the capture's begin");
             }
         }
         if let (Some(end), Some(seen)) = (last.num("iteration"), self.last_iteration) {
