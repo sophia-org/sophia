@@ -489,10 +489,8 @@ impl Checker {
                     self.reject(r, "incomplete: unlabelled exit, an unwrapped outer exit");
                 }
             }
-            "consume" => {
-                if r.get("entry") == "unwinding" {
-                    self.reject(r, "incomplete: the consume unwound");
-                }
+            "consume" if r.get("entry") == "unwinding" => {
+                self.reject(r, "incomplete: the consume unwound");
             }
             _ => {}
         }
@@ -736,10 +734,10 @@ impl Checker {
     }
 
     fn same_slot(&mut self, r: &Record, bid: u64) {
-        if let Some((_, _, slot)) = self.bound.get(&bid).copied() {
-            if r.num("slot") != Some(slot) {
-                self.reject(r, "the bid belongs to another slot");
-            }
+        if let Some((_, _, slot)) = self.bound.get(&bid).copied()
+            && r.num("slot") != Some(slot)
+        {
+            self.reject(r, "the bid belongs to another slot");
         }
     }
 
@@ -826,10 +824,10 @@ impl Checker {
                     self.reject(r, "arm record after its consume record");
                 }
             }
-            if let (Some(rel), Some(term)) = (release.first(), terminal.first()) {
-                if rel.index > term.index {
-                    self.reject(term, "the terminal request precedes the arm release");
-                }
+            if let (Some(rel), Some(term)) = (release.first(), terminal.first())
+                && rel.index > term.index
+            {
+                self.reject(term, "the terminal request precedes the arm release");
             }
             for r in &entry {
                 if r.index < consume.index {
@@ -1075,10 +1073,10 @@ impl Checker {
                 self.reject(last, "terminal iteration is before the capture's begin");
             }
         }
-        if let (Some(end), Some(seen)) = (last.num("iteration"), self.last_iteration) {
-            if end < seen {
-                self.reject(last, "terminal iteration is before the last one seen");
-            }
+        if let (Some(end), Some(seen)) = (last.num("iteration"), self.last_iteration)
+            && end < seen
+        {
+            self.reject(last, "terminal iteration is before the last one seen");
         }
         if self.summary.fixture {
             if last.pass() != (Some(passes), Some(passes)) {
