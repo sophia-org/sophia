@@ -206,8 +206,9 @@ impl CombinedRow {
         );
     }
 
-    /// The returned-plan removal (spec 03 2.1): the job ends here.
-    pub(super) fn witness_collect_returned(&self, job: &Job, confirmed: bool) {
+    /// The returned-plan removal (spec 03 2.1): the job ends here. `bid` is
+    /// copied before the cancellation takes the job's head.
+    pub(super) fn witness_collect_returned(&self, bid: Option<u64>, confirmed: bool) {
         let confirmed = if confirmed {
             "confirmed"
         } else {
@@ -218,7 +219,7 @@ impl CombinedRow {
             format_args!(
                 "{} bid={} result=returned_plan:{confirmed} state_after=removed",
                 self.at(),
-                opt(job.bid),
+                opt(bid),
             ),
         );
     }

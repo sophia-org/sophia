@@ -71,6 +71,14 @@ struct Harness {
     catalog: component_catalog::ComponentCatalog,
     launches: SessionLaunchQueue,
     config: PersistentXtermSessionConfig,
+    /// Gate 4 C3b: how often `service` ran, the witnessed call's iteration.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    witness_services: u64,
 }
 
 impl Harness {
@@ -151,6 +159,13 @@ impl Harness {
                 format!("--desktop-profile={}", profile.display()),
             ])
             .unwrap(),
+            #[cfg(all(
+                feature = "experimental-combined-frame-job",
+                feature = "experimental-native-frame-transaction",
+                feature = "native-session",
+                feature = "diagnostic-combined-witness"
+            ))]
+            witness_services: 0,
         }
     }
 
@@ -332,6 +347,25 @@ impl Harness {
     fn service(&mut self) {
         // This is the production owner-loop entry, including both settlement
         // calls around role service, not a recreated sequence of callbacks.
+        // Gate 4 C3b: under W the same entry runs inside its witness records,
+        // with the fixture's own call count as the iteration; no output is
+        // installed here, so the records go nowhere and nothing reads them.
+        #[cfg(all(
+            feature = "experimental-combined-frame-job",
+            feature = "experimental-native-frame-transaction",
+            feature = "native-session",
+            feature = "diagnostic-combined-witness"
+        ))]
+        let iteration = {
+            self.witness_services += 1;
+            Some(self.witness_services)
+        };
+        #[cfg(not(all(
+            feature = "experimental-combined-frame-job",
+            feature = "experimental-native-frame-transaction",
+            feature = "native-session",
+            feature = "diagnostic-combined-witness"
+        )))]
         component_service::service_components(
             &mut self.owner,
             &mut self.catalog,
@@ -358,6 +392,37 @@ impl Harness {
                 feature = "experimental-native-frame-transaction",
                 feature = "native-session"
             ))]
+            None,
+        )
+        .unwrap();
+        #[cfg(all(
+            feature = "experimental-combined-frame-job",
+            feature = "experimental-native-frame-transaction",
+            feature = "native-session",
+            feature = "diagnostic-combined-witness"
+        ))]
+        component_service::service_components_witnessed(
+            iteration,
+            &mut self.owner,
+            &mut self.catalog,
+            self.backend.runtime_mut(),
+            &LiveProductionCpuScene::new(output().size),
+            None,
+            &[output()],
+            &crate::live_session::wm_output_bounds(&[output()]),
+            &mut None,
+            true,
+            &mut self.launches,
+            &mut Vec::new(),
+            &self.config,
+            Path::new("/nonexistent-t100-xauthority"),
+            &mut None,
+            &mut crate::launch_authentication::LaunchCoordinator::new(
+                Default::default(),
+                crate::live_session::tests::lock_provider_factotum::namespaces(),
+            ),
+            &crate::live_session::OwnerWake::new().unwrap(),
+            &mut crate::live_session::LiveApplicationLaunches::default(),
             None,
         )
         .unwrap();

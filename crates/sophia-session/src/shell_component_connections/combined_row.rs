@@ -680,6 +680,7 @@ impl CombinedRow {
                 if let Ok(plan) = returned.try_recv() {
                     drop((plan, reservation));
                     let what = format!("combined job {}: returned plan not cancelled", job.job);
+                    crate::combined_witness!(let w_bid = job.bid;);
                     let _confirmed = self.cancel(native, job.grant, job.head, what);
                     #[cfg(test)]
                     self.record_removed(
@@ -688,7 +689,7 @@ impl CombinedRow {
                             confirmed: _confirmed,
                         },
                     );
-                    crate::combined_witness!(self.witness_collect_returned(&job, _confirmed););
+                    crate::combined_witness!(self.witness_collect_returned(w_bid, _confirmed););
                     return None;
                 }
                 match native.take_combined_frame_result(&job.head) {

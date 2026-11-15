@@ -1,10 +1,12 @@
 //! Gate 4 C3b: the one reader of a witness stream (spec 03 section 5.3,
-//! amended by spec 04 R1-R3). It is a consistency checker over the fixed
-//! record grammar; it carries no acceptance meaning. Every line that is not
-//! a witness record is ignored. The outcome separates REJECTION (malformed,
-//! incomplete or contradictory stream: nothing can be judged), VIOLATION (a
-//! contract the complete stream breaks) and INSUFFICIENT evidence (a
-//! predicate no pass of this stream could test), which the summary lists.
+//! amended by spec 04 R1-R3, corrected per source-01 review R2-R5). It is a
+//! consistency checker over the fixed record grammar; it carries no
+//! acceptance meaning. Every line that is not a witness record is ignored.
+//! The outcome separates REJECTION (malformed, incomplete or contradictory
+//! stream: nothing can be judged), VIOLATION (a contract a complete stream
+//! breaks) and INSUFFICIENT evidence (a predicate no pass of this stream
+//! could test), which the summary lists. The slot count is pinned by the
+//! caller: an untrusted stream cannot choose its own obligations away.
 use std::collections::{BTreeMap, BTreeSet};
 
 const PREFIX: &str = "sophia_combined_witness schema=1 kind=";
@@ -51,6 +53,12 @@ const EXITS: [&str; 17] = [
     "error:unlabelled",
     "unwinding",
 ];
+const INVENTORY: [&str; 4] = [
+    "retained_row",
+    "retained",
+    "retained_open",
+    "retained_cancel",
+];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Record {
@@ -75,6 +83,16 @@ impl Record {
 
     fn pass(&self) -> (Option<u64>, Option<u64>) {
         (self.num("iteration"), self.num("cpass"))
+    }
+
+    /// The consume identity a shared cseq binds: pass, slot and bid text.
+    fn identity(&self) -> (Option<u64>, Option<u64>, Option<u64>, &str) {
+        (
+            self.num("iteration"),
+            self.num("cpass"),
+            self.num("slot"),
+            self.get("bid"),
+        )
     }
 }
 
@@ -103,6 +121,7 @@ pub(super) struct Pass {
 #[derive(Clone, Debug, Default)]
 pub(super) struct Summary {
     pub(super) fixture: bool,
+    pub(super) expected_slots: usize,
     pub(super) passes: Vec<Pass>,
     pub(super) bindings: usize,
     pub(super) consumes: usize,
@@ -159,9 +178,15 @@ pub(super) fn parse<'a>(lines: impl Iterator<Item = &'a str>) -> Result<Vec<Reco
     }
 }
 
-/// Spec 03 sections 1-4 and spec 04 R1-R3 over one complete stream.
-pub(super) fn check(records: &[Record]) -> Result<Summary, Vec<Finding>> {
-    let mut c = Checker::default();
+/// Spec 03 sections 1-4 and spec 04 R1-R3 over one complete stream, with
+/// `expected_slots` the pinned slot count (MAX_SHELL_COMPONENTS in
+/// production and in the fixture).
+pub(super) fn check(records: &[Record], expected_slots: usize) -> Result<Summary, Vec<Finding>> {
+    let mut c = Checker {
+        expected: expected_slots,
+        ..Checker::default()
+    };
+    c.summary.expected_slots = expected_slots;
     c.grammar(records);
     if c.findings.is_empty() {
         c.envelope(records);
@@ -171,6 +196,9 @@ pub(super) fn check(records: &[Record]) -> Result<Summary, Vec<Finding>> {
         c.live_set(records);
         c.cseq(records);
         c.inventory(records);
+    }
+    if c.findings.is_empty() {
+        c.boundaries(records);
     }
     if c.findings.is_empty() {
         c.obligations(records);
@@ -187,9 +215,14 @@ pub(super) fn check(records: &[Record]) -> Result<Summary, Vec<Finding>> {
 struct Checker {
     findings: Vec<Finding>,
     summary: Summary,
+    expected: usize,
     /// bid -> (serial, job, slot); every bid ever bound.
-    bound: BTreeMap<u64, (u64, u64, usize)>,
-    max_slots: Option<usize>,
+    bound: BTreeMap<u64, (u64, u64, u64)>,
+    /// Iterations in stream order over passes and native services.
+    first_iteration: Option<u64>,
+    last_iteration: Option<u64>,
+    /// The inventory's declared slot count, `None` for components absent.
+    inventory_slots: Option<usize>,
 }
 
 fn list(value: &str) -> Option<Vec<usize>> {
@@ -200,11 +233,13 @@ fn list(value: &str) -> Option<Vec<usize>> {
     inner.split(',').map(|s| s.parse().ok()).collect()
 }
 
+/// `(n,n,...)` with exactly `arity` numeric components.
 fn pair(value: &str, arity: usize) -> bool {
-    value
-        .strip_prefix('(')
-        .and_then(|v| v.strip_suffix(')'))
-        .is_some_and(|v| v.split(',').filter(|p| p.parse::<u64>().is_ok()).count() == arity)
+    let Some(inner) = value.strip_prefix('(').and_then(|v| v.strip_suffix(')')) else {
+        return false;
+    };
+    let parts: Vec<&str> = inner.split(',').collect();
+    parts.len() == arity && parts.iter().all(|p| p.parse::<u64>().is_ok())
 }
 
 fn state(value: &str) -> bool {
@@ -246,7 +281,8 @@ impl Checker {
         self.findings.push(Finding::Violation(what));
     }
 
-    /// Exactly the fields of the kind, each from its closed set.
+    /// Exactly the fields of the kind, each from its closed set, every slot
+    /// within the pinned count.
     fn grammar(&mut self, records: &[Record]) {
         for r in records {
             let at: &[&str] = &["iteration", "cpass"];
@@ -279,8 +315,12 @@ impl Checker {
                 ),
                 "removed" => ([row, &["bid", "cause"][..]].concat(), vec![]),
                 "release_attempt" => (
-                    [row, &["site", "outcome", "keep", "state_after"][..]].concat(),
-                    vec!["bid", "cseq"],
+                    [
+                        row,
+                        &["bid", "site", "cseq", "outcome", "keep", "state_after"][..],
+                    ]
+                    .concat(),
+                    vec![],
                 ),
                 "reserve_cancelled" => {
                     ([row, &["ticket", "head", "confirmed"][..]].concat(), vec![])
@@ -327,29 +367,37 @@ impl Checker {
     }
 
     fn values(&mut self, r: &Record) {
+        let expected = self.expected;
+        let slot_list = |v: &str| {
+            list(v).is_some_and(|slots| {
+                slots.iter().all(|s| *s < expected) && slots.windows(2).all(|w| w[0] < w[1])
+            })
+        };
         let mut bad = Vec::new();
         for (key, value) in &r.fields {
             let v = value.as_str();
             let ok = match key.as_str() {
-                "iteration" | "cpass" | "ticket" | "serial" | "job" | "jobs" | "cancels" => {
+                "iteration" | "ticket" | "serial" | "job" | "jobs" | "cancels" => {
                     v.parse::<u64>().is_ok()
                 }
-                "slot" => v.parse::<usize>().is_ok(),
+                "cpass" if r.kind == "capture_end" => v == "none" || v.parse::<u64>().is_ok(),
+                "cpass" => v.parse::<u64>().is_ok(),
+                "slot" => v.parse::<usize>().is_ok_and(|s| s < expected),
                 "open" => matches!(v, "0" | "1"),
-                "bid" => v == "none" || v.parse::<u64>().is_ok(),
-                "cseq" => v == "none" || v.parse::<u64>().is_ok(),
+                "bid" | "cseq" => v == "none" || v.parse::<u64>().is_ok(),
                 "slots" | "slots_after" => {
-                    if r.kind == "cpass_begin"
-                        || r.kind == "fixture_pass_begin"
-                        || r.kind == "cpass_end"
-                    {
-                        list(v).is_some()
+                    if matches!(
+                        r.kind.as_str(),
+                        "cpass_begin" | "fixture_pass_begin" | "cpass_end"
+                    ) {
+                        slot_list(v)
                     } else {
-                        v == "none" || v.parse::<usize>().is_ok()
+                        v == "none" || v.parse::<usize>().is_ok_and(|s| s == expected)
                     }
                 }
                 "native" => matches!(v, "present" | "absent" | "none"),
-                "paused" | "keep" | "confirmed" | "hooked" => matches!(v, "true" | "false"),
+                "paused" | "keep" | "confirmed" => matches!(v, "true" | "false"),
+                "hooked" => v == "true",
                 "poll" => matches!(v, "ok" | "failed"),
                 "exit" if r.kind == "capture_end" => matches!(v, "normal" | "error"),
                 "exit" => EXITS.contains(&v),
@@ -370,12 +418,10 @@ impl Checker {
                 "join" => matches!(v, "ordinary" | "invariant" | "failed" | "debt" | "held"),
                 "deadline" => matches!(v, "ok" | "past" | "none"),
                 "check" | "accept" => matches!(v, "none" | "ok") || REFUSALS.contains(&v),
-                "classify" => {
-                    matches!(
-                        v,
-                        "none" | "match" | "churn" | "topology" | "candidate_failure" | "error"
-                    )
-                }
+                "classify" => matches!(
+                    v,
+                    "none" | "match" | "churn" | "topology" | "candidate_failure" | "error"
+                ),
                 "decline" => matches!(v, "none" | "ok" | "not_held"),
                 "terminal" => matches!(v, "none" | "ok" | "error"),
                 "entry" => matches!(
@@ -392,61 +438,68 @@ impl Checker {
         for b in bad {
             self.reject(r, &format!("value out of set: {b}"));
         }
-        if r.kind == "release_attempt" {
-            let removed = r.get("state_after") == "removed";
-            if (r.get("keep") == "false") != removed {
-                self.reject(r, "keep and state_after disagree");
+        match r.kind.as_str() {
+            "release_attempt" => {
+                let removed = r.get("state_after") == "removed";
+                if (r.get("keep") == "false") != removed {
+                    self.reject(r, "keep and state_after disagree");
+                }
+                // The arm's release carries its consume's cseq; a walk site has none.
+                let arm = r.get("site") == "arm";
+                if arm != r.num("cseq").is_some() || (!arm && r.get("cseq") != "none") {
+                    self.reject(r, "cseq is numeric at the arm site and none at a walk site");
+                }
+                if r.get("bid") == "none" {
+                    self.reject(r, "a release names its job's bid");
+                }
             }
-            if (r.get("site") == "arm") != r.fields.contains_key("cseq") {
-                self.reject(r, "cseq is the arm site's field");
+            "collect" => {
+                let returned = r.get("result").starts_with("returned_plan:");
+                if returned != (r.get("state_after") == "removed") {
+                    self.reject(r, "returned_plan and state_after=removed imply each other");
+                }
             }
-            if r.get("site") == "arm" && r.get("cseq") == "none" {
-                self.reject(r, "arm release without a cseq");
+            "ordinary_entry" => {
+                let lent = r.get("row") == "lent";
+                let has = ["iteration", "cpass", "slot", "bid"]
+                    .iter()
+                    .all(|k| r.fields.contains_key(*k));
+                if lent != has || lent != r.num("cseq").is_some() {
+                    self.reject(
+                        r,
+                        "row=lent carries pass, slot, cseq and bid; row=absent none of them",
+                    );
+                }
             }
-            if !r.fields.contains_key("bid") {
-                self.reject(r, "missing bid");
+            "capture_end" => {
+                if (r.get("cpass") == "none") != (r.get("slots") == "none") {
+                    self.reject(r, "cpass=none and slots=none imply each other");
+                }
             }
-        }
-        if r.kind == "collect" {
-            let returned = r.get("result").starts_with("returned_plan:");
-            if returned != (r.get("state_after") == "removed") {
-                self.reject(r, "returned_plan and state_after=removed imply each other");
+            "cpass_end" => {
+                if r.get("exit") == "unwinding" {
+                    self.reject(r, "incomplete: the pass unwound");
+                }
+                // Spec 04 R3: an unwrapped outer exit is an implementation
+                // omission; the pass is incomplete evidence, never a verdict.
+                if r.get("exit") == "error:unlabelled" {
+                    self.reject(r, "incomplete: unlabelled exit, an unwrapped outer exit");
+                }
             }
-        }
-        if r.kind == "ordinary_entry" {
-            let lent = r.get("row") == "lent";
-            let has = ["iteration", "cpass", "slot", "bid"]
-                .iter()
-                .all(|k| r.fields.contains_key(*k));
-            if lent != has
-                || (!lent && r.get("cseq") != "none")
-                || (lent && r.get("cseq") == "none")
-            {
-                self.reject(
-                    r,
-                    "row=lent carries pass, slot, cseq and bid; row=absent none of them",
-                );
+            "consume" => {
+                if r.get("entry") == "unwinding" {
+                    self.reject(r, "incomplete: the consume unwound");
+                }
             }
-        }
-        if r.kind == "cpass_end" && r.get("exit") == "unwinding" {
-            self.reject(r, "incomplete: the pass unwound");
-        }
-        // Spec 04 R3: the declared treatment of no known exit site.
-        if r.kind == "cpass_end" && r.get("exit") == "error:unlabelled" {
-            self.violation(format!(
-                "record {}: unlabelled exit, an unwrapped outer exit",
-                r.index
-            ));
-        }
-        if r.kind == "consume" && r.get("entry") == "unwinding" {
-            self.reject(r, "incomplete: the consume unwound");
+            _ => {}
         }
     }
 
     /// One envelope kind, begun by the first record and closed by the last.
     fn envelope(&mut self, records: &[Record]) {
         let Some(first) = records.first() else {
-            self.findings.push(Finding::Reject("empty stream".into()));
+            self.findings
+                .push(Finding::Reject("incomplete: empty stream".into()));
             return;
         };
         let fixture = match first.kind.as_str() {
@@ -489,7 +542,18 @@ impl Checker {
         }
     }
 
-    /// Pass pairing, nesting, counters and every row record's pass.
+    fn iteration_seen(&mut self, r: &Record, iteration: u64) {
+        if self.first_iteration.is_none() {
+            self.first_iteration = Some(iteration);
+        }
+        if self.last_iteration.is_some_and(|last| iteration < last) {
+            self.reject(r, "iteration goes backwards");
+        }
+        self.last_iteration = Some(iteration);
+    }
+
+    /// Pass pairing, nesting, the +1 pass sequence from one, iteration
+    /// order over passes and native services, and every row record's pass.
     fn passes(&mut self, records: &[Record]) {
         let (begin, end) = if self.summary.fixture {
             ("fixture_pass_begin", "fixture_pass_end")
@@ -499,25 +563,27 @@ impl Checker {
         let mut open: Option<Pass> = None;
         let mut native_open: Option<(u64, String)> = None;
         let mut last_cpass = 0;
-        let mut last_iteration = 0;
         for (i, r) in records.iter().enumerate() {
             let kind = r.kind.as_str();
             if kind == begin {
                 if open.is_some() {
                     self.reject(r, "a pass begins inside a pass");
                 }
+                if native_open.is_some() {
+                    self.reject(r, "a pass begins inside native service");
+                }
                 let (Some(iteration), Some(cpass)) = r.pass() else {
                     self.reject(r, "pass without identity");
                     continue;
                 };
-                if cpass <= last_cpass || iteration < last_iteration {
-                    self.reject(r, "pass counters do not advance");
+                if cpass != last_cpass + 1 {
+                    self.reject(r, "pass counters do not advance by one");
                 }
-                if self.summary.fixture && (iteration != cpass || cpass != last_cpass + 1) {
-                    self.reject(r, "fixture passes count 1, 2, ... with iteration = cpass");
+                if self.summary.fixture && iteration != cpass {
+                    self.reject(r, "fixture passes have iteration = cpass");
                 }
+                self.iteration_seen(r, iteration);
                 last_cpass = cpass;
-                last_iteration = iteration;
                 open = Some(Pass {
                     iteration,
                     cpass,
@@ -538,13 +604,13 @@ impl Checker {
                 if r.pass() != (Some(pass.iteration), Some(pass.cpass)) {
                     self.reject(r, "pass end identity differs from its begin");
                 }
-                if !self.summary.fixture {
+                if self.summary.fixture {
+                    pass.exit = "normal".into();
+                    pass.slots_after = pass.slots.clone();
+                } else {
                     pass.exit = r.get("exit").to_owned();
                     pass.poll_ok = r.get("poll") == "ok";
                     pass.slots_after = list(r.get("slots_after")).unwrap_or_default();
-                } else {
-                    pass.exit = "normal".into();
-                    pass.slots_after = pass.slots.clone();
                 }
                 self.summary.passes.push(pass);
                 continue;
@@ -554,7 +620,9 @@ impl Checker {
                     if open.is_some() || native_open.is_some() {
                         self.reject(r, "native service inside a pass or another native service");
                     }
-                    native_open = Some((r.num("iteration").unwrap_or(0), r.get("site").to_owned()));
+                    let iteration = r.num("iteration").unwrap_or(0);
+                    self.iteration_seen(r, iteration);
+                    native_open = Some((iteration, r.get("site").to_owned()));
                 }
                 "native_end" => match native_open.take() {
                     Some((iteration, site))
@@ -573,10 +641,10 @@ impl Checker {
                 }
                 _ => match &mut open {
                     Some(pass) => {
-                        if kind != "ordinary_entry" || r.get("row") == "lent" {
-                            if r.pass() != (Some(pass.iteration), Some(pass.cpass)) {
-                                self.reject(r, "record names another pass than the open one");
-                            }
+                        if (kind != "ordinary_entry" || r.get("row") == "lent")
+                            && r.pass() != (Some(pass.iteration), Some(pass.cpass))
+                        {
+                            self.reject(r, "record names another pass than the open one");
                         }
                         pass.records.push(i);
                     }
@@ -596,7 +664,8 @@ impl Checker {
         }
     }
 
-    /// Spec 03 2.1 and the identity rules of section 1.
+    /// Spec 03 2.1 and the identity rules of section 1; every record that
+    /// names a bid names the slot that bound it.
     fn live_set(&mut self, records: &[Record]) {
         let mut live: BTreeSet<u64> = BTreeSet::new();
         let mut last_bid = 0;
@@ -613,33 +682,28 @@ impl Checker {
                         self.reject(r, "bids are not strictly increasing");
                     }
                     last_bid = bid;
-                    if self
-                        .bound
-                        .insert(bid, (serial, job, slot as usize))
-                        .is_some()
-                        || !live.insert(bid)
-                    {
-                        self.reject(r, "duplicate bid");
-                    }
-                    if live
-                        .iter()
-                        .any(|b| *b != bid && self.bound[b].0 == serial && self.bound[b].1 == job)
-                    {
+                    if live.iter().any(|b| {
+                        self.bound
+                            .get(b)
+                            .is_some_and(|(s, j, _)| *s == serial && *j == job)
+                    }) {
                         self.reject(r, "(serial, job) repeats while the first bid is live");
+                    }
+                    if self.bound.insert(bid, (serial, job, slot)).is_some() || !live.insert(bid) {
+                        self.reject(r, "duplicate bid");
                     }
                     self.summary.bindings += 1;
                 }
                 "collect" | "removed" | "release_attempt" => {
                     let Some(bid) = r.bid() else {
-                        if r.kind != "release_attempt" || r.get("bid") != "none" {
-                            self.reject(r, "no bid");
-                        }
+                        self.reject(r, "no bid");
                         continue;
                     };
                     if !live.contains(&bid) {
                         self.reject(r, "bid is not live");
                         continue;
                     }
+                    self.same_slot(r, bid);
                     let removes = (r.kind == "removed")
                         || r.get("result").starts_with("returned_plan:")
                         || (r.kind == "release_attempt" && r.get("keep") == "false");
@@ -647,10 +711,12 @@ impl Checker {
                         live.remove(&bid);
                     }
                 }
-                "consume" | "terminal_requested" | "ordinary_entry" => {
+                "consume" | "terminal_requested" | "ordinary_entry" | "retained" => {
                     if let Some(bid) = r.bid() {
                         if !self.bound.contains_key(&bid) {
                             self.reject(r, "bid was never bound");
+                        } else {
+                            self.same_slot(r, bid);
                         }
                     }
                     if r.kind == "consume" {
@@ -663,7 +729,16 @@ impl Checker {
         self.summary.live = live;
     }
 
-    /// Spec 03 3.1: the consume table and the cseq-associated records.
+    fn same_slot(&mut self, r: &Record, bid: u64) {
+        if let Some((_, _, slot)) = self.bound.get(&bid).copied() {
+            if r.num("slot") != Some(slot) {
+                self.reject(r, "the bid belongs to another slot");
+            }
+        }
+    }
+
+    /// Spec 03 3.1: the consume table, and the records a shared cseq binds
+    /// to the consume's exact identity, in exact numbers.
     fn cseq(&mut self, records: &[Record]) {
         let mut consumes: BTreeMap<u64, &Record> = BTreeMap::new();
         let mut arm: BTreeMap<u64, Vec<&Record>> = BTreeMap::new();
@@ -699,27 +774,50 @@ impl Checker {
             let release = arm.remove(c).unwrap_or_default();
             let terminal = terminals.remove(c).unwrap_or_default();
             let entry = entries.remove(c).unwrap_or_default();
-            if (consume.get("decline") == "ok") != (release.len() == 1) {
+            let want_release = usize::from(consume.get("decline") == "ok");
+            let want_terminal = usize::from(consume.get("terminal") != "none");
+            let want_entry = usize::from(consume.get("entry") == "ordinary");
+            if release.len() != want_release {
                 self.reject(
                     consume,
-                    "decline=ok and exactly one arm release_attempt imply each other",
+                    &format!(
+                        "decline={} needs exactly {want_release} arm release_attempt, found {}",
+                        consume.get("decline"),
+                        release.len()
+                    ),
                 );
             }
-            if (consume.get("terminal") != "none") != (terminal.len() == 1) {
+            if terminal.len() != want_terminal {
                 self.reject(
                     consume,
-                    "terminal=ok|error and exactly one terminal_requested imply each other",
+                    &format!(
+                        "terminal={} needs exactly {want_terminal} terminal_requested, found {}",
+                        consume.get("terminal"),
+                        terminal.len()
+                    ),
                 );
             }
-            if (consume.get("entry") == "ordinary") != (entry.len() == 1) {
+            if entry.len() != want_entry {
                 self.reject(
                     consume,
-                    "entry=ordinary and exactly one ordinary_entry row=lent imply each other",
+                    &format!(
+                        "entry={} needs exactly {want_entry} ordinary_entry row=lent, found {}",
+                        consume.get("entry"),
+                        entry.len()
+                    ),
                 );
+            }
+            for r in release.iter().chain(&terminal).chain(&entry) {
+                if r.identity() != consume.identity() {
+                    self.reject(
+                        r,
+                        "cseq record names another pass, slot or bid than its consume",
+                    );
+                }
             }
             for r in release.iter().chain(&terminal) {
-                if r.index > consume.index || r.get("bid") != consume.get("bid") {
-                    self.reject(r, "arm record after its consume record or with another bid");
+                if r.index > consume.index {
+                    self.reject(r, "arm record after its consume record");
                 }
             }
             if let (Some(rel), Some(term)) = (release.first(), terminal.first()) {
@@ -728,14 +826,8 @@ impl Checker {
                 }
             }
             for r in &entry {
-                if r.index < consume.index
-                    || r.get("bid") != consume.get("bid")
-                    || r.pass() != consume.pass()
-                {
-                    self.reject(
-                        r,
-                        "ordinary_entry before its consume record or with another identity",
-                    );
+                if r.index < consume.index {
+                    self.reject(r, "ordinary_entry before its consume record");
                 }
             }
         }
@@ -775,7 +867,6 @@ impl Checker {
                     "deadline", "check", "classify", "accept", "decline", "terminal",
                 ]) && f("native") == "none"
                     && f("entry") == "ordinary"
-                    && f("bid") == "none"
             }
             "invariant" => {
                 all_none(&[
@@ -851,8 +942,8 @@ impl Checker {
         }
     }
 
-    /// Spec 04 R2: the inventory, checked for completeness before anything
-    /// is compared with it.
+    /// Spec 04 R2: the inventory phase, checked for completeness against the
+    /// pinned slot count before anything is compared with it.
     fn inventory(&mut self, records: &[Record]) {
         let begins: Vec<&Record> = records
             .iter()
@@ -865,22 +956,27 @@ impl Checker {
             )));
             return;
         };
+        for r in records {
+            if INVENTORY.contains(&r.kind.as_str()) && r.index < begin.index {
+                self.reject(r, "inventory record before the inventory phase");
+            }
+        }
         let terminal = records.last().unwrap();
         if terminal.get("slots") != begin.get("slots") {
             self.reject(terminal, "terminal slots differ from inventory_begin");
         }
         let tail = &records[begin.index..records.len() - 1];
         if begin.get("slots") == "none" {
-            if !self.summary.fixture && !tail.is_empty() {
-                self.reject(begin, "components absent but inventory records follow");
-            }
             if self.summary.fixture {
                 self.reject(begin, "a fixture inventory names its slots");
+            } else if !tail.is_empty() {
+                self.reject(begin, "components absent but inventory records follow");
             }
             return;
         }
-        let slots: usize = begin.num("slots").unwrap_or(0) as usize;
-        self.max_slots = Some(slots);
+        // Grammar already pinned a numeric count to the expected one.
+        let slots = self.expected;
+        self.inventory_slots = Some(slots);
         let mut expected_slot = 0;
         let mut i = 0;
         let mut bids = Vec::new();
@@ -957,10 +1053,44 @@ impl Checker {
         }
     }
 
-    /// Spec 03 4.1 as amended by spec 04 R1/R3, per pass.
+    /// The envelope's counters against what the stream showed: the first
+    /// iteration is the capture's, the terminal iteration is not before the
+    /// last one seen, and the terminal pass count is the number of passes.
+    fn boundaries(&mut self, records: &[Record]) {
+        let first = records.first().unwrap();
+        let last = records.last().unwrap();
+        let passes = self.summary.passes.len() as u64;
+        if let Some(begin) = first.num("iteration") {
+            if self.first_iteration.is_some_and(|seen| seen < begin) {
+                self.reject(first, "capture_begin iteration is after a later record's");
+            }
+        }
+        if let (Some(end), Some(seen)) = (last.num("iteration"), self.last_iteration) {
+            if end < seen {
+                self.reject(last, "terminal iteration is before the last one seen");
+            }
+        }
+        if self.summary.fixture {
+            if last.pass() != (Some(passes), Some(passes)) {
+                self.reject(
+                    last,
+                    "fixture_end names a pass count other than the passes seen",
+                );
+            }
+        } else if self.inventory_slots.is_none() {
+            if passes != 0 {
+                self.reject(last, "components absent but component passes were recorded");
+            }
+        } else if last.num("cpass") != Some(passes) {
+            self.reject(last, "capture_end cpass is not the number of passes seen");
+        }
+    }
+
+    /// Spec 03 4.1 as amended by spec 04 R1/R3, per pass, against the
+    /// pinned slot count.
     fn obligations(&mut self, records: &[Record]) {
         let passes = std::mem::take(&mut self.summary.passes);
-        let max = self.max_slots;
+        let max = self.expected;
         let mut eligible_images = false;
         let mut paused_native = false;
         let mut held_consume = false;
@@ -999,7 +1129,11 @@ impl Checker {
                         .filter(|s| pass.slots_after.contains(s))
                         .collect();
                     eligible_images |= !both.is_empty();
-                    let images = visits("images_visit");
+                    let images: Vec<(usize, usize)> = rs
+                        .iter()
+                        .filter(|r| r.kind == "images_visit" && r.get("hooked") == "true")
+                        .map(|r| (r.num("slot").unwrap_or(0) as usize, r.index))
+                        .collect();
                     for slot in &both {
                         let n = images.iter().filter(|(s, _)| s == slot).count();
                         if n != 1 {
@@ -1027,12 +1161,6 @@ impl Checker {
                     .push(format!("pass {at}: ended before the walk ({})", pass.exit));
                 continue;
             }
-            let Some(max) = max else {
-                self.summary
-                    .insufficient
-                    .push(format!("pass {at}: walk obligation needs the slot count"));
-                continue;
-            };
             let walks = visits("walk_visit");
             if walked_paused && !consumes.is_empty() {
                 self.violation(format!("paused pass {at} served content"));
@@ -1100,251 +1228,7 @@ impl Checker {
     }
 }
 
-/// Spec 04's rejection paths over small synthetic streams: each stream is
-/// the accepted fixture shape with one defect, and each defect is named by
-/// the finding it must produce.
-#[test]
-fn the_reader_rejects_incomplete_and_contradictory_streams() {
-    const P: &str = "sophia_combined_witness schema=1 kind=";
-    let at = "iteration=1 cpass=1";
-    let good = [
-        "fixture_begin owner=child".to_owned(),
-        format!("fixture_pass_begin {at} native=present paused=false slots=[0]"),
-        format!("images_visit {at} slot=0 hooked=true"),
-        format!("binding {at} slot=0 bid=1 ticket=0 serial=1 job=1 grant=(1,1) head=(1,1,0)"),
-        format!("collect {at} slot=0 bid=1 result=taken:Rendered state_after=Held"),
-        format!("removed {at} slot=0 bid=1 cause=accepted"),
-        format!(
-            "consume {at} slot=0 cseq=1 bid=1 join=held native=present deadline=ok check=ok classify=match accept=ok decline=none terminal=none entry=accepted"
-        ),
-        format!("walk_visit {at} slot=0 jobs=0 open=0 cancels=0"),
-        format!("fixture_pass_end {at}"),
-        "inventory_begin slots=2".to_owned(),
-        "retained_row slot=0 jobs=0 open=0 cancels=0".to_owned(),
-        "retained_row slot=1 jobs=0 open=0 cancels=0".to_owned(),
-        format!("fixture_end {at} slots=2"),
-    ];
-    let run = |lines: &[String]| {
-        let text: Vec<String> = lines.iter().map(|l| format!("{P}{l}")).collect();
-        parse(text.iter().map(String::as_str)).and_then(|r| check(&r))
-    };
-    let summary = run(&good).unwrap_or_else(|f| panic!("{f:?}"));
-    assert!(summary.retention_demonstrated && summary.live.is_empty());
-    assert_eq!(
-        (summary.bindings, summary.consumes, summary.passes.len()),
-        (1, 1, 1)
-    );
-    let with = |edit: &dyn Fn(&mut Vec<String>)| {
-        let mut lines = good.to_vec();
-        edit(&mut lines);
-        run(&lines)
-    };
-    let expect = |result: Result<Summary, Vec<Finding>>, reject: bool, word: &str| {
-        let findings = result.err().unwrap_or_else(|| panic!("{word}: accepted"));
-        assert!(
-            findings.iter().any(|f| match f {
-                Finding::Reject(m) => reject && m.contains(word),
-                Finding::Violation(m) => !reject && m.contains(word),
-            }),
-            "{word}: {findings:?}"
-        );
-    };
-    // Truncations: no terminal, no inventory, a declared row missing.
-    expect(
-        with(&|l| {
-            l.pop();
-        }),
-        true,
-        "incomplete",
-    );
-    expect(
-        with(&|l| {
-            l.remove(9);
-        }),
-        true,
-        "inventory_begin",
-    );
-    expect(
-        with(&|l| {
-            l.remove(11);
-        }),
-        true,
-        "retained_row",
-    );
-    expect(
-        with(&|l| l[12] = format!("fixture_end {at} slots=1")),
-        true,
-        "terminal slots",
-    );
-    // Nonempty inventory: a retained bid that the live set lacks, twice.
-    expect(
-        with(&|l| {
-            l[10] = "retained_row slot=0 jobs=1 open=0 cancels=0".into();
-            l.insert(11, "retained slot=0 bid=1 state=Held verdict=Open".into());
-        }),
-        false,
-        "live-set mismatch",
-    );
-    expect(
-        with(&|l| {
-            l[10] = "retained_row slot=0 jobs=2 open=0 cancels=0".into();
-            l.insert(11, "retained slot=0 bid=1 state=Held verdict=Open".into());
-            l.insert(12, "retained slot=0 bid=1 state=Held verdict=Open".into());
-        }),
-        true,
-        "retained twice",
-    );
-    // MW5's shape: the accepted removal missing leaves bid 1 live.
-    expect(
-        with(&|l| {
-            l.remove(5);
-        }),
-        false,
-        "live-set mismatch",
-    );
-    // Duplicate bid; exhausted; (serial, job) repeated while live.
-    expect(with(&|l| l.insert(4, l[3].clone())), true, "duplicate bid");
-    expect(
-        with(&|l| l[3] = l[3].replace("bid=1", "bid=exhausted")),
-        true,
-        "exhausted",
-    );
-    expect(
-        with(&|l| l.insert(4, l[3].replace("bid=1", "bid=2"))),
-        true,
-        "(serial, job) repeats",
-    );
-    // Duplicate cancellation identities are preserved and reported, not rejected.
-    let dup = with(&|l| {
-        l[11] = "retained_row slot=1 jobs=0 open=0 cancels=2".into();
-        l.insert(12, "retained_cancel slot=1 head=(1,1,0) grant=(1,1)".into());
-        l.insert(13, "retained_cancel slot=1 head=(1,1,0) grant=(1,1)".into());
-    })
-    .unwrap();
-    assert_eq!(dup.retained_cancels, 2);
-    assert!(
-        dup.notes
-            .iter()
-            .any(|n| n.contains("duplicate cancellation"))
-    );
-    // Native-absent exemption: an ordinary entry without the row is no violation there.
-    let absent = with(&|l| {
-        l[1] = format!("fixture_pass_begin {at} native=absent paused=false slots=[0]");
-        l.insert(2, "ordinary_entry cseq=none row=absent".into());
-    })
-    .unwrap();
-    assert!(absent.insufficient.iter().any(|n| n.starts_with("PM1")));
-    expect(
-        with(&|l| l.insert(2, "ordinary_entry cseq=none row=absent".into())),
-        false,
-        "content served without the row",
-    );
-    // Order: the walk before the content (MW2 / PM3).
-    expect(
-        with(&|l| {
-            let walk = l.remove(7);
-            l.insert(2, walk);
-        }),
-        false,
-        "walk before content",
-    );
-    // Omitted hooks: no images visit (PM1), no walk (MW... native-only PM4 shape).
-    expect(
-        with(&|l| {
-            l.remove(2);
-        }),
-        false,
-        "images hook",
-    );
-    expect(
-        with(&|l| {
-            l.remove(7);
-        }),
-        false,
-        "walk: slot 0",
-    );
-    // The consume table and its associated records.
-    expect(
-        with(&|l| l[6] = l[6].replace("decline=none", "decline=ok")),
-        true,
-        "decline=ok",
-    );
-    expect(
-        with(&|l| l[6] = l[6].replace("terminal=none", "terminal=ok")),
-        true,
-        "terminal_requested",
-    );
-    expect(
-        with(&|l| l[6] = l[6].replace("entry=accepted", "entry=ordinary")),
-        true,
-        "ordinary_entry",
-    );
-    expect(
-        with(&|l| l[6] = l[6].replace("classify=match", "classify=churn")),
-        true,
-        "return table",
-    );
-    // MW3's shape: the consume names no bid although the join was held.
-    expect(
-        with(&|l| l[6] = l[6].replace("bid=1", "bid=none")),
-        true,
-        "return table",
-    );
-    expect(
-        with(&|l| l[6] = l[6].replace("join=held", "join=ordinary")),
-        true,
-        "return table",
-    );
-    // Envelopes: mixed, unpaired, nested; unknown kind; unlabelled exit set.
-    expect(
-        with(&|l| {
-            l.insert(
-                1,
-                format!("cpass_begin {at} native=present paused=false slots=[0]"),
-            )
-        }),
-        true,
-        "mixed",
-    );
-    expect(
-        with(&|l| {
-            l.remove(8);
-        }),
-        true,
-        "incomplete",
-    );
-    expect(with(&|l| l.insert(2, l[1].clone())), true, "inside a pass");
-    expect(
-        with(&|l| l.insert(2, "unknown_kind a=1".into())),
-        true,
-        "unknown kind",
-    );
-    expect(
-        with(&|l| l.insert(2, format!("images_visit {at} slot=0 hooked=false"))),
-        true,
-        "out of set",
-    );
-    // A production stream: an unlabelled exit is accepted as a record and
-    // reported through the pass; an unwinding one is incomplete.
-    let production = [
-        "capture_begin iteration=1".to_owned(),
-        "native_begin iteration=1 site=authority".to_owned(),
-        "native_end iteration=1 site=authority result=ok".to_owned(),
-        format!("cpass_begin {at} native=present paused=false slots=[]"),
-        format!("cpass_end {at} exit=error:root_bounds poll=ok slots_after=[]"),
-        "inventory_begin slots=none".to_owned(),
-        "capture_end iteration=2 cpass=1 exit=normal slots=none".to_owned(),
-    ];
-    let p = run(&production).unwrap_or_else(|f| panic!("{f:?}"));
-    assert!(p.notes.iter().any(|n| n.contains("ended before the walk")));
-    assert!(p.insufficient.len() >= 3, "{:?}", p.insufficient);
-    let mut unlabelled = production.to_vec();
-    unlabelled[4] = format!("cpass_end {at} exit=error:unlabelled poll=ok slots_after=[]");
-    expect(run(&unlabelled), false, "unlabelled exit");
-    let mut unwound = production.to_vec();
-    unwound[4] = format!("cpass_end {at} exit=unwinding poll=ok slots_after=[]");
-    expect(run(&unwound), true, "unwound");
-    let mut absent_rows = production.to_vec();
-    absent_rows.insert(6, "retained_row slot=0 jobs=0 open=0 cancels=0".into());
-    expect(run(&absent_rows), true, "components absent");
-}
+// The reader's own control over synthetic streams, in its own file for the
+// source-layout limit.
+#[path = "combined_witness_reader_cases.rs"]
+mod cases;

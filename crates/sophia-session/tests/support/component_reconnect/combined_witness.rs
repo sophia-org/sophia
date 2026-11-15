@@ -185,7 +185,8 @@ fn the_witness_stream_of_one_accepted_admission_is_consistent() {
         .expect("the last pass walks slot 0");
     assert!(walk.index > c.index, "the walk follows the content step");
     // The reader's contract over the complete fixture stream.
-    let summary = reader::check(&records).unwrap_or_else(|f| panic!("{f:?}"));
+    let summary = reader::check(&records, sophia_config::MAX_SHELL_COMPONENTS)
+        .unwrap_or_else(|f| panic!("{f:?}"));
     assert!(summary.fixture);
     assert_eq!(summary.passes.len() as u64, expect.passes);
     assert!(
@@ -291,7 +292,7 @@ fn witness_reader_over_file() {
     let path = std::env::var_os(CAPTURE_ENV).expect("SOPHIA_WITNESS_CAPTURE names the capture");
     let text = std::fs::read_to_string(&path).unwrap();
     let records = reader::parse(text.lines()).unwrap_or_else(|f| panic!("{f:?}"));
-    match reader::check(&records) {
+    match reader::check(&records, sophia_config::MAX_SHELL_COMPONENTS) {
         Ok(summary) => println!("{summary:#?}"),
         Err(findings) => panic!("{findings:#?}"),
     }
