@@ -11,12 +11,13 @@
 //! serves nothing in the pass whose pause ended and reads the requested
 //! shutdown at its next control check, so the forwarded job is dropped
 //! unserved with its route: it never entered the gate and the seam read
-//! nothing. The owner wake rings once for that closure: the route's result
-//! sender notifies the wake when it drops (`sophia_wake::SignalSender`), a
-//! disconnect notification, not a publication; a wake is neither a result
-//! nor a count of results. That no result was buffered is shown by the
-//! producer boundaries above and by the next collection, which meets the
-//! closed route.
+//! nothing. Dropping the route's result sender notifies the owner wake
+//! (`sophia_wake::SignalSender`, by source), a disconnect notification and
+//! not a publication; the control observes the wake readable after the
+//! exit, which is neither a count of notifications nor an attribution of a
+//! coalesced wake to one source, and a wake is not a result. That no result
+//! was buffered is shown by the producer boundaries above and by the next
+//! collection, which meets the closed route and collects nothing.
 //!
 //! The owner's next images step finds the route closed (`NotConnected`,
 //! reported once as the result-route error, the current attempt's failure)
@@ -110,6 +111,10 @@ fn a_worker_lost_after_forwarding_keeps_the_job_in_flight_and_refuses_final_quie
         lane.states(),
         [(job, "in flight")],
         "5: the entry stays InFlight with its reservation"
+    );
+    assert!(
+        lane.row().collected().is_empty(),
+        "5: nothing collected: the closed route delivered no buffered result"
     );
     assert_ne!(
         lane.h.owner.processes.image_pending(0),

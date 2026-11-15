@@ -119,7 +119,11 @@ impl Lane {
 /// install or queue. After the successor ends the same way, every other
 /// guard of final quiescence is clear and the Held entry alone refuses it;
 /// one hooked walk with native present releases the ended grant's result
-/// and nothing else refuses. Every pass is named where it runs.
+/// and nothing else refuses. Every pass is named where it runs. That the
+/// ordinary boundaries admit and join nothing is observed, not inferred
+/// from the final state: the row's trace (every row call, b4) is
+/// snapshotted after the Held producer and must be unchanged after each
+/// boundary, until the explicit combined cleanup.
 #[test]
 fn a_held_job_is_untouched_by_the_pass_without_native_and_refuses_final_quiescence() {
     let mut lane = Lane::new();
@@ -127,6 +131,7 @@ fn a_held_job_is_untouched_by_the_pass_without_native_and_refuses_final_quiescen
     let job = lane.held(&mut a, 1);
     let old = a.key;
     let before = native_counts(&lane.native);
+    let trace = lane.h.owner.processes.combined_row(0).trace().to_vec();
     assert!(
         !a.stream.has_credit(),
         "the Held job keeps the stream's credit"
@@ -156,23 +161,40 @@ fn a_held_job_is_untouched_by_the_pass_without_native_and_refuses_final_quiescen
     );
     assert!(!a.stream.has_credit(), "1: the stream is still charged");
     assert_eq!(
+        lane.h.owner.processes.combined_row(0).trace(),
+        trace.as_slice(),
+        "1: the row recorded no call: no admission and no join"
+    );
+    assert_eq!(
         lane.h.owner.phase(old).unwrap(),
         ComponentConnectionPhase::Connected,
         "1: nothing stops"
     );
-    // 2. The first attempt ends: stop, its peer dropped, ordinary polls
-    // only (the session's own poll, native None). The Held job is retained
-    // through the transition; no combined walk and no native step runs.
-    lane.h.owner.stop(old).unwrap();
+    // 2. The first attempt ends: its peer dropped, then `quiesce` (stop,
+    // and the session's own poll with native None until the slot's image
+    // work is 0, bounded) and one more ordinary poll. The Held job is
+    // retained through the transition; no combined walk and no native step
+    // runs.
     drop(a);
-    for _ in 0..3 {
+    quiesce(&mut lane, old, |lane| {
         lane.h.owner.poll(65536).unwrap();
         assert_eq!(
             lane.states(),
             [(job, "held")],
             "2: retained through the drain"
         );
-    }
+    });
+    lane.h.owner.poll(65536).unwrap();
+    assert_eq!(
+        lane.h.owner.processes.image_pending(0),
+        0,
+        "2: the first attempt's image work ended"
+    );
+    assert_eq!(
+        lane.states(),
+        [(job, "held")],
+        "2: retained after the drain"
+    );
     assert_eq!(
         lane.h.owner.phase(old).unwrap(),
         ComponentConnectionPhase::Revoked
@@ -190,6 +212,11 @@ fn a_held_job_is_untouched_by_the_pass_without_native_and_refuses_final_quiescen
         lane.states(),
         [(job, "held")],
         "2: the old grant's job is still Held"
+    );
+    assert_eq!(
+        lane.h.owner.processes.combined_row(0).trace(),
+        trace.as_slice(),
+        "2: the drain and the successor's connection recorded no row call"
     );
     // 3. The successor's candidate 2 on its own stream, today's path. Each
     // iteration: the successor's poll_io, the session's own poll (native
@@ -220,10 +247,11 @@ fn a_held_job_is_untouched_by_the_pass_without_native_and_refuses_final_quiescen
         b.terminals(2).is_empty(),
         "3: candidate 2 awaits its presentation"
     );
+    assert_eq!(lane.states(), [(job, "held")], "3: the old job untouched");
     assert_eq!(
-        lane.states(),
-        [(job, "held")],
-        "3: no new admission or join; the old job untouched"
+        lane.h.owner.processes.combined_row(0).trace(),
+        trace.as_slice(),
+        "3: no new admission and no join: the row recorded no call"
     );
     assert_eq!(
         lane.h.owner.processes.combined_row(0).pending(),
@@ -261,6 +289,11 @@ fn a_held_job_is_untouched_by_the_pass_without_native_and_refuses_final_quiescen
     refused(&mut lane, "R1 native None");
     assert_eq!(lane.states(), [(job, "held")], "4: refusal changed nothing");
     assert_eq!(native_counts(&lane.native), before);
+    assert_eq!(
+        lane.h.owner.processes.combined_row(0).trace(),
+        trace.as_slice(),
+        "4: no row call before the explicit combined cleanup"
+    );
     // With native present again, the walk releases the ended grant's Held
     // result, and the row was the only refusal.
     assert!(lane.turn().is_none());
