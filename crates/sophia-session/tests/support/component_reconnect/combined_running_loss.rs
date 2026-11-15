@@ -19,13 +19,17 @@
 //! was buffered is shown by the producer boundaries above and by the next
 //! collection, which meets the closed route and collects nothing.
 //!
-//! The owner's next images step finds the route closed (`NotConnected`,
-//! reported once as the result-route error, the current attempt's failure)
-//! and keeps the entry InFlight with its reservation; the credit stays
-//! charged; later turns are silent and keep it; the walk never touches an
-//! InFlight entry; no release, accept or install is inferred; and final
-//! quiescence refuses, with the charged image work and the retained row the
-//! guards that block. That hold is unbounded by construction (the gate-4
+//! The owner's next turn: its images step collects, finds the route closed
+//! (`NotConnected`) and records the result-route error in the row, once,
+//! keeping the entry InFlight with its reservation; content is visited, the
+//! slot still connected; the walk then delivers the row's error to the slot
+//! as the current attempt's failure (`take_error` runs after the walk, in
+//! `turn_combined_walk`, never in the images step, which fails a slot only
+//! for the image owner's own service error); the credit stays charged;
+//! later turns are silent and keep it; the walk never touches an InFlight
+//! entry; no release, accept or install is inferred; and final quiescence
+//! refuses, with the charged image work and the retained row the guards
+//! that block. That hold is unbounded by construction (the gate-4
 //! authority note's R1); its disposal is a later authority review. After
 //! the loss only owner and shared-code steps run: no native service step,
 //! whose failure would be the dead worker's, not this row's. Every wait is
@@ -92,8 +96,8 @@ fn a_worker_lost_after_forwarding_keeps_the_job_in_flight_and_refuses_final_quie
     let (first, steps) = lane.until_driver_failure(&mut a, false);
     assert_eq!(
         steps,
-        [Images, FailService(0), Walk, Native],
-        "5: the images step failed the slot before content"
+        [Images, Content(0), Walk, FailService(0), Native],
+        "5: collection recorded the error, content was visited, the walk delivered it"
     );
     let what = format!("combined job {job}: result route: not connected");
     assert!(

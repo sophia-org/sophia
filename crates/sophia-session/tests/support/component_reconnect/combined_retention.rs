@@ -5,13 +5,13 @@
 //! Nothing here disposes of a retained entry by inference; the only
 //! release is the walk's own, with native present, where the row says so.
 //!
-//! The table's five cases: rows 1-3 are here (native None with a Held
-//! job, in two boundaries, the first attempt's and an ordinary successor's;
-//! a replaced owner's NotFound debt; a result whose issuing facade is gone
-//! at its settlement retry). Case 4, the worker lost after the
-//! validator forwarded its job and before the worker served it, is
-//! `driver::running::loss`. Case 5, the worker lost after its result is
-//! buffered, is `driver::running`'s replacement control
+//! The table's five cases: rows 1-3 are here (native None injected at pass
+//! time after a Held producer, where the ordinary content pass is refused
+//! the Held job's own candidate; a replaced owner's NotFound debt; a result
+//! whose issuing facade is gone at its settlement retry). Case 4, the
+//! worker lost after the validator forwarded its job and before the worker
+//! served it, is `driver::running::loss`. Case 5, the worker lost after its
+//! result is buffered, is `driver::running`'s replacement control
 //! `an_unexpected_worker_loss_keeps_disconnected_debt_that_refuses_final_quiescence`,
 //! as it stands.
 use super::super::super::super::content::reconnect_fixture::adopt_lane_facts;
@@ -35,8 +35,14 @@ fn native_counts(native: &CombinedNativeFixture) -> [usize; 6] {
 
 /// The owner moved into final quiescence: `stop` of the attempt, then the
 /// given turns until the slot's image work has ended.
-fn quiesce(lane: &mut Lane, key: ComponentConnectionKey, mut turn: impl FnMut(&mut Lane)) {
+fn quiesce(lane: &mut Lane, key: ComponentConnectionKey, turn: impl FnMut(&mut Lane)) {
     lane.h.owner.stop(key).unwrap();
+    drain(lane, turn);
+}
+
+/// The given turns until the slot's image work has ended, bounded; the
+/// attempt is already stopped.
+fn drain(lane: &mut Lane, mut turn: impl FnMut(&mut Lane)) {
     let deadline = Instant::now() + WAIT;
     while lane.h.owner.processes.image_pending(0) != 0 {
         turn(lane);
@@ -103,29 +109,37 @@ impl Lane {
     }
 }
 
-/// R1 row 1, labelled: native None at pass time with a Held job, in two
-/// boundaries, neither the original same-stream two-frame premise (a Held
-/// job keeps its stream's one credit, so a second frame on that stream is
-/// refused by the client, `QueueSaturated`, and is not a producer here).
-/// First, with the first attempt still connected: the pass without native
-/// scanout, the session's own `poll` (its turn is `turn_connected`) and the
-/// bar's ordinary content service with native None and no new submission,
-/// leaves the Held job untouched, its stream still charged. Second, that
-/// attempt ends by `stop` and ordinary polling only (no combined walk, no
-/// native step), the Held job retained; a successor connects in the same
-/// slot with a distinct grant and a fresh credit, and its candidate 2 takes
-/// today's path to a pending presentation under the successor's grant,
-/// beside the retained old-grant job, with no row attempt, release, accept,
-/// install or queue. After the successor ends the same way, every other
-/// guard of final quiescence is clear and the Held entry alone refuses it;
-/// one hooked walk with native present releases the ended grant's result
-/// and nothing else refuses. Every pass is named where it runs. That the
-/// ordinary boundaries admit and join nothing is observed, not inferred
-/// from the final state: the row's trace (every row call, b4) is
-/// snapshotted after the Held producer and must be unchanged after each
-/// boundary, until the explicit combined cleanup.
+/// R1 row 1, labelled: native None injected at pass time after a Held
+/// producer. Not a demonstrated production transition: the owner loop's
+/// `native_scanout` is `Some` from its assignment on, and this control
+/// supplies no path from an admission with native present to a later pass
+/// without it; the paused pass (presentation unavailable) keeps native
+/// present and lends the row, a different condition that does not stand in
+/// for this one. The pass is the production shape without native scanout:
+/// the session's own `poll` (its turn is `turn_connected`) and the bar's
+/// content service through `with_combined_service` with
+/// `ContentNative::ordinary(None)`. The Held job's own candidate is still
+/// the transport's next submission (`lane.held` renders and collects it and
+/// consumes nothing), so the ordinary content path takes it, bypassing the
+/// combined join, and the backend preflight refuses it without native
+/// presentation: that refusal, exactly, is the outcome, not a row
+/// result-route error and not a row cleanup diagnostic; the row records no
+/// event, the job stays Held, the stream stays charged, nothing pends
+/// presentation and candidate 1 has no terminal. The production pass maps
+/// that failure to `fail_service` (component_service.rs, its Poll-error
+/// branch); the control applies the same shared method to the current
+/// attempt, which is not an execution of `service_components` itself, and
+/// requires Revoked. The peer is then dropped and the slot drained by
+/// bounded ordinary polling only, the Held job retained; with the image
+/// work at 0 and every other guard shown clear, the Held entry alone
+/// refuses final quiescence; one hooked walk with native present releases
+/// the ended grant's result and nothing else refuses. The row's trace
+/// (recorded events, b4's scope, not every reader call) is snapshotted
+/// after the Held producer and must be unchanged until that cleanup.
 #[test]
-fn a_held_job_is_untouched_by_the_pass_without_native_and_refuses_final_quiescence() {
+fn a_held_jobs_candidate_is_refused_by_the_pass_without_native_and_the_job_refuses_final_quiescence()
+ {
+    const REFUSAL: &str = "shell content candidate cannot be accepted without native presentation";
     let mut lane = Lane::new();
     let mut a = lane.attempt();
     let job = lane.held(&mut a, 1);
@@ -136,20 +150,28 @@ fn a_held_job_is_untouched_by_the_pass_without_native_and_refuses_final_quiescen
         !a.stream.has_credit(),
         "the Held job keeps the stream's credit"
     );
-    // 1. The first attempt connected, native None, nothing new submitted.
-    // Each iteration: the peer's poll_io, the session's own poll (the
-    // production turn with native None: image service and ordinary
-    // content, no walk) and one bar content service pass.
-    for _ in 0..3 {
-        a.peer.poll_io().unwrap();
-        lane.h.owner.poll(65536).unwrap();
-        assert_eq!(lane.serve_ordinary(&mut a), Ok(()), "R1 native None");
-    }
-    assert_eq!(
-        lane.states(),
-        [(job, "held")],
-        "1: the pass without native touched nothing in the row"
+    assert!(
+        lane.pending(&a).is_empty(),
+        "nothing pends presentation before the pass"
     );
+    assert!(
+        a.terminals(1).is_empty(),
+        "candidate 1 has no terminal before the pass"
+    );
+    // 1. The pass without native: the peer's poll_io, the session's own
+    // poll (native None: image service and ordinary content, no walk) and
+    // one bar content service pass, which meets candidate 1 on the ordinary
+    // path and is refused.
+    a.peer.poll_io().unwrap();
+    lane.h.owner.poll(65536).unwrap();
+    let served = lane.serve_ordinary(&mut a);
+    assert_eq!(
+        served,
+        Err(REFUSAL.to_string()),
+        "1: the pass without native is refused candidate 1"
+    );
+    let error = served.unwrap_err();
+    assert_eq!(lane.states(), [(job, "held")], "1: the same Held job");
     assert_eq!(
         native_counts(&lane.native),
         before,
@@ -157,145 +179,100 @@ fn a_held_job_is_untouched_by_the_pass_without_native_and_refuses_final_quiescen
     );
     assert!(
         lane.pending(&a).is_empty(),
-        "1: nothing of the first attempt pends presentation"
+        "1: no successful pending presentation"
+    );
+    assert!(
+        a.terminals(1).is_empty(),
+        "1: the refusal wrote no terminal for candidate 1"
     );
     assert!(!a.stream.has_credit(), "1: the stream is still charged");
     assert_eq!(
         lane.h.owner.processes.combined_row(0).trace(),
         trace.as_slice(),
-        "1: the row recorded no call: no admission and no join"
+        "1: the row recorded no event"
+    );
+    assert!(
+        lane.h
+            .owner
+            .processes
+            .combined_row(0)
+            .cleanup_diagnostics()
+            .is_empty(),
+        "1: the refusal is not a row diagnostic"
     );
     assert_eq!(
         lane.h.owner.phase(old).unwrap(),
         ComponentConnectionPhase::Connected,
-        "1: nothing stops"
+        "1: the refusal itself stops nothing"
     );
-    // 2. The first attempt ends: its peer dropped, then `quiesce` (stop,
-    // and the session's own poll with native None until the slot's image
-    // work is 0, bounded) and one more ordinary poll. The Held job is
-    // retained through the transition; no combined walk and no native step
-    // runs.
+    // 2. The production Poll-error branch's effect, by the same shared
+    // method.
+    lane.h.owner.fail_service(old, &error).unwrap();
+    assert_eq!(
+        lane.h.owner.phase(old).unwrap(),
+        ComponentConnectionPhase::Revoked,
+        "2: the current attempt's failure stops it"
+    );
+    assert_eq!(
+        lane.states(),
+        [(job, "held")],
+        "2: retained through the stop"
+    );
+    assert_eq!(
+        native_counts(&lane.native),
+        before,
+        "2: the stop touched nothing"
+    );
+    // 3. The drain: the peer dropped, then the session's own poll with
+    // native None until the slot's image work is 0, bounded, the Held job
+    // checked after every poll; then one more ordinary poll. No combined
+    // walk and no native step runs.
     drop(a);
-    quiesce(&mut lane, old, |lane| {
+    drain(&mut lane, |lane| {
         lane.h.owner.poll(65536).unwrap();
         assert_eq!(
             lane.states(),
             [(job, "held")],
-            "2: retained through the drain"
+            "3: retained through the drain"
         );
     });
     lane.h.owner.poll(65536).unwrap();
     assert_eq!(
         lane.h.owner.processes.image_pending(0),
         0,
-        "2: the first attempt's image work ended"
+        "3: the image work ended"
     );
     assert_eq!(
         lane.states(),
         [(job, "held")],
-        "2: retained after the drain"
-    );
-    assert_eq!(
-        lane.h.owner.phase(old).unwrap(),
-        ComponentConnectionPhase::Revoked
-    );
-    assert_eq!(
-        native_counts(&lane.native),
-        before,
-        "2: the drain touched nothing"
-    );
-    let mut b = lane.attempt();
-    assert_eq!(b.key.slot, old.slot, "2: the same persistent slot");
-    assert_ne!(b.key.grant, old.grant, "2: a distinct grant");
-    assert!(b.stream.has_credit(), "2: the successor's own fresh credit");
-    assert_eq!(
-        lane.states(),
-        [(job, "held")],
-        "2: the old grant's job is still Held"
-    );
-    assert_eq!(
-        lane.h.owner.processes.combined_row(0).trace(),
-        trace.as_slice(),
-        "2: the drain and the successor's connection recorded no row call"
-    );
-    // 3. The successor's candidate 2 on its own stream, today's path. Each
-    // iteration: the successor's poll_io, the session's own poll (native
-    // None) and one bar content service pass for the successor.
-    lane.submit(&mut b, 2, PIXEL);
-    let deadline = Instant::now() + WAIT;
-    while lane.pending(&b).is_empty() {
-        b.peer.poll_io().unwrap();
-        lane.h.owner.poll(65536).unwrap();
-        assert_eq!(
-            lane.serve_ordinary(&mut b),
-            Ok(()),
-            "R1 native None: successor"
-        );
-        assert!(
-            Instant::now() < deadline,
-            "3: candidate 2 never reached the ordinary path: {:?}",
-            lane.states()
-        );
-        std::thread::yield_now();
-    }
-    assert_eq!(
-        lane.pending(&b),
-        [(b.key.grant, OUTPUT, 2)],
-        "3: candidate 2 pends presentation under the successor's grant"
-    );
-    assert!(
-        b.terminals(2).is_empty(),
-        "3: candidate 2 awaits its presentation"
-    );
-    assert_eq!(lane.states(), [(job, "held")], "3: the old job untouched");
-    assert_eq!(
-        lane.h.owner.processes.combined_row(0).trace(),
-        trace.as_slice(),
-        "3: no new admission and no join: the row recorded no call"
+        "3: retained after the drain"
     );
     assert_eq!(
         lane.h.owner.processes.combined_row(0).pending(),
         1,
-        "3: the row owes the one entry"
+        "3: blocking guard: the Held entry"
     );
     assert_eq!(
         native_counts(&lane.native),
         before,
-        "3: no row attempt, release, accept, install or queue"
+        "3: the drain touched nothing"
     );
     assert_eq!(
-        lane.h.owner.phase(b.key).unwrap(),
-        ComponentConnectionPhase::Connected,
-        "3: nothing stops the successor"
-    );
-    // 4. The successor ends the same way; the Held entry alone refuses.
-    let key = b.key;
-    drop(b);
-    quiesce(&mut lane, key, |lane| {
-        lane.h.owner.poll(65536).unwrap();
-    });
-    assert_eq!(lane.states(), [(job, "held")], "4: retained");
-    assert_eq!(
-        lane.h.owner.processes.combined_row(0).pending(),
-        1,
-        "4: blocking guard: the Held entry"
-    );
-    assert_eq!(
-        lane.h.owner.processes.image_pending(0),
-        0,
-        "4: no image work"
+        lane.h.owner.processes.combined_row(0).trace(),
+        trace.as_slice(),
+        "3: the drain recorded no row event"
     );
     other_guards_clear(&lane);
     refused(&mut lane, "R1 native None");
-    assert_eq!(lane.states(), [(job, "held")], "4: refusal changed nothing");
+    assert_eq!(lane.states(), [(job, "held")], "3: refusal changed nothing");
     assert_eq!(native_counts(&lane.native), before);
     assert_eq!(
         lane.h.owner.processes.combined_row(0).trace(),
         trace.as_slice(),
-        "4: no row call before the explicit combined cleanup"
+        "3: no row event before the explicit combined cleanup"
     );
-    // With native present again, the walk releases the ended grant's Held
-    // result, and the row was the only refusal.
+    // 4. With native present again, the walk releases the ended grant's
+    // Held result, and the row was the only refusal.
     assert!(lane.turn().is_none());
     assert!(
         lane.states().is_empty(),
