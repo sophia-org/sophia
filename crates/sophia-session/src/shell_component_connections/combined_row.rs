@@ -381,13 +381,13 @@ impl CombinedRow {
         let mut jobs = std::mem::take(&mut self.jobs);
         jobs.retain_mut(|job| {
             let ended = current != Some(job.grant);
-            let keep = match job.state {
+            match job.state {
                 State::Held if ended => {
                     let outcome = native.release_combined_held(&job.head, job.job);
                     let keep = self.released(job, outcome);
                     #[cfg(test)]
                     self.record_release(
-                        &job,
+                        job,
                         steps::Cause::WalkEndedHeld { current },
                         outcome,
                         keep,
@@ -399,7 +399,7 @@ impl CombinedRow {
                     let outcome = native.flush_combined_release(&job.head, job.job);
                     let keep = self.released(job, outcome);
                     #[cfg(test)]
-                    self.record_release(&job, steps::Cause::DebtFlush, outcome, keep, None);
+                    self.record_release(job, steps::Cause::DebtFlush, outcome, keep, None);
                     keep
                 }
                 State::Failed(_) if ended => {
@@ -416,8 +416,7 @@ impl CombinedRow {
                     keep
                 }
                 _ => true,
-            };
-            keep
+            }
         });
         self.jobs = jobs;
     }
