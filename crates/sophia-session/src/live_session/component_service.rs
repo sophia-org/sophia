@@ -1,6 +1,13 @@
 //! Owner-loop service of independently negotiated component roles.
 use super::*;
 mod native_input;
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session",
+    feature = "diagnostic-combined-witness"
+))]
+use crate::shell_component_connections::combined_row::{PassSlot, WitnessPass, witness};
 use metadata_shell::component_session::{ShellComponentService, ShellComponentSession};
 use metadata_shell::indicators::IndicatorServiceError;
 pub(super) use native_input::{dispatch_native_input, synchronize_native_capture};
@@ -30,11 +37,22 @@ pub(super) fn service_components(
         feature = "native-session"
     ))]
     position: Option<sophia_protocol::Point>,
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    exit: &PassEnd,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if !available {
         catalog.cancel_open_request();
     }
-    components.set_presentation_available(available)?;
+    crate::combined_witness_check!(
+        exit,
+        "error:presentation_available",
+        components.set_presentation_available(available)
+    )?;
     // Gate 4 C3: with native scanout, this pass's image services are hooked
     // over the combined row from one turn built here, at the pass's one
     // Instant, cursor and layer snapshot, and dropped before role service,
@@ -79,6 +97,13 @@ pub(super) fn service_components(
                 cursor,
                 plane,
                 instant,
+                #[cfg(all(
+                    feature = "experimental-combined-frame-job",
+                    feature = "experimental-native-frame-transaction",
+                    feature = "native-session",
+                    feature = "diagnostic-combined-witness"
+                ))]
+                witness: exit.pass(),
             },
         ),
         None => {
@@ -107,7 +132,11 @@ pub(super) fn service_components(
                         {
                             continue;
                         }
-                        let (role, gpu) = components.launch_evidence(key)?;
+                        let (role, gpu) = crate::combined_witness_check!(
+                            exit,
+                            "error:negotiation",
+                            components.launch_evidence(key)
+                        )?;
                         if welcome.capabilities
                             & sophia_protocol::shell_files::SHELL_FRAME_CAPABILITY
                             != 0
@@ -177,11 +206,18 @@ pub(super) fn service_components(
                 );
             }
         }
-        Err(error) => crate::session_eprintln!(
-            "sophia_shell_component schema=1 status=poll_failed reason={error}"
-        ),
+        Err(error) => {
+            crate::combined_witness!(exit.poll_failed(););
+            crate::session_eprintln!(
+                "sophia_shell_component schema=1 status=poll_failed reason={error}"
+            );
+        }
     }
-    components.settle_revocations(Some(runtime))?;
+    crate::combined_witness_check!(
+        exit,
+        "error:settle_revocations_early",
+        components.settle_revocations(Some(runtime))
+    )?;
     // Native startup may negotiate once its source snapshot is ready. Opening
     // and input remain separately gated by current native presentation authority.
     if let Err(error) = components.start_next(Instant::now(), |role| {
@@ -213,7 +249,11 @@ pub(super) fn service_components(
             "sophia_shell_component schema=1 status=start_backoff slot={slot}"
         );
     }
-    reconcile_catalog_connections(components, catalog, launches)?;
+    crate::combined_witness_check!(
+        exit,
+        "error:reconcile_early",
+        reconcile_catalog_connections(components, catalog, launches)
+    )?;
     if !available {
         // Gate 4 C3: the paused pass still walks the row, so Held results,
         // Release debt and unconfirmed cancellations are serviced while
@@ -226,7 +266,17 @@ pub(super) fn service_components(
         ))]
         if let Some(native) = native.as_deref_mut() {
             for (key, error) in components
-                .turn_combined_walk(native, instant)
+                .turn_combined_walk(
+                    native,
+                    instant,
+                    #[cfg(all(
+                        feature = "experimental-combined-frame-job",
+                        feature = "experimental-native-frame-transaction",
+                        feature = "native-session",
+                        feature = "diagnostic-combined-witness"
+                    ))]
+                    exit.pass(),
+                )
                 .into_iter()
                 .flatten()
             {
@@ -236,94 +286,111 @@ pub(super) fn service_components(
                 );
             }
         }
-        catalog.service_execution(
-            None,
-            config,
-            xauthority,
-            launches,
-            children,
-            admission_started,
-            &mut ApplicationLaunchTurn {
-                applications: application_launches,
-                authentication: authenticated_launches,
-                wake: owner_wake.notifier(),
-            },
+        crate::combined_witness_check!(
+            exit,
+            "error:service_execution_paused",
+            catalog.service_execution(
+                None,
+                config,
+                xauthority,
+                launches,
+                children,
+                admission_started,
+                &mut ApplicationLaunchTurn {
+                    applications: application_launches,
+                    authentication: authenticated_launches,
+                    wake: owner_wake.notifier(),
+                },
+            )
         )?;
+        crate::combined_witness!(exit.at("paused"););
         return Ok(());
     }
-    let root = wm_root_bounds(bounds).ok_or("component content has no output bounds")?;
+    let root = crate::combined_witness_check!(
+        exit,
+        "error:root_bounds",
+        wm_root_bounds(bounds).ok_or("component content has no output bounds")
+    )?;
     let publication = wm
         .as_mut()
         .and_then(LiveWmSession::shell_indicator_publication);
     let active_output = wm.as_ref().and_then(LiveWmSession::active_output);
     for (key, role) in components.connected_roles().into_iter().flatten() {
         if role == sophia_config::ShellComponentRole::Dock {
-            let result = components.with_service(key, |service, transport| {
-                let ShellComponentService::Dock(dock) = service else {
-                    return Err("catalog component role mismatch".into());
-                };
-                if catalog.publish(transport)? {
-                    catalog.service_dock(
-                        dock,
-                        transport,
-                        runtime,
-                        scene,
-                        native.as_deref_mut(),
-                        outputs,
-                        bounds,
-                        root,
-                        launches,
-                        children.len(),
-                    )?;
-                }
-                Ok::<_, Box<dyn std::error::Error>>(())
-            })?;
+            let result = crate::combined_witness_check!(
+                exit,
+                "error:role_loop",
+                components.with_service(key, |service, transport| {
+                    let ShellComponentService::Dock(dock) = service else {
+                        return Err("catalog component role mismatch".into());
+                    };
+                    if catalog.publish(transport)? {
+                        catalog.service_dock(
+                            dock,
+                            transport,
+                            runtime,
+                            scene,
+                            native.as_deref_mut(),
+                            outputs,
+                            bounds,
+                            root,
+                            launches,
+                            children.len(),
+                        )?;
+                    }
+                    Ok::<_, Box<dyn std::error::Error>>(())
+                })
+            )?;
             if let Err(error) = result {
                 crate::session_eprintln!(
                     "sophia_shell_component schema=1 status=dock_failed slot={} reason={error}",
                     key.slot
                 );
                 launches.revoke_native_catalog_grant(key.grant);
-                components.stop(key)?;
+                crate::combined_witness_check!(exit, "error:role_loop", components.stop(key))?;
             }
             continue;
         }
         if role == sophia_config::ShellComponentRole::ApplicationLauncher {
-            let result = components.with_service(key, |service, transport| {
-                let ShellComponentService::Launcher { content, actions } = service else {
-                    return Err("native component role mismatch".into());
-                };
-                let complete = catalog.publish(transport)?;
-                transport.poll_io()?;
-                if complete {
-                    catalog.service_actions(
-                        actions,
-                        transport,
-                        runtime,
-                        launches,
-                        children.len(),
-                    )?;
-                    content.close_admitted(transport, catalog.mint_transaction()?)?;
-                    catalog.service_open_content(
-                        content,
-                        transport,
-                        runtime,
-                        scene,
-                        native.as_deref_mut(),
-                        outputs,
-                        bounds,
-                        root,
-                    )?;
-                }
-                Ok::<_, Box<dyn std::error::Error>>(complete)
-            })?;
+            let result = crate::combined_witness_check!(
+                exit,
+                "error:role_loop",
+                components.with_service(key, |service, transport| {
+                    let ShellComponentService::Launcher { content, actions } = service else {
+                        return Err("native component role mismatch".into());
+                    };
+                    let complete = catalog.publish(transport)?;
+                    transport.poll_io()?;
+                    if complete {
+                        catalog.service_actions(
+                            actions,
+                            transport,
+                            runtime,
+                            launches,
+                            children.len(),
+                        )?;
+                        content.close_admitted(transport, catalog.mint_transaction()?)?;
+                        catalog.service_open_content(
+                            content,
+                            transport,
+                            runtime,
+                            scene,
+                            native.as_deref_mut(),
+                            outputs,
+                            bounds,
+                            root,
+                        )?;
+                    }
+                    Ok::<_, Box<dyn std::error::Error>>(complete)
+                })
+            )?;
             if let Err(error) = result {
                 crate::session_eprintln!(
                     "sophia_shell_component schema=1 status=catalog_failed slot={} reason={error}",
                     key.slot
                 );
                 launches.revoke_native_catalog_grant(key.grant);
-                components.stop(key)?;
+                crate::combined_witness_check!(exit, "error:role_loop", components.stop(key))?;
                 catalog.cancel_open_request();
             }
             continue;
@@ -380,6 +447,16 @@ pub(super) fn service_components(
                                     cursor,
                                     plane,
                                     instant,
+                                    #[cfg(all(
+                                        feature = "experimental-combined-frame-job",
+                                        feature = "experimental-native-frame-transaction",
+                                        feature = "native-session",
+                                        feature = "diagnostic-combined-witness"
+                                    ))]
+                                    witness: PassSlot {
+                                        pass: exit.pass(),
+                                        slot: key.slot,
+                                    },
                                 },
                             ),
                         },
@@ -405,24 +482,43 @@ pub(super) fn service_components(
             feature = "experimental-native-frame-transaction",
             feature = "native-session"
         )))]
-        let result = components.with_service(key, serve_bar)?;
+        let result = crate::combined_witness_check!(
+            exit,
+            "error:role_loop",
+            components.with_service(key, serve_bar)
+        )?;
         #[cfg(all(
             feature = "experimental-combined-frame-job",
             feature = "experimental-native-frame-transaction",
             feature = "native-session"
         ))]
-        let result = components.with_combined_service(key, serve_bar)?;
+        let result = crate::combined_witness_check!(
+            exit,
+            "error:role_loop",
+            components.with_combined_service(key, serve_bar)
+        )?;
         match result {
             Ok(()) => {}
             // Preserve the production distinction: an admitted WM effect is
             // never turned into a connection retry with uncertain replay.
-            Err(IndicatorServiceError::Completion(error)) => return Err(error),
+            Err(IndicatorServiceError::Completion(error)) => {
+                crate::combined_witness!(exit.at("error:completion"););
+                return Err(error);
+            }
             Err(IndicatorServiceError::Poll(error)) => {
-                components.fail_service(key, &error)?;
+                crate::combined_witness_check!(
+                    exit,
+                    "error:role_loop",
+                    components.fail_service(key, &error)
+                )?;
             }
         }
     }
-    reconcile_catalog_connections(components, catalog, launches)?;
+    crate::combined_witness_check!(
+        exit,
+        "error:reconcile",
+        reconcile_catalog_connections(components, catalog, launches)
+    )?;
     // Gate 4 C3: the row's walk, after content and before native service; a
     // failure of a slot's current attempt ends that component as a content
     // failure would. Entries are never disposed of by inference.
@@ -433,11 +529,25 @@ pub(super) fn service_components(
     ))]
     if let Some(native) = native {
         for (key, error) in components
-            .turn_combined_walk(native, instant)
+            .turn_combined_walk(
+                native,
+                instant,
+                #[cfg(all(
+                    feature = "experimental-combined-frame-job",
+                    feature = "experimental-native-frame-transaction",
+                    feature = "native-session",
+                    feature = "diagnostic-combined-witness"
+                ))]
+                exit.pass(),
+            )
             .into_iter()
             .flatten()
         {
-            components.fail_service(key, &error)?;
+            crate::combined_witness_check!(
+                exit,
+                "error:walk_fail_service",
+                components.fail_service(key, &error)
+            )?;
         }
     }
     // The single verification worker is visited once, with its exact current
@@ -450,9 +560,32 @@ pub(super) fn service_components(
         .find(|(key, _)| Some(key.grant) == owner)
         .map(|(key, _)| key);
     if let Some(key) = key {
-        components.with_service(key, |_, transport| {
+        let execution = crate::combined_witness_check!(
+            exit,
+            "error:role_loop_service",
+            components.with_service(key, |_, transport| {
+                catalog.service_execution(
+                    Some(transport),
+                    config,
+                    xauthority,
+                    launches,
+                    children,
+                    admission_started,
+                    &mut ApplicationLaunchTurn {
+                        applications: application_launches,
+                        authentication: authenticated_launches,
+                        wake: owner_wake.notifier(),
+                    },
+                )
+            })
+        )?;
+        crate::combined_witness_check!(exit, "error:service_execution", execution)?;
+    } else {
+        crate::combined_witness_check!(
+            exit,
+            "error:service_execution",
             catalog.service_execution(
-                Some(transport),
+                None,
                 config,
                 xauthority,
                 launches,
@@ -464,23 +597,14 @@ pub(super) fn service_components(
                     wake: owner_wake.notifier(),
                 },
             )
-        })??;
-    } else {
-        catalog.service_execution(
-            None,
-            config,
-            xauthority,
-            launches,
-            children,
-            admission_started,
-            &mut ApplicationLaunchTurn {
-                applications: application_launches,
-                authentication: authenticated_launches,
-                wake: owner_wake.notifier(),
-            },
         )?;
     }
-    components.settle_revocations(Some(runtime))?;
+    crate::combined_witness_check!(
+        exit,
+        "error:settle_revocations",
+        components.settle_revocations(Some(runtime))
+    )?;
+    crate::combined_witness!(exit.at("normal"););
     Ok(())
 }
 
@@ -542,4 +666,161 @@ pub(super) fn issue_component_activation(
             Ok(None)
         }
     }
+}
+
+/// Gate 4 C3b: the component pass's exit record (spec 04 R3). A label is set
+/// only when a wrapped outer result IS an error, so a successful fallible
+/// statement leaves nothing behind and an unwrapped exit prints
+/// `error:unlabelled`; the two plain returns set `paused` and `normal`. The
+/// end record is printed once: by `finish` after the pass returned, or by
+/// `Drop` while unwinding. Copy data and cells only; it borrows nothing of
+/// the pass and changes no `?`, return or error value.
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session",
+    feature = "diagnostic-combined-witness"
+))]
+pub(super) struct PassEnd {
+    pass: WitnessPass,
+    label: std::cell::Cell<Option<&'static str>>,
+    poll_failed: std::cell::Cell<bool>,
+    finished: std::cell::Cell<bool>,
+}
+
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session",
+    feature = "diagnostic-combined-witness"
+))]
+impl PassEnd {
+    fn new(pass: WitnessPass) -> Self {
+        Self {
+            pass,
+            label: std::cell::Cell::new(None),
+            poll_failed: std::cell::Cell::new(false),
+            finished: std::cell::Cell::new(false),
+        }
+    }
+
+    pub(super) fn pass(&self) -> WitnessPass {
+        self.pass
+    }
+
+    /// The result unchanged; the label is kept only when it is an error.
+    pub(super) fn check<T, E>(&self, label: &'static str, result: Result<T, E>) -> Result<T, E> {
+        if result.is_err() {
+            self.label.set(Some(label));
+        }
+        result
+    }
+
+    /// A plain return's label, set on the line before it.
+    pub(super) fn at(&self, label: &'static str) {
+        self.label.set(Some(label));
+    }
+
+    /// The poll's log-and-continue error: not an exit, recorded on the end.
+    pub(super) fn poll_failed(&self) {
+        self.poll_failed.set(true);
+    }
+
+    fn finish(&self, slots_after: &[usize]) {
+        self.finished.set(true);
+        witness::cpass_end(
+            self.pass,
+            self.label.get().unwrap_or("error:unlabelled"),
+            self.poll_failed.get(),
+            slots_after,
+        );
+    }
+}
+
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session",
+    feature = "diagnostic-combined-witness"
+))]
+impl Drop for PassEnd {
+    fn drop(&mut self) {
+        if self.finished.get() {
+            return;
+        }
+        let exit = if std::thread::panicking() {
+            "unwinding"
+        } else {
+            self.label.get().unwrap_or("error:unlabelled")
+        };
+        witness::cpass_end(self.pass, exit, self.poll_failed.get(), &[]);
+    }
+}
+
+/// Gate 4 C3b: `service_components` inside its witness records. The pass
+/// begins with the slots expected to be visited, read before the poll; the
+/// body runs with the exit guard; the end record carries the slots after
+/// it. No decision, wait, retry or borrow is added to the pass.
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session",
+    feature = "diagnostic-combined-witness"
+))]
+#[allow(clippy::too_many_arguments)]
+pub(super) fn service_components_witnessed(
+    iteration: Option<u64>,
+    components: &mut ShellComponentSession,
+    catalog: &mut component_catalog::ComponentCatalog,
+    runtime: &mut LiveProductionVisualRuntime,
+    scene: &LiveProductionCpuScene,
+    native: Option<&mut LiveProductionNativeScanout>,
+    outputs: &[sophia_engine::HeadlessOutput],
+    bounds: &[(sophia_protocol::OutputId, sophia_protocol::Rect)],
+    wm: &mut Option<LiveWmSession>,
+    available: bool,
+    launches: &mut SessionLaunchQueue,
+    children: &mut Vec<ManagedSessionChild>,
+    config: &PersistentXtermSessionConfig,
+    xauthority: &std::path::Path,
+    admission_started: &mut Option<Instant>,
+    authenticated_launches: &mut crate::launch_authentication::LaunchCoordinator,
+    owner_wake: &OwnerWake,
+    application_launches: &mut LiveApplicationLaunches,
+    position: Option<sophia_protocol::Point>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let pass = WitnessPass {
+        iteration,
+        cpass: components.begin_combined_pass(),
+    };
+    witness::cpass_begin(
+        pass,
+        native.is_some(),
+        !available,
+        &components.witness_expected_slots(),
+    );
+    let exit = PassEnd::new(pass);
+    let result = service_components(
+        components,
+        catalog,
+        runtime,
+        scene,
+        native,
+        outputs,
+        bounds,
+        wm,
+        available,
+        launches,
+        children,
+        config,
+        xauthority,
+        admission_started,
+        authenticated_launches,
+        owner_wake,
+        application_launches,
+        position,
+        &exit,
+    );
+    exit.finish(&components.witness_expected_slots());
+    result
 }

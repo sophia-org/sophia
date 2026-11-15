@@ -26,7 +26,22 @@ if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout
                     layout.consume_escaped_present(key);
                 }
             }
-            let service = match runtime.service_native(native_scanout, scene) {
+            #[cfg(all(
+                feature = "experimental-combined-frame-job",
+                feature = "experimental-native-frame-transaction",
+                feature = "native-session",
+                feature = "diagnostic-combined-witness"
+            ))]
+            crate::shell_component_connections::combined_row::witness::native_begin(witness_iteration, "lifecycle");
+            let served = runtime.service_native(native_scanout, scene);
+            #[cfg(all(
+                feature = "experimental-combined-frame-job",
+                feature = "experimental-native-frame-transaction",
+                feature = "native-session",
+                feature = "diagnostic-combined-witness"
+            ))]
+            crate::shell_component_connections::combined_row::witness::native_end(witness_iteration, "lifecycle", served.is_ok());
+            let service = match served {
                 Ok(service) => Some(service),
                 Err(error) => {
                     let Some(execution) = active_output_topology_preparation.as_mut() else {

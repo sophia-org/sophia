@@ -52,6 +52,19 @@ impl CombinedHead {
     }
 }
 
+#[cfg(feature = "diagnostic-combined-witness")]
+impl CombinedHead {
+    /// Gate 4 C3b: the issuing identity this admission carries, as (native
+    /// owner, head, facade ticket), read-only, for the witness's records.
+    pub fn witness_identity(&self) -> (u64, u64, u64) {
+        (
+            self.native_owner.raw(),
+            self.head.raw(),
+            self.facade.ticket(),
+        )
+    }
+}
+
 /// The parts of the native scanout the combined job routes through. The
 /// production entries below use this and nothing else, so device-free
 /// exporters exercise the same lookup.

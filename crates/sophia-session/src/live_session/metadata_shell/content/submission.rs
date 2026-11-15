@@ -37,7 +37,12 @@ impl LiveContentSession {
             feature = "native-session"
         ))]
         let frame = match native.combined.as_mut() {
-            None => Some(frame),
+            None => {
+                crate::combined_witness!(
+                    crate::shell_component_connections::combined_row::witness::ordinary_entry(None);
+                );
+                Some(frame)
+            }
             Some(consume) => match self.consume_combined(
                 transport,
                 runtime,
@@ -49,7 +54,14 @@ impl LiveContentSession {
                 layer,
                 now,
             )? {
-                combined_arm::CombinedEntry::Ordinary(frame) => Some(frame),
+                combined_arm::CombinedEntry::Ordinary(frame, _witness) => {
+                    crate::combined_witness!(
+                        crate::shell_component_connections::combined_row::witness::ordinary_entry(
+                            Some(_witness),
+                        );
+                    );
+                    Some(frame)
+                }
                 combined_arm::CombinedEntry::Accepted => None,
                 combined_arm::CombinedEntry::Finished => return Ok(()),
             },

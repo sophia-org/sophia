@@ -289,8 +289,45 @@ impl ShellComponentProcesses {
         &mut self,
         native: &mut N,
         instant: std::time::Instant,
+        #[cfg(all(
+            feature = "experimental-combined-frame-job",
+            feature = "experimental-native-frame-transaction",
+            feature = "native-session",
+            feature = "diagnostic-combined-witness"
+        ))]
+        witness: crate::shell_component_connections::combined_row::WitnessPass,
     ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
-        self.connections.turn_combined_walk(native, instant)
+        self.connections.turn_combined_walk(
+            native,
+            instant,
+            #[cfg(all(
+                feature = "experimental-combined-frame-job",
+                feature = "experimental-native-frame-transaction",
+                feature = "native-session",
+                feature = "diagnostic-combined-witness"
+            ))]
+            witness,
+        )
+    }
+    /// Gate 4 C3b: the slots the hooked images step is expected to visit.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    pub(crate) fn witness_expected_slots(&self) -> Vec<usize> {
+        self.connections.witness_expected_slots()
+    }
+    /// Gate 4 C3b: the closing inventory; the number of slots it covers.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    pub(crate) fn witness_inventory(&self) -> usize {
+        self.connections.witness_inventory()
     }
     pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
         self.connections.poll_fds()

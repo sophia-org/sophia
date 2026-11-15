@@ -76,6 +76,15 @@ pub struct ShellComponentSession {
     /// Set on the visit where a slot's retry first spaces beyond the base
     /// interval, so the transition is recorded once rather than per attempt.
     entered_backoff: Option<usize>,
+    /// Gate 4 C3b: the component passes the witness has begun; saturated
+    /// once exhausted, which every later record prints as `exhausted`.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    witness_cpass: u64,
     /// When each capture slot began waiting for its endpoint before launch.
     #[cfg(feature = "experimental-shell-capture")]
     capture_wait: [Option<std::time::Instant>; MAX_SHELL_COMPONENTS],
@@ -259,6 +268,13 @@ impl ShellComponentSession {
             failures: [0; MAX_SHELL_COMPONENTS],
             started_at: std::array::from_fn(|_| None),
             entered_backoff: None,
+            #[cfg(all(
+                feature = "experimental-combined-frame-job",
+                feature = "experimental-native-frame-transaction",
+                feature = "native-session",
+                feature = "diagnostic-combined-witness"
+            ))]
+            witness_cpass: 0,
             #[cfg(feature = "experimental-shell-capture")]
             capture_wait: [None; MAX_SHELL_COMPONENTS],
         })
@@ -478,8 +494,72 @@ impl ShellComponentSession {
         &mut self,
         native: &mut N,
         instant: std::time::Instant,
+        #[cfg(all(
+            feature = "experimental-combined-frame-job",
+            feature = "experimental-native-frame-transaction",
+            feature = "native-session",
+            feature = "diagnostic-combined-witness"
+        ))]
+        witness: crate::shell_component_connections::combined_row::WitnessPass,
     ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
-        self.processes.turn_combined_walk(native, instant)
+        self.processes.turn_combined_walk(
+            native,
+            instant,
+            #[cfg(all(
+                feature = "experimental-combined-frame-job",
+                feature = "experimental-native-frame-transaction",
+                feature = "native-session",
+                feature = "diagnostic-combined-witness"
+            ))]
+            witness,
+        )
+    }
+
+    /// Gate 4 C3b: the next component pass number, `None` once exhausted;
+    /// the counter then stays saturated.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    pub(crate) fn begin_combined_pass(&mut self) -> Option<u64> {
+        let next = self.witness_cpass.checked_add(1);
+        self.witness_cpass = next.unwrap_or(u64::MAX);
+        next
+    }
+
+    /// Gate 4 C3b: the last pass number begun, `None` once exhausted.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    pub(crate) fn witness_cpass(&self) -> Option<u64> {
+        (self.witness_cpass != u64::MAX).then_some(self.witness_cpass)
+    }
+
+    /// Gate 4 C3b: the slots the hooked images step is expected to visit.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    pub(crate) fn witness_expected_slots(&self) -> Vec<usize> {
+        self.processes.witness_expected_slots()
+    }
+
+    /// Gate 4 C3b: the closing inventory; the number of slots it covers.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    pub(crate) fn witness_inventory(&self) -> usize {
+        self.processes.witness_inventory()
     }
 
     /// `turn` is the visit's one image-service turn of every connected wire,

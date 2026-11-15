@@ -57,6 +57,21 @@ mod observers;
 // G3-5d gate 4 C2: the split combined turn, production code under the
 // parent's gate; `image_fault` is read there under cfg(test) only.
 mod turn;
+// Gate 4 C3b: the diagnostic witness's records and context (specs 03/04).
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session",
+    feature = "diagnostic-combined-witness"
+))]
+pub(crate) mod witness;
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session",
+    feature = "diagnostic-combined-witness"
+))]
+pub(crate) use witness::{PassSlot, WitnessPass};
 
 type Worker = IsbValidationWorker<CombinedRenderPlan>;
 type Failures = [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS];
@@ -76,6 +91,14 @@ pub(crate) struct CombinedTurn<'a, N> {
     /// The turn's one Instant: the image-owner service and the walk's
     /// deadlines read it (G3-5c).
     pub instant: Instant,
+    /// Gate 4 C3b: the pass the turn runs in.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    pub witness: WitnessPass,
 }
 
 /// The owner loop's cursor rule over one pointer reading, and that reading
@@ -99,6 +122,14 @@ pub(crate) struct CombinedConsume<'a> {
     pub(crate) plane: Option<Point>,
     /// The owner turn's one Instant, the one its image-owner service used.
     pub(crate) instant: Instant,
+    /// Gate 4 C3b: the pass and the slot whose row is lent.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    pub(crate) witness: PassSlot,
 }
 
 #[derive(Default)]
@@ -145,6 +176,14 @@ pub(crate) struct CombinedRow {
     /// b4: the row's own calls in order, one event each (REV3/REV4).
     #[cfg(test)]
     trace: Vec<steps::Event>,
+    /// Gate 4 C3b: the witness's pass, slot, joined bid and last decline.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    witness: witness::RowWitness,
 }
 
 struct Open {
@@ -181,6 +220,15 @@ struct Job {
     /// b4: the admission's key, named by every trace event.
     #[cfg(test)]
     key: steps::Key,
+    /// Gate 4 C3b: the binding's per-process identity; `None` when the
+    /// allocator was exhausted.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    bid: Option<u64>,
 }
 
 /// The owner's one-way decision for the job's candidate (G3-5c C4, REV3).
@@ -246,7 +294,15 @@ enum State {
     /// A released Held result whose Release did not transfer.
     Debt(
         #[cfg_attr(
-            not(test),
+            not(any(
+                test,
+                all(
+                    feature = "experimental-combined-frame-job",
+                    feature = "experimental-native-frame-transaction",
+                    feature = "native-session",
+                    feature = "diagnostic-combined-witness"
+                )
+            )),
             expect(dead_code, reason = "kept as the last Release outcome")
         )]
         CombinedRelease,
@@ -304,6 +360,7 @@ impl CombinedRow {
         let mut held = self.jobs.remove(index);
         let outcome = native.release_combined_held(&held.head, held.job);
         let keep = self.released(&mut held, outcome);
+        crate::combined_witness!(self.witness_declined(outcome, keep, &held););
         #[cfg(test)]
         self.record_release(&held, steps::Cause::Decline, outcome, keep, None);
         if keep {
@@ -353,6 +410,7 @@ impl CombinedRow {
         let mut cancels = std::mem::take(&mut self.cancels);
         cancels.retain(|(_grant, head)| {
             let confirmed = matches!(native.cancel_combined_frame(head), Ok(true));
+            crate::combined_witness!(self.witness_cancel_retry(head, confirmed););
             #[cfg(test)]
             self.record_cancel_later(*_grant, head, confirmed);
             !confirmed
@@ -365,6 +423,9 @@ impl CombinedRow {
                 State::Held if ended => {
                     let outcome = native.release_combined_held(&job.head, job.job);
                     let keep = self.released(job, outcome);
+                    crate::combined_witness!(
+                        self.witness_release(job, "walk_held_ended", outcome, keep);
+                    );
                     #[cfg(test)]
                     self.record_release(
                         job,
@@ -378,6 +439,7 @@ impl CombinedRow {
                 State::Debt(_) => {
                     let outcome = native.flush_combined_release(&job.head, job.job);
                     let keep = self.released(job, outcome);
+                    crate::combined_witness!(self.witness_release(job, "walk_debt", outcome, keep););
                     #[cfg(test)]
                     self.record_release(job, steps::Cause::DebtFlush, outcome, keep, None);
                     keep
@@ -385,6 +447,7 @@ impl CombinedRow {
                 State::Failed(_) if ended => {
                     #[cfg(test)]
                     self.record_removed(job.key, steps::Cause::WalkEndedFailed { current });
+                    crate::combined_witness!(self.witness_removed(job.bid, "ended"););
                     false
                 }
                 State::Held | State::Failed(_) => {
@@ -459,6 +522,7 @@ impl CombinedRow {
             Some(true) => {
                 let outcome = native.release_combined_held(&job.head, job.job);
                 let keep = self.released(job, outcome);
+                crate::combined_witness!(self.witness_release(job, "walk_dispose", outcome, keep););
                 #[cfg(test)]
                 self.record_release(
                     job,
@@ -470,7 +534,10 @@ impl CombinedRow {
                 return keep;
             }
             Some(false) => true,
-            None => false,
+            None => {
+                crate::combined_witness!(self.witness_removed(job.bid, "retired"););
+                false
+            }
         };
         #[cfg(test)]
         self.record_kept(job, keep, facts, current);
@@ -485,6 +552,7 @@ impl CombinedRow {
     pub(crate) fn join(&mut self, bundle: &ContentRenderBundle) -> CombinedJoin {
         #[cfg(test)]
         self.record_join(bundle);
+        crate::combined_witness!(self.witness.joined_bid = None;);
         let Some(job) = self.jobs.iter_mut().find(|held| {
             held.binding.key.grant == bundle.grant
                 && held.binding.key.output == bundle.output
@@ -492,6 +560,7 @@ impl CombinedRow {
         }) else {
             return CombinedJoin::Ordinary;
         };
+        crate::combined_witness!(self.witness.joined_bid = Some(job.bid););
         let admitted = bundle
             .surfaces
             .iter()
@@ -532,6 +601,7 @@ impl CombinedRow {
     /// native pending frame's now. False when no such entry is here.
     pub(crate) fn accepted(&mut self, job: u64) -> bool {
         let removed = self.remove(job, |state| matches!(state, State::Held));
+        crate::combined_witness!(self.witness_removed_job(removed.as_ref(), "accepted"););
         #[cfg(test)]
         self.record_consumed(removed.as_ref(), steps::Cause::Accepted);
         removed.is_some()
@@ -541,6 +611,7 @@ impl CombinedRow {
     /// lease. False when no such entry is here.
     pub(crate) fn consumed_failed(&mut self, job: u64) -> bool {
         let removed = self.remove(job, |state| matches!(state, State::Failed(_)));
+        crate::combined_witness!(self.witness_removed_job(removed.as_ref(), "consumed_failed"););
         #[cfg(test)]
         self.record_consumed(removed.as_ref(), steps::Cause::ConsumedFailed);
         removed.is_some()
@@ -594,6 +665,11 @@ impl CombinedRow {
         let state = std::mem::replace(&mut job.state, State::Held);
         #[cfg(test)]
         let from = steps::Label::of(&state);
+        crate::combined_witness!(
+            let w_from = witness::step_from(&state);
+            let mut w_taken = None;
+            let mut w_route = false;
+        );
         let step = match state {
             State::InFlight {
                 reservation,
@@ -612,6 +688,7 @@ impl CombinedRow {
                             confirmed: _confirmed,
                         },
                     );
+                    crate::combined_witness!(self.witness_collect_returned(&job, _confirmed););
                     return None;
                 }
                 match native.take_combined_frame_result(&job.head) {
@@ -621,6 +698,7 @@ impl CombinedRow {
                     }),
                     Ok(Some(result)) => {
                         let disposition = result.disposition();
+                        crate::combined_witness!(w_taken = Some(disposition););
                         #[cfg(test)]
                         self.collected.push((job.job, disposition));
                         #[cfg(test)]
@@ -629,6 +707,7 @@ impl CombinedRow {
                     }
                     Err(error) => {
                         let what = format!("result route: {error}");
+                        crate::combined_witness!(w_route = true;);
                         report(&mut self.errors, &mut job, &what);
                         Step::Keep(State::InFlight {
                             reservation,
@@ -676,6 +755,7 @@ impl CombinedRow {
                 }
             },
         };
+        crate::combined_witness!(self.witness_collect(&job, w_from, w_taken, w_route););
         #[cfg(test)]
         self.record_step(&job, from);
         Some(job)
@@ -834,9 +914,11 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
         let what = format!("combined reservation {ticket} not confirmed cancelled");
         #[cfg(test)]
         let identity = (open.grant, open.head.trace_identity());
+        crate::combined_witness!(let w_head = witness::head_identity(&open.head););
         let _confirmed = self
             .row
             .cancel(&mut *self.turn.native, open.grant, open.head, what);
+        crate::combined_witness!(self.row.witness_reserve_cancelled(ticket, &w_head, _confirmed););
         #[cfg(test)]
         self.row
             .record_reserve_cancelled(ticket, identity, _confirmed);
@@ -855,6 +937,10 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
             .expect("the runtime submits the admission it planned");
         #[cfg(test)]
         let key = self.row.record_binding(ticket, &reservation, &open);
+        crate::combined_witness!(
+            let bid = witness::next_bid();
+            self.row.witness_binding(bid, ticket, &reservation, &open);
+        );
         let Stage::Planned(dispatch, binding, deadline) = open.stage else {
             unreachable!("only a planned admission is submitted");
         };
@@ -873,6 +959,13 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
             reported: false,
             #[cfg(test)]
             key,
+            #[cfg(all(
+                feature = "experimental-combined-frame-job",
+                feature = "experimental-native-frame-transaction",
+                feature = "native-session",
+                feature = "diagnostic-combined-witness"
+            ))]
+            bid,
         });
     }
 
@@ -901,70 +994,5 @@ impl<N: ShellContentNative> CombinedFrameHooks<CombinedRenderPlan>
         {
             self.row.refusals = refusals;
         }
-    }
-}
-
-impl ShellComponentConnections {
-    /// The controlled driver's owner pass (R1, R4): `turn_connected` for the
-    /// turn, whose one image-owner service per slot is hooked over that
-    /// slot's persistent row, in every phase, revoked and replaced attempts
-    /// included; then the row's walk. A row invariant of the current attempt
-    /// is the slot's failure; one of an ended attempt is a diagnostic (R1).
-    #[cfg(test)]
-    pub(crate) fn turn_combined<N: ShellContentNative>(
-        &mut self,
-        turn: &mut CombinedTurn<'_, N>,
-    ) -> Failures {
-        self.turn_with(|slot, connection, epochs| {
-            let current = connection
-                .attempt
-                .filter(|(_, phase)| *phase != ComponentConnectionPhase::Revoked)
-                .map(|(grant, _)| grant);
-            let instant = turn.instant;
-            let serviced = match connection.images.as_mut() {
-                Some(owner) => owner.service_combined(
-                    &mut connection.transport,
-                    epochs,
-                    content_now_msec(),
-                    instant,
-                    &mut CombinedHooks {
-                        row: &mut connection.combined,
-                        turn: &mut *turn,
-                        slot,
-                    },
-                ),
-                None => Ok(()),
-            };
-            let view = connection.transport.connection(epochs);
-            connection.combined.walk(
-                &mut *turn.native,
-                current,
-                &|binding: FrameCopyBinding, job: u64| {
-                    view.content_frame_candidate_state(binding, job)
-                },
-                instant,
-            );
-            serviced?;
-            connection.combined.take_error(current).map_or(Ok(()), Err)
-        })
-    }
-
-    #[cfg(test)]
-    pub(crate) fn combined_row(&self, slot: usize) -> &CombinedRow {
-        &self.connections[slot].combined
-    }
-
-    #[cfg(test)]
-    pub(crate) fn combined_row_mut(&mut self, slot: usize) -> &mut CombinedRow {
-        &mut self.connections[slot].combined
-    }
-
-    /// The slot's image-owner work, the other final-quiescence blocker.
-    #[cfg(test)]
-    pub(crate) fn image_pending(&self, slot: usize) -> usize {
-        self.connections[slot]
-            .images
-            .as_ref()
-            .map_or(0, |owner| owner.pending())
     }
 }

@@ -93,6 +93,17 @@ pub struct IsbValidationWorker<P: Send + 'static = NoCombinedPlan> {
     max_jobs: usize,
     max_bytes: usize,
     wake: Wake,
+    /// Distinct per worker in this process, allocated at spawn; job numbers
+    /// are per worker, so (serial, job) names one admission (G3-5d d-2b2,
+    /// gate 4 C3b). 0 is the never-issued value of an exhausted allocator.
+    #[cfg(any(
+        all(
+            any(test, feature = "test-support"),
+            any(test, feature = "experimental-combined-frame-job")
+        ),
+        feature = "diagnostic-combined-witness"
+    ))]
+    serial: u64,
     #[cfg(all(
         any(test, feature = "test-support"),
         any(test, feature = "experimental-combined-frame-job")
@@ -132,6 +143,14 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
         let notify = wake.notifier();
         let (sender, jobs) = mpsc::sync_channel::<Job<P>>(max_jobs);
         let (results, completed) = mpsc::sync_channel(max_jobs);
+        #[cfg(any(
+            all(
+                any(test, feature = "test-support"),
+                any(test, feature = "experimental-combined-frame-job")
+            ),
+            feature = "diagnostic-combined-witness"
+        ))]
+        let serial = next_validator_serial();
         #[cfg(all(
             any(test, feature = "test-support"),
             any(test, feature = "experimental-combined-frame-job")
@@ -192,6 +211,14 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
             max_jobs,
             max_bytes,
             wake,
+            #[cfg(any(
+                all(
+                    any(test, feature = "test-support"),
+                    any(test, feature = "experimental-combined-frame-job")
+                ),
+                feature = "diagnostic-combined-witness"
+            ))]
+            serial,
             #[cfg(all(
                 any(test, feature = "test-support"),
                 any(test, feature = "experimental-combined-frame-job")
@@ -415,6 +442,47 @@ fn sealed_validation(
     })?;
     IsbPixelValidation::new(mapping).map_err(|_| IsbValidationFailure::Malformed)
 }
+#[cfg(any(
+    all(
+        any(test, feature = "test-support"),
+        any(test, feature = "experimental-combined-frame-job")
+    ),
+    feature = "diagnostic-combined-witness"
+))]
+static NEXT_VALIDATOR_SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// The next worker serial, or 0 once the counter is exhausted: 0 is never
+/// issued, so it aliases no live worker, and the worker is created as usual.
+#[cfg(any(
+    all(
+        any(test, feature = "test-support"),
+        any(test, feature = "experimental-combined-frame-job")
+    ),
+    feature = "diagnostic-combined-witness"
+))]
+fn next_validator_serial() -> u64 {
+    NEXT_VALIDATOR_SERIAL
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |serial| {
+            serial.checked_add(1)
+        })
+        .unwrap_or(0)
+}
+
+#[cfg(any(
+    all(
+        any(test, feature = "test-support"),
+        any(test, feature = "experimental-combined-frame-job")
+    ),
+    feature = "diagnostic-combined-witness"
+))]
+impl<P: Send + 'static> IsbValidationWorker<P> {
+    /// This worker's serial (G3-5d d-2b2; gate 4 C3b's witness identity).
+    /// 0 means the allocator was exhausted when the worker was spawned.
+    pub fn validator_serial(&self) -> u64 {
+        self.serial
+    }
+}
+
 #[cfg(any(test, feature = "experimental-combined-frame-job"))]
 mod combined;
 #[cfg(all(feature = "test-support", feature = "experimental-combined-frame-job"))]

@@ -9,9 +9,16 @@ pub(super) type PendingSlot = Option<Arc<Identity>>;
 
 pub(super) struct Identity {
     forwarded: AtomicBool,
-    /// Test-support (G3-5d d-2b2): the issuing validator's serial, fixed at
-    /// reservation, so a trace binds (serial, job) where the job is issued.
-    #[cfg(any(test, feature = "test-support"))]
+    /// The issuing validator's serial, fixed at reservation, so a trace or
+    /// the witness binds (serial, job) where the job is issued (G3-5d d-2b2,
+    /// gate 4 C3b).
+    #[cfg(any(
+        all(
+            any(test, feature = "test-support"),
+            any(test, feature = "experimental-combined-frame-job")
+        ),
+        feature = "diagnostic-combined-witness"
+    ))]
     serial: u64,
 }
 
@@ -36,10 +43,16 @@ impl CombinedReservation {
         self.job == token.job && Arc::ptr_eq(&self.identity, &token.identity)
     }
 
-    /// Test-support (G3-5d d-2b2): the serial of the validator that issued
-    /// this reservation, read from the reservation itself, not from any
-    /// worker's current state.
-    #[cfg(any(test, feature = "test-support"))]
+    /// The serial of the validator that issued this reservation, read from
+    /// the reservation itself, not from any worker's current state (G3-5d
+    /// d-2b2, gate 4 C3b).
+    #[cfg(any(
+        all(
+            any(test, feature = "test-support"),
+            any(test, feature = "experimental-combined-frame-job")
+        ),
+        feature = "diagnostic-combined-witness"
+    ))]
     pub fn validator_serial(&self) -> u64 {
         self.identity.serial
     }
@@ -237,8 +250,14 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
         let job = self.reserve(bytes, deadline)?;
         let identity = Arc::new(Identity {
             forwarded: AtomicBool::new(false),
-            #[cfg(any(test, feature = "test-support"))]
-            serial: self.hooks.serial,
+            #[cfg(any(
+                all(
+                    any(test, feature = "test-support"),
+                    any(test, feature = "experimental-combined-frame-job")
+                ),
+                feature = "diagnostic-combined-witness"
+            ))]
+            serial: self.serial,
         });
         self.pending
             .iter_mut()
@@ -437,10 +456,6 @@ impl<P: Send + 'static> IsbValidationWorker<P> {
 
     pub fn validator_progress(&self) -> hold::ValidatorProgress {
         self.hooks.progress.clone()
-    }
-
-    pub fn validator_serial(&self) -> u64 {
-        self.hooks.serial
     }
 
     /// G3-5d d-2b2: whether the owner has cancelled pending `job`, as the

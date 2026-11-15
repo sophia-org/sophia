@@ -1,10 +1,9 @@
 //! G3-5d d-2a, test-support: instrumentation of the real validator for
 //! end-to-end combined controls (design REV2 R1 and R7, REV3 section 2). A
-//! pre-validation hold armed for the next combined admission, a loop-head
-//! progress counter and a per-worker serial. None of it changes what the
-//! validator decides or sends.
+//! pre-validation hold armed for the next combined admission and a loop-head
+//! progress counter; the per-worker serial lives on the worker itself since
+//! gate 4 C3b. None of it changes what the validator decides or sends.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
@@ -103,13 +102,8 @@ impl ValidatorProgress {
     }
 }
 
-static NEXT_VALIDATOR: AtomicU64 = AtomicU64::new(1);
-
 /// What a validator holds for its controls.
 pub(crate) struct ValidatorHooks {
-    /// Distinct per worker in this process; job numbers are per worker, so a
-    /// trace names a job by (serial, job).
-    pub(crate) serial: u64,
     pub(crate) progress: ValidatorProgress,
     /// Taken by the next combined admission that carries no hold of its own.
     pub(crate) armed: Option<Checkpoint>,
@@ -118,7 +112,6 @@ pub(crate) struct ValidatorHooks {
 impl ValidatorHooks {
     pub(crate) fn new() -> Self {
         Self {
-            serial: NEXT_VALIDATOR.fetch_add(1, Ordering::Relaxed),
             progress: ValidatorProgress::default(),
             armed: None,
         }

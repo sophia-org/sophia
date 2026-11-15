@@ -39,6 +39,8 @@ experimental-shell-capture = ["gbm-probe", "sophia-renderer-live/experimental-sh
 experimental-combined-frame-job = ["dep:sophia-runtime", "sophia-runtime/experimental-combined-frame-job", "sophia-renderer-live/experimental-combined-frame-job", "sophia-engine/experimental-combined-frame-job"]
 # Deterministic cross-crate owner fixtures; never enabled by native-session.
 test-support = ["gbm-probe", "libdrm-events"]
+# Gate 4 C3b: the diagnostic combined witness's read-only head identity. Default off.
+diagnostic-combined-witness = []
 gbm-probe = ["sophia-renderer-live/gbm-probe"]
 egl-probe = ["sophia-renderer-live/egl-probe"]
 libdrm-events = ["dep:drm", "dep:rustix", "dep:sophia-drm-out-fence", "dep:sophia-drm-clock"]

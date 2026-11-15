@@ -599,3 +599,9 @@ mod custody;
 // Gate 4 C3a: R1 case 4, the worker lost after forwarding (REV5 5.4).
 #[path = "combined_running_loss.rs"]
 mod loss;
+
+// Gate 4 C3b: the diagnostic witness's isolated child, its parent and the
+// one reader (specifications 03 section 5 and 04).
+#[cfg(feature = "diagnostic-combined-witness")]
+#[path = "combined_witness.rs"]
+mod witness;

@@ -43,11 +43,17 @@ impl Lane {
             width: output().size.width,
             height: output().size.height,
         };
+        #[cfg(feature = "diagnostic-combined-witness")]
+        let witness = PassSlot {
+            pass: self.witness_pass(),
+            slot: 0,
+        };
         let Lane {
             h,
             native: fixture,
             runtime,
             scene,
+            ..
         } = self;
         let served = h
             .owner
@@ -68,6 +74,8 @@ impl Lane {
                                 cursor,
                                 plane,
                                 instant: at,
+                                #[cfg(feature = "diagnostic-combined-witness")]
+                                witness,
                             }),
                         },
                         &[output()],

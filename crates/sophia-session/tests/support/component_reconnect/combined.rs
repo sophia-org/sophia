@@ -23,6 +23,9 @@
 use super::super::super::content::reconnect_fixture::project;
 use super::*;
 use crate::shell_component_connections::combined_row::{CombinedTurn, turn_cursor};
+// Gate 4 C3b: the fixture's pass context and records.
+#[cfg(feature = "diagnostic-combined-witness")]
+use crate::shell_component_connections::combined_row::{PassSlot, WitnessPass, witness};
 use sophia_backend_live::{
     CombinedNativeFixture, CombinedRelease, CombinedSettleFault, LiveProductionVisualRuntime,
     ShellContentNative, StubReply,
@@ -50,6 +53,10 @@ struct Lane {
     native: CombinedNativeFixture,
     runtime: LiveProductionVisualRuntime,
     scene: LiveProductionCpuScene,
+    /// Gate 4 C3b: the fixture's own turn count, its pass identity (spec 03
+    /// 2.3); it proves nothing about the production owner pass.
+    #[cfg(feature = "diagnostic-combined-witness")]
+    turns: u64,
 }
 
 /// One attempt in slot 0: its peer, its frame stream and what it received.
@@ -94,7 +101,30 @@ impl Lane {
             native: CombinedNativeFixture::new(&[output()]),
             runtime: LiveProductionVisualRuntime::new(&[output()], None).unwrap(),
             scene: LiveProductionCpuScene::new(output().size),
+            #[cfg(feature = "diagnostic-combined-witness")]
+            turns: 0,
         }
+    }
+
+    /// Gate 4 C3b: the next fixture pass.
+    #[cfg(feature = "diagnostic-combined-witness")]
+    fn witness_turn(&mut self) -> WitnessPass {
+        self.turns += 1;
+        self.witness_pass()
+    }
+
+    /// Gate 4 C3b: the current fixture pass (iteration = cpass = turn).
+    #[cfg(feature = "diagnostic-combined-witness")]
+    fn witness_pass(&self) -> WitnessPass {
+        WitnessPass {
+            iteration: Some(self.turns),
+            cpass: Some(self.turns),
+        }
+    }
+
+    #[cfg(feature = "diagnostic-combined-witness")]
+    fn witness_passes(&self) -> u64 {
+        self.turns
     }
 
     /// One controlled owner turn. Slot 0 composes on the Shell layer with
@@ -108,6 +138,8 @@ impl Lane {
     fn turn_at(&mut self, instant: Instant) -> Option<ShellTransportError> {
         let outputs = [output()];
         let (cursor, plane) = turn_cursor(true, None);
+        #[cfg(feature = "diagnostic-combined-witness")]
+        let witness = self.witness_turn();
         let mut turn = CombinedTurn {
             native: &mut self.native,
             runtime: &self.runtime,
@@ -117,6 +149,8 @@ impl Lane {
             cursor,
             plane,
             instant,
+            #[cfg(feature = "diagnostic-combined-witness")]
+            witness,
         };
         let mut failures = self.h.owner.processes.turn_combined(&mut turn);
         assert!(failures[1..].iter().all(Option::is_none), "{failures:?}");

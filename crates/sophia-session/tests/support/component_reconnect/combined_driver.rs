@@ -55,6 +55,9 @@ struct DriverTurn<'a, N> {
     cursor: LiveProductionCursorPresentation,
     plane: Option<Point>,
     instant: Instant,
+    /// Gate 4 C3b: the fixture pass this turn is.
+    #[cfg(feature = "diagnostic-combined-witness")]
+    witness: WitnessPass,
 }
 
 /// One slot's content step: `Err` is the content service's error.
@@ -94,6 +97,8 @@ impl ShellComponentSession {
             cursor: turn.cursor,
             plane: turn.plane,
             instant: turn.instant,
+            #[cfg(feature = "diagnostic-combined-witness")]
+            witness: turn.witness,
         });
         for (key, error) in failures.into_iter().flatten() {
             first[key.slot] = Some(error.to_string());
@@ -123,9 +128,12 @@ impl ShellComponentSession {
         }
         // 3. Walk: every slot, whatever its phase.
         steps.push(Walk);
-        let failures = self
-            .processes
-            .turn_combined_walk(&mut *turn.native, turn.instant);
+        let failures = self.processes.turn_combined_walk(
+            &mut *turn.native,
+            turn.instant,
+            #[cfg(feature = "diagnostic-combined-witness")]
+            turn.witness,
+        );
         for (key, error) in failures.into_iter().flatten() {
             if first[key.slot].is_none() {
                 first[key.slot] = Some(error.to_string());
@@ -151,6 +159,8 @@ impl Lane {
             native: CombinedNativeFixture::running(&[output()]),
             runtime: LiveProductionVisualRuntime::new(&[output()], None).unwrap(),
             scene: LiveProductionCpuScene::new(output().size),
+            #[cfg(feature = "diagnostic-combined-witness")]
+            turns: 0,
         };
         let wake = sophia_wake::Wake::new().unwrap();
         lane.native.attach_owner_wake(&wake.notifier());
@@ -255,11 +265,16 @@ impl Lane {
             width: output().size.width,
             height: output().size.height,
         };
+        #[cfg(feature = "diagnostic-combined-witness")]
+        let witness = self.witness_turn();
+        #[cfg(feature = "diagnostic-combined-witness")]
+        witness::fixture_pass_begin(witness, &self.h.owner.processes.witness_expected_slots());
         let Lane {
             h,
             native,
             runtime,
             scene,
+            ..
         } = self;
         let mut turn = DriverTurn {
             native,
@@ -270,6 +285,8 @@ impl Lane {
             cursor,
             plane,
             instant,
+            #[cfg(feature = "diagnostic-combined-witness")]
+            witness,
         };
         let mut accepted = Vec::new();
         let turned = h.owner.combined_owner_turn(
@@ -292,6 +309,11 @@ impl Lane {
                                     cursor: turn.cursor,
                                     plane: turn.plane,
                                     instant: turn.instant,
+                                    #[cfg(feature = "diagnostic-combined-witness")]
+                                    witness: PassSlot {
+                                        pass: turn.witness,
+                                        slot: key.slot,
+                                    },
                                 }),
                             },
                             turn.outputs,
@@ -314,6 +336,8 @@ impl Lane {
             step4,
             steps,
         );
+        #[cfg(feature = "diagnostic-combined-witness")]
+        witness::fixture_pass_end(witness);
         (turned, accepted)
     }
 

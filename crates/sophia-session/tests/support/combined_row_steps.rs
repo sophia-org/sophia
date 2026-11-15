@@ -587,3 +587,75 @@ impl ShellComponentConnections {
             .map(|owner| owner.validation_worker())
     }
 }
+
+// G3-5d gate 4 C3b: the monolithic controlled turn and the row accessors,
+// moved text-unchanged from combined_row.rs (test-only; the file keeps its
+// source-layout limit). The monolithic turn writes the row's witness pass
+// as the split steps do, and records nothing else.
+impl ShellComponentConnections {
+    /// The controlled driver's owner pass (R1, R4): `turn_connected` for the
+    /// turn, whose one image-owner service per slot is hooked over that
+    /// slot's persistent row, in every phase, revoked and replaced attempts
+    /// included; then the row's walk. A row invariant of the current attempt
+    /// is the slot's failure; one of an ended attempt is a diagnostic (R1).
+    pub(crate) fn turn_combined<N: ShellContentNative>(
+        &mut self,
+        turn: &mut CombinedTurn<'_, N>,
+    ) -> Failures {
+        self.turn_with(|slot, connection, epochs| {
+            let current = connection
+                .attempt
+                .filter(|(_, phase)| *phase != ComponentConnectionPhase::Revoked)
+                .map(|(grant, _)| grant);
+            let instant = turn.instant;
+            #[cfg(feature = "diagnostic-combined-witness")]
+            {
+                connection.combined.witness.at = PassSlot {
+                    pass: turn.witness,
+                    slot,
+                };
+            }
+            let serviced = match connection.images.as_mut() {
+                Some(owner) => owner.service_combined(
+                    &mut connection.transport,
+                    epochs,
+                    content_now_msec(),
+                    instant,
+                    &mut CombinedHooks {
+                        row: &mut connection.combined,
+                        turn: &mut *turn,
+                        slot,
+                    },
+                ),
+                None => Ok(()),
+            };
+            let view = connection.transport.connection(epochs);
+            connection.combined.walk(
+                &mut *turn.native,
+                current,
+                &|binding: FrameCopyBinding, job: u64| {
+                    view.content_frame_candidate_state(binding, job)
+                },
+                instant,
+            );
+            serviced?;
+            connection.combined.take_error(current).map_or(Ok(()), Err)
+        })
+    }
+
+    pub(crate) fn combined_row(&self, slot: usize) -> &CombinedRow {
+        &self.connections[slot].combined
+    }
+
+    pub(crate) fn combined_row_mut(&mut self, slot: usize) -> &mut CombinedRow {
+        &mut self.connections[slot].combined
+    }
+
+    /// The slot's image-owner work, the other final-quiescence blocker.
+    pub(crate) fn image_pending(&self, slot: usize) -> usize {
+        self.connections[slot]
+            .images
+            .as_ref()
+            .map_or(0, |owner| owner.pending())
+    }
+}

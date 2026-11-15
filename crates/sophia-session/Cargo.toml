@@ -54,6 +54,9 @@ experimental-draw = ["sophia-runtime/experimental-draw"]
 experimental-shell-capture = ["sophia-renderer-live/experimental-shell-capture", "sophia-runtime/experimental-shell-capture", "sophia-backend-live/experimental-shell-capture"]
 experimental-custody-dispatch = ["sophia-runtime/experimental-custody-dispatch"]
 experimental-combined-frame-job = ["sophia-runtime/experimental-combined-frame-job", "sophia-backend-live/experimental-combined-frame-job"]
+# Gate 4 C3b: the diagnostic combined witness (specifications 03/04). Records
+# only under the combined feature set; never a default and never an ABBA arm.
+diagnostic-combined-witness = ["sophia-runtime/diagnostic-combined-witness", "sophia-backend-live?/diagnostic-combined-witness"]
 default = []
 native-session = [
     "dep:zbus",

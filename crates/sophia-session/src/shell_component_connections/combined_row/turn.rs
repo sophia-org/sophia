@@ -33,9 +33,16 @@ impl ShellComponentConnections {
     ) -> Failures {
         self.turn_with(|slot, connection, epochs| {
             let instant = turn.instant;
+            crate::combined_witness!(
+                connection.combined.witness.at = PassSlot {
+                    pass: turn.witness,
+                    slot,
+                };
+            );
             let Some(owner) = connection.images.as_mut() else {
                 return Ok(());
             };
+            crate::combined_witness!(connection.combined.witness_images_visit(););
             owner.service_combined(
                 &mut connection.transport,
                 epochs,
@@ -62,6 +69,13 @@ impl ShellComponentConnections {
         &mut self,
         native: &mut N,
         instant: Instant,
+        #[cfg(all(
+            feature = "experimental-combined-frame-job",
+            feature = "experimental-native-frame-transaction",
+            feature = "native-session",
+            feature = "diagnostic-combined-witness"
+        ))]
+        witness: WitnessPass,
     ) -> Failures {
         let mut failures: Failures = std::array::from_fn(|_| None);
         for (slot, (connection, failure)) in self
@@ -74,6 +88,10 @@ impl ShellComponentConnections {
                 .attempt
                 .filter(|(_, phase)| *phase != ComponentConnectionPhase::Revoked)
                 .map(|(grant, _)| grant);
+            crate::combined_witness!(
+                connection.combined.witness.at = PassSlot { pass: witness, slot };
+                connection.combined.witness_walk_visit();
+            );
             let view = connection.transport.connection(&mut self.epochs);
             connection.combined.walk(
                 &mut *native,
