@@ -353,6 +353,12 @@ impl Harness {
             ),
             &crate::live_session::OwnerWake::new().unwrap(),
             &mut crate::live_session::LiveApplicationLaunches::default(),
+            #[cfg(all(
+                feature = "experimental-combined-frame-job",
+                feature = "experimental-native-frame-transaction",
+                feature = "native-session"
+            ))]
+            None,
         )
         .unwrap();
     }

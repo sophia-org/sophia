@@ -7,9 +7,9 @@ mod content;
     feature = "native-session"
 ))]
 pub(crate) use content::project_frame_commit;
-// G3-5c: the controlled caller's entry type.
+// G3-5c's controlled caller's entry type; the production bar branch's from
+// gate 4 C3.
 #[cfg(all(
-    test,
     feature = "experimental-combined-frame-job",
     feature = "experimental-native-frame-transaction",
     feature = "native-session"
