@@ -15,6 +15,7 @@ use sophia_backend_live::{LiveProductionVisualRuntime, LiveRenderDeviceIdentityS
 use sophia_config::{MAX_SHELL_COMPONENTS, ShellComponentConfig, ShellComponentRole, ShellGpuMode};
 use sophia_runtime::{
     ContentEpochAccounting, ShellContentAdmissionPolicy, ShellTransportConnection,
+    ShellTransportError,
 };
 use std::path::Path;
 
@@ -409,7 +410,7 @@ impl ShellComponentSession {
     /// the actual successful role negotiation, not from an advertised profile.
     pub fn poll(&mut self, bytes: usize) -> Result<ComponentProcessVisit> {
         let visit = self.processes.visit(bytes);
-        self.finish_poll(visit)
+        self.finish_poll(visit, ShellComponentProcesses::turn_connected)
     }
 
     pub fn poll_authenticated(
@@ -421,10 +422,77 @@ impl ShellComponentSession {
         let visit =
             self.processes
                 .visit_authenticated(bytes, launches, wake, std::time::Instant::now());
-        self.finish_poll(visit)
+        self.finish_poll(visit, ShellComponentProcesses::turn_connected)
     }
 
-    fn finish_poll(&mut self, visit: ComponentProcessVisit) -> Result<ComponentProcessVisit> {
+    /// `poll_authenticated` with every slot's image service hooked over its
+    /// combined row (gate 4 C3): the visit at the pass's one Instant, then
+    /// `turn_combined_images` at the site `turn_connected` has, with that
+    /// site's handling.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    pub(crate) fn poll_authenticated_combined<N: sophia_backend_live::ShellContentNative>(
+        &mut self,
+        bytes: usize,
+        launches: &mut crate::launch_authentication::LaunchCoordinator,
+        wake: sophia_wake::Notifier,
+        turn: &mut crate::shell_component_connections::combined_row::CombinedTurn<'_, N>,
+    ) -> Result<ComponentProcessVisit> {
+        let visit = self
+            .processes
+            .visit_authenticated(bytes, launches, wake, turn.instant);
+        self.finish_poll(visit, |processes| processes.turn_combined_images(turn))
+    }
+
+    /// Each slot's content layer for the combined turn (gate 4 C3): Shell for
+    /// a slot whose Ready service is the bar, the layer its content service
+    /// submits on without a catalog; `None` for every other slot, which takes
+    /// today's path. A per-pass role hint read before the poll: a slot's role
+    /// is its plan's, which the poll does not change, and it grants nothing.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    pub(crate) fn content_layers(
+        &self,
+    ) -> [Option<sophia_backend_live::LiveShellContentLayer>; MAX_SHELL_COMPONENTS] {
+        std::array::from_fn(|slot| {
+            self.ready[slot].as_ref().and_then(|ready| {
+                matches!(ready.service, ShellComponentService::Bar(_))
+                    .then_some(sophia_backend_live::LiveShellContentLayer::Shell)
+            })
+        })
+    }
+
+    /// Every slot's combined-row walk (gate 4 C3); each slot's failure.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    pub(crate) fn turn_combined_walk<N: sophia_backend_live::ShellContentNative>(
+        &mut self,
+        native: &mut N,
+        instant: std::time::Instant,
+    ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
+        self.processes.turn_combined_walk(native, instant)
+    }
+
+    /// `turn` is the visit's one image-service turn of every connected wire,
+    /// `turn_connected` today; it runs at exactly one of the two sites below
+    /// when the visit reaches it.
+    fn finish_poll(
+        &mut self,
+        visit: ComponentProcessVisit,
+        turn: impl FnOnce(
+            &mut ShellComponentProcesses,
+        ) -> [Option<(ComponentConnectionKey, ShellTransportError)>;
+            MAX_SHELL_COMPONENTS],
+    ) -> Result<ComponentProcessVisit> {
         for event in visit.processes.iter().flatten() {
             let key = match event {
                 ComponentProcessEvent::ProcessRetired(key, _)
@@ -440,7 +508,7 @@ impl ShellComponentSession {
         if !self.available || self.stopping {
             // Wires are revoked, but submitted image validation still owns
             // descriptors and must finish its retired-store handoff.
-            for (key, error) in self.processes.turn_connected().into_iter().flatten() {
+            for (key, error) in turn(&mut self.processes).into_iter().flatten() {
                 crate::session_eprintln!(
                     "sophia_shell_component schema=1 status=image_drain_failed slot={} reason={error}",
                     key.slot
@@ -523,7 +591,7 @@ impl ShellComponentSession {
         // owner's wait subscribed is consumed even when no role service has
         // work for that wire. A failure ends that component as a service
         // failure would.
-        for (key, error) in self.processes.turn_connected().into_iter().flatten() {
+        for (key, error) in turn(&mut self.processes).into_iter().flatten() {
             self.fail_service(key, &error)?;
         }
         Ok(visit)
@@ -593,11 +661,10 @@ impl ShellComponentSession {
             .with_connection(key, |transport| service(&mut ready.service, transport))?)
     }
 
-    /// `with_service` for the controlled combined caller (G3-5c C2): the
-    /// same checks in the same order, and the slot's combined row lent
-    /// beside the transport.
+    /// `with_service` lending the slot's combined row beside the transport
+    /// (G3-5c C2; the production bar branch from gate 4 C3): the same checks
+    /// in the same order.
     #[cfg(all(
-        test,
         feature = "experimental-combined-frame-job",
         feature = "experimental-native-frame-transaction",
         feature = "native-session"

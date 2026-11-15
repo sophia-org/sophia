@@ -24,12 +24,75 @@ pub(super) fn service_components(
     authenticated_launches: &mut crate::launch_authentication::LaunchCoordinator,
     owner_wake: &OwnerWake,
     application_launches: &mut LiveApplicationLaunches,
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    position: Option<sophia_protocol::Point>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if !available {
         catalog.cancel_open_request();
     }
     components.set_presentation_available(available)?;
-    match components.poll_authenticated(64 * 1024, authenticated_launches, owner_wake.notifier()) {
+    // Gate 4 C3: with native scanout, this pass's image services are hooked
+    // over the combined row from one turn built here, at the pass's one
+    // Instant, cursor and layer snapshot, and dropped before role service,
+    // which borrows the runtime mutably. Without native scanout the pass is
+    // today's: the ordinary poll, ordinary content, no walk; the row keeps
+    // whatever it holds.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    let instant = Instant::now();
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    let (cursor, plane) =
+        crate::shell_component_connections::combined_row::turn_cursor(native.is_some(), position);
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    let layers = components.content_layers();
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    let polled = match native.as_deref_mut() {
+        Some(native) => components.poll_authenticated_combined(
+            64 * 1024,
+            authenticated_launches,
+            owner_wake.notifier(),
+            &mut crate::shell_component_connections::combined_row::CombinedTurn {
+                native,
+                runtime: &*runtime,
+                scene,
+                outputs,
+                layers,
+                cursor,
+                plane,
+                instant,
+            },
+        ),
+        None => {
+            components.poll_authenticated(64 * 1024, authenticated_launches, owner_wake.notifier())
+        }
+    };
+    #[cfg(not(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    )))]
+    let polled =
+        components.poll_authenticated(64 * 1024, authenticated_launches, owner_wake.notifier());
+    match polled {
         Ok(visit) => {
             for (key, result) in visit.negotiations.into_iter().flatten() {
                 match result {
@@ -152,6 +215,27 @@ pub(super) fn service_components(
     }
     reconcile_catalog_connections(components, catalog, launches)?;
     if !available {
+        // Gate 4 C3: the paused pass still walks the row, so Held results,
+        // Release debt and unconfirmed cancellations are serviced while
+        // presentation is unavailable; a slot's failure is logged, as the
+        // image drain's is, and not retried.
+        #[cfg(all(
+            feature = "experimental-combined-frame-job",
+            feature = "experimental-native-frame-transaction",
+            feature = "native-session"
+        ))]
+        if let Some(native) = native.as_deref_mut() {
+            for (key, error) in components
+                .turn_combined_walk(native, instant)
+                .into_iter()
+                .flatten()
+            {
+                crate::session_eprintln!(
+                    "sophia_shell_component schema=1 status=image_drain_failed slot={} reason={error}",
+                    key.slot
+                );
+            }
+        }
         catalog.service_execution(
             None,
             config,
@@ -244,7 +328,10 @@ pub(super) fn service_components(
             }
             continue;
         }
-        let result = components.with_service(key, |service, transport| {
+        let serve_bar = |service: &mut ShellComponentService,
+                         transport: &mut sophia_runtime::ShellTransportConnection<'_>,
+                         #[cfg(all(feature = "experimental-combined-frame-job", feature = "experimental-native-frame-transaction", feature = "native-session"))]
+                         row: &mut crate::shell_component_connections::combined_row::CombinedRow| {
             let ShellComponentService::Bar(bar) = service else {
                 return Err(IndicatorServiceError::Poll(
                     "bar service role mismatch".into(),
@@ -257,6 +344,11 @@ pub(super) fn service_components(
                     .iter()
                     .flat_map(|projection| projection.content.iter());
                 bar.service_actions_from(transport, presented)?;
+                #[cfg(not(all(
+                    feature = "experimental-combined-frame-job",
+                    feature = "experimental-native-frame-transaction",
+                    feature = "native-session"
+                )))]
                 bar.service_content(
                     transport,
                     runtime,
@@ -266,6 +358,36 @@ pub(super) fn service_components(
                     bounds,
                     root,
                 )?;
+                // Gate 4 C3: with native scanout the row is lent to the bar's
+                // content service under this pass's cursor and Instant; without
+                // it `combined` is None, today's ordinary content.
+                #[cfg(all(
+                    feature = "experimental-combined-frame-job",
+                    feature = "experimental-native-frame-transaction",
+                    feature = "native-session"
+                ))]
+                {
+                    let present = native.is_some();
+                    bar.service_content_on(
+                        transport,
+                        runtime,
+                        scene,
+                        crate::live_session::metadata_shell::ContentNative {
+                            native: native.as_deref_mut(),
+                            combined: present.then(|| {
+                                crate::shell_component_connections::combined_row::CombinedConsume {
+                                    row,
+                                    cursor,
+                                    plane,
+                                    instant,
+                                }
+                            }),
+                        },
+                        outputs,
+                        bounds,
+                        root,
+                    )?;
+                }
                 bar.observe_presentation(transport, runtime)?;
                 Ok(())
             })();
@@ -277,7 +399,19 @@ pub(super) fn service_components(
                     })
             })?;
             Ok(())
-        })?;
+        };
+        #[cfg(not(all(
+            feature = "experimental-combined-frame-job",
+            feature = "experimental-native-frame-transaction",
+            feature = "native-session"
+        )))]
+        let result = components.with_service(key, serve_bar)?;
+        #[cfg(all(
+            feature = "experimental-combined-frame-job",
+            feature = "experimental-native-frame-transaction",
+            feature = "native-session"
+        ))]
+        let result = components.with_combined_service(key, serve_bar)?;
         match result {
             Ok(()) => {}
             // Preserve the production distinction: an admitted WM effect is
@@ -289,6 +423,23 @@ pub(super) fn service_components(
         }
     }
     reconcile_catalog_connections(components, catalog, launches)?;
+    // Gate 4 C3: the row's walk, after content and before native service; a
+    // failure of a slot's current attempt ends that component as a content
+    // failure would. Entries are never disposed of by inference.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    if let Some(native) = native.as_deref_mut() {
+        for (key, error) in components
+            .turn_combined_walk(native, instant)
+            .into_iter()
+            .flatten()
+        {
+            components.fail_service(key, &error)?;
+        }
+    }
     // The single verification worker is visited once, with its exact current
     // connection. An unrelated peer cannot revoke or consume its pending result.
     let owner = catalog.execution_owner(launches);

@@ -43,8 +43,8 @@ const DRM_FORMAT_ARGB8888: u32 = u32::from_le_bytes(*b"AR24");
 pub(in crate::live_session) mod reconnect_fixture;
 
 /// The native a content service drives, and under CS the combined row a
-/// submission joins (G3-5c C2). Production passes `ordinary`; only the
-/// controlled caller lends a row, into the same bodies.
+/// submission joins (G3-5c C2). The bar branch lends a row when native
+/// scanout is present (gate 4 C3); every other caller passes `ordinary`.
 pub(crate) struct ContentNative<'a, N: sophia_backend_live::ShellContentNative> {
     pub(crate) native: Option<&'a mut N>,
     #[cfg(all(

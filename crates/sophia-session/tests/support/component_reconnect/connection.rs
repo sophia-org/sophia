@@ -63,23 +63,6 @@ impl ShellComponentProcesses {
         self.connections.image_pending(slot)
     }
 
-    /// G3-5d d-2b1: the split driver's images step.
-    pub(crate) fn turn_combined_images<N: sophia_backend_live::ShellContentNative>(
-        &mut self,
-        turn: &mut crate::shell_component_connections::combined_row::CombinedTurn<'_, N>,
-    ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
-        self.connections.turn_combined_images(turn)
-    }
-
-    /// G3-5d d-2b1: the split driver's walk step.
-    pub(crate) fn turn_combined_walk<N: sophia_backend_live::ShellContentNative>(
-        &mut self,
-        native: &mut N,
-        instant: std::time::Instant,
-    ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
-        self.connections.turn_combined_walk(native, instant)
-    }
-
     /// G3-5d d-2b3d: the slot's transport facts beside its attempt.
     pub(crate) fn transport_facts(
         &self,

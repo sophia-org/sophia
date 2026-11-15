@@ -5,15 +5,13 @@
 //! `turn_combined_walk` (every slot's walk, then its `take_error`). A
 //! private child of `combined_row`, under the parent's feature gate, so it
 //! reaches the row's private items as the steps mount does; the only test
-//! field it reads, `image_fault`, is read under `cfg(test)`. Nothing here
-//! is called by production until C3 wires the owner pass.
+//! field it reads, `image_fault`, is read under `cfg(test)`. Gate 4 C3
+//! calls all three from the owner pass.
 use super::*;
 
 impl ShellComponentConnections {
     /// `with_connection` that also lends the slot's row (G3-5c C2): the same
-    /// Connected-phase check, and the row borrowed beside the transport, for
-    /// the controlled caller only.
-    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
+    /// Connected-phase check, and the row borrowed beside the transport.
     pub(crate) fn with_connection_and_row<R>(
         &mut self,
         key: ComponentConnectionKey,
@@ -29,7 +27,6 @@ impl ShellComponentConnections {
 
     /// Step 1: the turn's one hooked image-owner service per slot, through
     /// `turn_with` exactly as `turn_combined` runs it, without the walk.
-    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     pub(crate) fn turn_combined_images<N: ShellContentNative>(
         &mut self,
         turn: &mut CombinedTurn<'_, N>,
@@ -61,7 +58,6 @@ impl ShellComponentConnections {
     /// Step 3: every slot's walk, whatever its phase, then its `take_error`.
     /// An error of the slot's current, unrevoked attempt is that slot's
     /// failure; any other becomes a cleanup diagnostic (R1).
-    #[cfg_attr(not(test), allow(dead_code, reason = "used once gate 4 wires the row"))]
     pub(crate) fn turn_combined_walk<N: ShellContentNative>(
         &mut self,
         native: &mut N,

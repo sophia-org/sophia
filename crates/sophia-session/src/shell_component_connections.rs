@@ -32,7 +32,7 @@ mod tests;
 pub(crate) mod combined_row;
 
 /// The image owner's renderer plan. With the combined feature one worker
-/// serves both paths; production admits no combined job until gate 4.
+/// serves both paths; the owner pass admits combined jobs from gate 4 C3.
 #[cfg(feature = "experimental-combined-frame-job")]
 type ImagePlan = sophia_backend_live::CombinedRenderPlan;
 #[cfg(not(feature = "experimental-combined-frame-job"))]

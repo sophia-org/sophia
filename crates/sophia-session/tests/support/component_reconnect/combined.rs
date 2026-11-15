@@ -1030,4 +1030,8 @@ mod full_debt;
 // G3-5d b4: the row trace checker and the checkpoints every control calls.
 #[path = "combined_trace.rs"]
 mod trace;
+
+// Gate 4 C3a: the R1 retention controls (REV5 5.4).
+#[path = "combined_retention.rs"]
+mod retention;
 use trace::*;

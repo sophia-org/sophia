@@ -251,7 +251,6 @@ impl ShellComponentProcesses {
     }
     /// `with_connection` lending the slot's combined row too (G3-5c C2).
     #[cfg(all(
-        test,
         feature = "experimental-combined-frame-job",
         feature = "experimental-native-frame-transaction",
         feature = "native-session"
@@ -265,6 +264,33 @@ impl ShellComponentProcesses {
         ) -> R,
     ) -> Result<R, ComponentConnectionError> {
         self.connections.with_connection_and_row(key, service)
+    }
+    /// Step 1 of the combined turn: every slot's hooked image service
+    /// (G3-5d d-2b1; production from gate 4 C3).
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    pub(crate) fn turn_combined_images<N: sophia_backend_live::ShellContentNative>(
+        &mut self,
+        turn: &mut crate::shell_component_connections::combined_row::CombinedTurn<'_, N>,
+    ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
+        self.connections.turn_combined_images(turn)
+    }
+    /// Step 3 of the combined turn: every slot's walk (G3-5d d-2b1;
+    /// production from gate 4 C3).
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    pub(crate) fn turn_combined_walk<N: sophia_backend_live::ShellContentNative>(
+        &mut self,
+        native: &mut N,
+        instant: std::time::Instant,
+    ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
+        self.connections.turn_combined_walk(native, instant)
     }
     pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
         self.connections.poll_fds()

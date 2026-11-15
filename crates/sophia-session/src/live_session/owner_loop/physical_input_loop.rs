@@ -585,7 +585,9 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             }
             component_service::service_components(components, component_catalog, runtime, scene, native_scanout.as_mut(),
                 &outputs, &component_bounds, wm_session, shell_presentation_available, session_launches, secondary_children, config, xauthority, &mut launch_admission_started_at,
-                authenticated_launches, owner_wake, application_launches)?;
+                authenticated_launches, owner_wake, application_launches,
+                #[cfg(all(feature = "experimental-combined-frame-job", feature = "experimental-native-frame-transaction", feature = "native-session"))]
+                pointer.position())?;
             components.write_work_area_bands(&mut shell_band_scratch);
             shell_work_area_bands = Some(std::mem::take(&mut shell_band_scratch));
         }
