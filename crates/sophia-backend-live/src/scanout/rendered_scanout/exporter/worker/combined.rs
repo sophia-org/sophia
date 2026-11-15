@@ -50,9 +50,15 @@ impl CombinedFacade {
         &self.claim
     }
 
-    /// Test-support (G3-5d d-2b2): the facade's admission ticket, for the
-    /// running fixture's trace identity.
-    #[cfg(any(test, feature = "test-support"))]
+    /// The facade's admission ticket, for the running fixture's trace
+    /// identity (test-support, G3-5d d-2b2) and for the diagnostic witness's
+    /// records (gate 4 C3b); a release build with the witness alone must
+    /// still compile its caller (mech build 01).
+    #[cfg(any(
+        test,
+        feature = "test-support",
+        feature = "diagnostic-combined-witness"
+    ))]
     pub(crate) fn ticket(&self) -> u64 {
         self.ticket
     }
