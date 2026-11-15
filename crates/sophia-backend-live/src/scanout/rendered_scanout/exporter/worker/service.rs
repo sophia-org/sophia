@@ -23,8 +23,6 @@ mod seam;
     any(test, feature = "test-support"),
     feature = "experimental-combined-frame-job"
 ))]
-// The pausing gate has only this crate's tests as consumers.
-#[cfg_attr(not(test), allow(unused_imports))]
 pub(crate) use seam::{
     CombinedRenderSeam,
     gate::{CombinedGate, GateHandle, combined_gate, pausing_combined_gate},

@@ -595,3 +595,7 @@ fn a_repeated_resource_frame_is_accepted_with_every_occurrence_rendered() {
 // G3-5d d-2b3a: running-core custody, Held/Unknown against Ended.
 #[path = "combined_custody.rs"]
 mod custody;
+
+// Gate 4 C3a: R1 case 4, the worker lost after forwarding (REV5 5.4).
+#[path = "combined_running_loss.rs"]
+mod loss;

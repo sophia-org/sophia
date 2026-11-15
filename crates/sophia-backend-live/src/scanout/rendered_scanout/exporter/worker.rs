@@ -981,7 +981,9 @@ pub use accept_stub::{CombinedGateFact, CombinedGateRelease, CombinedRenderGate,
     any(test, feature = "test-support"),
     feature = "experimental-combined-frame-job"
 ))]
-pub(crate) use accept_stub::{StubRenderer, arm_render_gate, running_seam_core, stub_core};
+pub(crate) use accept_stub::{
+    StubRenderer, arm_pausing_render_gate, arm_render_gate, running_seam_core, stub_core,
+};
 
 use service::run_worker;
 

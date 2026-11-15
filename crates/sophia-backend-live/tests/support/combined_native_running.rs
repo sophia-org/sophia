@@ -46,6 +46,19 @@ pub(crate) struct NativeService {
     device: CountingDevice,
 }
 
+/// Returns once `core`'s exact worker thread has exited, bounded by
+/// `wait`, after its shutdown was requested; no owner call.
+fn await_renderer_exit(core: &crate::NativeGbmRendererWorkerCore, wait: std::time::Duration) {
+    let deadline = std::time::Instant::now() + wait;
+    while !core.poll_shutdown().expect("the loss was requested") {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the renderer worker never exited"
+        );
+        std::thread::yield_now();
+    }
+}
+
 /// The seam's checksum: the same fold as the G3-2 bind controls.
 fn checksum(bytes: &[u8]) -> u64 {
     bytes.iter().fold(17, |hash, byte| {
@@ -141,6 +154,28 @@ impl CombinedNativeFixture {
             wait,
         )
         .expect("the running worker acknowledged the gate before any admission")
+    }
+
+    /// `arm_render_gate` with the pausing gate (gate 4 C3a, R1 case 4): it
+    /// pauses once, bounded by `wait`, the first time it finds the output's
+    /// route empty (`Waiting`), and after that pause ends (`PauseEnded`) it
+    /// serves nothing in that pass, so a job forwarded during the pause is
+    /// still in the inbox when the worker next reads its control flag.
+    pub fn arm_pausing_render_gate(
+        &self,
+        output: OutputId,
+        wait: std::time::Duration,
+    ) -> crate::CombinedRenderGate {
+        let core = self
+            .core
+            .as_ref()
+            .expect("only a running fixture has a renderer gate");
+        crate::arm_pausing_render_gate(
+            core,
+            crate::LiveRendererWorkerOutputKey::from_raw(output.raw()),
+            wait,
+        )
+        .expect("the running worker acknowledged the pausing gate before any admission")
     }
 
     /// One enabled head per output, each with an exporter on one running
@@ -301,14 +336,28 @@ impl CombinedNativeFixture {
             .as_ref()
             .expect("only a running fixture has a worker");
         core.request_shutdown();
-        let deadline = std::time::Instant::now() + wait;
-        while !core.poll_shutdown().expect("the loss was requested") {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the renderer worker never exited"
-            );
-            std::thread::yield_now();
-        }
+        await_renderer_exit(core, wait);
+    }
+
+    /// `lose_renderer_worker` against a worker paused by `gate` (gate 4
+    /// C3a, R1 case 4): the shutdown is requested first, then this pause is
+    /// resumed, then the wait for this exact worker's exit. The worker
+    /// serves nothing after the pause ends and reads the requested shutdown
+    /// at its next control check, so a job forwarded during the pause is
+    /// dropped unserved with its route. Same out-of-contract fault, same
+    /// unchanged shutdown contract; panics on the stub.
+    pub fn lose_renderer_worker_resuming(
+        &self,
+        gate: &mut crate::CombinedRenderGate,
+        wait: std::time::Duration,
+    ) {
+        let core = self
+            .core
+            .as_ref()
+            .expect("only a running fixture has a worker");
+        core.request_shutdown();
+        gate.resume();
+        await_renderer_exit(core, wait);
     }
 
     /// The occurrences the running seam has read so far, in order.

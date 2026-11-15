@@ -10,7 +10,9 @@
 //! G3-5d's running renderer.
 
 use super::combined::{CombinedOutcome, OutputRoute, RenderAttempt};
-use super::service::{CombinedRenderSeam, GateHandle, combined_gate};
+use super::service::{
+    CombinedGate, CombinedRenderSeam, GateHandle, combined_gate, pausing_combined_gate,
+};
 use super::support::{correlated_result, exported_outcome, inventory_test_core};
 use super::{
     CombinedFacade, DeviceIdentity, LiveRendererWorkerLeaseId, LiveRendererWorkerOutputKey,
@@ -92,6 +94,12 @@ impl CombinedRenderGate {
     pub fn disconnect(&mut self) {
         self.0.disconnect();
     }
+
+    /// Ends a pausing gate's one pause, once (gate 4 C3a, the running
+    /// fixture's loss-and-resume operation).
+    pub(crate) fn resume(&mut self) {
+        self.0.resume();
+    }
 }
 
 /// Arms the worker's gate for `output` and waits for its acknowledgement,
@@ -102,7 +110,24 @@ pub(crate) fn arm_render_gate(
     output: LiveRendererWorkerOutputKey,
     wait: Duration,
 ) -> Option<CombinedRenderGate> {
-    let (gate, handle) = combined_gate(output, wait);
+    arm(core, combined_gate(output, wait))
+}
+
+/// `arm_render_gate` with the pausing gate (gate 4 C3a): it also pauses
+/// once, bounded by `wait`, the first time it finds its output's route
+/// empty, and serves nothing in that pass after the pause ends.
+pub(crate) fn arm_pausing_render_gate(
+    core: &NativeGbmRendererWorkerCore,
+    output: LiveRendererWorkerOutputKey,
+    wait: Duration,
+) -> Option<CombinedRenderGate> {
+    arm(core, pausing_combined_gate(output, wait))
+}
+
+fn arm(
+    core: &NativeGbmRendererWorkerCore,
+    (gate, handle): (CombinedGate, GateHandle),
+) -> Option<CombinedRenderGate> {
     core.command_sender
         .send(WorkerCommand::InstallCombinedGate(gate))
         .ok()?;
