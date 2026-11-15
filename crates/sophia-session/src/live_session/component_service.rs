@@ -374,14 +374,14 @@ pub(super) fn service_components(
                         scene,
                         crate::live_session::metadata_shell::ContentNative {
                             native: native.as_deref_mut(),
-                            combined: present.then(|| {
+                            combined: present.then_some(
                                 crate::shell_component_connections::combined_row::CombinedConsume {
                                     row,
                                     cursor,
                                     plane,
                                     instant,
-                                }
-                            }),
+                                },
+                            ),
                         },
                         outputs,
                         bounds,
@@ -431,7 +431,7 @@ pub(super) fn service_components(
         feature = "experimental-native-frame-transaction",
         feature = "native-session"
     ))]
-    if let Some(native) = native.as_deref_mut() {
+    if let Some(native) = native {
         for (key, error) in components
             .turn_combined_walk(native, instant)
             .into_iter()
