@@ -943,6 +943,8 @@ impl LiveProductionNativeScanout {
                         .saturating_add(worker.frame_slots.history_records);
                     metrics.max_worker_request =
                         metrics.max_worker_request.max(worker.max_request_age);
+                    #[cfg(feature = "experimental-combined-frame-job")]
+                    metrics.worker_combined.add(&worker.combined);
                 }
                 metrics.max_target_create = metrics.max_target_create.max(stats.max_target_create);
                 metrics.max_frame_surface_create = metrics

@@ -127,6 +127,10 @@ impl NativeGbmRendererWorker {
         }
         self.combined_receipt.admissions = self.combined_receipt.admissions.wrapping_add(1);
         self.combined_release = CombinedReleaseCell::Reserved(self.combined_receipt.admissions);
+        #[cfg(feature = "experimental-combined-frame-job")]
+        {
+            self.metrics.combined.admissions = self.metrics.combined.admissions.saturating_add(1);
+        }
         Some(self.combined_receipt.admissions)
     }
 
@@ -141,6 +145,10 @@ impl NativeGbmRendererWorker {
             return false;
         }
         self.combined_release = CombinedReleaseCell::Free;
+        #[cfg(feature = "experimental-combined-frame-job")]
+        {
+            self.metrics.combined.cancels = self.metrics.combined.cancels.saturating_add(1);
+        }
         true
     }
 
@@ -166,6 +174,10 @@ impl NativeGbmRendererWorker {
             admission: CombinedAdmission { ticket, job },
             result,
         };
+        #[cfg(feature = "experimental-combined-frame-job")]
+        {
+            self.metrics.combined.holds = self.metrics.combined.holds.saturating_add(1);
+        }
         None
     }
 
@@ -188,14 +200,21 @@ impl NativeGbmRendererWorker {
                     lease_id,
                     slot_token,
                     ..
-                } => CombinedReleaseCell::Retained {
-                    admission,
-                    lease: DiscardedWorkerLease {
-                        output: result.output,
-                        lease_id,
-                        slot_token,
-                    },
-                },
+                } => {
+                    #[cfg(feature = "experimental-combined-frame-job")]
+                    {
+                        self.metrics.combined.give_ups =
+                            self.metrics.combined.give_ups.saturating_add(1);
+                    }
+                    CombinedReleaseCell::Retained {
+                        admission,
+                        lease: DiscardedWorkerLease {
+                            output: result.output,
+                            lease_id,
+                            slot_token,
+                        },
+                    }
+                }
                 // Only exported results are held.
                 _ => CombinedReleaseCell::Held {
                     admission: held,
@@ -264,6 +283,11 @@ impl NativeGbmRendererWorker {
             Ok(()) => {
                 self.combined_release = CombinedReleaseCell::Free;
                 self.combined_receipt.released = Some(admission);
+                #[cfg(feature = "experimental-combined-frame-job")]
+                {
+                    self.metrics.combined.release_enqueues =
+                        self.metrics.combined.release_enqueues.saturating_add(1);
+                }
                 return CombinedReleaseFlush::Enqueued;
             }
             Err(TrySendError::Full(_)) => CombinedReleaseFlush::Full,

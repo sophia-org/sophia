@@ -106,6 +106,57 @@ pub enum CombinedAcceptRefusal {
 /// Owner-numbered requests start at 1, so this never names one in flight.
 pub(crate) const COMBINED_REQUEST: LiveRendererWorkerRequestId = LiveRendererWorkerRequestId(0);
 
+/// The combined Release cell's transitions on one facade, each counted once
+/// when it succeeds, and its state when metrics are read. The ordinary
+/// `requests`, `completions` and `failures` keep their meanings: an accepted
+/// result is not a request, and `poll()` counts it in `completions` as well as
+/// here. At a drained capture `admissions = cancels + holds`, `holds =
+/// acceptances + give_ups`, `give_ups = release_enqueues` and `acceptances =
+/// completions`; mid-flight they need not hold.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LiveRendererCombinedWorkerMetrics {
+    /// Reservations made: Free became Reserved.
+    pub admissions: usize,
+    /// Unused reservations freed: Reserved became Free.
+    pub cancels: usize,
+    /// Exported results held: Reserved became Held.
+    pub holds: usize,
+    /// Held results taken as the facade's in-flight reply.
+    pub acceptances: usize,
+    /// Held results given up: Held became Retained.
+    pub give_ups: usize,
+    /// Retained Releases the command queue took (Retained became Free).
+    pub release_enqueues: usize,
+    /// Accepted results `poll()` validated and delivered as Exported.
+    pub completions: usize,
+    /// Release send attempts refused by a full or closed queue; retry
+    /// evidence, not lost work.
+    pub release_enqueue_failures: usize,
+    /// Facades whose cell was not Free when read. Summed across closed
+    /// owners, so an owner that closed owing work stays visible.
+    pub cells_not_free: usize,
+    /// Facades holding an unread Release receipt when read; summed likewise.
+    pub receipts_pending: usize,
+}
+
+impl LiveRendererCombinedWorkerMetrics {
+    /// Adds disjoint facades or owner lifetimes, gauges included.
+    pub fn add(&mut self, other: &Self) {
+        self.admissions = self.admissions.saturating_add(other.admissions);
+        self.cancels = self.cancels.saturating_add(other.cancels);
+        self.holds = self.holds.saturating_add(other.holds);
+        self.acceptances = self.acceptances.saturating_add(other.acceptances);
+        self.give_ups = self.give_ups.saturating_add(other.give_ups);
+        self.release_enqueues = self.release_enqueues.saturating_add(other.release_enqueues);
+        self.completions = self.completions.saturating_add(other.completions);
+        self.release_enqueue_failures = self
+            .release_enqueue_failures
+            .saturating_add(other.release_enqueue_failures);
+        self.cells_not_free = self.cells_not_free.saturating_add(other.cells_not_free);
+        self.receipts_pending = self.receipts_pending.saturating_add(other.receipts_pending);
+    }
+}
+
 /// What the owner froze for the renderer at dispatch; opaque to the runtime.
 pub struct CombinedRenderPlan {
     pub(super) deadline: Instant,
@@ -455,6 +506,7 @@ impl NativeGbmRendererWorker {
             soft_stall_reported: false,
             ready: Some(result),
         });
+        self.metrics.combined.acceptances = self.metrics.combined.acceptances.saturating_add(1);
     }
 
     pub(crate) fn flush_combined_release_for(
@@ -463,6 +515,27 @@ impl NativeGbmRendererWorker {
         job: u64,
     ) -> CombinedRelease {
         self.combined_release_for(facade.admission(job))
+    }
+
+    /// `metrics()`'s combined part: the transition counts, the retry count and
+    /// this facade's cell state now.
+    pub(super) fn combined_metrics(&self) -> LiveRendererCombinedWorkerMetrics {
+        LiveRendererCombinedWorkerMetrics {
+            release_enqueue_failures: self.metrics.combined_release_enqueue_failures,
+            cells_not_free: usize::from(!matches!(
+                self.combined_release,
+                CombinedReleaseCell::Free
+            )),
+            receipts_pending: usize::from(self.combined_receipt.released.is_some()),
+            ..self.metrics.combined
+        }
+    }
+
+    /// Counts a validated Exported reply that was an accepted combined result.
+    pub(super) fn count_combined_completion(&mut self, request: LiveRendererWorkerRequestId) {
+        if request == COMBINED_REQUEST {
+            self.metrics.combined.completions = self.metrics.combined.completions.saturating_add(1);
+        }
     }
 
     pub(super) fn take_combined_result(&self) -> Result<CombinedRenderResult, TryRecvError> {

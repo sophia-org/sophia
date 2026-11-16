@@ -316,6 +316,12 @@ impl NativeEvidenceSnapshot {
             .resources
             .worker_completions
             .saturating_add(next.resources.worker_completions);
+        // Counts add across disjoint owners; the cell gauges add too, so an
+        // owner that closed owing combined work is not erased by a clean one.
+        #[cfg(feature = "experimental-combined-frame-job")]
+        self.resources
+            .worker_combined
+            .add(&next.resources.worker_combined);
         self.resources.worker_failures = self
             .resources
             .worker_failures

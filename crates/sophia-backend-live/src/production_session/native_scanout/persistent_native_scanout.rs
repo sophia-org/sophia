@@ -684,6 +684,9 @@ pub struct LivePersistentRenderMetrics {
     pub linear_fallback_draws: usize,
     pub worker_requests: usize,
     pub worker_completions: usize,
+    /// Combined Release-cell transitions and cell state, summed over facades.
+    #[cfg(feature = "experimental-combined-frame-job")]
+    pub worker_combined: crate::LiveRendererCombinedWorkerMetrics,
     pub worker_failures: usize,
     pub worker_soft_stalls: usize,
     pub worker_hard_stalls: usize,

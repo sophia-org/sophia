@@ -68,6 +68,26 @@
         direct_scanout_totals.unsupported,
         direct_scanout_totals.fallbacks,
     );
+    // The combined frame job's own worker population, kept out of schema 12 so
+    // builds without the feature print exactly what they did before. Every
+    // field is final, summed over facades and owner lifetimes.
+    #[cfg(feature = "experimental-combined-frame-job")]
+    {
+        let combined = native_resources.worker_combined;
+        crate::session_println!(
+            "sophia_live_native_combined_worker schema=1 status=complete admissions={} cancels={} holds={} acceptances={} give_ups={} release_enqueues={} completions={} release_enqueue_failures={} cells_not_free={} receipts_pending={}",
+            combined.admissions,
+            combined.cancels,
+            combined.holds,
+            combined.acceptances,
+            combined.give_ups,
+            combined.release_enqueues,
+            combined.completions,
+            combined.release_enqueue_failures,
+            combined.cells_not_free,
+            combined.receipts_pending,
+        );
+    }
     // Why frames were or were not eligible, so a run in which direct scanout
     // never fired can say which of "the path was off", "the scene was never
     // eligible", and "the proof is wrong" it was. Zeros in the counters above

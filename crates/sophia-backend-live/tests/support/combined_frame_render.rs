@@ -34,6 +34,9 @@ mod accept_worker;
 // G3-5d d-1: the deterministic seam against the worker's own lease table.
 #[path = "combined_frame_seam.rs"]
 mod seam;
+// Worker accounting proposal 01: the combined Release-cell population.
+#[path = "combined_worker_metrics.rs"]
+mod worker_metrics;
 
 type Validator = IsbValidationWorker<CombinedRenderPlan>;
 const WAIT: Duration = Duration::from_secs(10);

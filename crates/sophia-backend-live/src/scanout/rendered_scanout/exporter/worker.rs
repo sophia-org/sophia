@@ -32,7 +32,7 @@ pub(crate) use combined::{COMBINED_REQUEST, CombinedFacade, CombinedPlaceholder}
 #[cfg(feature = "experimental-combined-frame-job")]
 pub use combined::{
     CombinedAcceptRefusal, CombinedDisposition, CombinedRenderPlan, CombinedRenderResult,
-    CombinedSettleRefused,
+    CombinedSettleRefused, LiveRendererCombinedWorkerMetrics,
 };
 mod head_imports;
 mod lifecycle;
@@ -157,6 +157,9 @@ pub struct LiveRendererWorkerMetrics {
     /// Combined frame-job Release sends refused by a full or closed queue,
     /// counted apart so the ordinary count keeps its meaning.
     pub combined_release_enqueue_failures: usize,
+    /// Combined Release-cell transitions and cell state, apart from the above.
+    #[cfg(feature = "experimental-combined-frame-job")]
+    pub combined: LiveRendererCombinedWorkerMetrics,
     pub max_request_age: Duration,
     pub frame_slots: LiveRendererFrameSlotMetrics,
 }
@@ -473,6 +476,8 @@ impl NativeGbmRendererWorker {
         LiveRendererWorkerMetrics {
             release_enqueue_failures: self.core.release_enqueue_failures.load(Ordering::Relaxed),
             frame_slots: self.frame_slot_metrics.snapshot(),
+            #[cfg(feature = "experimental-combined-frame-job")]
+            combined: self.combined_metrics(),
             ..self.metrics
         }
     }
@@ -677,6 +682,8 @@ impl NativeGbmRendererWorker {
                         slot_token,
                     } => {
                         self.metrics.completions = self.metrics.completions.saturating_add(1);
+                        #[cfg(feature = "experimental-combined-frame-job")]
+                        self.count_combined_completion(in_flight.request_id);
                         WorkerPoll::Exported(NativeGbmRendererWorkerScanoutLease {
                             capture,
                             output: self.output,
