@@ -3,8 +3,12 @@
 Status: t254 export, bounded file client and the only Session/CLI transport.
 Session and `sophia msg` use 9P2000.L. The export uses the existing
 HostDomain admission and ControlTicket queue; command validation and execution
-remain with their owners. Independent-client protocol checks and transport
-performance qualification pass. Installed-session acceptance remains pending.
+remain with their owners. The paired
+[transport qualification](notes/investigations/t75i0gx8-define-bounded-administrative-file-records-before-migrating-control.md#transport-qualification-result-and-default-candidate-october-14)
+(2026-10-14, source `639dab440`) and the
+[installed acceptance](notes/investigations/t75i0gx8-define-bounded-administrative-file-records-before-migrating-control.md#installed-acceptance-october-15) (2026-10-15)
+passed for the source and release they name. Neither certifies an installation
+of a later source, including the one that retired the legacy socket.
 
 ## Selecting the transport
 
@@ -132,7 +136,8 @@ The [bounded lifecycle model](../validation/specula/admin-file-lifecycle/README.
 checks cancellation, replay, status retention and unsettled execution custody.
 Owner integration is checked with a generic supervised policy fixture.
 An independent Go client checks the administrative records
-and file lifecycle. Performance and live-session qualification remain required.
+and file lifecycle. The qualification records linked above cover performance
+and one installed session.
 
 | File | Open mode | Read or write behavior |
 | --- | --- | --- |

@@ -108,8 +108,10 @@ survives reconnect as a client cache: rediscover on every new connection.
 An invocation names an owner and command from an exact previously returned catalog
 generation. No discovery, a stale generation, or a changed recipient before
 dispatch yields `stale`; no command runs. A valid current generation with a
-name absent from its catalog yields `rejected`. Authorization loss yields
-`denied` if a reply can still be delivered, otherwise the connection closes.
+name absent from its catalog yields `rejected`. Authorization loss before a
+request is accepted refuses the file operation with `EACCES` and no request
+exists. Loss after acceptance yields `denied` if a reply can still be
+delivered, otherwise the connection closes.
 Unknown owners are malformed, not extensible command families.
 The runtime resolves the private action mapping once, pins it through
 dispatch/settlement, and must never retarget the action to a replacement WM.
@@ -190,7 +192,8 @@ assume that operation was rolled back.
 The service admits at most 32 connected peers, including peers still
 authenticating, and 16 invocations in total (queued plus dispatched), also
 constrained by the responsible owner's existing capacity. Each peer has one
-outstanding request. Disconnect must release transport state immediately;
+pending administrative invocation; that is separate from 9P pipelining, which
+allows up to eight wire requests per connection. Disconnect must release transport state immediately;
 already dispatched work retains only its bounded owner correlation record
 until terminal recovery. The [file contract](sophia-admin-files.md#runtime-limits-and-admission)
 states the message, fid and timeout limits and the errors that report them.
@@ -249,8 +252,8 @@ boundary, specifically owner settlement, and keeps JSON in the convenience CLI.
 
 [QMP](https://www.qemu.org/docs/master/interop/qmp-spec.html) informs explicit
 negotiation, request correlation, structured errors, and validation before
-effects. Sophia makes correlation mandatory and avoids concurrent outstanding
-requests.
+effects. Sophia makes correlation mandatory and allows one pending invocation
+per connection.
 [D-Bus](https://dbus.freedesktop.org/doc/dbus-specification.html) illustrates
 separate authentication, typed interfaces, and correlated replies. Sophia
 adopts that separation without adding a general message bus or treating

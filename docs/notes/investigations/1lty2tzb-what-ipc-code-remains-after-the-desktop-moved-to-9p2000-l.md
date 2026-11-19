@@ -3670,7 +3670,9 @@ rights and the bytes are parsed as ordinary 9P input; no descriptor reaches
 the process. That difference in behaviour is not tested.
 
 The `admin_file_performance` diagnostic keeps its two rounds per catalog on
-files only; its header no longer names a legacy arm, so new samples are not
-comparable block for block with the t254 qualification record. A revision-1
+files only. The paired qualification needed both transports, so the runner's
+`qualify` phase and the harness's `SOPHIA_ADMIN_PERF_QUALIFY=1` switch are
+refused by name and a files-only run always records `qualification=false`.
+The archived eight-block t254 result stands. A revision-1
 client can no longer be served. The fallback is the whole release named in
 the inventory above; no rollback trial was run for administration either.

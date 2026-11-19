@@ -88,8 +88,8 @@ candidates that role may exchange.
 - [Sophia Control v1](sophia-control-v1.md) specifies scripting authority,
   host-control opt-in, catalog generations, and owner-settled outcomes; the
   [administrative files](sophia-admin-files.md) carry it.
-  The session service and `sophia msg` implement policy actions and confirmed
-  restart; reload and delegated access remain unadvertised.
+  The session service and `sophia msg` implement policy actions, confirmed
+  restart, `reload-profile` and `logout`; delegated access remains unadvertised.
 - [Read-only WM inspection](sophia-wm-inspection.md) specifies the independently
   enabled host observer, sanitized records, bounded cursors and `sophia inspect wm`.
 - [Sophia Indicator Descriptor](sophia-indicator-descriptor.md) defines the

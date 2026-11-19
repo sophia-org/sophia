@@ -754,7 +754,9 @@ blocks and idle intervals must pass; do not select a best run or drop outliers.
 
 Use `cargo-slot sophia cargo xtask check admin-file-performance prepare
 --output=/absolute/new/private-directory`, then the same command with `qualify`
-after all builds and tests finish. The runner verifies signed clean source and
+after all builds and tests finish. (Since t255 retired the legacy transport on
+2026-11-19 the runner refuses `qualify`; `measure` runs a files-only
+diagnostic that cannot publish this verdict. The October 14 result stands.) The runner verifies signed clean source and
 the release binary hash, hides devices/network/session sockets and records host
 identity, niceness and load. A noisy host can invalidate a run but cannot turn a
 failure into a pass. Declare any changed limits and rationale before measuring

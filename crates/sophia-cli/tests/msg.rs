@@ -106,11 +106,15 @@ fn cli_requires_explicit_discovery_and_valid_syntax() {
         vec!["msg", "--json", "--transport", "current-ipc", "commands"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_sophia"))
-            .args(args)
+            .args(&args)
             .env_remove(SOPHIA_CONTROL_SOCKET_ENV)
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         assert!(output.stdout.is_empty());
+        // Without this, the row would also pass on the missing socket.
+        if args.contains(&"current-ipc") {
+            assert!(String::from_utf8_lossy(&output.stderr).contains("current-ipc is retired"));
+        }
     }
 }

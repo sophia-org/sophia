@@ -149,10 +149,11 @@ fn admin_file_performance() {
         panic!("requires release profile");
     }
     let path = std::env::var_os("SOPHIA_ADMIN_PERF_EVIDENCE").expect("evidence path");
-    let qualification = std::env::var("SOPHIA_ADMIN_PERF_QUALIFY").as_deref() == Ok("1");
-    let count = if qualification { 1000 } else { 200 };
-    let idle_seconds = if qualification { 10 } else { 2 };
-    let idle_intervals = if qualification { 3 } else { 1 };
+    refuse_retired_qualification(std::env::var("SOPHIA_ADMIN_PERF_QUALIFY").ok().as_deref());
+    let qualification = false;
+    let count = 200;
+    let idle_seconds = 2;
+    let idle_intervals = 1;
     let mut budgets_pass = true;
     let mut evidence = std::fs::OpenOptions::new()
         .write(true)
@@ -169,7 +170,7 @@ fn admin_file_performance() {
         "warmups_per_delay":20,"invocation_samples_per_delay":count,"owner_delay_ms":[0,2],"idle_seconds":idle_seconds,"idle_intervals":idle_intervals,
         "order":"files, two rounds per catalog", "percentiles":"nearest rank", "catalogs":[1,259],
         "discovery_p99_ms":20,"discovery_max_ms":100,"invoke_p99_ms":8,"invoke_max_ms":50,"idle_percent_one_core":1,
-        "limits":"prospective t254 transport limits; enforced only in qualification; synthetic owner, no desktop"}),
+        "limits":"t254 transport limits, reported and not enforced; files-only diagnostic, not the paired qualification; synthetic owner, no desktop"}),
     );
     for maximum in [false, true] {
         let catalog = catalog(maximum);
@@ -261,10 +262,27 @@ fn admin_file_performance() {
     record(
         json!({"kind":"result","completed":true,"qualification":qualification,"budgets_pass":budgets_pass}),
     );
+}
+
+/// The t254 qualification compared eight alternating legacy and files blocks.
+/// A files-only run must never publish that verdict.
+fn refuse_retired_qualification(switch: Option<&str>) {
     assert!(
-        !qualification || budgets_pass,
-        "administrative performance budgets failed"
+        switch != Some("1"),
+        "paired administrative qualification is retired with the legacy transport"
     );
+}
+
+#[test]
+#[should_panic(expected = "paired administrative qualification is retired")]
+fn the_retired_qualification_switch_is_refused() {
+    refuse_retired_qualification(Some("1"));
+}
+
+#[test]
+fn a_diagnostic_run_is_not_refused() {
+    refuse_retired_qualification(None);
+    refuse_retired_qualification(Some("0"));
 }
 
 fn within(timing: &serde_json::Value, p99_ms: u64, max_ms: u64) -> bool {

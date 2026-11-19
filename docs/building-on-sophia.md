@@ -183,15 +183,15 @@ WM action semantics remain in the WM; shell behavior stays within the shell
 role. Neither client serves a scripting socket.
 
 The CLI and Linux session endpoint implement discovery, registered argument-free
-WM actions, and confirmed WM restart. Policy success follows Engine commit;
+WM actions, confirmed WM restart, `reload-profile` and `logout`. Policy success follows Engine commit;
 restart success follows the intended replacement's first usable commit.
 `session { control "host-admin"; }` explicitly enables the startup-only listener;
 the default is disabled. The [administrative files](sophia-admin-files.md) support
-independent clients with one outstanding request per stream and no automatic
-mutation replay. Linux peer admission checks the session UID and pinned user,
+independent clients with one pending invocation per connection (up to eight
+pipelined 9P requests) and no automatic mutation replay. Linux peer admission checks the session UID and pinned user,
 mount, and PID namespaces. It excludes Sophia's protected roles without
 claiming universal sandbox attestation. Desktop control grants no application
-data access. Reload, delegated callers, and generic shell commands remain
+data access. Delegated callers and generic shell commands remain
 unadvertised future work.
 
 ## The Ladder

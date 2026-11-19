@@ -1,4 +1,5 @@
-//! Paired diagnostic, deliberately separate from administrative acceptance.
+//! Files-only diagnostic, deliberately separate from administrative acceptance.
+//! The paired t254 qualification needed the legacy transport and is retired.
 use crate::output_file_performance::{artifact_for, digest, process, write};
 use serde_json::{Value, json};
 use std::{
@@ -42,6 +43,9 @@ pub fn run(repo: &Path, args: &[String]) -> Result<Vec<String>, String> {
     let [phase, option] = args else {
         return Err("expected prepare|measure --output=/PRIVATE/DIR".into());
     };
+    if phase == "qualify" {
+        return Err("qualify is retired: the paired t254 qualification needed the legacy transport; use measure".into());
+    }
     let output = PathBuf::from(
         option
             .strip_prefix("--output=")
@@ -97,8 +101,7 @@ pub fn run(repo: &Path, args: &[String]) -> Result<Vec<String>, String> {
                 "cargo_encoded_rustflags":std::env::var("CARGO_ENCODED_RUSTFLAGS").ok()}),
             )?;
         }
-        "measure" | "qualify" => {
-            let qualification = phase == "qualify";
+        "measure" => {
             let prepared: Value = serde_json::from_slice(
                 &fs::read(output.join("prepared.json")).map_err(|e| e.to_string())?,
             )
@@ -121,7 +124,7 @@ pub fn run(repo: &Path, args: &[String]) -> Result<Vec<String>, String> {
                 &json!({"kernel":capture(repo,"uname", &["-a"])?,
                 "cpuinfo":fs::read_to_string("/proc/cpuinfo").map_err(|e|e.to_string())?,
                 "loadavg":fs::read_to_string("/proc/loadavg").map_err(|e|e.to_string())?,
-                "nice":process::niceness()?,"qualification":qualification,"quiet_window":"not externally certified"}),
+                "nice":process::niceness()?,"qualification":false,"quiet_window":"not externally certified"}),
             )?;
             let mut command = Command::new("bwrap");
             command
@@ -158,8 +161,6 @@ pub fn run(repo: &Path, args: &[String]) -> Result<Vec<String>, String> {
                 .arg(&output)
                 .args(["--setenv", "SOPHIA_ADMIN_PERF_EVIDENCE"])
                 .arg(output.join("samples.jsonl"))
-                .args(["--setenv", "SOPHIA_ADMIN_PERF_QUALIFY"])
-                .arg(if qualification { "1" } else { "0" })
                 .arg(&binary)
                 .args([
                     "--ignored",
@@ -186,21 +187,19 @@ pub fn run(repo: &Path, args: &[String]) -> Result<Vec<String>, String> {
                 if last["kind"] != "result" || last["completed"] != true {
                     return Err("incomplete diagnostic".into());
                 }
-                if last["qualification"] != qualification
-                    || (qualification && last["budgets_pass"] != true)
-                {
-                    return Err("administrative qualification did not pass".into());
+                if last["qualification"] != false {
+                    return Err("diagnostic claimed the retired qualification".into());
                 }
                 Ok(())
             });
             write(
                 &output,
                 "result.json",
-                &json!({"completed":result.is_ok(),"error":result.as_ref().err(),"qualification":qualification,"revision":revision}),
+                &json!({"completed":result.is_ok(),"error":result.as_ref().err(),"qualification":false,"revision":revision}),
             )?;
             result?;
         }
-        _ => return Err("expected prepare, measure or qualify".into()),
+        _ => return Err("expected prepare or measure".into()),
     }
     Ok(vec![format!(
         "administrative transport {phase} complete: {}",
