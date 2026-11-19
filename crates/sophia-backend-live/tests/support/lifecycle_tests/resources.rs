@@ -186,6 +186,13 @@ pub(crate) struct BindingEvents {
 #[cfg(feature = "experimental-combined-frame-job")]
 impl BindingEvents {
     pub(crate) fn new(marker: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>) -> Self {
+        // While exactly one dispatcher is registered, tracing-core computes a
+        // new callsite's interest from the registering thread's own default.
+        // A parallel test without a subscriber that reaches the emitter first
+        // would cache "never" and this subscriber would lose the record. A
+        // second registered dispatcher makes tracing consult every one.
+        static SECOND: std::sync::OnceLock<tracing::Dispatch> = std::sync::OnceLock::new();
+        SECOND.get_or_init(|| tracing::Dispatch::new(tracing::subscriber::NoSubscriber::new()));
         Self {
             marker,
             seen: std::sync::Mutex::new(Vec::new()),

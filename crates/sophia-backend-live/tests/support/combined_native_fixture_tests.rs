@@ -836,3 +836,21 @@ fn a_submission_naming_another_target_is_not_recorded_as_the_heads() {
         "nothing was recorded submitted"
     );
 }
+
+/// The binding controls run beside tests that reach the same emitters with
+/// no subscriber. A record written under the scoped subscriber must arrive
+/// even when another thread was first to use its callsite.
+#[test]
+fn a_scoped_binding_record_survives_another_threads_first_use_of_its_callsite() {
+    fn emit() {
+        tracing::info!(
+            target: "sophia_scanout_evidence",
+            "sophia_shell_native_binding probe"
+        );
+    }
+    let events = Arc::new(BindingEvents::new(None));
+    let dispatch = tracing::Dispatch::new(events.clone());
+    std::thread::spawn(emit).join().unwrap();
+    tracing::dispatcher::with_default(&dispatch, emit);
+    assert_eq!(events.seen().len(), 1);
+}
