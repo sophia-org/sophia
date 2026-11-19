@@ -19,18 +19,15 @@ fn control_transport_selection_does_not_grant_admission() {
         config.control_transport,
         ControlTransportSelection::NineP2000L
     );
-    let rollback = isolated_session_config(&[
-        "--no-config".into(),
-        "--control-transport=current-ipc".into(),
-    ])
-    .unwrap();
-    assert_eq!(
-        rollback.control_transport,
-        ControlTransportSelection::Legacy
-    );
-    assert_eq!(
-        rollback.control_access,
-        sophia_config::DesktopControlAccess::Disabled
+    // The retired selector is refused and names its retirement.
+    assert!(
+        isolated_session_config(&[
+            "--no-config".into(),
+            "--control-transport=current-ipc".into(),
+        ])
+        .unwrap_err()
+        .to_string()
+        .contains("current-ipc is retired")
     );
     assert!(isolated_session_config(&["--control-transport=invalid".into()]).is_err());
     assert!(isolated_session_config(&["--control-transport".into()]).is_err());

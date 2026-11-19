@@ -3620,3 +3620,57 @@ and the grant comparison in
 which checks one broker generation on grants from two requester connections.
 The fallback release is the same as for the broker.
 Administration is unchanged.
+
+### Administration socket removal (t255, 2026-11-19)
+
+niltempus approved removing the legacy administration transport on
+2026-11-19 ("remove it", answering "remove `--transport current-ipc`?").
+Removed: the `sophia_control_v1` codec (`sophia-protocol/src/ipc/control_v1.rs`),
+the legacy server worker (`sophia-runtime/src/control/transport.rs`),
+`ControlClient` and `ControlService::bind`, the `current-ipc` arms of
+Session's `--control-transport` and of `sophia msg --transport`, the Python
+client and its tests, `protocol/sophia-control-v1.kdl`, its three golden
+corpora, the generated wire table and the generator module that produced them.
+Both selectors still accept `9p2000.L` and refuse `current-ipc` by name, as
+`--wm-transport` does.
+
+`SOPHIA_CONTROL_SOCKET`, `ControlService::bind_files`, tickets, HostDomain
+admission, the catalog and outcome records and owner dispatch stay; the file
+transport uses them. `docs/sophia-control-v1.md` stays as the authority,
+catalog and settlement contract, without its wire sections;
+`docs/sophia-admin-files.md` owns the wire.
+
+The legacy service tests in `sophia-runtime/tests/control_service.rs` map to
+file-side tests as follows. Client settlement and connection reuse:
+`admin_file_recovery.rs`
+`file_client_discovers_validates_settlement_and_reuses_connection`. Owner
+ring on a queued ticket and on the claim recheck, and disconnect before
+dispatch: `admin_file_service.rs`
+`owner_claim_and_completion_survive_ctl_clunk_and_status_snapshots` and
+`disconnect_cancels_only_queued_work_and_revocation_fences_open_files`. Stale
+and unadvertised commands, and a peer excluded after discovery:
+`admin_file_service.rs` and `admin_files_oracle.rs`. Replay and a second
+request while one is pending: `refused_writes_preserve_the_result_and_request_watermark`.
+Incomplete input and the connection limit:
+`partial_wire_times_out_after_attach_without_starving_other_peers` and
+`connection_budget_rejects_excess_and_reclaims_disconnected_peers`. Sixteen
+pending slots and the queued and dispatched deadlines:
+`admin_file_deadlines.rs`. Foreign-namespace denial:
+`admin_process_recovery.rs`
+`foreign_namespace_cannot_use_administrative_files` (ignored; run by
+`tools/check_control_protocol.sh --live-owner`). Revision and feature
+negotiation, the envelope goldens and the Python interoperation test covered
+the retired wire alone.
+
+One legacy assertion has no file-side test:
+`ancillary_rights_are_rejected_without_owner_work`. The legacy worker read
+with `recv_plain`, which closes received descriptors and closes the peer. The
+9P socket server reads with plain `read`, so the kernel discards attached
+rights and the bytes are parsed as ordinary 9P input; no descriptor reaches
+the process. That difference in behaviour is not tested.
+
+The `admin_file_performance` diagnostic keeps its two rounds per catalog on
+files only; its header no longer names a legacy arm, so new samples are not
+comparable block for block with the t254 qualification record. A revision-1
+client can no longer be served. The fallback is the whole release named in
+the inventory above; no rollback trial was run for administration either.

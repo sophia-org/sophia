@@ -37,7 +37,7 @@ separate endpoints, capabilities, disclosure budgets, and protection domains.
 | `sophia_wm_v1` major 1 revision 3 | metadata-blind spatial policy | stable | [Sophia Window Manager API](sophia-wm-api.md) |
 | `sophia_shell_v1` major 1 revision 8 | metadata-bearing shell | experimental descriptor and admitted content workflows; r7 native launcher and r8 persistent catalog are separate supervised profiles | [Sophia Shell Interface Direction](sophia-shell-v1-direction.md) |
 | Output file API 1 | exclusive output policy | separate 9P role; output IPC retired | [Output files](sophia-output-files.md) |
-| `sophia_control_v1` major 1 revision 1 | explicitly admitted host administration; no role authority | experimental Linux endpoint; policy actions and confirmed restart | [Sophia Control v1](sophia-control-v1.md) |
+| Administrative file API 1 | explicitly admitted host administration; no role authority | experimental Linux endpoint; `sophia_control_v1` socket retired | [Administrative files](sophia-admin-files.md), [control contract](sophia-control-v1.md) |
 | later broker, portal, and session families | separately authorized services | not specified | future role specifications |
 
 A shared envelope or implementation crate does not give one interface the
@@ -67,9 +67,9 @@ The public [scripting interface](scripting.md) is a separate
 session-owned control service. Its callers are not supervised role peers,
 and commands do not tunnel WM, shell, or broker packets through another
 endpoint. Existing role negotiation and authority boundaries remain intact.
-The experimental [control v1 specification](sophia-control-v1.md) and
-[schema](../protocol/sophia-control-v1.kdl) define its separate wire surface
-(kinds 128–134), with generated tables, vectors, and an independent example.
+The [control contract](sophia-control-v1.md) owns its authority and settlement
+rules; the [administrative file records](sophia-admin-files.md) own its wire.
+The `sophia_control_v1` socket envelope (kinds 128–134) is retired.
 The control service and CLI implement policy actions and confirmed restart. Generic shell commands
 still require a negotiated extension; control adds no role capability.
 
@@ -183,10 +183,9 @@ adds the native launcher and revision 8 the persistent catalog; neither grants
 arbitrary component roles or general service access. See the
 [capability map](native-desktop-capabilities.md) for source-backed scope; and
 
-The separate scripting service uses `protocol/sophia-control-v1.kdl` for
-experimental control major 1 revision 1. It shares this family's envelope but
-has its own host-admission, sequencing, and settlement contract; it is not a
-supervised role schema.
+The separate scripting service has no schema here. Its records are the
+[administrative files](sophia-admin-files.md), with their own host-admission,
+sequencing, and settlement contract; it is not a supervised role schema.
 
 Output's schema generates wire tables and valid/malformed samples independently
 of its handwritten codec. `output_schema` tests their equivalence. Extraction

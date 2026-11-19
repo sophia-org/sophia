@@ -7,21 +7,11 @@ use std::time::{Duration, Instant};
 
 #[test]
 fn cli_discovers_invokes_and_reports_machine_outcomes() {
-    check_cli(false);
-    check_cli(true);
-}
-
-fn check_cli(files: bool) {
-    let transport = if files { "9p2000.L" } else { "current-ipc" };
-    let root = std::env::temp_dir().join(format!("sc-cli-{}-{files}", std::process::id()));
+    let transport = "9p2000.L";
+    let root = std::env::temp_dir().join(format!("sc-cli-{}", std::process::id()));
     std::fs::create_dir(&root).unwrap();
     std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let service = if files {
-        ControlService::bind_files(&root)
-    } else {
-        ControlService::bind(&root)
-    }
-    .unwrap();
+    let service = ControlService::bind_files(&root).unwrap();
     let catalog = Arc::new(ControlCatalog {
         generation: 4,
         commands: vec![ControlCommand {
@@ -46,20 +36,18 @@ fn check_cli(files: bool) {
         String::from_utf8_lossy(&listed.stderr)
     );
     assert!(String::from_utf8_lossy(&listed.stdout).contains("\"catalog_generation\":4"));
-    if files {
-        let default = Command::new(cli)
-            .args(["msg", "--json", "--socket"])
-            .arg(service.socket_path())
-            .arg("commands")
-            .output()
-            .unwrap();
-        assert!(
-            default.status.success(),
-            "{}",
-            String::from_utf8_lossy(&default.stderr)
-        );
-        assert_eq!(default.stdout, listed.stdout);
-    }
+    let default = Command::new(cli)
+        .args(["msg", "--json", "--socket"])
+        .arg(service.socket_path())
+        .arg("commands")
+        .output()
+        .unwrap();
+    assert!(
+        default.status.success(),
+        "{}",
+        String::from_utf8_lossy(&default.stderr)
+    );
+    assert_eq!(default.stdout, listed.stdout);
     for (outcome, exit) in [
         (ControlOutcome::Committed, 0),
         (ControlOutcome::Rejected, 1),
@@ -92,11 +80,7 @@ fn check_cli(files: bool) {
             String::from_utf8_lossy(&output.stdout)
                 .contains(&format!("\"outcome\":\"{}\"", outcome.name()))
         );
-        assert!(String::from_utf8_lossy(&output.stdout).contains(if files {
-            "\"request_id\":1"
-        } else {
-            "\"request_id\":2"
-        }));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("\"request_id\":1"));
     }
     let absent = Command::new(cli)
         .args(["msg", "--transport", transport, "--json", "--socket"])
@@ -118,6 +102,8 @@ fn cli_requires_explicit_discovery_and_valid_syntax() {
         vec!["msg", "--json", "--socket", "relative", "commands"],
         vec!["msg", "--json", "policy"],
         vec!["msg", "--json", "--transport", "invalid", "commands"],
+        // The retired selector is refused before any connection.
+        vec!["msg", "--json", "--transport", "current-ipc", "commands"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_sophia"))
             .args(args)

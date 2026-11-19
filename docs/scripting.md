@@ -18,8 +18,8 @@ client executable, implementation language, or private command vocabulary.
 [Namespaces and Portals](namespaces-and-portals.md) owns resource isolation
 and transfers; the [native protocol family](sophia-policy-ipc.md) owns shared
 wire and lifecycle rules. This document owns scripting-specific requirements
-within those contracts. The [control schema](../protocol/sophia-control-v1.kdl)
-and companion wire specification define the first independent-client surface.
+within those contracts. The [administrative file records](sophia-admin-files.md)
+define the independent-client surface.
 
 ## Current And Proposed Support
 
@@ -85,9 +85,8 @@ sophia msg --json commands
 ```
 
 An explicit `--socket /absolute/path` overrides `SOPHIA_CONTROL_SOCKET`.
-Session and the CLI default to the [administrative 9P files](sophia-admin-files.md).
-For an existing legacy session, use `sophia msg --transport current-ipc`;
-starting a new legacy service requires `--control-transport=current-ipc`.
+Session and the CLI use the [administrative 9P files](sophia-admin-files.md).
+The `current-ipc` control socket is retired and its selectors are refused.
 There is no protocol probing or automatic fallback after a failed command.
 The session exports that variable to its host application launches. There is
 no guessed endpoint. Human-readable output is the default; `--json` uses the
@@ -163,7 +162,7 @@ processes running as the session user. That trusts all such processes, not
 only a terminal or a selected executable. Owner-only filesystem permissions
 exclude other users; they do not provide a same-user application allowlist.
 This mode must be named explicitly and must not be advertised as
-namespace-restricted scripting. Control v1 selects this mode only through an
+namespace-restricted scripting. Control selects this mode only through an
 explicit host-administration opt-in; the default is disabled. On Linux the
 service pins the socket's peer with `SO_PEERPIDFD`, checks the session UID and
 current credentials, and compares pinned user, mount, and PID namespaces.
@@ -177,14 +176,14 @@ sandbox sharing all three namespaces do not by themselves exclude a caller.
 An authorized host process can proxy its authority. The mode trusts that host
 user domain; it supplies neither per-executable grants nor per-message sender
 identity. Missing kernel/proc prerequisites disable the endpoint while the
-desktop continues. See the [wire admission contract](sophia-control-v1.md#scope-and-authority).
+desktop continues. See the [admission contract](sophia-control-v1.md#scope-and-authority).
 
 Selective grants require an enforceable caller boundary. They cannot establish
 isolation from an unconfined process that can replace authorized tools, read
 their credentials, or modify the session's configuration. Confined callers
 need explicit delegation and verified protection against reaching or
 inheriting broader host authority. Grant issuance and delivery remain
-prerequisites for a future delegated-access extension, outside control v1.
+prerequisites for a future delegated-access extension, outside this contract.
 
 The session keeps caller credentials, namespace identity, and authorization
 decisions outside the WM. The WM receives only the permitted opaque action
@@ -232,7 +231,7 @@ blocking socket I/O stay outside input and rendering work. Session servicing
 must enforce fair work budgets so a slow reader or command flood cannot
 starve physical input, frame service, security transitions, or recovery.
 The hot path must not spawn a process per request or acquire unbounded queues.
-The [control v1 bounds](sophia-control-v1.md#resource-and-scheduling-contract)
+The [control bounds](sophia-control-v1.md#resource-and-scheduling-contract)
 fix transport ceilings. Measurable aggregate service budgets still require
 implementation acceptance evidence.
 

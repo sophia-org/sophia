@@ -186,7 +186,7 @@ The CLI and Linux session endpoint implement discovery, registered argument-free
 WM actions, and confirmed WM restart. Policy success follows Engine commit;
 restart success follows the intended replacement's first usable commit.
 `session { control "host-admin"; }` explicitly enables the startup-only listener;
-the default is disabled. The [control v1 wire](sophia-control-v1.md) supports
+the default is disabled. The [administrative files](sophia-admin-files.md) support
 independent clients with one outstanding request per stream and no automatic
 mutation replay. Linux peer admission checks the session UID and pinned user,
 mount, and PID namespaces. It excludes Sophia's protected roles without

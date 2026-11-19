@@ -1,27 +1,26 @@
 # Administrative file records
 
-Status: t254 export, bounded file client and default Session/CLI transport.
-Session and `sophia msg` default to 9P2000.L. The export uses the existing
+Status: t254 export, bounded file client and the only Session/CLI transport.
+Session and `sophia msg` use 9P2000.L. The export uses the existing
 HostDomain admission and ControlTicket queue; command validation and execution
 remain with their owners. Independent-client protocol checks and transport
 performance qualification pass. Installed-session acceptance remains pending.
 
 ## Selecting the transport
 
-Session and the CLI select `9p2000.L` unless explicitly overridden. Start Session
-with `--control-transport=current-ipc` and use `sophia msg --transport current-ipc`
-for legacy rollback. Both sides must select the same transport. `--socket PATH` overrides
-`SOPHIA_CONTROL_SOCKET` as before. The desktop profile must still grant
-`session { control "host-admin"; }`; selecting a transport does not grant access.
-There is no automatic protocol probing,
-downgrade or retry, and a running service does not switch transports.
+Session and the CLI select `9p2000.L`. `--control-transport=9p2000.L` and
+`sophia msg --transport 9p2000.L` are accepted; `current-ipc` is retired and
+refused on both sides (t255, 2026-11-19). `--socket PATH` overrides
+`SOPHIA_CONTROL_SOCKET`. The desktop profile must still grant
+`session { control "host-admin"; }`; naming the transport does not grant access.
+There is no protocol probing, downgrade or retry.
 
-An already running legacy session keeps its legacy endpoint. Use the explicit
-legacy CLI selector until the next login; a newly installed CLI cannot change
-the running service. Keep the previous whole desktop release for rollback,
-including its matching CLI and Session binaries. Never retry an uncertain
-mutation while switching releases or transports. The admission grant remains
-startup-only and disabled by default.
+A session that an older release started with `--control-transport=current-ipc`
+keeps that endpoint until its next login, and this CLI cannot reach it; use
+that release's own `sophia msg`. Rollback is the previous whole desktop release,
+with its matching CLI and Session binaries. Never retry an uncertain mutation
+while switching releases. The admission grant remains startup-only and
+disabled by default.
 
 `sophia-runtime::AdminClient` uses the independent Rust SDK's 9P pipeline. It
 reads bounded snapshots under absolute deadlines, sends one complete invocation,
@@ -33,14 +32,13 @@ A complete write refusal establishes non-acceptance. Any transport or protocol
 failure closes the client; it never reconnects or repeats an invocation.
 
 The CLI preserves command spelling, JSON outcome names and exit codes. The JSON
-invocation `request_id` is the accepted file request identity, starting at one;
-legacy control starts at two after its catalog request. Catalog JSON retains
+invocation `request_id` is the accepted file request identity, starting at one.
+Catalog JSON retains
 its existing presentation fields. These JSON fields are not a 9P wire envelope.
 
 ## Version 1 line grammar
 
-This version names the file syntax, independently of legacy control-wire
-revision 2. It does not downgrade the current command catalog or add commands.
+This version names the file syntax. It does not change the command catalog.
 
 The `ctl` file accepts one invocation record. Its corresponding `status`
 record describes readiness, a pending request or an outcome; accepting bytes is
@@ -132,8 +130,8 @@ invoke them.
 The opt-in runtime export implements these rules above the shared 9P core.
 The [bounded lifecycle model](../validation/specula/admin-file-lifecycle/README.md)
 checks cancellation, replay, status retention and unsettled execution custody.
-Owner integration is checked with the same generic supervised policy fixture
-over both transports. An independent Go client checks the administrative records
+Owner integration is checked with a generic supervised policy fixture.
+An independent Go client checks the administrative records
 and file lifecycle. Performance and live-session qualification remain required.
 
 | File | Open mode | Read or write behavior |
@@ -223,8 +221,8 @@ or authorize a retry after an indeterminate result. Admission must be rechecked
 at the existing claim boundary. Read-only inspection grants no command access.
 
 Use the existing `ControlCommand`, `ControlCatalog` and `ControlOutcome` values
-in `sophia-protocol::control_records`. The legacy codec re-exports those same
-types for compatibility; no duplicate command executor belongs in the file adapter.
+in `sophia-protocol::control_records`. No duplicate command executor belongs
+in the file adapter.
 The deferred output-process invocation extension is excluded.
 
 ## Validation
@@ -236,7 +234,6 @@ missing or duplicate line endings and embedded control characters. These are
 codec controls, not proof of admission, replay prevention or live execution.
 `admin_discovery.rs` adds literal discovery/status records, full-size catalogs,
 strict sorting and command membership, malformed counts, identities and deadlines.
-The existing legacy golden-frame controls remain unchanged.
 
 `sophia-runtime/tests/admin_file_service.rs` uses literal 9P messages over Unix
 sockets to check admission revocation, snapshot pinning, short reads, replay,
@@ -248,9 +245,9 @@ service/ticket API, not a private test-only executor. They do not establish
 performance or live-session acceptance. `admin_file_recovery.rs` adds service
 teardown, fresh-instance result isolation, file-client settlement and no-replay
 checks. `admin_client_refusals.rs` supplies malformed role records inside valid
-9P replies. CLI tests run the same discovery and outcome checks over both wires.
-The generic Session owner test checks policy commits, WM replacement, stale
-actions, reload settlement and logout over both transports. It does not launch
+9P replies. CLI tests run discovery and outcome checks and refuse the retired
+selector. The generic Session owner test checks policy commits, WM replacement,
+stale actions, reload settlement and logout. It does not launch
 an installed desktop or prove recovery after a whole-process crash.
 
 `admin_files_oracle.rs` runs the pinned third-party Go 9P client against the

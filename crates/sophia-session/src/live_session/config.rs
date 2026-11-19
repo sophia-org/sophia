@@ -31,29 +31,24 @@ use firefox_stage::FirefoxM8StageProof;
 use input_profile::PreparedInputProfile;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum ControlTransportSelection {
-    Legacy,
     #[default]
     NineP2000L,
 }
 impl ControlTransportSelection {
     fn from_args(args: &[String]) -> Result<Self, Box<dyn std::error::Error>> {
         if args.iter().any(|arg| arg == "--control-transport") {
-            return Err("use --control-transport=current-ipc or --control-transport=9p2000.L".into());
+            return Err("use --control-transport=9p2000.L".into());
         }
         match arg_value(args, "--control-transport").as_deref() {
-            Some("current-ipc") => Ok(Self::Legacy),
             None | Some("9p2000.L") => Ok(Self::NineP2000L),
-            Some(other) => Err(format!("--control-transport expects current-ipc or 9p2000.L, got {other:?}").into()),
+            Some(other) => Err(format!("--control-transport expects 9p2000.L; current-ipc is retired, got {other:?}").into()),
         }
     }
     fn bind(self, runtime: &std::path::Path) -> std::io::Result<sophia_runtime::ControlService> {
-        match self {
-            Self::Legacy => sophia_runtime::ControlService::bind(runtime),
-            Self::NineP2000L => sophia_runtime::ControlService::bind_files(runtime),
-        }
+        sophia_runtime::ControlService::bind_files(runtime)
     }
     const fn name(self) -> &'static str {
-        match self { Self::Legacy => "current-ipc", Self::NineP2000L => "9p2000.L" }
+        "9p2000.L"
     }
 }
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

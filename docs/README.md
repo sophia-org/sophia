@@ -85,8 +85,9 @@ candidates that role may exchange.
 - [Sophia Native Protocol Family](sophia-policy-ipc.md) is the developer entry
   point for the shared language-neutral envelope, negotiation, lifecycle,
   source hierarchy, evolution rules, and per-role stability discipline.
-- [Sophia Control v1](sophia-control-v1.md) specifies the experimental scripting
-  wire, host-control opt-in, catalog generations, and owner-settled outcomes.
+- [Sophia Control v1](sophia-control-v1.md) specifies scripting authority,
+  host-control opt-in, catalog generations, and owner-settled outcomes; the
+  [administrative files](sophia-admin-files.md) carry it.
   The session service and `sophia msg` implement policy actions and confirmed
   restart; reload and delegated access remain unadvertised.
 - [Read-only WM inspection](sophia-wm-inspection.md) specifies the independently

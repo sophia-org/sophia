@@ -535,13 +535,13 @@ The session needs a private, owned `XDG_RUNTIME_DIR` and Linux peer-pidfd and
 namespace inspection support. If prerequisites fail, it logs control as
 disabled and continues desktop startup. It exports `SOPHIA_CONTROL_SOCKET` to
 host applications for `sophia msg commands`, `sophia msg policy 'NAME'`, and
-`sophia msg session restart-wm|reload-profile|logout` (control revision 2).
+`sophia msg session restart-wm|reload-profile|logout`.
 See [scripting](scripting.md) for the precise host trust boundary.
 
-Session and `sophia msg` default to the administrative 9P file transport.
-For legacy rollback, start Session with `--control-transport=current-ipc`
-and use `sophia msg --transport current-ipc`. Transport selection never
-enables a disabled control grant. See the [administrative file contract](sophia-admin-files.md)
+Session and `sophia msg` use the administrative 9P file transport. The
+`current-ipc` control socket is retired: `--control-transport=current-ipc` and
+`sophia msg --transport current-ipc` are refused. Naming `9p2000.L` explicitly
+is still accepted and never enables a disabled control grant. See the [administrative file contract](sophia-admin-files.md)
 for result retention, uncertainty and the remaining rollout gates.
 
 Read-only WM observation is a separate startup permission:

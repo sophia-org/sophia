@@ -3,7 +3,7 @@
 mod cpu;
 use serde_json::json;
 use sophia_protocol::{ControlCatalog, ControlCommand, ControlOutcome, ControlOwner};
-use sophia_runtime::{AdminClient, ControlClient, ControlService};
+use sophia_runtime::{AdminClient, ControlService};
 use std::io::Write;
 use std::path::Path;
 use std::sync::{
@@ -12,30 +12,16 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
-enum Client {
-    Legacy(ControlClient),
-    Files(Box<AdminClient>),
-}
+struct Client(Box<AdminClient>);
 impl Client {
-    fn connect(path: &Path, files: bool) -> Self {
-        if files {
-            Self::Files(Box::new(AdminClient::connect(path).unwrap()))
-        } else {
-            Self::Legacy(ControlClient::connect(path).unwrap())
-        }
+    fn connect(path: &Path) -> Self {
+        Self(Box::new(AdminClient::connect(path).unwrap()))
     }
     fn catalog(&mut self) -> ControlCatalog {
-        match self {
-            Self::Legacy(c) => c.commands().unwrap(),
-            Self::Files(c) => c.commands().unwrap(),
-        }
+        self.0.commands().unwrap()
     }
     fn invoke(&mut self, command: ControlCommand) {
-        let result = match self {
-            Self::Legacy(c) => c.invoke(command),
-            Self::Files(c) => c.invoke(command),
-        }
-        .unwrap();
+        let result = self.0.invoke(command).unwrap();
         assert_eq!(result, (7, ControlOutcome::Committed, String::new()));
     }
 }
@@ -181,7 +167,7 @@ fn admin_file_performance() {
     record(
         json!({"kind":"header","schema":1,"qualification":qualification,"rounds":2,"discovery_samples":100,
         "warmups_per_delay":20,"invocation_samples_per_delay":count,"owner_delay_ms":[0,2],"idle_seconds":idle_seconds,"idle_intervals":idle_intervals,
-        "order":"legacy,files; files,legacy per catalog", "percentiles":"nearest rank", "catalogs":[1,259],
+        "order":"files, two rounds per catalog", "percentiles":"nearest rank", "catalogs":[1,259],
         "discovery_p99_ms":20,"discovery_max_ms":100,"invoke_p99_ms":8,"invoke_max_ms":50,"idle_percent_one_core":1,
         "limits":"prospective t254 transport limits; enforced only in qualification; synthetic owner, no desktop"}),
     );
@@ -189,98 +175,87 @@ fn admin_file_performance() {
         let catalog = catalog(maximum);
         sophia_protocol::validate_control_catalog(&catalog).unwrap();
         for round in 0..2 {
-            for files in if round == 0 {
-                [false, true]
-            } else {
-                [true, false]
-            } {
-                let root = std::env::temp_dir().join(format!("admin-perf-{}", std::process::id()));
-                use std::os::unix::fs::DirBuilderExt;
-                std::fs::DirBuilder::new()
-                    .mode(0o700)
-                    .create(&root)
-                    .unwrap();
-                let before_threads = cpu::snapshot(&[std::process::id()]).unwrap().len();
-                let service = if files {
-                    ControlService::bind_files(&root)
-                } else {
-                    ControlService::bind(&root)
-                }
+            let root = std::env::temp_dir().join(format!("admin-perf-{}", std::process::id()));
+            use std::os::unix::fs::DirBuilderExt;
+            std::fs::DirBuilder::new()
+                .mode(0o700)
+                .create(&root)
                 .unwrap();
-                let socket = service.socket_path().to_owned();
-                let catalog = Arc::new(catalog.clone());
-                let publish_deadline = Instant::now() + Duration::from_secs(2);
-                while !service.publish(catalog.clone(), &[]) {
-                    assert!(Instant::now() < publish_deadline);
-                    std::thread::yield_now();
-                }
-                let delay = Arc::new(AtomicU64::new(0));
-                let mut owner = owner(service, catalog.commands[0].clone(), delay.clone());
-                let mut discovery = Vec::new();
-                for sample in 0..100 {
-                    let start = Instant::now();
-                    let mut client = Client::connect(&socket, files);
-                    assert_eq!(client.catalog(), *catalog);
-                    discovery.push(start.elapsed().as_nanos() as u64);
-                    record(
-                        json!({"kind":"sample","operation":"discovery","files":files,"round":round,
-                        "commands":catalog.commands.len(),"sample":sample,"ns":discovery.last().unwrap()}),
-                    );
-                    drop(client);
-                    // Outside timing: let the worker observe disconnect before reuse.
-                    std::thread::sleep(Duration::from_millis(2));
-                }
-                let mut client = Client::connect(&socket, files);
-                assert_eq!(client.catalog(), *catalog);
-                let mut commands = Vec::new();
-                for ms in [0, 2] {
-                    delay.store(ms, Ordering::Release);
-                    for _ in 0..20 {
-                        client.invoke(catalog.commands[0].clone());
-                    }
-                    let mut samples = Vec::new();
-                    for sample in 0..count {
-                        let start = Instant::now();
-                        client.invoke(catalog.commands[0].clone());
-                        samples.push(start.elapsed().as_nanos() as u64);
-                        record(
-                            json!({"kind":"sample","operation":"invoke","files":files,"round":round,
-                            "commands":catalog.commands.len(),"owner_delay_ms":ms,"sample":sample,"ns":samples.last().unwrap()}),
-                        );
-                    }
-                    commands.push(json!({"owner_delay_ms":ms,"timing":summary(&samples)}));
-                }
-                let mut idle = Vec::new();
-                let mut idle_pass = true;
-                for _ in 0..idle_intervals {
-                    let before = cpu::snapshot(&[std::process::id()]).unwrap();
-                    let start = Instant::now();
-                    std::thread::sleep(Duration::from_secs(idle_seconds));
-                    let elapsed = start.elapsed();
-                    let after = cpu::snapshot(&[std::process::id()]).unwrap();
-                    let mut interval = cpu::interval(&before, &after, elapsed).unwrap();
-                    interval.as_object_mut().unwrap().remove("passed");
-                    idle_pass &= u128::from(interval["combined_cpu_ns"].as_u64().unwrap()) * 100
-                        <= elapsed.as_nanos();
-                    idle.push(interval);
-                }
-                let timing_pass = within(&summary(&discovery), 20, 100)
-                    && commands.iter().all(|c| within(&c["timing"], 8, 50));
-                budgets_pass &= timing_pass && idle_pass;
-                drop(client);
-                assert_eq!(owner.join(), 2 * (count + 20));
-                assert_eq!(
-                    cpu::snapshot(&[std::process::id()]).unwrap().len(),
-                    before_threads
-                );
-                std::fs::remove_dir_all(root).unwrap();
-                record(
-                    json!({"kind":"block","files":files,"round":round,"commands":catalog.commands.len(),
-                    "discovery":summary(&discovery),"invocations":commands,"idle":idle,"owner_deliveries":2*(count+20),
-                    "budgets_pass":timing_pass && idle_pass,
-                    "threads_before_and_after":before_threads}),
-                );
+            let before_threads = cpu::snapshot(&[std::process::id()]).unwrap().len();
+            let service = ControlService::bind_files(&root).unwrap();
+            let socket = service.socket_path().to_owned();
+            let catalog = Arc::new(catalog.clone());
+            let publish_deadline = Instant::now() + Duration::from_secs(2);
+            while !service.publish(catalog.clone(), &[]) {
+                assert!(Instant::now() < publish_deadline);
+                std::thread::yield_now();
             }
+            let delay = Arc::new(AtomicU64::new(0));
+            let mut owner = owner(service, catalog.commands[0].clone(), delay.clone());
+            let mut discovery = Vec::new();
+            for sample in 0..100 {
+                let start = Instant::now();
+                let mut client = Client::connect(&socket);
+                assert_eq!(client.catalog(), *catalog);
+                discovery.push(start.elapsed().as_nanos() as u64);
+                record(
+                    json!({"kind":"sample","operation":"discovery","files":true,"round":round,
+                    "commands":catalog.commands.len(),"sample":sample,"ns":discovery.last().unwrap()}),
+                );
+                drop(client);
+                // Outside timing: let the worker observe disconnect before reuse.
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            let mut client = Client::connect(&socket);
+            assert_eq!(client.catalog(), *catalog);
+            let mut commands = Vec::new();
+            for ms in [0, 2] {
+                delay.store(ms, Ordering::Release);
+                for _ in 0..20 {
+                    client.invoke(catalog.commands[0].clone());
+                }
+                let mut samples = Vec::new();
+                for sample in 0..count {
+                    let start = Instant::now();
+                    client.invoke(catalog.commands[0].clone());
+                    samples.push(start.elapsed().as_nanos() as u64);
+                    record(
+                        json!({"kind":"sample","operation":"invoke","files":true,"round":round,
+                        "commands":catalog.commands.len(),"owner_delay_ms":ms,"sample":sample,"ns":samples.last().unwrap()}),
+                    );
+                }
+                commands.push(json!({"owner_delay_ms":ms,"timing":summary(&samples)}));
+            }
+            let mut idle = Vec::new();
+            let mut idle_pass = true;
+            for _ in 0..idle_intervals {
+                let before = cpu::snapshot(&[std::process::id()]).unwrap();
+                let start = Instant::now();
+                std::thread::sleep(Duration::from_secs(idle_seconds));
+                let elapsed = start.elapsed();
+                let after = cpu::snapshot(&[std::process::id()]).unwrap();
+                let mut interval = cpu::interval(&before, &after, elapsed).unwrap();
+                interval.as_object_mut().unwrap().remove("passed");
+                idle_pass &= u128::from(interval["combined_cpu_ns"].as_u64().unwrap()) * 100
+                    <= elapsed.as_nanos();
+                idle.push(interval);
+            }
+            let timing_pass = within(&summary(&discovery), 20, 100)
+                && commands.iter().all(|c| within(&c["timing"], 8, 50));
+            budgets_pass &= timing_pass && idle_pass;
+            drop(client);
+            assert_eq!(owner.join(), 2 * (count + 20));
+            assert_eq!(
+                cpu::snapshot(&[std::process::id()]).unwrap().len(),
+                before_threads
+            );
+            std::fs::remove_dir_all(root).unwrap();
+            record(
+                json!({"kind":"block","files":true,"round":round,"commands":catalog.commands.len(),
+                "discovery":summary(&discovery),"invocations":commands,"idle":idle,"owner_deliveries":2*(count+20),
+                "budgets_pass":timing_pass && idle_pass,
+                "threads_before_and_after":before_threads}),
+            );
         }
     }
     record(

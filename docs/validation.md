@@ -128,8 +128,8 @@ WM file export and independent C SDK peer. Hagia and
 Narthex run their own `SOPHIA_ROOT=/path/to/sophia nimble test` gates.
 These offline checks are separate from the [tabbed-layout operator gate](tabbed-layouts.md#verification-and-operator-acceptance).
 
-`tools/check_control_protocol.sh` checks the experimental
-[control v1 wire](sophia-control-v1.md), independent Python and Rust clients,
+`tools/check_control_protocol.sh` checks the
+[administrative files](sophia-admin-files.md), the Rust and pinned Go clients,
 real Unix endpoint, config opt-in, sequencing, dispatch recheck, cancellation,
 deadlines, and bounded queue pressure. Add `--live-owner` to require the
 bubblewrap namespace denial proof and the live session owner fixture: policy

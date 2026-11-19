@@ -8,7 +8,6 @@ use std::process::{Command, Stdio};
 
 use kdl::KdlNode;
 
-mod control;
 mod wm_rows;
 
 const RUST_ROWS_PATH: &str = "crates/sophia-protocol/src/wm_rows.rs";
@@ -94,9 +93,6 @@ fn run() -> Result<(), String> {
     outputs.insert(RECORD_GOLDEN_PATH, render_record_golden(&file_rows)?);
     outputs.insert(SMT_FACTS_PATH, render_smt_facts(&file_rows));
     outputs.insert(RUST_ROWS_PATH, format_rust(&render_rust_rows(&file_rows))?);
-    let control_text = fs::read_to_string(root.join("protocol/sophia-control-v1.kdl"))
-        .map_err(|error| format!("read control schema: {error}"))?;
-    outputs.extend(control::outputs(&control_text)?);
 
     let mut stale = Vec::new();
     for (relative, content) in outputs {

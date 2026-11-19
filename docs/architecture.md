@@ -702,9 +702,8 @@ routing; WM and shell clients retain their respective command semantics and
 existing role connections. A scripting caller acquires no role authority or
 application-data access merely by reaching that endpoint. The experimental
 endpoint and `sophia msg` implement policy actions and confirmed WM restart as
-specified in [control v1](sophia-control-v1.md). The 9P direction changes the
-target public transport, not these authority boundaries or the current service's
-advertised operations.
+specified in the [control contract](sophia-control-v1.md), over
+[administrative 9P files](sophia-admin-files.md).
 
 ## Protocol Frontends
 

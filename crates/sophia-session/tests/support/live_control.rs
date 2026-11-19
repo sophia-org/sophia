@@ -1,34 +1,13 @@
 use super::*;
 use crate::live_session::c_sdk_fixture_process as process;
 use sophia_protocol::{ControlCommand, ControlOutcome, ControlOwner};
-use sophia_runtime::{AdminClient, ControlClient};
+use sophia_runtime::AdminClient;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
 #[test]
 #[ignore = "runs a supervised policy process in bubblewrap; tools/check_control_protocol.sh --live-owner"]
 fn real_owner_commits_actions_and_confirms_replacement_commit() {
-    check_real_owner(false);
-    check_real_owner(true);
-}
-
-fn invoke(path: &std::path::Path, files: bool, command: ControlCommand) -> ControlOutcome {
-    if files {
-        AdminClient::connect(path)
-            .unwrap()
-            .invoke(command)
-            .unwrap()
-            .1
-    } else {
-        ControlClient::connect(path)
-            .unwrap()
-            .invoke(command)
-            .unwrap()
-            .1
-    }
-}
-
-fn check_real_owner(files: bool) {
     let _ = crate::install_session_output(crate::SessionOutput::new(
         |line| eprintln!("{line}"),
         |line| eprintln!("{line}"),
@@ -48,10 +27,6 @@ fn check_real_owner(files: bool) {
         format!("--wm-process={}", executable.display()),
         "--wm-interface=sophia_wm_v1".into(),
         "--wm-transport=9p2000.L".into(),
-        format!(
-            "--control-transport={}",
-            if files { "9p2000.L" } else { "current-ipc" }
-        ),
     ])
     .unwrap();
     config.wm_socket_path = root.join("wm.sock");
@@ -120,7 +95,7 @@ fn check_real_owner(files: bool) {
         .unwrap()
         .socket_path()
         .to_path_buf();
-    // Revision 2 advertises the three session operations beside the action.
+    // The catalog lists the three session operations beside the action.
     let names = scripting
         .catalog
         .commands
@@ -131,29 +106,6 @@ fn check_real_owner(files: bool) {
         names,
         ["focus-next", "logout", "reload-profile", "restart-wm"]
     );
-    // A revision-1 connection still sees only restart-wm among them.
-    if !files {
-        let path = socket.clone();
-        let revision_one = std::thread::spawn(move || {
-            let mut client = ControlClient::connect_revisions(&path, 1, 1).unwrap();
-            (client.revision(), client.commands().unwrap())
-        });
-        while !revision_one.is_finished() {
-            assert!(Instant::now() < deadline, "revision-one catalog reply");
-            scripting.service(Some(&mut wm), &layout, output, false);
-            std::thread::sleep(Duration::from_millis(1));
-        }
-        let (revision, catalog) = revision_one.join().unwrap();
-        assert_eq!(revision, 1);
-        assert_eq!(
-            catalog
-                .commands
-                .iter()
-                .map(|c| c.name.as_str())
-                .collect::<Vec<_>>(),
-            ["focus-next", "restart-wm"]
-        );
-    }
     for command in [
         ControlCommand {
             owner: ControlOwner::Policy,
@@ -176,7 +128,7 @@ fn check_real_owner(files: bool) {
         let committed_before = wm.committed;
         let epoch_before = wm.public.as_ref().unwrap().connection_epoch;
         let path = socket.clone();
-        let client = std::thread::spawn(move || invoke(&path, files, command));
+        let client = std::thread::spawn(move || invoke(&path, command));
         let deadline = Instant::now() + Duration::from_secs(8);
         let mut held_proposal = None;
         while held_proposal.is_none() {
@@ -223,7 +175,6 @@ fn check_real_owner(files: bool) {
     let stale = std::thread::spawn(move || {
         invoke(
             &path,
-            files,
             ControlCommand {
                 owner: ControlOwner::Policy,
                 name: "focus-next".into(),
@@ -257,7 +208,6 @@ fn check_real_owner(files: bool) {
     let reload = std::thread::spawn(move || {
         invoke(
             &path,
-            files,
             ControlCommand {
                 owner: ControlOwner::Session,
                 name: "reload-profile".into(),
@@ -287,7 +237,6 @@ fn check_real_owner(files: bool) {
     let logout = std::thread::spawn(move || {
         invoke(
             &path,
-            files,
             ControlCommand {
                 owner: ControlOwner::Session,
                 name: "logout".into(),
@@ -306,6 +255,14 @@ fn check_real_owner(files: bool) {
     assert_eq!(logout.join().unwrap(), ControlOutcome::Completed);
     drop(scripting);
     drop(wm);
+}
+
+fn invoke(path: &std::path::Path, command: ControlCommand) -> ControlOutcome {
+    AdminClient::connect(path)
+        .unwrap()
+        .invoke(command)
+        .unwrap()
+        .1
 }
 
 fn pump(

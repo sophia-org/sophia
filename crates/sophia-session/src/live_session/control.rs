@@ -218,7 +218,7 @@ impl LiveControlState {
             };
             if ready {
                 commands.extend(
-                    sophia_protocol::control_session_operations(sophia_protocol::CONTROL_REVISION)
+                    sophia_protocol::CONTROL_SESSION_OPERATIONS
                         .iter()
                         .map(|name| ControlCommand {
                             owner: ControlOwner::Session,

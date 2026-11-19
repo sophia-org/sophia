@@ -34,6 +34,7 @@ pub mod wm_rows;
 
 pub use capacity::*;
 pub use codec_error::BinaryCodecError;
+pub use control_records::*;
 pub use cursor::*;
 pub use geometry::*;
 pub use ids::*;

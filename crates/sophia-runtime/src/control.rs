@@ -2,10 +2,8 @@ mod admin_client;
 mod admission;
 mod client;
 mod files;
-mod transport;
 
 pub use admin_client::AdminClient;
-pub use client::*;
 
 use sophia_protocol::{ControlCatalog, ControlCommand, ControlOutcome};
 use std::io::{self, Write};
@@ -128,18 +126,9 @@ pub struct ControlService {
 }
 
 impl ControlService {
-    pub fn bind(runtime_directory: &Path) -> io::Result<Self> {
-        Self::bind_transport(runtime_directory, false)
-    }
-
-    /// Serve the administrative file contract through the shared 9P core.
-    /// This opt-in transport uses the same tickets and HostDomain admission;
-    /// it does not change Session's selected endpoint or the ordinary CLI.
+    /// Serve the administrative file contract through the shared 9P core,
+    /// with the service's tickets and HostDomain admission.
     pub fn bind_files(runtime_directory: &Path) -> io::Result<Self> {
-        Self::bind_transport(runtime_directory, true)
-    }
-
-    fn bind_transport(runtime_directory: &Path, files: bool) -> io::Result<Self> {
         use std::os::unix::fs::MetadataExt;
         let metadata = std::fs::symlink_metadata(runtime_directory)?;
         if !runtime_directory.is_absolute()
@@ -168,7 +157,7 @@ impl ControlService {
             session_id[0], session_id[1]
         ));
         std::fs::DirBuilder::new().mode(0o700).create(&directory)?;
-        let socket = directory.join(if files { "admin.9p" } else { "control.sock" });
+        let socket = directory.join("admin.9p");
         let setup = (|| {
             let listener = UnixListener::bind(&socket)?;
             std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
@@ -192,20 +181,12 @@ impl ControlService {
             let thread_stop = stop.clone();
             let thread_wake = wake.clone();
             let thread = std::thread::Builder::new()
-                .name(
-                    if files {
-                        "sophia-admin-files"
-                    } else {
-                        "sophia-control-v1"
-                    }
-                    .into(),
-                )
+                .name("sophia-admin-files".into())
                 .spawn(move || {
                     // Dropped when the worker returns, which rings the owner
                     // after the queue is already disconnected.
                     let requests = sophia_wake::SignalSender::new(tx, thread_owner_wake.clone());
-                    let run = if files { files::run } else { transport::run };
-                    run(
+                    files::run(
                         listener,
                         wake_rx,
                         thread_wake,
