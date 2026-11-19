@@ -196,8 +196,11 @@ handoff is selected as a design, subject to the remaining proof/prototype gates.
 
 On November 19 niltempus directed a default-off merge of the lane, with no
 adoption and no further matched block. Codex accepted that direction and
-performs the merge. The merge commit is named here once it exists; this
-section does not predict it. The combined frame job and its diagnostic
+made the merge after a passing integration gate (validation-codex-02, seal
+`4f425564`): signed merge `d58995eab`, parents master `d7f77e54d` and the
+tested documentation candidate `3cfbf87fc`, tree `5d484962` equal to the tested
+candidate tree (merge receipt seal `59e7a9eb`). It was pushed to origin on
+November 19. No installed artifact, service or default selection changed. The combined frame job and its diagnostic
 witness stay opt-in: `experimental-combined-frame-job` and
 `diagnostic-combined-witness` are in no default feature list or
 `native-session` closure, and the witness does not enable the combined
