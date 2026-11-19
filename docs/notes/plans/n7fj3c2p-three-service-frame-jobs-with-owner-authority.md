@@ -225,10 +225,12 @@ The final comparison
 lane at `62fdd0d1e` (tree `7f633eb8`) with master `d7f77e54d` (tree
 `c4d0dee0`). It uses master's D2 baseline-01 (seal `965a8f1b`) and the lane's
 worker-accounting validation-01 logs, with the proposal-02 comparator
-unchanged. All six feature-off rows are complete. No shared test is removed,
-failed or differs, and 3,088 shared row entries resolve to source. The lane
-adds 40 tests, all in combined-frame-job modules. Three observations stay
-unresolved and are not promoted to equal outcomes:
+unchanged. All six feature-off rows are collection complete. No shared test
+name is removed, no FAILED outcome or single-result difference is observed,
+and all 3,088 shared row entries resolve to source. The lane adds 40 tests,
+all in combined-frame-job modules. Two repeated-differ observation sets and
+one unknown-master result stay unresolved and are not promoted to equal
+outcomes:
 
 - session-ns-nft `protected_descriptor_peer`: lane [ok, ignored, ok, ok],
   master [ok, ignored, ok];
@@ -266,9 +268,11 @@ not a measured cost of pointer motion.
 **fj-01** failed before any arm: the nightly pool sweep had removed the peer
 binary (capture `ce6ed50a`).
 
-**fj-02** failed overall, at the first moving arm, on M7's requirement that
-pointer events reach a client. The workload never produces that delivery.
-Its still block completed and is accepted separately (capture `731f9560`,
+**fj-02** failed overall at the first moving arm, because the frozen M7
+required `physical_pointer_routed` above zero and ma1 recorded zero. That
+counter counts accepted routed Deliver requests, not owner-side motion, so
+package proposal 05 changed the workload-validity contract for the next
+block. Its still block completed and is accepted separately (capture `731f9560`,
 package manifest `61561b2b`):
 
 | still | µs/frame |

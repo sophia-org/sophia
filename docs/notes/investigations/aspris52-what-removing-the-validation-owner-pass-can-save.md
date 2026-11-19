@@ -119,9 +119,10 @@ it out. Each candidate arm admitted 2,120 combined frames. With the pointer
 still, both arms accepted all 2,120 and gave up none (fj-02 sb1 and sb2).
 With the pointer moving, the arms accepted 2,081 and 2,064 and gave up 39
 and 56, each give-up followed by one Release enqueue (fj-03 mb1 and mb2).
-These are the combined worker's counters in each arm's postflight record.
-They count give-ups but not their causes, so they do not attribute a give-up
-to pointer churn. The moving block priced mostly the direct path, with a
+These are whole-session counters of the combined worker in each arm's
+postflight record, not a fallback rate inside the counted window. They count
+give-ups but not their causes, so they do not attribute a give-up to pointer
+churn. The moving block priced mostly the direct path, with a
 small fallback share. Both blocks' results are recorded in
 [n7fj3c2p](../plans/n7fj3c2p-three-service-frame-jobs-with-owner-authority.md#gate-dispositions-and-default-off-merge-november-19).
 
