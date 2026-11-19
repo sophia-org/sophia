@@ -43,6 +43,257 @@ evidence.
 
 ## Previous resumption, November 10
 
+**Selected next: combined frame-job contract and proof, not a carrier rewrite.**
+Niltempus selected the integrated seven-part three-service plan. Research branch
+`design/combined-frame-job`, worktree `~/dev/sophia-framejob`, contains contract
+`n7fj3c2p` at signed `a52c358f4` and preliminary model head `ee4b95725`.
+Ten source files are pinned at base `22d8cbca7`. Keep authenticated 9P transactions,
+private capture, journal/ACK, one outstanding frame and owner-side DRM. The new
+contract proposes one private capture/validate/render job, then owner settlement
+and submission, then exact completion/publication. Three correlated frame services
+is a target, not a claim about every wake or busy-desktop pass.
+
+Two source gaps are explicit: projection needs a validated resource lease, and
+content installation currently queues rendering. A provisional plan and an
+owner-only install-already-rendered path need authority review; actual render
+slot acquisition/Deferred also requires a defined accounting transition. Claude
+review `2e0c759f` holds full authority approval. Niltempus has now selected a
+separate validation worker handing its validated result directly to the renderer,
+bypassing the intermediate owner visit. Contract `02e04ef06` and TRANSFER.md
+record one accounting owner, bounded transfer, cancellation, busy-renderer handling
+and retained charges. CPU/frame and security are the primary criteria: count the
+added worker handoff, retained resources, discarded renders and contention work,
+not just the removed owner visit. Preserve responsiveness and fresh owner checks.
+The scene-only conventional fallback is now selected below; concrete detach,
+scheduler/slot and atomic installation proofs remain implementation obligations.
+No production source or prototype is authorized past that gate by silence.
+
+Frozen research head `93258952d` adds a separate transfer projection. Evidence
+`sophia-framejob-transfer-model-01`, seal `1c405a25`, records 1885 generated / 516
+distinct states, complete checking and weakly fair owner withdrawal without worker
+fairness. Three action mutations violate unique ownership, retained credit and
+the cancellation gate. Two initial parser refusals are retained. Before/after
+identity is the same clean signed tree. This is uncomposed with the preliminary
+model; it proves neither scheduler progress nor runtime behavior. Review
+`sophia-framejob-transfer-review-claude-01` (`9faff6f7`) accepts the frozen design
+evidence and identifies six independent topology requirements. Revision 3 at
+`56790ddba` addresses them with dedicated bounded input/result channels, opaque
+moved plan, explicit combined-credit settlement, deadline-aware renderer wake,
+ordinary stall-cost accounting and exact native/source disposition. No existing
+retirement receipt is presumed to cover newly introduced payload owners.
+
+Source-release evidence `sophia-framejob-source-release-model-02` (`0d03178b`)
+checks 831 generated / 290 distinct states, plus a journal-stall timeout witness
+and early-confirm refusal control. The witness restricts presentation to 16,667 us
+and reaches a five-second WAIT with abstract publication room blocked. Review
+`58230480` corrects its applicability: admission reserves four frame responses,
+so arbitrary unavailable room is outside this contract, not a demonstrated
+held-peer timeout path. No unreserved consumer of that capacity was identified.
+The prior `-01` (`e3144657`) allowed late presentation and is retained as history.
+Clock milestones and a 100ms parked bound are illustrative. These projections
+remain uncomposed; no runtime timing claim follows.
+
+The held peer waits for source release and Presented before the next offer:
+review's initial n+2 busy-slot Budget conjecture does not apply. Settlement at
+service 2 before Presented need not delay the next offer. Review `58230480`
+accepts revision 3 facts as adequate for the scene decision. Revision 4 at signed
+`2b9e53726` records its A1 one-way forwarding witness and A2 reserved-capacity
+correction; evidence sibling `sophia-framejob-rev4-correction-01` preserves the
+review and diff without altering frozen models. Prototype/production gate is held.
+Niltempus approved conventional fallback limited to scene-input churn with valid
+description and authority. Research head `86fb743ed` records one conventional
+pipeline entry using the returned validated backing, with retained speculative
+Release and existing rollback/Prepared behavior. No recursive combined retry or
+new host-obsolete reason. Authority/geometry failures still refuse; existing Stale
+keeps its meaning. Count discarded speculative renders, actual ordinary renders,
+extra visits, retained bytes and stalls; CPU advantage remains a hypothesis.
+
+Evidence `sophia-framejob-fallback-proof-01` (`1331bff1`) records two positive finite
+checks (fallback 880/310, transfer 29229/6192 generated/distinct) and ten named
+negative controls. Fallback covers routing, one entry, two-field rollback, retained
+release and Prepared/current-check boundaries; transfer adds the per-job delayed
+forwarded witness and validator-exit/retirement split. Frozen identity is clean G
+before/after. These remain separate projections, not an integrated frame pipeline
+or runtime proof. Review `d99c5932` accepts the frozen evidence with source-mapping
+corrections: a separate combined retained-Release cell is needed; fallback declines
+fast installation and uses the existing content service, rather than re-entering
+submit_bundle; Full is ordinary deferral, not a setter error or rollback. No Rust
+build, prototype, physical run, adoption or combined CPU saving is established.
+
+Follow-up signed research head `20070959b`, evidence
+`sophia-framejob-owner-turn-proof-01` (`89b4e4d5`), composes result consumption,
+settlement bookkeeping, the dedicated per-output retained-Release cell, quota
+clearance, decline-fast latch and ordinary entry with a finite command FIFO and
+three slots. Quota clearance accepts token held in the cell or successfully sent
+to WorkerCommand; it does not wait for slot freedom or a nonexistent Release ACK.
+Full keeps the obligation. An ordinary Render that finds no slot returns Deferred
+to the owner, then requires a later export cycle to retry; latest-wins pending
+supersession is explicit and counted. This differs from worker-internal combined
+job retry. No fast-path candidate state changes before the owner decision.
+
+OwnerTurn checks 3,035 generated / 1,204 distinct states; two action controls fail
+retention/occupied-slot invariants, and two no-mutation witnesses reach Full on
+both sends and a superseded later owner retry. Narrowing Transfer Die to renderer-
+held queued/waiting/rendering/finished gives 26,661 / 5,616, with credit retention
+and fair withdrawal passing and all four guard controls still failing as expected.
+The original 29,229 / 6,192 proof-01 stays frozen. Ten checks pass their expected
+outcomes on the same signed clean identity, with 25 source and two peer pins.
+This is a narrow design composition, not whole-pipeline or Rust verification:
+receiver loss, exact native disposition, full scene binding, journal, GPU and
+implementation remain outside it. Review `2350ce57` accepts this composed projection
+for the design step. Docs-only research `89ac4ca7a` records its qualifications:
+retain before quota clearance in the consuming owner turn; installed shell content
+and Presented tracking survive pending-render supersession; recurrent shared-core
+Full and disconnected-send/native retirement remain outside this projection.
+Acceptance `sophia-framejob-owner-turn-acceptance-01` (`da8c29fa`) preserves the
+review and verifies the prior seal/model bytes unchanged.
+
+Niltempus approved the ordered test-only `SEAM-PROPOSAL.md`: tagged reservation
+and settle_combined first, opaque payload boundary, dedicated retained Release,
+wake behavior, then ordinary content-service fallback fixture. Every stage needs
+a frozen signed diff and bounded source review BEFORE builds. No copied admission
+ledger, production visibility/API change or default-off feature is authorized.
+Runtime-local cfg(test) composition is the stage 2 access decision; backend-local
+checks later cannot be described as a cross-crate proof. A bridge requiring
+non-test source remains a separate scope gate.
+
+Stage 1 research source `2269c4d33` (tree `a9fab517`) was accepted before builds by
+`sophia-framejob-stage1-review-claude-01`. Source-02 `cabfd249` and signing-01
+`d4c457d5` bind that same tree. The real validation worker's pending slots carry a
+private reservation tag; successful forwarding retains credit until matching
+settlement, while errors and failed moves use unchanged take_completed. The test
+endpoint returns validated pixels, not a renderer result or retirement proof.
+Cancellation is not an atomic forwarding gate. A destination lost after successful
+forwarding still pins credit until teardown: a documented stage-1 reclamation gap.
+
+Validation `sophia-framejob-credit-seam-validation-01` (`a5e5f616`) records seven
+seam tests and eight ordinary/shutdown controls passing. Three mutations fail the
+named identity, premature owner-credit clearance and unwanted-notify assertions;
+restored tests pass. The optional duplicate-completion mutation was not selected.
+The no-wake assertion is one point observation. Full isolated cargo xtask check
+exited 0 with 809 strict ok summaries and unchanged clean G source; fmt exited 0.
+A daemon restart killed the first gate's recorder while its child survived: its
+log is retained without an exit/verdict. The rerun began after that exact child
+PID was gone, with a setsid recorder, fd 0 /dev/null and separate logs. Independent
+validation review `sophia-framejob-stage1-validation-review-claude-01` (`80ebfe6f`)
+accepts the evidence and its limits. The mutation worktree was removed cleanly;
+the research worktree stays pinned. No production change, native launch, timing,
+three-service result, CPU claim, merge or push follows. The next stage carries the
+opaque payload and per-job forwarding witness, reviewed before any build.
+
+Stage 2 final source `9fd03c08c` (tree `a14eca12`), frozen in
+`sophia-framejob-payload-seam-source-03` (`33ac9fd7`), follows `c30bc8b7d` and
+`3ce427768`. Each head received source acceptance from
+`sophia-framejob-stage2-review-claude-01` before compilation. Only two
+cfg(test) field types changed in the existing worker file; its loop, validate and
+take_completed remain textually unchanged. Route<P>/ReturnedValidation<P> and the
+transport helpers require only Send + 'static. Job uses one concrete fixture
+instantiation; a distinct payload exercises the helper only. No production-generic
+worker or cross-crate bridge was introduced. This does not define the real scene
+plan or prove its permitted-reference eligibility.
+
+The per-job Arc identity holds a one-way Release-after-successful-move witness,
+read with Acquire; it grants no submission, publication or release authority.
+A private one-place return channel holds the opaque plan before ordinary failure
+completion, adding no owner descriptor wake. Its per-submit allocation is fixture
+cost, not a proposed free production mechanism. The Full panic is fixture-only;
+a production return path must not panic and break every pending job. Abandonment
+may dispose of the fixture payload on either thread. Move/store death and the
+lost-result reclamation gap remain unproved. The final fixture uses a private
+immutable Arc token and an external Weak observer to check payload destruction,
+while retaining descriptor identity checks; its allocation is fixture-only too.
+
+Final-head validation `sophia-framejob-payload-seam-validation-03` (`b558f8bb`)
+records ten targeted tests, eight ordinary/shutdown controls, four named
+assertion-red mutations and restored ten passing. Mutations cover a premature
+witness, absent witness, missing plan return specifically on validation Err, and
+a deliberately retained payload detected after ordinary completion. Full isolated
+xtask check and fmt exit 0 on unchanged clean G `9fd03c08c`, with 809 strict Rust
+ok summaries and zero FAILED summaries. The mutation copy was removed cleanly;
+research stays pinned. Independent final validation review
+`sophia-framejob-stage2-validation-review-claude-01` (`3ade124b`) accepts this
+checkpoint and its limits.
+
+The prior records remain separate: validation-01 (`5b03bf96`) failed six clippy
+assertion-style checks on `c30bc8b7d`; validation-02 (`8d9d5a06`) on `3ce427768`
+failed an immediate nonblocking socket-EOF assertion in the parallel suite despite
+passing focused checks. No specific cause of the EOF timing was proved. The
+replacement directly checks Rust payload lifetime without a sleep or an assumption
+about all OS references. Neither failed run qualifies the final head.
+
+Stage 3 source `b239fe5b7` (tree `42cdc605`), frozen in
+`sophia-framejob-release-seam-source-01` (`b03f15f5`), was accepted before builds
+by `sophia-framejob-stage3-review-claude-01` (`4f6e028d`). Following the scoping
+consult (`dc7c5dda`), it uses a harness-owned per-facade retained-Release cell;
+no crates/*/src item changed. The exclusive facade borrow and Free/Reserved/Retained
+states bound the fixture to one obligation. Retain accepts only Exported for that
+output and returns foreign, Deferred and Failed results intact. Full and Disconnected
+preserve the dedicated obligation without altering ordinary release-failure counts;
+the ordinary discarded-release cell coexists unchanged. Raw supplied results are
+drained directly once, never also through poll().
+
+Validation `sophia-framejob-release-seam-validation-01` (`85859590`) records
+seven tests with explicit gbm-probe/libdrm-events and capture off, seven with all
+features, 45 worker controls (one native readback ignored), nine shutdown controls,
+four assertion-red mutants and restored seven passing. The separate-copy mutants
+remove the foreign-output check, drop retention on Full, swallow Deferred, and
+remove the real slot pool's occupied guard. Full isolated xtask check and fmt exit 0
+on unchanged clean G `b239fe5b7`, with 808 strict Rust ok summaries and zero FAILED
+summaries. The mutation worktree was removed cleanly, pool left to nightly hygiene.
+Independent validation review `sophia-framejob-stage3-validation-review-claude-01`
+(`43cf9a91`) accepts the evidence.
+
+This is a backend-local fixture result. Retain does not recheck facade state after
+reservation and grants no new admission authority; caller classification remains
+required. Successful enqueue frees the cell while the bounded channel owns the
+Release, not while the slot is necessarily free. The actual slot pool stays occupied
+until the fixture explicitly supplies release; GPU buffer destruction is unproved.
+Disconnected remains retained while the sidecar lives, without a recovery path or
+retirement proof. Placement in the actual facade, poll-ordered flushing, runtime
+credit settlement and cross-crate wake composition remain unproved.
+
+Stage 4 scoping (`sophia-framejob-stage4-scoping-01`, `e36325ed`) and consult
+(`f6b7ac90`) selected a runtime-local wake checkpoint first, leaving actual facade
+poll placement (4b) and the runtime/backend bridge (4c) separate. Stage 4a source
+`aa1de21e4` (tree `7e5749e5`), source seal `5edf9ef5`, received pre-build acceptance
+`c201932a`. Five test-support/documentation files changed; no crates/*/src or Cargo
+change. Optional bounded checkpoint metadata sits beside opaque P and uses the
+existing take_route call. The next job's checkpoint entry orders the prior complete
+validator iteration without introducing an ordinary completion notification.
+
+Validation `sophia-framejob-wake-seam-validation-01` (`691dfa77`) records all sixteen
+combined tests (six new wake tests and the previous ten) passing with default and
+all features, seven ordinary plus one shutdown control, three assertion-red
+notification mutants and restored sixteen passing. It checks synchronized quiet
+forwarding with credit retained; cancellation/malformed and Full/Disconnected
+ordinary return wakes; one publication-after-clear schedule; independent control
+readiness in the fixture poll array; and normal/unwind exit with the owner Wake
+alive. The deliberate validator-thread Disconnected panic is expected output of a
+passing exit-guard test, not a failed test: IN and BrokenPipe are required while the
+unreturned job's credit stays held. The mutants add success notification, omit the
+ordinary notification, and omit NotifyOnExit; each fails its named IN/quiet assertion
+in a separate copy, not compilation. Mutation worktree removed normally, pool kept
+for nightly hygiene.
+
+Full isolated xtask check and fmt exit 0 on unchanged clean G `aa1de21e4`, with
+808 strict Rust ok summaries and zero FAILED summaries. Independent validation
+review `sophia-framejob-stage4a-validation-review-claude-01` (`4e8ab18a`) accepts this
+checkpoint. This covers one validator and controlled schedules, not all wake
+interleavings, Session OwnerWake wiring, actual renderer execution or the composed
+runtime/backend pipeline. Next is 4b poll-placement scoping; 4c and any non-test
+bridge remain separate scope gates. Production/native gates stay held, with no
+push, timing, three-service or CPU/frame claim.
+
+Preliminary design-model evidence `sophia-combined-frame-job-model-01`, seal
+`4c811ba9`, checks 353 generated / 189 distinct states and fair owner withdrawal
+without worker fairness. Three deliberately broken variants fail named stale
+submission/source ownership/predecessor lifetime invariants. This is not a full
+model or Rust refinement: scene binding, budgets, Deferred, journal, notifications,
+real ioctl uncertainty and actual GPU last-use remain explicit omissions. The
+prototype gate is not passed. No Rust build, native launch, merge or SDK change.
+Research source and evidence remain separate from the installed path.
+
+
 **Control-carrier experiment closed device-free; source disposition open.** The
 separate `cpu/sft-control-ring` branch is held at signed `4342177d4` (not merged).
 Its commit-only, pread-first prototype retained 9P journal events and standalone
