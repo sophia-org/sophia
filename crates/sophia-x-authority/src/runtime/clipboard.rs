@@ -370,17 +370,4 @@ impl XAuthorityRuntime {
              },
          })
      }
- 
-     pub fn execute_clipboard_payload_frame(
-         &mut self,
-         frame: &[u8],
-         grant: &sophia_protocol::PortalGrant,
-         atoms: &mut XAtomTable,
-         properties: &mut XPropertyTable,
-     ) -> Result<ClipboardSelectionExecutionOutcome, ClipboardSelectionExecutionError> {
-         let (transfer, payload) = sophia_protocol::decode_portal_clipboard_payload_frame(frame)
-             .map_err(|_| ClipboardSelectionExecutionError::ExecutorFailure)?;
-         self.execute_clipboard_payload(transfer, grant, &payload, atoms, properties)
-     }
- 
 }

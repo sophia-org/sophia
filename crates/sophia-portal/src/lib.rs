@@ -23,7 +23,6 @@ pub mod output_capture_source;
 mod pending;
 pub mod recipient_object;
 mod screen_capture;
-mod socket;
 mod types;
 mod uri_open;
 
@@ -41,6 +40,5 @@ pub use file_handoff::*;
 pub use lifecycle::*;
 pub use notification::*;
 pub use screen_capture::*;
-pub use socket::*;
 pub use types::*;
 pub use uri_open::*;

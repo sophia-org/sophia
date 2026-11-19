@@ -198,9 +198,8 @@ fn cross_namespace_grant_installs_bounded_utf8_and_reports_stale_owner() {
         state: PortalGrantState::Active,
     };
     let mut properties = XPropertyTable::new();
-    let frame = encode_portal_clipboard_payload_frame(transfer, b"hello").unwrap();
     let outcome = runtime
-        .execute_clipboard_payload_frame(&frame, &grant, &mut atoms, &mut properties)
+        .execute_clipboard_payload(transfer, &grant, b"hello", &mut atoms, &mut properties)
         .unwrap();
     let ClipboardSelectionExecutionOutcome::Handoff(handoff) = outcome else {
         panic!("expected handoff");

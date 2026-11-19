@@ -25,7 +25,6 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor_for(selecti
             .unwrap()
             .as_nanos()
     ));
-    let portal_path = socket_path.with_extension("portal.sock");
     let target_path = if listeners { socket_path.with_extension("group") } else { socket_path.clone() };
     let source = NamespaceContext::new(
         NamespaceId::from_raw(860),
@@ -54,7 +53,6 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor_for(selecti
     let (executor_sender, executor_receiver) = std::sync::mpsc::sync_channel(1);
     let (request_sender, request_receiver) = std::sync::mpsc::sync_channel(1);
     let (coordinate_sender, coordinate_receiver) = std::sync::mpsc::sync_channel(1);
-    let server_portal_path = portal_path.clone();
     let server = thread::spawn(move || {
         let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(4).unwrap());
         let mut frontend = XServerFrontend::bind(config).unwrap();
@@ -94,53 +92,30 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor_for(selecti
             .serve_next_concurrently_routed_traced(&broker, observer)
             .unwrap();
         let transfer = coordinate_receiver.recv().unwrap();
-        let request = PortalBrokerRequestPacket {
-            request: PortalRequest {
-                transfer: PortalTransfer {
-                    transfer,
-                    source_namespace: source.id,
-                    target_namespace: target.id,
-                    kind: PortalTransferKind::Clipboard,
-                    mime_type: Some("UTF8_STRING".to_owned()),
-                    byte_size: 0,
-                    decision: PortalDecision::Pending,
-                    generation: 1,
-                },
-                deadline_msec: 2_000,
-            },
-            source_may_publish: true,
-            target_may_request: true,
+        // The portal's decision is supplied here: an allowed grant for the
+        // retained source generation. The file coordinator's own joins are
+        // covered in `portal_adapters.rs`.
+        let grant = PortalGrant {
+            transfer,
+            source_namespace: source.id,
+            target_namespace: target.id,
+            kind: PortalTransferKind::Clipboard,
+            source_generation: 1,
+            broker_generation: 1,
+            deadline_msec: 2_000,
+            state: PortalGrantState::Active,
         };
-        coordinate_x11_clipboard_transfer(
-            server_portal_path,
-            &request,
-            &frontend.clipboard_executor(&broker),
-            &broker,
-            std::time::Duration::from_secs(2),
-        )
-        .unwrap();
+        let executor = frontend.clipboard_executor(&broker);
+        executor.request_source(&grant).unwrap();
+        let payload = broker
+            .recv_clipboard_source_payload_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        assert_eq!(payload.transfer, transfer);
+        executor.execute(&grant, &payload.bytes).unwrap();
         frontend.wait_for_clients().unwrap();
     });
     wait_for_socket(&socket_path);
     let executor = executor_receiver.recv().unwrap();
-    let portal_executor = executor.clone();
-    let portal_server_path = portal_path.clone();
-    let portal_server = thread::spawn(move || {
-        sophia_portal::run_portal_clipboard_broker_socket_server_bounded(
-            portal_server_path,
-            1,
-            sophia_portal::HeadlessPortalPolicy::Allow,
-            10,
-            1,
-            move |grant, payload| {
-                portal_executor
-                    .execute(grant, payload)
-                    .map(|_| ())
-                    .map_err(|_| ())
-            },
-        )
-    });
-    wait_for_socket(&portal_path);
     let mut owner = connect_x_socket(&socket_path);
     owner
         .set_read_timeout(Some(X_RECORD_READ_TIMEOUT))
@@ -304,7 +279,6 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor_for(selecti
     let missing = read_x_reply(&mut requestor, XByteOrder::LittleEndian);
     assert_eq!(read_u32(XByteOrder::LittleEndian, &missing[8..12]), 0);
     assert_eq!(read_u32(XByteOrder::LittleEndian, &missing[16..20]), 0);
-    portal_server.join().unwrap().unwrap();
 
     requestor
         .write_all(&convert_selection_request(

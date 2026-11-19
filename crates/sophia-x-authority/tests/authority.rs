@@ -4,7 +4,7 @@ use sophia_protocol::{
     PortalGrant, PortalGrantState, PortalTransfer, PortalTransferId, PortalTransferKind, Rect,
     Region, SOPHIA_IPC_MAGIC, Size, SurfaceConstraints, SurfaceId, SurfaceRasterClass,
     SurfaceRasterRequirements, SurfaceRasterTransform, SurfaceTransactionReadiness, TransactionId,
-    encode_frame, encode_portal_clipboard_payload_frame,
+    encode_frame,
 };
 use sophia_x_authority::*;
 

@@ -74,13 +74,6 @@ pub enum PortalGrantState {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PortalBrokerRequestPacket {
-    pub request: PortalRequest,
-    pub source_may_publish: bool,
-    pub target_may_request: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PortalBrokerResponsePacket {
     pub transfer: PortalTransferId,
     pub decision: PortalBrokerResponseDecision,

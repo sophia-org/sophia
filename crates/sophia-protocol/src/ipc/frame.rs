@@ -46,9 +46,6 @@ pub fn decode_frame(frame: &[u8]) -> Result<(IpcFrameHeader, &[u8]), IpcCodecErr
         3 => IpcMessageKind::BrokerHealth,
         4 => IpcMessageKind::XAuthorityRequest,
         5 => IpcMessageKind::XAuthorityResponse,
-        6 => IpcMessageKind::PortalBrokerRequest,
-        7 => IpcMessageKind::PortalBrokerResponse,
-        8 => IpcMessageKind::PortalClipboardPayload,
 
         other => return Err(IpcCodecError::UnknownMessageKind(other)),
     };

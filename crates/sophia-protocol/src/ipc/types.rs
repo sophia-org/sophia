@@ -11,9 +11,6 @@ pub enum IpcMessageKind {
     BrokerHealth = 3,
     XAuthorityRequest = 4,
     XAuthorityResponse = 5,
-    PortalBrokerRequest = 6,
-    PortalBrokerResponse = 7,
-    PortalClipboardPayload = 8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

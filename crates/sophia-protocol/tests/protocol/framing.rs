@@ -43,52 +43,6 @@ fn broker_health_frame_roundtrips() {
 }
 
 #[test]
-fn portal_broker_and_payload_frames_roundtrip() {
-    let transfer = PortalTransferId::from_raw(41);
-    let request = PortalBrokerRequestPacket {
-        request: PortalRequest {
-            transfer: PortalTransfer {
-                transfer,
-                source_namespace: NamespaceId::from_raw(10),
-                target_namespace: NamespaceId::from_raw(20),
-                kind: PortalTransferKind::Clipboard,
-                mime_type: Some("UTF8_STRING".to_owned()),
-                byte_size: 6,
-                decision: PortalDecision::Pending,
-                generation: 7,
-            },
-            deadline_msec: 2_000,
-        },
-        source_may_publish: true,
-        target_may_request: true,
-    };
-    let frame = encode_portal_broker_request_frame(&request).unwrap();
-    assert_eq!(decode_portal_broker_request_frame(&frame), Ok(request));
-
-    let response = PortalBrokerResponsePacket {
-        transfer,
-        decision: PortalBrokerResponseDecision::Allowed(PortalGrant {
-            transfer,
-            source_namespace: NamespaceId::from_raw(10),
-            target_namespace: NamespaceId::from_raw(20),
-            kind: PortalTransferKind::Clipboard,
-            source_generation: 7,
-            broker_generation: 3,
-            deadline_msec: 2_000,
-            state: PortalGrantState::Active,
-        }),
-    };
-    let frame = encode_portal_broker_response_frame(&response).unwrap();
-    assert_eq!(decode_portal_broker_response_frame(&frame), Ok(response));
-
-    let frame = encode_portal_clipboard_payload_frame(transfer, b"sophia").unwrap();
-    assert_eq!(
-        decode_portal_clipboard_payload_frame(&frame),
-        Ok((transfer, b"sophia".to_vec()))
-    );
-}
-
-#[test]
 fn metadata_broker_health_frame_roundtrips_without_message() {
     let packet =
         BrokerHealthPacket::new(BrokerKind::Metadata, BrokerHealthState::Stopped, 13, None)

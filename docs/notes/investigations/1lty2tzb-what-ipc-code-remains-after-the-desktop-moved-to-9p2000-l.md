@@ -3584,3 +3584,29 @@ niltempus `docs/install.md` describes the step. The broker holds no persistent
 state to migrate. A release swap does not roll back home configuration or
 separately installed clients, and no broker-specific rollback trial has been
 run.
+
+### Portal socket removal (t255, 2026-11-19)
+
+The portal pieces named in the inventory above are removed in the change that
+carries this section: `sophia-portal/src/socket.rs` and its five tests,
+`ipc/portal.rs`, message kinds 6 to 8, `PortalBrokerRequestPacket`,
+`coordinate_x11_clipboard_transfer` and `execute_clipboard_payload_frame`.
+`PortalBrokerResponsePacket`, `PortalBrokerResponseDecision` and the domain
+types stay; the file contract uses them.
+
+The four X frontend transfer tests in `x11_wire/clipboard_frontend.rs` stay.
+They used the socket only to obtain an allowed grant, and now construct that
+grant themselves, so they still witness the source request, the captured
+payload, the installed property and the SelectionNotify for CLIPBOARD and
+PRIMARY, with and without listener groups, and the stale and failed cases.
+The authority test that decoded a payload frame calls
+`execute_clipboard_payload` with the same bytes.
+
+The five socket tests covered owner-only access, a disconnect after the grant,
+expiry, payload only after a correlated grant, and one broker generation
+across connections. The
+[t315 reconciliation](rd9nia0s-several-x-listeners-and-confined-application-launch-validation.md)
+maps the file-side tests for the same obligations: admission and foreign
+refusal, queued and issued disconnect, deadline, single terminal settlement,
+and broker restart. The fallback release is the same as for the broker.
+Administration is unchanged.
