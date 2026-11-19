@@ -274,6 +274,52 @@ export; latency, CPU and copied bytes are measured against the current
 envelope for the same descriptor workload before the socket is removed under
 t255.
 
+### Result, November 19
+
+Niltempus closed t314 as measured on November 19. Production already reached
+the broker through files alone: `LiveMetadataBroker` starts
+`metadata-broker-files-serve` whenever a WM process is configured and drives
+`BrokerFileDriver` (`live_session/run.rs`, `metadata_broker.rs` at
+`d7f77e54d`). There is no restart path to either transport; a broker exit
+ends the Session's broker. The legacy socket's remaining callers are
+diagnostic: the `metadata-broker-transport-smoke` CLI command and its
+`metadata-broker-serve` server, and the cost harness baseline. The compiled
+negative controls are `foreign_process_is_rejected_before_attach` and
+`missing_protection_role_is_rejected` in
+`sophia-runtime/tests/broker_service.rs`.
+
+The comparison ran once on crunch from the clean pin `d7f77e54d` with the
+existing harness: four ABBA positions, labels of 0, 16 and 120 bytes, 1,000
+updates each, untraced inside a coordinated quiet window, then 1- and
+10-update traces outside it. Evidence is
+`~/.local/state/sophia/broker-cost/t314-cost-claude-01` (seal `d2dabce8`,
+70 entries); Codex recounted all 24 rows from the raw inputs. Ranges are the
+two positions per transport, in microseconds per update:
+
+| transport | label | median latency | CPU | peer socket bytes read/written | socket calls |
+|---|---:|---:|---:|---:|---:|
+| legacy | 0 | 7.9–8.0 | 8.2–9.5 | 56/91 | 3 |
+| legacy | 16 | 6.7–7.6 | 9.8–10.0 | 74/109 | 3 |
+| legacy | 120 | 7.6–8.1 | 10.1–11.1 | 178/213 | 3 |
+| files | 0 | 57.2–65.2 | 74.0–80.0 | 367/698 | about 34 |
+| files | 16 | 49.3–64.9 | 71.8–79.7 | 367/698 | about 34 |
+| files | 120 | 57.1–58.6 | 71.3–79.2 | 367/698 | about 34 |
+
+The files path took more CPU and had higher median latency at every label
+size. Copied bytes come from a separate diagnostic build
+(`t314/copy-accounting`, `672add249`) that counts logical copies at 13
+inventoried sites: owner exact, peer estimated from two process lifetimes.
+Its per-update subtotals are 147, 279 and 1,111 bytes for legacy (including
+the harness's own request clone of 0, 16 and 120 bytes) and 248, 312 and 728
+for files. The files owner's journal staging append and the SDK's copies in
+the files peer are outside the inventory, so the subtotals support no
+files-minus-legacy copy comparison. The run is a single-host diagnostic with
+qualification false.
+
+The legacy socket, its smoke command, the harness baseline and the broker IPC
+codecs stay in place. Their removal, and whether this cost needs work first,
+is t255's decision.
+
 ## t315
 
 On 2026-10-10 niltempus selected the portal-files and live X clipboard join

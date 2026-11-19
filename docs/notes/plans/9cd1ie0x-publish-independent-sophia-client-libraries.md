@@ -783,6 +783,9 @@ The CLI also passes strict Clippy with `native-session`. The tested executable
 is the slot 1 debug build, not an installed desktop. Next, connect
 `LiveMetadataBroker` to this driver and update its descriptor fixture; its
 production transport is still legacy. Performance comparison remains pending.
+(Superseded: `LiveMetadataBroker` moved to the files driver in `ab5e8b7ba` on
+2026-10-16, and the comparison closed t314 on 2026-11-19; see
+[t314](jsschoen-converge-public-roles-on-one-9p-core.md#t314).)
 
 As of 2026-10-16, t333 remains open. C and Rust broker sessions pass 12
 independent socket schedules, including failure custody, explicit retry, retained
