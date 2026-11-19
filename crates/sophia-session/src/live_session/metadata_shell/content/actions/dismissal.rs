@@ -144,12 +144,14 @@ impl super::super::LiveContentSession {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::live_session::metadata_shell) fn service_dismissals(
+    pub(in crate::live_session::metadata_shell) fn service_dismissals<
+        N: sophia_backend_live::ShellContentNative,
+    >(
         &mut self,
         transport: &mut ShellTransportConnection<'_>,
         runtime: &mut sophia_backend_live::LiveProductionVisualRuntime,
         scene: &sophia_backend_live::LiveProductionCpuScene,
-        mut native: Option<&mut sophia_backend_live::LiveProductionNativeScanout>,
+        mut native: Option<&mut N>,
         now: u64,
         transaction: &mut dyn FnMut() -> Result<TransactionId, Box<dyn std::error::Error>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -178,13 +180,23 @@ impl super::super::LiveContentSession {
                 pending.cancellation_sent = true;
             }
             // ACK is receipt, not proof that the peer withdrew anything.
-            let withdrawn = match runtime.withdraw_shell_popout(
-                action.grant,
-                action.output,
-                action.allocation,
-                scene,
-                native.as_deref_mut(),
-            ) {
+            let withdrawal = match native.as_deref_mut() {
+                Some(native) => native.withdraw_shell_popout(
+                    runtime,
+                    action.grant,
+                    action.output,
+                    action.allocation,
+                    scene,
+                ),
+                None => runtime.withdraw_shell_popout(
+                    action.grant,
+                    action.output,
+                    action.allocation,
+                    scene,
+                    None,
+                ),
+            };
+            let withdrawn = match withdrawal {
                 Ok(withdrawn) => withdrawn,
                 Err(error) => {
                     if !pending.withdrawal_error_reported {

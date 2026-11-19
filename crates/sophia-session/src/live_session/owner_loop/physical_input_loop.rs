@@ -99,11 +99,38 @@ let mut surface_samples = 0_u32;
 // Handed to producers the owner replaces while it runs.
 let owner_notifier = owner_wake.notifier();
 let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
+    // Gate 4 C3b: the capture opens on the first pass (spec 03 2.3).
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    let mut witness_capture_open = false;
     'session: loop {
         // Before any producer is inspected, so a ring that lands during this
         // pass stays readable and ends the pass's wait at once. Idle waits
         // are bounded by authority_wait_timeout (at most 25 ms).
         owner_wake.begin_pass()?;
+        // Gate 4 C3b: the iteration is the wake's existing pass count, read
+        // after its saturating increment; saturated is exhausted.
+        #[cfg(all(
+            feature = "experimental-combined-frame-job",
+            feature = "experimental-native-frame-transaction",
+            feature = "native-session",
+            feature = "diagnostic-combined-witness"
+        ))]
+        let witness_iteration = crate::shell_component_connections::combined_row::witness::iteration(owner_wake.statistics().passes);
+        #[cfg(all(
+            feature = "experimental-combined-frame-job",
+            feature = "experimental-native-frame-transaction",
+            feature = "native-session",
+            feature = "diagnostic-combined-witness"
+        ))]
+        if !witness_capture_open {
+            witness_capture_open = true;
+            crate::shell_component_connections::combined_row::witness::capture_begin(witness_iteration);
+        }
         // Runs before seat paths that can continue early, including while
         // ordinary frame service is quarantined. A removed native owner must
         // settle old clock bindings even if there are no more DRM events.
@@ -583,9 +610,27 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 component_bounds = wm_output_bounds(&outputs);
                 component_bounds_outputs.clone_from(&outputs);
             }
+            #[cfg(not(all(
+                feature = "experimental-combined-frame-job",
+                feature = "experimental-native-frame-transaction",
+                feature = "native-session",
+                feature = "diagnostic-combined-witness"
+            )))]
             component_service::service_components(components, component_catalog, runtime, scene, native_scanout.as_mut(),
                 &outputs, &component_bounds, wm_session, shell_presentation_available, session_launches, secondary_children, config, xauthority, &mut launch_admission_started_at,
-                authenticated_launches, owner_wake, application_launches)?;
+                authenticated_launches, owner_wake, application_launches,
+                #[cfg(all(feature = "experimental-combined-frame-job", feature = "experimental-native-frame-transaction", feature = "native-session"))]
+                pointer.position())?;
+            // Gate 4 C3b: the same pass inside its witness records.
+            #[cfg(all(
+                feature = "experimental-combined-frame-job",
+                feature = "experimental-native-frame-transaction",
+                feature = "native-session",
+                feature = "diagnostic-combined-witness"
+            ))]
+            component_service::service_components_witnessed(witness_iteration, components, component_catalog, runtime, scene, native_scanout.as_mut(),
+                &outputs, &component_bounds, wm_session, shell_presentation_available, session_launches, secondary_children, config, xauthority, &mut launch_admission_started_at,
+                authenticated_launches, owner_wake, application_launches, pointer.position())?;
             components.write_work_area_bands(&mut shell_band_scratch);
             shell_work_area_bands = Some(std::mem::take(&mut shell_band_scratch));
         }
@@ -801,6 +846,30 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 })();
+// Gate 4 C3b: the closing inventory and the capture's terminal record, after
+// the loop's result is known and before the metadata shell's stopped record
+// (spec 04 R2). Read-only over the rows.
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session",
+    feature = "diagnostic-combined-witness"
+))]
+{
+    let slots = match shell_components.as_ref() {
+        Some(components) => Some(components.witness_inventory()),
+        None => {
+            crate::shell_component_connections::combined_row::witness::inventory_absent();
+            None
+        }
+    };
+    crate::shell_component_connections::combined_row::witness::capture_end(
+        crate::shell_component_connections::combined_row::witness::iteration(owner_wake.statistics().passes),
+        shell_components.as_ref().map(|components| components.witness_cpass()),
+        session_loop_result.is_err(),
+        slots,
+    );
+}
 if let Err(error) = session_loop_result {
     present_evidence.flush();
     sophia_x_authority::flush_present_evidence();

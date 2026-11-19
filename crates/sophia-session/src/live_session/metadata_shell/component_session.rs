@@ -15,6 +15,7 @@ use sophia_backend_live::{LiveProductionVisualRuntime, LiveRenderDeviceIdentityS
 use sophia_config::{MAX_SHELL_COMPONENTS, ShellComponentConfig, ShellComponentRole, ShellGpuMode};
 use sophia_runtime::{
     ContentEpochAccounting, ShellContentAdmissionPolicy, ShellTransportConnection,
+    ShellTransportError,
 };
 use std::path::Path;
 
@@ -75,6 +76,15 @@ pub struct ShellComponentSession {
     /// Set on the visit where a slot's retry first spaces beyond the base
     /// interval, so the transition is recorded once rather than per attempt.
     entered_backoff: Option<usize>,
+    /// Gate 4 C3b: the component passes the witness has begun; saturated
+    /// once exhausted, which every later record prints as `exhausted`.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    witness_cpass: u64,
     /// When each capture slot began waiting for its endpoint before launch.
     #[cfg(feature = "experimental-shell-capture")]
     capture_wait: [Option<std::time::Instant>; MAX_SHELL_COMPONENTS],
@@ -258,6 +268,13 @@ impl ShellComponentSession {
             failures: [0; MAX_SHELL_COMPONENTS],
             started_at: std::array::from_fn(|_| None),
             entered_backoff: None,
+            #[cfg(all(
+                feature = "experimental-combined-frame-job",
+                feature = "experimental-native-frame-transaction",
+                feature = "native-session",
+                feature = "diagnostic-combined-witness"
+            ))]
+            witness_cpass: 0,
             #[cfg(feature = "experimental-shell-capture")]
             capture_wait: [None; MAX_SHELL_COMPONENTS],
         })
@@ -348,6 +365,32 @@ impl ShellComponentSession {
         self.revoked.record(key.grant)?;
         self.processes.request_stop(key).map_err(Into::into)
     }
+    /// Ends a component that failed in service: records the failure, stops
+    /// its attempt and spaces its retry. A failed stop or retry deadline is
+    /// returned at once, with the attempt's custody retained; it is not
+    /// completed cleanup.
+    pub fn fail_service(
+        &mut self,
+        key: ComponentConnectionKey,
+        reason: &dyn std::fmt::Display,
+    ) -> Result<()> {
+        crate::session_eprintln!(
+            "sophia_shell_component schema=1 status=service_failed slot={} reason={reason}",
+            key.slot
+        );
+        self.stop(key)?;
+        // A component that starts cleanly and then fails in service is a loop
+        // as much as one that never starts, and is spaced by the same count.
+        // The transition is recorded here because the next visit's selection
+        // clears it before reading it.
+        if self.record_service_failure(key.slot, std::time::Instant::now())? {
+            crate::session_eprintln!(
+                "sophia_shell_component schema=1 status=start_backoff slot={}",
+                key.slot
+            );
+        }
+        Ok(())
+    }
     pub fn start(&mut self, slot: usize) -> Result<ComponentConnectionKey> {
         if !self.available || self.stopping || self.revoked.len() != 0 {
             return Err("component presentation unavailable or cleanup retained".into());
@@ -383,7 +426,7 @@ impl ShellComponentSession {
     /// the actual successful role negotiation, not from an advertised profile.
     pub fn poll(&mut self, bytes: usize) -> Result<ComponentProcessVisit> {
         let visit = self.processes.visit(bytes);
-        self.finish_poll(visit)
+        self.finish_poll(visit, ShellComponentProcesses::turn_connected)
     }
 
     pub fn poll_authenticated(
@@ -395,10 +438,141 @@ impl ShellComponentSession {
         let visit =
             self.processes
                 .visit_authenticated(bytes, launches, wake, std::time::Instant::now());
-        self.finish_poll(visit)
+        self.finish_poll(visit, ShellComponentProcesses::turn_connected)
     }
 
-    fn finish_poll(&mut self, visit: ComponentProcessVisit) -> Result<ComponentProcessVisit> {
+    /// `poll_authenticated` with every slot's image service hooked over its
+    /// combined row (gate 4 C3): the visit at the pass's one Instant, then
+    /// `turn_combined_images` at the site `turn_connected` has, with that
+    /// site's handling.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    pub(crate) fn poll_authenticated_combined<N: sophia_backend_live::ShellContentNative>(
+        &mut self,
+        bytes: usize,
+        launches: &mut crate::launch_authentication::LaunchCoordinator,
+        wake: sophia_wake::Notifier,
+        turn: &mut crate::shell_component_connections::combined_row::CombinedTurn<'_, N>,
+    ) -> Result<ComponentProcessVisit> {
+        let visit = self
+            .processes
+            .visit_authenticated(bytes, launches, wake, turn.instant);
+        self.finish_poll(visit, |processes| processes.turn_combined_images(turn))
+    }
+
+    /// Each slot's content layer for the combined turn (gate 4 C3): Shell for
+    /// a slot whose Ready service is the bar, the layer its content service
+    /// submits on without a catalog; `None` for every other slot, which takes
+    /// today's path. A per-pass role hint read before the poll: a slot's role
+    /// is its plan's, which the poll does not change, and it grants nothing.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    pub(crate) fn content_layers(
+        &self,
+    ) -> [Option<sophia_backend_live::LiveShellContentLayer>; MAX_SHELL_COMPONENTS] {
+        std::array::from_fn(|slot| {
+            self.ready[slot].as_ref().and_then(|ready| {
+                matches!(ready.service, ShellComponentService::Bar(_))
+                    .then_some(sophia_backend_live::LiveShellContentLayer::Shell)
+            })
+        })
+    }
+
+    /// Every slot's combined-row walk (gate 4 C3); each slot's failure.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    pub(crate) fn turn_combined_walk<N: sophia_backend_live::ShellContentNative>(
+        &mut self,
+        native: &mut N,
+        instant: std::time::Instant,
+        #[cfg(all(
+            feature = "experimental-combined-frame-job",
+            feature = "experimental-native-frame-transaction",
+            feature = "native-session",
+            feature = "diagnostic-combined-witness"
+        ))]
+        witness: crate::shell_component_connections::combined_row::WitnessPass,
+    ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
+        self.processes.turn_combined_walk(
+            native,
+            instant,
+            #[cfg(all(
+                feature = "experimental-combined-frame-job",
+                feature = "experimental-native-frame-transaction",
+                feature = "native-session",
+                feature = "diagnostic-combined-witness"
+            ))]
+            witness,
+        )
+    }
+
+    /// Gate 4 C3b: the next component pass number, `None` once exhausted;
+    /// the counter then stays saturated.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    pub(crate) fn begin_combined_pass(&mut self) -> Option<u64> {
+        let next = self.witness_cpass.checked_add(1);
+        self.witness_cpass = next.unwrap_or(u64::MAX);
+        next
+    }
+
+    /// Gate 4 C3b: the last pass number begun, `None` once exhausted.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    pub(crate) fn witness_cpass(&self) -> Option<u64> {
+        (self.witness_cpass != u64::MAX).then_some(self.witness_cpass)
+    }
+
+    /// Gate 4 C3b: the slots the hooked images step is expected to visit.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    pub(crate) fn witness_expected_slots(&self) -> Vec<usize> {
+        self.processes.witness_expected_slots()
+    }
+
+    /// Gate 4 C3b: the closing inventory; the number of slots it covers.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    pub(crate) fn witness_inventory(&self) -> usize {
+        self.processes.witness_inventory()
+    }
+
+    /// `turn` is the visit's one image-service turn of every connected wire,
+    /// `turn_connected` today; it runs at exactly one of the two sites below
+    /// when the visit reaches it.
+    fn finish_poll(
+        &mut self,
+        visit: ComponentProcessVisit,
+        turn: impl FnOnce(
+            &mut ShellComponentProcesses,
+        ) -> [Option<(ComponentConnectionKey, ShellTransportError)>;
+            MAX_SHELL_COMPONENTS],
+    ) -> Result<ComponentProcessVisit> {
         for event in visit.processes.iter().flatten() {
             let key = match event {
                 ComponentProcessEvent::ProcessRetired(key, _)
@@ -414,7 +588,7 @@ impl ShellComponentSession {
         if !self.available || self.stopping {
             // Wires are revoked, but submitted image validation still owns
             // descriptors and must finish its retired-store handoff.
-            for (key, error) in self.processes.turn_connected().into_iter().flatten() {
+            for (key, error) in turn(&mut self.processes).into_iter().flatten() {
                 crate::session_eprintln!(
                     "sophia_shell_component schema=1 status=image_drain_failed slot={} reason={error}",
                     key.slot
@@ -497,18 +671,8 @@ impl ShellComponentSession {
         // owner's wait subscribed is consumed even when no role service has
         // work for that wire. A failure ends that component as a service
         // failure would.
-        for (key, error) in self.processes.turn_connected().into_iter().flatten() {
-            crate::session_eprintln!(
-                "sophia_shell_component schema=1 status=service_failed slot={} reason={error}",
-                key.slot
-            );
-            self.stop(key)?;
-            if self.record_service_failure(key.slot, std::time::Instant::now())? {
-                crate::session_eprintln!(
-                    "sophia_shell_component schema=1 status=start_backoff slot={}",
-                    key.slot
-                );
-            }
+        for (key, error) in turn(&mut self.processes).into_iter().flatten() {
+            self.fail_service(key, &error)?;
         }
         Ok(visit)
     }
@@ -575,6 +739,39 @@ impl ShellComponentSession {
         Ok(self
             .processes
             .with_connection(key, |transport| service(&mut ready.service, transport))?)
+    }
+
+    /// `with_service` lending the slot's combined row beside the transport
+    /// (G3-5c C2; the production bar branch from gate 4 C3): the same checks
+    /// in the same order.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    pub(crate) fn with_combined_service<T>(
+        &mut self,
+        key: ComponentConnectionKey,
+        service: impl FnOnce(
+            &mut ShellComponentService,
+            &mut ShellTransportConnection<'_>,
+            &mut crate::shell_component_connections::combined_row::CombinedRow,
+        ) -> T,
+    ) -> Result<T> {
+        if !self.available || self.stopping {
+            return Err("component service paused".into());
+        }
+        let ready = self
+            .ready
+            .get_mut(key.slot)
+            .and_then(Option::as_mut)
+            .filter(|ready| ready.key == key)
+            .ok_or("component service has no negotiated owner")?;
+        Ok(self
+            .processes
+            .with_connection_and_row(key, |transport, row| {
+                service(&mut ready.service, transport, row)
+            })?)
     }
     pub fn settle_revocations(
         &mut self,

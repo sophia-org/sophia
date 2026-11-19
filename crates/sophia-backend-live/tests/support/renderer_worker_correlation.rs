@@ -103,43 +103,6 @@ fn submit_owned_job(
     (correlation, frame)
 }
 
-fn correlated_result(
-    correlation: super::LiveRendererFrameCorrelation,
-    outcome: WorkerOutcome,
-) -> WorkerResult {
-    WorkerResult {
-        output: LiveRendererWorkerOutputKey::from_raw(701),
-        request_id: correlation.request.unwrap(),
-        correlation,
-        context_status: super::NativeGbmRenderedScanoutContextStatus::Ready,
-        persistent_render_stats: super::LiveNativePersistentRenderStats::default(),
-        gl_identity: super::NativeGlIdentityState::Unobserved,
-        composition_nonzero_rgb_pixels: 0,
-        outcome,
-    }
-}
-
-fn exported_outcome() -> WorkerOutcome {
-    let mut slots = super::LiveRendererFrameSlotPool::new();
-    let crate::LiveRendererFrameSlotAcquire::Acquired(slot_token) = slots.try_acquire() else {
-        panic!("empty slot pool refused a lease");
-    };
-    WorkerOutcome::Exported {
-        capture: None,
-        descriptor: super::LiveRendererScanoutBufferDescriptor::new(
-            Size {
-                width: 16,
-                height: 16,
-            },
-            64,
-            sophia_renderer_live::LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-            1,
-        ),
-        lease_id: super::LiveRendererWorkerLeaseId(1),
-        slot_token,
-    }
-}
-
 #[test]
 fn a_delayed_lease_keeps_its_submission_when_a_newer_frame_is_pending() {
     let (mut facade, commands, results) = correlated_facade();

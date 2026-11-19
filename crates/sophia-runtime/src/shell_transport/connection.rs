@@ -13,9 +13,9 @@ pub struct ShellTransportConnection<'a> {
 impl ShellTransportConnection<'_> {
     /// Service the component's persistent image owner using the same clock as
     /// ordinary content resources. The owner itself must outlive this borrow.
-    pub fn service_isb_images(
+    pub fn service_isb_images<P: Send + 'static>(
         &mut self,
-        owner: &mut super::ShellIsbImageOwner,
+        owner: &mut super::ShellIsbImageOwner<P>,
         now_msec: u64,
         now: std::time::Instant,
     ) -> Result<(), super::ShellTransportError> {
@@ -26,6 +26,43 @@ impl ShellTransportConnection<'_> {
     /// store profile. Persistent launch cannot inherit a transient menu grant.
     pub fn supports_persistent_catalog(&self) -> bool {
         self.state.supports_persistent_catalog(self.content_epochs)
+    }
+
+    /// Where a combined job's candidate stands, read from existing state
+    /// only (G3-5c C4); `None` when the binding's grant has no active store.
+    /// Absence is never death: see `frame_candidate_state`.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction"
+    ))]
+    pub fn content_frame_candidate_state(
+        &self,
+        binding: crate::FrameCopyBinding,
+        job: u64,
+    ) -> Option<crate::FrameCandidateState> {
+        self.content_epochs
+            .active_candidates(binding.key.grant)
+            .map(|store| store.frame_candidate_state(&binding, job))
+    }
+
+    /// The exact frame stream's owner-side phase and close-notice
+    /// transaction (`frame_stream_fact`); `None` without its active store
+    /// or stream. Test support only (G3-5d d-2b3a).
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        any(test, feature = "test-support")
+    ))]
+    pub fn content_frame_stream_fact(
+        &self,
+        key: crate::frame_credits::FrameStreamKey,
+    ) -> Option<(
+        crate::frame_credits::FrameStreamPhase,
+        sophia_protocol::TransactionId,
+    )> {
+        self.content_epochs
+            .active_candidates(key.grant)?
+            .frame_stream_fact(key)
     }
 }
 

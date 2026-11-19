@@ -142,7 +142,8 @@ fn the_metadata_broker_and_lock_provider_launch_the_session_bubblewrap() {
     .unwrap();
     let marker = stand_in.directory.join("bwrap.ran");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while !marker.exists() {
+    // The shell creates the marker before echo writes it: wait for its line.
+    while !std::fs::read_to_string(&marker).is_ok_and(|text| !text.is_empty()) {
         assert!(
             std::time::Instant::now() < deadline,
             "lock provider did not run Session's Bubblewrap"

@@ -1,6 +1,8 @@
 //! Actual shell intake, Engine planning, lowered owners and native queue with
 //! simulated device facts/completions. This is not a KMS/driver proof.
 use super::*;
+#[path = "lifecycle_tests/combined_scene.rs"]
+mod combined_scene;
 #[path = "lifecycle_tests/component_identity.rs"]
 mod component_identity;
 #[path = "lifecycle_tests/component_removal.rs"]
@@ -11,8 +13,9 @@ mod content_peer;
 mod policy_composition;
 #[path = "lifecycle_tests/popout_removal.rs"]
 mod popout_removal;
+// G3-5a: the combined fixture's controls build their candidate here too.
 #[path = "lifecycle_tests/resources.rs"]
-mod resources;
+pub(crate) mod resources;
 #[path = "frame_service_observation.rs"]
 mod service_observation;
 #[path = "lifecycle_tests/startup.rs"]

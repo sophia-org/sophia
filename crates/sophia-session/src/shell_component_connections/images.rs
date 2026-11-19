@@ -12,7 +12,31 @@ use std::time::Instant;
 /// against a retired store after its role-specific service has been dropped.
 pub(crate) fn content_now_msec() -> u64 {
     static STARTED: OnceLock<Instant> = OnceLock::new();
-    u64::try_from(STARTED.get_or_init(Instant::now).elapsed().as_millis()).unwrap_or(u64::MAX)
+    let now =
+        u64::try_from(STARTED.get_or_init(Instant::now).elapsed().as_millis()).unwrap_or(u64::MAX);
+    #[cfg(test)]
+    let now = now.saturating_add(CONTENT_CLOCK_ADVANCE.with(std::cell::Cell::get));
+    now
+}
+
+// Test-only content-clock seam (G3-5c F3/F4): this test thread's content
+// clock moves forward only, so the candidate store's own expiry is reached
+// without touching the row's Instant or any other test's clock.
+#[cfg(test)]
+thread_local! {
+    static CONTENT_CLOCK_ADVANCE: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Moves this test thread's content clock forward by `msec` (labelled seam).
+/// Only the combined disposal controls use it.
+#[cfg(all(
+    test,
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session"
+))]
+pub(crate) fn advance_content_clock(msec: u64) {
+    CONTENT_CLOCK_ADVANCE.with(|advance| advance.set(advance.get() + msec));
 }
 
 /// DMA-BUF facts for one GPU-authorized connection: its granted render
@@ -39,10 +63,13 @@ pub(super) fn configure(
         // The worker survives reduced reconnect grants. Its hard resource cap
         // is the role contract ceiling; each admission checks the current grant.
         let maximum = sophia_protocol::ContentLimits::prototype(limits.grant).max_resource_bytes;
-        connection.images = Some(
-            ShellIsbImageOwner::new(maximum as usize, VALIDATION_BYTES as usize)
-                .map_err(|error| ShellTransportError::Io(error.to_string()))?,
-        );
+        #[cfg(feature = "experimental-combined-frame-job")]
+        let owner =
+            ShellIsbImageOwner::for_combined_plans(maximum as usize, VALIDATION_BYTES as usize);
+        #[cfg(not(feature = "experimental-combined-frame-job"))]
+        let owner = ShellIsbImageOwner::new(maximum as usize, VALIDATION_BYTES as usize);
+        connection.images =
+            Some(owner.map_err(|error| ShellTransportError::Io(error.to_string()))?);
     }
     configure_with(limits, capture, |d, l, f, b| {
         connection.transport.configure_image_channel(d, l, f, b)
@@ -181,4 +208,43 @@ pub(super) fn visit_worker<'a>(
             rustix::event::PollFlags::IN,
         ));
     }
+}
+
+/// One service of this slot's retained image owner on the content clock. The
+/// owner outlives its attempt, so a revoked slot is serviced as well.
+pub(super) fn service(
+    connection: &mut Connection,
+    epochs: &mut sophia_runtime::ContentEpochRegistry,
+) -> Result<(), ShellTransportError> {
+    let Some(owner) = connection.images.as_mut() else {
+        return Ok(());
+    };
+    owner.service(
+        &mut connection.transport,
+        epochs,
+        content_now_msec(),
+        Instant::now(),
+    )
+}
+
+/// Owed combined work in this slot's row, which joins final quiescence and
+/// nothing else (G3-5b R1). The row is compiled with the CS features, so
+/// this predicate is too; until gate 4 only the controlled driver admits a
+/// job into it.
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session"
+))]
+pub(super) fn combined_pending(connection: &Connection) -> usize {
+    connection.combined.pending()
+}
+
+#[cfg(not(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session"
+)))]
+pub(super) fn combined_pending(_: &Connection) -> usize {
+    0
 }

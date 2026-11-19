@@ -156,7 +156,10 @@ pub(super) struct WorkerControl {
     // Read by worker.rs; renderer_worker_shutdown mounts this file alone.
     #[allow(dead_code)]
     pub(super) result_wake: sophia_wake::WakeSlot,
-    #[cfg(feature = "experimental-shell-capture")]
+    #[cfg(any(
+        feature = "experimental-shell-capture",
+        feature = "experimental-combined-frame-job"
+    ))]
     pub(super) command_wake: sophia_wake::WakeSlot,
     /// The Session owner wake rung by every capture-preparation reply and
     /// disconnect. Attached once: this control lives inside one exporter of
@@ -172,7 +175,10 @@ pub(super) struct WorkerControl {
 impl WorkerControl {
     pub fn shutdown(&self) {
         self.shutdown.store(true, Ordering::Release);
-        #[cfg(feature = "experimental-shell-capture")]
+        #[cfg(any(
+            feature = "experimental-shell-capture",
+            feature = "experimental-combined-frame-job"
+        ))]
         self.command_wake.notify();
     }
 

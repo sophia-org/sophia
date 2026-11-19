@@ -1,5 +1,11 @@
 #![cfg(test)]
 
+#[path = "combined_frame_release.rs"]
+mod combined_release;
+#[cfg(feature = "experimental-combined-frame-job")]
+#[path = "combined_frame_render.rs"]
+pub(super) mod combined_render;
+
 use super::reusable_cpu_buffer_damage;
 use sophia_protocol::Size;
 
@@ -47,7 +53,7 @@ use crate::api::LiveGbmEglFrameTargetRecord;
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::time::Duration;
 
-const SETTLE: Duration = Duration::from_secs(2);
+use super::support::{SETTLE, correlated_result, exported_outcome, inventory_test_core};
 
 trait SendCommand {
     fn send(
@@ -63,7 +69,10 @@ impl SendCommand for SyncSender<WorkerCommand> {
         SyncSender::send(self, command).map_err(Box::new)
     }
 }
-#[cfg(feature = "experimental-shell-capture")]
+#[cfg(any(
+    feature = "experimental-shell-capture",
+    feature = "experimental-combined-frame-job"
+))]
 impl SendCommand for sophia_wake::SignalSender<WorkerCommand> {
     fn send(
         &self,

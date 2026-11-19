@@ -94,10 +94,10 @@ impl<M: CpuImageMetadata> CpuImageJobs<M> {
     /// An Incomplete error releasing an unsent credit indicates the wrong
     /// worker was supplied. Custody stays stopped here; retry with the paired
     /// worker. Never discard the slot or synthesize a second completion.
-    pub fn withdraw(
+    pub fn withdraw<P: Send + 'static>(
         &mut self,
         registry: &mut ContentEpochRegistry,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         job: u64,
         cause: IsbImageWithdrawal,
         now: u64,
@@ -136,15 +136,36 @@ impl<M: CpuImageMetadata> CpuImageJobs<M> {
         &mut self,
         completion: IsbValidationCompletion,
     ) -> Result<(), IsbValidationCompletion> {
+        let job = completion.job;
+        self.accept(job, completion.result)
+            .map_err(|result| IsbValidationCompletion { job, result })
+    }
+
+    /// The combined path's entry: the owner settled the validation credit and
+    /// hands over what came back for `job`, without any ordinary completion.
+    /// It matches `receive`'s exact row, stopped or not, so a late result still
+    /// reaches `reconcile`. A refusal returns the input untouched.
+    #[cfg(any(test, feature = "experimental-combined-frame-job"))]
+    pub fn receive_forwarded(
+        &mut self,
+        job: u64,
+        result: Result<ValidatedIsbPixels, IsbValidationFailure>,
+    ) -> Result<(), Result<ValidatedIsbPixels, IsbValidationFailure>> {
+        self.accept(job, result)
+    }
+
+    fn accept(
+        &mut self,
+        job: u64,
+        result: Result<ValidatedIsbPixels, IsbValidationFailure>,
+    ) -> Result<(), Result<ValidatedIsbPixels, IsbValidationFailure>> {
         let Some(pending) = self.pending.iter_mut().flatten().find(|pending| {
-            pending.admission.worker_job == completion.job
-                && pending.submitted
-                && pending.result.is_none()
+            pending.admission.worker_job == job && pending.submitted && pending.result.is_none()
         }) else {
-            return Err(completion);
+            return Err(result);
         };
-        pending.failure = completion.result.as_ref().err().copied();
-        pending.result = Some(completion.result.map_err(|_| ContentStoreError::Malformed));
+        pending.failure = result.as_ref().err().copied();
+        pending.result = Some(result.map_err(|_| ContentStoreError::Malformed));
         Ok(())
     }
 
@@ -158,10 +179,10 @@ impl<M: CpuImageMetadata> CpuImageJobs<M> {
             .min()
     }
 
-    pub fn expire(
+    pub fn expire<P: Send + 'static>(
         &mut self,
         registry: &mut ContentEpochRegistry,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         instant: Instant,
         now: u64,
     ) -> Result<(), ContentStoreError> {
@@ -188,10 +209,10 @@ impl<M: CpuImageMetadata> CpuImageJobs<M> {
     /// Channel loss withdraws every offer, including sources that never arrived.
     /// Run this after registry disconnect too: stopped retired transfers remain
     /// reachable, but no old journal can acquire a new event obligation.
-    pub fn withdraw_epoch(
+    pub fn withdraw_epoch<P: Send + 'static>(
         &mut self,
         registry: &mut ContentEpochRegistry,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         grant: ContentGrant,
         now: u64,
     ) -> Result<(), ContentStoreError> {
@@ -294,10 +315,10 @@ impl<M: CpuImageMetadata> CpuImageJobs<M> {
     /// custody. Run after resource service and before taking new Sources.
     /// A stopped unsent offer needs a local handoff even if no FD ever arrives.
     /// The store's original cause wins; the fallback cause cannot replace it.
-    pub fn observe_store_stops(
+    pub fn observe_store_stops<P: Send + 'static>(
         &mut self,
         registry: &mut ContentEpochRegistry,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         now: u64,
     ) -> Result<(), ContentStoreError> {
         let jobs = self.pending.each_ref().map(|slot| {

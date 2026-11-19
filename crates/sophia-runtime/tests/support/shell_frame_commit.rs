@@ -1,6 +1,9 @@
 //! Complete input uses real copy/lease owners and never asks the peer for End.
 use super::*;
 
+#[cfg(feature = "experimental-combined-frame-job")]
+#[path = "combined_frame_join.rs"]
+mod combined;
 #[path = "shell_frame_native_profile.rs"]
 mod native_profile;
 

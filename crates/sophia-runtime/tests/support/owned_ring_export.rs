@@ -224,8 +224,13 @@ fn packet(
 }
 
 fn journal_bytes(files: &ShellFiles) -> Vec<u8> {
+    journal_bytes_from(files, 0)
+}
+
+/// The stream from `offset`. Reads below an acknowledged floor are ESTALE,
+/// so a test that acknowledges records passes the floor it acknowledged.
+fn journal_bytes_from(files: &ShellFiles, mut offset: u64) -> Vec<u8> {
     let mut bytes = Vec::new();
-    let mut offset = 0u64;
     loop {
         match files.journal.read(offset, 65536) {
             Ok(sophia_9p::ReadOutcome::Ready(chunk)) if !chunk.is_empty() => {
@@ -240,7 +245,10 @@ fn journal_bytes(files: &ShellFiles) -> Vec<u8> {
 
 /// Decode every ResourceStatus record in the journal stream, in order.
 fn journal_statuses(files: &ShellFiles) -> Vec<sophia_protocol::ContentResourceStatus> {
-    let bytes = journal_bytes(files);
+    statuses_in(&journal_bytes(files))
+}
+
+fn statuses_in(bytes: &[u8]) -> Vec<sophia_protocol::ContentResourceStatus> {
     let record = SHELL_FILE_HEADER_BYTES + 56;
     let mut statuses = Vec::new();
     let mut at = 0usize;
@@ -259,7 +267,10 @@ fn journal_statuses(files: &ShellFiles) -> Vec<sophia_protocol::ContentResourceS
 
 /// Decode every owned event in the journal stream, in order.
 fn journal_events(files: &ShellFiles) -> Vec<Event> {
-    let bytes = journal_bytes(files);
+    events_in(&journal_bytes(files))
+}
+
+fn events_in(bytes: &[u8]) -> Vec<Event> {
     // Records are length-prefixed: the D4E1 magic sits four bytes in, and
     // Event::decode requires exactly one record, not the stream tail.
     let mut events = Vec::new();

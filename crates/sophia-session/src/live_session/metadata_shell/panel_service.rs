@@ -85,9 +85,33 @@ impl PanelComponentService {
         bounds: &[(OutputId, Rect)],
         root: Rect,
     ) -> ServiceResult<()> {
+        self.service_content_on(
+            transport,
+            runtime,
+            scene,
+            super::content::ContentNative::ordinary(native),
+            outputs,
+            bounds,
+            root,
+        )
+    }
+
+    /// `service_content`'s body over any `ShellContentNative`; the controlled
+    /// combined caller enters here (G3-5c C2).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn service_content_on<N: sophia_backend_live::ShellContentNative>(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        runtime: &mut LiveProductionVisualRuntime,
+        scene: &LiveProductionCpuScene,
+        native: super::content::ContentNative<'_, N>,
+        outputs: &[HeadlessOutput],
+        bounds: &[(OutputId, Rect)],
+        root: Rect,
+    ) -> ServiceResult<()> {
         self.validate(transport)?;
         let next = &mut self.next_transaction;
-        self.content.service(
+        self.content.service_on(
             transport,
             runtime,
             scene,

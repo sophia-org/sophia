@@ -13,6 +13,14 @@ experimental-draw = ["dep:sophia-draw", "rustix/fs"]
 experimental-shell-capture = ["dep:sophia-renderer-image", "sophia-renderer-image/experimental-shell-capture", "rustix/fs"]
 # Opt-in shell-file control-turn observation; absent from default builds.
 experimental-custody-dispatch = []
+# Validated frames move from the validator straight to the renderer (n7fj3c2p).
+experimental-combined-frame-job = []
+# Instrumentation for downstream combined-frame controls (G3-5d d-2a): the
+# validator's pre-validation hold, loop-head progress and serial. No behaviour.
+test-support = []
+# Gate 4 C3b: the diagnostic combined witness's identity surface (worker
+# serial and reservation accessor); records nothing here. Default off.
+diagnostic-combined-witness = []
 
 [dependencies]
 sophia-draw = { path = "../sophia-draw", optional = true }

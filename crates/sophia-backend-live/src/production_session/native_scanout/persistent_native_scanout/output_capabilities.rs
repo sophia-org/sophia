@@ -63,25 +63,6 @@ impl LiveProductionNativeScanout {
         &self,
         output: sophia_protocol::OutputId,
     ) -> Vec<sophia_engine::HeadRenderTarget> {
-        self.head_indices(output)
-            .into_iter()
-            .filter_map(|index| {
-                reduce_live_production_head_render_target(
-                    LiveProductionNativeTopologyCurrentHead::new_with_target(
-                        self.heads[index].head,
-                        self.heads[index].enabled,
-                        self.heads[index].group,
-                        output,
-                        self.heads[index].selection,
-                        self.heads[index].target_generation,
-                        self.heads[index].scale,
-                        self.heads[index].refresh_millihz,
-                        self.heads[index].transform,
-                        self.heads[index].mapping,
-                        self.heads[index].vrr,
-                    ),
-                )
-            })
-            .collect()
+        native_facts::head_render_targets(&self.heads, output)
     }
 }

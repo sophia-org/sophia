@@ -25,6 +25,15 @@ use std::time::{Duration, Instant};
 pub(crate) type CaptureReservation =
     Arc<std::sync::Mutex<Option<sophia_renderer_live::LiveSnapshotReservation>>>;
 
+#[cfg(feature = "experimental-combined-frame-job")]
+mod combined;
+#[cfg(feature = "experimental-combined-frame-job")]
+pub(crate) use combined::{COMBINED_REQUEST, CombinedFacade, CombinedPlaceholder};
+#[cfg(feature = "experimental-combined-frame-job")]
+pub use combined::{
+    CombinedAcceptRefusal, CombinedDisposition, CombinedRenderPlan, CombinedRenderResult,
+    CombinedSettleRefused, LiveRendererCombinedWorkerMetrics,
+};
 mod head_imports;
 mod lifecycle;
 mod maintenance;
@@ -38,17 +47,29 @@ type CaptureInstallReceiver = Receiver<
         sophia_renderer_live::LiveShellCaptureFacts,
     )>,
 >;
-#[cfg(feature = "experimental-shell-capture")]
+#[cfg(any(
+    feature = "experimental-shell-capture",
+    feature = "experimental-combined-frame-job"
+))]
 type CommandSender = sophia_wake::SignalSender<WorkerCommand>;
-#[cfg(not(feature = "experimental-shell-capture"))]
+#[cfg(not(any(
+    feature = "experimental-shell-capture",
+    feature = "experimental-combined-frame-job"
+)))]
 type CommandSender = SyncSender<WorkerCommand>;
 
 fn wrap_commands(sender: SyncSender<WorkerCommand>, control: &WorkerControl) -> CommandSender {
-    #[cfg(feature = "experimental-shell-capture")]
+    #[cfg(any(
+        feature = "experimental-shell-capture",
+        feature = "experimental-combined-frame-job"
+    ))]
     {
         sophia_wake::SignalSender::new(sender, control.command_wake.clone())
     }
-    #[cfg(not(feature = "experimental-shell-capture"))]
+    #[cfg(not(any(
+        feature = "experimental-shell-capture",
+        feature = "experimental-combined-frame-job"
+    )))]
     {
         let _ = control;
         sender
@@ -133,69 +154,14 @@ pub struct LiveRendererWorkerMetrics {
     /// each quarantined the facade (t186).
     pub stalls_abandoned: usize,
     pub release_enqueue_failures: usize,
+    /// Combined frame-job Release sends refused by a full or closed queue,
+    /// counted apart so the ordinary count keeps its meaning.
+    pub combined_release_enqueue_failures: usize,
+    /// Combined Release-cell transitions and cell state, apart from the above.
+    #[cfg(feature = "experimental-combined-frame-job")]
+    pub combined: LiveRendererCombinedWorkerMetrics,
     pub max_request_age: Duration,
     pub frame_slots: LiveRendererFrameSlotMetrics,
-}
-
-#[derive(Debug)]
-pub struct NativeGbmRendererWorkerScanoutLease {
-    pub(super) capture: Option<super::LiveNativeFrameCapture>,
-    descriptor: LiveRendererScanoutBufferDescriptor,
-    correlation: LiveRendererFrameCorrelation,
-    output: LiveRendererWorkerOutputKey,
-    lease_id: LiveRendererWorkerLeaseId,
-    slot_token: LiveRendererFrameSlotToken,
-    command_sender: CommandSender,
-    release_enqueue_failures: Arc<AtomicUsize>,
-}
-
-impl NativeGbmRendererWorkerScanoutLease {
-    pub(crate) fn capture_for(
-        &self,
-        expected: super::LiveNativeFrameIdentity,
-    ) -> Option<super::LiveNativeFrameCapture> {
-        let capture = self.capture.as_ref()?;
-        (self.correlation.native == Some(expected) && capture.identity() == expected)
-            .then(|| capture.clone())
-    }
-    pub const fn correlation(&self) -> LiveRendererFrameCorrelation {
-        self.correlation
-    }
-
-    pub const fn descriptor(&self) -> LiveRendererScanoutBufferDescriptor {
-        self.descriptor
-    }
-
-    pub const fn lease_id(&self) -> LiveRendererWorkerLeaseId {
-        self.lease_id
-    }
-
-    pub const fn slot_token(&self) -> LiveRendererFrameSlotToken {
-        self.slot_token
-    }
-
-    pub fn export_scanout_dma_buf_fds(
-        &self,
-    ) -> io::Result<Option<(u8, [Option<std::os::fd::OwnedFd>; 4])>> {
-        Ok(None)
-    }
-}
-
-impl Drop for NativeGbmRendererWorkerScanoutLease {
-    fn drop(&mut self) {
-        if self
-            .command_sender
-            .try_send(WorkerCommand::Release {
-                output: self.output,
-                lease_id: self.lease_id,
-                slot_token: self.slot_token,
-            })
-            .is_err()
-        {
-            self.release_enqueue_failures
-                .fetch_add(1, Ordering::Relaxed);
-        }
-    }
 }
 
 static NEXT_IMAGE_STORE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -375,6 +341,10 @@ impl NativeGbmRendererWorkerCore {
             next_request_id: 1,
             in_flight: None,
             discarded_release: None,
+            combined_release: CombinedReleaseCell::Free,
+            combined_receipt: CombinedReceipt::default(),
+            #[cfg(feature = "experimental-combined-frame-job")]
+            combined: None,
             context_status: None,
             persistent_render_stats: LiveNativePersistentRenderStats::default(),
             gl_identity: NativeGlIdentityState::Unobserved,
@@ -403,6 +373,11 @@ pub(super) struct NativeGbmRendererWorker {
     next_request_id: u64,
     in_flight: Option<InFlightRequest>,
     discarded_release: Option<DiscardedWorkerLease>,
+    /// Never shares a slot with `discarded_release` (FALLBACK.md step 1).
+    combined_release: CombinedReleaseCell,
+    combined_receipt: CombinedReceipt,
+    #[cfg(feature = "experimental-combined-frame-job")]
+    combined: Option<combined::FacadeRoute>,
     context_status: Option<NativeGbmRenderedScanoutContextStatus>,
     persistent_render_stats: LiveNativePersistentRenderStats,
     /// Merged from every reply, so a context the worker reopens cannot
@@ -501,6 +476,8 @@ impl NativeGbmRendererWorker {
         LiveRendererWorkerMetrics {
             release_enqueue_failures: self.core.release_enqueue_failures.load(Ordering::Relaxed),
             frame_slots: self.frame_slot_metrics.snapshot(),
+            #[cfg(feature = "experimental-combined-frame-job")]
+            combined: self.combined_metrics(),
             ..self.metrics
         }
     }
@@ -589,6 +566,7 @@ impl NativeGbmRendererWorker {
             output_format,
             submitted_at: Instant::now(),
             soft_stall_reported: false,
+            ready: None,
         });
         self.metrics.requests = self.metrics.requests.saturating_add(1);
         if trace_worker_request(request_id) {
@@ -602,6 +580,8 @@ impl NativeGbmRendererWorker {
     }
 
     pub fn poll(&mut self) -> WorkerPoll {
+        // Busy or idle: a Full-retained combined Release must not wait for idle.
+        self.flush_combined_release();
         let Some(mut in_flight) = self.in_flight.take() else {
             self.flush_discarded_release();
             if self.quarantined
@@ -615,7 +595,13 @@ impl NativeGbmRendererWorker {
         // A stall changes the wait bound, not ownership. Keep validating late
         // replies against the accepted frame so its content can still settle.
         let stalled = self.stalled.take();
-        match self.result_receiver.try_recv() {
+        // An accepted combined result is this request's reply (F2); the
+        // ordinary channel is never read for it.
+        match in_flight
+            .ready
+            .take()
+            .map_or_else(|| self.result_receiver.try_recv(), Ok)
+        {
             Ok(result) => {
                 self.in_flight = None;
                 let age = in_flight.submitted_at.elapsed();
@@ -696,6 +682,8 @@ impl NativeGbmRendererWorker {
                         slot_token,
                     } => {
                         self.metrics.completions = self.metrics.completions.saturating_add(1);
+                        #[cfg(feature = "experimental-combined-frame-job")]
+                        self.count_combined_completion(in_flight.request_id);
                         WorkerPoll::Exported(NativeGbmRendererWorkerScanoutLease {
                             capture,
                             output: self.output,
@@ -764,40 +752,6 @@ impl NativeGbmRendererWorker {
             }
         }
     }
-
-    fn release_discarded_result(&mut self, result: &WorkerResult) {
-        if let WorkerOutcome::Exported {
-            lease_id,
-            slot_token,
-            ..
-        } = result.outcome
-        {
-            self.discarded_release = Some(DiscardedWorkerLease {
-                output: result.output,
-                lease_id,
-                slot_token,
-            });
-            self.flush_discarded_release();
-        }
-    }
-
-    fn flush_discarded_release(&mut self) {
-        let Some(release) = self.discarded_release.take() else {
-            return;
-        };
-        if let Err(error) = self.core.command_sender.try_send(WorkerCommand::Release {
-            output: release.output,
-            lease_id: release.lease_id,
-            slot_token: release.slot_token,
-        }) {
-            self.core
-                .release_enqueue_failures
-                .fetch_add(1, Ordering::Relaxed);
-            if matches!(error, TrySendError::Full(_)) {
-                self.discarded_release = Some(release);
-            }
-        }
-    }
 }
 
 impl Drop for NativeGbmRendererWorker {
@@ -831,12 +785,6 @@ pub(super) enum WorkerPoll {
     },
 }
 
-struct DiscardedWorkerLease {
-    output: LiveRendererWorkerOutputKey,
-    lease_id: LiveRendererWorkerLeaseId,
-    slot_token: LiveRendererFrameSlotToken,
-}
-
 struct InFlightRequest {
     capture: bool,
     request_id: LiveRendererWorkerRequestId,
@@ -844,6 +792,8 @@ struct InFlightRequest {
     output_format: Option<sophia_renderer_live::LiveCompositionFormatRequest>,
     submitted_at: Instant,
     soft_stall_reported: bool,
+    /// An accepted combined result, which `poll()` checks as the reply.
+    ready: Option<WorkerResult>,
 }
 
 // The bounded channel already accounts for these fixed-size cells. Boxing the
@@ -885,6 +835,23 @@ enum WorkerCommand {
         frame_slot_metrics: LiveRendererFrameSlotMetricsHandle,
         claim: Arc<OutputClaim>,
     },
+    #[cfg(feature = "experimental-combined-frame-job")]
+    RegisterCombined(combined::Registration),
+    /// Test-support (G3-5d d-1): later bound combined frames render through
+    /// this deterministic seam instead of the GPU.
+    #[cfg(all(
+        any(test, feature = "test-support"),
+        feature = "experimental-combined-frame-job"
+    ))]
+    InstallRenderSeam(service::CombinedRenderSeam),
+    /// Test-support (G3-5d d-2a): arms the renderer gate for one output's
+    /// next forwarded combined job; the worker acknowledges it first.
+    #[cfg(all(
+        any(test, feature = "test-support"),
+        feature = "experimental-combined-frame-job"
+    ))]
+    #[cfg_attr(not(test), allow(dead_code))]
+    InstallCombinedGate(service::CombinedGate),
     /// Detach an output and free everything it still holds.
     Deregister {
         output: LiveRendererWorkerOutputKey,
@@ -990,9 +957,40 @@ use result_diagnostics::*;
 // whose helpers read like part of this file, and the split exists for file
 // size rather than for a boundary.
 include!("worker/damage.rs");
+// Same textual include, for file size: the facade's Release cells.
+include!("worker/release.rs");
+// Same textual include, for file size: the worker's scanout lease.
+include!("worker/lease.rs");
 mod service;
 #[path = "../../../../tests/support/renderer_worker.rs"]
 pub(crate) mod tests;
+#[cfg(all(test, feature = "experimental-combined-frame-job"))]
+pub(crate) use tests::combined_render::{device_free_core, device_free_plan};
+// The worker test core, and G3-4's renderer stub on it, for the
+// test-support combined fixture as well as this crate's tests.
+#[cfg(all(
+    any(test, feature = "test-support"),
+    feature = "experimental-combined-frame-job"
+))]
+#[path = "../../../../tests/support/combined_frame_accept_stub.rs"]
+mod accept_stub;
+#[path = "../../../../tests/support/renderer_worker_support.rs"]
+mod support;
+#[cfg(all(test, feature = "experimental-combined-frame-job"))]
+use accept_stub::running_core;
+#[cfg(all(
+    any(test, feature = "test-support"),
+    feature = "experimental-combined-frame-job"
+))]
+#[doc(hidden)]
+pub use accept_stub::{CombinedGateFact, CombinedGateRelease, CombinedRenderGate, StubReply};
+#[cfg(all(
+    any(test, feature = "test-support"),
+    feature = "experimental-combined-frame-job"
+))]
+pub(crate) use accept_stub::{
+    StubRenderer, arm_pausing_render_gate, arm_render_gate, running_seam_core, stub_core,
+};
 
 use service::run_worker;
 

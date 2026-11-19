@@ -3,6 +3,12 @@
 //! unsolicited records can never consume.
 use std::time::Instant;
 mod owned;
+// G3-5d d-2b3d, test-support only: read-only journal facts and the retained
+// record table.
+#[cfg(any(test, feature = "test-support"))]
+mod observe;
+#[cfg(any(test, feature = "test-support"))]
+pub use observe::{JournalFacts, ReadReplyWitness, RecordIdentity, RetainedEntry, RetainedRecord};
 
 use sophia_9p::journal::{Journal as Custody, JournalBounds as Limits};
 use sophia_9p::{Errno, ReadOutcome};
@@ -48,6 +54,13 @@ pub(in crate::shell_transport) struct Journal {
     /// start and end offsets. The next record published past `end` reveals
     /// the run in journal order.
     deferred: Option<(u64, u64)>,
+    /// The last Ready read reply this wrapper produced (observe.rs).
+    #[cfg(any(test, feature = "test-support"))]
+    witness: std::cell::Cell<Option<ReadReplyWitness>>,
+    #[cfg(any(test, feature = "test-support"))]
+    ready_serial: std::cell::Cell<u64>,
+    #[cfg(any(test, feature = "test-support"))]
+    pending_evaluations: std::cell::Cell<u64>,
 }
 
 impl Journal {
@@ -60,6 +73,12 @@ impl Journal {
             held: [None; MAX_HELD_RECORDS],
             next_reservation: 1,
             deferred: None,
+            #[cfg(any(test, feature = "test-support"))]
+            witness: std::cell::Cell::new(None),
+            #[cfg(any(test, feature = "test-support"))]
+            ready_serial: std::cell::Cell::new(0),
+            #[cfg(any(test, feature = "test-support"))]
+            pending_evaluations: std::cell::Cell::new(0),
         }
     }
 
@@ -273,12 +292,25 @@ impl Journal {
         let visible = self.visible();
         if offset >= visible && offset < self.custody.size() {
             scratch.clear();
+            #[cfg(any(test, feature = "test-support"))]
+            self.note_pending();
             return Ok(ReadOutcome::Pending);
         }
+        #[cfg(any(test, feature = "test-support"))]
+        let requested = count;
         let count = u32::try_from(visible.saturating_sub(offset)).map_or(count, |readable| {
             count.min(readable).max(u32::from(offset >= visible))
         });
-        self.custody.read_buffered(offset, count, scratch)
+        #[cfg(not(any(test, feature = "test-support")))]
+        {
+            self.custody.read_buffered(offset, count, scratch)
+        }
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            let outcome = self.custody.read_buffered(offset, count, scratch);
+            self.note_outcome(offset, requested, count, visible, &outcome);
+            outcome
+        }
     }
 
     /// Releases retention through `ack.sequence`. Acknowledgement releases

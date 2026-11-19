@@ -573,6 +573,11 @@ impl LiveProductionCpuScene {
                                     sophia_engine::CompositorImageSource::Lock(image) => {
                                         crate::lock_image_handle(image.identity)
                                     }
+                                    // Its bytes are None below: refused.
+                                    #[cfg(feature = "experimental-combined-frame-job")]
+                                    sophia_engine::CompositorImageSource::Provisional(begin) => {
+                                        begin.resource.id
+                                    }
                                 },
                                 size: content.size_px,
                                 stride: content.stride,

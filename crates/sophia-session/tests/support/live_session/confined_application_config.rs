@@ -397,7 +397,25 @@ fn only_a_genuinely_stale_group_socket_is_cleared() {
     // Dropping the listener leaves the file; ECONNREFUSED marks it stale.
     drop(live);
     assert!(path.exists());
-    clear_stale_group_socket(&path).unwrap();
+    // As in the group-socket test below: closing our handle is not proof that
+    // the kernel has released every reference, since parallel child creation
+    // may still be between fork and exec. The connect probe stays
+    // authoritative; only its already-active refusal is retried, until a
+    // two-second retry deadline (not a bound on any one blocking connect).
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        match clear_stale_group_socket(&path) {
+            Ok(()) => break,
+            Err(error) if error.to_string().ends_with("is already active") => {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the dropped listener's socket must become stale: {error}"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            Err(error) => panic!("stale group socket clearing failed: {error}"),
+        }
+    }
     assert!(std::fs::symlink_metadata(&path).is_err());
     // A regular file or a link where the socket goes is refused, untouched.
     std::fs::write(&path, b"").unwrap();

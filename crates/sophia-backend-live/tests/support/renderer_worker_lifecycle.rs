@@ -156,46 +156,6 @@ fn dropping_a_full_queue_facade_and_core_does_not_wait_for_a_stalled_worker() {
     );
 }
 
-fn inventory_test_core(
-    capacity: usize,
-) -> (
-    std::sync::Arc<super::NativeGbmRendererWorkerCore>,
-    Receiver<WorkerCommand>,
-    SyncSender<()>,
-) {
-    let control = std::sync::Arc::new(super::WorkerControl::default());
-    let registry = std::sync::Arc::new(super::WorkerRegistry::default());
-    let identity = super::DeviceIdentity {
-        device: 1,
-        inode: 901,
-        special_device: 226 << 8,
-    };
-    let (commands, receive) = sync_channel(capacity);
-    let (resume, gate) = sync_channel(1);
-    let thread = registry
-        .reserve(identity)
-        .unwrap()
-        .start(|| {
-            std::thread::Builder::new().spawn(move || {
-                let _ = gate.recv_timeout(SETTLE * 4);
-            })
-        })
-        .unwrap();
-    let core = std::sync::Arc::new(super::NativeGbmRendererWorkerCore {
-        image_store: super::NEXT_IMAGE_STORE.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-        command_sender: super::wrap_commands(commands, &control),
-        _thread: std::sync::Mutex::new(thread),
-        control,
-        inventory_replacement: std::sync::Mutex::new(None),
-        #[cfg(feature = "experimental-shell-capture")]
-        capture_install: std::sync::Mutex::new(None),
-        #[cfg(feature = "experimental-shell-capture")]
-        capture_prepare: std::sync::Mutex::new(None),
-        release_enqueue_failures: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-    });
-    (core, receive, resume)
-}
-
 #[test]
 fn inventory_replacement_allows_one_pending_exact_generation() {
     let (core, receive, resume) = inventory_test_core(2);

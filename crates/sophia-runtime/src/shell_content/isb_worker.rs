@@ -43,12 +43,13 @@ impl Source {
     }
 }
 
-struct Job {
+struct Job<P> {
     id: u64,
     source: Source,
     bytes: usize,
     deadline: Instant,
     cancelled: Arc<AtomicBool>,
+    combined: combined::RouteSlot<P>,
 }
 
 struct Pending {
@@ -57,6 +58,7 @@ struct Pending {
     deadline: Instant,
     cancelled: Arc<AtomicBool>,
     submitted: bool,
+    combined: combined::PendingSlot,
 }
 
 /// Result-channel disconnection alone cannot wake an eventfd waiter. Signal
@@ -75,17 +77,38 @@ pub enum IsbSubmitFailure {
     Closed,
 }
 
+/// The plan type of a worker that admits no combined frame jobs; it has no
+/// values, so such a worker can never carry a plan.
+pub enum NoCombinedPlan {}
+
 /// A successful submit owns the source until a completion is taken. The owner
 /// must reconcile every completion with its resource reservation, even after
 /// cancellation. Keep this pool alive while retired epochs still own jobs.
-pub struct IsbValidationWorker {
-    sender: mpsc::SyncSender<Job>,
+/// `P` is the opaque plan a combined frame job carries to the renderer.
+pub struct IsbValidationWorker<P: Send + 'static = NoCombinedPlan> {
+    sender: mpsc::SyncSender<Job<P>>,
     completed: mpsc::Receiver<IsbValidationCompletion>,
     pending: [Option<Pending>; 4],
     next_id: u64,
     max_jobs: usize,
     max_bytes: usize,
     wake: Wake,
+    /// Distinct per worker in this process, allocated at spawn; job numbers
+    /// are per worker, so (serial, job) names one admission (G3-5d d-2b2,
+    /// gate 4 C3b). 0 is the never-issued value of an exhausted allocator.
+    #[cfg(any(
+        all(
+            any(test, feature = "test-support"),
+            any(test, feature = "experimental-combined-frame-job")
+        ),
+        feature = "diagnostic-combined-witness"
+    ))]
+    serial: u64,
+    #[cfg(all(
+        any(test, feature = "test-support"),
+        any(test, feature = "experimental-combined-frame-job")
+    ))]
+    hooks: combined::hold::ValidatorHooks,
 }
 
 impl IsbValidationWorker {
@@ -100,6 +123,12 @@ impl IsbValidationWorker {
         max_bytes: usize,
         validation_bytes: usize,
     ) -> io::Result<Self> {
+        Self::spawn(max_jobs, max_bytes, validation_bytes)
+    }
+}
+
+impl<P: Send + 'static> IsbValidationWorker<P> {
+    fn spawn(max_jobs: usize, max_bytes: usize, validation_bytes: usize) -> io::Result<Self> {
         if !(1..=4).contains(&max_jobs)
             || max_bytes == 0
             || max_bytes > isize::MAX as usize
@@ -112,8 +141,26 @@ impl IsbValidationWorker {
         }
         let wake = Wake::new()?;
         let notify = wake.notifier();
-        let (sender, jobs) = mpsc::sync_channel::<Job>(max_jobs);
+        let (sender, jobs) = mpsc::sync_channel::<Job<P>>(max_jobs);
         let (results, completed) = mpsc::sync_channel(max_jobs);
+        #[cfg(any(
+            all(
+                any(test, feature = "test-support"),
+                any(test, feature = "experimental-combined-frame-job")
+            ),
+            feature = "diagnostic-combined-witness"
+        ))]
+        let serial = next_validator_serial();
+        #[cfg(all(
+            any(test, feature = "test-support"),
+            any(test, feature = "experimental-combined-frame-job")
+        ))]
+        let hooks = combined::hold::ValidatorHooks::new();
+        #[cfg(all(
+            any(test, feature = "test-support"),
+            any(test, feature = "experimental-combined-frame-job")
+        ))]
+        let progress = hooks.progress.clone();
         // No callback or owner state enters this thread. Each job returns one
         // owned result before the worker starts another; the queue is bounded.
         std::thread::Builder::new()
@@ -124,14 +171,29 @@ impl IsbValidationWorker {
                 let completion_sender = results;
                 #[cfg(feature = "experimental-draw")]
                 let mut raster = None;
-                while let Ok(job) = jobs.recv() {
+                loop {
+                    #[cfg(all(
+                        any(test, feature = "test-support"),
+                        any(test, feature = "experimental-combined-frame-job")
+                    ))]
+                    progress.enter();
+                    let Ok(job) = jobs.recv() else {
+                        break;
+                    };
                     let id = job.id;
+                    #[cfg(any(test, feature = "experimental-combined-frame-job"))]
+                    let (job, combined) = combined::take_route(job);
                     let result = validate(
                         job,
                         validation_bytes,
                         #[cfg(feature = "experimental-draw")]
                         &mut raster,
                     );
+                    #[cfg(any(test, feature = "experimental-combined-frame-job"))]
+                    let result = match combined::forward(combined, id, result) {
+                        Some(result) => result,
+                        None => continue,
+                    };
                     if completion_sender
                         .send(IsbValidationCompletion { job: id, result })
                         .is_err()
@@ -149,6 +211,19 @@ impl IsbValidationWorker {
             max_jobs,
             max_bytes,
             wake,
+            #[cfg(any(
+                all(
+                    any(test, feature = "test-support"),
+                    any(test, feature = "experimental-combined-frame-job")
+                ),
+                feature = "diagnostic-combined-witness"
+            ))]
+            serial,
+            #[cfg(all(
+                any(test, feature = "test-support"),
+                any(test, feature = "experimental-combined-frame-job")
+            ))]
+            hooks,
         })
     }
 
@@ -197,6 +272,7 @@ impl IsbValidationWorker {
             deadline,
             cancelled: Arc::new(AtomicBool::new(false)),
             submitted: false,
+            combined: Default::default(),
         });
         Ok(id)
     }
@@ -223,6 +299,7 @@ impl IsbValidationWorker {
             bytes: pending.bytes,
             deadline: pending.deadline,
             cancelled: pending.cancelled.clone(),
+            combined: Default::default(),
         };
         match self.sender.try_send(job) {
             Ok(()) => {
@@ -299,7 +376,7 @@ impl IsbValidationWorker {
     }
 }
 
-impl Drop for IsbValidationWorker {
+impl<P: Send + 'static> Drop for IsbValidationWorker<P> {
     fn drop(&mut self) {
         // Never join on the owner thread. Shutdown cancels bounded units and
         // drops both queues; the worker closes any abandoned source itself.
@@ -309,8 +386,8 @@ impl Drop for IsbValidationWorker {
     }
 }
 
-fn validate(
-    job: Job,
+fn validate<P>(
+    job: Job<P>,
     validation_bytes: usize,
     #[cfg(feature = "experimental-draw")] raster: &mut Option<sophia_draw::Rasterizer>,
 ) -> Result<ValidatedIsbPixels, IsbValidationFailure> {
@@ -365,6 +442,56 @@ fn sealed_validation(
     })?;
     IsbPixelValidation::new(mapping).map_err(|_| IsbValidationFailure::Malformed)
 }
+#[cfg(any(
+    all(
+        any(test, feature = "test-support"),
+        any(test, feature = "experimental-combined-frame-job")
+    ),
+    feature = "diagnostic-combined-witness"
+))]
+static NEXT_VALIDATOR_SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// The next worker serial, or 0 once the counter is exhausted: 0 is never
+/// issued, so it aliases no live worker, and the worker is created as usual.
+#[cfg(any(
+    all(
+        any(test, feature = "test-support"),
+        any(test, feature = "experimental-combined-frame-job")
+    ),
+    feature = "diagnostic-combined-witness"
+))]
+fn next_validator_serial() -> u64 {
+    NEXT_VALIDATOR_SERIAL
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |serial| {
+            serial.checked_add(1)
+        })
+        .unwrap_or(0)
+}
+
+#[cfg(any(
+    all(
+        any(test, feature = "test-support"),
+        any(test, feature = "experimental-combined-frame-job")
+    ),
+    feature = "diagnostic-combined-witness"
+))]
+impl<P: Send + 'static> IsbValidationWorker<P> {
+    /// This worker's serial (G3-5d d-2b2; gate 4 C3b's witness identity).
+    /// 0 means the allocator was exhausted when the worker was spawned.
+    pub fn validator_serial(&self) -> u64 {
+        self.serial
+    }
+}
+
+#[cfg(any(test, feature = "experimental-combined-frame-job"))]
+mod combined;
+#[cfg(all(feature = "test-support", feature = "experimental-combined-frame-job"))]
+pub use combined::hold::{Checkpoint, CheckpointHandle, ValidatorProgress, checkpoint};
+#[cfg(any(test, feature = "experimental-combined-frame-job"))]
+pub use combined::{CombinedInbox, CombinedReservation, CombinedToken, ForwardedValidation};
+#[cfg(not(any(test, feature = "experimental-combined-frame-job")))]
+#[path = "isb_worker/combined_off.rs"]
+mod combined;
 mod owned_copy;
 
 #[cfg(feature = "experimental-draw")]
@@ -399,7 +526,7 @@ fn draw_source(
 }
 
 #[cfg(feature = "experimental-draw")]
-impl IsbValidationWorker {
+impl<P: Send + 'static> IsbValidationWorker<P> {
     /// Raster work uses the same bounded slots, cancellation and wake source.
     /// The owner has already charged the exact output size to its resource store.
     pub(crate) fn submit_draw_reserved(
@@ -420,6 +547,7 @@ impl IsbValidationWorker {
             bytes: pending.bytes,
             deadline: pending.deadline,
             cancelled: pending.cancelled.clone(),
+            combined: Default::default(),
         };
         match self.sender.try_send(job) {
             Ok(()) => {

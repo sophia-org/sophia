@@ -3,9 +3,9 @@ use super::*;
 use crate::{ContentCandidateError, ContentFrameRequestAdmission, IsbImageAdmissionError};
 
 impl ContentEpochRegistry {
-    pub(crate) fn reserve_owned_frame_copy(
+    pub(crate) fn reserve_owned_frame_copy<P: Send + 'static>(
         &mut self,
-        worker: &mut crate::IsbValidationWorker,
+        worker: &mut crate::IsbValidationWorker<P>,
         ring: &crate::OwnedRing,
         frame: crate::OwnedFrameCopyRequest,
         response_room: usize,

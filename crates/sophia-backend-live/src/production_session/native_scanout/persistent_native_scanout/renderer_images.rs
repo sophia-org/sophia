@@ -469,22 +469,15 @@ impl LiveProductionNativeScanout {
     }
 
     pub(crate) fn output_retirement_protected(&self, output: OutputId) -> bool {
-        self.deferred_mirror_generations.protected(output)
-            || self.installed_retirement_protected(output)
+        native_facts::output_retirement_protected(
+            &self.heads,
+            &self.deferred_mirror_generations,
+            output,
+        )
     }
 
     pub(super) fn installed_retirement_protected(&self, output: OutputId) -> bool {
-        self.head_indices_iter(output).any(|index| {
-            let head = &self.heads[index];
-            [
-                head.pending_content,
-                head.rendering_content,
-                head.submitted_content,
-            ]
-            .into_iter()
-            .flatten()
-            .any(LiveProductionScanoutContent::requires_retirement)
-        })
+        native_facts::installed_retirement_protected(&self.heads, output)
     }
 
     pub(crate) fn retained_repaint_deferred(&self) -> bool {
@@ -950,6 +943,8 @@ impl LiveProductionNativeScanout {
                         .saturating_add(worker.frame_slots.history_records);
                     metrics.max_worker_request =
                         metrics.max_worker_request.max(worker.max_request_age);
+                    #[cfg(feature = "experimental-combined-frame-job")]
+                    metrics.worker_combined.add(&worker.combined);
                 }
                 metrics.max_target_create = metrics.max_target_create.max(stats.max_target_create);
                 metrics.max_frame_surface_create = metrics
@@ -976,3 +971,18 @@ impl LiveProductionNativeScanout {
 
 include!("output_frame_queue.rs");
 include!("render_metrics.rs");
+
+impl LiveProductionNativeHead {
+    /// Content on this head still owes a retirement. Shared with the
+    /// combined accept preflight.
+    pub(crate) fn retirement_protected(&self) -> bool {
+        [
+            self.pending_content,
+            self.rendering_content,
+            self.submitted_content,
+        ]
+        .into_iter()
+        .flatten()
+        .any(LiveProductionScanoutContent::requires_retirement)
+    }
+}

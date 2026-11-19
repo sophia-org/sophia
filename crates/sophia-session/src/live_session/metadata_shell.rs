@@ -1,6 +1,20 @@
 use super::metadata_broker::MetadataBrokerView;
 use super::*;
 mod content;
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session"
+))]
+pub(crate) use content::project_frame_commit;
+// G3-5c's controlled caller's entry type; the production bar branch's from
+// gate 4 C3.
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session"
+))]
+pub(crate) use content::ContentNative;
 #[path = "../../tests/support/descriptor_work_area.rs"]
 mod descriptor_work_area;
 mod panel_service;

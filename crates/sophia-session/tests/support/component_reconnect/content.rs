@@ -44,3 +44,47 @@ pub(in crate::live_session) fn prepare(
         allocations: bundle.surfaces.iter().map(|s| s.allocation).collect(),
     });
 }
+
+/// The ordinary projection of `bundle`, as `prepare` admits it. Its only
+/// caller is the combined lane's harness.
+#[cfg(feature = "experimental-combined-frame-job")]
+pub(in crate::live_session) fn project(
+    transport: &mut ShellTransportConnection<'_>,
+    descriptor: HeadlessOutput,
+    bundle: &ContentRenderBundle,
+) -> LiveShellContentFrame {
+    let allocations = transport.content_allocation_snapshots();
+    project_render_bundle(bundle, descriptor, bundle.output, &allocations).unwrap()
+}
+
+/// The lane published output facts generation 1 itself
+/// (`wire::allocate_extent`); the bar's real service adopts them, as
+/// `prepare` does, rather than publish that generation again. G3-5c only.
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session"
+))]
+pub(in crate::live_session) fn adopt_lane_facts(
+    content: &mut LiveContentSession,
+    descriptor: HeadlessOutput,
+) {
+    content.facts_generation = 1;
+    content.published_facts = vec![output_facts_entry(descriptor).unwrap()];
+}
+
+/// The candidates `content` holds as pending presentation. G3-5c only.
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session"
+))]
+pub(in crate::live_session) fn pending_presentations(
+    content: &LiveContentSession,
+) -> Vec<(sophia_protocol::ContentGrant, ContentOutputId, u64)> {
+    content
+        .pending
+        .iter()
+        .map(|pending| (pending.grant, pending.output, pending.candidate_generation))
+        .collect()
+}

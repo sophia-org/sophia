@@ -44,6 +44,20 @@ mod frame_controls;
 #[cfg(feature = "experimental-native-frame-transaction")]
 mod frame_events;
 pub use files::{ShellPollRole, ShellReadinessObservation, ShellReadinessSubscription};
+// G3-5d d-2b3d, test-support only: read-only transport, journal and store facts.
+#[cfg(any(test, feature = "test-support"))]
+mod observe;
+#[cfg(any(test, feature = "test-support"))]
+pub use files::{JournalFacts, ReadReplyWitness, RecordIdentity, RetainedEntry, RetainedRecord};
+#[cfg(all(
+    any(test, feature = "test-support"),
+    feature = "experimental-native-frame-transaction"
+))]
+pub use observe::QueuedFrameFacts;
+#[cfg(any(test, feature = "test-support"))]
+pub use observe::{
+    OutboxEntryFacts, OutboxRecordFacts, OwnedCreditFacts, StoreEventFacts, TransportFacts,
+};
 #[cfg(feature = "experimental-draw")]
 mod draw;
 mod image_configuration;
@@ -52,6 +66,16 @@ mod image_offers;
 pub use image_offers::{ShellCaptureAdmission, ShellCaptureImageSource};
 mod image_owner;
 pub use image_owner::ShellIsbImageOwner;
+#[cfg(all(
+    feature = "experimental-native-frame-transaction",
+    any(test, feature = "experimental-combined-frame-job")
+))]
+mod combined_frame;
+#[cfg(all(
+    feature = "experimental-native-frame-transaction",
+    any(test, feature = "experimental-combined-frame-job")
+))]
+pub use combined_frame::{CombinedFrameFacts, CombinedFrameHooks, CombinedReserve, CombinedResult};
 mod indicator_responses;
 pub(crate) mod outbound;
 mod outbox;
@@ -84,6 +108,19 @@ pub enum ShellTransportError {
     ContentQueueSaturated,
     ActivationQueueSaturated,
     NotConnected,
+    /// A combined frame's first, unclassified composition error (G3-5b).
+    #[cfg(all(
+        feature = "experimental-native-frame-transaction",
+        any(test, feature = "experimental-combined-frame-job")
+    ))]
+    CombinedComposition(String),
+    /// A combined row's collection or cleanup invariant failed; the row keeps
+    /// every owner it holds and retries (G3-5b).
+    #[cfg(all(
+        feature = "experimental-native-frame-transaction",
+        any(test, feature = "experimental-combined-frame-job")
+    ))]
+    CombinedRow(String),
 }
 
 impl core::fmt::Display for ShellTransportError {
@@ -364,6 +401,23 @@ impl ShellComponentTransport {
             .ok_or(ShellTransportError::MissingCapability)?
             .lease(grant, resource)
             .map_err(Into::into)
+    }
+
+    /// The combined lane's control read of one exact frame's image (G3-5b
+    /// F1); `None` without a content store. No lease is made.
+    #[cfg(all(
+        feature = "experimental-native-frame-transaction",
+        any(test, feature = "experimental-combined-frame-job")
+    ))]
+    pub fn content_frame_image_residency(
+        &self,
+        epochs: &crate::ContentEpochRegistry,
+        owner: crate::ContentRetireOwner,
+        resource: sophia_protocol::ContentResourceId,
+    ) -> Option<crate::FrameImageResidency> {
+        epochs
+            .resources(self.store_grant)
+            .map(|store| store.frame_image_residency(owner, resource))
     }
 
     /// Starts an owner pass. Call once per pass, before visiting any roles.

@@ -147,9 +147,7 @@ impl LiveProductionNativeScanout {
 
         /// Borrow observations; mutation paths can still request an owned index list.
         fn head_indices_iter(&self, output: OutputId) -> impl Iterator<Item = usize> + '_ {
-            head_selection::enabled_head_indices(
-                self.heads.iter().map(|head| (head.enabled, head.output.id)), output,
-            )
+            native_facts::enabled_heads(&self.heads, output)
         }
 
         /// How many connectors drive each logical output, in output order.
@@ -193,12 +191,7 @@ impl LiveProductionNativeScanout {
         }
 
         fn allocate_frame_id(&mut self) -> LiveProductionNativeFrameId {
-            let frame = LiveProductionNativeFrameId::from_raw(self.next_frame_id);
-            self.next_frame_id = self
-                .next_frame_id
-                .checked_add(1)
-                .expect("native frame ID space exhausted");
-            frame
+            native_facts::allocate_frame_id(&mut self.next_frame_id)
         }
 
         fn allocate_head_candidate_id(&mut self) -> sophia_engine::HeadFrameCandidateId {

@@ -1,0 +1,393 @@
+//! G3-5d d-1: the combined fixture on a running worker. The core's own
+//! thread runs the real loop with no render device; its bound combined frames
+//! render through the deterministic seam, which records what it read and
+//! answers a descriptor the worker leases in its own table. Attempt, bind,
+//! the slot pool, the repaint table and damage settlement, the lease ids, the
+//! Release checks and the result route are the worker's. The seam replaces
+//! only the GPU draw: it constructs no capture, and no ordinary frame is
+//! rendered (ordinary work is still only queued on this fixture).
+//!
+//! Each output's native service is the generic runtime tick on its exporter
+//! with the counting device, then the owner's renderer-content advance and,
+//! at the submission boundary, the owner's shared head operations
+//! (singleton_tick.rs): `accepted_native_frame` checks the captured identity
+//! against this owner, head and target, and `take_accepted_content` promotes
+//! the rendering frame to submitted and hands over its content, which the
+//! head keeps as `submitted_content`. A failed submission takes
+//! `take_failed_content`. It is not the owner's tick wrapper: no pacing,
+//! cursor, preview-failure or trace bookkeeping, no deferred-content
+//! settlement and no flip completion.
+use super::super::accept_device::{CountingDevice, Refuse};
+use super::*;
+use sophia_renderer_live::{
+    LiveCpuPixelStorage, LiveOwnedMixedCompositionLayer, LiveRendererImportHealth,
+    LiveRendererImportPathStatus, LiveRendererRuntimeObservation,
+    LiveRendererScanoutBufferDescriptor, LiveRendererScanoutBufferExportDetail,
+    LiveRendererSelectionObservation, LiveSharedCpuBufferSource,
+};
+use std::sync::{Arc, Mutex};
+
+/// One validated occurrence the running seam read, in final layer order:
+/// its layer index, image handle, a checksum of its bytes, and the pixels'
+/// strong count when read.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CombinedSeen {
+    pub index: usize,
+    pub handle: u64,
+    pub checksum: u64,
+    pub strong: usize,
+}
+
+/// One output's native service on the running fixture.
+pub(crate) struct NativeService {
+    output: OutputId,
+    runtime: crate::LiveBackendRuntimeAssembly,
+    device: CountingDevice,
+}
+
+/// Returns once `core`'s exact worker thread has exited, bounded by
+/// `wait`, after its shutdown was requested; no owner call.
+fn await_renderer_exit(core: &crate::NativeGbmRendererWorkerCore, wait: std::time::Duration) {
+    let deadline = std::time::Instant::now() + wait;
+    while !core.poll_shutdown().expect("the loss was requested") {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the renderer worker never exited"
+        );
+        std::thread::yield_now();
+    }
+}
+
+/// The seam's checksum: the same fold as the G3-2 bind controls.
+fn checksum(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(17, |hash, byte| {
+        hash.wrapping_mul(31).wrapping_add(u64::from(*byte))
+    })
+}
+
+/// The deterministic render: reads every validated occurrence of a Mixed
+/// frame, then answers an XRGB8888 descriptor of the target's size.
+fn render(
+    seen: &Mutex<Vec<CombinedSeen>>,
+    fault: &Mutex<Option<LiveRendererScanoutBufferExportDetail>>,
+    frame: &crate::PendingRenderedFrame,
+    target: crate::api::LiveGbmEglFrameTargetRecord,
+    _repaint: Option<&sophia_renderer_live::NativeCompositionRepaintTable>,
+) -> Result<LiveRendererScanoutBufferDescriptor, LiveRendererScanoutBufferExportDetail> {
+    let crate::PendingRenderedFrame::Mixed(mixed, _) = frame else {
+        return Err(LiveRendererScanoutBufferExportDetail::ComposeRefused);
+    };
+    let mut seen = seen
+        .lock()
+        .map_err(|_| LiveRendererScanoutBufferExportDetail::ComposeRefused)?;
+    for (index, layer) in mixed.layers.iter().enumerate() {
+        if let LiveOwnedMixedCompositionLayer::Cpu {
+            buffer:
+                LiveSharedCpuBufferSource {
+                    handle,
+                    bytes: bytes @ LiveCpuPixelStorage::Validated(pixels),
+                    ..
+                },
+            ..
+        } = layer
+        {
+            seen.push(CombinedSeen {
+                index,
+                handle: *handle,
+                checksum: checksum(bytes),
+                strong: Arc::strong_count(pixels),
+            });
+        }
+    }
+    // A declared draw failure (G3-5d d-2b3b1) is taken once, after the
+    // bound frame's occurrences were read, as a GPU draw fails after bind.
+    if let Some(detail) = fault
+        .lock()
+        .map_err(|_| LiveRendererScanoutBufferExportDetail::ComposeRefused)?
+        .take()
+    {
+        return Err(detail);
+    }
+    let pitch = u32::try_from(target.size.width)
+        .ok()
+        .and_then(|width| width.checked_mul(4))
+        .ok_or(LiveRendererScanoutBufferExportDetail::InvalidTarget)?;
+    Ok(LiveRendererScanoutBufferDescriptor::new(
+        target.size,
+        pitch,
+        sophia_renderer_live::LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+        1,
+    ))
+}
+
+impl CombinedHead {
+    /// G3-5d d-2b2: the issuing identity this admission carries, as (native
+    /// owner, head, facade ticket), for a trace record made where the
+    /// admission is submitted.
+    pub fn trace_identity(&self) -> (u64, u64, u64) {
+        (
+            self.native_owner.raw(),
+            self.head.raw(),
+            self.facade.ticket(),
+        )
+    }
+}
+
+impl CombinedNativeFixture {
+    /// G3-5d d-2b2: arms the running worker's renderer gate (d-2a) for
+    /// `output` and waits for its acknowledgement. A hold ends at the latest
+    /// after `wait`, as `TimedOut`. Panics on the stub, which has no worker
+    /// thread, or if the worker does not acknowledge.
+    pub fn arm_render_gate(
+        &self,
+        output: OutputId,
+        wait: std::time::Duration,
+    ) -> crate::CombinedRenderGate {
+        let core = self
+            .core
+            .as_ref()
+            .expect("only a running fixture has a renderer gate");
+        crate::arm_render_gate(
+            core,
+            crate::LiveRendererWorkerOutputKey::from_raw(output.raw()),
+            wait,
+        )
+        .expect("the running worker acknowledged the gate before any admission")
+    }
+
+    /// `arm_render_gate` with the pausing gate (gate 4 C3a, R1 case 4): it
+    /// pauses once, bounded by `wait`, the first time it finds the output's
+    /// route empty (`Waiting`), and after that pause ends (`PauseEnded`) it
+    /// serves nothing in that pass, so a job forwarded during the pause is
+    /// still in the inbox when the worker next reads its control flag.
+    pub fn arm_pausing_render_gate(
+        &self,
+        output: OutputId,
+        wait: std::time::Duration,
+    ) -> crate::CombinedRenderGate {
+        let core = self
+            .core
+            .as_ref()
+            .expect("only a running fixture has a renderer gate");
+        crate::arm_pausing_render_gate(
+            core,
+            crate::LiveRendererWorkerOutputKey::from_raw(output.raw()),
+            wait,
+        )
+        .expect("the running worker acknowledged the pausing gate before any admission")
+    }
+
+    /// One enabled head per output, each with an exporter on one running
+    /// worker core whose combined renders go through the deterministic seam,
+    /// and each output with its own native service.
+    pub fn running(outputs: &[sophia_engine::HeadlessOutput]) -> Self {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let record = Arc::clone(&seen);
+        let render_fault = Arc::new(Mutex::new(None));
+        let fault = Arc::clone(&render_fault);
+        let core = crate::running_seam_core(
+            9_500,
+            Box::new(
+                move |frame: &crate::PendingRenderedFrame,
+                      target: crate::api::LiveGbmEglFrameTargetRecord,
+                      repaint: Option<&sophia_renderer_live::NativeCompositionRepaintTable>| {
+                    render(&record, &fault, frame, target, repaint)
+                },
+            ),
+        );
+        let mut fixture = Self::on_core(outputs, &core, None);
+        fixture.seen = seen;
+        fixture.render_fault = render_fault;
+        fixture.core = Some(core);
+        fixture.native = outputs
+            .iter()
+            .map(|output| NativeService {
+                output: output.id,
+                runtime: crate::LiveBackendRuntimeAssembly::from_ready_headless_scanout(
+                    sophia_engine::HeadlessCompositorBackendAssembly::new(*output),
+                    *output,
+                    LiveRendererRuntimeObservation {
+                        health: LiveRendererImportHealth::CpuFallback,
+                        xpixmap: LiveRendererImportPathStatus::Disabled,
+                        dmabuf: LiveRendererImportPathStatus::Disabled,
+                        selection: LiveRendererSelectionObservation::CpuFallback,
+                    },
+                ),
+                device: CountingDevice::sized(Refuse::Nothing, output.size),
+            })
+            .collect();
+        fixture
+    }
+
+    /// `output`'s native service once: the generic runtime tick on its
+    /// exporter with the counting device, the owner's renderer-content
+    /// advance, then the owner's head operations for the submission status
+    /// (module doc). Answers the tracked submission's status, if the tick
+    /// reached one. A submission whose captured identity is not this head's
+    /// is an error and leaves the head as it was; an export still pending
+    /// after the worker finished is an error, because the owner's deferred
+    /// settlement is not modelled here.
+    pub fn service_native(
+        &mut self,
+        output: OutputId,
+    ) -> Result<
+        Option<crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus>,
+        Box<dyn std::error::Error>,
+    > {
+        let index = self
+            .heads
+            .iter()
+            .position(|head| head.output.id == output)
+            .ok_or("no fixture head serves the output")?;
+        let service = self
+            .native
+            .iter_mut()
+            .find(|service| service.output == output)
+            .ok_or("a running fixture serves the output natively")?;
+        let exporter = &mut self.exporters[index];
+        let worker_was_in_flight = exporter.worker_in_flight();
+        let report = service
+            .runtime
+            .run_tick_with_native_gbm_rendered_primary_plane_scanout_exporter_with(
+                sophia_engine::CompositorBackendTickInput::default(),
+                &service.device,
+                exporter,
+            )
+            .map_err(|error| format!("native tick: {error:?}"))?;
+        let worker_is_in_flight = exporter.worker_in_flight();
+        let nonzero_rgb_pixels = exporter.composition_nonzero_rgb_pixels();
+        let head = &mut self.heads[index];
+        let renderer_started = advance_live_production_renderer_content(
+            worker_was_in_flight,
+            worker_is_in_flight,
+            &mut head.pending_content,
+            &mut head.rendering_content,
+        )?;
+        if renderer_started && head.output_frames.pending().is_some() {
+            head.output_frames
+                .mark_rendering()
+                .map_err(|error| format!("render transition: {error}"))?;
+        }
+        let status = report
+            .rendered_primary_plane_scanout_submit
+            .map(|submit| submit.status);
+        use crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as Status;
+        match status {
+            Some(Status::SubmittedWaitingForPageFlip) => {
+                let captured = service
+                    .runtime
+                    .submitted_rendered_frame_correlation(output)
+                    .and_then(|correlation| correlation.native);
+                let native_frame =
+                    head.accepted_native_frame(captured, self.native_owner, output)?;
+                head.submitted_content =
+                    head.take_accepted_content(native_frame, nonzero_rgb_pixels)?;
+            }
+            Some(Status::ScanoutExportPending) if worker_was_in_flight && !worker_is_in_flight => {
+                return Err("deferred renderer content settlement is not modelled".into());
+            }
+            Some(
+                Status::ScanoutExportPending | Status::AlreadyInFlight | Status::CleanupPending,
+            )
+            | None => {}
+            Some(_) => {
+                let _ = head.take_failed_content(worker_was_in_flight);
+            }
+        }
+        Ok(status)
+    }
+
+    /// `output`'s device counts: framebuffers, commits, test commits.
+    pub fn device_counts(&self, output: OutputId) -> Option<(usize, usize, usize)> {
+        self.native
+            .iter()
+            .find(|service| service.output == output)
+            .map(|service| service.device.counts())
+    }
+
+    /// Labelled fault (G3-5d d-2b3b1): the running seam's next bound render
+    /// reads its occurrences, then fails as a GPU draw does
+    /// (`CompositionDrawFailed`). Once. Panics on the stub, which has no seam.
+    pub fn declare_render_failure(&self) {
+        assert!(self.core.is_some(), "only a running fixture has a seam");
+        *self.render_fault.lock().expect("render fault lock") =
+            Some(LiveRendererScanoutBufferExportDetail::CompositionDrawFailed);
+    }
+
+    /// Whether a declared draw failure is still to be taken.
+    pub fn render_failure_armed(&self) -> bool {
+        self.render_fault
+            .lock()
+            .expect("render fault lock")
+            .is_some()
+    }
+
+    /// Labelled out-of-contract fault (G3-5d d-2b3b2 row 7): unexpected
+    /// renderer-worker loss. It calls `request_shutdown` while native custody
+    /// is still live, which violates that method's documented precondition
+    /// (final shutdown after native custody drained); it is never a legal
+    /// final shutdown, and that contract is unchanged. Returns once this
+    /// exact worker thread has exited, bounded by `wait`, with no owner
+    /// call. Panics on the stub, which has no worker.
+    pub fn lose_renderer_worker(&self, wait: std::time::Duration) {
+        let core = self
+            .core
+            .as_ref()
+            .expect("only a running fixture has a worker");
+        core.request_shutdown();
+        await_renderer_exit(core, wait);
+    }
+
+    /// `lose_renderer_worker` against a worker paused by `gate` (gate 4
+    /// C3a, R1 case 4): the shutdown is requested first, then this pause is
+    /// resumed, then the wait for this exact worker's exit. The worker
+    /// serves nothing after the pause ends and reads the requested shutdown
+    /// at its next control check, so a job forwarded during the pause is
+    /// dropped unserved with its route. Same out-of-contract fault, same
+    /// unchanged shutdown contract; panics on the stub.
+    pub fn lose_renderer_worker_resuming(
+        &self,
+        gate: &mut crate::CombinedRenderGate,
+        wait: std::time::Duration,
+    ) {
+        let core = self
+            .core
+            .as_ref()
+            .expect("only a running fixture has a worker");
+        core.request_shutdown();
+        gate.resume();
+        await_renderer_exit(core, wait);
+    }
+
+    /// The occurrences the running seam has read so far, in order.
+    pub fn seen(&self) -> Vec<CombinedSeen> {
+        self.seen
+            .lock()
+            .map(|seen| seen.clone())
+            .unwrap_or_default()
+    }
+
+    /// `output`'s worker slot metrics: acquisitions, deferrals, stale
+    /// releases and leased slots, as the worker publishes them.
+    pub fn slot_metrics(&self, output: OutputId) -> Option<crate::LiveRendererFrameSlotMetrics> {
+        let index = self
+            .heads
+            .iter()
+            .position(|head| head.output.id == output)?;
+        self.exporters[index]
+            .worker_metrics()
+            .map(|metrics| metrics.frame_slots)
+    }
+
+    /// Rings `notifier` on every render result, through each exporter.
+    pub fn attach_owner_wake(&self, notifier: &sophia_wake::Notifier) {
+        for exporter in &self.exporters {
+            exporter.attach_owner_wake(notifier);
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "combined_native_running_tests.rs"]
+mod tests;

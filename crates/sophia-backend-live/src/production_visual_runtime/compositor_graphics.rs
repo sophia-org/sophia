@@ -1,5 +1,7 @@
 use super::*;
 
+#[cfg(feature = "experimental-combined-frame-job")]
+pub(in crate::production_visual_runtime) mod combined_scene;
 mod topology;
 
 /// Head composition frames grouped by the output that will scan them out.
@@ -454,10 +456,12 @@ impl LiveProductionVisualRuntime {
             .unwrap_or_else(|| self.production.committed_surfaces())
     }
 
-    pub(super) fn retained_composition_source_set(
+    /// The retained sources, holding no read custody. `direct` None is metadata-only:
+    /// no DMA-BUF is cloned, so a directly displayed surface lowers as its renderer image.
+    pub(super) fn retained_composition_sources(
         &self,
         scene: &LiveProductionCpuScene,
-        in_flight_direct_transaction: Option<TransactionId>,
+        direct: Option<Option<TransactionId>>,
     ) -> Result<LiveProductionRetainedCompositionSourceSet, Box<dyn std::error::Error>> {
         let committed = self.displayed_surface_view().to_vec();
         let retained_order =
@@ -497,12 +501,11 @@ impl LiveProductionVisualRuntime {
                 .get(surface)
                 .map(|displayed| &displayed.layer);
             let in_flight_direct = in_flight
-                .filter(|_| in_flight_direct_transaction.is_some())
-                .and_then(|_| {
-                    self.cloned_direct_frame(in_flight_direct_transaction.expect("filtered above"))
-                });
-            let retained_direct =
-                retained.and_then(|displayed| self.displayed_direct_frame(displayed.image_id));
+                .and(direct.flatten())
+                .and_then(|transaction| self.cloned_direct_frame(transaction));
+            let retained_direct = retained
+                .filter(|_| direct.is_some())
+                .and_then(|displayed| self.displayed_direct_frame(displayed.image_id));
             sources.extend(retained_surface_sources(
                 *surface,
                 committed_source,
@@ -519,7 +522,7 @@ impl LiveProductionVisualRuntime {
             .max()
             .unwrap_or(1);
         Ok(LiveProductionRetainedCompositionSourceSet {
-            _image_reads: self.image_reads_for_sources(&sources),
+            _image_reads: Vec::new(),
             committed,
             presentation_order: retained_order,
             scene_generation,
@@ -989,5 +992,8 @@ impl LiveProductionVisualRuntime {
     }
 }
 
-mod shell_content;
+pub(super) mod shell_content;
+#[cfg(feature = "experimental-combined-frame-job")]
+#[cfg_attr(not(test), allow(unused_imports))]
+pub(super) use shell_content::{CombinedAcceptError, CombinedAcceptFailed, ShellContentPreflight};
 mod tests;

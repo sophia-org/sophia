@@ -5,9 +5,9 @@ use crate::shell_content::candidates::{FrameAdmissionReservation, FrameCommitSta
 use crate::{ContentCandidateError as Error, ContentFrameRequestAdmission as Admission};
 
 impl ContentEpochRegistry {
-    pub(crate) fn reserve_frame_commit(
+    pub(crate) fn reserve_frame_commit<P: Send + 'static>(
         &mut self,
-        worker: &mut crate::IsbValidationWorker,
+        worker: &mut crate::IsbValidationWorker<P>,
         ring: Option<&crate::OwnedRing>,
         input: &mut Option<crate::ContentFrameCommit>,
         response_room: usize,
@@ -15,6 +15,12 @@ impl ContentEpochRegistry {
         source_error: Option<Error>,
         now: u64,
         deadline: std::time::Instant,
+        // Some for a combined frame: the copy takes one combined credit and
+        // its reservation lands here. A later refusal releases that credit
+        // as today; callers use the reservation only for an accepted copy.
+        #[cfg(any(test, feature = "experimental-combined-frame-job"))] mut combined: Option<
+            &mut Option<crate::CombinedReservation>,
+        >,
     ) -> Result<(Admission, Option<crate::OwnedCopyImageAdmission>), Error> {
         let frame = input.as_ref().ok_or(Error::Stale)?;
         let begin = frame.begin();
@@ -87,17 +93,48 @@ impl ContentEpochRegistry {
                     None
                 };
                 if let Some(image) = frame.image {
+                    let ring = ring.expect("copy source checked");
+                    #[cfg(any(test, feature = "experimental-combined-frame-job"))]
+                    let reserved = match combined.as_mut() {
+                        Some(out) => reserve_copy_with(
+                            &epoch.allocations,
+                            &mut epoch.resources,
+                            &epoch.source_bytes,
+                            worker,
+                            ring,
+                            image,
+                            now,
+                            deadline,
+                            |worker, bytes, deadline| {
+                                let reservation = worker.reserve_combined(bytes, deadline)?;
+                                let job = reservation.job();
+                                **out = Some(reservation);
+                                Ok(job)
+                            },
+                        ),
+                        None => reserve_copy(
+                            &epoch.allocations,
+                            &mut epoch.resources,
+                            &epoch.source_bytes,
+                            worker,
+                            ring,
+                            image,
+                            now,
+                            deadline,
+                        ),
+                    };
+                    #[cfg(not(any(test, feature = "experimental-combined-frame-job")))]
                     let reserved = reserve_copy(
                         &epoch.allocations,
                         &mut epoch.resources,
                         &epoch.source_bytes,
                         worker,
-                        ring.expect("copy source checked"),
+                        ring,
                         image,
                         now,
                         deadline,
-                    )
-                    .map_err(frame_error)?;
+                    );
+                    let reserved = reserved.map_err(frame_error)?;
                     epoch.resources.bind_frame_copy(image.resource, owner);
                     admission = Some(reserved);
                 }

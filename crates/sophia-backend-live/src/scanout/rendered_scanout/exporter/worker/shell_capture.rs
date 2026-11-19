@@ -341,11 +341,16 @@ impl Captures {
         self.fail_service_once = true;
     }
 
+    /// `must_poll` forbids the blocking shortcut: something other than the
+    /// command channel (a combined inbox) can ring the command wake.
+    /// `deadline` caps the poll, for a parked combined frame.
     pub(super) fn next(
         &self,
         receive: &Receiver<WorkerCommand>,
+        must_poll: bool,
+        deadline: Option<Instant>,
     ) -> io::Result<Option<WorkerCommand>> {
-        if self.executor.is_none() && !self.managed_pending {
+        if self.executor.is_none() && !self.managed_pending && !must_poll {
             return receive
                 .recv()
                 .map(Some)
@@ -362,7 +367,13 @@ impl Captures {
             receive,
             &self.commands,
             self.executor.as_ref().map(|executor| executor.as_fd()),
-            self.follow_up,
+            match (
+                self.follow_up,
+                deadline.map(|deadline| deadline.saturating_duration_since(Instant::now())),
+            ) {
+                (Some(follow_up), Some(parked)) => Some(follow_up.min(parked)),
+                (follow_up, parked) => follow_up.or(parked),
+            },
         )
     }
 }

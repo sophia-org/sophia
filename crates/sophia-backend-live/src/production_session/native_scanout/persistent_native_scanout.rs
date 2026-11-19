@@ -25,6 +25,7 @@ pub use discovery::{
 mod completion_wait;
 mod head_completion;
 mod head_selection;
+mod native_facts;
 #[path = "../../../tests/support/native_head_fixture.rs"]
 mod native_head_fixture;
 mod prepared_cancellation;
@@ -83,6 +84,19 @@ mod render_devices;
 pub use render_devices::{
     LiveOutputAllocationContext, LiveOutputAllocationFormatPreference,
     LiveOutputAllocationPreference, LiveRenderDeviceNodeIdentity,
+};
+#[cfg(feature = "experimental-combined-frame-job")]
+mod combined_frame;
+#[cfg(feature = "experimental-combined-frame-job")]
+pub(crate) use combined_frame::CombinedAcceptNative;
+#[cfg(feature = "experimental-combined-frame-job")]
+pub use combined_frame::{CombinedAccept, CombinedAcceptPlan, CombinedHead};
+#[cfg(all(
+    any(test, feature = "test-support"),
+    feature = "experimental-combined-frame-job"
+))]
+pub use combined_frame::{
+    CombinedDeclaredHead, CombinedNativeFixture, CombinedSeen, CombinedSettleFault,
 };
 #[cfg(test)]
 #[path = "../../../tests/support/output_topology_readback.rs"]
@@ -670,6 +684,9 @@ pub struct LivePersistentRenderMetrics {
     pub linear_fallback_draws: usize,
     pub worker_requests: usize,
     pub worker_completions: usize,
+    /// Combined Release-cell transitions and cell state, summed over facades.
+    #[cfg(feature = "experimental-combined-frame-job")]
+    pub worker_combined: crate::LiveRendererCombinedWorkerMetrics,
     pub worker_failures: usize,
     pub worker_soft_stalls: usize,
     pub worker_hard_stalls: usize,

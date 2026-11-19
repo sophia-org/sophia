@@ -496,6 +496,12 @@ impl ShellFiles {
         &self.journal
     }
 
+    /// G3-5d d-2b3d, test-support only.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(in crate::shell_transport) fn lean_frames_in_flight(&self) -> u32 {
+        self.lean_frames_in_flight
+    }
+
     pub(in crate::shell_transport) fn expire(&mut self) {
         if self
             .staging

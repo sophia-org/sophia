@@ -12,31 +12,61 @@ use std::time::Instant;
 /// Call service on every owner turn, even after disconnect, with the same
 /// monotonic millisecond clock used by that component's resource store.
 /// Shutdown must drain pending work before dropping this owner or the registry.
-pub struct ShellIsbImageOwner {
+/// `P` is the opaque plan a combined frame job carries; the default worker
+/// admits none.
+pub struct ShellIsbImageOwner<P: Send + 'static = crate::NoCombinedPlan> {
     jobs: IsbImageJobs,
     #[cfg(feature = "experimental-draw")]
     draw: super::draw::DrawJobs,
     owned: super::owned_copy::OwnedCopyOwner,
-    worker: IsbValidationWorker,
+    worker: IsbValidationWorker<P>,
     releases: [Option<IsbImageSettlement>; 4],
     waiting: Option<(ContentGrant, u64, Instant, Option<u16>)>,
 }
 
 impl ShellIsbImageOwner {
     pub fn new(max_resource_bytes: usize, validation_bytes: usize) -> std::io::Result<Self> {
-        Ok(Self {
+        IsbValidationWorker::with_validation_budget(4, max_resource_bytes, validation_bytes)
+            .map(Self::with_worker)
+    }
+}
+
+#[cfg(any(test, feature = "experimental-combined-frame-job"))]
+impl<P: Send + 'static> ShellIsbImageOwner<P> {
+    /// `new`, for a worker whose combined frame jobs carry plan `P`.
+    pub fn for_combined_plans(
+        max_resource_bytes: usize,
+        validation_bytes: usize,
+    ) -> std::io::Result<Self> {
+        IsbValidationWorker::for_combined_plans_with_budget(4, max_resource_bytes, validation_bytes)
+            .map(Self::with_worker)
+    }
+}
+
+impl<P: Send + 'static> ShellIsbImageOwner<P> {
+    fn with_worker(worker: IsbValidationWorker<P>) -> Self {
+        Self {
             jobs: IsbImageJobs::default(),
             #[cfg(feature = "experimental-draw")]
             draw: super::draw::DrawJobs::default(),
             owned: super::owned_copy::OwnedCopyOwner::default(),
-            worker: IsbValidationWorker::with_validation_budget(
-                4,
-                max_resource_bytes,
-                validation_bytes,
-            )?,
+            worker,
             releases: std::array::from_fn(|_| None),
             waiting: None,
-        })
+        }
+    }
+
+    /// Test-support (G3-5d d-2b2): the paired validation worker, for a
+    /// control's hold, progress and serial handles.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn validation_worker(&mut self) -> &mut IsbValidationWorker<P> {
+        &mut self.worker
+    }
+
+    /// G3-5d d-2b3d, test-support only: `OwnedCopyOwner::releasing`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn owned_releasing(&self) -> Vec<crate::owned_ring_protocol::Identity> {
+        self.owned.releasing()
     }
 
     pub fn readiness(&self) -> BorrowedFd<'_> {
@@ -88,8 +118,28 @@ impl ShellIsbImageOwner {
         epochs: &mut ContentEpochRegistry,
         now: u64,
         instant: Instant,
+        #[cfg(all(
+            feature = "experimental-native-frame-transaction",
+            any(test, feature = "experimental-combined-frame-job")
+        ))]
+        hooks: Option<&mut (dyn crate::CombinedFrameHooks<P> + '_)>,
     ) -> Result<(), ShellTransportError> {
         let other_pending = self.pending() - self.owned.pending();
+        #[cfg(all(
+            feature = "experimental-native-frame-transaction",
+            any(test, feature = "experimental-combined-frame-job")
+        ))]
+        if let Some(hooks) = hooks {
+            return self.owned.service_combined(
+                transport,
+                epochs,
+                &mut self.worker,
+                now,
+                instant,
+                other_pending,
+                hooks,
+            );
+        }
         self.owned.service(
             transport,
             epochs,
@@ -117,9 +167,71 @@ impl ShellIsbImageOwner {
         now: u64,
         instant: Instant,
     ) -> Result<(), ShellTransportError> {
+        self.service_with(
+            transport,
+            epochs,
+            now,
+            instant,
+            #[cfg(all(
+                feature = "experimental-native-frame-transaction",
+                any(test, feature = "experimental-combined-frame-job")
+            ))]
+            None,
+        )
+    }
+
+    /// `service` for a combined frame job (GATE3-SCOPE.md G3-1). Results the
+    /// renderer returned are collected first and handed to their exact rows,
+    /// so the unchanged body below reconciles them in this same call: the
+    /// copy gate closes and the terminal ResourceStatus waits in the resource
+    /// store. Publication keeps today's order: the host's content-resource
+    /// service journals that status, and a later call publishes SlotReleased
+    /// once the status is journalled. Frame admission inside the body reaches
+    /// the session through `hooks`.
+    #[cfg(all(
+        feature = "experimental-native-frame-transaction",
+        any(test, feature = "experimental-combined-frame-job")
+    ))]
+    pub fn service_combined(
+        &mut self,
+        transport: &mut ShellComponentTransport,
+        epochs: &mut ContentEpochRegistry,
+        now: u64,
+        instant: Instant,
+        hooks: &mut (dyn crate::CombinedFrameHooks<P> + '_),
+    ) -> Result<(), ShellTransportError> {
+        let owned = &mut self.owned;
+        hooks.collect(&mut self.worker, &mut |job, result| {
+            owned.receive_forwarded(job, result)
+        });
+        self.service_with(transport, epochs, now, instant, Some(hooks))
+    }
+
+    fn service_with(
+        &mut self,
+        transport: &mut ShellComponentTransport,
+        epochs: &mut ContentEpochRegistry,
+        now: u64,
+        instant: Instant,
+        #[cfg(all(
+            feature = "experimental-native-frame-transaction",
+            any(test, feature = "experimental-combined-frame-job")
+        ))]
+        mut hooks: Option<&mut (dyn crate::CombinedFrameHooks<P> + '_)>,
+    ) -> Result<(), ShellTransportError> {
         #[cfg(feature = "experimental-draw")]
         self.service_draw(transport, epochs, now, instant)?;
-        self.service_owned(transport, epochs, now, instant)?;
+        self.service_owned(
+            transport,
+            epochs,
+            now,
+            instant,
+            #[cfg(all(
+                feature = "experimental-native-frame-transaction",
+                any(test, feature = "experimental-combined-frame-job")
+            ))]
+            hooks.as_deref_mut(),
+        )?;
         let grant = transport.content_grant();
         let ready = transport.isb_image_channel_ready();
         let mut lost = [None; 4];
@@ -156,7 +268,17 @@ impl ShellIsbImageOwner {
         }
         #[cfg(feature = "experimental-draw")]
         self.service_draw(transport, epochs, now, instant)?;
-        self.service_owned(transport, epochs, now, instant)?;
+        self.service_owned(
+            transport,
+            epochs,
+            now,
+            instant,
+            #[cfg(all(
+                feature = "experimental-native-frame-transaction",
+                any(test, feature = "experimental-combined-frame-job")
+            ))]
+            hooks,
+        )?;
         self.reconcile(epochs, now);
         self.jobs.expire(epochs, &mut self.worker, instant, now)?;
         self.reconcile(epochs, now);

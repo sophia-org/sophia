@@ -1,0 +1,181 @@
+//! G3-5d d-2b3d, test-support only: read-only facts of one component's
+//! persistent transport, from its outbox, its file wire's journal, its
+//! owned-ring credits and its grant's three content stores. Reading
+//! drains, publishes, ACKs, flushes, services and advances nothing. A
+//! missing wire reads as `wired == false` with empty wire facts, never as
+//! an empty journal.
+use super::ShellComponentTransport;
+use super::files::{JournalFacts, RetainedEntry};
+use super::outbound::OutboundRecord;
+use crate::ContentEpochRegistry;
+use crate::owned_ring_protocol::Offer;
+use sophia_protocol::{ShellContentRecord, TransactionId};
+
+/// A queued record's identity, as the FIFO holds it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "a test-support snapshot; the size gap depends on the cfg'd Frame variant"
+)]
+pub enum OutboxRecordFacts {
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    Frame(sophia_protocol::shell_files::ShellFrameRecord),
+    Content(TransactionId, ShellContentRecord),
+    Other(&'static str),
+}
+
+impl From<&OutboundRecord> for OutboxRecordFacts {
+    fn from(record: &OutboundRecord) -> Self {
+        match record {
+            #[cfg(feature = "experimental-native-frame-transaction")]
+            OutboundRecord::Frame(frame) => Self::Frame(frame.clone()),
+            OutboundRecord::Content(transaction, record) => {
+                Self::Content(*transaction, record.clone())
+            }
+            OutboundRecord::Descriptor(_) => Self::Other("Descriptor"),
+            OutboundRecord::NativeLauncher(..) => Self::Other("NativeLauncher"),
+            OutboundRecord::CatalogAction(..) => Self::Other("CatalogAction"),
+            OutboundRecord::IndicatorOutcome(..) => Self::Other("IndicatorOutcome"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OutboxEntryFacts {
+    pub resource_settlement: bool,
+    pub control: bool,
+    pub charge: usize,
+    pub record: OutboxRecordFacts,
+}
+
+/// One live owned-ring credit: its offer and whether the status
+/// reservation is still unspent (`release` is spent with the slot).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OwnedCreditFacts {
+    pub offer: Offer,
+    pub status_reserved: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TransportFacts {
+    /// A file wire is held; its facts below are `Some`/nonempty only then.
+    pub wired: bool,
+    pub output_blocked: bool,
+    pub outbox: Vec<OutboxEntryFacts>,
+    pub journal: Option<JournalFacts>,
+    pub table: Vec<RetainedEntry>,
+    pub owned_live_credits: Vec<OwnedCreditFacts>,
+    pub owned_publication_sequence: Option<u64>,
+    /// G3-5d d-2b3d-2: the owned-ring offer the owner holds unadmitted
+    /// (an admission refused by `Step::Stop` waits here).
+    pub owned_pending_offer: Option<Offer>,
+    pub lean_frames_in_flight: Option<u32>,
+}
+
+/// G3-5d d-2b3d-2 (source-02 R2): the lean frame commit queued in the
+/// inbound SFT queue, unadmitted, with the preconditions
+/// `admit_peeked_commit` reads for ITS embedded offer: the grants it
+/// requires, `owned_offer_available` (the worker below its job limit and
+/// the backing budget with the offer's source and pixel bytes) with the
+/// worker's pending count it was given, and the control room (the
+/// largest of 0..=4 additional records `control_capacity_available`
+/// admits). A reservation refused EAGAIN (`Step::Stop`) leaves the frame
+/// queued here; the ordinary `Control::Offer` queue (`owned_pending_offer`)
+/// is a different field the lean path never writes.
+#[cfg(feature = "experimental-native-frame-transaction")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct QueuedFrameFacts {
+    pub transaction: TransactionId,
+    pub candidate_generation: u64,
+    /// The commit's grant is the current content and store grant.
+    pub grant_current: bool,
+    pub offer: Offer,
+    pub available: Result<bool, sophia_9p::Errno>,
+    pub worker_pending: usize,
+    pub room: usize,
+}
+
+/// The grant's queued store events, not yet transferred to the outbox.
+/// Candidate records are kept as their Debug text: the queue holds two
+/// record types behind one head.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StoreEventFacts {
+    pub resources: Vec<(TransactionId, ShellContentRecord)>,
+    pub candidates: Vec<(TransactionId, String)>,
+    pub allocations: Vec<(TransactionId, ShellContentRecord)>,
+}
+
+impl ShellComponentTransport {
+    pub fn transport_facts(&self) -> TransportFacts {
+        let export = self.wire.as_ref().map(|wire| wire.export());
+        TransportFacts {
+            wired: export.is_some(),
+            output_blocked: self.output_blocked,
+            outbox: self.output.snapshot(),
+            journal: export.map(|files| files.journal().facts()),
+            table: export.map_or_else(Vec::new, |files| files.journal().retained_table()),
+            owned_live_credits: export.map_or_else(Vec::new, |files| files.owned_live_credits()),
+            owned_publication_sequence: export.map(|files| files.owned_publication_sequence()),
+            owned_pending_offer: export
+                .and_then(|files| files.owned_pending_offer().map(|(offer, _)| offer)),
+            lean_frames_in_flight: export.map(|files| files.lean_frames_in_flight()),
+        }
+    }
+
+    /// `None` without a wire or a queued frame commit carrying an offer
+    /// (never an empty success: callers assert the exact frame). Reads the
+    /// same functions the admission reads; reserves, admits, consumes and
+    /// services nothing.
+    #[cfg(feature = "experimental-native-frame-transaction")]
+    pub fn queued_frame_facts(
+        &self,
+        epochs: &ContentEpochRegistry,
+        worker_pending: usize,
+    ) -> Option<QueuedFrameFacts> {
+        use sophia_protocol::shell_files::ShellFrameRecord;
+        let files = self.wire.as_ref()?.export();
+        let ShellFrameRecord::Commit(frame) = files.peek_frame_request()? else {
+            return None;
+        };
+        let offer = Offer::from(frame.image?);
+        let grant = frame.candidate.grant;
+        Some(QueuedFrameFacts {
+            transaction: frame.transaction,
+            candidate_generation: frame.candidate.candidate_generation,
+            grant_current: self.content_grant == Some(grant) && self.store_grant == grant,
+            offer,
+            available: files.owned_offer_available(offer, epochs, worker_pending),
+            worker_pending,
+            room: (0..=4)
+                .rev()
+                .find(|room| self.control_capacity_available(epochs, *room))
+                .unwrap_or(0),
+        })
+    }
+
+    /// `None` when the store grant has no active epoch.
+    pub fn store_event_facts(&self, epochs: &ContentEpochRegistry) -> Option<StoreEventFacts> {
+        let grant = self.store_grant;
+        Some(StoreEventFacts {
+            resources: epochs.resources(grant)?.pending_events(),
+            candidates: epochs.active_candidates(grant)?.pending_events(),
+            allocations: epochs.allocations(grant)?.pending_events(),
+        })
+    }
+
+    /// `ContentCandidateStore::candidate_prepared` for the store grant.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction"
+    ))]
+    pub fn candidate_prepared(
+        &self,
+        epochs: &ContentEpochRegistry,
+        output: sophia_protocol::ContentOutputId,
+        generation: u64,
+    ) -> Option<bool> {
+        epochs
+            .active_candidates(self.store_grant)?
+            .candidate_prepared(output, generation)
+    }
+}

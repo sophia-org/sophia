@@ -1,21 +1,38 @@
-#![cfg(test)]
+#![cfg(any(
+    test,
+    all(feature = "test-support", feature = "experimental-combined-frame-job")
+))]
 
 use super::*;
 
+/// A 640x480 head for `output`.
+#[cfg(test)]
 pub(super) fn head(
     id: u32,
     output: u64,
     capabilities: crate::LibdrmNativePlaneFormatCapabilities,
 ) -> LiveProductionNativeHead {
-    let size = sophia_protocol::Size {
-        width: 640,
-        height: 480,
-    };
     let output = sophia_engine::HeadlessOutput {
         id: OutputId::from_raw(output),
-        size,
+        size: sophia_protocol::Size {
+            width: 640,
+            height: 480,
+        },
         scale: 1,
     };
+    head_for(id, output, capabilities)
+}
+
+/// A head whose primary-plane selection, render target and presentation
+/// state all describe `output`. Fixture heads are scale 1: the selection's
+/// physical size is the output's logical size.
+pub(super) fn head_for(
+    id: u32,
+    output: sophia_engine::HeadlessOutput,
+    capabilities: crate::LibdrmNativePlaneFormatCapabilities,
+) -> LiveProductionNativeHead {
+    assert_eq!(output.scale, 1, "fixture heads are scale 1");
+    let size = output.size;
     LiveProductionNativeHead {
         head: sophia_engine::RenderHeadId::from_raw(u64::from(id)),
         enabled: true,

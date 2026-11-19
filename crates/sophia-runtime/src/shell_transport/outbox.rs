@@ -62,6 +62,20 @@ impl ShellOutbox {
         });
     }
 
+    /// G3-5d d-2b3d, test-support only: every queued record in FIFO order.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(super) fn snapshot(&self) -> Vec<super::OutboxEntryFacts> {
+        self.records
+            .iter()
+            .map(|queued| super::OutboxEntryFacts {
+                resource_settlement: queued.resource_settlement,
+                control: queued.control,
+                charge: queued.charge,
+                record: (&queued.record).into(),
+            })
+            .collect()
+    }
+
     pub(super) fn front(&self) -> Option<&Queued> {
         self.records.front()
     }

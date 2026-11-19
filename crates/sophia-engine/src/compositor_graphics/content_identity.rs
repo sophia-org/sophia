@@ -9,6 +9,11 @@ pub enum CompositorImageSource {
     Shell(sophia_runtime::ContentResourceLease),
     /// A lock provider's image, shown only while its lock covers the output.
     Lock(crate::SessionLockImage),
+    /// A combined frame job's candidate image, placed by its admitted
+    /// description alone (G3-3). It holds no pixels and no lease: nothing can
+    /// render, install or admit it, and it grants no authority.
+    #[cfg(feature = "experimental-combined-frame-job")]
+    Provisional(sophia_protocol::ContentResourceBegin),
 }
 
 /// The comparable, non-owning identity of a source: no pixels are retained.
@@ -39,6 +44,10 @@ impl CompositorImageSource {
         match self {
             Self::Shell(lease) => CompositorImageSourceIdentity::Shell(lease.description().clone()),
             Self::Lock(image) => CompositorImageSourceIdentity::Lock(image.identity),
+            // The resource it will be once installed; local to provisional
+            // composition, never an installed identity.
+            #[cfg(feature = "experimental-combined-frame-job")]
+            Self::Provisional(begin) => CompositorImageSourceIdentity::Shell(begin.clone()),
         }
     }
 
@@ -46,6 +55,8 @@ impl CompositorImageSource {
         match self {
             Self::Shell(lease) => lease.cpu_bytes(),
             Self::Lock(image) => Some(&image.pixels),
+            #[cfg(feature = "experimental-combined-frame-job")]
+            Self::Provisional(_) => None,
         }
     }
 
@@ -55,6 +66,9 @@ impl CompositorImageSource {
         match self {
             Self::Shell(lease) => Some(lease),
             Self::Lock(_) => None,
+            // Not a lease: shell content admission refuses it.
+            #[cfg(feature = "experimental-combined-frame-job")]
+            Self::Provisional(_) => None,
         }
     }
 }
@@ -140,6 +154,10 @@ impl CompositorContentMetadata for CompositorContentImage {
                     usize::try_from(lease.description().total_bytes).unwrap_or(usize::MAX)
                 }
                 CompositorImageSource::Lock(image) => image.pixels.len(),
+                #[cfg(feature = "experimental-combined-frame-job")]
+                CompositorImageSource::Provisional(begin) => {
+                    usize::try_from(begin.total_bytes).unwrap_or(usize::MAX)
+                }
             },
         }
     }

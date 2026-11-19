@@ -108,3 +108,94 @@ fn capture_reply_binds_the_held_card_to_its_granted_render_node() {
         assert!(install.bind_facts(wrong).is_none());
     }
 }
+
+/// G3-5b R3: the combined job's capture predicate on its own, so no other
+/// eligibility fact can decline for it. G3-5d d-0: the owners below are
+/// these states for the accept's consumption guards.
+#[cfg(feature = "experimental-combined-frame-job")]
+pub(in crate::production_session::native_scanout::persistent_native_scanout) mod combined_capture_predicate {
+    use super::*;
+
+    /// A real owner with a pending install on `output`.
+    pub(in crate::production_session::native_scanout::persistent_native_scanout) fn pending_on(
+        output: u64,
+    ) -> CaptureOwner {
+        // CaptureOwner is Drop: no struct update from a default.
+        let mut owner = CaptureOwner::default();
+        owner.pending = Some(install(output));
+        owner
+    }
+
+    /// A real owner with an active install on `output`.
+    pub(in crate::production_session::native_scanout::persistent_native_scanout) fn active_on(
+        output: u64,
+    ) -> CaptureOwner {
+        // CaptureOwner is Drop: no struct update from a default.
+        let mut owner = CaptureOwner::default();
+        owner.active = Some(install(output));
+        owner
+    }
+
+    /// A real owner closing by its own observation (a generation change)
+    /// while it retains its active install on `output`.
+    pub(in crate::production_session::native_scanout::persistent_native_scanout) fn closing_on(
+        output: u64,
+    ) -> CaptureOwner {
+        let mut owner = active_on(output);
+        owner.observe(3, |_, _| true);
+        assert!(owner.closing && owner.active.is_some());
+        owner
+    }
+
+    fn install(output: u64) -> Install {
+        Install {
+            output: OutputId::from_raw(output),
+            store: 3,
+            card_device: 1,
+            generation: 2,
+            epoch: LiveRendererSnapshotEpoch::new(1, 2, 3),
+        }
+    }
+
+    #[test]
+    fn an_active_install_with_nothing_pending_declines_its_output_only() {
+        let mut owner = CaptureOwner::default();
+        owner.active = Some(install(1));
+        assert!(owner.pending.is_none() && !owner.closing);
+        assert!(owner.may_capture(OutputId::from_raw(1)));
+        assert!(!owner.may_capture(OutputId::from_raw(2)));
+    }
+
+    #[test]
+    fn a_pending_install_declines_its_output_only() {
+        let mut owner = CaptureOwner::default();
+        owner.pending = Some(install(1));
+        assert!(owner.may_capture(OutputId::from_raw(1)));
+        assert!(!owner.may_capture(OutputId::from_raw(2)));
+    }
+
+    #[test]
+    fn a_closing_owner_that_retains_an_install_declines_every_output() {
+        let mut owner = CaptureOwner::default();
+        owner.active = Some(install(1));
+        owner.observe(3, |_, _| true);
+        assert!(owner.closing && owner.active.is_some());
+        assert!(owner.may_capture(OutputId::from_raw(1)));
+        assert!(owner.may_capture(OutputId::from_raw(2)));
+    }
+
+    #[test]
+    fn a_closing_owner_with_nothing_retained_declines_every_output() {
+        let mut owner = CaptureOwner::default();
+        owner.closing = true;
+        assert!(owner.pending.is_none() && owner.active.is_none());
+        assert!(owner.may_capture(OutputId::from_raw(1)));
+        assert!(owner.may_capture(OutputId::from_raw(2)));
+    }
+
+    #[test]
+    fn an_owner_with_nothing_installed_or_closing_declines_nothing() {
+        let owner = CaptureOwner::default();
+        assert!(!owner.may_capture(OutputId::from_raw(1)));
+    }
+}

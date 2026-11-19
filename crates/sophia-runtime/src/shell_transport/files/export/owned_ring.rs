@@ -135,6 +135,21 @@ impl ShellFiles {
                 .and_then(|n| n.checked_add(offer.request.pixel_bytes()? as u64))
                 .is_some_and(|n| n <= config.max_sealed_backing_bytes))
     }
+    /// G3-5d d-2b3d, test-support only: every live credit's offer and
+    /// whether its status reservation is still unspent.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(in crate::shell_transport) fn owned_live_credits(&self) -> Vec<crate::OwnedCreditFacts> {
+        self.owned
+            .live
+            .iter()
+            .flatten()
+            .map(|credit| crate::OwnedCreditFacts {
+                offer: credit.offer,
+                status_reserved: credit.status.is_some(),
+            })
+            .collect()
+    }
+
     pub(in crate::shell_transport) fn owned_publication_sequence(&self) -> u64 {
         self.owned.published
     }

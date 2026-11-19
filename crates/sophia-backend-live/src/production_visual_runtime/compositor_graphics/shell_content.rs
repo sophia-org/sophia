@@ -1,5 +1,13 @@
 use super::*;
 
+/// What the setter's checks decided before any write.
+pub(in crate::production_visual_runtime) enum ShellContentPreflight {
+    /// The same frame is already installed: the setter answers Ok(false).
+    Unchanged,
+    /// Admissible now, under this presented transform.
+    Admit(sophia_engine::PresentedContentTransform),
+}
+
 impl LiveProductionVisualRuntime {
     /// Installs one complete shell content candidate and queues a retained
     /// repaint. The prior candidate remains installed if native queueing fails.
@@ -49,6 +57,33 @@ impl LiveProductionVisualRuntime {
         scene: &LiveProductionCpuScene,
         native_scanout: Option<&mut T>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        let transform = match self.preflight_shell_component_content(
+            &frame,
+            layer,
+            native_scanout
+                .as_deref()
+                .map(NativeCompositionTarget::frame_service_available),
+        )? {
+            ShellContentPreflight::Unchanged => return Ok(false),
+            ShellContentPreflight::Admit(transform) => transform,
+        };
+        // The preflight admits only with native presentation; same refusal.
+        let native_scanout = native_scanout
+            .ok_or("shell content candidate cannot be accepted without native presentation")?;
+        self.install_shell_component_content(frame, layer, transform, scene, native_scanout)
+    }
+
+    /// Every check the setter makes before it writes, in its order, with its
+    /// messages, writing nothing (G3-3). Its answer is for the same owner
+    /// turn only: it is not current authority once the turn moves on.
+    /// `frame_service` is the native target's answer, `None` without native
+    /// presentation (G3-4: the combined accept supplies its own target's).
+    pub(in crate::production_visual_runtime) fn preflight_shell_component_content(
+        &self,
+        frame: &LiveShellContentFrame,
+        layer: LiveShellContentLayer,
+        frame_service: Option<bool>,
+    ) -> Result<ShellContentPreflight, Box<dyn std::error::Error>> {
         let key = (frame.output, layer);
         if !frame.output.is_valid()
             || frame.candidate_generation == 0
@@ -86,12 +121,12 @@ impl LiveProductionVisualRuntime {
                 "closing component must be removed before another candidate is admitted".into(),
             );
         }
-        if self.shell_content.get(&key).map(|owned| &owned.frame) == Some(&frame) {
-            return Ok(false);
+        if self.shell_content.get(&key).map(|owned| &owned.frame) == Some(frame) {
+            return Ok(ShellContentPreflight::Unchanged);
         }
-        let native_scanout = native_scanout
+        let frame_service_available = frame_service
             .ok_or("shell content candidate cannot be accepted without native presentation")?;
-        if self.native_suspended || !native_scanout.frame_service_available() {
+        if self.native_suspended || !frame_service_available {
             return Err(
                 "shell content candidate cannot be accepted while native presentation is quiesced"
                     .into(),
@@ -108,13 +143,29 @@ impl LiveProductionVisualRuntime {
                     .into(),
             );
         }
-        let transform = sophia_engine::PresentedContentTransform {
-            viewport: self
-                .outputs
-                .logical_viewport(output)
-                .ok_or("shell content output has no committed viewport")?,
-            layout_generation: self.content_layout_generation,
-        };
+        Ok(ShellContentPreflight::Admit(
+            sophia_engine::PresentedContentTransform {
+                viewport: self
+                    .outputs
+                    .logical_viewport(output)
+                    .ok_or("shell content output has no committed viewport")?,
+                layout_generation: self.content_layout_generation,
+            },
+        ))
+    }
+
+    /// The setter's write: installs a preflighted frame and queues its
+    /// retained repaint, restoring the prior content if queueing fails.
+    fn install_shell_component_content<T: NativeCompositionTarget>(
+        &mut self,
+        frame: LiveShellContentFrame,
+        layer: LiveShellContentLayer,
+        transform: sophia_engine::PresentedContentTransform,
+        scene: &LiveProductionCpuScene,
+        native_scanout: &mut T,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let key = (frame.output, layer);
+        let grant = frame.grant;
         let previous = self.shell_content.insert(
             key,
             AdmittedShellContent {
@@ -273,3 +324,148 @@ impl LiveProductionVisualRuntime {
 
 #[path = "shell_content/removal.rs"]
 mod removal;
+
+/// Why a combined accept did not happen. Nothing changed in any case: the
+/// frame comes back, and the facade still holds its result for disposal.
+#[cfg(feature = "experimental-combined-frame-job")]
+// First production caller is G3-5's owner row; until then the accept controls.
+#[cfg_attr(not(test), allow(dead_code))]
+pub enum CombinedAcceptError {
+    /// The setter's own preflight refused the frame, with its message.
+    Runtime(Box<dyn std::error::Error>),
+    /// The frame is already installed: there is nothing to accept.
+    Unchanged,
+    /// The frame is for another output than the admitted plan.
+    Output,
+    /// A retirement claim for this key is still unbound, or the native
+    /// frame already carries claims.
+    RetirementClaim,
+    Native(crate::CombinedAcceptRefusal),
+}
+
+#[cfg(feature = "experimental-combined-frame-job")]
+// First production caller is G3-5's owner row; until then the accept controls.
+#[cfg_attr(not(test), allow(dead_code))]
+pub struct CombinedAcceptFailed {
+    pub error: CombinedAcceptError,
+    pub frame: LiveShellContentFrame,
+}
+
+#[cfg(feature = "experimental-combined-frame-job")]
+impl LiveProductionVisualRuntime {
+    /// Every read-only check of the accept before its native preflight's
+    /// presentation, in the accept's order (G3-5c C1): the setter's
+    /// preflight, the output, the key's retirement claims, then the native
+    /// guards. Answers the transform the setter admits. Writes nothing; the
+    /// answer is for this owner turn only.
+    pub(crate) fn check_combined_consumption<N: crate::CombinedAcceptNative>(
+        &self,
+        frame: &LiveShellContentFrame,
+        layer: LiveShellContentLayer,
+        native: &N,
+        head: &N::Head,
+        accept: &crate::CombinedAccept,
+    ) -> Result<sophia_engine::PresentedContentTransform, CombinedAcceptError> {
+        let transform = match self.preflight_shell_component_content(
+            frame,
+            layer,
+            Some(native.frame_service_available()),
+        ) {
+            Ok(ShellContentPreflight::Admit(transform)) => transform,
+            Ok(ShellContentPreflight::Unchanged) => return Err(CombinedAcceptError::Unchanged),
+            Err(error) => return Err(CombinedAcceptError::Runtime(error)),
+        };
+        if frame.output != accept.snapshot.output.id {
+            return Err(CombinedAcceptError::Output);
+        }
+        let key = (frame.output, layer);
+        if self.retained_projection_retirements.contains_key(&key)
+            || self
+                .queued_shell_retirements
+                .contains_key(&(frame.output, accept.frame))
+        {
+            return Err(CombinedAcceptError::RetirementClaim);
+        }
+        native
+            .check_combined_accept(head, accept)
+            .map_err(CombinedAcceptError::Native)?;
+        Ok(transform)
+    }
+
+    /// The two-phase accept of a held combined result (AUTHORITY-STEP3 F2).
+    /// The consumption checks, then the native preflight, both reading only;
+    /// then the commit: this runtime installs the content and binds its
+    /// retirement claim to the plan's native frame without queueing a
+    /// render (step 1), and the native target writes steps 2 to 4. After the
+    /// commit returns, the binding record (gate 4 binding repair).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn accept_combined_shell_content<N: crate::CombinedAcceptNative>(
+        &mut self,
+        frame: LiveShellContentFrame,
+        layer: LiveShellContentLayer,
+        native: &mut N,
+        head: &N::Head,
+        accept: crate::CombinedAccept,
+    ) -> Result<(), Box<CombinedAcceptFailed>> {
+        let refuse = |error, frame| Err(Box::new(CombinedAcceptFailed { error, frame }));
+        let transform = match self.check_combined_consumption(&frame, layer, native, head, &accept)
+        {
+            Ok(transform) => transform,
+            Err(error) => return refuse(error, frame),
+        };
+        let key = (frame.output, layer);
+        let native_frame = accept.frame;
+        let plan = match native.preflight_combined_accept(head, accept) {
+            Ok(plan) => plan,
+            Err(refusal) => return refuse(CombinedAcceptError::Native(refusal), frame),
+        };
+        // Step 1: content and its retirement claim, bound to the plan's
+        // native frame as `bind_shell_retirement_claims` binds a queued one.
+        let grant = frame.grant;
+        let candidate_generation = frame.candidate_generation;
+        self.shell_content.insert(
+            key,
+            AdmittedShellContent {
+                frame,
+                retained_content_epoch: None,
+                transform,
+                interaction_revoked: false,
+            },
+        );
+        self.queued_shell_retirements
+            .entry((key.0, native_frame))
+            .or_default()
+            .insert(key, grant);
+        native.commit_combined_accept(head, plan);
+        // The record the timing runner joins a native completion to. The
+        // ordinary emitter (projection/retirement.rs) writes it when it
+        // queues a retained projection, which an accepted combined frame
+        // never passes through; so the same record, in the same form, for
+        // the committed frame here. Reads and a log line: no domain-state
+        // mutation, ownership decision or fallible step follows the commit.
+        let targets = native.head_targets(key.0);
+        for target in &targets {
+            let identity = native.frame_owner().frame(
+                key.0,
+                target.head,
+                target.target_generation,
+                native_frame.raw(),
+            );
+            tracing::info!(
+                target: "sophia_scanout_evidence",
+                "sophia_shell_native_binding schema=1 connection_epoch={} content_grant_epoch={} output={} candidate_generation={} native_owner={} native_frame={} head={} target_generation={} heads={} mode_refresh_millihz={}",
+                grant.connection_epoch,
+                grant.content_grant_epoch,
+                key.0.raw(),
+                candidate_generation,
+                identity.owner(),
+                identity.frame(),
+                target.head.raw(),
+                target.target_generation,
+                targets.len(),
+                target.refresh_millihz,
+            );
+        }
+        Ok(())
+    }
+}

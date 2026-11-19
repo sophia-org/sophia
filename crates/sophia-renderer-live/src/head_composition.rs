@@ -36,6 +36,9 @@ pub enum LiveHeadCompositionLoweringError {
     DmaBufCloneFailed(u64),
     IndicatorRasterFailed,
     TextRasterFailed,
+    /// The metadata lowering of a combined frame job declined this plan.
+    #[cfg(feature = "experimental-combined-frame-job")]
+    ProvisionalIneligible(LiveProvisionalDecline),
 }
 
 impl core::fmt::Display for LiveHeadCompositionLoweringError {
@@ -172,6 +175,79 @@ pub fn lower_head_composition_plan_with_caches(
     indicator_cache: &mut crate::IndicatorStripRasterCache,
     text_cache: &mut crate::CompositorTextRasterCache,
 ) -> Result<LiveOwnedMixedCompositionFrame, LiveHeadCompositionLoweringError> {
+    lower_with(
+        plan,
+        sources,
+        Rasters::Fill {
+            indicator: indicator_cache,
+            text: text_cache,
+        },
+    )
+}
+
+/// How one lowering reaches the compositor rasters.
+enum Rasters<'a> {
+    /// Ordinary lowering: a miss rasterizes and fills the cache, and a
+    /// translucent rect gets a fresh solid buffer.
+    Fill {
+        indicator: &'a mut crate::IndicatorStripRasterCache,
+        text: &'a mut crate::CompositorTextRasterCache,
+    },
+    /// A combined frame job's metadata lowering: caches are only read, every
+    /// content image occurrence is recorded, and a raster it cannot read is
+    /// recorded as a decline and lowers to no layer (G3-3).
+    #[cfg(feature = "experimental-combined-frame-job")]
+    Peek(provisional::Peek<'a>),
+}
+
+// Each raster is Some for ordinary lowering; None only for a recorded decline.
+impl Rasters<'_> {
+    fn text(
+        &mut self,
+        text: &sophia_engine::HeadCompositorText,
+    ) -> Result<Option<LiveSharedCpuBufferSource>, LiveHeadCompositionLoweringError> {
+        match self {
+            Self::Fill { text: cache, .. } => cache
+                .raster_for(text)
+                .map(Some)
+                .map_err(|_| LiveHeadCompositionLoweringError::TextRasterFailed),
+            #[cfg(feature = "experimental-combined-frame-job")]
+            Self::Peek(peek) => Ok(peek.text(text)),
+        }
+    }
+
+    fn indicator(
+        &mut self,
+        strip: &sophia_engine::HeadCompositorIndicatorStrip,
+    ) -> Result<Option<LiveSharedCpuBufferSource>, LiveHeadCompositionLoweringError> {
+        match self {
+            Self::Fill { indicator, .. } => indicator
+                .raster_for(strip)
+                .map(Some)
+                .map_err(|_| LiveHeadCompositionLoweringError::IndicatorRasterFailed),
+            #[cfg(feature = "experimental-combined-frame-job")]
+            Self::Peek(peek) => Ok(peek.indicator(strip)),
+        }
+    }
+
+    fn translucent(
+        &mut self,
+        color: sophia_engine::CompositorRgb8,
+    ) -> Result<Option<LiveSharedCpuBufferSource>, LiveHeadCompositionLoweringError> {
+        match self {
+            Self::Fill { .. } => Ok(Some(crate::solid_color_buffer(color))),
+            // Its buffer is new pixels under a new version on every call.
+            #[cfg(feature = "experimental-combined-frame-job")]
+            Self::Peek(peek) => Ok(peek.decline(LiveProvisionalDecline::TranslucentRect)),
+        }
+    }
+}
+
+fn lower_with(
+    plan: &HeadCompositionPlan,
+    sources: &[LiveOwnedHeadCompositionSource],
+    mut rasters: Rasters<'_>,
+) -> Result<LiveOwnedMixedCompositionFrame, LiveHeadCompositionLoweringError> {
     let mut layers = Vec::with_capacity(plan.compositor.len().saturating_mul(4));
     let mut emitted_surfaces = std::collections::BTreeSet::new();
     for command in &plan.compositor {
@@ -241,9 +317,9 @@ pub fn lower_head_composition_plan_with_caches(
                             geometry: rect.geometry,
                             color: rect.color,
                         });
-                    } else {
+                    } else if let Some(buffer) = rasters.translucent(rect.color)? {
                         layers.push(LiveOwnedMixedCompositionLayer::Cpu {
-                            buffer: crate::solid_color_buffer(rect.color),
+                            buffer,
                             placement: LiveCompositionPlacement {
                                 target: rect.geometry,
                                 clip: Some(rect.geometry),
@@ -256,10 +332,9 @@ pub fn lower_head_composition_plan_with_caches(
                 }
             }
             HeadCompositorCommand::Text(text) => {
-                if !text.geometry.is_empty() {
-                    let buffer = text_cache
-                        .raster_for(text)
-                        .map_err(|_| LiveHeadCompositionLoweringError::TextRasterFailed)?;
+                if !text.geometry.is_empty()
+                    && let Some(buffer) = rasters.text(text)?
+                {
                     layers.push(LiveOwnedMixedCompositionLayer::Cpu {
                         buffer,
                         placement: LiveCompositionPlacement {
@@ -273,19 +348,18 @@ pub fn lower_head_composition_plan_with_caches(
                 }
             }
             HeadCompositorCommand::IndicatorStrip(strip) => {
-                let buffer = indicator_cache
-                    .raster_for(strip)
-                    .map_err(|_| LiveHeadCompositionLoweringError::IndicatorRasterFailed)?;
-                layers.push(LiveOwnedMixedCompositionLayer::Cpu {
-                    buffer,
-                    placement: LiveCompositionPlacement {
-                        target: strip.strip.geometry,
-                        clip: Some(strip.strip.geometry),
-                        transform: Transform::IDENTITY,
-                        alpha: 1.0,
-                        sampling: HeadSamplingClass::Exact,
-                    },
-                });
+                if let Some(buffer) = rasters.indicator(strip)? {
+                    layers.push(LiveOwnedMixedCompositionLayer::Cpu {
+                        buffer,
+                        placement: LiveCompositionPlacement {
+                            target: strip.strip.geometry,
+                            clip: Some(strip.strip.geometry),
+                            transform: Transform::IDENTITY,
+                            alpha: 1.0,
+                            sampling: HeadSamplingClass::Exact,
+                        },
+                    });
+                }
             }
             HeadCompositorCommand::ContentImage(content) => {
                 if !content.clip.is_empty() {
@@ -295,6 +369,10 @@ pub fn lower_head_composition_plan_with_caches(
                         }
                         sophia_engine::CompositorImageSource::Lock(image) => {
                             crate::lock_image_handle(image.identity)
+                        }
+                        #[cfg(feature = "experimental-combined-frame-job")]
+                        sophia_engine::CompositorImageSource::Provisional(begin) => {
+                            shell_content_handle(begin.resource)
                         }
                     };
                     let placement = LiveCompositionPlacement {
@@ -310,6 +388,13 @@ pub fn lower_head_composition_plan_with_caches(
                             },
                         ),
                     };
+                    #[cfg(feature = "experimental-combined-frame-job")]
+                    if let Rasters::Peek(peek) = &mut rasters
+                        && peek.record(layers.len(), &content.image, placement, handle)?
+                    {
+                        // A placeholder: no layer until the job binds it.
+                        continue;
+                    }
                     match crate::LiveCpuPixelStorage::try_from(content.image.resource.clone()) {
                         Ok(bytes) => layers.push(LiveOwnedMixedCompositionLayer::Cpu {
                             buffer: LiveSharedCpuBufferSource {
@@ -424,6 +509,14 @@ pub fn lower_head_composition_plan_with_caches(
         direct_scanout,
     })
 }
+
+#[cfg(feature = "experimental-combined-frame-job")]
+mod provisional;
+#[cfg(feature = "experimental-combined-frame-job")]
+pub use provisional::{
+    LiveImageOccurrence, LiveProvisionalComposition, LiveProvisionalDecline,
+    lower_provisional_head_composition_plan,
+};
 
 fn shell_content_handle(resource: sophia_protocol::ContentResourceId) -> u64 {
     resource.id.rotate_left(17) ^ resource.generation ^ (1_u64 << 63)

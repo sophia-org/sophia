@@ -86,10 +86,10 @@ impl OwnedCopyImageJobs {
     /// Returns Stale for an absent input or foreign grant/source owner, and
     /// ClockRegression for a regressed owner clock. Recoverable admission
     /// failures consume the whole input and return a reserved Refused result.
-    pub fn admit_frame_commit(
+    pub fn admit_frame_commit<P: Send + 'static>(
         &mut self,
         registry: &mut ContentEpochRegistry,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         ring: Option<&OwnedRing>,
         input: &mut Option<crate::ContentFrameCommit>,
         response_room: usize,
@@ -105,19 +105,24 @@ impl OwnedCopyImageJobs {
             None,
             now,
             deadline,
+            #[cfg(any(test, feature = "experimental-combined-frame-job"))]
+            None,
         )
     }
 
-    pub(crate) fn admit_frame_commit_with_source(
+    pub(crate) fn admit_frame_commit_with_source<P: Send + 'static>(
         &mut self,
         registry: &mut ContentEpochRegistry,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         ring: Option<&OwnedRing>,
         input: &mut Option<crate::ContentFrameCommit>,
         response_room: usize,
         source_error: Option<crate::ContentCandidateError>,
         now: u64,
         deadline: Instant,
+        #[cfg(any(test, feature = "experimental-combined-frame-job"))] combined: Option<
+            &mut Option<crate::CombinedReservation>,
+        >,
     ) -> Result<crate::ContentFrameAdmission, crate::ContentCandidateError> {
         let slot = self.pending.iter_mut().find(|slot| slot.is_none());
         let (decision, admission) = registry.reserve_frame_commit(
@@ -129,6 +134,8 @@ impl OwnedCopyImageJobs {
             source_error,
             now,
             deadline,
+            #[cfg(any(test, feature = "experimental-combined-frame-job"))]
+            combined,
         )?;
         Ok(match decision {
             crate::ContentFrameRequestAdmission::Deferred => crate::ContentFrameAdmission::Deferred,
@@ -154,10 +161,10 @@ impl OwnedCopyImageJobs {
     /// Reserve the existing worker, resource and frame owners before consuming input.
     /// The caller retains source-release journal capacity and freshly checks custody.
     /// `response_room` includes all connection-wide record and byte limits.
-    pub fn reserve_frame_copy(
+    pub fn reserve_frame_copy<P: Send + 'static>(
         &mut self,
         registry: &mut ContentEpochRegistry,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         ring: &OwnedRing,
         frame: OwnedFrameCopyRequest,
         response_room: usize,
@@ -234,10 +241,10 @@ impl OwnedCopyImageJobs {
     /// Reserve destination and worker credits against the ring's actual grant.
     /// The export owner must first hold terminal/slot-release journal credits
     /// and check current custody. No source read or slot handoff occurs here.
-    pub fn reserve(
+    pub fn reserve<P: Send + 'static>(
         &mut self,
         registry: &mut ContentEpochRegistry,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         ring: &OwnedRing,
         request: OwnedCopyImageRequest,
         now: u64,
@@ -263,9 +270,9 @@ impl OwnedCopyImageJobs {
     /// Only the exact reserved ring/offer/slot/generation may supply this job.
     /// A refusal returns its ticket intact: it still owes its own slot release.
     /// Keep the table paired with the same worker for its entire lifetime.
-    pub fn submit(
+    pub fn submit<P: Send + 'static>(
         &mut self,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         job: u64,
         source: OwnedRingRead,
     ) -> Result<(), (IsbSubmitFailure, OwnedRingRead)> {
@@ -284,5 +291,112 @@ impl OwnedCopyImageJobs {
         worker.submit_ring_reserved(job, source)?;
         pending.submitted = true;
         Ok(())
+    }
+}
+
+/// What the plan hook needs about one admitted combined copy, read from its
+/// row: the host-derived description and the exact candidate binding.
+#[cfg(all(
+    feature = "experimental-native-frame-transaction",
+    any(test, feature = "experimental-combined-frame-job")
+))]
+pub struct CombinedFrameAdmitted<'a> {
+    pub job: u64,
+    pub description: &'a sophia_protocol::ContentResourceBegin,
+    pub binding: crate::FrameCopyBinding,
+    /// The job's original validation deadline; the renderer's plan expires
+    /// with it.
+    pub deadline: Instant,
+}
+
+#[cfg(all(
+    feature = "experimental-native-frame-transaction",
+    any(test, feature = "experimental-combined-frame-job")
+))]
+impl OwnedCopyImageJobs {
+    /// `admit_frame_commit` whose copy takes one combined credit. The
+    /// reservation comes back beside the admission, and only an accepted copy
+    /// keeps it: every other outcome already released that credit.
+    #[doc(hidden)]
+    pub fn admit_frame_commit_combined<P: Send + 'static>(
+        &mut self,
+        registry: &mut ContentEpochRegistry,
+        worker: &mut IsbValidationWorker<P>,
+        ring: Option<&OwnedRing>,
+        input: &mut Option<crate::ContentFrameCommit>,
+        response_room: usize,
+        now: u64,
+        deadline: Instant,
+    ) -> Result<
+        (
+            crate::ContentFrameAdmission,
+            Option<crate::CombinedReservation>,
+        ),
+        crate::ContentCandidateError,
+    > {
+        let mut reservation = None;
+        let admission = self.admit_frame_commit_with_source(
+            registry,
+            worker,
+            ring,
+            input,
+            response_room,
+            None,
+            now,
+            deadline,
+            Some(&mut reservation),
+        )?;
+        let kept = match admission {
+            crate::ContentFrameAdmission::Accepted {
+                copy_job: Some(job),
+            } => reservation.filter(|reservation| reservation.job() == job),
+            _ => None,
+        };
+        Ok((admission, kept))
+    }
+
+    /// The row of an admitted, unsent frame copy.
+    pub fn combined_admitted(&self, job: u64) -> Option<CombinedFrameAdmitted<'_>> {
+        let pending = self.pending.iter().flatten().find(|pending| {
+            pending.admission.worker_job == job && !pending.submitted && pending.result.is_none()
+        })?;
+        Some(CombinedFrameAdmitted {
+            job,
+            description: &pending.admission.metadata.description,
+            binding: pending.admission.metadata.frame?,
+            deadline: pending.admission.deadline,
+        })
+    }
+
+    /// `submit` with the combined send: the same exact binding check, then
+    /// the row's own admitted description travels with the job. The table's
+    /// flag moves only after the worker accepted the send, as the worker's
+    /// own does. A refusal returns the ticket and the plan intact.
+    pub fn submit_combined<P: Send + 'static>(
+        &mut self,
+        worker: &mut IsbValidationWorker<P>,
+        reservation: &crate::CombinedReservation,
+        source: OwnedRingRead,
+        plan: P,
+        inbox: crate::CombinedInbox<P>,
+    ) -> Result<std::sync::mpsc::Receiver<P>, (IsbSubmitFailure, OwnedRingRead, P)> {
+        let job = reservation.job();
+        let Some(pending) = self.pending.iter_mut().flatten().find(|pending| {
+            pending.admission.worker_job == job
+                && !pending.submitted
+                && pending.stopped.is_none()
+                && pending.result.is_none()
+                && source.matches(
+                    &pending.admission.metadata.binding,
+                    pending.admission.metadata.request.slot,
+                )
+        }) else {
+            return Err((IsbSubmitFailure::Invalid, source, plan));
+        };
+        let description = pending.admission.metadata.description.clone();
+        let returned =
+            worker.submit_ring_combined(reservation, source, description, plan, inbox)?;
+        pending.submitted = true;
+        Ok(returned)
     }
 }

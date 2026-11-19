@@ -2,7 +2,7 @@
 use super::*;
 use crate::OwnedRingRead;
 
-impl IsbValidationWorker {
+impl<P: Send + 'static> IsbValidationWorker<P> {
     /// On refusal return the exact source ticket; it still owes a slot release.
     /// The caller may retry against this reservation or drop the ticket to stop
     /// all source reads, then reconcile its resource and journal obligations.
@@ -22,6 +22,7 @@ impl IsbValidationWorker {
             bytes: pending.bytes,
             deadline: pending.deadline,
             cancelled: pending.cancelled.clone(),
+            combined: Default::default(),
         };
         match self.sender.try_send(job) {
             Ok(()) => {

@@ -7,6 +7,9 @@ use sophia_protocol::*;
 use std::fs::File;
 use std::os::unix::{fs::FileExt, net::UnixStream};
 
+#[path = "shell_frame_copy_combined.rs"]
+mod combined;
+
 struct Fixture {
     transport: ShellComponentTransport,
     epochs: ContentEpochRegistry,
@@ -17,6 +20,13 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        let mut fixture = Self::unserviced();
+        fixture.service();
+        fixture
+    }
+
+    /// The fixture before any owner adopted its ring.
+    fn unserviced() -> Self {
         let mut epochs = epochs();
         let mut request = offer(1, 0, 2).request;
         request.allocation.generation = 1;
@@ -146,15 +156,13 @@ impl Fixture {
         transport.wire = Some(Box::new(
             ShellFileWire::adopt(local, files, None, false).unwrap(),
         ));
-        let mut fixture = Self {
+        Self {
             transport,
             epochs,
             owner: OwnedCopyOwner::default(),
             worker: IsbValidationWorker::new(1, PIXELS).unwrap(),
             _peer: peer,
-        };
-        fixture.service();
-        fixture
+        }
     }
 
     fn service(&mut self) {
@@ -171,6 +179,15 @@ impl Fixture {
     }
 
     fn submit(&mut self, stream: u64) {
+        self.submit_with(stream, |_| {});
+    }
+
+    /// `submit`, with `edit` applied to the commit before it is encoded.
+    fn submit_with(
+        &mut self,
+        stream: u64,
+        edit: impl FnOnce(&mut sophia_protocol::shell_files::ShellFrameCommit),
+    ) {
         let ShellFrameRecord::Commit(mut frame) =
             decode_shell_frame_record(&golden("commit-copy"), ShellFileClass::Candidate, 13, 8192)
                 .unwrap()
@@ -209,6 +226,7 @@ impl Fixture {
             width: 48,
             height: 24,
         });
+        edit(&mut frame);
         let record = ShellFrameRecord::Commit(frame);
         let bytes = encode_shell_frame_record(
             ShellFileHeader {

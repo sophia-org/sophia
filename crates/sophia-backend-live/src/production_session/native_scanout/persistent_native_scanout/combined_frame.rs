@@ -1,0 +1,388 @@
+//! Combined frame-job entry points for the Session owner (BRIDGE.md 4c-3,
+//! AUTHORITY-STEP3.md 4c-4). Admission picks the one facade serving an
+//! output; every later call reaches that issuing facade through its
+//! `CombinedHead`, whatever the output became since.
+use super::*;
+use crate::{
+    CombinedComposition, CombinedDispatch, CombinedFacade, CombinedRelease, CombinedRenderPlan,
+    CombinedRenderResult, CombinedSettleRefused, RenderDeviceDiscoveryBackend,
+};
+use sophia_runtime::{CombinedInbox, CombinedReservation, IsbValidationWorker, ValidatedIsbPixels};
+use std::io;
+
+#[path = "../../../../tests/support/combined_frame_routing.rs"]
+mod routing_tests;
+// G3-4: the two-phase accept, beside this file.
+#[path = "combined_accept.rs"]
+mod accept;
+pub(crate) use accept::CombinedAcceptNative;
+pub use accept::{CombinedAccept, CombinedAcceptPlan};
+// G3-5a: one device-free native authority over the owner's parts.
+#[path = "../../../../tests/support/combined_native_fixture.rs"]
+mod native_fixture;
+#[cfg(any(test, feature = "test-support"))]
+pub use native_fixture::{
+    CombinedDeclaredHead, CombinedNativeFixture, CombinedSeen, CombinedSettleFault,
+};
+// The one deterministic device both device-free fixtures drive.
+#[cfg(all(
+    any(test, feature = "test-support"),
+    feature = "experimental-combined-frame-job"
+))]
+#[path = "../../../../tests/support/combined_frame_accept_device.rs"]
+mod accept_device;
+
+type Exporter<R> = NativeGbmRenderedScanoutBufferDiscoveryExporter<R>;
+
+/// The facade that issued one combined admission. Opaque to the session; it
+/// locates the same renderer state after disable, mirror or remap, and never
+/// a replacement facade attached under the same output key.
+pub struct CombinedHead {
+    native_owner: crate::NativeFrameOwner,
+    head: sophia_engine::RenderHeadId,
+    target_generation: u64,
+    facade: CombinedFacade,
+}
+
+impl CombinedHead {
+    /// The head's target generation at admission; acceptance compares it
+    /// with the current one, cleanup never does.
+    pub fn target_generation(&self) -> u64 {
+        self.target_generation
+    }
+}
+
+#[cfg(feature = "diagnostic-combined-witness")]
+impl CombinedHead {
+    /// Gate 4 C3b: the issuing identity this admission carries, as (native
+    /// owner, head, facade ticket), read-only, for the witness's records.
+    pub fn witness_identity(&self) -> (u64, u64, u64) {
+        (
+            self.native_owner.raw(),
+            self.head.raw(),
+            self.facade.ticket(),
+        )
+    }
+}
+
+/// The parts of the native scanout the combined job routes through. The
+/// production entries below use this and nothing else, so device-free
+/// exporters exercise the same lookup.
+struct CombinedRoutes<'a, R: RenderDeviceDiscoveryBackend> {
+    native_owner: crate::NativeFrameOwner,
+    heads: &'a mut [LiveProductionNativeHead],
+    exporters: &'a mut [Exporter<R>],
+}
+
+impl<R: RenderDeviceDiscoveryBackend> CombinedRoutes<'_, R> {
+    /// One output, one head, one facade: a mirrored output is refused rather
+    /// than split across facades that each hold their own Release cell.
+    fn reserve(
+        &mut self,
+        output: OutputId,
+    ) -> io::Result<(CombinedHead, CombinedInbox<CombinedRenderPlan>)> {
+        let heads = &*self.heads;
+        let mut serving = heads
+            .iter()
+            .enumerate()
+            .filter(|(_, head)| head.enabled && head.output.id == output);
+        let (index, head) = serving.next().ok_or(io::ErrorKind::NotFound)?;
+        if serving.next().is_some() {
+            return Err(io::ErrorKind::Unsupported.into());
+        }
+        let exporter = self
+            .exporters
+            .get_mut(index)
+            .ok_or(io::ErrorKind::NotFound)?;
+        let (facade, inbox) = exporter.reserve_combined_frame()?;
+        Ok((
+            CombinedHead {
+                native_owner: self.native_owner,
+                head: head.head,
+                target_generation: head.target_generation,
+                facade,
+            },
+            inbox,
+        ))
+    }
+
+    /// The exporter whose facade issued `head`, or none. Heads and exporters
+    /// keep their construction order, so the head identity is a check here,
+    /// and the claim pointer is the exact key. `enabled` and the current
+    /// output are never read: cleanup follows the issuer, not the topology.
+    fn issuing(&mut self, head: &CombinedHead) -> Option<&mut Exporter<R>> {
+        if head.native_owner != self.native_owner {
+            return None;
+        }
+        self.exporters
+            .iter_mut()
+            .zip(self.heads.iter())
+            .find(|(exporter, current)| {
+                current.head == head.head && exporter.issued_combined(&head.facade)
+            })
+            .map(|(exporter, _)| exporter)
+    }
+
+    fn cancel(&mut self, head: &CombinedHead) -> io::Result<bool> {
+        self.issuing(head)
+            .and_then(|exporter| exporter.cancel_combined_frame(&head.facade))
+            .ok_or_else(|| io::ErrorKind::NotFound.into())
+    }
+
+    fn take(&mut self, head: &CombinedHead) -> io::Result<Option<CombinedRenderResult>> {
+        self.issuing(head)
+            .and_then(|exporter| exporter.take_combined_frame_result(&head.facade))
+            .unwrap_or_else(|| Err(io::ErrorKind::NotFound.into()))
+    }
+
+    fn settle(
+        &mut self,
+        head: &CombinedHead,
+        validator: &mut IsbValidationWorker<CombinedRenderPlan>,
+        reservation: CombinedReservation,
+        result: CombinedRenderResult,
+    ) -> Result<ValidatedIsbPixels, CombinedSettleRefused> {
+        match self.issuing(head) {
+            Some(exporter) => {
+                exporter.settle_combined_frame(&head.facade, validator, reservation, result)
+            }
+            None => Err(CombinedSettleRefused::RendererNotFound(
+                reservation,
+                Box::new(result),
+            )),
+        }
+    }
+
+    /// The facade's half of settlement alone, for the fixture's declared
+    /// credit fault.
+    #[cfg(any(test, feature = "test-support"))]
+    fn settle_cell(
+        &mut self,
+        head: &CombinedHead,
+        reservation: CombinedReservation,
+        result: CombinedRenderResult,
+    ) -> Result<
+        (
+            CombinedReservation,
+            sophia_runtime::CombinedToken,
+            ValidatedIsbPixels,
+        ),
+        CombinedSettleRefused,
+    > {
+        match self.issuing(head) {
+            Some(exporter) => exporter.settle_combined_cell(&head.facade, reservation, result),
+            None => Err(CombinedSettleRefused::RendererNotFound(
+                reservation,
+                Box::new(result),
+            )),
+        }
+    }
+
+    /// The plan for `composition` as native frame `frame`, sent under the
+    /// admission `head` reserved, or `None` (a refused send): the admitted
+    /// copy must be exactly the composed candidate, and the composed head
+    /// still the enabled head of that output at the reserved generation, on
+    /// the facade that issued `head`. The frame is composed, never direct.
+    fn plan(
+        &self,
+        composition: CombinedComposition,
+        head: &CombinedHead,
+        frame: LiveProductionNativeFrameId,
+        admitted: &sophia_protocol::ContentResourceBegin,
+        deadline: std::time::Instant,
+    ) -> Option<(CombinedRenderPlan, CombinedDispatch)> {
+        let admitted = sophia_engine::CompositorImageSourceIdentity::Shell(admitted.clone());
+        let provisional = &composition.frame;
+        let exact = !composition.candidate.is_empty()
+            && composition.candidate.iter().all(|id| *id == admitted)
+            && provisional
+                .composition
+                .images
+                .iter()
+                .filter(|image| image.provisional)
+                .all(|image| image.resource == admitted);
+        if !exact
+            || head.native_owner != self.native_owner
+            || provisional.native_owner != self.native_owner
+            || provisional.head != head.head
+            || provisional.target_generation != head.target_generation
+        {
+            return None;
+        }
+        let (index, current) = self.heads.iter().enumerate().find(|(_, current)| {
+            current.enabled && current.head == head.head && current.output.id == composition.output
+        })?;
+        let exporter = self.exporters.get(index)?;
+        if current.target_generation != head.target_generation
+            || !exporter.issued_combined(&head.facade)
+        {
+            return None;
+        }
+        let CombinedComposition {
+            frame: provisional,
+            key,
+            candidate,
+            ..
+        } = composition;
+        let sophia_renderer_live::LiveProvisionalComposition {
+            frame: mut mixed,
+            images,
+            ..
+        } = provisional.composition;
+        let snapshot = mixed.output_damage_snapshot.clone()?;
+        mixed.direct_scanout =
+            sophia_engine::DirectScanoutVerdict::CompositionRequired("combined_frame");
+        let identity = self.native_owner.frame(
+            current.output.id,
+            current.head,
+            current.target_generation,
+            frame.raw(),
+        );
+        let plan = CombinedRenderPlan::new(
+            deadline,
+            crate::api::LiveGbmEglFrameTargetRecord::new(current.output.size),
+            crate::PendingRenderedFrame::Mixed(mixed, Some(identity)),
+            exporter.combined_preferred_modifiers(),
+            None,
+            crate::CombinedPlaceholder::of_composition(&images),
+        );
+        let dispatch = CombinedDispatch {
+            frame,
+            key,
+            candidate,
+            checksum: provisional.logical_content_checksum,
+            snapshot,
+            correlation: plan.correlation(),
+            output_format: None,
+        };
+        Some((plan, dispatch))
+    }
+
+    fn release_held(&mut self, head: &CombinedHead, job: u64) -> CombinedRelease {
+        self.issuing(head)
+            .map_or(CombinedRelease::NotFound, |exporter| {
+                exporter.release_combined_held(&head.facade, job)
+            })
+    }
+
+    fn flush(&mut self, head: &CombinedHead, job: u64) -> CombinedRelease {
+        self.issuing(head)
+            .map_or(CombinedRelease::NotFound, |exporter| {
+                exporter.flush_combined_release(&head.facade, job)
+            })
+    }
+}
+
+impl LiveProductionNativeScanout {
+    fn combined_routes(&mut self) -> CombinedRoutes<'_, RealAtomicScanoutRenderDeviceDiscovery> {
+        CombinedRoutes {
+            native_owner: self.native_frame_owner,
+            heads: &mut self.heads,
+            exporters: &mut self.exporters,
+        }
+    }
+
+    /// The native frame a combined admission is planned as, drawn from the
+    /// counter ordinary batches use, so the two never share an identity.
+    pub fn allocate_combined_frame(&mut self) -> LiveProductionNativeFrameId {
+        native_facts::allocate_frame_id(&mut self.next_frame_id)
+    }
+
+    /// The renderer half of one combined admission: the output's Release
+    /// cell, the handle that reaches it again, and an inbox for the validator.
+    pub fn reserve_combined_frame(
+        &mut self,
+        output: OutputId,
+    ) -> io::Result<(CombinedHead, CombinedInbox<CombinedRenderPlan>)> {
+        self.combined_routes().reserve(output)
+    }
+
+    /// The validator refused the submission after this admission's
+    /// reservation. `NotFound` when the issuing facade is gone; `false` when
+    /// the reservation was already spent.
+    pub fn cancel_combined_frame(&mut self, head: &CombinedHead) -> io::Result<bool> {
+        self.combined_routes().cancel(head)
+    }
+
+    /// `NotFound` when the issuing facade is gone, `InvalidInput` when this
+    /// admission is no longer the one its facade is waiting on.
+    pub fn take_combined_frame_result(
+        &mut self,
+        head: &CombinedHead,
+    ) -> io::Result<Option<CombinedRenderResult>> {
+        self.combined_routes().take(head)
+    }
+
+    /// Holds an exported lease in the issuing facade before the validation
+    /// credit clears. A missing facade is `RendererNotFound` with everything
+    /// returned, never a settlement.
+    pub fn settle_combined_frame(
+        &mut self,
+        head: &CombinedHead,
+        validator: &mut IsbValidationWorker<CombinedRenderPlan>,
+        reservation: CombinedReservation,
+        result: CombinedRenderResult,
+    ) -> Result<ValidatedIsbPixels, CombinedSettleRefused> {
+        self.combined_routes()
+            .settle(head, validator, reservation, result)
+    }
+
+    /// The combined job's owner facts for `output`, with this owner's own
+    /// shell capture endpoint read; `None` when they are unknown.
+    pub(crate) fn combined_owner_state(
+        &self,
+        output: OutputId,
+    ) -> Option<crate::production_visual_runtime::CombinedOwnerState> {
+        native_facts::combined_owner_state(
+            &self.heads,
+            &self.exporters,
+            &self.deferred_mirror_generations,
+            output,
+            self.combined_shell_capture(output),
+        )
+    }
+
+    /// This owner's shell capture endpoint read for `output`, now: eligibility
+    /// at reserve and the consumption guards each call it in their own owner
+    /// call (G3-5d d-0).
+    #[allow(
+        clippy::let_and_return,
+        reason = "the endpoint exists only with shell capture"
+    )]
+    pub(super) fn combined_shell_capture(&self, output: OutputId) -> bool {
+        #[cfg(feature = "experimental-shell-capture")]
+        let capture = self.preview_images.capture.may_capture(output);
+        #[cfg(not(feature = "experimental-shell-capture"))]
+        let capture = {
+            let _ = output;
+            false
+        };
+        capture
+    }
+
+    /// The plan for one admitted copy of `composition`; `None` is a refused
+    /// send, and the caller cancels the reservation.
+    pub fn plan_combined_frame(
+        &mut self,
+        composition: CombinedComposition,
+        head: &CombinedHead,
+        frame: LiveProductionNativeFrameId,
+        admitted: &sophia_protocol::ContentResourceBegin,
+        deadline: std::time::Instant,
+    ) -> Option<(CombinedRenderPlan, CombinedDispatch)> {
+        self.combined_routes()
+            .plan(composition, head, frame, admitted, deadline)
+    }
+
+    /// The owner declined `job`'s held result: retain its lease for Release
+    /// and try the flush once.
+    pub fn release_combined_held(&mut self, head: &CombinedHead, job: u64) -> CombinedRelease {
+        self.combined_routes().release_held(head, job)
+    }
+
+    /// The owner's per-turn maintenance for `job`'s Release debt, on idle
+    /// and disabled heads alike; it never polls ordinary work.
+    pub fn flush_combined_release(&mut self, head: &CombinedHead, job: u64) -> CombinedRelease {
+        self.combined_routes().flush(head, job)
+    }
+}

@@ -256,19 +256,33 @@ impl LiveRenderedScanoutBufferExporter for DeterministicRenderedScanoutExporter 
     }
 }
 
+/// Also the device boundary of the combined accept controls (G3-4).
 #[derive(Debug)]
-struct DeterministicPrimaryPlaneScanoutDevice {
+pub(crate) struct DeterministicPrimaryPlaneScanoutDevice {
     selection: DeterministicKmsSelectionDevice,
     properties: DeterministicPropertyLookupDevice,
     resources: DeterministicPrimaryPlaneResourceDevice,
 }
 
 impl DeterministicPrimaryPlaneScanoutDevice {
-    fn ready() -> Self {
+    pub(crate) fn ready() -> Self {
         Self {
             selection: DeterministicKmsSelectionDevice::ready(),
             properties: DeterministicPropertyLookupDevice::ready(),
             resources: DeterministicPrimaryPlaneResourceDevice,
+        }
+    }
+
+    /// G3-5d d-2b2: `ready` with its one connector mode at `size`, so a
+    /// fixture whose output is not the deterministic size can match it.
+    #[cfg(all(
+        any(test, feature = "test-support"),
+        feature = "experimental-combined-frame-job"
+    ))]
+    pub(crate) fn sized(size: Size) -> Self {
+        Self {
+            selection: DeterministicKmsSelectionDevice { size },
+            ..Self::ready()
         }
     }
 }

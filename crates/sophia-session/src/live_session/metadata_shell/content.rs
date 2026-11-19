@@ -16,9 +16,23 @@ pub use actions::NativeLauncherActionService;
 mod native_service;
 mod placement;
 mod projection;
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session"
+))]
+pub(crate) use projection::project_frame_commit;
 use projection::project_render_bundle;
 #[path = "content/submission.rs"]
 mod submission;
+// G3-5c: the combined arm of `submit_bundle`.
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session"
+))]
+#[path = "content/combined_arm.rs"]
+mod combined_arm;
 pub use native_service::NativeLauncherContentService;
 use placement::{panel_pixel_thickness, panel_rect, popout_rect, quantize};
 
@@ -27,6 +41,34 @@ const DRM_FORMAT_ARGB8888: u32 = u32::from_le_bytes(*b"AR24");
 #[cfg(test)]
 #[path = "../../../tests/support/component_reconnect/content.rs"]
 pub(in crate::live_session) mod reconnect_fixture;
+
+/// The native a content service drives, and under CS the combined row a
+/// submission joins (G3-5c C2). The bar branch lends a row when native
+/// scanout is present (gate 4 C3); every other caller passes `ordinary`.
+pub(crate) struct ContentNative<'a, N: sophia_backend_live::ShellContentNative> {
+    pub(crate) native: Option<&'a mut N>,
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    pub(crate) combined:
+        Option<crate::shell_component_connections::combined_row::CombinedConsume<'a>>,
+}
+
+impl<'a, N: sophia_backend_live::ShellContentNative> ContentNative<'a, N> {
+    pub(crate) fn ordinary(native: Option<&'a mut N>) -> Self {
+        Self {
+            native,
+            #[cfg(all(
+                feature = "experimental-combined-frame-job",
+                feature = "experimental-native-frame-transaction",
+                feature = "native-session"
+            ))]
+            combined: None,
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 enum ContentServiceStage {
@@ -176,11 +218,39 @@ impl LiveContentSession {
             Box<dyn std::error::Error>,
         >,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.service_on(
+            transport,
+            runtime,
+            scene,
+            ContentNative::ordinary(native_scanout),
+            outputs,
+            output_bounds,
+            root,
+            transaction,
+        )
+    }
+
+    /// `service`'s body over any `ShellContentNative` (G3-5c C2).
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn service_on<N: sophia_backend_live::ShellContentNative>(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        runtime: &mut sophia_backend_live::LiveProductionVisualRuntime,
+        scene: &sophia_backend_live::LiveProductionCpuScene,
+        native: ContentNative<'_, N>,
+        outputs: &[HeadlessOutput],
+        output_bounds: &[(OutputId, Rect)],
+        root: Rect,
+        transaction: &mut dyn FnMut() -> Result<
+            sophia_protocol::TransactionId,
+            Box<dyn std::error::Error>,
+        >,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.service_with_catalog(
             transport,
             runtime,
             scene,
-            native_scanout,
+            native,
             outputs,
             output_bounds,
             root,
@@ -190,12 +260,12 @@ impl LiveContentSession {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn service_with_catalog(
+    pub(super) fn service_with_catalog<N: sophia_backend_live::ShellContentNative>(
         &mut self,
         transport: &mut ShellTransportConnection<'_>,
         runtime: &mut sophia_backend_live::LiveProductionVisualRuntime,
         scene: &sophia_backend_live::LiveProductionCpuScene,
-        native_scanout: Option<&mut sophia_backend_live::LiveProductionNativeScanout>,
+        native: ContentNative<'_, N>,
         outputs: &[HeadlessOutput],
         output_bounds: &[(OutputId, Rect)],
         root: Rect,
@@ -211,7 +281,7 @@ impl LiveContentSession {
         if transport.content_grant().is_none() {
             return Ok(());
         }
-        let mut native_scanout = native_scanout;
+        let mut native = native;
         while self.observe_presentation(transport, runtime)? {}
         let now = self.now_msec();
         let presented_allocations = self
@@ -253,7 +323,7 @@ impl LiveContentSession {
             transport,
             runtime,
             scene,
-            native_scanout.as_deref_mut(),
+            native.native.as_deref_mut(),
             now,
             transaction,
         )?;
@@ -314,7 +384,7 @@ impl LiveContentSession {
                 transport,
                 runtime,
                 scene,
-                native_scanout.as_deref_mut(),
+                &mut native,
                 outputs,
                 output_bounds,
                 root,

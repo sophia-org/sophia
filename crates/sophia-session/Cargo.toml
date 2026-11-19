@@ -38,6 +38,8 @@ x11rb = { version = "0.13.1", features = ["present", "randr", "dri3", "xfixes"] 
 rustix = { version = "1.1", default-features = false, features = ["param"] }
 serde_json = "1"
 sophia-backend-live = { path = "../sophia-backend-live", default-features = false, features = ["test-support"] }
+# G3-5d d-2b2: the validator's hold, progress and serial handles.
+sophia-runtime = { path = "../sophia-runtime", features = ["test-support"] }
 sophia-conformance = { path = "../sophia-conformance" }
 sophia-9p-client = { workspace = true }
 sophia-launch-client = { workspace = true }
@@ -51,6 +53,10 @@ experimental-native-frame-transaction = ["sophia-runtime/experimental-native-fra
 experimental-draw = ["sophia-runtime/experimental-draw"]
 experimental-shell-capture = ["sophia-renderer-live/experimental-shell-capture", "sophia-runtime/experimental-shell-capture", "sophia-backend-live/experimental-shell-capture"]
 experimental-custody-dispatch = ["sophia-runtime/experimental-custody-dispatch"]
+experimental-combined-frame-job = ["sophia-runtime/experimental-combined-frame-job", "sophia-backend-live/experimental-combined-frame-job"]
+# Gate 4 C3b: the diagnostic combined witness (specifications 03/04). Records
+# only under the combined feature set; never a default and never an ABBA arm.
+diagnostic-combined-witness = ["sophia-runtime/diagnostic-combined-witness", "sophia-backend-live?/diagnostic-combined-witness"]
 default = []
 native-session = [
     "dep:zbus",

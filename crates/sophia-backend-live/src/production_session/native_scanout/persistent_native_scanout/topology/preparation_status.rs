@@ -59,31 +59,7 @@ impl LiveProductionNativeScanout {
         if !rollback && self.output_topology_preparation.is_some() {
             return Some("topology_preparation");
         }
-        for head in &self.heads {
-            if head.rendering_content.is_some() {
-                return Some("head_rendering_content");
-            }
-            if head.submitted_content.is_some() {
-                return Some("head_submitted_content");
-            }
-            if head.scanout_custody.submitted().is_some() {
-                return Some("head_scanout_submission");
-            }
-            if head.prepared_scanout.is_some() {
-                return Some("head_prepared_scanout");
-            }
-            if head.scanout_custody.cleanup_pending() {
-                return Some("head_scanout_cleanup");
-            }
-        }
-        if self
-            .exporters
-            .iter()
-            .any(|exporter| exporter.worker_in_flight())
-        {
-            return Some("exporter_worker_in_flight");
-        }
-        None
+        heads_quiescence_blocker(&self.heads, &self.exporters)
     }
 
     /// Per-head pipeline state for the first head blocking quiescence.
@@ -230,4 +206,34 @@ impl LiveProductionNativeScanout {
         }
         self.output_topology_cleanup.len()
     }
+}
+
+/// The head and exporter clauses of ordinary topology quiescence, in their
+/// order. Shared with the combined accept controls, which show an accepted
+/// render blocks a topology install as an ordinary one does.
+pub(crate) fn heads_quiescence_blocker<R: crate::RenderDeviceDiscoveryBackend>(
+    heads: &[LiveProductionNativeHead],
+    exporters: &[crate::NativeGbmRenderedScanoutBufferDiscoveryExporter<R>],
+) -> Option<&'static str> {
+    for head in heads {
+        if head.rendering_content.is_some() {
+            return Some("head_rendering_content");
+        }
+        if head.submitted_content.is_some() {
+            return Some("head_submitted_content");
+        }
+        if head.scanout_custody.submitted().is_some() {
+            return Some("head_scanout_submission");
+        }
+        if head.prepared_scanout.is_some() {
+            return Some("head_prepared_scanout");
+        }
+        if head.scanout_custody.cleanup_pending() {
+            return Some("head_scanout_cleanup");
+        }
+    }
+    if exporters.iter().any(|exporter| exporter.worker_in_flight()) {
+        return Some("exporter_worker_in_flight");
+    }
+    None
 }

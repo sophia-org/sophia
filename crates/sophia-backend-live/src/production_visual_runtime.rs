@@ -28,7 +28,7 @@ mod composition_test_target;
 mod compositor_graphics;
 #[cfg(test)]
 #[path = "../tests/support/lifecycle_tests.rs"]
-mod lifecycle_tests;
+pub(crate) mod lifecycle_tests;
 #[cfg(any(test, feature = "test-support"))]
 #[allow(dead_code)]
 #[path = "../tests/support/mirrored_composition_target.rs"]
@@ -50,6 +50,20 @@ pub mod session_content_fixture;
 pub mod session_policy_presentation_fixture;
 mod software_preview_recovery;
 mod topology_target;
+// G3-5a: the native seam the Session content path drives.
+mod shell_content_native;
+#[cfg(feature = "experimental-combined-frame-job")]
+pub(crate) use compositor_graphics::combined_scene::CombinedOwnerState;
+#[cfg(feature = "experimental-combined-frame-job")]
+pub use compositor_graphics::combined_scene::{
+    CombinedComposeRefusal, CombinedComposition, CombinedDispatch, CombinedIneligible,
+    CombinedRecompose,
+};
+#[cfg(feature = "experimental-combined-frame-job")]
+pub use compositor_graphics::shell_content::{CombinedAcceptError, CombinedAcceptFailed};
+pub use shell_content_native::ShellContentNative;
+#[path = "../tests/support/combined_native_target.rs"]
+mod combined_native_target;
 use composition_target::NativeCompositionTarget;
 pub use policy_presentation::{
     LivePolicyPresentation, LivePolicyPresentationRefusal, LivePolicyPresentationRevocation,

@@ -249,6 +249,86 @@ impl ShellComponentProcesses {
     ) -> Result<R, ComponentConnectionError> {
         self.connections.with_connection(key, service)
     }
+    /// `with_connection` lending the slot's combined row too (G3-5c C2).
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    pub(crate) fn with_connection_and_row<R>(
+        &mut self,
+        key: ComponentConnectionKey,
+        service: impl FnOnce(
+            &mut ShellTransportConnection<'_>,
+            &mut crate::shell_component_connections::combined_row::CombinedRow,
+        ) -> R,
+    ) -> Result<R, ComponentConnectionError> {
+        self.connections.with_connection_and_row(key, service)
+    }
+    /// Step 1 of the combined turn: every slot's hooked image service
+    /// (G3-5d d-2b1; production from gate 4 C3).
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    pub(crate) fn turn_combined_images<N: sophia_backend_live::ShellContentNative>(
+        &mut self,
+        turn: &mut crate::shell_component_connections::combined_row::CombinedTurn<'_, N>,
+    ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
+        self.connections.turn_combined_images(turn)
+    }
+    /// Step 3 of the combined turn: every slot's walk (G3-5d d-2b1;
+    /// production from gate 4 C3).
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session"
+    ))]
+    pub(crate) fn turn_combined_walk<N: sophia_backend_live::ShellContentNative>(
+        &mut self,
+        native: &mut N,
+        instant: std::time::Instant,
+        #[cfg(all(
+            feature = "experimental-combined-frame-job",
+            feature = "experimental-native-frame-transaction",
+            feature = "native-session",
+            feature = "diagnostic-combined-witness"
+        ))]
+        witness: crate::shell_component_connections::combined_row::WitnessPass,
+    ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
+        self.connections.turn_combined_walk(
+            native,
+            instant,
+            #[cfg(all(
+                feature = "experimental-combined-frame-job",
+                feature = "experimental-native-frame-transaction",
+                feature = "native-session",
+                feature = "diagnostic-combined-witness"
+            ))]
+            witness,
+        )
+    }
+    /// Gate 4 C3b: the slots the hooked images step is expected to visit.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    pub(crate) fn witness_expected_slots(&self) -> Vec<usize> {
+        self.connections.witness_expected_slots()
+    }
+    /// Gate 4 C3b: the closing inventory; the number of slots it covers.
+    #[cfg(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "native-session",
+        feature = "diagnostic-combined-witness"
+    ))]
+    pub(crate) fn witness_inventory(&self) -> usize {
+        self.connections.witness_inventory()
+    }
     pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
         self.connections.poll_fds()
     }
@@ -264,6 +344,7 @@ impl ShellComponentProcesses {
     }
 
     /// The connection owner, for wait subscriptions made beside other descriptors.
+    #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
     pub(crate) fn connections(
         &self,
     ) -> &crate::shell_component_connections::ShellComponentConnections {

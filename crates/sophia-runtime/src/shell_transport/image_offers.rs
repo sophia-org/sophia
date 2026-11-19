@@ -206,11 +206,11 @@ impl ShellComponentTransport {
     /// The owner must reject permanent failures, and queued offers after
     /// channel closure, rather than retrying them indefinitely. Transient
     /// capacity retries must be bounded by the owner's offer deadline.
-    pub fn admit_pending_isb_image(
+    pub fn admit_pending_isb_image<P: Send + 'static>(
         &mut self,
         epochs: &mut ContentEpochRegistry,
         jobs: &mut IsbImageJobs,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         now_msec: u64,
         now: Instant,
     ) -> Result<u64, ShellTransportError> {

@@ -164,7 +164,9 @@ struct PersistentXtermSessionConfig {
     shell_content_input_enabled: bool,
     shell_capture_destination_reuse: bool,
     frame_transactions: bool,
+    #[cfg_attr(not(feature = "experimental-native-frame-transaction"), allow(dead_code))]
     frame_terminal_only: bool,
+    #[cfg_attr(not(feature = "experimental-native-frame-transaction"), allow(dead_code))]
     frame_lean: bool,
     shell_gpu_mode: sophia_config::ShellGpuMode,
     shell_proof_restart_after_visible: Option<u32>,

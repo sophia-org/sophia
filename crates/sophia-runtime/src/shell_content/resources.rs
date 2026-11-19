@@ -57,6 +57,11 @@ mod retire_on_present;
 #[cfg(feature = "experimental-shell-capture")]
 pub use backing::ContentCapturedImage;
 pub use backing::{ContentCpuResourceLease, ContentResourceLease};
+#[cfg(all(
+    feature = "experimental-native-frame-transaction",
+    any(test, feature = "experimental-combined-frame-job")
+))]
+pub use frame::FrameImageResidency;
 #[cfg(feature = "experimental-native-frame-transaction")]
 pub use retire_on_present::{ContentRetireOnPresent, ContentRetireOwner, ContentRetireToken};
 
@@ -201,6 +206,14 @@ impl ContentResourceStore {
     // transfer settlements; the shell outbox preserves that provenance.
     pub fn pending_event(&self) -> Option<&ContentResourceEvent> {
         self.events.front()
+    }
+    /// G3-5d d-2b3d, test-support only: every queued event, in order.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn pending_events(&self) -> Vec<(TransactionId, ShellContentRecord)> {
+        self.events
+            .iter()
+            .map(|event| (event.transaction, event.record.clone()))
+            .collect()
     }
 
     fn check(

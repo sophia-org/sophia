@@ -11,6 +11,8 @@ sophia-wake = { path = "../sophia-wake" }
 sophia-engine = { path = "../sophia-engine" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-renderer-live = { path = "../sophia-renderer-live" }
+# Already reached through sophia-renderer-live; named only for the combined frame job.
+sophia-runtime = { path = "../sophia-runtime", optional = true }
 sophia-drm-out-fence = { path = "../sophia-drm-out-fence", optional = true }
 sophia-seat-device = { path = "../sophia-seat-device", optional = true }
 sophia-drm-clock = { path = "../sophia-drm-clock", optional = true }
@@ -33,8 +35,12 @@ sophia-xshmfence = { path = "../sophia-xshmfence" }
 [features]
 default = []
 experimental-shell-capture = ["gbm-probe", "sophia-renderer-live/experimental-shell-capture"]
+# Validator-to-renderer frame handoff; default off until its owner join is measured.
+experimental-combined-frame-job = ["dep:sophia-runtime", "sophia-runtime/experimental-combined-frame-job", "sophia-renderer-live/experimental-combined-frame-job", "sophia-engine/experimental-combined-frame-job"]
 # Deterministic cross-crate owner fixtures; never enabled by native-session.
 test-support = ["gbm-probe", "libdrm-events"]
+# Gate 4 C3b: the diagnostic combined witness's read-only head identity. Default off.
+diagnostic-combined-witness = []
 gbm-probe = ["sophia-renderer-live/gbm-probe"]
 egl-probe = ["sophia-renderer-live/egl-probe"]
 libdrm-events = ["dep:drm", "dep:rustix", "dep:sophia-drm-out-fence", "dep:sophia-drm-clock"]

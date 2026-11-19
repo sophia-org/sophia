@@ -80,3 +80,36 @@ impl SessionContentFixture {
         self.target.teardown();
     }
 }
+
+/// G3-5d d-2b3d-2 F4-O (simulated completion), test-support only: the
+/// runtime half over the combined fixture as the composition target, as
+/// `simulate_completion` runs it over `Target`. `publish_presented_from` is
+/// the production `publish_presented_input_layers`: it settles the
+/// retirement claim keyed by the fixture's presented (output, frame) and
+/// rebuilds the output's presented input projection. `queued_claims` reads
+/// the claims the runtime recorded when it queued retained content, one per
+/// (output, native frame, layer, grant).
+#[cfg(feature = "experimental-combined-frame-job")]
+impl LiveProductionVisualRuntime {
+    pub fn publish_presented_from(&mut self, native: &crate::CombinedNativeFixture) {
+        self.publish_presented_input_layers(native);
+    }
+
+    pub fn queued_claims(
+        &self,
+    ) -> Vec<(
+        OutputId,
+        LiveProductionNativeFrameId,
+        LiveShellContentLayer,
+        ContentGrant,
+    )> {
+        self.queued_shell_retirements
+            .iter()
+            .flat_map(|((output, frame), claims)| {
+                claims
+                    .iter()
+                    .map(move |((_, layer), grant)| (*output, *frame, *layer, *grant))
+            })
+            .collect()
+    }
+}

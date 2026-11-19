@@ -5,10 +5,10 @@ use std::os::fd::OwnedFd;
 impl CpuImageJobs<ShellImageMetadata> {
     /// Journal and offer credits must already be held by the channel owner.
     /// No ImageAdmitted is published here. Failure leaves no table entry.
-    pub fn reserve(
+    pub fn reserve<P: Send + 'static>(
         &mut self,
         registry: &mut ContentEpochRegistry,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         grant: ContentGrant,
         metadata: ShellImageMetadata,
         now: u64,
@@ -34,9 +34,9 @@ impl CpuImageJobs<ShellImageMetadata> {
     /// The channel validates packet identity and shape before this handoff.
     /// Refusal returns the FD; a withdrawn or already submitted job never sends
     /// a second source to the worker.
-    pub fn submit(
+    pub fn submit<P: Send + 'static>(
         &mut self,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         job: u64,
         source: OwnedFd,
     ) -> Result<(), (IsbSubmitFailure, OwnedFd)> {

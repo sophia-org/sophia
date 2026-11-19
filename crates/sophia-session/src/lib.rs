@@ -35,6 +35,65 @@ macro_rules! session_eprintln {
 }
 pub(crate) use session_eprintln;
 
+// Gate 4 C3b: statements of the diagnostic combined witness (W = the three
+// combined gates plus `diagnostic-combined-witness`). Without W the
+// invocation expands to nothing, so every other build compiles today's text.
+// Every caller is inside `live_session` or the combined row, which compile
+// only with `native-session`; the macros exist exactly there.
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session",
+    feature = "diagnostic-combined-witness"
+))]
+macro_rules! combined_witness {
+    ($($statement:tt)*) => {
+        $($statement)*
+    };
+}
+#[cfg(all(
+    feature = "native-session",
+    not(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "diagnostic-combined-witness"
+    ))
+))]
+macro_rules! combined_witness {
+    ($($statement:tt)*) => {};
+}
+#[cfg(feature = "native-session")]
+pub(crate) use combined_witness;
+
+// Gate 4 C3b: a fallible outer exit of the component pass, labelled only
+// when its result is an error (spec 04 R3). Without W it is the expression.
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction",
+    feature = "native-session",
+    feature = "diagnostic-combined-witness"
+))]
+macro_rules! combined_witness_check {
+    ($exit:ident, $label:literal, $result:expr) => {
+        $exit.check($label, $result)
+    };
+}
+#[cfg(all(
+    feature = "native-session",
+    not(all(
+        feature = "experimental-combined-frame-job",
+        feature = "experimental-native-frame-transaction",
+        feature = "diagnostic-combined-witness"
+    ))
+))]
+macro_rules! combined_witness_check {
+    ($exit:ident, $label:literal, $result:expr) => {
+        $result
+    };
+}
+#[cfg(feature = "native-session")]
+pub(crate) use combined_witness_check;
+
 pub mod application_catalog;
 pub mod backend_args;
 pub mod backend_evidence;

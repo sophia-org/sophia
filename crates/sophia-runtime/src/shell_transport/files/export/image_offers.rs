@@ -154,12 +154,12 @@ impl ShellFiles {
 
     /// All journal failures precede owner admission. Terminal holds survive
     /// publication and can be spent only by the corresponding status/release.
-    pub(in crate::shell_transport) fn admit_image_offer(
+    pub(in crate::shell_transport) fn admit_image_offer<P: Send + 'static>(
         &mut self,
         grant: ContentGrant,
         epochs: &mut ContentEpochRegistry,
         jobs: &mut IsbImageJobs,
-        worker: &mut IsbValidationWorker,
+        worker: &mut IsbValidationWorker<P>,
         now: u64,
         deadline: Instant,
     ) -> Result<u64, Errno> {

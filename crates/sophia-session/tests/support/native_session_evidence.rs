@@ -149,3 +149,65 @@ fn an_abandoned_replacement_is_opened_and_closed_like_any_other_owner() {
     assert_eq!(session.unsettled_owners, 0);
     assert_eq!(session.epoch, 2);
 }
+
+/// Worker accounting proposal 01: combined counts add once per owner, a
+/// repeated snapshot adds nothing, and an owner that closed owing a combined
+/// cell stays visible after a clean replacement.
+#[cfg(feature = "experimental-combined-frame-job")]
+#[test]
+fn combined_worker_counts_add_once_per_owner_and_debt_at_close_stays_visible() {
+    use sophia_backend_live::LiveRendererCombinedWorkerMetrics as Counts;
+    let owner = |accepted: usize, owed: usize| NativeEvidenceSnapshot {
+        resources: LivePersistentRenderMetrics {
+            worker_combined: Counts {
+                admissions: accepted + owed,
+                holds: accepted + owed,
+                acceptances: accepted,
+                completions: accepted,
+                cells_not_free: owed,
+                ..Counts::default()
+            },
+            ..Default::default()
+        },
+        ..successful(1, 1)
+    };
+    let mut session = NativeSessionEvidence::default();
+    session.open("startup");
+    session.close(&owner(10, 1), "topology_rebuild");
+    session.open("topology_rebuild");
+    session.close(&owner(5, 0), "completion");
+    let first = session.snapshot(None).resources.worker_combined;
+    assert_eq!(
+        session.snapshot(None).resources.worker_combined,
+        first,
+        "a repeated snapshot adds nothing"
+    );
+    assert_eq!(
+        (
+            first.admissions,
+            first.holds,
+            first.acceptances,
+            first.completions
+        ),
+        (16, 16, 15, 15)
+    );
+    assert_eq!(
+        first.cells_not_free, 1,
+        "a clean later owner does not erase the debt at close"
+    );
+
+    let mut clean = NativeSessionEvidence::default();
+    clean.open("startup");
+    clean.close(&owner(3, 0), "topology_rebuild");
+    clean.open("topology_rebuild");
+    clean.close(&owner(4, 0), "completion");
+    let totals = clean.snapshot(None).resources.worker_combined;
+    assert_eq!(
+        (
+            totals.acceptances,
+            totals.completions,
+            totals.cells_not_free
+        ),
+        (7, 7, 0)
+    );
+}

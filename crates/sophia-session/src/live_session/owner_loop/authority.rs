@@ -875,7 +875,22 @@
                             }
                         }
                     }
-                    let service = runtime.service_native(native_scanout, scene)?;
+                    #[cfg(all(
+                        feature = "experimental-combined-frame-job",
+                        feature = "experimental-native-frame-transaction",
+                        feature = "native-session",
+                        feature = "diagnostic-combined-witness"
+                    ))]
+                    crate::shell_component_connections::combined_row::witness::native_begin(witness_iteration, "authority");
+                    let served = runtime.service_native(native_scanout, scene);
+                    #[cfg(all(
+                        feature = "experimental-combined-frame-job",
+                        feature = "experimental-native-frame-transaction",
+                        feature = "native-session",
+                        feature = "diagnostic-combined-witness"
+                    ))]
+                    crate::shell_component_connections::combined_row::witness::native_end(witness_iteration, "authority", served.is_ok());
+                    let service = served?;
                     last_native_frame_service = Instant::now();
                     record_discarded_presents(&service.discarded_presents);
                     if let Some(retired) = service.retired_present {

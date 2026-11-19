@@ -159,7 +159,7 @@ impl NativeLauncherContentService {
                 transport,
                 runtime,
                 scene,
-                native,
+                &mut super::ContentNative::ordinary(native),
                 outputs,
                 bounds,
                 root,

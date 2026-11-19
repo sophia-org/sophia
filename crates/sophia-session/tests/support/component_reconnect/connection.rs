@@ -30,3 +30,94 @@ impl ShellComponentProcesses {
         (key, self.connections.socket_path(slot).unwrap().to_owned())
     }
 }
+
+/// G3-5b's controlled driver and its rows, through the process owner the
+/// harness holds.
+#[cfg(all(
+    feature = "experimental-combined-frame-job",
+    feature = "experimental-native-frame-transaction"
+))]
+impl ShellComponentProcesses {
+    pub(crate) fn turn_combined<N: sophia_backend_live::ShellContentNative>(
+        &mut self,
+        turn: &mut crate::shell_component_connections::combined_row::CombinedTurn<'_, N>,
+    ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
+        self.connections.turn_combined(turn)
+    }
+
+    pub(crate) fn combined_row(
+        &self,
+        slot: usize,
+    ) -> &crate::shell_component_connections::combined_row::CombinedRow {
+        self.connections.combined_row(slot)
+    }
+
+    pub(crate) fn combined_row_mut(
+        &mut self,
+        slot: usize,
+    ) -> &mut crate::shell_component_connections::combined_row::CombinedRow {
+        self.connections.combined_row_mut(slot)
+    }
+
+    pub(crate) fn image_pending(&self, slot: usize) -> usize {
+        self.connections.image_pending(slot)
+    }
+
+    /// G3-5d d-2b3d: the slot's transport facts beside its attempt.
+    pub(crate) fn transport_facts(
+        &self,
+        slot: usize,
+    ) -> Option<(
+        Option<(sophia_protocol::ContentGrant, ComponentConnectionPhase)>,
+        sophia_runtime::TransportFacts,
+    )> {
+        self.connections.transport_facts(slot)
+    }
+
+    /// G3-5d d-2b3d: the slot grant's queued store events.
+    pub(crate) fn store_event_facts(&self, slot: usize) -> Option<sophia_runtime::StoreEventFacts> {
+        self.connections.store_event_facts(slot)
+    }
+
+    /// G3-5d d-2b3d-2: the slot grant's content memory usage.
+    pub(crate) fn content_usage(&self, slot: usize) -> Option<sophia_runtime::ContentMemoryUsage> {
+        self.connections.content_usage(slot)
+    }
+
+    /// G3-5d d-2b3d-2: the slot's queued, unadmitted lean frame commit and
+    /// the admission preconditions read from its embedded offer.
+    pub(crate) fn queued_frame_facts(
+        &mut self,
+        slot: usize,
+    ) -> Option<sophia_runtime::QueuedFrameFacts> {
+        self.connections.queued_frame_facts(slot)
+    }
+
+    /// G3-5d d-2b3d: the slot's owned source work awaiting SlotReleased.
+    pub(crate) fn owned_releasing(
+        &self,
+        slot: usize,
+    ) -> Option<Vec<sophia_runtime::owned_ring_protocol::Identity>> {
+        self.connections.owned_releasing(slot)
+    }
+
+    /// G3-5d d-2b3d: the exact candidate's internal prepared state.
+    pub(crate) fn candidate_prepared(
+        &self,
+        slot: usize,
+        output: sophia_protocol::ContentOutputId,
+        generation: u64,
+    ) -> Option<bool> {
+        self.connections
+            .candidate_prepared(slot, output, generation)
+    }
+
+    /// G3-5d d-2b2: the slot's validation worker, for a control's handles.
+    pub(crate) fn combined_validator(
+        &mut self,
+        slot: usize,
+    ) -> Option<&mut sophia_runtime::IsbValidationWorker<sophia_backend_live::CombinedRenderPlan>>
+    {
+        self.connections.combined_validator(slot)
+    }
+}

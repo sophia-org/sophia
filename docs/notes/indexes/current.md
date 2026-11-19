@@ -57,6 +57,12 @@ read from current source, against the dcp-01 rows, and says for each candidate
 consolidation whether it removes a loop body, a wait or a leg of an exchange.
 Observed counts stay apart from source associations; nothing is selected.
 
+The [validation-owner pass ceiling](../investigations/aspris52-what-removing-the-validation-owner-pass-can-save.md)
+reads the dcp-01 row means as 176.7 to 316.0 owner µs per completion for the pass
+the three-service frame job removes; it is an upper-bound association, not a saving.
+The [frame job's gate dispositions and default-off merge](../plans/n7fj3c2p-three-service-frame-jobs-with-owner-authority.md#gate-dispositions-and-default-off-merge-november-19)
+record the measured still (−8.47%) and moving (−4.27%) blocks; adoption is open.
+
 The [worker-side submission checkpoint](../investigations/l4ruwq60-worker-side-native-submission-needs-a-new-authority-and-lifetime-contract.md)
 records T4's new authority, lifetime and completion obligations. Its TLA+ safety
 checks pass under proposed mechanisms, while a stalled-gate progress probe fails.
