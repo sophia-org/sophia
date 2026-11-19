@@ -435,9 +435,12 @@ fn refusal_has_fixed_drain_deadline_and_ack_progress_is_not_authorization() {
 
 #[test]
 fn queued_payload_is_reclaimed_on_disconnect_and_can_never_execute_later() {
-    let mut f = Fixture::new(PortalFileLimits::defaults(1));
+    // Broker generation 7 is distinct from both connection epochs (1 and 2).
+    let mut f = Fixture::new(PortalFileLimits::defaults(7));
     f.negotiate();
-    f.request(1);
+    let PortalBrokerResponseDecision::Allowed(first) = f.request(1) else {
+        panic!("first request must be granted");
+    };
     let writer = f.begin(1, b"x");
     f.end(1, 1).unwrap();
     f.events(true);
@@ -456,10 +459,38 @@ fn queued_payload_is_reclaimed_on_disconnect_and_can_never_execute_later() {
         Err(Errno::EINVAL)
     );
     f.export.release(Node::Slot, Some(writer));
-    assert!(matches!(
-        f.request(2),
-        PortalBrokerResponseDecision::Allowed(_)
-    ));
+    let PortalBrokerResponseDecision::Allowed(second) = f.request(2) else {
+        panic!("second request must be granted");
+    };
+    assert_eq!(
+        (first.transfer.raw(), second.transfer.raw()),
+        (1, 2),
+        "each connection's grant names its own transfer"
+    );
+    assert_eq!(
+        (first.broker_generation, second.broker_generation),
+        (7, 7),
+        "one broker generation serves successive requester connections"
+    );
+}
+
+#[test]
+fn a_request_already_past_its_deadline_is_denied_at_submission() {
+    let mut f = Fixture::new(PortalFileLimits::defaults(1));
+    f.negotiate();
+    // Policy, rights, source generation and namespaces stay valid; only the
+    // owner clock has reached the request's deadline.
+    f.export.authority_mut().now = 10000;
+    assert_eq!(f.request(1), PortalBrokerResponseDecision::Denied);
+    assert!(f.export.take_execution().is_none());
+    assert_eq!(
+        f.send(PortalFileCandidate::PayloadBegin(PortalPayloadBegin {
+            transfer: PortalTransferId::from_raw(1),
+            total_bytes: 1,
+        })),
+        Err(Errno::EINVAL),
+        "a denied transfer accepts no upload"
+    );
 }
 
 #[test]

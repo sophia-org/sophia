@@ -3595,18 +3595,28 @@ carries this section: `sophia-portal/src/socket.rs` and its five tests,
 types stay; the file contract uses them.
 
 The four X frontend transfer tests in `x11_wire/clipboard_frontend.rs` stay.
-They used the socket only to obtain an allowed grant, and now construct that
-grant themselves, so they still witness the source request, the captured
-payload, the installed property and the SelectionNotify for CLIPBOARD and
-PRIMARY, with and without listener groups, and the stale and failed cases.
+The socket carried both the grant negotiation and the correlated payload to
+the executor. The tests now construct the allowed grant themselves and hand
+the captured bytes directly to the X executor, so they still witness the
+source request, the captured payload, the installed property and the
+SelectionNotify for CLIPBOARD and PRIMARY, with and without listener groups,
+and the stale and failed cases. A supplied grant does not witness policy
+admission; the file-side tests do.
 The authority test that decoded a payload frame calls
 `execute_clipboard_payload` with the same bytes.
 
 The five socket tests covered owner-only access, a disconnect after the grant,
-expiry, payload only after a correlated grant, and one broker generation
-across connections. The
+expiry at submission, payload only after a correlated grant, and one broker
+generation across connections. The socket's path mode and unlink on exit were
+properties of the retired listener; the file service uses a private socket
+pair, and `sophia-portal/tests/portal_files.rs` covers exact admission and
+refusal of a second peer. The same file covers queued and issued disconnect
+and the single correlated handoff, as the
 [t315 reconciliation](rd9nia0s-several-x-listeners-and-confined-application-launch-validation.md)
-maps the file-side tests for the same obligations: admission and foreign
-refusal, queued and issued disconnect, deadline, single terminal settlement,
-and broker restart. The fallback release is the same as for the broker.
+maps. Two assertions had no direct file-side counterpart and are added with
+the removal: `a_request_already_past_its_deadline_is_denied_at_submission`,
+and the grant comparison in
+`queued_payload_is_reclaimed_on_disconnect_and_can_never_execute_later`,
+which checks one broker generation on grants from two requester connections.
+The fallback release is the same as for the broker.
 Administration is unchanged.
