@@ -1,5 +1,5 @@
 mod authority;
-mod broker_v1;
+mod broker;
 mod chrome;
 mod input;
 mod namespace;
@@ -15,7 +15,7 @@ mod tab_groups;
 mod wm;
 
 pub use authority::*;
-pub use broker_v1::*;
+pub use broker::*;
 pub use chrome::*;
 pub use input::*;
 pub use namespace::*;

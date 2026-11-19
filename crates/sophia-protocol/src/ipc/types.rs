@@ -14,10 +14,6 @@ pub enum IpcMessageKind {
     PortalBrokerRequest = 6,
     PortalBrokerResponse = 7,
     PortalClipboardPayload = 8,
-    BrokerV1ClientHello = 80,
-    BrokerV1ServerWelcome = 81,
-    BrokerV1Request = 82,
-    BrokerV1Response = 83,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

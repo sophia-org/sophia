@@ -3528,3 +3528,59 @@ proof and its physical qualification gap. The subsequent
 [t272 acceptance](../milestones/dzsezje2-accept-output-ipc-retirement-with-the-strict-file-only-wm-contract.md)
 records the exact assembled candidate, passing attended gate and signed master
 promotion. Earlier evidence in this inventory retains its original scope.
+
+## t255 inventory (2026-11-19)
+
+Read at master `f8a5db4e7`, after t250, t252, t253, t254, t314 and t315 had
+closed. Earlier sections keep their original pins and scope.
+
+The window-manager, shell and output roles have no selectable old transport.
+`WmTransportSelection` and `ShellTransportSelection` each hold only the
+9P2000.L variant. What remains of `sophia_wm_v1`, `sophia_shell_v1` and
+`sophia_output_v1` is the interface-family name in configuration and flags,
+test references, and code that removes the retired socket variables from a
+child's environment.
+
+The metadata broker ran on the file contract in every production path, as the
+[t314 result](../plans/jsschoen-converge-public-roles-on-one-9p-core.md#t314)
+records. The legacy socket had three callers: the `metadata-broker-serve` and
+`metadata-broker-transport-smoke` commands, the baseline arm of
+`broker_performance.rs`, and the transport's own test. The change that carries
+this section removes the transport, its frame codec and message kinds, both
+commands, `protocol/sophia-broker-v1.kdl` and the baseline arm. It keeps
+`BrokerToplevelActionGrant`, which the file path uses, in
+`packets/broker.rs`, and points `PolicyRole::Broker` at
+`SOPHIA_BROKER_9P_SOCKET`. The cost harness measures the file path alone; the
+legacy figures stay in the t314 result. The broker-health frame is a separate
+message and is not touched.
+
+Administration still has an operator-selectable legacy server and client. The
+Session binds the old wire on `--control-transport=current-ipc`, and
+`sophia msg --transport current-ipc` uses `ControlClient`; 9P is the default in
+both. `bindings/python/sophia_control_v1.py` is a third client of the old wire.
+`SOPHIA_CONTROL_SOCKET`, the shared control service, tickets, catalog and
+command dispatch serve both transports and are not legacy. Withdrawing the
+selector and the Python reference is a public compatibility decision and is
+not made here.
+
+The portal's legacy pieces are the socket server and client in
+`sophia-portal/src/socket.rs`, the framed codec in `ipc/portal.rs`, the request
+wrapper in `packets/portal.rs`, and two X clipboard helpers that only tests
+call. The desktop reaches `PortalTransferCoordinator` and the file service.
+`coordinator.rs` and the domain and response types in `packets/portal.rs`
+belong to the file path. The socket functions are exported, so a downstream
+Rust caller is possible; none is known.
+
+The installed release `niltempus-a82c7f09d7566a927b65` pins Hagia, Lom,
+Bemenu and Kleis at revisions that select 9P endpoints, and Provlita and
+sophia-output do the same. No selected client of a legacy administration,
+broker or portal envelope was found. This is a reading of source and of the
+selected roles, not a census of private clients or old archives.
+
+The fallback for the broker removal is that same release, built from Sophia
+`8d694554c`, which still contains the legacy broker transport and commands.
+Installing it by its explicit store path and logging in again restores them;
+niltempus `docs/install.md` describes the step. The broker holds no persistent
+state to migrate. A release swap does not roll back home configuration or
+separately installed clients, and no broker-specific rollback trial has been
+run.

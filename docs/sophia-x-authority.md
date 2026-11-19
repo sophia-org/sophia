@@ -631,7 +631,8 @@ The broker still owns what only it can: disclosure policy, trust assignment, ico
 tokens, and aggregation across authorities. It emits sanitized `ChromeDescriptor`
 data. Sophia Engine owns the chrome presentation and chrome hit-testing.
 
-Production Hagia sessions host this loop over `sophia_broker_v1`. The session admits
+Production Hagia sessions host this loop over the
+[broker file contract](sophia-broker-files.md). The session admits
 the surface to its protected metadata-broker process, routes the returned rule to
 the exact X frontend client, and commits only the broker's sanitized descriptor to
 Engine's `ChromeDescriptorTable`. Removal retires the same surface on both sides.

@@ -1,16 +1,14 @@
-//! Opt-in paired diagnostic. Never a performance qualification by itself.
+//! Opt-in cost diagnostic. Never a performance qualification by itself.
 #[path = "../../sophia-runtime/tests/support/output_file_performance/cpu.rs"]
 mod cpu;
 
-use sophia_engine::ChromeDescriptorTable;
 use sophia_protocol::{
-    BrokerToplevelActionGrant, BrokerV1Request, BrokerV1Response, DisplayLabel, MetadataDisclosure,
-    NamespaceProfile, ReducedMetadataCandidate, SurfaceId, TransactionId,
+    DisplayLabel, MetadataDisclosure, NamespaceProfile, ReducedMetadataCandidate, SurfaceId,
     broker_files::{BrokerFileLimits, BrokerFileRequest},
 };
 use sophia_runtime::{
-    MetadataBrokerSessionTransport, ProcessLaunchSpec, ProcessSupervisor, ProtectionDomainRole,
-    ProtectionDomainSpec, ProtectionPath, SupervisedProcessKind, SupervisorCommand,
+    ProcessLaunchSpec, ProcessSupervisor, ProtectionDomainRole, ProtectionDomainSpec,
+    ProtectionPath, SupervisedProcessKind, SupervisorCommand,
     broker_files::{BrokerFileListener, SOPHIA_BROKER_9P_SOCKET_ENV},
 };
 use sophia_session::{
@@ -18,41 +16,24 @@ use sophia_session::{
     broker_file_owner::{BrokerCompletion, BrokerFileOwner},
 };
 use std::{
-    collections::BTreeMap,
     io::Write,
     path::Path,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-enum Transport {
-    Legacy {
-        wire: MetadataBrokerSessionTransport,
-        descriptors: ChromeDescriptorTable,
-        grants: BTreeMap<SurfaceId, BrokerToplevelActionGrant>,
-        next: u64,
-    },
-    Files(Box<BrokerFileDriver<u64>>),
-}
 struct Peer {
-    transport: Transport,
+    driver: BrokerFileDriver<u64>,
     supervisor: ProcessSupervisor,
     pid: u32,
 }
 impl Drop for Peer {
     fn drop(&mut self) {
         let _ = self.supervisor.terminate();
-        match &mut self.transport {
-            Transport::Legacy { wire, .. } => {
-                let _ = wire.disconnect();
-            }
-            Transport::Files(driver) => {
-                let _ = driver.close();
-            }
-        }
+        let _ = self.driver.close();
     }
 }
 impl Peer {
-    fn start(executable: &Path, bwrap: &Path, files: bool) -> Self {
+    fn start(executable: &Path, bwrap: &Path) -> Self {
         let directory = std::env::temp_dir().join(format!(
             "sophia-broker-cost-{}-{}",
             std::process::id(),
@@ -62,33 +43,16 @@ impl Peer {
                 .as_nanos()
         ));
         let uid = rustix::process::geteuid().as_raw();
-        let listener = files.then(|| BrokerFileListener::bind(&directory, uid).unwrap());
-        let mut legacy = (!files).then(|| {
-            MetadataBrokerSessionTransport::bind_for_supervised_uid(&directory, uid).unwrap()
-        });
-        let socket = listener
-            .as_ref()
-            .map(|v| v.socket_path())
-            .unwrap_or_else(|| legacy.as_ref().unwrap().socket_path());
+        let listener = BrokerFileListener::bind(&directory, uid).unwrap();
+        let socket = listener.socket_path();
         let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataBroker])
             .unwrap()
             .bubblewrap_path(bwrap)
             .path(ProtectionPath::read_only(socket.parent().unwrap()))
             .unwrap();
         let spec = ProcessLaunchSpec::new(executable)
-            .arg(if files {
-                "metadata-broker-files-serve"
-            } else {
-                "metadata-broker-serve"
-            })
-            .env(
-                if files {
-                    SOPHIA_BROKER_9P_SOCKET_ENV
-                } else {
-                    sophia_runtime::SOPHIA_BROKER_SOCKET_ENV
-                },
-                socket,
-            )
+            .arg("metadata-broker-files-serve")
+            .env(SOPHIA_BROKER_9P_SOCKET_ENV, socket)
             .env("SOPHIA_BROKER_DEFAULT_DISCLOSURE", "class-only")
             .process_group()
             .protection_domain(domain);
@@ -100,148 +64,77 @@ impl Peer {
             })
             .unwrap();
         let evidence = supervisor.protection_evidence().unwrap().clone();
-        let transport = if let Some(listener) = listener {
-            let service = listener
-                .accept(
-                    BrokerFileOwner::new(1).unwrap(),
-                    &evidence,
-                    1,
-                    1,
-                    0,
-                    BrokerFileLimits::default(),
-                    Duration::from_secs(5),
-                )
-                .unwrap();
-            let mut driver = BrokerFileDriver::new(service);
-            driver.negotiate(Duration::from_secs(5)).unwrap();
-            Transport::Files(Box::new(driver))
-        } else {
-            let mut wire = legacy.take().unwrap();
-            wire.authorize_protected_peer(&evidence).unwrap();
-            wire.accept_and_negotiate(1, Duration::from_secs(5))
-                .unwrap();
-            Transport::Legacy {
-                wire,
-                descriptors: Default::default(),
-                grants: Default::default(),
-                next: 1,
-            }
-        };
+        let service = listener
+            .accept(
+                BrokerFileOwner::new(1).unwrap(),
+                &evidence,
+                1,
+                1,
+                0,
+                BrokerFileLimits::default(),
+                Duration::from_secs(5),
+            )
+            .unwrap();
+        let mut driver = BrokerFileDriver::new(service);
+        driver.negotiate(Duration::from_secs(5)).unwrap();
         Self {
-            transport,
+            driver,
             supervisor,
             pid: evidence.peer_pid,
         }
     }
     fn admit(&mut self, surface: SurfaceId) {
-        match &mut self.transport {
-            Transport::Files(driver) => assert!(matches!(
-                driver
-                    .request(
-                        BrokerFileRequest::SurfaceAdmitted {
-                            surface,
-                            profile: NamespaceProfile::Confined
-                        },
-                        1,
-                        Duration::from_secs(5)
-                    )
-                    .unwrap(),
-                BrokerCompletion::Applied { rule: Some(_), .. }
-            )),
-            Transport::Legacy { wire, next, .. } => {
-                let reply = wire
-                    .request(
-                        TransactionId::from_raw(*next),
-                        &BrokerV1Request::SurfaceAdmitted {
-                            connection_epoch: 1,
-                            surface,
-                            profile: NamespaceProfile::Confined,
-                        },
-                    )
-                    .unwrap();
-                *next += 1;
-                assert!(matches!(reply, BrokerV1Response::PublishRule { .. }));
-            }
-        }
+        assert!(matches!(
+            self.driver
+                .request(
+                    BrokerFileRequest::SurfaceAdmitted {
+                        surface,
+                        profile: NamespaceProfile::Confined
+                    },
+                    1,
+                    Duration::from_secs(5)
+                )
+                .unwrap(),
+            BrokerCompletion::Applied { rule: Some(_), .. }
+        ));
     }
     fn candidate(&mut self, candidate: &ReducedMetadataCandidate) {
-        match &mut self.transport {
-            Transport::Files(driver) => assert!(matches!(
-                driver
-                    .request(
-                        BrokerFileRequest::CandidateReduced {
-                            surface: candidate.surface,
-                            disclosure: candidate.disclosure,
-                            label: candidate.label.as_ref().map(|v| v.text.as_str()),
-                            redacted: false,
-                            generation: candidate.generation,
-                        },
-                        1,
-                        Duration::from_secs(5)
-                    )
-                    .unwrap(),
-                BrokerCompletion::Applied { .. }
-            )),
-            Transport::Legacy {
-                wire,
-                descriptors,
-                grants,
-                next,
-            } => {
-                let response = wire
-                    .request(
-                        TransactionId::from_raw(*next),
-                        &BrokerV1Request::CandidateReduced {
-                            connection_epoch: 1,
-                            candidate: candidate.clone(),
-                        },
-                    )
-                    .unwrap();
-                *next += 1;
-                let BrokerV1Response::EmitDescriptor {
-                    descriptor, action, ..
-                } = response
-                else {
-                    panic!("unexpected response: {response:?}")
-                };
-                let descriptor = descriptors.prepare_metadata(descriptor).unwrap();
-                assert_eq!(action.target_generation, descriptor.generation);
-                grants.insert(descriptor.surface, action);
-                descriptors.upsert(descriptor);
-            }
-        }
+        assert!(matches!(
+            self.driver
+                .request(
+                    BrokerFileRequest::CandidateReduced {
+                        surface: candidate.surface,
+                        disclosure: candidate.disclosure,
+                        label: candidate.label.as_ref().map(|v| v.text.as_str()),
+                        redacted: false,
+                        generation: candidate.generation,
+                    },
+                    1,
+                    Duration::from_secs(5)
+                )
+                .unwrap(),
+            BrokerCompletion::Applied { .. }
+        ));
     }
     fn check(&self, candidate: &ReducedMetadataCandidate) {
-        let (descriptors, grants) = match &self.transport {
-            Transport::Files(driver) => (driver.owner().descriptors(), driver.owner().grants()),
-            Transport::Legacy {
-                descriptors,
-                grants,
-                ..
-            } => (descriptors, grants),
-        };
-        let descriptor = descriptors.get(candidate.surface).unwrap();
+        let owner = self.driver.owner();
+        let descriptor = owner.descriptors().get(candidate.surface).unwrap();
         assert_eq!(descriptor.generation, candidate.generation);
         assert_eq!(descriptor.label, candidate.label);
         assert_eq!(
-            grants[&candidate.surface].target_generation,
+            owner.grants()[&candidate.surface].target_generation,
             candidate.generation
         );
     }
     fn settle(&mut self) {
-        if let Transport::Files(driver) = &mut self.transport {
-            // Wait for the final receipt acknowledgment before ending CPU accounting.
-            driver.negotiate(Duration::from_secs(5)).unwrap();
-        }
+        // Wait for the final receipt acknowledgment before ending CPU accounting.
+        self.driver.negotiate(Duration::from_secs(5)).unwrap();
     }
     fn finish(&mut self) {
         // Let blocked socket calls return before supervisor cleanup. Killing a
         // peer inside recv makes a byte trace incomplete, even after owner work
         // has settled. Teardown remains outside the measured workload interval.
-        match &mut self.transport {
-            Transport::Legacy { wire, .. } => wire.disconnect().unwrap(),
-            Transport::Files(driver) => driver.close().unwrap(),
-        }
+        self.driver.close().unwrap();
         let deadline = Instant::now() + Duration::from_secs(2);
         while self.supervisor.poll().unwrap().is_none() {
             assert!(
@@ -255,7 +148,7 @@ impl Peer {
 
 #[test]
 #[ignore = "requires explicit executable, bubblewrap and new evidence path; opt-in cost diagnostic"]
-fn paired_broker_descriptor_cost() {
+fn broker_descriptor_cost() {
     let executable = std::path::PathBuf::from(std::env::var_os("SOPHIA_TEST_EXECUTABLE").unwrap());
     let bwrap = std::path::PathBuf::from(std::env::var_os("SOPHIA_TEST_BUBBLEWRAP").unwrap());
     let evidence =
@@ -271,12 +164,14 @@ fn paired_broker_descriptor_cost() {
         .parse()
         .unwrap();
     assert!((1..=100_000).contains(&samples));
-    // ABBA order, with independent process lifetime per block. Admission and
+    // Two blocks, with independent process lifetime per block. Admission and
     // warmup are outside the interval; candidates and sample storage are prebuilt.
-    for (block, files) in [false, true, true, false].into_iter().enumerate() {
+    // The legacy-envelope baseline this once paired against is recorded in
+    // docs/notes/plans/jsschoen (t314 result).
+    for block in 0..2 {
         for label_bytes in [0usize, 16, 120] {
             for latency in [true, false] {
-                let mut peer = Peer::start(&executable, &bwrap, files);
+                let mut peer = Peer::start(&executable, &bwrap);
                 let surface = SurfaceId::new(1, 1);
                 peer.admit(surface);
                 let candidate = |generation| ReducedMetadataCandidate {
@@ -333,7 +228,7 @@ fn paired_broker_descriptor_cost() {
                 });
                 peer.check(candidates.last().unwrap());
                 peer.finish();
-                writeln!(output, "{}", serde_json::json!({"kind":"sample","block":block,"files":files,"label_bytes":label_bytes,"operations":samples,
+                writeln!(output, "{}", serde_json::json!({"kind":"sample","block":block,"files":true,"label_bytes":label_bytes,"operations":samples,
                     "peer_pid":peer.pid,"owner_pid":std::process::id(),"owner_tid":rustix::thread::gettid().as_raw_pid(),
                     "pass":if latency {"latency"} else {"cpu"},"elapsed_ns":elapsed.as_nanos().to_string(),
                     "latency_ns":if latency {Some(timings)} else {None},

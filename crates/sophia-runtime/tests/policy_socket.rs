@@ -313,7 +313,7 @@ fn every_role_has_its_own_socket_and_environment_variable() {
     assert_eq!(PolicyRole::Shell.socket_env(), "SOPHIA_SHELL_9P_SOCKET");
 
     assert_eq!(PolicyRole::Broker.socket_file_name(), "broker.sock");
-    assert_eq!(PolicyRole::Broker.socket_env(), "SOPHIA_BROKER_SOCKET");
+    assert_eq!(PolicyRole::Broker.socket_env(), "SOPHIA_BROKER_9P_SOCKET");
     assert_eq!(PolicyRole::Output.socket_file_name(), "output.sock");
     assert_eq!(PolicyRole::Output.socket_env(), "SOPHIA_OUTPUT_9P_SOCKET");
 }

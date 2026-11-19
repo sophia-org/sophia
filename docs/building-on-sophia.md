@@ -156,7 +156,7 @@ replaceable:
 | --- | --- | --- | --- | --- |
 | Window manager | `sophia_wm_v1` (r3, frozen) | [Hagia](https://github.com/sophia-org/hagia) | no | geometry, window facts |
 | Shell | `sophia_shell_v1` (r6, experimental; older negotiated capabilities supported) | [Narthex](https://github.com/sophia-org/narthex), [Lom](https://github.com/sophia-org/lom) | descriptors: Engine pixels; content: own images, production admission still closed | authorized presentation facts |
-| Broker | `sophia_broker_v1` | in-tree | no | redacted descriptors |
+| Broker | [broker files](sophia-broker-files.md) | in-tree | no | redacted descriptors |
 
 The window manager never learns titles, application identities, or pixel
 content. The current descriptor shell never learns surface identities or

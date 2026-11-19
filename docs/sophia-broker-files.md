@@ -1,8 +1,7 @@
 # Metadata broker file contract
 
-**Design only.** The export and SDK broker clients are not implemented. The
-current metadata broker still uses `sophia_broker_v1`. This contract specifies
-its replacement; it does not change production selection or accept retirement.
+The Session's metadata broker runs on this contract. The `sophia_broker_v1`
+socket it replaced has been removed from the source.
 The [decision](notes/decisions/xa78u03g-keep-broker-and-portal-file-authority-and-custody-separate.md)
 records admission, compatibility and resource choices. Exact native layouts are
 in [sophia-broker-files-v1.kdl](../protocol/sophia-broker-files-v1.kdl).

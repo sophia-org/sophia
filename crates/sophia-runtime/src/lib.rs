@@ -9,7 +9,6 @@ extern crate self as sophia_runtime;
 pub mod authenticated_files;
 pub mod broker_files;
 #[cfg(target_os = "linux")]
-mod broker_transport;
 #[cfg(target_os = "linux")]
 mod control;
 #[cfg(target_os = "linux")]
@@ -76,8 +75,6 @@ mod prelude {
     pub(crate) use crate::{SophiaErrorExt, SophiaErrorKind};
 }
 
-#[cfg(target_os = "linux")]
-pub use broker_transport::*;
 #[cfg(target_os = "linux")]
 pub use control::*;
 pub use error::*;
