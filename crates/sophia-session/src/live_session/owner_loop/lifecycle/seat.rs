@@ -59,7 +59,7 @@ if let Some(controller) = seat_controller.as_mut() {
                     "sophia_live_input_epoch schema=1 reason=virtual_terminal epoch={} revoked_leases={revoked_input_leases}",
                     application_route_leases.control_epoch(),
                 );
-                physical_input.take();
+                crate::session_lock_input::detach_input_source(physical_input, session_lock_input.as_mut());
                 application_launches.revoke_captures();
                 pause_metadata_shell_presentation!("seat_release");
                 let quiesced = if let (Some(runtime), Some(native)) =
@@ -258,7 +258,7 @@ if let Some(controller) = seat_controller.as_mut() {
                 if let Some(surface) = applied_client_focus {
                     flush_client_keys!(surface, "seat_release");
                 }
-                physical_input.take();
+                crate::session_lock_input::detach_input_source(physical_input, session_lock_input.as_mut());
                 if !seat_release_prepared
                     && let Some(runtime) = runtime.as_mut()
                 {
@@ -301,8 +301,6 @@ if let Some(controller) = seat_controller.as_mut() {
                 key_repeat.cancel_seat(seat);
                 virtual_terminal_chord = VirtualTerminalChordState::default();
                 emergency_chord = EmergencyChordState::armed();
-                // The VT chord's modifiers are still down in the lock's keymap.
-                if let Some(input) = session_lock_input.as_mut() { input.reset_keys(); }
                 crate::session_println!("sophia_live_seat schema=1 status=suspended");
                 std::io::stdout().flush()?;
             }

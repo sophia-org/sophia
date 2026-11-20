@@ -506,13 +506,20 @@ Evidence is in `~/.local/state/sophia/development-evidence/t297-attended-2026111
 
 The password failure is in Session, not the provider. The lock keyboard feeds
 every key to its keymap state, including the Ctrl and Alt of the VT chord. A
-seat release takes the keyboards without their key releases, and the release
-path reset the desktop mapper, shortcuts and chord recognizers but not the
-lock keyboard. Ctrl and Alt stayed active, so every later key was read as a
-command chord. `keys_held_at_a_seat_release_do_not_block_the_next_secret`
-reproduces this: without the reset it fails with no edits; the seat release
-now resets the lock keyboard's key state as well. The owner-loop call itself
-has no unit test.
+VT switch drops the input source without the key releases, and the owner
+reset the desktop mapper, shortcuts and chord recognizers but not the lock
+keyboard. Ctrl and Alt stayed active, so every later key was read as a
+command chord. The owner now drops the source through
+`session_lock_input::detach_input_source`, at the requested VT switch and at
+seat release; taking a source that was there gives the lock keyboard a fresh
+keymap state and resets composition. That covers a refused or failed switch,
+which reopens input with no suspend in between. Text already typed stays in
+the same lock; toggles and layout group return to the keymap baseline, which
+need not match the desktop mapper's configured CapsLock and NumLock.
+`keys_held_when_the_input_source_goes_do_not_block_the_secret` and
+`a_reopened_source_keeps_its_keys_when_nothing_is_left_to_detach` cover the
+operation; the two owner-loop call sites have no test of their own, and
+unplugging one of several keyboards is not covered.
 
 The stopped picture of a provider that was running across the seat release is
 a separate defect and is not diagnosed. t297 stays open: the fix needs an

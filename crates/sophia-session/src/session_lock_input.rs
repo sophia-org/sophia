@@ -207,9 +207,9 @@ impl SessionLockInput {
         SessionLockKeyOutcome::Consumed
     }
 
-    /// A seat release took the keyboards with keys still down. Their releases
-    /// never arrive, so the keymap forgets them; the secret typed so far stays.
-    pub fn reset_keys(&mut self) {
+    /// The input source went with keys still down. Their releases never
+    /// arrive, so the keymap starts afresh; the secret typed so far stays.
+    fn reset_keys(&mut self) {
         self.keyboard.reset_keys();
     }
 
@@ -246,6 +246,17 @@ impl SessionLockInput {
     pub fn settle_submission(&mut self) {
         self.submitted = false;
         self.secret.clear();
+    }
+}
+
+/// Drops the physical input source, for a VT switch or a seat release. Only
+/// taking a source that was there resets the lock's keys, so a repeated poll
+/// with none left cannot forget keys pressed on its successor.
+pub fn detach_input_source<T>(source: &mut Option<T>, lock: Option<&mut SessionLockInput>) {
+    if source.take().is_some()
+        && let Some(lock) = lock
+    {
+        lock.reset_keys();
     }
 }
 

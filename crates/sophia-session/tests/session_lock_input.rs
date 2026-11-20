@@ -7,7 +7,7 @@ use sophia_session::emergency_input::EmergencyChordState;
 use sophia_session::session_keyboard::VirtualTerminalChordState;
 use sophia_session::session_lock_input::{
     SESSION_LOCK_SECRET_CAPACITY, SessionLockEdit, SessionLockInput, SessionLockKeyOutcome,
-    SessionLockSecret, session_lock_chords,
+    SessionLockSecret, detach_input_source, session_lock_chords,
 };
 
 const A: u32 = 30;
@@ -17,6 +17,7 @@ const BACKSPACE: u32 = 14;
 const ESCAPE: u32 = 1;
 const LEFT_CTRL: u32 = 29;
 const LEFT_ALT: u32 = 56;
+const LEFT_SHIFT: u32 = 42;
 const F2: u32 = 60;
 
 struct Seat {
@@ -327,32 +328,60 @@ fn a_vt_switch_still_acts_after_its_modifiers_hold_the_device() {
     assert!(seat.lock.take_unreported_held_devices().is_empty());
 }
 
-/// t297, 2026-11-19: Ctrl+Alt+F2 while locked took the seat with Ctrl and Alt
-/// down. No release ever came, and every later key was read as a chord.
-#[test]
-fn keys_held_at_a_seat_release_do_not_block_the_next_secret() {
+/// The lock is typed into, the VT chord is held, and the input source goes.
+fn seat_with_a_prefix_and_the_vt_chord_held() -> Seat {
     let mut seat = Seat::new();
+    seat.tap(A);
     seat.key(LEFT_CTRL, true);
     seat.key(LEFT_ALT, true);
     assert!(matches!(
         seat.key(F2, true),
         SessionLockKeyOutcome::VirtualTerminal { terminal: 2, .. }
     ));
-    // The seat is released and returns with new devices, as the owner loop
-    // resets its own recognizers.
-    seat.lock.reset_keys();
+    seat
+}
+
+/// t297, 2026-11-19: Ctrl+Alt+F2 while locked took the seat with Ctrl and Alt
+/// down. No release ever came, and every later key was read as a chord.
+#[test]
+fn keys_held_when_the_input_source_goes_do_not_block_the_secret() {
+    let mut seat = seat_with_a_prefix_and_the_vt_chord_held();
+    let mut source = Some(());
+    detach_input_source(&mut source, Some(&mut seat.lock));
+    assert_eq!(source, None);
+    // The seat returns with new devices; the owner resets its recognizers.
     seat.terminal = VirtualTerminalChordState::default();
     seat.emergency = EmergencyChordState::default();
     seat.device = DeviceId::from_raw(9);
-    seat.lock.take_edits();
-    seat.tap(A);
+    seat.tap(B);
     seat.tap(ENTER);
     assert_eq!(
         seat.lock.take_edits(),
         vec![
             (SessionLockEdit::Insert, false),
+            (SessionLockEdit::Insert, false),
             (SessionLockEdit::Submit, false)
         ]
     );
-    assert_eq!(seat.secret().as_deref(), Some("a"));
+    assert_eq!(
+        seat.secret().as_deref(),
+        Some("ab"),
+        "text typed before the detachment stays in the same lock"
+    );
+}
+
+/// A refused or failed VT switch reopens input with no suspend in between,
+/// and a release poll may find no source left to take.
+#[test]
+fn a_reopened_source_keeps_its_keys_when_nothing_is_left_to_detach() {
+    let mut seat = seat_with_a_prefix_and_the_vt_chord_held();
+    let mut source = Some(());
+    detach_input_source(&mut source, Some(&mut seat.lock));
+    seat.terminal = VirtualTerminalChordState::default();
+    seat.key(LEFT_SHIFT, true);
+    detach_input_source(&mut source, Some(&mut seat.lock));
+    seat.tap(B);
+    seat.key(LEFT_SHIFT, false);
+    seat.tap(ENTER);
+    assert_eq!(seat.secret().as_deref(), Some("aB"));
 }
