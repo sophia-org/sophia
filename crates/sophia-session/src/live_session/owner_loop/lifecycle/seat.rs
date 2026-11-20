@@ -301,6 +301,8 @@ if let Some(controller) = seat_controller.as_mut() {
                 key_repeat.cancel_seat(seat);
                 virtual_terminal_chord = VirtualTerminalChordState::default();
                 emergency_chord = EmergencyChordState::armed();
+                // The VT chord's modifiers are still down in the lock's keymap.
+                if let Some(input) = session_lock_input.as_mut() { input.reset_keys(); }
                 crate::session_println!("sophia_live_seat schema=1 status=suspended");
                 std::io::stdout().flush()?;
             }

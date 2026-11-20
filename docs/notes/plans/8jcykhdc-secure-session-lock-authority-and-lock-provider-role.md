@@ -486,6 +486,38 @@ installed `96cb6d6d8` does not emit per-owner lock covers, and its successful
 unlocked zero-output VT return does not replace t297's locked VT check. The
 remaining physical matrix needs a matched release carrying the evidence fix.
 
+#### Attended run, 2026-11-19 (one output)
+
+niltempus ran the cases on release `niltempus-a82c7f09d7566a927b65` (Sophia
+`8d694554c`) with one monitor attached. Lock and unlock by password passed.
+The VT round trip failed: the session recorded the lock as covering the output
+again on return, and no desktop content was shown, but the provider's picture
+stopped moving and no password attempt could be started. The session recorded
+keys consumed by the lock and never a `checking` record. The two-output and
+hotplug cases need the second monitor and were not run; the provider-kill and
+wrong-password cases were not run as written.
+
+During recovery, `SIGKILL` to the provider (a plain `SIGTERM` does not reach
+it: it is PID 1 of its sandbox) left the lock covered, and the session started
+a new provider after the next seat return. Its picture moved; the password
+still could not be entered. `sophia msg session logout` over the control
+socket was accepted while locked and ended the session with status 0.
+Evidence is in `~/.local/state/sophia/development-evidence/t297-attended-20261119/`.
+
+The password failure is in Session, not the provider. The lock keyboard feeds
+every key to its keymap state, including the Ctrl and Alt of the VT chord. A
+seat release takes the keyboards without their key releases, and the release
+path reset the desktop mapper, shortcuts and chord recognizers but not the
+lock keyboard. Ctrl and Alt stayed active, so every later key was read as a
+command chord. `keys_held_at_a_seat_release_do_not_block_the_next_secret`
+reproduces this: without the reset it fails with no edits; the seat release
+now resets the lock keyboard's key state as well. The owner-loop call itself
+has no unit test.
+
+The stopped picture of a provider that was running across the seat release is
+a separate defect and is not diagnosed. t297 stays open: the fix needs an
+installed release, and all five cases are still owed.
+
 ### t298 p9any and dp9ik
 
 Add `p9any` and `dp9ik` (client and server roles) to `sophia-factotum`,

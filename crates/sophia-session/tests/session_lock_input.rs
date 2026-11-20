@@ -326,3 +326,33 @@ fn a_vt_switch_still_acts_after_its_modifiers_hold_the_device() {
     ));
     assert!(seat.lock.take_unreported_held_devices().is_empty());
 }
+
+/// t297, 2026-11-19: Ctrl+Alt+F2 while locked took the seat with Ctrl and Alt
+/// down. No release ever came, and every later key was read as a chord.
+#[test]
+fn keys_held_at_a_seat_release_do_not_block_the_next_secret() {
+    let mut seat = Seat::new();
+    seat.key(LEFT_CTRL, true);
+    seat.key(LEFT_ALT, true);
+    assert!(matches!(
+        seat.key(F2, true),
+        SessionLockKeyOutcome::VirtualTerminal { terminal: 2, .. }
+    ));
+    // The seat is released and returns with new devices, as the owner loop
+    // resets its own recognizers.
+    seat.lock.reset_keys();
+    seat.terminal = VirtualTerminalChordState::default();
+    seat.emergency = EmergencyChordState::default();
+    seat.device = DeviceId::from_raw(9);
+    seat.lock.take_edits();
+    seat.tap(A);
+    seat.tap(ENTER);
+    assert_eq!(
+        seat.lock.take_edits(),
+        vec![
+            (SessionLockEdit::Insert, false),
+            (SessionLockEdit::Submit, false)
+        ]
+    );
+    assert_eq!(seat.secret().as_deref(), Some("a"));
+}

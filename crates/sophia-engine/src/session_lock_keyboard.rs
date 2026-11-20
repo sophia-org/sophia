@@ -112,6 +112,13 @@ impl SessionLockKeyboard {
         }
     }
 
+    /// Forgets every held key and modifier, as a seat release does for the
+    /// desktop keyboard. Keys held when the seat goes never send a release.
+    pub fn reset_keys(&mut self) {
+        self.state = xkb::State::new(&self.state.get_keymap());
+        self.reset_composition();
+    }
+
     /// Feeds one evdev key. Every key updates the keymap state, so modifiers
     /// stay true across keys a session recognizer consumed; only a key with
     /// `edit` set can edit the secret or fire a chord. Committed text is

@@ -207,6 +207,12 @@ impl SessionLockInput {
         SessionLockKeyOutcome::Consumed
     }
 
+    /// A seat release took the keyboards with keys still down. Their releases
+    /// never arrive, so the keymap forgets them; the secret typed so far stays.
+    pub fn reset_keys(&mut self) {
+        self.keyboard.reset_keys();
+    }
+
     /// Devices this lock first consumed a pressed key from since the last call.
     pub fn take_unreported_held_devices(&mut self) -> &[DeviceId] {
         let start = self.held_reported;
